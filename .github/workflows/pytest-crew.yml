@@ -139,10 +139,13 @@ jobs:
       # workers overlap the waits. The count is fixed, not `auto`: on the
       # self-hosted pool `auto` meant 4 (the runner's
       # PYTEST_XDIST_AUTO_NUM_WORKERS). Benchmarked there (L-0590, 5 runs per
-      # setting, branch L-0590-bench): p50 260 s at 4/load, 211 s at 8/load,
-      # 171 s at 12/load, 145 s at 8/worksteal; then, on a busier host,
-      # 221 s at 8/worksteal, 197 s at 12, 135 s at 16. Worksteal helps
-      # because a few modules hold most of the long subprocess tests. EXCEPT the `wallclock` set (crew's conftest): those assert
+      # setting): p50 260 s at 4/load, 211 s at 8/load,
+      # 171 s at 12/load, 145 s at 8/worksteal; then, beside a busy slow-
+      # set chain (the PR shape), 221 s at 8/worksteal, 197 s at 12, 135 s
+      # at 16 (rows in .work/tickets/L-0590/evidence.md, untracked; the
+      # run ids are 37058615163 and 37080675891).
+      #
+      # EXCEPT the `wallclock` set (crew's conftest): those assert
       # elapsed time against a real hook timeout, and beside busy workers one
       # read 10.25s against its 10s bound on 2 of 6 jobs. They run serially
       # in this job's `wallclock` legs, so the bound stays the real one.
@@ -302,8 +305,8 @@ jobs:
     - name: Run crew's slow set (the full per-shell hook matrix)
       # -n 8, not `auto` (= 4 on the self-hosted pool). Benchmarked there
       # (L-0590, 5 runs per setting): p50 154 s at 4, 92 s at 8; worksteal
-      # did not help (161 s at 4, 98 s at 8); later, on a busier host, 110 s
-      # at 8, 96 s at 12, 89 s at 16. 8, because on a PR this leg runs
+      # did not help (161 s at 4, 98 s at 8); then, beside a busy default-
+      # set chain, 110 s at 8, 96 s at 12, 89 s at 16. 8, because on a PR this leg runs
       # beside test-default's 16 workers and the serial wallclock legs, and
       # it is not the critical path there.
       run: python -m pytest plugin/crew/tests -m slow -n 8 -v

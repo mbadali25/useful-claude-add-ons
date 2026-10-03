@@ -615,15 +615,25 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 `skills/jira-manager/scripts/_test/jq_absence.sh` had never once been
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
-into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
-hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
-parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+into one line. Since L-0590 the Linux Python suites of `pytest-crew.yml` run in one
+`test-set` matrix (`:25`), python version x set: `test-default (3.x)` (the combined
+default-set step with `-n 16 --dist worksteal`, then cisco-meraki and wazuh-onprem) and
+`test-wallclock (3.x)` (`-m wallclock`, serial). Its `max-parallel` is 6 on a pull request
+and 1 on every other event, so a main push runs one Python leg at a time on the
+self-hosted host. The required `test (3.11|3.12|3.13)` checks are the `test` fan-in
+(`:206`): `needs: test-set`, `if: always()`, red unless `needs.test-set.result` is
+`success` and, where its `RUN_LEG` is true, both `test-ran-<set>-<python>` marker
+artifacts (uploaded by a leg's last step only after every step passed) are present.
+`needs.test-set.result` spans all six legs, so on a non-PR event one failed leg reds all
+three `test (3.x)` checks. `pytest-crew.yml` gained a `crew-shell-matrix` job
+(`:256`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
+hook matrix (`-n 8` since L-0590). On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
+parallel jobs (`:311-565`): `crew-windows-decide` (`:363`, T-0110's rule: on a
 pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
-`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
-parity-sample set split in 3 by pytest-split, since the `test` job above only runs
-that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
-(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
+`pytest-crew.yml`), `crew-windows-default` (`:397`, crew's default
+parity-sample set split in 3 by pytest-split, since `test-default` above only runs
+that set on Ubuntu), `crew-windows-slow` (`:449`), `crew-windows-wallclock`
+(`:492`, serial), and the fan-in `crew-windows-gate` (`:535`), named
 `crew-shell-matrix (windows-latest)` so the required check name is unchanged.
 The gate runs `if: always()` and passes only through
 `scripts/check-windows-shards.py`: every Windows job succeeded, every shard
@@ -632,7 +642,7 @@ exactly once, and slow and wallclock ran what they collected (suite
 `scripts/_test/windows-shards.py`). Each Windows `run:` step carries
 `if: runner.os == 'Windows'`, the `WINDOWS_ONLY_IFS` condition
 `scripts/gate-runner.py`'s drift check excludes. The Windows jobs take `runs-on` from one
-`crew-windows-decide` output and run `shell: pwsh` steps, so retargeting them is a one-line change. Both the ubuntu leg and the `test` job carry an opt-in
+`crew-windows-decide` output and run `shell: pwsh` steps, so retargeting them is a one-line change. The ubuntu leg and the `test-set` and `test` jobs carry an opt-in
 `runs-on` expression (L-0521): with repo variable `CREW_RUNNER` set to
 `self-hosted` they run on `[self-hosted, linux, x64, crew]`, otherwise on
 `ubuntu-latest` / `matrix.os` as before; a `windows-latest` job never moves,
@@ -646,6 +656,10 @@ CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned t
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
 suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
 their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
+Since L-0590 the Linux default set runs `-n 16 --dist worksteal` and the ubuntu slow set
+`-n 8` (on the self-hosted pool `auto` was 4, the runner's PYTEST_XDIST_AUTO_NUM_WORKERS),
+and the Linux wallclock set runs as its own `test-wallclock` legs; the Windows jobs keep
+`-n auto`.
 
 ## Entry points
 
