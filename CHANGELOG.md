@@ -21,8 +21,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   ignored `out/`.
 - This repo's diagrams: five that failed (63, 54, 40, 31 and 18 boxes; 32 and 10 crossings) are
   split into overviews plus parts, and wordy boxes are shortened with their detail moved to notes.
-  All 33 renders pass, re-measured after the review fixes below; seven of them predate a later
-  re-anchor of their `.mmd`, so the page shows those as out of date until `render.sh` runs again.
+  All 33 pass, re-measured with the fixed checker on fresh renders (Mermaid 11.17.2 in headless
+  Chromium; the seven whose `.mmd` changed in the main merge were re-rendered first).
   Every original box, line and comment is accounted for (checked by script per file).
 - No verdict passes without measuring (PR #375 review): a drawing with no measured box, path data
   or a transform (scale, rotate, matrix, skew) the checker cannot read, or a checker error is

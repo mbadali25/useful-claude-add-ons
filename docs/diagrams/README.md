@@ -9,13 +9,13 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Data flow crew config autoclear](#data-flow-crew-config-autoclear) | PASS |
 | [Data flow crew config menu](#data-flow-crew-config-menu) | PASS |
 | [Data flow crew config no python](#data-flow-crew-config-no-python) | PASS |
-| [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | render out of date (run render.sh, then this again) |
-| [Data flow crew config read](#data-flow-crew-config-read) | render out of date (run render.sh, then this again) |
-| [Data flow crew config shell route](#data-flow-crew-config-shell-route) | render out of date (run render.sh, then this again) |
+| [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | PASS |
+| [Data flow crew config read](#data-flow-crew-config-read) | PASS |
+| [Data flow crew config shell route](#data-flow-crew-config-shell-route) | PASS |
 | [Data flow crew config split](#data-flow-crew-config-split) | PASS |
 | [Data flow crew config two files](#data-flow-crew-config-two-files) | PASS |
-| [Data flow crew config write](#data-flow-crew-config-write) | render out of date (run render.sh, then this again) |
-| [Data flow crew config](#data-flow-crew-config) | render out of date (run render.sh, then this again) |
+| [Data flow crew config write](#data-flow-crew-config-write) | PASS |
+| [Data flow crew config](#data-flow-crew-config) | PASS |
 | [Data flow search](#data-flow-search) | PASS |
 | [Data flow](#data-flow) | PASS |
 | [Process bitbucket svg check](#process-bitbucket-svg-check) | PASS |
@@ -34,9 +34,9 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
 | [Process crew lifecycle implement](#process-crew-lifecycle-implement) | PASS |
-| [Process crew lifecycle review](#process-crew-lifecycle-review) | render out of date (run render.sh, then this again) |
+| [Process crew lifecycle review](#process-crew-lifecycle-review) | PASS |
 | [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | PASS |
-| [Process crew lifecycle](#process-crew-lifecycle) | render out of date (run render.sh, then this again) |
+| [Process crew lifecycle](#process-crew-lifecycle) | PASS |
 | [Process](#process) | PASS |
 
 ## Architecture
@@ -256,7 +256,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-ratchet.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/CONFIG.md`, `plugin/crew/tests/test_install_policy.py`
-- **Readability:** render out of date (run render.sh, then this again)
+- **Readability:** PASS: 11 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config read
 
@@ -316,7 +316,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-read.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_guards.py`
-- **Readability:** render out of date (run render.sh, then this again)
+- **Readability:** PASS: 12 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config shell route
 
@@ -343,7 +343,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config-shell-route.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_shell.py`
-- **Readability:** render out of date (run render.sh, then this again)
+- **Readability:** PASS: 3 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config split
 
@@ -465,7 +465,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-write.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`
-- **Readability:** render out of date (run render.sh, then this again)
+- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config
 
@@ -494,7 +494,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`, `plugin/crew/hooks/scripts/crew_config_files.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/crew_autoclear_setup.py`
-- **Readability:** render out of date (run render.sh, then this again)
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Data flow search
 
@@ -1159,7 +1159,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-review.mmd`
 - **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** render out of date (run render.sh, then this again)
+- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle spec plan
 
@@ -1219,7 +1219,7 @@ flowchart LR
 
 - **Source:** `process-crew-lifecycle.mmd`
 - **Drawn from:** `plugin/crew/commands/brainstorm.md`, `plugin/crew/commands/spec.md`, `plugin/crew/commands/plan.md`, `plugin/crew/commands/approve.md`, `plugin/crew/commands/implement.md`, `plugin/crew/commands/review.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/fix.md`
-- **Readability:** render out of date (run render.sh, then this again)
+- **Readability:** PASS: 9 nodes, no crossings, nothing drawn through a node
 
 ## Process
 
