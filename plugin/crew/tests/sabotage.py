@@ -2422,10 +2422,12 @@ MUTATIONS = (
         '              + "\\x1d" + str(acute_count)\n   '
         '              + "\\x1d" + str(int(max_cost))\n   '
         '              + "\\x1d" + extras\n   '
-        '              + "\\x1d" + cover_record + "\\n")',
+        '              + "\\x1d" + cover_record\n   '
+        '              + "\\x1d" + "\\x1e".join("1" if c in tree_cached else "" for c in cmds) + "\\n")',
         'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched'
         '))\nprint("\\x1e".join(notices))\nprint(str(acute_count'
-        '))\nprint(str(int(max_cost)))\nprint(extras)\nprint(cover_record)',
+        '))\nprint(str(int(max_cost)))\nprint(extras)\nprint(cover_record)'
+        '\nprint("\\x1e".join("1" if c in tree_cached else "" for c in cmds))',
         ("tests/test_verify_gate_rule_framing.py::"
          "test_the_two_halves_of_the_framing_contract_agree"),
     ),
