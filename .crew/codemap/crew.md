@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f808e5f0
+anchor: useful-claude-add-ons@d2b599ea
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -3813,3 +3813,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `a0143b4b` -> `38d7e1a1` on 2026-10-03 (T-0009 round-6 self-check fixes: a workflow name holding a character that does not show is unknown, `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/tests/test_cloud_guard_deploy.py`, `plugin/crew/tests/sabotage_cloud.py`, README/CONFIG/BUDGETS/CHANGELOG; crew stepped back to 1.0.139 at `37c5067e` and 1.0.145 re-set at `4d09beaa`).** `crew_guards.py` gained an import (+1 from `:33`) and 7 lines at `_WORKFLOW_NON_LITERAL_RE`/`_workflow_literal` (+5 from `~:2090`, +7 from `~:2720`): every live `crew_guards.py` citation was re-mapped by difflib and the moved ones re-read by symbol; four stale `crew_config.py` citations corrected (`:2752`, `:2821`, `:3002`, `:3217`).
 
 **Re-anchored `452b30cc` (main) and `38d7e1a1` (T-0009) -> `233f006c` on 2026-10-03 (T-0009 merges origin/main `f808e5f0`, #328-#330, crew 1.0.154, at `f80b43b5` with rerere off, and sets crew 1.0.156 at `233f006c`).** The header took main's anchor and `paths:` line; both provenance blocks kept, main's first. Every `path:N` citation into a file either side changed since `2a2d6e07` was re-mapped by a line-level difflib match from the side whose line it is onto the merged file, and bare `crew_config.py` citations only where the symbol named before them sits on the new line. Main's own changes after `452b30cc` (#328-#330) moved citations only by that re-map; claims about them were not re-derived here.
+
+**Re-anchored `f808e5f0` (main, L-0600) and `233f006c` (T-0009) -> `d2b599ea` on 2026-10-03 (T-0009 merges origin/main `6bcb8b8c`, L-0600 #332 and two docs commits, rerere off; crew stays 1.0.156).** L-0600's corrected citations were taken where T-0009 left the line alone and re-mapped by difflib onto the merged files where T-0009 changed the cited file (`crew_config.py` +54 from `~:1043`); T-0009's dispatch section, the 131 / 73 / 58 counts (re-executed) and `test_crew_config.py:352` kept; `_REPO_WIDENING` `:3077`, `_set_layer` `:3322`, `main` `:3356`, `crew_shell.settings` `:444` and `mode` `:465` re-read by symbol.
