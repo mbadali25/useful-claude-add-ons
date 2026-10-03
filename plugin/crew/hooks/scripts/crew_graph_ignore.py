@@ -92,13 +92,13 @@ import sys
 
 sys.dont_write_bytecode = True
 
-# pylint: disable=wrong-import-position
-import argparse
-import json
-import os
-import re
-import subprocess
-import tempfile
+# Imported after the bytecode switch above, so no __pycache__ is written.
+import argparse  # noqa: E402  pylint: disable=wrong-import-position
+import json  # noqa: E402  pylint: disable=wrong-import-position
+import os  # noqa: E402  pylint: disable=wrong-import-position
+import re  # noqa: E402  pylint: disable=wrong-import-position
+import subprocess  # noqa: E402  pylint: disable=wrong-import-position
+import tempfile  # noqa: E402  pylint: disable=wrong-import-position
 
 COVERED = "covered"
 UNCOVERED = "uncovered"
