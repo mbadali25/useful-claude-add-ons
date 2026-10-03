@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed - `crew` 1.0.166: the verify gate records a fully clean `--all`, and the status line can show check 2 passing (L-0602, PR 1 of 2)
+### Changed - `crew` 1.0.170: the verify gate records a fully clean `--all`, and the status line can show check 2 passing (L-0602, PR 1 of 2)
 
 - **Why.** `/crew:done` check 2 read `crew_status.py`'s `verify` line, and a clean gate always left
   `verify   no rules recorded`: `verify_record._sync` removes every rule that passes, so the record
