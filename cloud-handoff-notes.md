@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:30 UTC
+Last updated: 2026-10-03 23:31 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:31: #372 merge-only re-review on 11d5194e: CLEAN (0/0/0). Review rule satisfied on the current head; waiting for CI on 11d5194e, then merge.
 - 23:30: #352 T-0069 built + pushed eaae7b72 (crew 1.0189): 4/6 fixes (T-0023 x2, T-0042 x2); T-0024's two + sabotage entries -> harness-only PR. Suite 8823 passed. Sonnet review of #352 started. Port T-0064 (#367, 1.0.198) started in /home/user/pr-367. Merge-only re-review of #372 running.
 - 23:30: main took #380 (crew 1.0.167, verify-gate CLAUDE_PLUGIN_ROOT). #372 re-merged main (version/CHANGELOG conflicts only) -> 11d5194e, crew 1.0.223; gates pass, reach + gate tests 23 passed. Needs fresh CI, plus a merge-only Sonnet re-review. #375 round-3 re-review CLEAN (e22687da). #337 round 5: 0 BLOCK, 1 FIX (refusal stems hit names like Denise) -> fixer, target 1.0.222. Next free: 1.0.224.
 - 23:27: #375 round-2 fixes pushed (e22687da, crew 1.0.218): char-level path parser (arc flags), per-subpath segments, renamed/stray edges UNKNOWN (invisible links excluded), render.sh writes .svg.src source hash. 33 real renders still PASS. Round-3 Sonnet re-review started.
