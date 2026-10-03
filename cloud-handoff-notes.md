@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:16 UTC
+Last updated: 2026-10-03 23:17 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:17: #359 T-0025 first review on 66d25049: PASS, 0 BLOCK, 0 FIX (3 NITs) -> CLEAN. Install scripts changed as a matched pair (36->37 label); README re-pin needed after it merges.
 - 23:16: #368 fixes pushed (309575c2, crew 1.0.213): _main_folder carries 'could not tell' into the stop; cp -r paths shlex-quoted. Fixer now re-deriving moved crew_autopilot.py code-map citations (no plugin change) before re-review.
 - 23:16: #337 round-2 fixes pushed (a9c56d43, crew 1.0.215): acceptance allow-list (parse_acceptance yes/no/unknown; bare name no longer accepted), qualified reach UNKNOWN, unparseable map UNKNOWN, parse_live trailing text UNKNOWN. Round-3 Sonnet re-review started.
 - 23:15: #351 round-3 re-review on c610fe28: PASS, 0 BLOCK, 0 FIX (1 NIT) -> CLEAN. #375 red crew-shell-matrix on f6208e20/be507112: Windows jobs 'cancelled' by newer pushes (log: DEFAULT/SLOW/WALLCLOCK_RESULT cancelled), not failures; head is 16e92602. #337 round-2 fixer has 3 local commits (to 1.0.215), gating before push.
