@@ -1487,7 +1487,7 @@ def test_next_no_row_in_either_checkout_stops(tmp_path):
     got = crew_autopilot.next_phase(str(lane), T)
 
     assert (got["phase"], got["stop"], _main_index(main) in got["reason"],
-            os.path.join(".work", "INDEX.md") in got["reason"]) == (
+            ".work/INDEX.md" in got["reason"]) == (
         "direction-approval", True, True, True), got
 
 
@@ -1692,3 +1692,52 @@ def test_next_says_when_the_main_checkout_could_not_be_compared(tmp_path, monkey
     assert (got["phase"] != "direction-approval",
             any("not compared" in e and "boom" in e for e in got["evidence"])) == (
         True, True), got
+
+
+# --- T-0063 CI (Windows): one spelling of the main checkout's path ---------------
+
+def _porcelain(monkeypatch, first):
+    """`git worktree list --porcelain` naming `first` as the main checkout,
+    the way git spells it: its own separators and aliases, not ours."""
+    real = crew_autopilot.git_out
+    monkeypatch.setattr(crew_autopilot, "git_out", lambda top, *args: (
+        f"worktree {first}\nHEAD {'0' * 40}\nbranch refs/heads/main\n\n"
+        if args[:2] == ("worktree", "list") else real(top, *args)))
+
+
+def _alias(target, alias):
+    try:
+        os.symlink(str(target), str(alias), target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"no directory symlink here: {exc}")
+
+
+def test_main_checkout_named_through_an_alias_is_resolved(tmp_path, monkeypatch):
+    main, lane = _lane(tmp_path)
+    alias = tmp_path / "alias"
+    _alias(main, alias)
+    _porcelain(monkeypatch, str(alias) + os.sep + "." + os.sep)
+
+    assert crew_autopilot._main_checkout(str(lane)) == (  # pylint: disable=protected-access
+        os.path.realpath(str(main)), "")
+
+
+def test_lane_named_through_an_alias_is_not_a_second_checkout(tmp_path, monkeypatch):
+    _main, lane = _lane(tmp_path)
+    alias = tmp_path / "lane-alias"
+    _alias(lane, alias)
+    _porcelain(monkeypatch, str(alias))
+
+    assert crew_autopilot._main_checkout(str(lane)) == (None, "")  # pylint: disable=protected-access
+
+
+def test_a_path_outside_the_checkout_is_named_exactly_as_given(tmp_path):
+    """Never re-slashed: on Windows the evidence and the reason must carry
+    the same string `index_source` does. A backslash inside a POSIX name
+    stands in for Windows' separator, which a POSIX run cannot produce."""
+    _main, lane = _lane(tmp_path)
+    outside = str(tmp_path / "x\\y" / ".work" / "INDEX.md")
+
+    assert (crew_autopilot._rel_inside(str(lane), outside),  # pylint: disable=protected-access
+            crew_autopilot._rel_inside(str(lane), str(lane / ".work" / "INDEX.md"))) == (  # pylint: disable=protected-access
+        outside, ".work/INDEX.md")

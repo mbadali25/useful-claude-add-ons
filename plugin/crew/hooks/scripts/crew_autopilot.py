@@ -264,11 +264,14 @@ def _rel(top, path):
 
 
 def _rel_inside(top, path):
-    """`path` relative to `top` when it lies inside it, else whole (T-0063: an
-    INDEX.md read from the main checkout is named in full)."""
+    """`path` relative to `top` when it lies inside it, `/`-separated as every
+    evidence line is; else whole and exactly as given (T-0063: an INDEX.md read
+    from the main checkout is named in full, the same string `index_source`
+    carries -- never re-slashed, which on Windows made the evidence and the
+    reason name a path `index_source` did not)."""
     rel = _rel(top, path)
     if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
-        return path.replace("\\", "/")
+        return path
     return rel
 
 
