@@ -3030,6 +3030,34 @@ def test_52_clear_all_clean_keeps_rules(tmp_path, monkeypatch):
     assert _record(tmp_path) == {"rules": {"k": entry}, "all_clean_at": None}
 
 
+@pytest.mark.parametrize("record", ["absent", "already-null"])
+def test_52_clear_all_clean_with_nothing_to_clear_writes_nothing(record, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".crew").mkdir()
+    if record == "already-null":
+        (tmp_path / ".crew" / ".verify-gate.record.json").write_text(
+            json.dumps({"rules": {}, "all_clean_at": None}), encoding="utf-8")
+    (tmp_path / ".crew" / ".verify-gate.record.json.tmp").mkdir()
+
+    assert verify_record.cmd_clear_all_clean() is True
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_all_without_the_record_helper_removes_the_old_evidence(flavour, tmp_path):
+    vmap = {"version": 1, "rules": [_local(["README.md"], ["touch ../ran"])],
+            "default": [], "unmapped": "ignore"}
+    root = _repo(tmp_path, vmap)
+    _clean_all(flavour, root)
+    scripts = tmp_path / "scripts"
+    shutil.copytree(os.path.dirname(_SH), scripts,
+                    ignore=shutil.ignore_patterns("__pycache__", "_test"))
+    (scripts / "verify_record.py").unlink()
+
+    _run(flavour, root, "--all", scripts=str(scripts))
+
+    assert not (root / ".crew" / ".verify-gate.record.json").exists()
+
+
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_52_all_still_rebuilds_a_corrupt_record(flavour, tmp_path):
     root = _repo(tmp_path, _flag_map())
@@ -3099,7 +3127,7 @@ def test_52_all_clean_at_needs_a_clean_outcome(tmp_path, monkeypatch, case):
                "tree-moved-absent": {k: v for k, v in _CLEAN_OUTCOME.items() if k != "tree_moved"}}[case]
 
     got, _ = _unit_sync(tmp_path, monkeypatch, outcome=outcome,
-                        head_moved=(case == "head-moved"))
+                        head_moved=case == "head-moved")
 
     assert got is None
 

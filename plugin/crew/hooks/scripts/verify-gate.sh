@@ -748,9 +748,16 @@ PY=$(crew_py_strict) || { echo "VERIFY GATE: no python (python3, python or py) r
 # any command runs. If that cannot be written, nothing runs: otherwise a run
 # whose own record write later failed would leave the older clean value
 # standing behind its failure, and /crew:done check 2 would read it.
+# With no verify_record.py beside this script (no planner: the --all below runs
+# every rule, test_no_planner_runs_subset), the record file is removed instead;
+# the --all that follows rebuilds it, as for a corrupt record.
 if [ "$BUDGET_FLAG" = "--all" ]; then
   CLEAR_PY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  "$PY" "$CLEAR_PY_DIR/verify_record.py" clear-all-clean >&2 || {
+  if [ -e "$CLEAR_PY_DIR/verify_record.py" ]; then
+    "$PY" "$CLEAR_PY_DIR/verify_record.py" clear-all-clean >&2
+  else
+    rm -f .crew/.verify-gate.record.json && [ ! -e .crew/.verify-gate.record.json ]
+  fi || {
     echo "verify-gate: could not clear the previous clean --all evidence; nothing ran" >&2
     exit 2
   }

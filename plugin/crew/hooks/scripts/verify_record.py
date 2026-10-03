@@ -948,8 +948,14 @@ def cmd_clear_all_clean():
     {"rules": {}, "all_clean_at": null} -- its obligations were already lost,
     and the `--all` that follows re-derives every rule, the documented
     recovery. Exit 0 only when the write succeeded; the gate aborts otherwise,
-    so no run can fail behind an older clean value it could not clear."""
+    so no run can fail behind an older clean value it could not clear.
+    Nothing to clear (no record, or a sound one whose `all_clean_at` is
+    already null) writes nothing, so an unwritable record aborts only a run
+    that has old evidence to hide behind (test_25 runs --all with one)."""
     record, state = _load_state(RECORD_PATH)
+    if state == "absent" or (state == "ok" and isinstance(record.get("rules"), dict)
+                             and record.get("all_clean_at", None) is None):
+        return True
     if state == "corrupt" or not isinstance(record.get("rules"), dict):
         record = {"rules": {}}
     record["all_clean_at"] = None

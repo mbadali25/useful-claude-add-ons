@@ -11,7 +11,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   only ever lists what is owed. Every landing needed an owner waiver (L-0576, L-0555, L-0598).
 - **Gate behaviour changes (both flavours).** An `--all` run first clears the record's
   `all_clean_at`, after taking the lock and before running anything; if that write fails it exits 2
-  and runs nothing (`could not clear the previous clean --all evidence; nothing ran`). Both gates
+  and runs nothing (`could not clear the previous clean --all evidence; nothing ran`). With nothing
+  to clear it writes nothing; with no `verify_record.py` beside the gate it deletes the record file
+  instead (the `--all` rebuilds it), and exits 2 only if the file survives. Both gates
   now read HEAD once before matching and record only that sha, so a command that moves HEAD during
   the run gets nothing recorded and the gate exits 2 (`HEAD moved during the run`). The sync payload
   carries the gate's own outcome (failed, skipped, deferred), so a failing `default`/`always`

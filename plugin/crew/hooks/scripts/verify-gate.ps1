@@ -1069,11 +1069,16 @@ $verifyRecordScript = Join-Path $PSScriptRoot 'verify_record.py'
 
 # L-0602: -All clears the previous clean --all evidence before any command
 # runs, after the lock is held; if it cannot, nothing runs. Twin of the same
-# block in verify-gate.sh.
+# block in verify-gate.sh. With no verify_record.py (no planner) the record
+# file is removed instead; the -All that follows rebuilds it.
 if ($All) {
   $cleared = $false
   try {
-    if ($matchPy -and (Test-Path $verifyRecordScript)) {
+    if (-not (Test-Path -LiteralPath $verifyRecordScript)) {
+      $recordFile = Join-Path (Join-Path $root '.crew') '.verify-gate.record.json'
+      Remove-Item -LiteralPath $recordFile -Force -ErrorAction SilentlyContinue
+      $cleared = -not (Test-Path -LiteralPath $recordFile)
+    } elseif ($matchPy) {
       $global:LASTEXITCODE = 0
       & $matchPy $verifyRecordScript clear-all-clean 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
       $cleared = ($LASTEXITCODE -eq 0)

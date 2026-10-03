@@ -167,6 +167,10 @@ class _QuietGit:
 
     _KEYS = ("GIT_CONFIG_COUNT", "GIT_OPTIONAL_LOCKS")
 
+    def __init__(self):
+        self.saved = {}
+        self.added = ()
+
     def __enter__(self):
         self.saved = {k: os.environ.get(k) for k in self._KEYS}
         count = int(os.environ.get("GIT_CONFIG_COUNT") or "0")

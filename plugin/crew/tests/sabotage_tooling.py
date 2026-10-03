@@ -96,8 +96,10 @@ TOOLING_MUTATIONS = (
     (
         "verify-gate.sh runs --all although the old evidence was not cleared",
         VERIFY_GATE_SH,
-        '  "$PY" "$CLEAR_PY_DIR/verify_record.py" clear-all-clean >&2 || {\n',
-        '  "$PY" "$CLEAR_PY_DIR/verify_record.py" clear-all-clean >&2 || true || {\n',
+        '    rm -f .crew/.verify-gate.record.json && [ ! -e .crew/.verify-gate.record.json ]\n'
+        '  fi || {\n',
+        '    rm -f .crew/.verify-gate.record.json && [ ! -e .crew/.verify-gate.record.json ]\n'
+        '  fi || true || {\n',
         STOP_RECORD_TEST + "test_52_all_cannot_start_without_clearing_its_evidence[sh]",
     ),
     (

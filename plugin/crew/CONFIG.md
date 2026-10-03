@@ -2453,7 +2453,10 @@ Both gates now read HEAD once before matching and record only that sha: a
 command that moves HEAD during the run gets nothing recorded and the gate exits
 2 (`HEAD moved during the run`). An `--all` run first clears `all_clean_at`,
 after taking the lock and before any command; if that write fails it exits 2
-and runs nothing (`could not clear the previous clean --all evidence`).
+and runs nothing (`could not clear the previous clean --all evidence`). With
+nothing to clear (no record, or `all_clean_at` already `null`) it writes
+nothing; with no `verify_record.py` beside the gate it deletes the record file
+instead, and aborts only if the file survives.
 `crew_status.py`'s `verify` line reads `verify   clean at <sha>: ...` only when
 the record is empty with `all_clean_at` at HEAD, `review_gate.gate_state` is
 VERIFIED, and nothing material differs from HEAD, all read twice inside one
