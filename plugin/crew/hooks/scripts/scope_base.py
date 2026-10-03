@@ -75,8 +75,9 @@ reason names which ref was used. On the default branch itself the merge-base
 IS HEAD, so the last resort is the working tree alone, stated rather than
 silent.
 
-A configured branch that names no commit here, or a config that does not
-parse, is "could not tell": `resolve` returns no base with source `unknown`,
+A configured branch that names no commit here, a config that does not
+parse, or a base branch (configured or default) that shares no merge-base
+with HEAD -- a shallow clone, unrelated history -- is "could not tell": `resolve` returns no base with source `unknown`,
 `--record` writes nothing and exits 1, and `--base`/`--changed` print nothing
 and exit 3. It never falls back to `origin/HEAD`: that is the base the key
 exists to replace, and using it silently is the defect T-0061 closed.
@@ -115,8 +116,8 @@ _REASON_NOT_ANCESTOR = ("could not tell where {ticket} started: start commit "
                         "{sha} is no longer an ancestor of HEAD (rebased?)")
 _REASON_OTHER_REF = ("the record for {ticket} was a merge-base guess against "
                      "{old}, and the base branch is now {ref}")
-_COULD_NOT_TELL = ("could not tell {ticket}'s scope base: {problem}; set "
-                   "tickets.baseBranch to a branch this clone has, or unset it")
+_COULD_NOT_TELL = ("could not tell {ticket}'s scope base: {problem}; fix "
+                   "tickets.baseBranch or this clone's history, then re-run")
 _FALLBACK = "; evidence is against merge-base {base} with {ref} (fallback)"
 _LAST_RESORT = ("; no default branch to take a merge-base with, so the working "
                 "tree alone (fallback)")
@@ -212,14 +213,25 @@ def _default_ref(root):
 def _merge_base(root):
     """`(ref, sha, problem)` for the merge-base with the base branch.
     `problem` is set (and the rest None) when the base branch could not be
-    told; `(None, None, None)` when there is simply none to take."""
+    told, which includes a base branch that resolves but shares no merge-base
+    with HEAD (a shallow clone, unrelated history); `(None, None, None)` only
+    when no base branch exists here at all."""
     ref, problem = base_branch(root)
     if problem:
         return None, None, problem
     if not ref:
         return None, None, None
     base = crew_common.git_out(root, "merge-base", "HEAD", ref)
-    return (ref, base, None) if base else (None, None, None)
+    if base:
+        return ref, base, None
+    # A ref with no merge-base is not "no default branch": HEAD alone, or an
+    # EXACT record of it, would hide every commit the shallow or unrelated
+    # history does not show. Configured or default, the start is unknown.
+    value = read_base_branch(root)[0]
+    which = (f"tickets.baseBranch {value!r} ({ref})" if value
+             else f"the default branch {ref} (tickets.baseBranch unset)")
+    return None, None, (f"HEAD shares no merge-base with {which} - a shallow "
+                        "clone (fetch with --unshallow) or unrelated history")
 
 
 def _other_ref(root, entry):

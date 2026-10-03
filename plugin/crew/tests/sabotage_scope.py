@@ -424,4 +424,17 @@ SCOPE_MUTATIONS = (
         ("tests/test_scope_base_branch.py::"
          "test_a_not_ancestor_record_says_could_not_tell_and_shows_more"),
     ),
+    (
+        # QA F1 restored: a base branch that resolves with an empty
+        # merge-base (orphan, shallow) reads as "no base branch", so --base
+        # prints HEAD and --record writes an EXACT entry that is never moved.
+        "an empty merge-base falls to HEAD",
+        SCOPE_BASE_PY,
+        "    if base:\n"
+        "        return ref, base, None\n",
+        "    if True:\n"
+        "        return (ref, base, None) if base else (None, None, None)\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_an_orphan_branch_with_the_key_could_not_tell"),
+    ),
 )

@@ -202,6 +202,61 @@ def test_could_not_tell_never_falls_back_to_origin_head(clone):
     assert scope_base.record(str(clone), "T-1") == (None, "unknown")
 
 
+def _assert_could_not_tell_everywhere(root, *needles):
+    """No base from any entry point, and nothing written: `--base` and
+    `--changed` exit 3 with empty stdout, `--record` exits 1."""
+    base, source, reason = scope_base.resolve(str(root), "T-1")
+    assert (base, source) == (None, "unknown"), reason
+    for needle in needles:
+        assert needle in reason, reason
+    for action in ("--base", "--changed"):
+        done = _cli(root, action)
+        assert (done.returncode, done.stdout) == (3, ""), (action, done)
+        assert done.stderr.startswith("scope-base: could not tell"), done.stderr
+    done = _cli(root, "--record")
+    assert done.returncode == 1, done.stderr
+    assert "could not tell" in done.stderr, done.stderr
+    assert not _record_path(root).exists(), "an empty merge-base wrote a record"
+
+
+def test_an_orphan_branch_with_the_key_could_not_tell(clone):
+    """QA F1. `origin/development` resolves, but HEAD shares no history with
+    it, so `git merge-base` is empty. That once fell to HEAD: `--base`
+    printed it with exit 0 and `--record` wrote an EXACT entry, never moved
+    again, hiding every commit on the branch."""
+    _config(clone, "development")
+    _git(clone, "checkout", "-q", "--orphan", "unrelated")
+    _commit(clone, "orphan.txt")
+    _assert_could_not_tell_everywhere(
+        clone, "tickets.baseBranch 'development'", "no merge-base")
+
+
+def test_an_orphan_branch_without_the_key_could_not_tell(clone):
+    """The unset-key chain gets the same answer, deliberately: an empty
+    merge-base with origin/main is just as unknown a start."""
+    _git(clone, "checkout", "-q", "--orphan", "unrelated")
+    _commit(clone, "orphan.txt")
+    _assert_could_not_tell_everywhere(
+        clone, "the default branch origin/main", "no merge-base")
+
+
+def test_a_shallow_clone_could_not_tell(clone):
+    """`--depth 1` of every branch: both tips are shallow boundaries, so
+    `development` and `main` share no merge-base here, with or without the
+    key."""
+    upstream = clone.parent / "upstream"
+    shallow = clone.parent / "shallow"
+    subprocess.run(["git", "clone", "-q", "--depth", "1", "--no-single-branch",
+                    "-b", "development", upstream.as_uri(), str(shallow)],
+                   check=True, capture_output=True, text=True)
+    _git(shallow, "remote", "set-head", "origin", "main")
+    (shallow / ".git" / "info" / "exclude").write_text(".crew/\n", encoding="utf-8")
+    assert _git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+    _assert_could_not_tell_everywhere(shallow, "the default branch origin/main", "shallow")
+    _config(shallow, "main")
+    _assert_could_not_tell_everywhere(shallow, "tickets.baseBranch 'main'", "shallow")
+
+
 def test_a_not_ancestor_record_says_could_not_tell_and_shows_more(clone):
     _config(clone, "development")
     scope_base.record(str(clone), "T-1")
