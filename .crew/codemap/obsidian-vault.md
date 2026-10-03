@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@c1fe04e2
+anchor: useful-claude-add-ons@29bba1d9
 verified: 2026-10-01
 
 ## Does
@@ -1220,7 +1220,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `f937576e` -> `af59b237` on 2026-10-02 (L-0555 merges origin/main `d2ec37d3`, W-0120 #308, README install URLs re-pinned to `04dde5a2`).** The merge changed `README.md:12` and `:18` in place; no line moved. The install-URL pin landmines in `install-scripts.md` and `repo-docs.md` now state the `04dde5a2` pin, and `git log --oneline 04dde5a2..af59b237 -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is empty. No suite was executed for this note.
 
 
-**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1397` in a past-tense note, left as written. No suite was executed for this note.
+**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1399` in a past-tense note, left as written. No suite was executed for this note.
 
 
 **Re-anchored `d6e51bb8` (main) and `7e18daf8` (L-0555) -> `5467b110` on 2026-10-02 (L-0555 merges origin/main `75681fba`: L-0577 #305, T-0107 #273 (gizmoduck 0.5.5); rerere disabled; crew 1.0.127).** The header conflict took main's anchor and both sides' provenance notes, main's first; the install-URL pin bullet took main's equivalent wording. Citations moved by difflib: this lane's `CHANGELOG.md` lines in `crew.md` +86 (the entries main added). Main-side citations into files this branch changes resolve to the same text. No suite was executed for this note.
@@ -1315,3 +1315,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
 
 **Re-anchored `452b30cc` -> `c1fe04e2` on 2026-10-03 (L-0602 PR 1 after merging origin/main f808e5f0 (#329 crew 1.0.153, #330 crew 1.0.154), rerere disabled; main's maps taken, then: /crew:done check 2's local evidence - `verify_record` `all_clean_at` and `read_record_meta`, both gates' outcome payload (with #329's `tree_moved`) / START_HEAD / `--all` pre-clear, `crew_status._verify_line`; README, CONFIG.md section 19, status.md. Citations into changed files re-mapped by difflib; the gate-record reader and marker claims rewritten by hand; two body citations of CONFIG.md's descoped process-group paragraph, already stale on main (`:2435-2442`), re-found at `:2468-2479`).**
+
+**Re-anchored `c1fe04e2` -> `29bba1d9` on 2026-10-03 (L-0602 PR 1, fix after the 98b02227 `--all` gate: `verify_record.cmd_clear_all_clean` writes nothing when there is nothing to clear; with no `verify_record.py` beside the gate both gates delete the record file instead; `crew_status._QuietGit.__init__`; CONFIG.md section 19. Citations into changed files re-mapped by difflib).**
