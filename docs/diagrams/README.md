@@ -9,13 +9,13 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Data flow crew config autoclear](#data-flow-crew-config-autoclear) | PASS |
 | [Data flow crew config menu](#data-flow-crew-config-menu) | PASS |
 | [Data flow crew config no python](#data-flow-crew-config-no-python) | PASS |
-| [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | PASS |
-| [Data flow crew config read](#data-flow-crew-config-read) | PASS |
-| [Data flow crew config shell route](#data-flow-crew-config-shell-route) | PASS |
+| [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | render out of date (run render.sh, then this again) |
+| [Data flow crew config read](#data-flow-crew-config-read) | render out of date (run render.sh, then this again) |
+| [Data flow crew config shell route](#data-flow-crew-config-shell-route) | render out of date (run render.sh, then this again) |
 | [Data flow crew config split](#data-flow-crew-config-split) | PASS |
 | [Data flow crew config two files](#data-flow-crew-config-two-files) | PASS |
-| [Data flow crew config write](#data-flow-crew-config-write) | PASS |
-| [Data flow crew config](#data-flow-crew-config) | PASS |
+| [Data flow crew config write](#data-flow-crew-config-write) | render out of date (run render.sh, then this again) |
+| [Data flow crew config](#data-flow-crew-config) | render out of date (run render.sh, then this again) |
 | [Data flow search](#data-flow-search) | PASS |
 | [Data flow](#data-flow) | PASS |
 | [Process bitbucket svg check](#process-bitbucket-svg-check) | PASS |
@@ -34,9 +34,9 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
 | [Process crew lifecycle implement](#process-crew-lifecycle-implement) | PASS |
-| [Process crew lifecycle review](#process-crew-lifecycle-review) | PASS |
+| [Process crew lifecycle review](#process-crew-lifecycle-review) | render out of date (run render.sh, then this again) |
 | [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | PASS |
-| [Process crew lifecycle](#process-crew-lifecycle) | PASS |
+| [Process crew lifecycle](#process-crew-lifecycle) | render out of date (run render.sh, then this again) |
 | [Process](#process) | PASS |
 
 ## Architecture
@@ -166,7 +166,7 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `FLOCK` | Lock :104 - O_CREAT/O_EXCL <path>.lock holding the PID (a failed PID write removes it, :134-141); Busy :63 after LOCK_WAIT_SECONDS :43. Serialises crew's writers, not a hand edit. machine_lock() :273 is the machine file's Lock, ALWAYS taken (creates ~/.claude/crew/, never the file), before any repo Lock - one nesting order |
+| `FLOCK` | Lock :104 - O_CREAT/O_EXCL &lt;path&gt;.lock holding the PID (a failed PID write removes it, :134-141); Busy :63 after LOCK_WAIT_SECONDS :43. Serialises crew's writers, not a hand edit. machine_lock() :273 is the machine file's Lock, ALWAYS taken (creates ~/.claude/crew/, never the file), before any repo Lock - one nesting order |
 | `FUPD` | update_json() :364 - inside the lock: read_strict() :181 (absent / unparsable / empty / notobject), state_digest() :243 (ABSENT :50 for no file) compared with expect (Conflict :67), mutate, replace_text() :352 (sibling, fsync, os.replace, CRLF and BOM kept) |
 | `FMOVE` | move_no_clobber() :466 - a rename that NEVER replaces its destination: os.link, then _unlink_source() :418 renames the source to a reserved name and removes it only when it IS the linked inode; a foreign file is linked back and its *.moving name KEPT (Displaced :71, exit 1; the link to the backup is never undone after the rename). move_aside() :508 (the backup IS the inode), create_bytes() :517 |
 | `FREST` | read_restorable() :199 - a REGULAR file that restorable() :171 accepts: the ONE read delete refuses by and restore accepts by |
@@ -256,7 +256,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-ratchet.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/CONFIG.md`, `plugin/crew/tests/test_install_policy.py`
-- **Readability:** PASS: 11 nodes, no crossings, nothing drawn through a node
+- **Readability:** render out of date (run render.sh, then this again)
 
 ## Data flow crew config read
 
@@ -316,7 +316,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-read.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_guards.py`
-- **Readability:** PASS: 12 nodes, no crossings, nothing drawn through a node
+- **Readability:** render out of date (run render.sh, then this again)
 
 ## Data flow crew config shell route
 
@@ -343,7 +343,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config-shell-route.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_shell.py`
-- **Readability:** PASS: 3 nodes, no crossings, nothing drawn through a node
+- **Readability:** render out of date (run render.sh, then this again)
 
 ## Data flow crew config split
 
@@ -465,7 +465,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-write.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`
-- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
+- **Readability:** render out of date (run render.sh, then this again)
 
 ## Data flow crew config
 
@@ -494,7 +494,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`, `plugin/crew/hooks/scripts/crew_config_files.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/crew_autoclear_setup.py`
-- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
+- **Readability:** render out of date (run render.sh, then this again)
 
 ## Data flow search
 
@@ -618,7 +618,7 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `C5` | compare it :528 - a mismatch is DAMAGED :529-530. no svgHash (pre-v2 manifest) ? structural check svg_structure_ok() :100-117 at :532-534: non-empty, has <svg, ends </svg> |
+| `C5` | compare it :528 - a mismatch is DAMAGED :529-530. no svgHash (pre-v2 manifest) ? structural check svg_structure_ok() :100-117 at :532-534: non-empty, has &lt;svg, ends &lt;/svg&gt; |
 | `C6` | under either manifest version - tests/test_check_reads_the_svg.py:92 and :198 prove it by damaging a genuine mmdc render |
 | `C8` | in its own docstring :103-106: a well-formed SVG with WRONG CONTENTS passes it. Passing is therefore the absence of evidence, not evidence - which is the entire argument for UNVERIFIED exiting 1 rather than 0. |
 | `C2` | before any other file is examined. Asymmetric on purpose or not, the effect is that one fence hides the rest - and this is the one early return the 1.2.2 fix did NOT remove. |
@@ -1032,7 +1032,7 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `small` | small? one subsystem, known cause, no new behaviour, no auth/SQL/IaC |
-| `BR` | (+ Obsidian card); 'id taken' -> next free id; any other failure -> stop |
+| `BR` | (+ Obsidian card); 'id taken' -&gt; next free id; any other failure -&gt; stop |
 | `rdy` | (INDEX 'ready', card stays in Backlog) |
 
 - **Source:** `process-crew-lifecycle-brainstorm.mmd`
@@ -1159,7 +1159,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-review.mmd`
 - **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
+- **Readability:** render out of date (run render.sh, then this again)
 
 ## Process crew lifecycle spec plan
 
@@ -1188,7 +1188,7 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `sp2` | write spec.md: Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks :15; Touch one path per bullet :38-43 |
-| `sp3` | (INDEX, board -> Ready) |
+| `sp3` | (INDEX, board -&gt; Ready) |
 | `pl1` | optional second opinion :22 |
 
 - **Source:** `process-crew-lifecycle-spec-plan.mmd`
@@ -1219,7 +1219,7 @@ flowchart LR
 
 - **Source:** `process-crew-lifecycle.mmd`
 - **Drawn from:** `plugin/crew/commands/brainstorm.md`, `plugin/crew/commands/spec.md`, `plugin/crew/commands/plan.md`, `plugin/crew/commands/approve.md`, `plugin/crew/commands/implement.md`, `plugin/crew/commands/review.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/fix.md`
-- **Readability:** PASS: 9 nodes, no crossings, nothing drawn through a node
+- **Readability:** render out of date (run render.sh, then this again)
 
 ## Process
 
@@ -1273,7 +1273,7 @@ flowchart TB
 | `S2` | runs 'ollama --version' and 'curl .../api/tags' as tool calls; stops if either fails |
 | `S3` | runs 'ollama pull ...' x2, skipped on --no-pull (bootstrap step 4 covers this too) |
 | `S4` | invokes bootstrap.sh or bootstrap.ps1 for the platform |
-| `S6` | runs 'localgpu mcp-init <repo>' (plugin/localgpu/cli/localgpu_cli.py:339) -- resolves the 3 paths itself, verifies them, merges into repo-root .mcp.json, gitignores it -- no template, no hand-substitution |
+| `S6` | runs 'localgpu mcp-init &lt;repo&gt;' (plugin/localgpu/cli/localgpu_cli.py:339) -- resolves the 3 paths itself, verifies them, merges into repo-root .mcp.json, gitignores it -- no template, no hand-substitution |
 | `S7` | reports what changed, points at /localgpu:index, runs /localgpu:doctor |
 | `B6` | proving GPU residency, not CPU offload bootstrap.sh header comment |
 | `Note` | where the target already exists (plugin/localgpu/bootstrap.sh:1-4 header, setup.md throughout) |
