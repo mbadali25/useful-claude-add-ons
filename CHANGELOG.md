@@ -33,7 +33,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   through an alias or copy of `gh` made on the line, or from a command word
   made at run time; gh reading stdin or a file (`--json`, `--input`,
   `-F k=@f` — **stdin is never read**); and every dispatch-shaped line while
-  the `environments` block does not validate. Review rounds 1 and 2 found
+  the `environments` block does not validate. A single-quoted workflow name
+  holding a character that does not show (a control, a line or paragraph
+  separator, a bidi or zero-width mark, a blank other than a plain space) is
+  could-not-tell too, never `unlisted`. Review rounds 1 and 2 found
   nine ways past a parser that read the lexer's output (a filter or `<` on
   stdin, `0>&3`, a variable, a bracket glob, a script piped into bash, a
   marker that covered another file): each is now a must-block row, watched
