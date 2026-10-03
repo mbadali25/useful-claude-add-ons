@@ -1,0 +1,92 @@
+# T-0035 diagrams organised by kind, lint-checked for readability, and embedded in READMEs          status: spec   risk: high
+## Decisions (owner, Matthew Badali, 2026-09-26, direction.md)
+- Option C, items 1-3 approved ("approve 1-3"): the `.mmd` stays the single source; a generator writes marker-delimited ```mermaid blocks into READMEs, and a check fails when an embed differs from its source.
+- The readability rules are checked, not advisory: size caps, ELK layout, one contrast-tested theme, wrapped labels, direction by kind, labelled flow edges, a render-and-inspect overlap check. The 7 existing diagrams are redrawn under them as part of the move.
+- "for T-0035 /36 this should be a part of the crew routines automatically when running": it runs inside `/crew:implement` step 6, `/crew:done` check 4, `/crew:onboard`, and autopilot. It is not a command someone has to remember to run.
+- Spec-time decisions (recommendations, open until the Approve phase confirms them): kind definitions are architecture = components and deployment, design = module, class or sequence detail inside one component, data-flow, process. `docs.diagramsDir` becomes the ROOT with the kinds under it, and the generator runs in any repo that installs crew, honouring `docs.diagramsDir`.
+## Intent
+Every crew diagram sits under `<diagramsDir>/<kind>/[<subject>/]<name>.mmd` and passes a lint before it is committed: size, layout header, theme, label length, direction and edge labels, plus an overlap check on the rendered SVG. A generator, `crew_diagrams.py`, embeds each diagram as a marker-delimited ```mermaid block in the README nearest its anchors and in an index at `<diagramsDir>/README.md`. Each embed carries a short text summary above the block, so humans see a rendered picture on GitHub and agents read the same text. Embed drift and lint failures come out as `crew_refresh_check.py` artifact lines. That makes `/crew:implement` step 6, `/crew:done` check 4 and autopilot enforce them with no new step for anyone to remember.
+## Exclusions
+- No new hook, and no new hook event. The completion audit (an existing Stop check) gains one narrow allowance: a README whose change lies entirely inside the crew-diagrams markers. Nothing else is widened.
+- `skills/mermaid-svg-bitbucket/` is not modified, and no README is created where none exists. A diagram whose anchors reach no README appears in the index only. A skill's SKILL.md never gets an embed, because it is loaded into context.
+- No change to the review ledger, the approval receipt, `crew_ticket.py`, or `scope_guard.py`. The generator writes through Bash, which the scope guard does not judge against Touch (`plugin/crew/hooks/scripts/scope_guard.py:48-52`).
+- `CHANGELOG.md` history is not rewritten. Its old flat paths are a record of what was true at the time.
+- `implement.md` does not grow: it is at 118 of the 120-line cap (`plugin/crew/tests/test_lifecycle_commands.py:28`). The new work reaches it through `crew_refresh_check.py`'s existing `refresh with` loop.
+- Consumer repos keep working with a flat `docs/diagrams/*.mmd`. Nested discovery is additive, and no consumer is forced to migrate.
+- graphify command ownership is unchanged: `graphify update .` owns `graphify-out/` (root CLAUDE.md).
+## Evidence
+- The seven diagrams on `origin/main` (bebbb97f) are flat under `docs/diagrams/`, and the kind lives only in the filename prefix (`git ls-tree -r --name-only origin/main docs/diagrams`). Non-comment lines carrying an arrow, from `grep -v '^\s*%%' | grep -cE -- '-->|-\.->|==>|->>|-->>'`: `process-crew-lifecycle.mmd` 52, `data-flow-crew-config.mmd` 39, `process-crew-brief.mmd` 34, `process-bitbucket-svg.mmd` 30, `architecture.mmd` 11, `data-flow.mmd` 5, `process.mmd` 5.
+- The size rule is prose that nothing checks: `plugin/crew/skills/crew-diagrams/SKILL.md:86-87` ("Over roughly 12 nodes, split").
+- Discovery is flat in both readers, so nested diagrams would be invisible. `plugin/crew/hooks/scripts/crew_freshness.py:494` calls `os.listdir(dirpath)` in `read_diagrams` (`:472`), and `plugin/crew/hooks/scripts/crew_refresh_check.py:261-271` has `_listing`, which `_diagrams` (`:455`) uses. An invisible diagram cannot read `stale`, so moving the files without this fix turns check 4 into a false `fresh`.
+- A kind is satisfied by an exact filename stem: `plugin/crew/hooks/scripts/crew_freshness.py:530-533` over `DIAGRAM_KINDS` (`:142`). `plugin/crew/tests/test_verify_absent_and_diagram_kind.py:55-110` pins that behaviour.
+- The provenance and anchor regexes are MULTILINE searches: `plugin/crew/hooks/scripts/crew_freshness.py:127` (`_DIAGRAM_ANCHOR_RE`) and `:224` (`_DIAGRAM_ANCHORS_RE`). A Mermaid front-matter block can therefore come first without hiding either line.
+- `render.sh` globs one level (`plugin/crew/skills/crew-diagrams/scripts/render.sh:75`) and exits 1 when that level holds no `.mmd` (`:84-85`). It also names each output by basename (`:108`) into `$DIR/out` (`:88`). Once the files move, `render.sh docs/diagrams` fails.
+- `.gitignore:409` ignores only `docs/diagrams/out/`. Rendering mirrored under that one `out/` keeps the rule valid, while an `out/` per subfolder would not be ignored.
+- `plugin/crew/commands/diagram.md:15` and `:17` hard-code `docs/diagrams/<name>.mmd` and the render line. The `refresh` mode (`:21-23`) never touches a README.
+- No README embeds a diagram. `plugin/crew/README.md:2086-2097` only says where the source goes and how to render it.
+- The refresh-artifact allowance is directory-level: `plugin/crew/hooks/scripts/crew_refresh_check.py:168-173` (`REFRESH_ARTIFACT_PATHS`), consumed by `plugin/crew/hooks/scripts/scope_guard.py:196-197` and `plugin/crew/hooks/scripts/completion_audit.py:177-187` (`_outside_refresh_artifacts`, applied at `:205`). Nested `docs/diagrams/sub/a.mmd` is already allowed (`plugin/crew/tests/test_refresh_check.py:455`). A README is not a refresh artifact, so today the Stop audit flags a generated embed in a README that the ticket's Touch does not name.
+- `/crew:done` check 4 already refuses on any `stale` or `unknown` artifact line (`plugin/crew/commands/done.md:46-58`). `implement.md` step 6 already loops on `refresh with` lines (`plugin/crew/commands/implement.md:89-112`). The file is 118 lines against a 120 cap (`plugin/crew/tests/test_lifecycle_commands.py:28`, `:31`).
+- `role_write_guard.py:256-257` already allows `docs/diagrams/**` for the PM role, recursively.
+- Tests that read the flat layout: `plugin/crew/hooks/scripts/_test/run-tests.sh:782-816` (`read_diagrams`, `diagramsMissing`, `diagramsStale`).
+- READMEs the anchors reach: `plugin/crew/README.md` (2842 lines) and `plugin/localgpu/README.md` (336 lines). `skills/mermaid-svg-bitbucket/` has no README.md.
+- Versions on `origin/main`: crew 1.0.46 (`plugin/crew/.claude-plugin/plugin.json`), localgpu 0.1.20, mermaid-svg-bitbucket 1.2.5 (`.claude-plugin/marketplace.json`). Editing `plugin/localgpu/README.md` is a localgpu content change, so it needs a localgpu bump (root CLAUDE.md, first stop-and-ask).
+- Code maps cite the flat paths: `.crew/codemap/INDEX.md:69-73`, `.crew/codemap/repo-docs.md:16-21`, `:51-52`, `:124-131`, and `.crew/codemap/crew.md:135`, `:827`, `:1009`, `:1030`.
+- Probe on this machine, 2026-09-27: `mmdc` 11.17.0 (`/usr/local/bin/mmdc`) rendered a source with a `config: layout: elk` front-matter block to SVG without error. Whether the ELK layout was actually applied was NOT established.
+- `docs/guides/crew/src/*.md` has no line mentioning diagrams or the refresh step (`git grep -i diagram origin/main -- docs/guides/crew/src` returns nothing).
+## Unknowns
+- Does `mmdc` 11.17 apply `layout: elk`, or silently fall back to dagre? Resolved in plan step 2: render one source both ways and compare node coordinates. If ELK is not applied, the shared header uses dagre and the lint stays the guard. Recorded in the PR body.
+- Does GitHub's own Mermaid renderer honour `layout: elk` in an embedded block? Accepted as risk: the lint judges the `mmdc` render, and GitHub falls back to its default layout, which still renders.
+- Can Mermaid take a front-matter block after `%%` comment lines? Resolved in step 2 by rendering both orders. The shared header puts front matter first and the provenance lines immediately after, and the regexes above find those lines anywhere.
+- The completion-audit allowance for marker-bounded README edits. Recommended: allow a README only when its content outside every `<!-- crew-diagrams:begin -->`/`<!-- crew-diagrams:end -->` region is byte-identical to the scope base, the README exists at the base, and the ticket holds the same current user-prompt approval the other refresh artifacts need. This needs must-block, must-allow and sabotage tests. Alternative if the owner declines: embed only into `<diagramsDir>/README.md`, which is already an artifact path, and leave plugin READMEs a static link to it. Resolved at the Approve phase.
+- Embed on a Bitbucket-hosted origin (direction C). The generator emits an SVG image link plus the source in a `<details>` block, and warns when the SVG path is git-ignored. Accepted as risk: tested with a fixture remote only, because this repo is GitHub-hosted.
+- Lint coverage by diagram type. Flowchart/graph and sequence are measured; nodes and edges are counted from the rendered SVG. Other types (`erDiagram`, `stateDiagram-v2`, `gantt`) read `not measured - <type>` and never pass silently. Accepted as the limit of this ticket.
+- Machines without `mmdc`: lint and overlap read `unknown` with the reason "mmdc missing on this machine", never pass. Embed drift needs no renderer and is always judged.
+- Moving the 7 files changes the paths that code maps and TODO.md cite. Re-anchored in the same change (plan step 6). Historical CHANGELOG lines stay as they are.
+## Touch
+- `plugin/crew/hooks/scripts/crew_diagrams.py` - new: lint, embed, check, index
+- `plugin/crew/hooks/scripts/crew_freshness.py`
+- `plugin/crew/hooks/scripts/crew_refresh_check.py`
+- `plugin/crew/hooks/scripts/completion_audit.py`
+- `plugin/crew/hooks/scripts/_test/run-tests.sh`
+- `plugin/crew/skills/crew-diagrams/**`
+- `plugin/crew/skills/crew-docs/SKILL.md`
+- `plugin/crew/commands/diagram.md`
+- `plugin/crew/commands/onboard.md`
+- `plugin/crew/commands/implement.md`
+- `plugin/crew/commands/done.md`
+- `plugin/crew/tests/**`
+- `plugin/crew/README.md`
+- `plugin/crew/CONFIG.md`
+- `plugin/crew/BUDGETS.md`
+- `plugin/crew/.claude-plugin/plugin.json`
+- `plugin/localgpu/README.md`
+- `plugin/localgpu/.claude-plugin/plugin.json`
+- `plugin/localgpu/pyproject.toml`
+- `plugin/PLUGINS.md`
+- `.claude-plugin/marketplace.json`
+- `CHANGELOG.md`
+- `README.md` - one link to the diagrams index
+- `TODO.md`
+- `docs/diagrams/**`
+- `docs/guides/crew/src/*.md` - only if a guide describes the step; the rebuilt outputs follow
+- `docs/guides/crew/crew-1.0-*`
+- `scripts/check-marketplace.py`
+- `scripts/_test/**`
+- `.crew/verify.json`
+- `.crew/codemap/**`
+- `graphify-out/**`
+## Acceptance checks
+- [ ] A diagram nested at `docs/diagrams/process/crew/lifecycle.mmd` whose anchors the ticket changed reads `stale` in `crew_refresh_check.py --ticket <id>` and in `read_diagrams`. Tests: `test_nested_diagram_behind_is_stale` and `test_read_diagrams_finds_nested` in `plugin/crew/tests/test_diagram_layout.py`. A flat legacy `docs/diagrams/architecture.mmd` still reads exactly as before (`test_flat_legacy_layout_unchanged`, must-allow). `out/` is never walked (`test_rendered_out_dir_is_not_a_diagram`).
+- [ ] Kinds: `<kind>/overview.mmd` or a legacy `<kind>.mmd` satisfies the kind, and `<kind>/other.mmd` alone does not (`test_kind_overview_satisfies_kind`, `test_specific_diagram_in_kind_dir_does_not_satisfy_kind`). The existing `test_verify_absent_and_diagram_kind.py` cases still pass.
+- [ ] `crew_diagrams.py lint` fails a diagram over 12 nodes or 15 edges, one with an unlabelled edge in a flow or sequence, a label over 30 characters, the wrong direction for its kind, a missing or divergent shared header, or overlapping node boxes in the rendered SVG. Each has its own test in `plugin/crew/tests/test_crew_diagrams_lint.py`. A missing `mmdc` gives `unknown` (`test_lint_without_mmdc_is_unknown`), never a pass.
+- [ ] The shared theme passes WCAG AA: node text on every role fill is at least 4.5:1, and edges and outlines are at least 3:1 against both a white and a `#0d1117` page. Tests: `test_theme_text_contrast_aa` and `test_theme_edges_contrast_both_modes`. Each role (service, datastore, external, person) also differs in shape, not only colour (`test_role_not_colour_only`).
+- [ ] `crew_diagrams.py embed` writes one marker-delimited section per target README, with a summary above each block (from `%% Summary:` and `%% Omits:`), a fenced ```mermaid block and a source link. It also writes the index at `<diagramsDir>/README.md`. A second run changes no byte (`test_embed_is_idempotent`). `check` exits 1 naming the README and diagram when a block differs from its source (`test_check_detects_drift`). Tests are in `plugin/crew/tests/test_crew_diagrams_embed.py`.
+- [ ] `crew_refresh_check.py` reports embed drift as `stale` with `refresh with python3 .../crew_diagrams.py embed --root .`, and a lint failure as `stale` with `stop - needs judgement: split <diagram>`, which is not refreshable. Tests: `test_embed_drift_is_stale_with_command` and `test_lint_failure_stops`. `/crew:done` check 4 therefore refuses both with no change to `done.md`'s logic.
+- [ ] The completion audit allows a README changed only inside crew-diagrams markers when the ticket holds a current user-prompt approval (must-allow). It refuses these cases: an edit outside the markers, a README absent at the base, an unapproved, stale or `cli` approval (unless `scope.allowCliApproval`), and a forged unbalanced marker pair (must-block). Tests are in `plugin/crew/tests/test_completion_audit_diagram_embeds.py`.
+- [ ] Sabotage entries go RED on their named tests: flat `os.listdir` restored in `_diagrams` -> `test_nested_diagram_behind_is_stale`; the edge cap removed -> the edge-cap lint test; `unknown` read as pass when `mmdc` is missing -> `test_lint_without_mmdc_is_unknown`; the outside-marker comparison dropped -> the must-block edit-outside-markers test; embed drift ignored -> `test_embed_drift_is_stale_with_command`.
+- [ ] `render.sh docs/diagrams` renders every nested `.mmd` to `docs/diagrams/out/<same relative path>.{svg,png}` and still exits 1 on a tree with none. Its `_test/render.sh` gains a nested case, and the existing `MSYS_NO_PATHCONV=1` case still passes.
+- [ ] In this repo the 7 diagrams move with `git mv` into the kind layout and are redrawn so that every one passes `crew_diagrams.py lint`. Anything larger splits into an overview plus detail diagrams, and `architecture/overview.mmd`, `data-flow/overview.mmd` and `process/overview.mmd` exist. `plugin/crew/README.md`, `plugin/localgpu/README.md` and `docs/diagrams/README.md` carry the generated embeds, and `crew_diagrams.py check --root .` exits 0.
+- [ ] `python3 scripts/check-marketplace.py` runs the embed-drift check (`check_diagram_embeds`) and fails on a hand-edited block. The scripts/_test suite has a sabotage-style case for it.
+- [ ] `.crew/verify.json` maps `plugin/crew/hooks/scripts/crew_diagrams.py`, its tests, `docs/diagrams/**` and the target READMEs to `python3 -m pytest plugin/crew/tests/test_crew_diagrams_lint.py plugin/crew/tests/test_crew_diagrams_embed.py plugin/crew/tests/test_diagram_layout.py -q` and `python3 plugin/crew/hooks/scripts/crew_diagrams.py check --root .`.
+- [ ] Docs match the behaviour. That covers `commands/diagram.md` (layout, lint, embed), `commands/onboard.md` (draws the three kind overviews and embeds them when the repo has none), both SKILL.md files, `plugin/crew/README.md`, and `CONFIG.md` (`docs.diagramsDir` is the root of the kind tree). `implement.md` stays at or under 120 lines. `.crew/codemap/` and TODO.md cite the new paths. The guides are checked, with the result stated in the PR body.
+- [ ] crew and localgpu are each bumped one patch above `origin/main` at land time, in every place their version appears, with a CHANGELOG entry. `crew_refresh_check.py --ticket T-0035` reads `fresh` before review.
