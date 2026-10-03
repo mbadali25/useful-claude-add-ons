@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@308ac2fa
+anchor: useful-claude-add-ons@c9867c59
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -1524,3 +1524,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
 
 **Re-anchored `452b30cc` -> `308ac2fa` on 2026-10-03 (T-0063, crew 1.0.164). Current despite the lag.** `crew_refresh_check.py` named this note reached through crew paths T-0063 changed (`plugin/crew/README.md`, `plugin/crew/commands/{autopilot,done,implement}.md`, `crew_autopilot.py`, `crew_refresh_check.py`, the crew troubleshooting guide). A difflib line map of each changed file from the scope base `34d9f267` to `308ac2fa` over every `path:line` citation in this note found none in the body covering an edited or moved line; the version-file citations it reports are in provenance notes, kept as history.
+
+**Re-anchored `308ac2fa` -> `c9867c59` on 2026-10-03 (T-0063, crew 1.0.182). Current despite the lag.** `f0d40c66` changes `crew_autopilot.py` (`_rel_inside`, +3 docstring lines), `test_crew_autopilot.py`, two version mentions in `plugin/crew/README.md` (edited in place, no line moved) and the troubleshooting guide; no body citation in this note covers a changed or moved line.
