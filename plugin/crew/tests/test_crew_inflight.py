@@ -1096,3 +1096,30 @@ def test_another_bridge_session_is_not_mine(capsys, monkeypatch, repo, clock, li
     code, out = _begin(capsys, repo["main"], "autopilot")
 
     _assert_refused(code, out, repo, before, 1, "live")
+
+
+# --- review round 2 (T-0049) ---------------------------------------------------------
+
+def test_clear_in_the_same_second_as_the_reservation_does_not_release_it(capsys, monkeypatch, repo, clock, live_pid):
+    assert review_ledger.reserve(repo["main"], TICKET, "claude")[0]
+    reserved_at = crew_inflight.current_rounds(review_ledger.status(repo["main"], TICKET))[-1]["reserved_at"]
+    clock["t"] = crew_holder.parse_stamp(reserved_at)
+    _owner_terminal(monkeypatch)
+    code, out = _run(capsys, repo["main"], "clear", "--ticket", TICKET, "--by", "Owner", "--round", "1")
+    assert code == 0, out
+    _session(monkeypatch, "sess-a", live_pid)
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    assert code == 3, out
+    assert "result=unknown" in out.splitlines()[-1]
+
+
+def test_clear_command_quotes_a_root_with_a_space(tmp_path):
+    root = str(tmp_path / "repo dir")
+
+    command = crew_inflight.clear_command(root, TICKET, 2)
+
+    argv = shlex.split(command.split("   (")[0].replace("<your name>", "Owner"))
+    assert argv[argv.index("--root") + 1] == root
+    assert argv[argv.index("--round") + 1] == "2"

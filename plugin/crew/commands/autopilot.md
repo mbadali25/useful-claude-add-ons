@@ -96,7 +96,7 @@ A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS
 turn: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`,
 `unsettled-artifact`, `ticket-mismatch`, `handover-elsewhere` (continue in the checkout it names), `max-phases`,
 `no-progress`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR
-(T-0011), new ticket (T-0012), lane or writer. Before every stop and the report: `crew_inflight.py end --root .
+(T-0011), new ticket (T-0012), lane or writer. Before every stop and the report: `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py end --root .
 --ticket <ticket> --runner autopilot --outcome <phase>`. Never without an explicit yes
 (`crew_state.AUTONOMOUS_STOPS`): `offboard-role` (a role), `delete-map` (a codemap or diagram), `rewrite-metrics`
 (.crew/metrics.md), `in-flight` (driving, clearing or taking over a ticket another runner holds), and

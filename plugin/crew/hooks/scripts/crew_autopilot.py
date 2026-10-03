@@ -578,12 +578,16 @@ def _in_flight(root, ticket, result, runner):
                 "runner": None, "since": None, "clear": ""}
     if held["state"] in crew_inflight.GO:
         return result
-    who = f"{held.get('runner') or 'no runner named'} since {held.get('since') or 'unknown'}"
+    # The runner, since and reason carry text another runner wrote into its marker:
+    # made printable before they reach next's one-line output.
+    safe = crew_holder.safe
+    who = f"{safe(held.get('runner') or 'no runner named', 80)} since {safe(held.get('since') or 'unknown', 40)}"
+    reason = safe(held.get("reason") or "", 400)
     if held["state"] == crew_inflight.ELSEWHERE:
         return dict(result, phase="handover-elsewhere", stop=True, command="",
-                    reason=f"{ticket}: {held['reason']} ({who})")
-    return dict(result, phase="in-flight", stop=True, command=held.get("clear") or "",
-                reason=f"{ticket} is in flight ({held['state']}): {held['reason']} ({who}) - "
+                    reason=f"{ticket}: {reason} ({who})")
+    return dict(result, phase="in-flight", stop=True, command=safe(held.get("clear") or "", 600),
+                reason=f"{ticket} is in flight ({held['state']}): {reason} ({who}) - "
                        "left alone; never taken over")
 
 

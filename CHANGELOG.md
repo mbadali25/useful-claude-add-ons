@@ -46,6 +46,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   working directory cannot be read all answer `unknown`, never free or none.
   A different `CLAUDE_CODE_BRIDGE_SESSION_ID` is another holder. `lane-lines`
   quotes its paths for the shell.
+- **Review round 2.** `clear --round N` releases a round only when it is
+  strictly later than the reservation (both stamps are whole seconds).
+  `/crew:autopilot` names `crew_inflight.py end` by its full path, so it runs.
+  `next` makes the runner and reason it takes from another runner's marker
+  printable, and the displayed `clear` command quotes `--root`. Findings 3, 4,
+  6 and 8 of that round are L-0617.
 
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 

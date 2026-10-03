@@ -166,7 +166,8 @@ def marker_path(top, ticket):
 
 def clear_command(top, ticket, round_number=None):
     extra = f" --round {round_number}" if round_number is not None else ""
-    return (f"python3 {os.path.abspath(__file__)} clear --root {top} --ticket {norm_ticket(ticket)} "
+    return (f"python3 {shlex.quote(os.path.abspath(__file__))} clear --root {shlex.quote(top)} "
+            f"--ticket {norm_ticket(ticket)} "
             f"--by <your name>{extra}   (from a terminal outside Claude Code)")
 
 
@@ -335,12 +336,14 @@ def current_rounds(ledger):
 
 
 def _released(record, number, reserved_at):
-    """The owner released round `number` with `clear --round`, after it was reserved."""
+    """The owner released round `number` with `clear --round`, strictly after it was
+    reserved: both stamps have one-second precision, so a clear in the same second
+    may predate the reservation and releases nothing."""
     if not record or record.get("released_round") != number:
         return False
     released = crew_holder.parse_stamp(record.get("released_at") or record.get("cleared_at"))
     reserved = crew_holder.parse_stamp(reserved_at)
-    return released is not None and reserved is not None and released >= reserved
+    return released is not None and reserved is not None and released > reserved
 
 
 def _ledger_signal(top, ticket, record):

@@ -5,6 +5,7 @@ On the fixture `test_crew_autopilot.py` uses; markers are written through
 unreadable marker. The beat loop is never started (`_start_loop` replaced).
 """
 import datetime
+import json
 import os
 import subprocess
 import sys
@@ -233,3 +234,19 @@ def test_status_reserved_round_still_waits_on_reviewer(tmp_path):
     got = crew_autopilot.status(str(root), T)
 
     assert (got["phase"], got["waiting"].split(" - ", maxsplit=1)[0]) == ("in-flight", "reviewer")
+
+
+def test_next_sanitises_runner_text_from_another_marker(tmp_path, monkeypatch, live_pid):
+    root = _approved(tmp_path)
+    _held(monkeypatch, root, live_pid)
+    path = crew_inflight.marker_path(str(root), T)
+    with open(path, encoding="utf-8") as handle:
+        record = json.load(handle)
+    record["runner"] = "workflow:lane-b\nphase=closed stop=0\x1b[31m"
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(record, handle)
+
+    got = _next(root)
+
+    assert got["phase"] == "in-flight", got
+    assert "\n" not in got["reason"] and "\x1b" not in got["reason"], got["reason"]

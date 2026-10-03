@@ -432,3 +432,13 @@ def test_autopilot_claims_the_ticket_before_it_sets_the_pointer():
     text = _read(os.path.join(COMMANDS, "autopilot.md"))
 
     assert text.index("crew_inflight.py begin") < text.index("crew_ticket.py activate")
+
+
+def test_autopilot_names_crew_inflight_by_its_full_path():
+    """T-0049 review round 2: a bare `crew_inflight.py` is not on PATH, so `end` would never run."""
+    text = _read(os.path.join(COMMANDS, "autopilot.md"))
+
+    flat = text.replace("\n", " ")
+    uses = flat.count("crew_inflight.py")
+    assert uses >= 2
+    assert flat.count("${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py") == uses
