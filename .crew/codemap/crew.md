@@ -591,7 +591,7 @@ and gets nothing created.
 - `crew_autoclear_setup.py` is called from **three** places, confirmed by
   grep and by reading each call site: `/crew:init`'s Phase 1
   (`plugin/crew/skills/crew-setup/phases.md:191-197`, `plan-windows-default`),
-  `/crew:onboard` (`plugin/crew/commands/onboard.md:199`, the identical
+  `/crew:onboard` (`plugin/crew/commands/onboard.md:201`, the identical
   helper, "so a repo onboarded standalone gets the identical question"),
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
@@ -924,7 +924,7 @@ absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:228`). `measure
 times 50 forks and 200 writes per side, each shell reading its own clock (`$EPOCHREALTIME`, a
 pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing is an error,
 never zero. `status_line` (`:923`) reads config and the cache only, and
-`plugin/crew/hooks/scripts/crew_status.py:226` calls it and appends it after the `verify` line. Tests:
+`plugin/crew/hooks/scripts/crew_status.py:248` calls it and appends it after the `verify` line. Tests:
 `plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
 `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) shipped with T-0040 up to
 its landing bump, then split out to follow-up ticket W-0115 per rule 36
@@ -1148,7 +1148,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
-  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:67`).
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:73`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 87 mutations (by `len()` at `8cabe586`; 81 before T-0077) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
@@ -1163,13 +1163,13 @@ question: are the code maps, diagrams and code graph that THIS ticket's
 changed paths reach still current (module docstring, `:1-8`)? It narrows
 `crew_freshness.py`'s per-artifact questions to the paths the ticket changed
 (`plugin/crew/hooks/scripts/scope_base.py` `resolve` plus `completion_audit.changed_paths`, minus
-`RELEASE_BOOKKEEPING`, `:251`), so a raw anchor lag is not staleness; each
-artifact reads `fresh`/`stale`/`unknown` (`:207-209`) with the refresh command
+`RELEASE_BOOKKEEPING`, `:256`), so a raw anchor lag is not staleness; each
+artifact reads `fresh`/`stale`/`unknown` (`:212-214`) with the refresh command
 to run, documents read `not measured`, and a scope base that hides or may
 hide the change - a fallback, or (since review round 3) a recorded base with
-a commit behind it naming the ticket (`_named_behind`, `:1273`) - makes the
+a commit behind it naming the ticket (`_named_behind`, `:1303`) - makes the
 whole answer `unknown`, and every artifact measured against that base with it
-(`_unconfirmed`, `:1290`; `ticket_freshness`, `:1312`). It is a CLI the
+(`_unconfirmed`, `:1320`; `ticket_freshness`, `:1342`). It is a CLI the
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
@@ -1178,7 +1178,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:55-66`) runs it again
   and refuses on `stale` or `unknown` without refreshing (`:61-64`).
-- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:236-241`: the code map,
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:241-246`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:209-220`) lets a ticket write
@@ -1188,50 +1188,50 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `_outside_refresh_artifacts` (`plugin/crew/hooks/scripts/completion_audit.py:177-187`)
   drops every refresh-artifact path when the approval is current and none
   otherwise. JUDGEMENT: T-0094 (crew 1.0.78) ships the narrower judgement,
-  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1019`), and
+  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1024`), and
   the owner split its wiring into the audit off to L-0540 on 2026-09-30 (a
   harness change lands alone, `scripts/check-tooling-pr.py`), so until L-0540
   lands nothing in the hooks calls it. It answers True / False / None per
   changed artifact. A `True` needs a changed path to reach the artifact
   through its BASE copy's citations (reach = every path changed since the base,
   release bookkeeping dropped except `ADMISSION_BOOKKEEPING`, a plugin
-  manifest, `:264` and `:1037-1046` in `crew_refresh_check.py`; the graph's code
+  manifest, `:269` and `:1042-1051` in `crew_refresh_check.py`; the graph's code
   test reads the whole reach) and a re-anchor or regeneration shape: a map's
   `anchor:` moved forward from the base copy's anchor to a commit behind HEAD
-  (`_map_verdict` `:851`, `_sha_moved` `:557`, `_moved_from` `:615`: an
+  (`_map_verdict` `:856`, `_sha_moved` `:562`, `_moved_from` `:620`: an
   unchanged anchor text never moved, an anchor added to a base copy with none
   did not move either (review round 3), a base anchor git cannot resolve is
   could-not-tell, a base anchor `cat-file` cannot find counts as moved only
-  when `_names_no_commit` (`:594`, review round 4) proves no commit or tag
+  when `_names_no_commit` (`:599`, review round 4) proves no commit or tag
   carries that prefix - an ambiguous short anchor is could-not-tell -, one on HEAD's history must be behind the new one), INDEX rows
   of admitted maps only, deleted lines included, read from `git diff -U0
   <base> -- INDEX.md` so a changed terminator or a BOM counts
-  (`_index_verdict` `:888`, `_diff_lines` `:865`, since review round 3), a
-  diagram's provenance sha moved the same way (`_diagram_verdict` `:912`), a
+  (`_index_verdict` `:893`, `_diff_lines` `:870`, since review round 3), a
+  diagram's provenance sha moved the same way (`_diagram_verdict` `:917`), a
   rendered file beside an admitted same-stem source, its extension compared
-  case-folded (`_rendered_verdict` `:1078`, review round 4), a rule
+  case-folded (`_rendered_verdict` `:1083`, review round 4), a rule
   whose bytes equal `crew_instructions.expected_rules`, or whose blob git would
-  store does (`_rule_verdict` `:931`, `_stored_blob` `:971`: a CRLF checkout
+  store does (`_rule_verdict` `:936`, `_stored_blob` `:976`: a CRLF checkout
   under `core.autocrlf` passes, a CRLF or BOM rewrite does not, since review
   round 3; a rule file that exists but cannot be read is could-not-tell before
   any comparison, in `_on_disk`, since review round 2), the graph after a code
-  change (`_graph_verdict` `:1100`). `None` (`COULD_NOT_TELL`, `:491`) never
+  change (`_graph_verdict` `:1105`). `None` (`COULD_NOT_TELL`, `:496`) never
   admits. Since review round 5 whether the config, a rule or a map exists is
-  `_present` (`:340`), lstat's errno rather than `os.path.lexists`: only
+  `_present` (`:345`), lstat's errno rather than `os.path.lexists`: only
   ENOENT or ENOTDIR is absent, and a directory the hook user cannot search is
-  could-not-tell (`_read_config` `:313`, `_texts` `:667`). Since review round 6
+  could-not-tell (`_read_config` `:318`, `_texts` `:672`). Since review round 6
   every kind that reads or admits a working-tree file first asks `_on_disk`
-  (`:786`): a deleted file, a symlink at the path or along its dirs, a git mode
+  (`:791`): a deleted file, a symlink at the path or along its dirs, a git mode
   different from the base copy's (`git diff --raw`, which is why INDEX.md's
   own mode branch is gone) or a 120000/160000 stage entry is refused; and the
   kind comes from the most specific artifact dir holding the path (`_claims`
-  `:983`, `_kind` `:992`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
-  judges the bytes `_read_regular` (`:719`) read once through a descriptor opened with
+  `:988`, `_kind` `:997`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
+  judges the bytes `_read_regular` (`:724`) read once through a descriptor opened with
   `O_NOFOLLOW` at every component, before any git call (on Windows, which has no `O_NOFOLLOW`,
-  W-0116 adds `_FINAL_PATH` (`:716`): the read is refused unless `GetFinalPathNameByHandleW` on
-  the open descriptor (`:750-751`) names `realpath(top)/rel`, and an unanswerable final path is
+  W-0116 adds `_FINAL_PATH` (`:721`): the read is refused unless `GetFinalPathNameByHandleW` on
+  the open descriptor (`:755-756`) names `realpath(top)/rel`, and an unanswerable final path is
   could-not-tell; `_FINAL_PATH` is None off Windows); an ambiguous new anchor is
-  could-not-tell, and `_base_text` (`:530`) looks the base copy up with `git ls-tree`.
+  could-not-tell, and `_base_text` (`:535`) looks the base copy up with `git ls-tree`.
   With no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
@@ -1274,6 +1274,27 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   budget beside rules 0 and 16 (the `**/*.py` rule, 38s; both `why` texts still call it 15), and rule 26 (58s) is deferred at Stop on a
   hook-script edit (its `why` says so first). Confirmed
   present, **not run and not read** by this note.
+
+**The secrets-denylist gate on the graph (T-0064, crew 1.0.198).** DERIVED at `687759ce`
+(T-0064's merge of origin/main `fe4d5996`, crew 1.0.167). `_graph`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1252`) calls `_graph_ignore_refusal` (`:1230`,
+called at `:1260`) after its "no code changed" return and before the graphify-missing check.
+While `crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore`
+does not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
+graphify command is run and autopilot's `_settles` stops on it unchanged. The checker is
+`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:107`), `translate_rule`
+for `Read(...)` deny rules (`:169`), `denylist` (`:232`), `candidates` (`:259`, `git ls-files
+--cached --others`, no `--exclude-standard`), `_ignored` (`:273`, git's own `check-ignore
+--no-index` in a scratch repository with the user's global excludes disabled), `coverage`
+(`:310`), `write` (`:343`, temp file then `os.replace`) and `main` (`:395`). `crew_status.py`
+prints the same answer as its `graph-ignore` line (`_graph_ignore_line`,
+`plugin/crew/hooks/scripts/crew_status.py:185`, appended at `:252`). Tests:
+`plugin/crew/tests/test_graph_ignore.py`, `plugin/crew/tests/test_graph_ignore_graphify.py` (real
+graphify; skips without it), and new cases in `test_refresh_check.py` and `test_status.py`. The
+last `.crew/verify.json` rule maps them. Its mutations were run by hand; they join
+`plugin/crew/tests/sabotage_refresh.py` in a harness-only change, because `sabotage*.py` is in
+`HARNESS` (`scripts/check-tooling-pr.py`). JUDGEMENT: graphify's post-commit hook still builds
+without the check; `/crew:status`'s line is the only warning on that path.
 
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
@@ -1496,9 +1517,12 @@ then the train is advisory.
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1312` — `ticket_freshness`,
-  the library entry point; `main()` at `:1412`; `artifact_verdicts` at `:1019`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1342` — `ticket_freshness`,
+  the library entry point; `main()` at `:1442`; `artifact_verdicts` at `:1024`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
+- `plugin/crew/hooks/scripts/crew_graph_ignore.py:310` — `coverage`, the library
+  entry point `crew_refresh_check.py` and `crew_status.py` call; `main()` at `:395` is the
+  `--check` / `--write` CLI (T-0064).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:568` — `next_phase`, read-only;
   `main()` at `:1662` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` / `deploy-allowed` / `approve` / `questions-check` CLI
@@ -1634,7 +1658,7 @@ then the train is advisory.
   (`_boundary`, `:288`), `_charged` (`:302`) is spent minus refunded, and
   `reserve` tests `_charged` against `BUDGET`. `summary` (`:923`, `load = _load` at
   `:920`) is the dict `status` returns and the one `crew_status._review_lines`
-  renders (`plugin/crew/hooks/scripts/crew_status.py:140`). Autopilot sends a
+  renders (`plugin/crew/hooks/scripts/crew_status.py:146`). Autopilot sends a
   refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:532`,
   `_toward_review` `:548`), and `next_phase`'s no-progress stop (`:597`) lets that
   rerun through even when `/crew:review` was the command just run (review round 1).
@@ -1647,7 +1671,7 @@ then the train is advisory.
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:178`) and `crew_status._verify_line`
-  (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
+  (`plugin/crew/hooks/scripts/crew_status.py:161`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one
   Codex stream), built and machine-locally replayed by
