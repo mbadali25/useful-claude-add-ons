@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.149: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
+### Changed — `crew` 1.0.151: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
 
 - Review round 1 on the tree-pass cache. Its key now includes every ref (`git for-each-ref`): a
   rule may read a ref the tree does not show (rules[39] diffs `origin/main...HEAD`), so a fetch
@@ -18,6 +18,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   entries (the matcher's record separator, the snapshot's mode bits) re-anchored, both still red. `verify-gate.ps1` reads
   the cache's JSON array by assigning before `@()`, since Windows PowerShell 5.1's
   `ConvertFrom-Json` emits an array as one pipeline object and nothing was credited there.
+- Review round 2. Two cases the round-1 tests could not tell apart: a withdrawn credit must leave
+  its rule's standing record entry exactly as it was (the marker alone was asserted, and dropping
+  the credited log lines was untested), and refs that cannot be listed mean no stable snapshot,
+  never one without refs. Both red on the mutation that stayed green; three more mutations
+  registered (sh, record, ps1). The ps1 filter uses `.Contains('tree')`, which holds under
+  `Set-StrictMode`; a run that both moved the tree and deferred says both.
 - `tests/test_review_eligible.py` runs the `$ELIGIBLE` snippet in `crew_fixtures.resolve_bash()` with
   `python3` mapped to the test's own interpreter: on windows-latest a bare `bash` plus Git Bash's
   missing `python3` exited 1 (root CLAUDE.md, Landmines).

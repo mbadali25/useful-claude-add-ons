@@ -2051,7 +2051,8 @@ if ($matchPy -and (Test-Path $verifyRecordScript)) {
 # tree-pass credits - see verify-gate.sh: their log entries are dropped
 # before the record sync and neither marker advances.
 if ($treeMoved) {
-  $cmdLog = [System.Collections.ArrayList]@(@($cmdLog) | Where-Object { -not $_.tree })
+  # .Contains, not $_.tree: a missing key is a throw under Set-StrictMode.
+  $cmdLog = [System.Collections.ArrayList]@(@($cmdLog) | Where-Object { -not $_.Contains('tree') })
   [Console]::Error.WriteLine("verify-gate: the tree changed during this run, so the $treeN command(s) credited from the tree-pass cache are withdrawn - not verified on the tree this run ended on")
 }
 
@@ -2173,7 +2174,8 @@ if ($fullyVerified) {
 } elseif ($anySkipped) {
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn.")
 } elseif ($treeMoved) {
-  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $treeN credited command(s) were not checked against it.")
+  $alsoDeferred = if ($deferredCount -gt 0) { "; $deferredCount rule command(s) were also deferred" } else { "" }
+  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $treeN credited command(s) were not checked against it$alsoDeferred.")
 } else {
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")
 }

@@ -570,8 +570,9 @@ def cover_plan(rules, rule_order, rule_cmds, cmds, always=(), environ=None):
 
 def tree_snapshot(root, stable=False):
     """A digest of the whole working tree as the checks would read it - HEAD,
-    the deciders, and the index entry and bytes of every tracked, deleted,
-    renamed and untracked (not ignored) path - or None when git cannot list
+    every ref (stable=True only: the tree-pass cache), the deciders, and the
+    index entry and bytes of every tracked, deleted, renamed and untracked
+    (not ignored) path - or None when git cannot list
     it. The gate takes one before the first command and one before the first
     coverage credit; a credit needs the two equal, so a superset's pass is
     only ever credited for the tree it actually ran against."""
