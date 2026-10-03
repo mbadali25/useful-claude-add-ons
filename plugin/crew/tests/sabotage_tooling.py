@@ -7,6 +7,7 @@ Run that file, not this one.
 """
 import os
 import shutil
+import sys
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -666,8 +667,39 @@ TOOLING_MUTATIONS += (
         # bash form.
         "the gate replaces a CLAUDE_PLUGIN_ROOT its caller set",
         GATE_SH,
-        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then\n',
-        "if true; then\n",
+        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        'if [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
         "tests/test_verify_gate_plugin_root.py::test_a_plugin_root_the_caller_set_is_kept",
     ),
+    (
+        # An empty value kept as empty: a rule's `$CLAUDE_PLUGIN_ROOT/...`
+        # becomes `/hooks/...`.
+        "the gate keeps an empty CLAUDE_PLUGIN_ROOT",
+        GATE_SH,
+        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        'if [ "${CLAUDE_PLUGIN_ROOT+set}" != set ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+    ),
+    (
+        # Resolved after the gate cd's into the project, a relative script
+        # path resolves to nothing and the root came out as `/`.
+        "the gate resolves its plugin root after leaving the caller's directory",
+        GATE_SH,
+        '  CLAUDE_PLUGIN_ROOT="$GATE_PLUGIN_ROOT"\n',
+        '  CLAUDE_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null; pwd)"\n',
+        ("tests/test_verify_gate_plugin_root.py::"
+         "test_a_gate_started_by_a_relative_path_still_finds_its_root"),
+    ),
 )
+# The .ps1 cases run only on native Windows (verify-gate.ps1 exits early
+# elsewhere), so its mutation would survive anywhere else.
+if sys.platform.startswith("win") and shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            "the PowerShell gate does not set CLAUDE_PLUGIN_ROOT for its rule commands",
+            GATE_PS1,
+            "  $env:CLAUDE_PLUGIN_ROOT = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path\n",
+            "  $null = 0\n",
+            "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+        ),
+    )
