@@ -4,6 +4,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed - repository CI: Linux pytest legs tuned on the self-hosted pool (L-0590)
+
+- **What.** `.github/workflows/pytest-crew.yml`'s Linux suites run as one `test-set` matrix,
+  python version x set: `test-default (3.x)` (crew's default set and the skill suites, now
+  `-n 16 --dist worksteal`, then cisco-meraki and wazuh-onprem) and `test-wallclock (3.x)` (crew's
+  `-m wallclock` set, serially). On a pull request the two 3.12 legs run side by side instead of
+  one after the other; on every other event (push to main, schedule, dispatch) `max-parallel: 1`
+  runs one leg at a time, so a main push no longer puts three Python legs on the one 16-vCPU
+  host. The ubuntu `crew-shell-matrix` leg runs `-n 8` instead of `-n auto`.
+- **Required checks unchanged.** `test (3.11)`, `test (3.12)`, `test (3.13)` are now a fan-in
+  (`if: always()`) that fails unless every `test-set` leg succeeded and, for a version that does
+  work, both its legs uploaded a marker written only after all their steps passed. Sabotage
+  dispatch runs proved both paths red: a wallclock leg selecting nothing (run 37084028539) and
+  wallclock legs whose steps were skipped (run 37084031107). Behaviour change: on a non-PR event
+  one failed leg turns all three `test (3.x)` checks red; the `test-<set> (<python>)` checks name
+  the leg.
+- **Measured, not assumed.** On the self-hosted pool `-n auto` meant 4 workers. A serial
+  benchmark (5 runs per setting, runs 37058615163 and 37080675891): the default set p50 260 s at
+  4/load, 211 s at 8/load, 171 s at 12/load, 145 s at 8/worksteal, and beside the slow-set chain
+  221 s at 8/worksteal, 197 s at 12, 135 s at 16; the slow set p50 154 s at 4, 92 s at 8,
+  worksteal no better (161 s / 98 s). Collected tests are identical (9546 default, 32 wallclock,
+  1712 slow, node ids diffed against main).
+- **Dropped.** A pip/uv cache: `Install pytest` already takes 0-2 s on the pool (runs
+  37057371538, 37055674723, 37053380475, 37051933552, 37051464436), so there is nothing to save.
+- `scripts/gate-runner.py`'s CI drift strings follow the new commands; `EXCLUDED_CI` gains the
+  marker's `mkdir`.
+
 ### Fixed — `crew` 1.0.134: `ci_receipt.py check` compares receipt fields by type as well as value; the verify-gate workflow stops installing into the shared toolcache
 
 - `_mismatch` used `==` alone, which holds `1 == True` and `False == 0`, so a receipt saying
