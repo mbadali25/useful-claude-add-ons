@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@4fc93b19
+anchor: useful-claude-add-ons@f3de8e91
 verified: 2026-10-02
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -621,21 +621,21 @@ default-set step with `-n 16 --dist worksteal`, then cisco-meraki and wazuh-onpr
 `test-wallclock (3.x)` (`-m wallclock`, serial). Its `max-parallel` is 6 on a pull request
 and 1 on every other event, so a main push runs one Python leg at a time on the
 self-hosted host. The required `test (3.11|3.12|3.13)` checks are the `test` fan-in
-(`:206`): `needs: test-set`, `if: always()`, red unless `needs.test-set.result` is
+(`:212`): `needs: test-set`, `if: always()`, red unless `needs.test-set.result` is
 `success` and, where its `RUN_LEG` is true, both `test-ran-<set>-<python>` marker
 artifacts (uploaded by a leg's last step only after every step passed) are present; both sides
 keep the marker under `runner.temp`, emptied at every job start, never in the persistent
 self-hosted workspace.
 `needs.test-set.result` spans all six legs, so on a non-PR event one failed leg reds all
 three `test (3.x)` checks. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:256`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
+(`:265`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
 hook matrix (`-n 8` since L-0590). On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
-parallel jobs (`:311-565`): `crew-windows-decide` (`:363`, T-0110's rule: on a
+parallel jobs (`:320-574`): `crew-windows-decide` (`:372`, T-0110's rule: on a
 pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
-`pytest-crew.yml`), `crew-windows-default` (`:397`, crew's default
+`pytest-crew.yml`), `crew-windows-default` (`:406`, crew's default
 parity-sample set split in 3 by pytest-split, since `test-default` above only runs
-that set on Ubuntu), `crew-windows-slow` (`:449`), `crew-windows-wallclock`
-(`:492`, serial), and the fan-in `crew-windows-gate` (`:535`), named
+that set on Ubuntu), `crew-windows-slow` (`:458`), `crew-windows-wallclock`
+(`:501`, serial), and the fan-in `crew-windows-gate` (`:544`), named
 `crew-shell-matrix (windows-latest)` so the required check name is unchanged.
 The gate runs `if: always()` and passes only through
 `scripts/check-windows-shards.py`: every Windows job succeeded, every shard
@@ -2255,7 +2255,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `f937576e` -> `af59b237` on 2026-10-02 (L-0555 merges origin/main `d2ec37d3`, W-0120 #308, README install URLs re-pinned to `04dde5a2`).** The merge changed `README.md:12` and `:18` in place; no line moved. The install-URL pin landmines in `install-scripts.md` and `repo-docs.md` now state the `04dde5a2` pin, and `git log --oneline 04dde5a2..af59b237 -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is empty. No suite was executed for this note.
 
 
-**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1244` in a past-tense note, left as written. No suite was executed for this note.
+**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1273` in a past-tense note, left as written. No suite was executed for this note.
 
 
 **Re-anchored `d6e51bb8` (main) and `7e18daf8` (L-0555) -> `5467b110` on 2026-10-02 (L-0555 merges origin/main `75681fba`: L-0577 #305, T-0107 #273 (gizmoduck 0.5.5); rerere disabled; crew 1.0.127).** The header conflict took main's anchor and both sides' provenance notes, main's first; the install-URL pin bullet took main's equivalent wording. Citations moved by difflib: this lane's `CHANGELOG.md` lines in `crew.md` +86 (the entries main added). Main-side citations into files this branch changes resolve to the same text. No suite was executed for this note.
@@ -2268,3 +2268,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `a81e4382` -> `407f2b33` on 2026-10-02 (L-0587, repository tooling, no plugin version).** `git diff --name-only a81e4382 407f2b33` is main's own history to e0c70fc9 plus L-0587's three commits. L-0587 changes `scripts/install-prerequisites.sh:1675` and `scripts/_test/lsp-stack-tools.sh:7` in place (comment text only, no line added or removed), `.crew/verify.json` rules[3] in place (one command appended on the existing last `run` line, its `why` extended; no line added), adds `scripts/_test/shellcheck-directives.py`, one `_py_suite` TABLE row in `scripts/gate-runner.py` (after `version-drift`, +1 line at `:155`), one step in `.github/workflows/marketplace.yml` (+8 lines after the Shell syntax step) and a CHANGELOG entry (+23 lines near the top). No current citation in this map points into `scripts/gate-runner.py` or `marketplace.yml` past the insertion; the `CHANGELOG.md` line numbers in this map sit in past provenance paragraphs that record the tree they were read at, and are left as written. No claim in this note was re-derived; no suite was executed for this note.
 
 **Re-anchored `407f2b33` -> `4fc93b19` on 2026-10-03 (L-0587 merges origin/main `ffeb0e2f`: L-0598 #321, crew 1.0.135; rerere disabled).** Main's side changes `plugin/crew/hooks/scripts/crew_standards.py` (one hunk at `:729`, +4 lines, in `proposals`) and `plugin/crew/skills/crew-qa-standards/references/review.md` (one hunk at `:40`, +2 lines), plus version files, CHANGELOG, BUDGETS and `crew.md`'s version sentence, which came in unchanged. The only current citations into `crew_standards.py` in these maps are `:145` and `:664`, above the hunk, so they stand; the larger numbers that mention it sit in past provenance paragraphs and are left as written. Only the generated `.claude/rules/crew.md` conflicted and was regenerated. No claim was re-derived; no suite was executed for this note.
+
+**Re-anchored `4fc93b19` -> `f3de8e91` on 2026-10-03 (L-0590, repository CI tooling, no plugin version).** `f3de8e91` merges origin/main `6ac3b1b3` (L-0587 #319 and its README re-pin #322) into `L-0590-build`, rerere disabled. L-0590 changes `.github/workflows/pytest-crew.yml` (the Linux `test` job becomes the `test-set` matrix plus the `test` fan-in; fixed xdist worker counts), `scripts/gate-runner.py` (two `ci=` strings, one `EXCLUDED_CI` entry), `scripts/_test/gate-runner.py` (one fixture job id), `AGENTS.md` and `CHANGELOG.md` (+29 at the top). Every body citation of the form `path:line` into a file changed between `4fc93b19` and `f3de8e91` was re-mapped by script (difflib, never guessed): only `CHANGELOG.md` citations moved (+29, L-0590's entry); `README.md:12` changed in place (the re-pin) and is unchanged here. Nothing was executed for this note.
