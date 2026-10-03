@@ -4,6 +4,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.167: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
+
+- A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
+  ran under the Stop hook, which Claude Code gives that variable, but under `/crew:verify --all` the
+  Bash tool substitutes it into the command text and is not documented to export it to the gate's
+  children. That rule could then fail, or exit 77 and leave the verified baseline frozen, depending on
+  which path ran the gate. `verify-gate.sh` and `verify-gate.ps1` now set it to the plugin's own root
+  (two levels above the script) when the caller left it unset or empty, and never replace a value the
+  caller set. The `.sh` resolves that root at its first line, before it `cd`s into the project, so a
+  gate started by a relative path still finds it (resolved later, it came out as `/`), and on Git Bash
+  it takes `pwd -W`'s native `D:/...` form, which a native python can open (`CDPATH` emptied, so
+  `cd` cannot echo into the value). Unresolvable, the variable stays unset, so a
+  `${CLAUDE_PLUGIN_ROOT:?}` rule fails loudly; that branch is untested, since no way was found to
+  make the `cd` fail. Groundwork for a rule that
+  checks `AGENTS.md` against `verify.json` with crew's own generator.
+- `test_verify_gate_plugin_root.py` runs the real gate with a rule that reads the variable from its own
+  process environment (a value visible only to the gate's shell, and not exported, does not pass):
+  unset and empty → the gate's own plugin root, a relative-path start → the same, set → kept. Four
+  mutations against `verify-gate.sh` registered in `sabotage_tooling.py`, one per behaviour, and one
+  against `verify-gate.ps1`, registered only on native Windows with pwsh, the one place its cases run.
+  The file joins `.crew/verify.json`'s verify-gate rule. Review (Sonnet 5.5): 0 BLOCK, 3 FIX (Git
+  Bash's `/d/...` form, the relative start, the untested empty value), 3 NIT; all fixed but the
+  `.ps1` cases running off Windows, which the gate's own Windows-only guard rules out. Round 2: 0
+  BLOCK, 0 FIX, 3 NIT (`CDPATH`, a mutation comment, the untested unresolvable branch), all taken.
+- `test_verify_gate_rule_env_leak.py` lists `CLAUDE_PLUGIN_ROOT` among the variables the gate exports
+  on purpose; it still watches `GATE_PLUGIN_ROOT`, the shell variable the value is copied from.
+  CI caught this on Linux and Windows; the review rounds and the mapped rules did not run that file.
+
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
