@@ -386,6 +386,14 @@ PREREVIEW_MUTATIONS = (
      '    problem = _manifest_problem(manifest)\n',
      '    problem = None\n',
      _R + "test_an_unreadable_manifest_at_finish_is_incomplete"),
+    ('an explicit null parts reads as absent (S3d)', RUN,
+     '    if "parts" in manifest:\n        parts = manifest["parts"]\n',
+     '    if manifest.get("parts") is not None:\n        parts = manifest["parts"]\n',
+     _R + "test_an_unreadable_manifest_at_finish_is_incomplete"),
+    ('a NUL in a part path passes validation (S3e)', RUN,
+     '            if any(isinstance(v, str) and "\\0" in v for v in (path, name)):\n',
+     '            if False:\n',
+     _R + "test_an_unreadable_manifest_at_finish_is_incomplete"),
     ('bidi controls print raw (S4)', CHECKS,
      '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2028\\'
      'u2029"\n'

@@ -553,7 +553,11 @@ def test_claude_output_that_is_not_a_regular_file_is_incomplete(tmp_path, kind):
 
 
 _MALFORMED = {"list": [], "parts-null": {"parts": [None]}, "parts-str": {"parts": "x"},
-              "empty-path": {"parts": [{"path": ""}]}, "sha-int": "SHA5"}
+              "empty-path": {"parts": [{"path": ""}]}, "sha-int": "SHA5",
+              "parts-is-null": {"parts": None},
+              "nul-path": {"parts": [{"path": "/tmp/x\u0000y"}]},
+              "nul-name": {"parts": [{"name": "x\u0000y"}]},
+              "nul-base": {"base": "a\u0000b"}}
 
 
 @pytest.mark.parametrize("case", ["symlink"] + sorted(_MALFORMED))

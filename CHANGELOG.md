@@ -22,7 +22,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   and why.
 - **An unreadable `--output` or a swapped manifest after a reservation.** The claude provider's
   second call crashed on a symlinked, FIFO or directory `--output`, and `finish` crashed on an
-  unreadable or malformed manifest. Both now record an INCOMPLETE round with the reason.
+  unreadable or malformed manifest. Both now record an INCOMPLETE round with the reason. An
+  explicit `"parts": null` counts as malformed, not absent, and a NUL in a part path or name or in
+  `base`, `head` or `bundle_sha256` is refused before it can reach a path or a git argument.
 - **Bidirectional controls.** `one_line` escapes Unicode's `Bidi_Control` set (U+061C, U+200E,
   U+200F, U+202A-U+202E, U+2066-U+2069), so a file name or message cannot visually reorder a status
   line. A rule name holding one is a config problem.
