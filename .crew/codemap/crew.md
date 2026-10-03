@@ -591,7 +591,7 @@ and gets nothing created.
 - `crew_autoclear_setup.py` is called from **three** places, confirmed by
   grep and by reading each call site: `/crew:init`'s Phase 1
   (`plugin/crew/skills/crew-setup/phases.md:191-197`, `plan-windows-default`),
-  `/crew:onboard` (`plugin/crew/commands/onboard.md:201`, the identical
+  `/crew:onboard` (`plugin/crew/commands/onboard.md:199`, the identical
   helper, "so a repo onboarded standalone gets the identical question"),
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).

@@ -11,10 +11,8 @@ gets trusted.
 ## 1. Build or refresh the graph first
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/SKILL.md`'s **Build** section
-— `graphify . --no-viz --code-only`, both flags required, after that skill's
-denylist check (`crew_graph_ignore.py --check`) passes — if no graph is
-present, or if it is present but not current. A check that exits 1 or 2
-stops this command: report what it printed. If `graphify` is absent, that
+— `graphify . --no-viz --code-only`, both flags required, after its denylist check (`crew_graph_ignore.py --check`) passes — if no
+graph is present, or if it is present but not current. A check that exits 1 or 2 stops here: report what it printed. If `graphify` is absent, that
 skill's **Detect** section governs: report it and stop; do not install
 anything without asking.
 
