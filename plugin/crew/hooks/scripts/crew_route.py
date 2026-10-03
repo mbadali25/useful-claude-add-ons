@@ -14,8 +14,8 @@ runs nothing, blocks nothing and writes nothing.
 A prompt routes only when the WHOLE prompt, normalised, matches a row: strip,
 collapse whitespace, drop one trailing `.` or `!`, drop one leading `please`,
 `ok`, `now` or `let's`; matched case-insensitively. Never a match inside a
-longer sentence, never a question (`?` is not dropped), never a prompt with a
-line break, over MAX_PROMPT_CHARS, starting with `/`, `<` or a backtick.
+longer sentence, never a question (`?` is not dropped), never a prompt with
+any line boundary `str.splitlines` knows, over MAX_PROMPT_CHARS, starting with `/`, `<` or a backtick.
 `AMBIGUOUS` phrases ("do it", "yes", bare "done"...) route nowhere whatever a
 row says: they usually answer Claude's last question, and the conversation is
 the better judge of that.
@@ -38,6 +38,9 @@ approval is the human's to type (T-0024 owns group approval).
   continue: next_phase not a stop                 route  the command it names
   continue: next_phase a stop, raises, or names
             /crew:approve                         ask    with the reason
+  any route whose command `_clip` would change    ask    (cut, reflowed or a line break:
+                                                         a route never passes a command
+                                                         other than the one named)
 
 `crew_ticket.resolve_active`'s own INDEX fallback takes the FIRST open line,
 so it is never the answer here: `crew_autopilot.open_index_tickets` (T-0004)
@@ -96,6 +99,11 @@ PHRASES = (
 AMBIGUOUS = ("do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it")
 _PREFIXES = ("please ", "ok ", "now ", "let's ")
 _WS = re.compile(r"\s+")
+# The line boundaries `str.splitlines` knows besides "\n" and "\r", which
+# `normalise` checks on their own line. Written out, not derived, so
+# `test_every_unicode_line_boundary_is_not_a_route`'s derivation is an
+# independent check of it (T-0069).
+_OTHER_LINE_BREAKS = "\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
 _CREW_COMMAND = re.compile(r"^/crew:([a-z][a-z0-9-]*)(?:\s+(.*))?$")
 _APPROVE = re.compile(r"approve", re.IGNORECASE)
 
@@ -111,13 +119,16 @@ _COMPILED = compile_table(PHRASES)
 
 def normalise(prompt):
     """The prompt as the table sees it, case preserved, or None when it can
-    never be a route (not a string, a line break, too long, a slash command,
-    markup or a backtick)."""
+    never be a route (not a string, a line break -- any boundary
+    `str.splitlines` knows -- too long, a slash command, markup or a
+    backtick)."""
     if not isinstance(prompt, str):
         return None
     text = prompt.strip()
     if not text or "\n" in prompt or "\r" in prompt or len(text) > MAX_PROMPT_CHARS \
             or text[0] in "/<`":
+        return None
+    if any(ch in _OTHER_LINE_BREAKS for ch in prompt):
         return None
     text = _WS.sub(" ", text)
     if text[-1] in ".!":
@@ -167,6 +178,26 @@ def _answer(outcome, found, **fields):
     return answer
 
 
+def _routable(command):
+    """True when `render` can pass `command` on exactly as given: `_clip`
+    would neither cut it nor reflow its whitespace. A cut or reflowed command
+    is a different command, so it is never routed (T-0069)."""
+    return isinstance(command, str) and _clip(command, "command") == command
+
+
+def _unroutable_reason(command):
+    return (f"the command it would run is not passed on cut or reflowed "
+            f"({len(str(command or ''))} characters, limit {FIELD_CHARS['command']})")
+
+
+def _route(found, command, **fields):
+    """A `route` answer for `command`, or an `ask` when it is not routable."""
+    if not _routable(command):
+        return _answer("ask", found, reason=_unroutable_reason(command),
+                       **{k: v for k, v in fields.items() if k != "reason"})
+    return _answer("route", found, command=command, **fields)
+
+
 def _resolve(top, explicit):  # pylint: disable=too-many-return-statements
     """(ticket, source, reason, candidates). `ticket` None means ask: one
     return per row of the module docstring's table, so each reads alone."""
@@ -204,8 +235,8 @@ def _continue(found, top, ticket, source):
         return _answer("ask", found, ticket=ticket, source=source, phase=phase.get("phase"),
                        reason=f"the next step is {command}, and routing never approves: "
                               "the human types it")
-    return _answer("route", found, command=command, ticket=ticket, source=source,
-                   phase=phase.get("phase"), reason=phase.get("reason") or "")
+    return _route(found, command, ticket=ticket, source=source,
+                  phase=phase.get("phase"), reason=phase.get("reason") or "")
 
 
 def decide(root, prompt):
@@ -216,15 +247,14 @@ def decide(root, prompt):
     if found is None:
         return _answer("none", None)
     if found["rule"] in ("none", "topic"):
-        return _answer("route", found, command=command_for(found, None))
+        return _route(found, command_for(found, None))
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     ticket, source, reason, candidates = _resolve(top, found["ticket_arg"])
     if ticket is None:
         return _answer("ask", found, reason=reason, candidates=candidates)
     if found["rule"] == "continue":
         return _continue(found, top, ticket, source)
-    return _answer("route", found, command=command_for(found, ticket), ticket=ticket,
-                   source=source)
+    return _route(found, command_for(found, ticket), ticket=ticket, source=source)
 
 
 def _clip(value, field):
@@ -241,7 +271,12 @@ def _candidates(names):
 
 
 def _run_clause(command):
+    """The run sentence for `command` as given, or None when `_clip` would
+    change it: `render` asks instead of passing on a cut or reflowed command."""
+    given = command or ""
     command = _clip(command or "", "command")
+    if command != given:
+        return None
     parsed = _CREW_COMMAND.match(command)
     if not parsed:
         return f"Run `{command}`."
@@ -260,6 +295,9 @@ def render(decision):
     source = _clip(decision.get("source"), "source")
     if outcome == "route":
         run = _run_clause(decision.get("command"))
+        if run is None:
+            return render(dict(decision, outcome="ask",
+                               reason=_unroutable_reason(decision.get("command"))))
         if intent == "continue":
             phase = _clip(decision.get("phase") or "the next phase", "phase")
             head = (f"the user's prompt asks to continue {ticket} ({source}); "

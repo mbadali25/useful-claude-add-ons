@@ -276,16 +276,19 @@ def record_author(root, session_id, handoff_path):
     The note is read ONCE, under the lock, through the same reader `decide`'s
     caller uses, so the recorded sha is the sha `decide` computes. A note that
     cannot be read, or a write that fails, leaves NO entry for this worktree
-    (the previous one is removed where possible): a missing entry waits,
-    while a stale one would vouch for a note its session never saw. An author
+    (the previous file is removed, or else blanked, where possible): a
+    missing entry or an empty file waits, while a stale one would vouch for a
+    note its session never saw. An author
     file that cannot be read is replaced -- it holds no history, only the
     latest writer per worktree, and a lost entry for another worktree only
     makes that worktree wait.
 
-    A lock that cannot be taken drops the whole file, unlocked: this session
+    A lock that cannot be taken drops the whole file -- removed, or blanked
+    in place where the directory refuses the removal -- unlocked: this session
     did write the note, and the entry already there -- possibly another
     session's for the same text -- must not keep vouching for it (review
-    round 1, T-0042). Unlinking races no reader into a torn file; the
+    round 1, T-0042). Unlinking races no reader into a torn file, and a
+    reader that meets the blanked file reads it as unreadable and waits; the
     residual race is a holder that read identical text before this write
     and replaces the file after the drop, which content cannot tell apart."""
     path = author_path(root)
@@ -331,9 +334,20 @@ def record_author(root, session_id, handoff_path):
 
 def _drop_author(path):
     """A failed write must not leave the previous entry vouching for the new
-    note. Removing the whole file is the only step left that needs no write
-    of it; an author file that is gone makes every worktree wait. True when
-    nothing is left at `path`, False when the old file may still be there."""
+    note. Removing the whole file is tried first: it needs no write of the
+    file, only of its directory, and an author file that is gone makes every
+    worktree wait. When the directory refuses that, the file is blanked in
+    place (`_blank`), which needs a writable file but not a writable
+    directory; an empty author file reads as unreadable and waits too
+    (T-0069, T-0042 review round 2). True when no record is left vouching,
+    False when the old file may still be there."""
+    if _unlink_author(path):
+        return True
+    return _blank(path)
+
+
+def _unlink_author(path):
+    """True when nothing is left at `path`, False when the unlink was refused."""
     try:
         os.unlink(path)
     except FileNotFoundError:
