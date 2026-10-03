@@ -94,8 +94,9 @@ per-construct definition of "gone," rather than file-existence).
 ## Does
 Holds the repo's hand-written documentation — Mermaid diagram sources under
 `docs/diagrams/`, planning artifacts under `docs/superpowers/`, review notes
-under `docs/review/`, ADRs under `docs/adr/` (four: T-0085 added
-`0004-build-time-development-standards.md`; re-checked with `ls docs/adr/`), rendered per-topic guides under `docs/guides/*/` (see
+under `docs/review/`, ADRs under `docs/adr/` (five: T-0085 added
+`0004-build-time-development-standards.md`, L-0605 added
+`0005-prereview-linter-leftovers-ended-before-reap.md`; re-checked with `ls docs/adr/`), rendered per-topic guides under `docs/guides/*/` (see
 below — restructured in this range), one operational runbook, handoff notes,
 and the top-level `CHANGELOG.md`. Nothing under `docs/` is generated except
 the rendered diagram images (`docs/diagrams/out/`) and the rendered guide
@@ -333,12 +334,13 @@ listing the directory.
   human-authored; the two files remain unrelated despite the shared
   basename.
 
-- **`docs/adr/` still exists and holds four ADRs, the fourth T-0085's.**
+- **`docs/adr/` still exists and holds five ADRs, the fourth T-0085's, the fifth L-0605's.**
   `docs/adr/0001-promote-stays-unarmed.md` (unchanged, closed by the
   per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14),
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
   2026-09-17) and `0004-build-time-development-standards.md` (T-0085, the
-  build-time development standards); re-checked with `ls docs/adr/`. `CLAUDE.md:103` still reads "Decisions in
+  build-time development standards), and `0005-prereview-linter-leftovers-ended-before-reap.md`
+  (L-0605, ending a clean pre-review linter's leftovers before the reap); re-checked with `ls docs/adr/`. `CLAUDE.md:103` still reads "Decisions in
   `docs/adr/`" (re-grepped at L-0513's `fe524012`, two lines down from `:101` after L-0513's Commands pointer; `:101` at `adf8d1dd`, re-grepped then; `CLAUDE.md` changed in
   `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap

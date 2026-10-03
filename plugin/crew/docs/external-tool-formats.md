@@ -184,7 +184,7 @@ ruff 0.16.9, ShellCheck 0.11.0 (`shellcheck-py==0.11.0.1`), actionlint
 | ruff | `check --output-format json --exit-zero --no-cache --extend-select E902 <args> <files>` | 0 | a JSON list; `filename` (absolute), `code`, `message` | `code` `invalid-syntax` (a null `code` is read as it; a row with no `code` key is unreadable), or `E902` (the file could not be read, e.g. not UTF-8; selected always, because an unselected E902 reports nothing): ruff then reports nothing else for that file |
 | ShellCheck | `-f json1 --rcfile <bundle .shellcheckrc>` (or `--norc` when the bundle has none) `<args> <files>` | 0 none, 1 findings (2 unreadable file, 3 bad syntax, 4 bad options are errors) | `{"comments": [...]}`; `file` (as passed), `code` (int, read as `SC<code>`), `message` | `SC1072` ("Fix any mentioned problems and try again"): parsing of that file stopped; `SC1071`: a shell ShellCheck does not check (zsh, fish) |
 | actionlint | `-format '{{json .}}' -no-color -shellcheck= -pyflakes= [-config-file <bundle .github/actionlint.y(a)ml>] <args> <files>` (1.7.12 discovers only `actionlint.yaml` by itself) | 0 none, 1 findings (2 bad flag, 3 fatal are errors) | a JSON list; `filepath` (as passed), `kind`, `message` | `kind` `syntax-check` |
-| PSScriptAnalyzer | `pwsh -NoProfile -NonInteractive -File <script> <file-list> <rule-list>`, both lists JSON arrays (a newline in a file name cannot split one) | 0 (the script exits 3 on any error, an unknown `-IncludeRule` name included) | one JSON line from `ConvertTo-Json`; `file`, `rule`, `severity` (one of `Information`, `Warning`, `Error`, `ParseError`), `message` | `severity` `ParseError` |
+| PSScriptAnalyzer | `pwsh -NoProfile -NonInteractive -File <script> <file-list> <rule-list>`, both lists JSON arrays (a newline in a file name cannot split one) | 0 (the script exits 3 on any error, an unknown `-IncludeRule` name included) | one JSON line from `ConvertTo-Json`, always an array built from a typed list (`[]` when clean, never `[null]`); a `null` row is unreadable, never "no findings"; `file`, `rule`, `severity` (one of `Information`, `Warning`, `Error`, `ParseError`), `message` | `severity` `ParseError` |
 
 Each linter runs with stdin closed, a copy of the environment with every
 variable whose name carries TOKEN, SECRET, PASSWORD, API_KEY or CREDENTIAL
@@ -221,13 +221,22 @@ read: a new finding among them still refuses, and `--allow-unverified` does
 not override it. A bad row naming a base-side file leaves only that file unchecked,
 because its base count is short. A timeout kills the linter's whole process
 group, and covers a child left holding the output open after the linter
-exits. On Windows the linter starts suspended inside a job object and is
+exits. After a CLEAN exit on Linux the checks read both pipes to EOF, wait
+for the linter with `waitid(..., WNOWAIT)` so it stays an unreaped zombie,
+and only then kill its group: the zombie holds the pid, so the group id
+cannot belong to anything else (ADR 0005). A refused signal is "could not
+check". macOS has no `os.waitid`, so there a clean exit's leftovers survive;
+a process that left the group (`setsid`) is out of reach everywhere. On Windows the linter starts suspended inside a job object and is
 resumed once it is in it, so a timeout ends every process it started, a child
 whose parent already exited included (`taskkill /T` walks parent pids and
 cannot find that child); a job Windows will not make is "could not check".
-The review runner puts the reviewer CLI in a job the same way, falling back to
-`%SystemRoot%\System32\taskkill.exe /T` (never a bare `taskkill`) only when
-no job can be made. Every program (git, each linter, pwsh, taskkill, the reviewer CLIs) is
+The review runner puts the reviewer CLI in a job the same way. Only a job's
+successful terminate establishes that the tree ended. Without one, or when
+ending it fails, the runner falls back to
+`%SystemRoot%\System32\taskkill.exe /T` (never a bare `taskkill`), then ends
+the reviewer process itself by handle, and says a descendant may have
+escaped, naming why (no job, no taskkill, taskkill failed or exited nonzero).
+It never calls `os.killpg` on Windows. Every program (git, each linter, pwsh, taskkill, the reviewer CLIs) is
 found by `review_checks.resolve_executable`: an absolute path, or the absolute
 `PATH` entries only. On Windows `shutil.which` searches the current directory
 first, so it is not used there. PSScriptAnalyzer takes no `args`: the key is
