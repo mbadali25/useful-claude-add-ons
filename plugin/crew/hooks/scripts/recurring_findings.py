@@ -30,7 +30,15 @@ UNKNOWN STAYS UNKNOWN (GEN-01). A data file that cannot be read prints
 parse are still listed. Paths that cannot be read (no spec, no Touch entry, a
 manifest whose file lists are unusable) print `UNKNOWN:` and list EVERY
 section: a list that cannot be scoped is over-included, never emptied. A known
-empty match says so in one line.
+empty match says so in one line. An `UNKNOWN:` line is never the one a full
+block drops (L-0592).
+
+ONLY REGULAR FILES ARE READ (L-0592). A FIFO, a device or a directory (or a
+symlink to one) is refused by its stat before anything is opened, so a spec
+that is a FIFO yields UNKNOWN instead of hanging the implementer. A file
+swapped in between that stat and the open is opened non-blocking where the OS
+allows it and refused by fstat; a swap to a device that blocks on open in that
+window needs a concurrent writer in the worktree and is out of scope.
 
 CLI: --root R (--ticket T | --paths P [P ...]) [--paths ...]
 Exit codes: 0 everything read; 1 something was UNKNOWN, UNREADABLE or a
@@ -42,6 +50,7 @@ import functools
 import json
 import os
 import re
+import stat
 import sys
 
 import crew_ticket
@@ -64,6 +73,38 @@ def data_path():
 
 # ---- parsing --------------------------------------------------------------------
 
+_OPEN_FLAGS = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+
+
+def _kind(mode):
+    for test, name in ((stat.S_ISDIR, "directory"), (stat.S_ISFIFO, "FIFO"),
+                       (stat.S_ISCHR, "character device"), (stat.S_ISBLK, "block device"),
+                       (stat.S_ISSOCK, "socket")):
+        if test(mode):
+            return name
+    return "special file"
+
+
+def _read_regular(path):
+    """The file's text, read only when it is a regular file: refused by its
+    stat before any open (layer 1), and by fstat on a non-blocking open for a
+    file swapped in after that stat (layer 2). OSError on refusal."""
+    mode = os.stat(path).st_mode
+    if not stat.S_ISREG(mode):
+        raise OSError(f"not a regular file ({_kind(mode)})")
+    fd = os.open(path, _OPEN_FLAGS)
+    try:
+        mode = os.fstat(fd).st_mode
+        if not stat.S_ISREG(mode):
+            raise OSError(f"not a regular file ({_kind(mode)})")
+        fh = os.fdopen(fd, encoding="utf-8", newline="")
+    except BaseException:
+        os.close(fd)
+        raise
+    with fh:
+        return fh.read()
+
+
 def _globs(value):
     try:
         globs = json.loads(value)
@@ -81,8 +122,7 @@ def parse(path):
     others are kept."""
     label = os.path.basename(path)
     try:
-        with open(path, encoding="utf-8", newline="") as fh:
-            text = fh.read()
+        text = _read_regular(path)
     except FileNotFoundError:
         return [], [f"UNREADABLE: {path} does not exist"]
     except (OSError, UnicodeDecodeError) as exc:
@@ -196,17 +236,24 @@ def _names_a_directory(entry, root):
     directory (`docs/v1.0`) and anything that cannot be checked are covered."""
     if _WILD.search(entry):
         return False
-    if root:
-        try:
-            return not os.path.isfile(os.path.join(root, *_segments(entry)))
-        except (OSError, ValueError):
-            return True
-    return True
+    try:
+        return not os.path.isfile(os.path.join(root, *_segments(entry)))
+    except (OSError, ValueError):
+        return True
+
+
+def _need_root(touch, root):
+    """A Touch entry cannot be told file from directory without the root it
+    is relative to (L-0592): refuse rather than guess "directory"."""
+    if touch and not (isinstance(root, str) and root):
+        raise ValueError("a Touch match needs the root to tell a file from a directory")
 
 
 def matches(path, glob, touch=False, root=None):
     """A concrete changed path through the Touch matcher; a Touch entry by
-    overlap, and one naming a directory also as everything under it."""
+    overlap, and one naming a directory also as everything under it. A Touch
+    match needs `root` (ValueError without one)."""
+    _need_root(touch, root)
     path = path.replace("\\", "/")
     if not touch:
         return crew_ticket.glob_match(path, glob)
@@ -215,9 +262,13 @@ def matches(path, glob, touch=False, root=None):
     return _names_a_directory(path, root) and overlap(path.rstrip("/") + "/**", glob)
 
 
-def select(entries, paths, touch=False):
+def select(entries, paths, touch=False, root=None):
+    """The entries, in file order, whose globs meet `paths`. With `touch`, the
+    paths are Touch entries and `root` is required, checked before anything
+    is iterated so an empty list cannot answer without it."""
+    _need_root(touch, root)
     return [e for e in entries
-            if any(matches(p, g, touch) for p in paths for g in e["applies_to"])]
+            if any(matches(p, g, touch, root) for p in paths for g in e["applies_to"])]
 
 
 # ---- rendering ------------------------------------------------------------------
@@ -228,19 +279,28 @@ def _entry_lines(entry):
 
 
 def render(header, entries, notes=()):
-    """`header` lines, then `notes` (UNKNOWN/UNREADABLE/PROBLEM), then whole
-    entries while they fit; never more than MAX_LINES lines in all. Notes past
-    their share are counted, not dropped silently; entries past the cap are
-    named by id. With a data note present, an empty selection is never
-    reported as "none applies": the section that could not be read may have
-    been the one that did."""
-    out = list(header)
-    room = MAX_LINES - len(out) - 2
-    out += list(notes[:room])
-    if len(notes) > room:
-        out[-1] = f"[... {len(notes) - room + 1} more notes not shown]"
+    """`header` lines, then every `UNKNOWN:` note, then the data notes
+    (UNREADABLE/PROBLEM), then whole entries while they fit; never more than
+    MAX_LINES lines in all. Data notes past their share are counted in one
+    line, never an UNKNOWN one (L-0592); entries past the cap are named by id.
+    The required lines (header, every UNKNOWN, a counter when there are data
+    notes, one final line) must fit, or ValueError: a cut there would be
+    silent. With a data note present, an empty selection is never reported as
+    "none applies": the section that could not be read may have been the one
+    that did."""
+    scope = [n for n in notes if n.startswith("UNKNOWN:")]
+    data = [n for n in notes if not n.startswith("UNKNOWN:")]
+    required = len(header) + len(scope) + (1 if data else 0) + 1
+    if required > MAX_LINES:
+        raise ValueError(f"{required} required lines cannot fit in MAX_LINES={MAX_LINES}")
+    out = list(header) + scope
+    room = MAX_LINES - len(out) - 1
+    if len(data) > room:
+        out += data[:room - 1] + [f"[... {len(data) - room + 1} more notes not shown]"]
+    else:
+        out += data
     if not entries:
-        if any(n.startswith(("UNREADABLE:", "PROBLEM:")) for n in notes):
+        if data:
             out.append("No class could be read that is keyed to these paths, and the checklist "
                        "has unreadable parts (above), so whether one applies is not known.")
         else:
@@ -313,10 +373,9 @@ def implementer_block(root, ticket, paths=(), data=None):
     if ticket:
         spec = os.path.join(root, ".work", "tickets", crew_ticket.check_ticket(ticket), "spec.md")
         try:
-            with open(spec, encoding="utf-8", newline="") as fh:
-                text = fh.read()
+            text = _read_regular(spec)
         except (OSError, UnicodeDecodeError) as exc:
-            unknown = f"UNKNOWN: {spec} cannot be read ({exc.__class__.__name__})"
+            unknown = f"UNKNOWN: {spec} cannot be read ({exc.__class__.__name__}: {exc})"
         else:
             touch, why = crew_ticket.parse_touch(text)
             if why:
@@ -324,9 +383,9 @@ def implementer_block(root, ticket, paths=(), data=None):
     if unknown:
         notes = notes + [unknown + "; every class is listed."]
         return render(header, entries, notes), False
-    chosen = [e for e in entries
-              if any(matches(t, g, touch=True, root=root) for t in touch for g in e["applies_to"])
-              or any(matches(p, g) for p in paths for g in e["applies_to"])]
+    by_touch = select(entries, touch, touch=True, root=root)
+    by_path = select(entries, paths)
+    chosen = [e for e in entries if e in by_touch or e in by_path]
     return render(header, chosen, notes), not notes
 
 
