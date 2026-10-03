@@ -25,6 +25,16 @@ Last updated: 2026-10-03.
 | 10 | _new_ | Apply the diagram standard to the other diagram-producing skills | needs ticket | #4 |
 | 11 | owner | Tell the two production repositories' sessions about D10 and the audit | owner action | #1, #2 merged |
 
+## Owner decisions (2026-10-03)
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Merge order for the open PRs | #374, then #373, #372, #337, #375. Each crew PR is re-bumped and merged with `main` after the one before it lands |
+| 2 | Box limit per diagram | 15 (`diagram_check.MAX_NODES`) |
+| 3 | Should `render.sh` fail on a readability FAIL? | No. The check is its own step; `/crew:diagram` treats a FAIL as not done |
+| 4 | Diagram standard for other skills (row 10) | Each skill references the crew-diagrams rules and runs `diagram_check.py` only where crew is installed; no hard dependency on crew |
+| 5 | A visual of graphify's graph | No. It is a 1,000+ node graph with no readable single picture; the code map is the human view |
+
 ## Details
 
 ### 1. L-0618: QA standards (slices 0 + a)
@@ -95,8 +105,8 @@ with `/crew:onboard --refresh crew`, never by hand: `.claude/rules/crew.md` is g
 ### 10. Diagram standard for the other skills
 
 `skills/mermaid-svg-bitbucket`, `skills/repo-docs` and `skills/terraform-docs-readme` also produce
-Mermaid. Decide per skill whether it adopts `diagram_check.py` (a dependency on crew) or carries its
-own copy of the rules. Recommendation: reference the rules, and check only where crew is installed.
+Mermaid. Owner decision 4: each references the crew-diagrams rules and runs `diagram_check.py` only
+where crew is installed, with no hard dependency on crew.
 
 ### 11. Owner action: tell the production repositories
 
