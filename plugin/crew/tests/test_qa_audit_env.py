@@ -497,6 +497,29 @@ def test_e5_a_refusal_names_the_word_that_refused(tmp_path, value, word):
     assert f"`X` acceptance refused by the word `{word}`" in row["evidence"], row["evidence"]
 
 
+@pytest.mark.parametrize("value, word", [
+    ("accepted by No One", "no"), ("accepted by No-one", "no"), ("yes by No", "no"),
+    ("yes by No 2026-10-01", "no"), ("accepted by Noone", "noone"),
+    ("accepted by Bob by Denise Revoked", "revoked"), ("accepted by Ann Retract", "retract"),
+    ("accepted by Matthew Revoking", "revoking"), ("accepted by Ann Expires", "expires"),
+    ("accepted by Bob Withdrew", "withdrew"), ("accepted by Ann Voided", "voided"),
+    ("accepted by Terminated", "terminated"), ("accepted by Ann Revocation", "revocation"),
+    ("accepted by Bob Lapses", "lapses"), ("accepted by Ann Denial", "denial")])
+def test_e5_a_refusal_form_in_a_by_name_is_named(tmp_path, value, word):
+    row = _e5(tmp_path, f"| X | staging | yes | {value} |")
+    assert row["status"] == qa_audit.GAP, (value, row["evidence"])
+    assert f"refused by the word `{word}`" in row["evidence"], row["evidence"]
+
+
+@pytest.mark.parametrize("value", ["accepted by Matthew N Badali", "accepted by Na-Young Kim",
+                                   "accepted by Noel", "accepted by Nora", "accepted by Denise",
+                                   "accepted by Waite", "accepted by Staley", "accepted by Lapsley",
+                                   "accepted by Draftson"])
+def test_e5_names_near_the_new_forms_still_pass(tmp_path, value):
+    row = _e5(tmp_path, f"| X | staging | yes | {value} |")
+    assert row["status"] == qa_audit.PASS, (value, row["evidence"])
+
+
 def test_e5_a_declared_hyphenated_environment_is_read(tmp_path):
     _map(tmp_path, environments={"staging-eu": {}})
     row = _e5(tmp_path, "| K | staging-eu | yes | |")

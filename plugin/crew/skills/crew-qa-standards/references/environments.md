@@ -145,20 +145,27 @@ Non-production held live payment and shipping credentials for weeks (D4).
   - **Unknown (E5 UNKNOWN for that row):** everything else, never an acceptance: a name without
     `by` (`accepted Matthew`, `accepted, Matthew`), `accepted Under Review`, `accepted soon`,
     `accepted (verbally)`, `accepted by the owner on 2026-10-01`, `approved`, `ok`, `y`, `✅`.
-  - **Inside a `by` name** the stems and the short words do not apply, so `accepted by Denise`,
-    `accepted by Waite` and `accepted by Matthew N Badali` are names. There a word refuses only as
-    a whole refusal word: revoked, revoke, rejected, reject, denied, deny, refused, refuse, expired,
-    expire, withdrawn, withdraw, cancelled, canceled, cancel, rescinded, retracted, lapsed, void,
-    invalid, pending, tbd, todo, unknown, awaiting, waiting, declined, maybe, perhaps, conditional,
-    conditionally, tentative, tentatively, provisional, draft, unverified, proposed, superseded,
-    disputed, inactive, disabled, obsolete, stale, unaccepted, never, nobody, none, not. The GAP
-    names the word that refused.
+  - **Inside a `by` name** the stems and the words `n`, `na` and `false` do not apply, so
+    `accepted by Denise`, `accepted by Waite`, `accepted by Matthew N Badali` and
+    `accepted by Na-Young Kim` are names. There a word refuses only as one of these whole refusal
+    words, matched case-insensitively on the word, on each part split by `-`, and on the parts
+    joined (`No-one`): no, no-one, noone, not, never, nobody, none, revoke, revoked, revokes,
+    revoking, revocation, reject, rejected, rejects, rejecting, rejection, deny, denied, denies,
+    denying, denial, refuse, refused, refuses, refusing, expire, expired, expires, expiring, expiry,
+    withdraw, withdrawn, withdrew, withdrawing, cancel, cancelled, canceled, cancels, cancelling,
+    rescind, rescinded, retract, retracted, lapse, lapsed, lapses, void, voided, invalid,
+    invalidate, invalidated, terminated, nullified, pending, tbd, todo, unknown, awaiting,
+    waiting, decline, declined, declines, maybe, perhaps, conditional, conditionally, tentative,
+    tentatively, provisional, draft, unverified, proposed, dispute, disputed, disputes,
+    superseded, inactive, disabled, obsolete, stale, unaccepted. The GAP names the word that
+    refused, and a whole refusal word is named before a stem match.
   - **Limits.** A refusal word written as a name after `by` still refuses (`accepted by Nobody`,
-    `accepted by Matthew Revoked`), even if someone is really called that. Names are ASCII only:
-    `accepted by José` reads UNKNOWN, so write an ASCII form (`accepted by Jose`). A qualifier
-    written as a capitalised name after `by` that is not a whole refusal word
-    (`accepted by Later`, `accepted by Pendingly`) cannot be told from a name, which is why the form is
-    `accepted by <person> <date>` and nothing else.
+    `accepted by Matthew Revoked`), even if someone is really called that. Any other word in a `by`
+    name is read as a name, rarer inflections such as `Unverifiable` included, so write acceptances
+    as `accepted by <person> <date>`. A qualifier written as a capitalised name after `by` that is
+    not a whole refusal word (`accepted by Later`, `accepted by Pendingly`) cannot be told from a
+    name. Names are ASCII only: `accepted by José` reads UNKNOWN, so write an ASCII form
+    (`accepted by Jose`).
 
 | Name | Reaches | Live | Accepted |
 |---|---|---|---|

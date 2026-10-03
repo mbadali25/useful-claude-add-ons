@@ -506,7 +506,12 @@ NAME_REFUSAL_FORMS = frozenset((
     "lapsed", "void", "invalid", "pending", "tbd", "todo", "unknown", "awaiting", "waiting",
     "declined", "maybe", "perhaps", "conditional", "conditionally", "tentative", "tentatively",
     "provisional", "draft", "unverified", "proposed", "superseded", "disputed", "inactive",
-    "disabled", "obsolete", "stale", "unaccepted", "never", "nobody", "none", "not"))
+    "disabled", "obsolete", "stale", "unaccepted", "never", "nobody", "none", "not",
+    "no", "no-one", "noone",
+    "retract", "rescind", "lapse", "lapses", "decline", "declines", "dispute", "disputes",
+    "invalidate", "invalidated", "revoking", "revokes", "rejects", "rejecting", "denies", "denying",
+    "expiring", "expires", "withdrew", "withdrawing", "cancelling", "cancels", "refusing",
+    "refuses", "voided", "terminated", "nullified", "revocation", "rejection", "denial", "expiry"))
 _BY_NAME_SPAN_RE = re.compile(rf"(?i:\bby)\s+({_NAME})")
 
 
@@ -514,17 +519,29 @@ def _refuses(token):
     return token in NOT_ACCEPTED or token.startswith(NOT_ACCEPTED_STEMS)
 
 
+def _name_forms(word):
+    """The forms of one name word that are checked against NAME_REFUSAL_FORMS:
+    each `-` part, then the word whole and joined ("No-one": no, one, no-one, noone)."""
+    word = word.lower()
+    return [*word.split("-"), word, word.replace("-", "")]
+
+
 def _refusal(text):
-    """The word that refuses an acceptance cell, or None. Outside the `by` name a
-    token refuses as a NOT_ACCEPTED word or by a NOT_ACCEPTED_STEMS prefix; inside
-    it, only as a whole NAME_REFUSAL_FORMS word."""
+    """The word that refuses an acceptance cell, or None. A whole refusal word is
+    reported before a stem match, so two `by` clauses name the word that refused
+    ("accepted by Bob by Denise Revoked" -> revoked, not denise). Outside the
+    first `by` name a token refuses as a NOT_ACCEPTED or NAME_REFUSAL_FORMS word,
+    or by a NOT_ACCEPTED_STEMS prefix; inside it, only as a NAME_REFUSAL_FORMS
+    word (`n`, `na` and `false` stay names there: Matthew N Badali, Na-Young)."""
     span = _BY_NAME_SPAN_RE.search(text)
     name = span.group(1) if span else ""
     outside = text[:span.start(1)] + " " + text[span.end(1):] if span else text
-    for word in re.findall(r"[a-z]+(?:/[a-z]+)?", outside.lower()):
-        if _refuses(word):
-            return word
-    return next((w for w in re.findall(r"[a-z]+", name.lower()) if w in NAME_REFUSAL_FORMS), None)
+    tokens = re.findall(r"[a-z]+(?:/[a-z]+)?", outside.lower())
+    whole = [t for t in tokens if t in NOT_ACCEPTED or t in NAME_REFUSAL_FORMS]
+    whole += [f for w in name.split() for f in _name_forms(w) if f in NAME_REFUSAL_FORMS]
+    if whole:
+        return whole[0]
+    return next((t for t in tokens if _refuses(t)), None)
 
 
 def _header_col(header, words):
