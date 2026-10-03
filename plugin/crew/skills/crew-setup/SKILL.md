@@ -173,6 +173,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "environments": { "nonProd": [], "prodUnattended": false },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
+  "git": { "forbiddenTrailers": [] },
   "scope": { "mode": "off", "allowCliApproval": false },
   "autopilot": { "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk" },
   "route": { "enabled": false }

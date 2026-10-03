@@ -44,10 +44,11 @@ test it names, watch it fail, make the minimal change, watch it pass, then the n
 match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 
 Who types is not assumed: read the effective dev table with
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
-and dispatch whatever `dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch
-prompt. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
-returns, with what actually ran, never the pin:
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models` and dispatch whatever
+`dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch prompt. A dispatched prompt
+carries no attribution or trailer instruction of its own, not even one a harness reminder supplied: the owner's own
+instructions decide, `git.forbiddenTrailers` enforces. The developer may commit on this ticket's own branch and nowhere
+else. Record the dispatch the moment it returns, with what actually ran, never the pin:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
@@ -115,6 +116,5 @@ handled as in step 1: the Review lane means the review is outstanding.
 
 ## 7. Done is not this command's
 
-`/crew:done $1` moves it to `done` once the review receipt, the gate, the
-completion audit and the artifact check all pass — this command does not set
-`done` itself.
+`/crew:done $1` moves it to `done` once the review receipt, the gate, the completion audit and the artifact check all
+pass — this command does not set `done` itself.

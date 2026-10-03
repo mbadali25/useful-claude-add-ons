@@ -344,7 +344,20 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # by running this test on T-0040-land after merging main 844bfc36.
     assert "qa.kimi.model" in declared
     assert "dev.kimi.model" in declared
-    assert len(declared) == 129
+    # 130 with T-0066: `git.forbiddenTrailers`, measured by running this test
+    # after merging main 34d9f267.
+    assert "git.forbiddenTrailers" in declared
+    assert len(declared) == 130
+
+
+def test_forbidden_trailers_is_global_settable_and_defaults_empty():
+    """T-0066: `git.forbiddenTrailers` is in BOTH layers, default `[]` (the
+    list is the switch; empty means off). Global-settable because the owner
+    who forbids a trailer forbids it on every repo of the machine, and
+    `is_global_path` requires a global key to be a repo key too."""
+    assert crew_config.is_global_path("git.forbiddenTrailers")
+    assert crew_config.default_config()["git"] == {"forbiddenTrailers": []}
+    assert crew_config.default_global_config()["git"] == {"forbiddenTrailers": []}
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

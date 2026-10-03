@@ -65,6 +65,18 @@ stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh,
 commit, then `/crew:review $1` again, then rerun this command. Documents read
 `not measured`, which is `/crew:docs`'s judgement, not a pass or a refusal.
 
+## Report — forbidden trailers (never refuses)
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_trailers.py --check --root . --ticket "$1"
+```
+
+Copy its lines verbatim into the close note and the PR body. `clean`, a
+`FINDING <sha> <trailer>` (a commit carrying a trailer `git.forbiddenTrailers`
+lists) or `unknown - <why>`: this report never refuses done and crew
+never rewrites the commits — a rewrite is the owner's decision, and it stales
+check 1.
+
 ## On all four passing
 
 1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
