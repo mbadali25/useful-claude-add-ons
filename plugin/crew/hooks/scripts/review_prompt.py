@@ -10,8 +10,13 @@ script writes the part of it that is about the ticket rather than the diff:
     files-mode ticket with no spec.md yet, `.work/tickets/<id>.md`);
   - the plan, `.work/tickets/<id>/plan.md`, in full;
   - the test receipts: the verify gate's last verified commit
-    (`.crew/.verify-verified-at`) against HEAD, and every rule its record
-    (`.crew/.verify-gate.record.json`) still lists as NOT VERIFIED.
+    (`.crew/.verify-verified-at`) against HEAD and, when that does not show
+    HEAD clean, the local gate's answer (`review_gate.gate_state`: `Local
+    gate: VERIFIED`, `No verify gate`) or, only when that is UNVERIFIED or
+    UNKNOWN, the CI receipt for HEAD -- the upgrade `review_run.py` reserves
+    on -- and every rule the local record (`.crew/.verify-gate.record.json`)
+    still lists as NOT VERIFIED (marked superseded when the receipt covers
+    HEAD).
 
   - the development standards checklist (T-0085): the effective standards
     set's ids, rules and self-check questions from `crew_standards.
@@ -47,8 +52,11 @@ import re
 import subprocess
 import sys
 
+import ci_receipt
 import crew_standards
 import recurring_findings
+import review_checks
+import review_gate
 import review_verdict
 import verify_record
 
@@ -161,20 +169,79 @@ def _head(root):
         return ""
 
 
+REASON_MAX = 400
+
+
+def _reason(text):
+    """A gate reason as ONE line: control characters escaped (a git or gh
+    stderr carried in a reason can be multi-line, and a line of its own in
+    the prompt reads as an instruction) and capped at REASON_MAX."""
+    one = review_checks.one_line(str(text))
+    return one if len(one) <= REASON_MAX else one[:REASON_MAX] + "... (truncated)"
+
+
+def _ask(question, root):
+    """(state, reason) from a gate question; a call that raises is UNKNOWN,
+    never a pass."""
+    try:
+        return question(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return review_gate.UNKNOWN, f"{exc.__class__.__name__}: {exc}"
+
+
+def _receipt(root):
+    """(state, reason) of the CI receipt alone (`ci_receipt.check`), never
+    the local gate. `accepted_state` is NOT asked here: it re-asks
+    `gate_state`, so a local pass that lands between two calls (the Stop gate
+    finishing while the prompt is built) would come back VERIFIED and be
+    printed as a receipt (review r2). This is the same upgrade
+    `accepted_state` makes, on the ONE local answer this block already holds."""
+    state, reason, _ = ci_receipt.check(root)
+    return state, reason
+
+
 def _receipts_block(root, manifest):
+    """The verify evidence, as the gate that reserved this round judged it
+    (docs/review/08, defect 1). A clean local pass on HEAD needs no question.
+    Otherwise the LOCAL gate is asked ONCE (`review_gate.gate_state`): a
+    dirty tree its fingerprint covers is a local VERIFIED, and a repo with no
+    gate is NO_GATE -- neither is a receipt, and neither is MISSING. Only a
+    local UNVERIFIED or UNKNOWN asks the CI receipt (`_receipt`), the upgrade
+    `review_gate.accepted_state` makes for `review_run.py`; then, and only
+    then, the local record's rows are marked superseded, because a receipt is
+    a `--all` run with nothing outstanding."""
     out = ["== Test receipts (verify gate) =="]
     marker = os.path.join(root, ".crew", ".verify-verified-at")
     verified = (_read(marker) or "").strip()
     head = _head(root)
-    if not verified:
-        out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has not recorded "
-                   "a clean pass in this checkout.")
-    elif verified == head and not manifest.get("dirty"):
-        out.append(f"Last clean verify pass: {verified[:12]} = HEAD, tree clean.")
+    receipt = False
+    if verified and verified == head and not manifest.get("dirty"):
+        out.append(f"Last clean verify pass: {_reason(verified[:12])} = HEAD, tree clean.")
     else:
-        out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
-                   f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after that "
-                   "pass have NOT been through the gate.")
+        local, local_why = _ask(review_gate.gate_state, root)
+        if local == review_gate.VERIFIED:
+            out.append(f"Local gate: VERIFIED - {_reason(local_why)}")
+        elif local == review_gate.NO_GATE:
+            out.append(f"No verify gate: {_reason(local_why)}")
+        else:
+            r_state, r_reason = _ask(_receipt, root)
+            if r_state == review_gate.VERIFIED:
+                receipt = True
+                out.append(f"CI receipt: VERIFIED for HEAD - {_reason(r_reason)}")
+            else:
+                if not verified:
+                    out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has "
+                               "not recorded a clean pass in this checkout.")
+                else:
+                    out.append(f"Last clean verify pass: {_reason(verified[:12])}; HEAD is "
+                               f"{head[:12]}"
+                               f"{', tree dirty' if manifest.get('dirty') else ''}. Changes "
+                               "after that pass have NOT been through the gate.")
+                # Each part capped on its own: one cap over both let a long
+                # local reason (up to three record rows) cut the receipt's
+                # answer off entirely (review r3).
+                out.append(f"Gate answer for HEAD: {local}: {_reason(local_why)}; "
+                           f"CI receipt {r_state}: {_reason(r_reason)}")
     state, rules = verify_record.read_record(root)
     shown = verify_record.RECORD_PATH.replace("\\", "/")
     if state == "absent":
@@ -186,9 +253,11 @@ def _receipts_block(root, manifest):
     elif not rules:
         out.append("Per-rule record: no rule is outstanding.")
     else:
+        prefix = "Local record, superseded for HEAD by the CI receipt: " if receipt else ""
         for info in rules.values():
             if isinstance(info, dict):
-                out.append(f"NOT VERIFIED: {info.get('label', '?')}: {info.get('reason', '')}")
+                out.append(f"{prefix}NOT VERIFIED: {info.get('label', '?')}: "
+                           f"{info.get('reason', '')}")
     return out
 
 
