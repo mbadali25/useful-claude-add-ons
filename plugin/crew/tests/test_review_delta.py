@@ -320,6 +320,18 @@ def test_marketplace_bump_of_the_bumped_plugin_keeps_the_receipt(world):
     assert ".claude-plugin/marketplace.json" in out, out
 
 
+def test_untracked_metrics_file_written_by_the_review_keeps_the_fast_path(world):
+    """review_run appends .crew/metrics.md after every round; in a repository
+    that does not gitignore it, an untracked file never lands, so check E's
+    third range (the index) does not see it."""
+    _review(world)
+    _write(world.lane, ".crew/metrics.md", "| a review row |\n")
+
+    code, out = _check(world)
+
+    assert code == 0 and out.startswith("review-ledger: receipt current:"), out
+
+
 # --------------------------------------------------------------- must stale
 
 def test_ticket_file_edited_after_review_committed_is_stale(world):

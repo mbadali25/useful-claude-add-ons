@@ -15,7 +15,8 @@ return. The bundle leaves `.work/`, `graphify-out/` and `.crew/metrics.md` out
 (`review_patch.EXCLUDED`), so a change there is invisible to its hash. Three
 ranges are diffed on those paths alone: receipt base -> reviewed head (what
 the reviewer was never shown), reviewed head -> HEAD (what lands) and reviewed
-head -> the working state (what the fast path judges). Every entry must be
+head -> the index (what the next commit lands; untracked files never do, and
+crew writes some there itself, so not the `add -A` working state). Every entry must be
 one of `EXCLUDED_EXCEPTIONS`, status M, mode 100644 both sides, not binary.
 
 THE DELTA GATE (`judge`), in order:
@@ -156,7 +157,8 @@ def _blob(root, blob_id):
 def working_tree(root):
     """The working state as a tree id: the temporary-index `add -A` +
     `write-tree` `review_patch.compute` builds, never touching the real index.
-    Used by check E only (the fast path's target)."""
+    Kept for the sabotage control that judges the working state instead of
+    HEAD's tree; the gate itself never reads it."""
     real_index = _ok(root, ["rev-parse", "--git-path", "index"]).strip()
     if not os.path.isabs(real_index):
         real_index = os.path.join(root, real_index)
@@ -170,6 +172,16 @@ def working_tree(root):
         return _ok(root, ["write-tree"], env=env).strip()
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def index_tree(root):
+    """The real index as a tree id (`git write-tree`, which reads the index
+    and writes only tree objects): what the next commit would land. Check E
+    judges this rather than the `add -A` working state, because crew itself
+    writes untracked files under the excluded paths - `.crew/metrics.md` after
+    every review, `.work/` ticket files - in a repository that does not
+    gitignore them, and an untracked file never lands."""
+    return _ok(root, ["write-tree"]).strip()
 
 
 def tree_bundle_sha256(root, base, tree):
@@ -227,7 +239,7 @@ def excluded_check(root, receipt, row):
         head_tree = _tree(root, head)
         ranges = ((_tree(root, base), head_tree, "receipt base -> reviewed head"),
                   (head_tree, _tree(root, "HEAD"), "reviewed head -> HEAD"),
-                  (head_tree, working_tree(root), "reviewed head -> working state"))
+                  (head_tree, index_tree(root), "reviewed head -> index"))
         for a, b, label in ranges:
             problem = _excluded_problem(root, a, b, label)
             if problem:
