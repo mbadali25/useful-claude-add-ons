@@ -282,7 +282,7 @@ Then inside Claude Code:
 /plugin install crew@my-marketplace
 ```
 
-Verify with `/help` — you should see `/crew:brainstorm`, `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`, `/crew:status`, `/crew:migrate`, and `/crew:onboard`.
+Verify with `/help` — you should see `/crew:brainstorm`, `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`, `/crew:status`, `/crew:help`, `/crew:migrate`, and `/crew:onboard`.
 
 Plugin components other than skills are cached at load time. After editing agents, hooks, or `.mcp.json`, run `/reload-plugins` or restart.
 
@@ -907,6 +907,20 @@ Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of
 
 **Approval and questions policies** (T-0010). `autopilot.approval` and `autopilot.questions` are `human`, `self` or `risk` (default `risk`); any other value reads as `human`, with a warning, and `human` always stops. At the plan-approval phase autopilot runs `crew_autopilot.py approve --root . --ticket <id>`: `self` approves at any risk, `risk` only when the spec's header says `risk: low` (a missing or unparseable risk is `high`). **Every setting also needs `scope.allowCliApproval: true`**, a readable config (a `.crew/config.json` that exists but cannot be read as a JSON object, or an `autopilot` value that is not an object, reads both policies as `unknown` — could not tell — so `approve` refuses, a question stops and autopilot reads as off; an absent file or block still reads the defaults), autopilot armed, and a readable review ledger. A NEEDS_REPLAN ledger does not refuse: approving a different successor plan is its only way out, and the ledger still refuses a plan approved before (`crew_autopilot.py approve` exits 3 and says so). The receipt says `approved_via: "autopilot"`, the command prints `self-approved <id> under approval=<policy>, risk=<risk>`, and `crew_ticket.accepted` re-asks the policy on every read — a later spec edit, `approval: human` or `allowCliApproval: false` demotes it. The scope guard allows only that bare command, only while the policy says yes; `crew_ticket.py approve` stays refused. Autopilot never uses the group confirm ("Approving several tickets at once"): that stays the owner's own prompt, and `crew_ticket.approve` refuses an `autopilot` approval that carries a group's hashes, whatever the policy says. At an open question autopilot researches it (crew:explorer, crew:researcher), writes `.work/tickets/<id>/questions.md` — 2-4 options per question, the recommendation first, each with a `Cost:`, plus a `Research:` line — and `crew_autopilot.py questions-check --root . --ticket <id>` validates it and prints `action=take|stop`: `self` takes the recommendation, `risk` only on `risk: low`, `human` stops. A taken answer is recorded as `taken: Option <id> by autopilot (<policy>)`, naming the policy that took it; the check refuses one naming a policy that never takes (only `self` or `risk` does), and every `taken:` line while the policy in force says `stop` — a later switch between `self` and `risk` does not void an earlier honest record. Every self-approval and taken answer is reported by name.
 
+### Contextual help: /crew:help
+
+`/crew:help` (T-0025) answers "what now?" from the files on disk, in at most 8 lines, and never runs what it names:
+
+```
+where: T-0042 (from active-ticket) - phase approve
+waiting on: owner - types /crew:approve T-0042
+next: you type /crew:approve T-0042 - T-0042 has no approved plan. ...
+also: /crew:autopilot status T-0042 - this ticket's standing
+also: /crew:plan T-0042 - change the plan before approving it
+```
+
+State comes only from autopilot's reader (`crew_autopilot.status`, which composes `resume_target` and `next_phase`), so `/crew:help`, `/crew:autopilot status` and `continue` never disagree about the phase. A stop's `next:` is what **you** type; approval is always "you type `/crew:approve <id>`". Several open tickets and no pointer are listed, never picked: `/crew:help <id>` shows one. `/crew:help <command>` prints the command's purpose, when to use it, its arguments and what comes next; `/crew:help <question>` (`how do i write the spec`) resolves through the plain-text routing table below - the same `crew_route.PHRASES`, no second table - and an unknown word lists the core commands. `/crew:help commands` lists every command by group: **core** (brainstorm, spec, plan, approve, implement, review, done, fix, autopilot, status, help), then the ones reached through help or autopilot, the merge candidates, the specialists and the two removal stubs. The grouping is advisory; nothing is hidden or renamed (TODO.md, "crew command surface - owner decision"). The script is `hooks/scripts/crew_help.py where|about`; it writes nothing and exits 0.
+
 ### Plain-text lifecycle: short prompts that name a command
 
 With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-text prompt can stand in for a lifecycle command. crew's UserPromptSubmit context hook matches the **whole** prompt against a small table (`hooks/scripts/crew_route.py`, `PHRASES`) and, on a match, puts one `crew route:` line first in that turn's context: the `/crew:<command> <ticket>` whose procedure Claude should run through the Skill tool. The hook runs nothing and blocks nothing, and the command's own checks still decide.
@@ -921,6 +935,8 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 | `close it`, `close it out`, `mark it done` | `/crew:done <ticket>` |
 | `continue`, `keep going`, `carry on` | whatever `crew_autopilot.next_phase` names from disk for the ticket |
 | `status`, `crew status` | `/crew:status` |
+| `help`, `what now`, `what's next`, `where are we` | `/crew:help` (T-0025) |
+| `how do i <x>`, `how do i use <x>` | `/crew:help <x>` - never for approval |
 
 `it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
 
@@ -2748,20 +2764,23 @@ CONFIG.md §17 has the table and the reasoning.
 
 | Command | Purpose |
 |---|---|
-| `/crew:ticket` | Removed in 1.0 — a stub that says to use `/crew:brainstorm` then `/crew:spec` |
-| `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
+| `/crew:help [command\|question\|commands\|<id>]` | **Start here.** With nothing: where you are (ticket, phase, what it waits on), the one command to type next and why, and 2-3 related ones, in at most 8 lines. With a command or a question (`how do i write the spec`): what it is for, when, its arguments and what comes next. `commands`: every command by group, core first. Read-only, and it never runs what it names - see "Contextual help: /crew:help" |
 | `/crew:brainstorm <what needs doing>` | crew 1.0 lifecycle: brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:spec <id>` | Fill the ticket contract — Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
+| `/crew:plan <id> [--approve]` | Turn an approved spec into a step-by-step plan and ask you to `/crew:approve` it; the independent design opinion is now its optional step 3 |
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt; several ids or a range go pending until your `/crew:approve --confirm` — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
+| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run] [<id>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020 — see "Autopilot" |
-| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
+| `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats |
+| **More** (see `/crew:help commands`) | |
+| `/crew:ticket` | Removed in 1.0 — a stub that says to use `/crew:brainstorm` then `/crew:spec` |
+| `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
 | `/crew:init` | Guided phased setup, resumable |
-| `/crew:plan <id> [--approve]` | Turn an approved spec into a step-by-step plan and ask you to `/crew:approve` it; the independent design opinion is now its optional step 3 |
 | `/crew:runbook <name\|--audit\|--verify>` | Write, verify, or audit operational runbooks |
 | `/crew:docs [--audit]` | Update the documents this change should touch |
 | `/crew:handoff` | Write the handoff note before clearing |
@@ -2776,14 +2795,13 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
-| `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats |
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-36 commands.<!-- claim: plugin-commands:crew -->
+37 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
