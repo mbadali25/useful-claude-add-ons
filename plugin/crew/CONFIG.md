@@ -144,7 +144,7 @@ the heal path creates nothing there again.
 The writers never follow it: `crew_platform` (heal and `platform-sync`),
 `crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
 keep their own-path behaviour, and the heal path creates nothing in a worktree
-that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
+that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
 routed yet and read only the worktree's own file.
 
 ## 2. The invariant
@@ -674,10 +674,10 @@ them:
 
 ---
 
-## 10. Global-settable keys — 68
+## 10. Global-settable keys — 70
 
-68 measured (`leaf_paths(default_global_config())`, crew 1.0.46); the table
-below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+70 measured (`leaf_paths(default_global_config())`, T-0051); the table
+below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
 global-settable and not tabled here.
 
@@ -715,11 +715,13 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `secondOpinion.sendsCode` | boolean | `false` |
 | `memory.mode` | string | `"repo"` |
 | `memory.vaultPath` | path or `null` | `null` |
-| `notify.provider` | string | `"none"` |
+| `notify.provider` | `telegram` \| `teams` \| `none` \| `null` (a repo `null` inherits the global one; a repo `"none"` opts out) | `null` |
 | `notify.urlEnv` | string or `null` | `null` |
-| `notify.tokenEnv` | string or `null` | `null` |
-| `notify.chatId` | string or `null` | `null` |
-| `notify.events` | list (a leaf) | `["phase", "gate", "waiting"]` |
+| `notify.tokenEnv` | string or `null` (a null one may come from the notify skill's `bot_token_env`) | `null` |
+| `notify.chatId` | string or `null` (likewise from its `chat_id`; `-1001234567890` counts as unset) | `null` |
+| `notify.events` | list (a leaf): `deploy`, `question`, and `blocker` (reserved until T-0060); `gate`, `waiting`, `phase`, `review`, `done` are mapped with a notice | `["blocker", "deploy", "question"]` |
+| `notify.realertHours` | number: the same event + ticket + reason is sent once per window | `6` |
+| `notify.questionTypes` | list of `notification_type` strings, or `null` for the built-in five (`crew_notify.QUESTION_TYPES`) | `null` |
 | `install.policy` | `manual` \| `ask` \| `auto` (narrower layer wins, §15) | `"manual"` |
 | `pm.enabled` | boolean | `true` |
 | `pm.mode` | string | `"adaptive"` |

@@ -72,9 +72,3 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 
 3. Delete `.work/HANDOFF.md` if present — a stale handoff reads as current to
    the next session, the same rule `/crew:work`'s old step 14 states. <!-- deliberate -->
-4. If `notify.provider` is not `none`:
-   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
-
-Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing"
-is the reason nobody trusts a notification channel — the same line `/crew:work`
-opened with. <!-- deliberate -->

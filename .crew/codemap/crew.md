@@ -211,6 +211,14 @@ a handoff skeleton), it is a visible duplicate, so `notify.sh` and
 emitting: one atomic `O_CREAT|O_EXCL` file per generation
 (`plugin/crew/hooks/scripts/event_claim.py:29-38`), so both flavours racing
 for the same event have exactly one winner.
+Since T-0051 the two notify twins are thin wrappers: they keep the claim and
+hand the payload to `plugin/crew/hooks/scripts/crew_notify.py` (`hook`,
+`send`, `config`), which owns the config layering (`resolve_config`, so a
+lane worktree reads the main checkout's config), the `notification_type`
+filter, the subject line, the dedupe and episode records under
+`<git-common-dir>/crew/notify/`, and the Telegram/Teams send. DERIVED:
+`plugin/crew/hooks/scripts/notify.sh` and `plugin/crew/hooks/scripts/notify.ps1`
+name no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
 
 **Context-watch's forced-continuation marker is now session-scoped, not
 repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:59-60` defines

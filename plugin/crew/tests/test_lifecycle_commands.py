@@ -92,6 +92,7 @@ EXPECTED_CLI = {
                      "crew_autopilot.py next --root .",
                      "crew_autopilot.py route --root .",
                      "crew_autopilot.py status --root ."),
+    "promote.md": ("crew_notify.py send --root . --event deploy",),
 }
 
 

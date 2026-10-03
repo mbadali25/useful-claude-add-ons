@@ -959,7 +959,7 @@ instead of `block`, `scope.mode`, `scope.allowCliApproval`, `roleWrites` and
 `cloudGuard` the same way. Ratcheted guard keys still take the narrower of repo
 and machine-global. A lane that wants its own guards writes its own
 `.crew/config.json`, and that file then wins whole. **Not yet covered:** the shell
-and PowerShell readers of `.crew/config.json` (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) still read only the
+and PowerShell readers of `.crew/config.json` (`verify-gate.sh`, `_common.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) still read only the
 worktree's own file.
 
 ### `/crew:config` — see where a value comes from, and set the global file
@@ -1752,19 +1752,39 @@ Symlink `.crew/codemap` into the vault rather than copying, so divergence is nev
 **Outbound only.** crew sends messages; it never reads a channel and never takes
 instructions from one.
 
+Set it once in the machine-global `~/.claude/crew/config.json`; a repo's
+`.crew/config.json` overrides any key it sets, a repo `null` inherits, and a repo
+`"provider": "none"` opts out on purpose.
+
 ```json
 "notify": {
-  "provider": "teams",
-  "urlEnv": "CREW_TEAMS_WEBHOOK",
-  "events": ["phase", "gate", "waiting"]
+  "provider": "telegram",
+  "tokenEnv": "CREW_TELEGRAM_TOKEN",
+  "chatId": "-1009876543210",
+  "events": ["blocker", "deploy", "question"],
+  "realertHours": 6
 }
 ```
 
-Events: `phase` (an init phase completed or blocked), `gate` (verification
-failed), `review` (BLOCK/FIX counts), `waiting` (Claude needs you), `done`
-(ticket finished). Opt into few — a channel that pings on everything gets muted
-within a week, and a muted channel is worse than none because you believe you
-are covered.
+Two events send, each led by a subject that says what happened (T-0051):
+
+- `deploy` — every `/crew:promote` result: `Promotion passed` (silent) or
+  `Deploy FAILED` (loud).
+- `question` — Claude Code stopped and is waiting on you: `Question` (an
+  AskUserQuestion or an elicitation) or `Needs permission` (any other tool),
+  from the `Notification` hook's `notification_type` (`notify.questionTypes`
+  overrides the built-in five). An idle "finished" prompt never pings. The line
+  says what it is waiting on — the pending question, or the tool — read from
+  the session transcript, capped and redacted. One ping per waiting episode:
+  no repeat until you have replied in that session.
+
+`blocker` is reserved until T-0060 and sends nothing yet. The per-phase,
+per-review and per-ticket pings are retired; an old config's `gate` reads as
+`deploy`, `waiting` as `question`, and `phase`/`review`/`done` as `blocker`, each
+with a notice. The same message is sent once per `realertHours`, and both that
+record and the episode record advance only on a confirmed send.
+`python3 hooks/scripts/crew_notify.py config --root .` prints what this repo
+runs with, and why.
 
 ### Teams
 
@@ -1788,11 +1808,15 @@ Yes, it's a bot — created through another bot. Message **@BotFather**, run
 conversation with you. Read the chat id from `getUpdates`; group ids are negative,
 which is normal rather than a bug.
 
-Export `CREW_TELEGRAM_TOKEN` and put the chat id in `notify.chatId`.
+Export `CREW_TELEGRAM_TOKEN` and put the chat id in `notify.chatId`. If the
+notify skill is already set up on this machine, its `telegram.bot_token_env` and
+`chat_id` fill a null `tokenEnv` / `chatId` (read-only; its example chat id
+`-1001234567890` counts as unset).
 
 ### Payload discipline
 
-One line, truncated at 280 characters. No diffs, no findings text, no ticket
+One line, the reason cut at 280 characters and the transcript excerpt at 200,
+every line redacted first. No diffs, no findings text, no ticket
 bodies, no error output that might carry a connection string. A chat channel
 syncs to phones, is searchable by people outside the project, and in Teams may be
 retained under policies you don't control. Send the fact; the detail stays in the
@@ -2725,7 +2749,7 @@ with three hooks registered and unlisted.
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
-| `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
+| `notify.sh` / `.ps1` | `Notification` (`hook`) | Thin wrappers around `crew_notify.py`: a `question` ping for the permission and elicitation types only, never `idle_prompt`, one per waiting episode. `/crew:promote` calls `crew_notify.py send --event deploy` itself. Outbound only; never reads. |
 
 Both flavours are registered **on every event, on purpose** — not because
 each fires everywhere, but because `hooks.json` cannot know which shell a

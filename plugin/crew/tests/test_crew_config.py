@@ -76,6 +76,26 @@ def test_default_global_config_matches_the_committed_template():
     assert actual == expected
 
 
+def test_notify_new_keys_survive_filter_global():
+    """crew_notify.py reads `notify.realertHours` and `notify.questionTypes` from
+    the global layer too (T-0051); a key `filter_global` prunes takes effect
+    nowhere."""
+    kept, ignored = crew_config.filter_global(
+        {"notify": {"realertHours": 2, "questionTypes": ["permission_prompt"]}})
+
+    assert (kept["notify"], ignored) == (
+        {"realertHours": 2, "questionTypes": ["permission_prompt"]}, [])
+
+
+def test_repo_template_notify_provider_is_null():
+    """A repo `"none"` is an explicit opt-out that beats the global provider, so
+    the template /crew:init writes leaves it null and inherits instead."""
+    with open(_TEMPLATE_PATH, encoding="utf-8") as handle:
+        written = json.load(handle)
+
+    assert written["notify"]["provider"] is None
+
+
 def test_the_global_template_is_not_a_copy_of_the_repo_one():
     """`tracker`, `jira.project`, `obsidian.boardDir`, `graph.out` and
     `platform.*` are facts about one checkout. Shipping them globally invites

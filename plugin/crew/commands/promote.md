@@ -275,7 +275,14 @@ including failures. Then:
   production. Do not resume mid-sequence afterwards; the whole sequence runs
   again from gate 1.
 
-Then send `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh gate "<env> <sha> - <pass|FAILED at gate N>"`.
+Then, for every result - a pass and a failure alike - send one line:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py send --root . --event deploy --outcome <pass|fail> --reason "<env> <sha> - <pass|FAILED at gate N>"
+```
+
+A pass goes silent and a failure goes loud (`Promotion passed` / `Deploy FAILED`).
+The result, never the gate output: the log stays in `.work/PROMOTIONS.md`.
 
 ## What is enforced, and what is not
 

@@ -313,12 +313,17 @@ def default_config():
             "ttlMinutes": 120,
             "maxTtlMinutes": 480,
         },
+        # `provider` is null, not "none": a repo that leaves it null inherits the
+        # machine-global provider (`null_shadows`), and an explicit repo "none" is
+        # a deliberate opt-out that wins. crew_notify.py reads this block (T-0051).
         "notify": {
-            "provider": "none",
+            "provider": None,
             "urlEnv": None,
             "tokenEnv": None,
             "chatId": None,
-            "events": ["phase", "gate", "waiting"],
+            "events": ["blocker", "deploy", "question"],
+            "realertHours": 6,
+            "questionTypes": None,
         },
         # Left nulled deliberately -- the platform-sync SessionStart hook
         # fills these in on first run and repairs them on every later one.
@@ -496,11 +501,13 @@ def default_global_config():
         },
         "memory": {"mode": "repo", "vaultPath": None},
         "notify": {
-            "provider": "none",
+            "provider": None,
             "urlEnv": None,
             "tokenEnv": None,
             "chatId": None,
-            "events": ["phase", "gate", "waiting"],
+            "events": ["blocker", "deploy", "question"],
+            "realertHours": 6,
+            "questionTypes": None,
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         # `context.autoClear` and NOTHING ELSE under `context`. How a terminal

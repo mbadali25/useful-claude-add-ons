@@ -4,6 +4,41 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.71: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
+
+- **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always
+  exits 0) replaces the send logic that `notify.sh` and `notify.ps1` each carried. The two are now thin
+  wrappers that keep `event_claim.py`'s one-sender election and hand the payload over.
+- **Two events send.** `deploy`: every `/crew:promote` result, `Promotion passed` silent and `Deploy FAILED`
+  loud. `question`: Claude Code stopped and is waiting on you, from the `Notification` hook filtered on
+  `notification_type` (`permission_prompt`, `worker_permission_prompt`, `elicitation_dialog`,
+  `elicitation_url_dialog`, `agent_needs_input`, or `notify.questionTypes`). `idle_prompt` never pings; an
+  unknown or missing type stays quiet and is logged to `<git-common-dir>/crew/notify/unrecognised.log`.
+  `blocker` is reserved until T-0060: accepted in `notify.events`, sends nothing.
+- **Every line leads with a subject** (`Question`, `Needs permission`, `Promotion passed`, `Deploy FAILED`),
+  then `[<repo>/<branch>]` - the ticket on a detached HEAD, never `HEAD` - the active ticket and its phase, and
+  what Claude is waiting on: the payload's message plus the pending question, the pending tool, or the last
+  assistant text, read from the transcript, capped at 200 characters and redacted. A fixed "Claude is waiting
+  on you" is never sent.
+- **Measured, not assumed** (a live `Notification` capture on Claude Code 2.1.285): a Bash permission prompt and
+  an AskUserQuestion both arrive as `permission_prompt` with the fixed message "Claude needs your permission",
+  naming neither tool, so the tool is read from the transcript's pending `tool_use`.
+- **Less spam.** One ping per waiting episode (`session_id` + `prompt_id`); the same event + ticket + reason
+  once per `notify.realertHours` (default 6). Both records advance only on a confirmed send. Telegram's 429
+  `retry_after` is honoured once inside a 10 s budget, sends are paced a second apart, and text goes as
+  escaped HTML - ported from the notify skill's `tg.py`, not imported.
+- **Retired:** the `/crew:init` per-phase, `/crew:review` per-round and `/crew:done` per-ticket pings, and
+  both `context-watch` pings. An old config still works: `gate` reads as `deploy`, `waiting` as `question`,
+  `phase`/`review`/`done` as `blocker`, each with a notice, never a silent drop.
+- **Config.** The machine-global `notify` block is honoured (the twins read only `.crew/config.json` before);
+  a repo value overrides it, and an explicit repo `"provider": "none"` opts out with a notice. The repo and
+  global templates now write `provider: null`. The notify skill's `telegram.bot_token_env` / `chat_id` fill a
+  null `tokenEnv` / `chatId`, read-only; its example chat id counts as unset. New keys `notify.realertHours`
+  and `notify.questionTypes` (global-settable: 70 leaves).
+- **Tests.** `test_crew_notify.py`, `test_crew_notify_hooks.py`, the updated twin tests, and
+  `sabotage_notify.py` (`NOTIFY_MUTATIONS`, registered in `sabotage.py`): one mutation per filter branch, each
+  red on its named test. `.crew/verify.json` maps the sender and both wrappers to them.
+
 ### Fixed — `crew` 1.0.70: a silent python candidate no longer writes a red error block on every Windows hook (T-0097)
 
 - **What changed.** `Resolve-CrewPython`, which is byte-identical in all 11 PowerShell hook carriers

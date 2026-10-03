@@ -99,37 +99,55 @@ def _notify_repo(tmp_path):
     return _crew_repo(tmp_path, {"notify": {"provider": "teams", "urlEnv": "CREW_TEST_TEAMS_URL"}})
 
 
-def _notification(root, message="Claude is waiting on you"):
+def _notification(root, message="Claude needs your permission", prompt="p-1",
+                  ntype="permission_prompt"):
     return {"hook_event_name": "Notification", "session_id": "win-1", "cwd": str(root),
-            "message": message, "transcript_path": str(root / "t.jsonl")}
+            "message": message, "transcript_path": str(root / "t.jsonl"),
+            "notification_type": ntype, "prompt_id": prompt}
 
 
-def _both_notify(root, url, payload):
+def _both_notify(root, url, payload, words=None):
     for flavour in ("sh", "ps1"):
-        _run(flavour, "notify", root, payload, ("waiting", "Claude is waiting on you"),
-             CREW_TEST_TEAMS_URL=url)
+        done = _run(flavour, "notify", root, payload, ("hook",), CREW_TEST_TEAMS_URL=url)
+        if words is not None:
+            words.append(done.stdout.decode("utf-8", "replace").strip())
     return len(_Counter.hits)
 
 
 def test_one_notification_sends_one_ping_across_both_flavours(tmp_path, teams):
+    """One ping, AND the twin stood down at the claim: it never reached
+    crew_notify.py (no result word). crew_notify's own episode rule would
+    also keep a sequential second run quiet, so the ping count alone cannot
+    tell a working claim from a bypassed one; two flavours racing on a real
+    Windows host can both pass that check before either writes."""
     root = _notify_repo(tmp_path)
+    words = []
 
-    assert _both_notify(root, teams, _notification(root)) == 1
+    assert (_both_notify(root, teams, _notification(root), words), words) == (1, ["sent", ""])
 
 
 def test_a_second_different_notification_is_its_own_event(tmp_path, teams):
     root = _notify_repo(tmp_path)
     _both_notify(root, teams, _notification(root))
 
-    assert _both_notify(root, teams, _notification(root, "Permission needed")) == 2
+    assert _both_notify(root, teams, _notification(root, "Permission needed", prompt="p-2")) == 2
+
+
+def test_idle_prompt_sends_nothing_across_both_flavours(tmp_path, teams):
+    root = _notify_repo(tmp_path)
+
+    assert _both_notify(root, teams, _notification(root, "Claude is waiting for your input",
+                                                    ntype="idle_prompt")) == 0
 
 
 def test_a_notify_call_with_no_payload_always_sends(tmp_path, teams):
-    """A command calling notify.sh by hand (/crew:done, /crew:review) is not
-    a hook event and has no twin to race."""
+    """A command calling notify.sh by hand is not a hook event and has no
+    twin to race. Two different results, so crew_notify's dedupe (same
+    event, ticket and reason inside the window) is not what is measured."""
     root = _notify_repo(tmp_path)
-    for _ in range(2):
-        _run("sh", "notify", root, b"", ("done", "T-1 complete"), CREW_TEST_TEAMS_URL=teams)
+    for index in range(2):
+        _run("sh", "notify", root, b"", ("deploy", f"qa abc{index} - pass", "--outcome", "pass"),
+             CREW_TEST_TEAMS_URL=teams)
 
     assert len(_Counter.hits) == 2
 

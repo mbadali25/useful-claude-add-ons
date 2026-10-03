@@ -524,12 +524,9 @@ to.
    never-reviewed without a human reading threads, and an unprotected branch
    cannot refuse a merge on the strength of a comment. Say which form you used.
    If the repo has no PR yet, say that instead of silently skipping the step.
-5. If `notify.provider` is not `none`, send one line:
-   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
-   Counts only. Never the findings themselves — those stay in the repo.
-6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
+5. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
    (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0; a round a Codex limit sent to step 2c is `claude (same-family: codex limit)`, never a bare `claude`)
-7. Name every specialist from step 0 that ran, every one that a matched rule
+6. Name every specialist from step 0 that ran, every one that a matched rule
    asked for but you skipped, and every one that a matched rule named but that
    **is not installed on this machine**. A review that quietly dropped the `dba`
    pass on a migration reads exactly like one that had nothing to find, and a
@@ -540,7 +537,7 @@ to.
    that file, and "this rule has asked for `security-auditor` eleven times and
    never got it" is exactly the evidence that should drive either installing it
    or deleting the rule.
-8. Name the author family **and its source** in the same breath as the reviewer:
+7. Name the author family **and its source** in the same breath as the reviewer:
    `recorded dispatch <role>/<provider>/<model>`, `READ FROM CONFIG - no
    dispatch recorded`, or `STALE RECORD - both families struck` - and a Codex-limit round as `claude (same-family: codex limit)` with the probe's quoted `PROBE_DETAIL`. Which family
    was barred is only checkable by a reader who knows whether the bar rests on a

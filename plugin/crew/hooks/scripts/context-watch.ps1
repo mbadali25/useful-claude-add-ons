@@ -345,8 +345,6 @@ $threshH = $threshold.ToString("N0", $inv)
 $reserveH = $reserve.ToString("N0", $inv)
 $warnPct = [long][math]::Floor($warnAt * 100)
 
-try { & "$PSScriptRoot/notify.ps1" waiting "context $pctH% - writing handoff" 2>$null | Out-Null } catch { }
-
 # Report the absolute numbers, not only the percentage. A budgetTokens that does
 # not match the model in use is otherwise invisible - it just makes the gate
 # fire early forever, and a warning that is always on is one nobody reads.

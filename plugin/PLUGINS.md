@@ -41,7 +41,7 @@ menu item 21 is unticked by default.**
 | `context-watch.sh` / `.ps1` | `Stop` | Reads actual window occupancy from the transcript's last `message.usage` record and asks for a handoff once per session, at the later of `context.warnAt` and `context.reserveTokens` of remaining headroom; instructs a full wrap-up instead if `context.autoWrapUp` is `true`. On the following turn it invokes `auto-clear`, which is inert unless `context.autoClear.enabled` is `true` |
 | `auto-clear.sh` / `.ps1` | called by `context-watch`, not registered | **Experimental, off by default.** Types `/clear` into the *terminal* once the handoff is written — it cannot clear the conversation, it drives the terminal the way a human would. `tmux` targets a pane by id; every other method needs an explicit `windowTitle` and refuses without one. Refusals go to `.crew/.autoclear.log`, because a `Stop` hook's stderr is invisible on exit 0 |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
-| `notify.sh` / `.ps1` | `Notification`, and called directly by commands | One outbound line to Teams or Telegram. Never reads, never accepts instructions |
+| `notify.sh` / `.ps1` | `Notification` | Thin wrappers around `crew_notify.py`: one outbound line to Teams or Telegram when Claude stopped on a question or permission prompt (never `idle_prompt`); `/crew:promote` sends its `deploy` result through the same module. Never reads, never accepts instructions |
 
 **This is what "the moment the plugin is enabled" means in practice: a `SessionStart` hook now fires on every session's `startup`, unconditionally, in a repository with `.crew/config.json` present.** `crew-context`, `platform-sync` and `handoff-read` all run before you type anything, so enabling the plugin changes what the very first turn of every session looks like, not just what later tool calls are allowed to do.
 
@@ -204,7 +204,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-house-style` | House style for a document handed to a human — palette, headings, capitalization, and PDF vs DOCX vs HTML vs plain markdown. Routes generation to `anthropic-office-skills`, `ppt-master` and `visio-diagrams`; falls back to markdown and says so when none is installed |
 | `crew-providers` | Codex as reviewer, Gemini as design partner, and verifying either |
 | `crew-memory` | Obsidian-backed memory |
-| `crew-notify` | Teams and Telegram payload discipline |
+| `crew-notify` | Teams and Telegram setup: the `deploy` and `question` events, their subjects, and payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
 | `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |
 | `find-skills` | Discovering and installing other skills |
