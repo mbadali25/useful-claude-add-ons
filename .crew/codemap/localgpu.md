@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@452b30cc
-verified: 2026-10-01
+anchor: useful-claude-add-ons@586cabe0
+verified: 2026-10-03
 
 # localgpu
 
@@ -1864,3 +1864,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `d95d8b25` (main) and L-0510's `a06dd790` -> `b8d09685` on 2026-10-03 (L-0510 merges origin/main `8123fe74` (L-0574 #323; crew 1.0.140) at `8c04c783`, rerere off; crew 1.0.142 set last at `b8d09685`).** Both provenance histories kept, main's first. In `crew.md` main's L-0574 `review_run.py` citations were re-derived on the merged file (L-0510 adds 8 lines above `finish` and 28 through it): by difflib, and by name for `prereview_gate` `:731` (called `:857`), `standards_gate` `:699` (at `:859`) and `review_ledger.reserve` `:863`, which main's side had stale; L-0510's `review_ledger.py` citations are unchanged. `verification-harness.md`'s `sabotage.py` citations moved +1 (main's import at `:87`; main's side had them stale). History notes were not re-mapped.
 
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
+
+**Re-anchored `452b30cc` -> `586cabe0` on 2026-10-03 (T-0046 merges origin/main `3a064f4f`, L-0510 #318, at `9e6d8b0f`, rerere disabled; crew 1.0.147 re-set at `586cabe0`).** Main's maps were taken in the merge. T-0046 is split under the tooling-PR rule: its change is the new BUDGETS.md claim-number predicate module under the crew hooks and its test, one verify-map rule appended at the end, the version files and CHANGELOG; the hook consumers move to L-0610. No body citation in this map points at a line that moved.
