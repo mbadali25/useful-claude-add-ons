@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.161: the full crew 1.0 guide and a generated configuration reference (T-0048)
+### Added — `crew` 1.0.183: the full crew 1.0 guide and a generated configuration reference (T-0048)
 
 - `plugin/crew/hooks/scripts/crew_keys.py`: one row per config leaf (129 today), each with a
   summary, its allowed values, the file that reads it, and the version it arrived in. A value tuple
@@ -40,6 +40,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   must-allow cases on temp copies), and a `.crew/verify.json` rule running both, the pytest file
   and the two `--check`s. The ten `crew_keys.py` sabotage mutations each went red on their named
   test; they are registered separately, under the harness rule.
+
+### Changed — repository: `_verify/smoke.sh` runs in CI, and a missing `pwsh` is a SKIP
+
+- `marketplace.yml` runs `_verify/smoke.sh` after the Claude Code CLI install. Two of its checks
+  ran nowhere in CI: the crew-setup `canon()` round-trip, and version agreement across
+  `pyproject.toml`, `plugin.json`, `marketplace.json` and the Python-source copies. Found by
+  crew's QA audit (L-0618, item E7). `scripts/gate-runner.py`'s table lists it, so
+  `--check-ci` holds the two in step.
+- `smoke.sh`'s PowerShell check reports SKIP (NOT VERIFIED) when `pwsh` is absent instead of
+  FAIL, as its `claude plugin validate` check already does: a missing tool is not a broken check.
+  CI is unaffected: the runner carries `pwsh`, and the "PowerShell static checks" step fails if
+  it ever does not.
 
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
