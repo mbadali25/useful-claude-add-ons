@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.164: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
+### Changed — `crew` 1.0.182: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
 
 - `crew_autopilot.py next` and `resume` read a ticket's `.work/INDEX.md` row from the main checkout
   (the first record of `git worktree list --porcelain`) when the lane worktree's INDEX has none.
@@ -28,6 +28,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   the sha answer and says so; uncommitted code is never confirmed. Every `save_manifest` caller in
   graphify 0.9.65 and 0.9.74 was re-read first: each runs after a successful `graph.json` write or a
   same-topology confirmation.
+- Windows: a main checkout's INDEX.md outside this checkout is named in the evidence and the
+  no-row reason exactly as `index_source` names it, never re-slashed (`C:/...` against `C:\...`
+  failed two tests on crew-windows-default). `_main_checkout` resolving an aliased spelling of
+  either checkout is pinned by tests; relative evidence paths stay `/`-separated.
+- QA fixes: `commit-refresh` prints `git commit -m ... -- <paths>`, so anything else already
+  staged stays out of the refresh commit; a path that is not printable stops, shown escaped; and
+  when this checkout's INDEX row answers but the main checkout could not be read, the evidence
+  says the two were not compared.
 - T-0063's sixteen sabotage mutations are not in this release: `plugin/crew/tests/sabotage*.py` is
   a harness path, and a harness change lands alone (T-0087), so they follow in their own lane.
   Each was run red against this tree before it was split out.
