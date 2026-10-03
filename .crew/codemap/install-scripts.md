@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6475c41c
+anchor: useful-claude-add-ons@35b9e6d9
 verified: 2026-10-02
 
 ## Re-derive provenance
@@ -1525,3 +1525,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `2594c90f` (L-0555) and `273ec0f6` (main) -> `a81e4382` on 2026-10-02 (L-0555 merges origin/main `0487fc39`: L-0575 #311, crew 1.0.129, and L-0599 #315, gizmoduck 0.5.6; rerere disabled; crew 1.0.132 re-set after the merge).** The anchor, INDEX and provenance hunks conflicted: both sides' provenance was kept, main's first. Citation-number hunks took main's side. 8 citation(s) moved by difflib, each checked to cite the same line text: main-written lines mapped from `0487fc39`, L-0555-written lines from `c38be472`. A bare `:N` followed by "on <rev>" is history and was left alone, as were citations already stale on main.
 
 **Re-anchored `a81e4382` -> `6475c41c` on 2026-10-02 (L-0592, L-0575's round-2 fixes to the recurring-findings checklist; origin/main `ffeb0e2f` merged first as a fast-forward, rerere disabled).** `git diff --name-only a81e4382 6475c41c` against this map's paths returns five files under the crew plugin: its README, the implement command, recurring_findings.py and two test modules (test_lifecycle_commands.py, test_recurring_findings.py). The README changes one line in place (727) and implement.md re-wraps step 2 in its same five lines (40-44), so no line moves; paths are named here without citation markup so this note does not shift the map's derived rule paths; no citation in this map points at a changed line or at recurring_findings.py or either test. No claim changed.
+
+**Re-anchored `6475c41c` -> `35b9e6d9` on 2026-10-02 (L-0592 review round 1 fixes).** Of this map's paths only the test module test_recurring_findings.py changed (its render table made exhaustive); this map cites no line of it. No claim changed.
