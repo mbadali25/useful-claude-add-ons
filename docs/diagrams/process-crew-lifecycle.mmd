@@ -1,4 +1,11 @@
-%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@f7fd2e78 on 2026-10-03. Verify before trusting.
+%% Re-drawn f808e5f0 -> f7fd2e78 (T-0066, crew 1.0.159): done.md gains a report after check 4
+%% (:68-79, crew_trailers.py --check: clean / FINDING / unknown, never refuses, never rewrites),
+%% drawn as node dnr between dn5 and dn4. The /crew:done subgraph's done.md cites were re-read on
+%% this tree (several were already off at f808e5f0): check 3 :40-53, check 4 :55-66, on all four
+%% passing :80-97, train :99-102, check-land :104-110, LAND_OK :110-111, refusal :112-113.
+%% implement.md: step 2 gains one line at :46-52 and step 6's first paragraph loses one, so nodes move +2
+%% through step 5 (:59, :69) and +1 from step 6 on (:88-91, :94, :106-110, :111-114, :115); :17-42 hold.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -332,15 +339,15 @@ flowchart TB
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
         im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
         im1 --> im2["recurring-findings checklist<br/>for the Touch paths, then<br/>steps in order, test first<br/>:38-42; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
-        im2 --> im3a["changed-file list, verify<br/>:57, :67"]
-        im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
-        im3 --> rf1{"crew_refresh_check.py<br/>:93"}
+        im2 --> im3a["changed-file list, verify<br/>:59, :69"]
+        im3a --> im3["step 6: tests, then /crew:docs<br/>:88-91"]
+        im3 --> rf1{"crew_refresh_check.py<br/>:94"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
-        rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:105-109"]
-        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-113"]
-        im4 --> im5["then /crew:review last<br/>:114"]
+        rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:106-110"]
+        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:111-114"]
+        im4 --> im5["then /crew:review last<br/>:115"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
@@ -369,17 +376,18 @@ flowchart TB
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:35-48"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:63-74"]
+        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:40-53"}
+        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
+        dn5 -- fresh --> dnr["report, never a check:<br/>crew_trailers.py --check<br/>git.forbiddenTrailers over the ticket's commits,<br/>copied to close note + PR body; no rewrite<br/>:68-79"]
+        dnr --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:80-97"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
-        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:99-102"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:104-110"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :110-111"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:112-113" --> im5
     end
 
     fix -.-> BR

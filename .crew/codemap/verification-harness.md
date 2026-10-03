@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@452b30cc
+anchor: useful-claude-add-ons@f7fd2e78
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -442,7 +442,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2435-2442` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2441-2448` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -699,7 +699,7 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1526-1535` /
-  `plugin/crew/CONFIG.md:2435-2442` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2441-2448` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -2340,3 +2340,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `d95d8b25` (main) and L-0510's `a06dd790` -> `b8d09685` on 2026-10-03 (L-0510 merges origin/main `8123fe74` (L-0574 #323; crew 1.0.140) at `8c04c783`, rerere off; crew 1.0.142 set last at `b8d09685`).** Both provenance histories kept, main's first. In `crew.md` main's L-0574 `review_run.py` citations were re-derived on the merged file (L-0510 adds 8 lines above `finish` and 28 through it): by difflib, and by name for `prereview_gate` `:731` (called `:857`), `standards_gate` `:699` (at `:859`) and `review_ledger.reserve` `:863`, which main's side had stale; L-0510's `review_ledger.py` citations are unchanged. `verification-harness.md`'s `sabotage.py` citations moved +1 (main's import at `:87`; main's side had them stale). History notes were not re-mapped.
 
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
+
+**Re-anchored `452b30cc` -> `f7fd2e78` on 2026-10-03 (T-0066, crew 1.0.159: `git.forbiddenTrailers` and the `/crew:done` trailer report, after origin/main `34d9f267`).** T-0066 changed, among the paths this note cites: `.crew/verify.json` (one rule appended, `:537-544`), `plugin/crew/CONFIG.md` (section 10/11 headings re-measured, one section 10 row, new section 22; lines from `:682` on move by +1 to +6), `plugin/crew/commands/done.md` (a report section after check 4, `:68-79`; the check 1-4 lines unchanged), `plugin/crew/commands/implement.md` (step 2 grows one line, `:46-52`; step 6's first paragraph and step 7 each lose one; still 120 lines), `plugin/crew/hooks/scripts/crew_config.py` (the `git` block, +6 after `:380` and +4 after `:595`), `plugin/crew/skills/crew-setup/SKILL.md` (one inline-JSON line), the two templates, `plugin/crew/tests/test_crew_config.py`, and release bookkeeping (`CHANGELOG.md`, `TODO.md` +11 at `:241`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, both version files). Body `path:N` citations into those files were re-mapped by a difflib line diff from origin/main `34d9f267` to `f7fd2e78`; a bare `:N` whose path was named earlier in its paragraph was applied only after reading the sentence. Two citations moved (`plugin/crew/CONFIG.md:2441-2448`, twice). No other claim was re-derived and no suite was executed for this note.
