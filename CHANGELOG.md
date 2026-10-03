@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added - `crew` 1.0.147: `crew_bookkeeping.claim_numbers_only`, the BUDGETS.md claim-number predicate (T-0046)
+### Added - `crew` 1.0.158: `crew_bookkeeping.claim_numbers_only`, the BUDGETS.md claim-number predicate (T-0046)
 
 - **The predicate, not yet wired.** `plugin/crew/hooks/scripts/crew_bookkeeping.py` decides whether
   a change to `plugin/*/BUDGETS.md` only re-measures the number on the one line a
