@@ -1326,7 +1326,9 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`plugin/crew/hooks/scripts/review_prompt.py:267`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
-  `UNKNOWN:` line.
+  `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
+  manifest)`, the recurring-findings classes keyed to the manifest's changed files (every class
+  under `UNKNOWN:` when the file lists are unusable), then the web tests.
 - **Loop and metric.** `proposals` (`:724`) exclusive-creates
   `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped, and
   refuses an out.txt the parser calls INCOMPLETE, writing nothing; `metric_summary` (`:791`)
