@@ -10,6 +10,7 @@ log and lock never reach the real temp directory.
 import datetime
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -979,3 +980,119 @@ def test_status_prints_marker_fields_through_safe(capsys, monkeypatch, repo, clo
 def test_time_constants_are_t0030s():
     assert crew_inflight.TTL_MINUTES == 30 and crew_inflight.BEAT_SECONDS == 600
     assert crew_inflight.LOOP_SECONDS == 600
+
+
+# --- review round 1 (T-0049) ---------------------------------------------------------
+
+def test_ended_on_the_same_branch_in_another_live_worktree_is_elsewhere(capsys, monkeypatch, repo, tmp_path,  # pylint: disable=unused-argument
+                                                                         clock, live_pid):
+    _session(monkeypatch, "sess-b", live_pid)
+    _begin(capsys, repo["wt2"], "workflow:lane-b")
+    _run(capsys, repo["wt2"], "end", "--ticket", TICKET, "--runner", "workflow:lane-b")
+    twin = tmp_path / "twin"
+    git(repo["main"], "worktree", "add", "-q", "--force", str(twin), f"{TICKET}-build")
+    before = _marker_bytes(repo)
+    _session(monkeypatch, "sess-a", live_pid)
+
+    code, out = _begin(capsys, str(twin), "autopilot")
+
+    _assert_refused(code, out, repo, before, 1, "elsewhere")
+    assert f"cd {repo['wt2']}" in out
+
+
+def test_ended_on_this_branch_whose_worktree_is_gone_is_free(capsys, monkeypatch, repo, clock, live_pid):  # pylint: disable=unused-argument
+    _session(monkeypatch, "sess-b", live_pid)
+    _begin(capsys, repo["wt2"], "workflow:lane-b")
+    _run(capsys, repo["wt2"], "end", "--ticket", TICKET, "--runner", "workflow:lane-b")
+    git(repo["main"], "worktree", "remove", "--force", repo["wt2"])
+    git(repo["main"], "checkout", "-q", f"{TICKET}-build")
+    _session(monkeypatch, "sess-a", live_pid)
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    assert code == 0, out
+
+
+@pytest.mark.parametrize("content", ["{not json", "[\"T-0005\"]"], ids=["bad-json", "not-a-map"])
+def test_unreadable_active_map_with_a_dirty_unrelated_worktree_is_unknown(capsys, monkeypatch, repo, tmp_path,  # pylint: disable=unused-argument
+                                                                          clock, live_pid, content):
+    other = tmp_path / "wt3"
+    git(repo["main"], "worktree", "add", "-q", "-b", "unrelated", str(other))
+    _dirty(str(other), tracked=True)
+    path = os.path.join(crew_ticket.state_dir(repo["main"]), "active-ticket")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    monkeypatch.setattr(crew_holder, "processes_in", lambda _path: ("none", []))
+    _session(monkeypatch, "sess-a", live_pid)
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    _assert_refused(code, out, repo, None, 3, "unknown")
+    assert "active-ticket" in out
+
+
+def test_unreadable_active_map_with_only_clean_worktrees_is_free(capsys, monkeypatch, repo, tmp_path,  # pylint: disable=unused-argument
+                                                                 clock, live_pid):
+    git(repo["main"], "worktree", "add", "-q", "-b", "unrelated", str(tmp_path / "wt3"))
+    path = os.path.join(crew_ticket.state_dir(repo["main"]), "active-ticket")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("{not json")
+    _session(monkeypatch, "sess-a", live_pid)
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    assert code == 0, out
+
+
+def test_marker_naming_another_ticket_is_unknown(capsys, monkeypatch, repo, clock, live_pid):  # pylint: disable=unused-argument
+    os.makedirs(crew_inflight.inflight_dir(repo["main"]), exist_ok=True)
+    record = {"schema": crew_inflight.SCHEMA, "ticket": "T-0006", "state": "cleared", "runner": "owner",
+              "cleared_at": "2026-09-30T09:00:00+00:00", "cleared_by": "owner"}
+    for field in crew_inflight._REQUIRED["cleared"]:  # pylint: disable=protected-access
+        record.setdefault(field, "x")
+    with open(crew_inflight.marker_path(repo["main"], TICKET), "w", encoding="utf-8") as handle:
+        json.dump(record, handle)
+    before = _marker_bytes(repo)
+    _session(monkeypatch, "sess-a", live_pid)
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    _assert_refused(code, out, repo, before, 3, "unknown")
+    assert "T-0006" in out
+
+
+def test_marker_for_its_own_ticket_still_reads(capsys, monkeypatch, repo, clock, live_pid):  # pylint: disable=unused-argument
+    _session(monkeypatch, "sess-a", live_pid)
+    _begin(capsys, repo["main"], "autopilot")
+
+    record, status, why = crew_inflight.read_marker(repo["main"], TICKET.lower())
+
+    assert (status, why) == ("ok", "") and record["ticket"] == TICKET
+
+
+def test_lane_lines_quote_a_worktree_path_with_a_space(capsys, repo, tmp_path):
+    spaced = tmp_path / "lane dir"
+    git(repo["main"], "worktree", "add", "-q", "-b", "spaced", str(spaced))
+    code, out = _run(capsys, repo["main"], "lane-lines", "--ticket", TICKET, "--runner", "workflow:lane-3",
+                     "--worktree", str(spaced))
+
+    assert code == 0, out
+    begin = next(line for line in out.splitlines() if " begin " in line)
+    argv = shlex.split(begin)
+    assert argv[argv.index("--worktree") + 1] == str(spaced)
+    assert argv[argv.index("--root") + 1] == repo["main"]
+
+
+def test_another_bridge_session_is_not_mine(capsys, monkeypatch, repo, clock, live_pid):  # pylint: disable=unused-argument
+    _session(monkeypatch, "sess-a", live_pid)
+    monkeypatch.setenv("CLAUDE_CODE_BRIDGE_SESSION_ID", "bridge-1")
+    code, out = _begin(capsys, repo["main"], "autopilot")
+    assert code == 0, out
+    before = _marker_bytes(repo)
+    monkeypatch.setenv("CLAUDE_CODE_BRIDGE_SESSION_ID", "bridge-2")
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    _assert_refused(code, out, repo, before, 1, "live")

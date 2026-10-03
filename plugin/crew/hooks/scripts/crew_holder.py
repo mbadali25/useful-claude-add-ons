@@ -259,6 +259,8 @@ def same_holder(a, b):
         return False
     if (a["session"], a["machine"], a.get("pid")) != (b["session"], b["machine"], b.get("pid")):
         return False
+    if a.get("bridge_session") != b.get("bridge_session"):
+        return False
     if os.path.normcase(a["worktree"]) != os.path.normcase(b["worktree"]):
         return False
     return not (a.get("pid_start") and b.get("pid_start") and a["pid_start"] != b["pid_start"])
@@ -334,7 +336,10 @@ def processes_in(path):
     bubblewrap's --unshare-pid hides other processes too, so "none seen" would
     mean nothing), or /proc not listable. A process whose cwd cannot be read
     (another user's, or gone mid-scan) is skipped: the own-pid check above is
-    what makes a scan that sees nothing trustworthy."""
+    what makes a scan that sees nothing trustworthy. A process whose cwd cannot
+    be read for any other reason (another user's) makes a scan that found none
+    unknown: that process may be the one in the worktree. One gone mid-scan is
+    skipped."""
     if not sys.platform.startswith("linux"):
         return "unknown", f"process working directories are read on Linux only, not {sys.platform}"
     own = _env_pid()
@@ -349,14 +354,22 @@ def processes_in(path):
         entries = os.listdir("/proc")
     except OSError as exc:
         return "unknown", f"/proc cannot be listed ({type(exc).__name__})"
-    pids = []
+    pids, unreadable = [], 0
     for entry in entries:
         if not entry.isdigit():
             continue
         try:
             cwd = os.readlink(f"/proc/{entry}/cwd")
+        except (FileNotFoundError, ProcessLookupError):
+            continue
         except OSError:
+            unreadable += 1
             continue
         if cwd == target or cwd.startswith(prefix):
             pids.append(int(entry))
-    return ("live", sorted(pids)) if pids else ("none", [])
+    if pids:
+        return "live", sorted(pids)
+    if unreadable:
+        return "unknown", (f"{unreadable} process(es)' working directory cannot be read (another user's?), "
+                           "so none seen proves nothing")
+    return "none", []

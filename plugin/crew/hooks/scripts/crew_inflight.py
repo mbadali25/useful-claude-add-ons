@@ -85,6 +85,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -243,6 +244,9 @@ def read_marker(top, ticket):
     why = _valid(record)
     if why:
         return None, UNKNOWN, f"the marker is unreadable: {why}"
+    if record["ticket"].upper() != norm_ticket(ticket):
+        return None, UNKNOWN, (f"the marker for {norm_ticket(ticket)} names "
+                               f"{crew_holder.safe(record['ticket'], 40)}")
     return record, "ok", ""
 
 
@@ -296,7 +300,11 @@ def _marker_signal(top, ticket, record, status, why, me, runner, now, here=False
     if record["state"] == "ended":
         caller = crew_ticket.toplevel(top) or os.path.realpath(top)
         mine_wt = os.path.normcase(os.path.realpath(record["worktree"])) == os.path.normcase(caller)
-        if not here and not mine_wt and (record.get("branch") is None or record.get("branch") != _branch(caller)):
+        # The same branch counts as this checkout only once the recorded worktree is gone (the
+        # branch moved here); a second live worktree on that branch (`worktree add --force`) is not.
+        moved_here = (record.get("branch") is not None and record.get("branch") == _branch(caller)
+                      and not os.path.isdir(record["worktree"]))
+        if not here and not mine_wt and not moved_here:
             return _answer(ELSEWHERE, ticket, f"{record['runner']} ended in another checkout: continue "
                            f"there with cd {record['worktree']} and /crew:autopilot {ticket}",
                            since=record.get("ended_at"), **who)
@@ -373,13 +381,17 @@ def _worktrees(top):
 
 
 def _active_map(top):
+    """The shared worktree -> ticket map: {} when there is none, None when it
+    exists but cannot be read or is not a map (could not tell, never empty)."""
     path = os.path.join(crew_ticket.state_dir(top) or "", "active-ticket")
     try:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return {}
-    return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def _is_ticket_branch(ref, ticket):
@@ -402,19 +414,24 @@ def _worktree_signal(top, ticket, marker):
     if listed is None:
         return _answer(UNKNOWN, ticket, "git worktree list failed")
     own = _own_worktrees(top, marker)
-    active = {os.path.normcase(os.path.realpath(k)): v for k, v in _active_map(top).items()}
+    mapped = _active_map(top)
+    active = {} if mapped is None else {os.path.normcase(os.path.realpath(k)): v for k, v in mapped.items()}
     for path, ref in listed:
         real = os.path.normcase(os.path.realpath(path))
         if real in own or not os.path.isdir(path):
             continue
         entry = active.get(real)
-        if not (_is_ticket_branch(ref, ticket) or (isinstance(entry, str) and entry.upper() == ticket)):
+        ours = _is_ticket_branch(ref, ticket) or (isinstance(entry, str) and entry.upper() == ticket)
+        if not ours and mapped is not None:
             continue
         dirty = _git(path, "status", "--porcelain")
         if dirty is None:
             return _answer(UNKNOWN, ticket, f"git status failed in {path}", worktree=path)
         if not dirty:
             continue
+        if not ours:
+            return _answer(UNKNOWN, ticket, f"{path} has uncommitted changes and the active-ticket map "
+                           "cannot be read, so whether they are this ticket's cannot be told", worktree=path)
         seen, detail = crew_holder.processes_in(path)
         if seen == "live":
             return _answer(LIVE, ticket, f"{path} has uncommitted changes and live process(es) "
@@ -704,9 +721,9 @@ def cmd_lane_lines(args):
     runner = expand_runner(args.runner)
     if runner is None:
         raise UsageError("lane-lines needs an explicit runner id")
-    script = os.path.abspath(__file__)
-    base = f"python3 {script} {{}} --root {top} --ticket {ticket} --runner {runner}"
-    print(base.format("begin") + f" --worktree {os.path.abspath(args.worktree)}")
+    script = shlex.quote(os.path.abspath(__file__))
+    base = f"python3 {script} {{}} --root {shlex.quote(top)} --ticket {ticket} --runner {shlex.quote(runner)}"
+    print(base.format("begin") + f" --worktree {shlex.quote(os.path.abspath(args.worktree))}")
     print(base.format("beat") + " --phase <step>")
     print(base.format("end") + " --outcome <result>")
     print("Run begin before any other command; on exit 1 or 3 stop and report in-flight with its "

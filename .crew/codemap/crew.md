@@ -800,30 +800,30 @@ registered at `plugin/crew/tests/sabotage.py:77` and `:3059`; `.crew/verify.json
 
 ## In-flight markers (T-0049, crew 1.0.146)
 
-DERIVED at `0c683860` (T-0049-build after merging main `2a2d6e07`); re-read at `ef7dad84`, where no file this section cites changed.
-`plugin/crew/hooks/scripts/crew_inflight.py` (861 lines) keeps one marker per ticket at
-`<git-common-dir>/crew/inflight/<TICKET>.json` (`inflight_dir` `:155`, `marker_path` `:162`), so every
-worktree of a clone sees who is driving a ticket. Every write is under the lock (`_locked` `:269`) and
-goes through a temp file and `os.replace` (`write_marker` `:249`); the log is `inflight/log.jsonl`
-(`append_log` `:263`). Constants `TTL_MINUTES = 30`, `BEAT_SECONDS = 600` (`:105-107`). Subcommands
-`begin` (`cmd_begin` `:530`), `beat` (`:597`), `end` (`:606`), `clear` (`:619`, owner-only:
-`crew_holder.owner_signal`, a prose control spoofable with `env -u`), `status` (`:648`), `pick`
-(`:682`) and `lane-lines` (`:701`); exit 0 free or mine, 1 refused/live/stale/elsewhere, 2 usage,
-3 unknown. `holds` (`:431`) is the decision: the marker (`_marker_signal` `:289`), then the review
-ledger (`_ledger_signal` `:338`: a latest current-plan round reserved with no result is in flight
+DERIVED at `0c683860` (T-0049-build after merging main `2a2d6e07`); re-read at `ef7dad84`; every citation into crew_inflight.py, crew_holder.py and autopilot.md re-measured with `grep -n` after the review round 1 fixes.
+`plugin/crew/hooks/scripts/crew_inflight.py` (878 lines) keeps one marker per ticket at
+`<git-common-dir>/crew/inflight/<TICKET>.json` (`inflight_dir` `:156`, `marker_path` `:163`), so every
+worktree of a clone sees who is driving a ticket. Every write is under the lock (`_locked` `:273`) and
+goes through a temp file and `os.replace` (`write_marker` `:253`); the log is `inflight/log.jsonl`
+(`append_log` `:267`). Constants `TTL_MINUTES = 30`, `BEAT_SECONDS = 600` (`:106-107`). Subcommands
+`begin` (`cmd_begin` `:547`), `beat` (`:614`), `end` (`:623`), `clear` (`:636`, owner-only:
+`crew_holder.owner_signal`, a prose control spoofable with `env -u`), `status` (`:665`), `pick`
+(`:699`) and `lane-lines` (`:718`); exit 0 free or mine, 1 refused/live/stale/elsewhere, 2 usage,
+3 unknown. `holds` (`:448`) is the decision: the marker (`_marker_signal` `:293`), then the review
+ledger (`_ledger_signal` `:346`: a latest current-plan round reserved with no result is in flight
 unless a later `clear --round N` released it), then other worktrees for the ticket with uncommitted
-changes (`_worktree_signal` `:399`), first non-free signal wins; no session id, or an exception,
+changes (`_worktree_signal` `:411`), first non-free signal wins; no session id, or an exception,
 is `unknown`, never free. Stale is never taken over; only `clear` removes a marker. `begin` refuses
-without a session before calling `holds` (`:535-537`), and starts a detached beat loop
-(`_start_loop` `:728`).
-`plugin/crew/hooks/scripts/crew_holder.py` (362 lines) holds T-0030's process-identity helpers moved verbatim from the
+without a session before calling `holds` (`:552-554`), and starts a detached beat loop
+(`_start_loop` `:745`).
+`plugin/crew/hooks/scripts/crew_holder.py` (375 lines) holds T-0030's process-identity helpers moved verbatim from the
 T-0030-coord branch (`crew_coord.py` is not on main): `probe_holder` `:221`, `current_holder`
-`:238`, `same_holder` `:252`, `_locked` `:291`, `private_dir` `:308`, plus T-0049's `processes_in`
-`:328` (Linux `/proc/<pid>/cwd` scan, `unknown` wherever it cannot see its own `CLAUDE_PID`).
+`:238`, `same_holder` `:252`, `_locked` `:293`, `private_dir` `:310`, plus T-0049's `processes_in`
+`:330` (Linux `/proc/<pid>/cwd` scan, `unknown` wherever it cannot see its own `CLAUDE_PID` or cannot read a process's cwd). Review round 1: an ended record frees the ticket on the same branch elsewhere only once its worktree is gone; a marker naming another ticket, an unreadable active-ticket map with a dirty unclaimed worktree, and another bridge session (`same_holder`) are not free.
 `crew_autopilot.next_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:590`) runs `_in_flight` (`:567`) after the closed check: live,
 stale and unknown stop `in-flight`, an ended-elsewhere record stops `handover-elsewhere`
 (`FIXED_STOPS` `:207`, waiting on the owner, `WAITING` `:1384`). `plugin/crew/commands/autopilot.md`
-runs `begin` after picking the ticket (`:55`) and `end` before every stop (`:99`).
+runs `begin` after picking the ticket and before `activate` sets the pointer (`:52-53`, so a refused claim leaves no pointer) and `end` before every stop (`:99`).
 Tests `test_crew_inflight.py`, `test_crew_holder.py`, `test_crew_autopilot_inflight.py`; the suite's
 session default is `plugin/crew/tests/conftest.py`'s autouse `_a_session`. The in-flight
 sabotage mutations are not on this branch: they move to L-0613, the tooling PR that follows (a

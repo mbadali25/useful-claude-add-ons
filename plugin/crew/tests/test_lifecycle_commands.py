@@ -425,3 +425,10 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
+
+
+def test_autopilot_claims_the_ticket_before_it_sets_the_pointer():
+    """T-0049 review round 1: begin runs before activate, so a refused claim leaves no pointer."""
+    text = _read(os.path.join(COMMANDS, "autopilot.md"))
+
+    assert text.index("crew_inflight.py begin") < text.index("crew_ticket.py activate")

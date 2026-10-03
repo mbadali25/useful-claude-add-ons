@@ -49,10 +49,10 @@ in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; 
 and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is
 open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).
 `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
-active one. `activate=1` (no pointer is set): run
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>`
-so the scope guard judges edits by it. Never pick from `## Next action`. Then claim it (T-0049) with
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py begin --root . --ticket <ticket> --runner autopilot`: non-zero is another runner's ticket - print its `result=` line and stop, never take it over.
+active one. Never pick from `## Next action`. First claim it (T-0049) with
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py begin --root . --ticket <ticket> --runner autopilot`: non-zero is another runner's ticket - print its `result=` line and stop, never take it over or set a pointer.
+Then, `activate=1` (no pointer is set): run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>`
+so the scope guard judges edits by it.
 
 ## 3. The loop - keep `N` (phases run, from 0) and `LAST` (last command, empty)
 

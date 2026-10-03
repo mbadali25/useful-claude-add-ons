@@ -26,7 +26,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   stale and unknown, naming the runner, the ticket and since when, and
   `handover-elsewhere` with `cd <worktree>` when the last runner ended in
   another checkout; a closed ticket still reads `closed`. `/crew:autopilot`
-  runs `begin` after it picks the ticket and `end` before every stop.
+  runs `begin` after it picks the ticket, before it sets the active-ticket
+  pointer, and `end` before every stop.
 - **Behaviour change:** a latest review round reserved with no result now
   stops as `in-flight`, not `review`, whoever reserved it, until the owner
   releases it with `crew_inflight.py clear --round N`. `next` also stops
@@ -37,6 +38,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   temp directory) move verbatim into `hooks/scripts/crew_holder.py`, with a
   new `processes_in` that reads `/proc/<pid>/cwd` on Linux only and answers
   `unknown` anywhere it cannot see its own `CLAUDE_PID`.
+- **Review round 1.** An ended record frees the ticket in another checkout on
+  the same branch only once the recorded worktree is gone, so a second live
+  worktree on that branch (`git worktree add --force`) still stops
+  `handover-elsewhere`. A marker naming another ticket, an active-ticket map
+  that cannot be read (when another worktree is dirty), and a process whose
+  working directory cannot be read all answer `unknown`, never free or none.
+  A different `CLAUDE_CODE_BRIDGE_SESSION_ID` is another holder. `lane-lines`
+  quotes its paths for the shell.
 
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 

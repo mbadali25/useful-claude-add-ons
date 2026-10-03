@@ -184,7 +184,8 @@ def _holder(**over):
 @pytest.mark.parametrize("other, same", [
     ({}, True), ({"session": "t"}, False), ({"pid": 11}, False), ({"machine": "n"}, False),
     ({"worktree": "/x"}, False), ({"pid_start": "6"}, False), ({"pid_start": None}, True),
-], ids=["identical", "session", "pid", "machine", "worktree", "start", "start-missing"])
+    ({"bridge_session": "b2"}, False),
+], ids=["identical", "session", "pid", "machine", "worktree", "start", "start-missing", "bridge-session"])
 def test_same_holder_compares_every_identity_field(other, same):
     assert crew_holder.same_holder(_holder(), _holder(**other)) is same
 
@@ -305,3 +306,36 @@ def test_processes_in_unknown_when_proc_cannot_be_listed(monkeypatch, tmp_path, 
     monkeypatch.setattr(crew_holder.os, "listdir", refuse)
 
     assert crew_holder.processes_in(str(tmp_path))[0] == "unknown"
+
+
+def test_processes_in_unknown_when_a_cwd_cannot_be_read(monkeypatch, tmp_path, live_pid):
+    _linux_only()
+    (tmp_path / "wt").mkdir()
+    monkeypatch.setenv("CLAUDE_PID", str(live_pid))
+    real = crew_holder.os.readlink
+
+    def refuse(path, *args, **kwargs):
+        if path == f"/proc/{live_pid}/cwd":
+            raise PermissionError(13, "Permission denied")
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_holder.os, "readlink", refuse)
+
+    state, reason = crew_holder.processes_in(str(tmp_path / "wt"))
+
+    assert state == "unknown"
+    assert "cannot be read" in reason
+
+
+def test_processes_in_skips_a_process_gone_mid_scan(monkeypatch, tmp_path, live_pid):
+    _linux_only()
+    (tmp_path / "wt").mkdir()
+    monkeypatch.setenv("CLAUDE_PID", str(live_pid))
+    real = crew_holder.os.readlink
+
+    def vanish(path, *args, **kwargs):
+        if path == f"/proc/{live_pid}/cwd":
+            raise FileNotFoundError(2, "No such file or directory")
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_holder.os, "readlink", vanish)
+
+    assert crew_holder.processes_in(str(tmp_path / "wt"))[0] in ("none", "live")
