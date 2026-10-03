@@ -7,7 +7,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 ### Changed — `crew` 1.0.142: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
 
 Bumped `1.0.139 -> 1.0.142` (main's 1.0.139 taken in the merge; 1.0.142 allocated by the coordinator) after merging
-origin/main `2a2d6e07` (L-0592 #325, L-0587 re-pin #322, crew 1.0.139). Before it `1.0.134 -> 1.0.137` (main's 1.0.134 taken
+origin/main `2a2d6e07` (L-0592 #325, L-0587 re-pin #322, crew 1.0.139), and kept 1.0.142 after merging origin/main
+`8123fe74` (L-0574 #323, crew 1.0.140). Before it `1.0.134 -> 1.0.137` (main's 1.0.134 taken
 in the merge; 1.0.137 allocated by the coordinator) after merging
 origin/main `e0c70fc9` (#317 ci_receipt/verify-gate.yml, L-0597 #316, L-0555 #310, crew 1.0.134), and kept
 1.0.137 after merging origin/main `bd3e9ad1` (L-0598 #321, L-0587 #319, crew 1.0.135). Before it
@@ -73,6 +74,88 @@ merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1
   round, never a fix or a rerun.
 - **Boundary with L-0514 (INCOMPLETE retry):** disjoint. No INCOMPLETE is ever auto-accepted, and
   a refunded round never counts toward "final"; L-0514 is not implemented here.
+
+### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
+
+- **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt
+  check and the verify gate and before the standards self-check. `hooks/scripts/review_checks.py`
+  lints exactly the files the review bundle changes, with the linters `.crew/verify.json` lists under
+  `preReview` (ruff, ShellCheck, PSScriptAnalyzer with a rule allowlist, actionlint). Each file is
+  linted at its base blob and at its bundle blob. A finding the bundle adds (path + rule + message,
+  line numbers ignored) refuses the round with exit 5 and no round spent, and `--allow-unverified`
+  does not override it.
+- **Could not check is never a pass.** A missing tool, a crash, a timeout, an unexpected exit, bad
+  output, a config it cannot read, or a file the tool could not parse on either side all read
+  `COULD NOT CHECK`. That refuses too (exit 5), unless `--allow-unverified`, which `review.json`
+  records as `prereview.overridden`. Only an active incident stands the checks down, logging a
+  `prereview-checks` skip. A file the tool could not parse is unchecked on its own: a new finding in
+  any other file still refuses, override or not. Only line and column positions in a message are
+  ignored when matching findings; any other changed number is a new finding.
+- **Strict inputs.** `preReview` accepts only `linters`; any other key, `_note` included, is a
+  `config` COULD NOT CHECK row, so this repo's comment on the block now lives in a top-level
+  `_note_preReview`. A root linter config the bundle renames away is gone from the bundle, never
+  reloaded from the base. A `prereview.json` for the right bundle is used only in the exact shape
+  `record()` writes and when its result is what its checks add up to; otherwise `review.json`
+  carries `not-recorded`. A row has findings only when it is a FAIL, and an override or stand-down
+  only beside the result it can come with. A `.crew/verify.json` that is valid JSON but not an object
+  is could-not-check, not "none configured".
+- **Nothing known is thrown away, nothing outlives its timeout.** A tool row the checks cannot read,
+  or an exit status that disagrees with the output, no longer discards the rows already read, so a
+  new finding among them still refuses. A bad base-side row leaves only that file unchecked. The
+  timeout kills the linter's whole process group and covers a child left holding its output open.
+  The bundle hash recorded comes from the same read of the manifest as the files linted.
+- **The config is the bundle's.** `preReview` is read from `.crew/verify.json` as the bundle has it
+  (its blob when the bundle changes, deletes or renames the map, else the base commit's), so a
+  working-tree edit made after the bundle was built cannot disable or narrow the checks. Only a map
+  git does not track (an ignored `.crew/`) is read from the working tree. A manifest that cannot be
+  read, or has no `bundle_sha256`, is could-not-check, even where nothing is configured. A file the
+  bundle turns from a symlink or submodule into a regular file has no base side and is linted; a
+  linter config or verify map that is a symlink is could-not-check. On Windows `taskkill` runs from
+  `%SystemRoot%\System32`, and a linter named without a path is found on absolute `PATH` entries
+  only, never in the current directory.
+- **One path per class, in `review_checks.py` and `review_run.py`.** Every program (git, each linter,
+  pwsh, taskkill, the reviewer CLIs) is found by one resolver: an absolute path, or an absolute `PATH`
+  entry, never the current directory. Every file read (the untracked verify map, the manifest, the
+  records, `prompt.txt`, the diff parts, `--output`) goes through one regular-file-only reader that
+  refuses a symlink, FIFO or device as could-not-check and never blocks. Every config value is
+  typed strictly: an explicit `null` is could-not-check, and a key a tool does not use (`args` for
+  PSScriptAnalyzer) is rejected. Each run stages its own pre-review record, bound to the round it
+  reserves (`prereview-r<N>.json`), so two runs sharing a scratch directory never swap records.
+  Files git flags as binary are still linted when their extension is configured (a UTF-16 `.ps1`).
+- **Review round 7.** A file is read only through no symlink at any directory between the repo root
+  (or scratch directory) and it, each directory opened `O_NOFOLLOW` from the one before, so an
+  untracked `.crew/` that is a link to another directory's map is could-not-check. PSScriptAnalyzer
+  gets its file and rule lists as JSON arrays, so a newline in a file name can no longer split it
+  into the names of clean files. A linter's valid rows are kept beside an unexpected exit status, so
+  a new finding among them still refuses and `--allow-unverified` does not override it. A row with no
+  actionlint `kind`, PSScriptAnalyzer `rule` or `severity`, or ruff/ShellCheck `code`, is unreadable
+  instead of a finding with a default. Records are `prereview-<ticket>-r<N>.json`, so two tickets
+  sharing a scratch directory each keep round 1. Every printed path, rule, message and error is one
+  line, its control characters escaped, so a file name cannot forge a status line.
+- **Review round 8.** Only a ShellCheck position field (`SC2086:info:2:28:`) is read as a position,
+  so a changed time, port pair or ratio in a message is a new finding. On Windows a linter, and the
+  reviewer CLI, run inside a job object started suspended, so a timeout ends a child whose parent
+  already exited. Every line `review_run.py` prints is escaped onto one line, the scratch path in a
+  failed-record message included. `install-scripts`' code map names its `paths:`, so its rule loads
+  for `scripts/**` again however many citations other tickets add.
+- **Review round 9.** Each linter's run, its file selection included, is its own result, so one
+  linter raising (a `paths` glob deep enough to hit RecursionError) can no longer turn another's new
+  finding into an overridable COULD NOT CHECK. Linter output, the verify map, the manifest and the
+  records refuse a duplicate JSON key. A lone surrogate prints escaped, and the CLI exits 1 only for a
+  new finding: any crash, printing included, is COULD NOT CHECK. After a clean exit the linter's
+  process group is no longer signalled on POSIX, because its leader is already reaped and the group
+  id may belong to another process.
+- **This repo's config.** ruff adds the fail-open rules S110/S112/BLE001, which `ruff.toml` does not
+  select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
+  runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).
+  check-marketplace, self-claims and version drift are not duplicated, because the verify gate the
+  preflight already requires runs them. actionlint runs with its embedded shellcheck and pyflakes
+  passes off, because it skips them silently when those binaries are missing, so `run:` scripts in
+  workflows are not checked by this pass.
+- **No known COULD NOT CHECK left in this repo.** ShellCheck used to stop parsing
+  `scripts/install-prerequisites.sh` (a malformed `disable=... - reason` directive) and
+  `scripts/_test/lsp-stack-tools.sh` (a prose `# shellcheck/...` comment); L-0587 (#319) fixed both,
+  and both parse under ShellCheck 0.11.0 as merged here.
 
 ### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
 
