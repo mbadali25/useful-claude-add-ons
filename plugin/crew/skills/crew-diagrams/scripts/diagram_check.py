@@ -12,12 +12,15 @@ SVG works) and measures the drawing itself rather than trusting the source:
                  WARNING, not a FAIL: the detail is content, and moving it to
                  the page's prose is an editorial call
 
-A diagram PASSes only with zero of the first three and a size within the
-limit. A flowchart is the only kind measured: a sequence, state or ER diagram
-is reported NOT CHECKED, never PASS. An SVG that cannot be parsed is UNKNOWN.
+A diagram PASSes only with at least one measured node box, zero of the first
+three and a size within the limit. A flowchart is the only kind measured: a
+sequence, state or ER diagram is reported NOT CHECKED, never PASS. An SVG that
+cannot be parsed, has no measurable node, or whose geometry the checker cannot
+read (a scale/rotate/matrix/skew transform above a measured element, path data
+it cannot parse) is UNKNOWN -- "could not tell" is never a PASS.
 
-Geometry: every `translate()` from the root down is accumulated, curves are
-sampled into polylines, and an intersection inside (or within EDGE_SLACK of)
+Geometry: every `translate()` from the root down is accumulated, curves and
+arcs are sampled into polylines, and an intersection inside (or within EDGE_SLACK of)
 an edge's own end nodes does not count -- arrows converging on one node meet
 there by design.
 
@@ -26,6 +29,7 @@ Exit: 0 every measured diagram PASSes; 1 any FAIL or UNKNOWN; 2 usage.
 """
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -39,15 +43,28 @@ NODE_SHRINK = 2.0    # px a node box is shrunk by before an edge "passes through
 CURVE_STEPS = 12
 
 PASS, FAIL, UNKNOWN, NOT_CHECKED = "PASS", "FAIL", "UNKNOWN", "NOT CHECKED"
-_NUM = r"-?\d*\.?\d+(?:e-?\d+)?"
-_TRANSLATE = re.compile(rf"translate\(\s*({_NUM})[\s,]+({_NUM})?\s*\)")
+_NUM = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?"
+_TRANSFORM = re.compile(r"\s*([A-Za-z]+)\s*\(([^)]*)\)\s*,?")
 
 
 def _offset(el, base):
+    """`base` moved by this element's transform. Only translate() is a plain
+    offset; scale, rotate, matrix or skew would move every point differently,
+    so they raise ValueError (the caller's verdict becomes UNKNOWN) rather
+    than being ignored."""
+    text = el.get("transform") or ""
     dx = dy = 0.0
-    for m in _TRANSLATE.finditer(el.get("transform") or ""):
-        dx += float(m.group(1))
-        dy += float(m.group(2) or 0)
+    pos = 0
+    while pos < len(text.rstrip()):
+        m = _TRANSFORM.match(text, pos)
+        if not m:
+            raise ValueError(f"unreadable transform {text!r}")
+        name, args = m.group(1), [float(a) for a in re.findall(_NUM, m.group(2))]
+        if name != "translate" or len(args) not in (1, 2):
+            raise ValueError(f"transform {name}({m.group(2).strip()}) is not measured")
+        dx += args[0]
+        dy += args[1] if len(args) == 2 else 0.0
+        pos = m.end()
     return base[0] + dx, base[1] + dy
 
 
@@ -59,32 +76,96 @@ def _local(tag):
     return tag.rsplit("}", 1)[-1]
 
 
+_PATH_TOKEN = re.compile(rf"\s*,?\s*([MLHVCSQTAZmlhvcsqtaz]|{_NUM})")
+_PATH_ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
+
+
+def _path_tokens(d):
+    tokens, pos, d = [], 0, (d or "").rstrip()
+    while pos < len(d):
+        m = _PATH_TOKEN.match(d, pos)
+        if not m:
+            raise ValueError(f"unreadable path data at {d[pos:pos + 12]!r}")
+        tokens.append(m.group(1))
+        pos = m.end()
+    return tokens
+
+
+def _arc(p0, rx, ry, phi_deg, large, sweep, p1):
+    """Sample an SVG elliptical arc (endpoint parameterisation, SVG 1.1 F.6.5)."""
+    if rx == 0 or ry == 0 or p0 == p1:
+        return [p1]
+    phi = math.radians(phi_deg % 360)
+    cos_p, sin_p = math.cos(phi), math.sin(phi)
+    hx, hy = (p0[0] - p1[0]) / 2, (p0[1] - p1[1]) / 2
+    x1, y1 = cos_p * hx + sin_p * hy, -sin_p * hx + cos_p * hy
+    lam = (x1 * x1) / (rx * rx) + (y1 * y1) / (ry * ry)
+    if lam > 1:  # radii too small to reach: scale them up, as a renderer does
+        rx, ry = rx * math.sqrt(lam), ry * math.sqrt(lam)
+    num = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1
+    den = rx * rx * y1 * y1 + ry * ry * x1 * x1
+    coef = math.sqrt(max(num, 0.0) / den) if den else 0.0
+    if large == sweep:
+        coef = -coef
+    cx1, cy1 = coef * rx * y1 / ry, -coef * ry * x1 / rx
+    cx = cos_p * cx1 - sin_p * cy1 + (p0[0] + p1[0]) / 2
+    cy = sin_p * cx1 + cos_p * cy1 + (p0[1] + p1[1]) / 2
+
+    def angle(ux, uy, vx, vy):
+        return math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)
+
+    t1 = angle(1, 0, (x1 - cx1) / rx, (y1 - cy1) / ry)
+    dt = angle((x1 - cx1) / rx, (y1 - cy1) / ry, (-x1 - cx1) / rx, (-y1 - cy1) / ry)
+    if not sweep and dt > 0:
+        dt -= 2 * math.pi
+    elif sweep and dt < 0:
+        dt += 2 * math.pi
+    pts = []
+    for k in range(1, CURVE_STEPS + 1):
+        t = t1 + dt * k / CURVE_STEPS
+        ex, ey = rx * math.cos(t), ry * math.sin(t)
+        pts.append((cos_p * ex - sin_p * ey + cx, sin_p * ex + cos_p * ey + cy))
+    pts[-1] = p1
+    return pts
+
+
 def path_points(d, origin=(0.0, 0.0)):
-    """Path data as a sampled polyline. Absolute and relative M/L/H/V/C/Q/A/Z:
-    edges use absolute commands, but shapes do not -- a cylinder is drawn with
-    relative arcs (`a`) and lines (`l`). An arc contributes its endpoint plus
-    its radii either side, enough for the bounding box a shape needs."""
-    tokens = re.findall(rf"[MLCQHVZAmlcqhvza]|{_NUM}", d or "")
-    sizes = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "Q": 4, "A": 7}
+    """Path data as a sampled polyline: every SVG path command, absolute and
+    relative. Edges use absolute commands, but shapes do not -- a cylinder is
+    drawn with relative arcs (`a`) and lines (`l`). Curves and arcs are sampled
+    (an arc through its centre parameterisation), S/T reflect the previous
+    control point. Path data this cannot read raises ValueError, never a guess."""
+    tokens = _path_tokens(d)
     pts, i, cmd, cur, start = [], 0, None, (0.0, 0.0), (0.0, 0.0)
+    ctrl, prev = (0.0, 0.0), None  # last control point (read only after C/S/Q/T), last command
     while i < len(tokens):
-        if re.fullmatch(r"[A-Za-z]", tokens[i]):
+        if tokens[i].isalpha():
             cmd = tokens[i]
             i += 1
-            if cmd in "Zz":
-                cur = start
-                continue
-        if cmd is None:
+        elif cmd is None:
             raise ValueError("path data does not start with a command")
+        elif cmd in "Zz":
+            raise ValueError("numbers after a closepath (Z) with no command")
         up, rel = cmd.upper(), cmd.islower()
-        vals = [float(t) for t in tokens[i:i + sizes[up]]]
-        if len(vals) < sizes[up]:
-            raise ValueError(f"truncated {cmd!r} in path data")
-        i += sizes[up]
-        ox, oy = cur if rel else (0.0, 0.0)
-        if up in ("M", "L"):
-            cur = (vals[0] + ox, vals[1] + oy)
+        if up == "Z":
+            cur, prev = start, "Z"
             pts.append(cur)
+            continue
+        vals = [float(t) for t in tokens[i:i + _PATH_ARGS[up]]]
+        if len(vals) < _PATH_ARGS[up] or any(t.isalpha() for t in tokens[i:i + _PATH_ARGS[up]]):
+            raise ValueError(f"truncated {cmd!r} in path data")
+        i += _PATH_ARGS[up]
+        ox, oy = cur if rel else (0.0, 0.0)
+        p0 = cur
+        if up in ("M", "L", "T"):
+            end = (vals[0] + ox, vals[1] + oy)
+            if up == "T":
+                c = (2 * p0[0] - ctrl[0], 2 * p0[1] - ctrl[1]) if prev in ("Q", "T") else p0
+                pts += _bezier([p0, c, end])
+                ctrl = c
+            else:
+                pts.append(end)
+            cur = end
             if up == "M":
                 start = cur
                 cmd = "l" if rel else "L"  # implicit lineto after a moveto
@@ -94,30 +175,37 @@ def path_points(d, origin=(0.0, 0.0)):
         elif up == "V":
             cur = (cur[0], vals[0] + oy)
             pts.append(cur)
-        elif up == "C":
-            x1, y1, x2, y2, x, y = vals[0] + ox, vals[1] + oy, vals[2] + ox, vals[3] + oy, vals[4] + ox, vals[5] + oy
-            p0 = cur
-            for k in range(1, CURVE_STEPS + 1):
-                t = k / CURVE_STEPS
-                a, b, c, e = (1 - t) ** 3, 3 * (1 - t) ** 2 * t, 3 * (1 - t) * t ** 2, t ** 3
-                pts.append((a * p0[0] + b * x1 + c * x2 + e * x, a * p0[1] + b * y1 + c * y2 + e * y))
-            cur = (x, y)
+        elif up in ("C", "S"):
+            if up == "C":
+                c1, rest = (vals[0] + ox, vals[1] + oy), vals[2:]
+            else:
+                c1 = (2 * p0[0] - ctrl[0], 2 * p0[1] - ctrl[1]) if prev in ("C", "S") else p0
+                rest = vals
+            c2, end = (rest[0] + ox, rest[1] + oy), (rest[2] + ox, rest[3] + oy)
+            pts += _bezier([p0, c1, c2, end])
+            cur, ctrl = end, c2
         elif up == "Q":
-            x1, y1, x, y = vals[0] + ox, vals[1] + oy, vals[2] + ox, vals[3] + oy
-            p0 = cur
-            for k in range(1, CURVE_STEPS + 1):
-                t = k / CURVE_STEPS
-                pts.append(((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * x1 + t * t * x,
-                            (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * y1 + t * t * y))
-            cur = (x, y)
+            c, end = (vals[0] + ox, vals[1] + oy), (vals[2] + ox, vals[3] + oy)
+            pts += _bezier([p0, c, end])
+            cur, ctrl = end, c
         else:  # A: rx ry rotation large-arc sweep x y
-            rx, ry = abs(vals[0]), abs(vals[1])
             end = (vals[5] + ox, vals[6] + oy)
-            for px, py in (cur, end):
-                pts += [(px, py - ry), (px, py + ry), (px - rx, py), (px + rx, py)]
+            pts += _arc(p0, abs(vals[0]), abs(vals[1]), vals[2], vals[3] != 0, vals[4] != 0, end)
             cur = end
-            pts.append(cur)
+        prev = up
     return [(x + origin[0], y + origin[1]) for x, y in pts]
+
+
+def _bezier(ctl):
+    """CURVE_STEPS points along a quadratic or cubic Bezier (after its start)."""
+    out = []
+    for k in range(1, CURVE_STEPS + 1):
+        t = k / CURVE_STEPS
+        p = list(ctl)
+        while len(p) > 1:  # de Casteljau
+            p = [((1 - t) * a[0] + t * b[0], (1 - t) * a[1] + t * b[1]) for a, b in zip(p, p[1:])]
+        out.append(p[0])
+    return out
 
 
 def _shape_box(el, base):
@@ -165,9 +253,18 @@ def collect(root):
     nodes, edges, labels = {}, [], []
     unmeasured, lines = [], {}
 
-    def walk(el, base):
-        cls, here = _classes(el), _offset(el, base)
-        tag = _local(el.tag)
+    def walk(el, base, bad=None):
+        cls, tag = _classes(el), _local(el.tag)
+        try:
+            here = _offset(el, base)
+        except ValueError as exc:
+            # Only fatal under something measured: a scaled icon in <defs>
+            # moves nothing the checker reads.
+            here, bad = base, bad or str(exc)
+        measured = (tag == "g" and ("node" in cls or "edgeLabel" in cls)) or (
+            tag == "path" and "flowchart-link" in cls)
+        if measured and bad:
+            raise ValueError(f"{_short(el.get('id') or tag)}: {bad}")
         if tag == "g" and "node" in cls:
             shapes = [_shape_box(child, here) for child in el
                       if _local(child.tag) in ("rect", "polygon", "circle", "ellipse", "path")]
@@ -185,7 +282,14 @@ def collect(root):
                 unmeasured.append(el.get("id") or "?")
             return
         if tag == "path" and "flowchart-link" in cls:
-            edges.append((el.get("id") or f"edge{len(edges)}", path_points(el.get("d"), here)))
+            eid = el.get("id") or f"edge{len(edges)}"
+            try:
+                poly = path_points(el.get("d"), here)
+            except ValueError as exc:
+                raise ValueError(f"edge {_short(eid)}: {exc}") from exc
+            if len(poly) < 2:
+                raise ValueError(f"edge {_short(eid)} has no line to measure")
+            edges.append((eid, poly))
             return
         if tag == "g" and "edgeLabel" in cls:
             owner = next((g.get("data-id") for g in el.iter() if g.get("data-id")), None)
@@ -201,7 +305,7 @@ def collect(root):
                                        round(h / LINE_HEIGHT)))
             return
         for child in el:
-            walk(child, here)
+            walk(child, here, bad)
 
     walk(root, (0.0, 0.0))
     if unmeasured:
@@ -269,10 +373,21 @@ def measure(svg_text):
         kind = root.get("aria-roledescription") or "not a flowchart"
         return {"status": NOT_CHECKED, "why": f"{kind}: only flowcharts are measured"}
     try:
-        nodes, edges, labels, lines = collect(root)
+        return _judge(*collect(root))
     except ValueError as exc:
         return {"status": UNKNOWN, "why": f"could not read the geometry: {exc}"}
-    ends = [(eid, poly, _ends(poly, nodes)) for eid, poly in edges if len(poly) >= 2]
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # A checker bug is "could not tell" too: never a crash, never a PASS.
+        return {"status": UNKNOWN, "why": f"checker error: {type(exc).__name__}: {exc}"}
+
+
+def _judge(nodes, edges, labels, lines):
+    """The verdict on collected geometry. No measured node is no measurement."""
+    if not nodes:
+        return {"status": UNKNOWN, "nodes": 0, "edges": len(edges),
+                "why": (f"{len(edges)} edge(s) but no node box measured" if edges
+                        else "no node boxes found: nothing was measured")}
+    ends = [(eid, poly, _ends(poly, nodes)) for eid, poly in edges]
     crossings = []
     for i, (ida, pa, ea) in enumerate(ends):
         for idb, pb, eb in ends[i + 1:]:

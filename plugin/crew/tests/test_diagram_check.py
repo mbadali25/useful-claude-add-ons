@@ -152,3 +152,84 @@ def test_a_wordy_edge_label_is_a_warning():
     r = diagram_check.measure(svg)
     assert r["status"] == diagram_check.PASS
     assert r["wordy"] == [f"label of a->b ({diagram_check.MAX_BOX_LINES + 1} lines)"]
+
+
+# --- review of PR #375: no verdict may PASS without measuring ---------------
+
+def test_no_node_boxes_at_all_is_unknown_not_pass():
+    r = diagram_check.measure('<svg xmlns="http://www.w3.org/2000/svg" aria-roledescription="flowchart-v2">'
+                              '<g><path class="x" d="M0 0L5 5"/></g></svg>')
+    assert r["status"] == diagram_check.UNKNOWN and r["nodes"] == 0 and "no node" in r["why"]
+
+
+def test_an_edge_with_no_measured_node_is_unknown_not_pass():
+    r = diagram_check.measure(_svg(_edge("a", "b", "M0,0L100,100")))
+    assert r["status"] == diagram_check.UNKNOWN and r["edges"] == 1 and "no node box" in r["why"]
+
+
+def test_numbers_after_closepath_are_a_value_error_not_a_key_error():
+    try:
+        diagram_check.path_points("M0 0 L10 10 Z 5 5")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+    r = diagram_check.measure(_svg(_node("a", 50, 50) + _node("b", 50, 250)
+                                   + _edge("a", "b", "M50,70 L50,230 Z 5 5")))
+    assert r["status"] == diagram_check.UNKNOWN
+
+
+def test_an_unexpected_checker_error_is_unknown_never_a_crash(monkeypatch):
+    def boom(*_):
+        raise KeyError("Z")
+    monkeypatch.setattr(diagram_check, "path_points", boom)
+    r = diagram_check.measure(_svg(_node("a", 50, 50) + _edge("a", "a", "M0,0L1,1")))
+    assert r["status"] == diagram_check.UNKNOWN and "KeyError" in r["why"]
+
+
+def test_smooth_curves_reflect_the_previous_control_point():
+    # S after C: its first control point is (50,100) reflected about (50,50) = (50,0).
+    pts = diagram_check.path_points("M0,50 C0,100 50,100 50,50 S100,0 100,50")
+    assert pts == diagram_check.path_points("M0,50 C0,100 50,100 50,50 C50,0 100,0 100,50")
+    rel = diagram_check.path_points("M0,50 c0,50 50,50 50,0 s50,-50 50,0")
+    assert [tuple(round(v, 6) for v in p) for p in rel] == [tuple(round(v, 6) for v in p) for p in pts]
+    # T after Q reflects too: the curve from (100,0) bows below y=0.
+    tq = diagram_check.path_points("M0,0 Q50,100 100,0 T200,0")
+    assert tq == diagram_check.path_points("M0,0 Q50,100 100,0 Q150,-100 200,0")
+
+
+def test_an_s_curve_through_a_node_is_seen():
+    """Before S/s was read, its numbers were parsed as the previous command."""
+    svg = _svg(_node("a", 0, 0) + _node("b", 300, 0) + _node("mid", 150, -60)
+               + _edge("a", "b", "M40,0 C60,0 100,-60 150,-60 S240,0 260,0"))
+    assert diagram_check.measure(svg)["through"] == ["a->b through mid"]
+
+
+def test_one_argument_translate_is_x_only():
+    el = diagram_check.ET.fromstring('<g transform="translate(10)"/>')
+    assert diagram_check._offset(el, (1.0, 2.0)) == (11.0, 2.0)  # pylint: disable=protected-access
+    svg = _svg('<g transform="translate(200)">' + _node("a", 0, 50) + _node("b", 0, 250) + '</g>'
+               + _node("c", 200, 150) + _edge("a", "b", "M200,70L200,230"))
+    assert diagram_check.measure(svg)["through"] == ["a->b through c"]
+
+
+def test_a_scale_or_rotate_above_a_measured_element_is_unknown():
+    for t in ("scale(2)", "rotate(90)", "matrix(1 0 0 1 0 0)", "skewX(10)", "translate(5,5) scale(2)"):
+        svg = _svg(f'<g transform="{t}">' + _node("a", 50, 50) + "</g>")
+        r = diagram_check.measure(svg)
+        assert r["status"] == diagram_check.UNKNOWN and "not measured" in r["why"], t
+
+
+def test_a_scaled_shape_that_is_not_measured_does_not_matter():
+    svg = _svg('<defs><path transform="scale(.5)" d="M0 0L1 1"/></defs>' + _node("a", 50, 50))
+    assert diagram_check.measure(svg)["status"] == diagram_check.PASS
+
+
+def test_an_arc_edge_is_sampled_along_its_curve():
+    """A half-circle from (0,0) to (200,0) bulging to y=-100 passes through a
+    node at its top; the endpoints-plus-radii approximation did not see it."""
+    pts = diagram_check.path_points("M0,0 A100,100 0 0,1 200,0")
+    assert abs(min(p[1] for p in pts) + 100) < 1 and pts[-1] == (200.0, 0.0)
+    svg = _svg(_node("a", -40, 0, w=40) + _node("b", 240, 0, w=40) + _node("top", 100, -100, w=20, h=10)
+               + _edge("a", "b", "M0,0 A100,100 0 0,1 200,0"))
+    assert diagram_check.measure(svg)["through"] == ["a->b through top"]

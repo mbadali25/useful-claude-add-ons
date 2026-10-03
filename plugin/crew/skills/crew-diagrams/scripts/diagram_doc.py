@@ -13,7 +13,8 @@ readable drawing loses nothing.
 The purpose comes from the source's `%% Purpose:` lines (any `%%` comment that
 is not provenance, when there are none). The readability verdict comes from
 diagram_check.py on `out/<name>.svg` when render.sh has produced it, and is
-"not rendered" otherwise -- never a guessed PASS.
+"not rendered" otherwise, and "render out of date" when the .mmd is newer
+than its render -- never a guessed PASS.
 
 DRY RUN BY DEFAULT. `--write` writes both files and never overwrites one that
 lacks the GENERATED marker: a hand-written README.md is refused (exit 1).
@@ -82,10 +83,14 @@ def read_source(path):
     return name.replace("-", " ").capitalize(), purpose, anchors, body
 
 
-def verdict(directory, name):
-    svg = os.path.join(directory, "out", name + ".svg")
+def verdict(directory, source):
+    """The readability of `out/<name>.svg`, only if that render is newer than
+    its source: a verdict on an old drawing is not a verdict on this one."""
+    svg = os.path.join(directory, "out", os.path.splitext(source)[0] + ".svg")
     if not os.path.isfile(svg):
         return "not rendered (run render.sh, then this again)"
+    if os.stat(svg).st_mtime_ns <= os.stat(os.path.join(directory, source)).st_mtime_ns:
+        return "render out of date (run render.sh, then this again)"
     with open(svg, encoding="utf-8") as fh:
         r = diagram_check.measure(fh.read())
     if r["status"] == diagram_check.PASS:
@@ -107,7 +112,7 @@ def collect(directory):
             title, purpose, anchors, body = read_source(os.path.join(directory, name))
             out.append({"file": name, "title": title, "purpose": purpose, "anchors": anchors,
                         "notes": read_notes(os.path.join(directory, name)),
-                        "body": body, "check": verdict(directory, os.path.splitext(name)[0])})
+                        "body": body, "check": verdict(directory, name)})
     return out
 
 
@@ -117,20 +122,27 @@ def render_markdown(items):
              "`.mmd` files are the source; `out/` holds renders. Regenerate with "
              "`diagram_doc.py --write` after `render.sh`.", "",
              "| Diagram | Readability |", "|---|---|"]
-    parts += [f"| [{i['title']}](#{_anchor(i['title'])}) | {i['check'].split(':')[0]} |" for i in items]
+    parts += [f"| [{_cell(i['title'])}](#{_anchor(i['title'])}) | {_cell(i['check'].split(':')[0])} |"
+              for i in items]
     for i in items:
         parts += ["", f"## {i['title']}", ""]
         parts += [" ".join(i["purpose"]) or "_No `%% Purpose:` line in the source yet._", ""]
         parts += ["```mermaid", i["body"], "```", ""]
         if i["notes"]:
             parts += ["| Box | Details |", "|---|---|"]
-            parts += [f"| `{n}` | {t.replace('|', '/')} |" for n, t in i["notes"]]
+            parts += [f"| `{n}` | {_cell(t)} |" for n, t in i["notes"]]
             parts.append("")
         parts.append(f"- **Source:** `{i['file']}`")
         if i["anchors"]:
             parts.append("- **Drawn from:** " + ", ".join(f"`{a}`" for a in i["anchors"][:8]))
         parts.append(f"- **Readability:** {i['check']}")
     return "\n".join(parts) + "\n"
+
+
+def _cell(text):
+    """Text for a Markdown table cell: `<repo>` kept by plain() is text, but
+    GitHub drops it as an HTML tag unless it is escaped; a pipe ends the cell."""
+    return html.escape(text, quote=False).replace("|", "/")
 
 
 def _anchor(title):
@@ -187,7 +199,8 @@ def write(directory, files):
         path = os.path.join(directory, name)
         if os.path.isfile(path):
             with open(path, encoding="utf-8") as fh:
-                if GENERATED not in fh.read():
+                head = "".join(fh.readline() for _ in range(2))  # the marker is on line 1 or 2
+                if GENERATED not in head:
                     refused.append(name)
                     continue
         tmp = path + ".tmp"

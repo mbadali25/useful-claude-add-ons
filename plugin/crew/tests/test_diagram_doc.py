@@ -23,7 +23,13 @@ def _dir(tmp_path, rendered=None):
     if rendered:
         (d / "out").mkdir()
         shutil.copy(os.path.join(FIX, rendered), d / "out" / "process-merge.svg")
+        _age(d / "process-merge.mmd", 60)  # the render is newer than its source
     return d
+
+
+def _age(path, seconds):
+    st = os.stat(path)
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns - seconds * 10 ** 9))
 
 
 def test_dry_run_writes_nothing(tmp_path, capsys):
@@ -96,3 +102,30 @@ def test_an_edge_note_is_read_by_its_src_dst_id(tmp_path):
     (d / "process-merge.mmd").write_text(SOURCE.replace(
         "flowchart TD", "%% Note a->b: the full edge wording\nflowchart TD"), encoding="utf-8")
     assert diagram_doc.read_notes(str(d / "process-merge.mmd")) == [("a->b", "the full edge wording")]
+
+
+# --- review of PR #375 ------------------------------------------------------
+
+def test_a_render_older_than_its_source_is_out_of_date_not_pass(tmp_path):
+    d = _dir(tmp_path, rendered="clean.svg")
+    assert diagram_doc.verdict(str(d), "process-merge.mmd").startswith("PASS")
+    _age(d / "out" / "process-merge.svg", 120)  # the source was edited after the render
+    diagram_doc.main(["--dir", str(d), "--write"])
+    md = (d / "README.md").read_text(encoding="utf-8")
+    assert "render out of date (run render.sh" in md and "PASS" not in md
+
+
+def test_tag_like_note_text_is_escaped_in_the_markdown_table(tmp_path):
+    d = _dir(tmp_path)
+    (d / "process-merge.mmd").write_text(SOURCE.replace(
+        "flowchart TD", "%% Note a: clone <repo> & run a|b\nflowchart TD"), encoding="utf-8")
+    diagram_doc.main(["--dir", str(d), "--write"])
+    assert "| `a` | clone &lt;repo&gt; &amp; run a/b |" in (d / "README.md").read_text(encoding="utf-8")
+
+
+def test_a_file_quoting_the_marker_below_its_head_is_still_refused(tmp_path):
+    d = _dir(tmp_path)
+    own = "# ours\n\nThis page is not " + diagram_doc.GENERATED + ".\n"
+    (d / "README.md").write_text(own, encoding="utf-8")
+    assert diagram_doc.main(["--dir", str(d), "--write"]) == 1
+    assert (d / "README.md").read_text(encoding="utf-8") == own
