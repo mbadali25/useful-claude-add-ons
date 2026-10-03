@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@0620587f
-verified: 2026-10-01
+anchor: useful-claude-add-ons@b32e9fc9
+verified: 2026-10-03
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -64,12 +64,12 @@ against disk:
 | Claim | Stated | On disk | Where |
 |---|---|---|---|
 | agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:887`, `INSTALLATION.md:252`, `plugin/README.md:414` |
-| commands | 36 | `find plugin/crew/commands -name '*.md'` → 36 (T-0004 added `autopilot.md`, T-0075 `config-setup.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
+| commands | 37 | `find plugin/crew/commands -name '*.md'` → 37 (T-0004 added `autopilot.md`, T-0075 `config-setup.md`, T-0025 `help.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
 | skills | 31 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 31 (T-0085 added `crew-standards`, #267 `crew-qa-standards`; both read 30 on their own branches, 31 from T-0085's landing merge) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both; both read 30 from `b82035e6` (the Touch amendment) and the check passes |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
 Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1393`,
-`scripts/install-prerequisites.ps1:1175`) states "4 agents, 36 commands" and
+`scripts/install-prerequisites.ps1:1175`) states "4 agents, 37 commands" and
 matches too — `CATALOG_CLAIMS` (below) checks exactly this pair for exactly
 this reason. Every number in the table above was re-derived from the
 filesystem this pass, not read off a previous version of this note or off the
@@ -124,7 +124,7 @@ two tables is, like an unmarked number anywhere else, not checked.
 | Own manifest version | none | `plugin/<name>/.claude-plugin/plugin.json`, bumped in lockstep with the marketplace entry |
 
 Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1393`,
-`scripts/install-prerequisites.ps1:1175`) both read "4 agents, 36 commands,
+`scripts/install-prerequisites.ps1:1175`) both read "4 agents, 37 commands,
 safety hooks", matching `PLUGIN_KEYS` order
 (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`, `rule-of-two`) against
 `marketplace.json`'s own plugin ordering — `check_catalogs`
@@ -1530,3 +1530,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored `0620587f` -> `b32e9fc9` on 2026-10-03 (T-0025, `/crew:help`, crew 1.0.192; origin/main `7846261c` (crew 1.0.163) merged at `f1a08209`).** `b32e9fc9` is T-0025's last non-refresh commit on `T-0025-build`. Every explicit `path:N` citation outside history paragraphs and provenance sections was mapped by script (difflib equal blocks over each cited file, `0620587f` -> `b32e9fc9`); a citation whose line changed in place was read by hand, and all were count or version lines. The crew counts table and the two catalog-row sentences read 37 commands; `marketplace.json:223`/`:224`, `plugin/PLUGINS.md:14`/`:17`, `plugin/README.md:414` and both install scripts changed in place. History paragraphs were left as written. No suite was executed for this note.

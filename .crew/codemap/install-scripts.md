@@ -1,7 +1,7 @@
 # install-scripts
-anchor: useful-claude-add-ons@0620587f
+anchor: useful-claude-add-ons@b32e9fc9
 paths: plugin/crew/**, scripts/**
-verified: 2026-10-01
+verified: 2026-10-03
 
 ## Re-derive provenance
 
@@ -231,9 +231,9 @@ through their own package managers.
 
 - **The five-way crew count disagreement this note tracked for several
   anchors is fully resolved and re-confirmed independently correct, not
-  merely re-synced.** All of the following read **4 agents, 36 commands** (34
+  merely re-synced.** All of the following read **4 agents, 37 commands** (34
   until `ecf69e43` added `/crew:autopilot`, 35 until T-0075 added
-  `/crew:config-setup`; re-read at `e95e5964`) (or
+  `/crew:config-setup`, 36 until T-0025 added `/crew:help`; re-read at `e95e5964`) (or
   the plugin-level 31 skills (31 from T-0085's landing merge with #267's `crew-qa-standards`; 29 until T-0085 added `crew-standards`; at
   `22399a9c` `plugin/README.md:414` and `INSTALLATION.md:252` still say 29, outside
   T-0085's Touch, and `scripts/check-marketplace.py` fails on both; both read 30
@@ -1620,3 +1620,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored `0620587f` -> `b32e9fc9` on 2026-10-03 (T-0025, `/crew:help`, crew 1.0.192; origin/main `7846261c` (crew 1.0.163) merged at `f1a08209`).** `b32e9fc9` is T-0025's last non-refresh commit on `T-0025-build`. Every explicit `path:N` citation outside history paragraphs and provenance sections was mapped by script (difflib equal blocks over each cited file, `0620587f` -> `b32e9fc9`); a citation whose line changed in place was read by hand, and all were count or version lines. Both install scripts' crew catalog label changed in place (`scripts/install-prerequisites.sh:1393`, `scripts/install-prerequisites.ps1:1175`: 36 -> 37 commands); no line moved. The count bullet now reads 37. History paragraphs were left as written. No suite was executed for this note.
