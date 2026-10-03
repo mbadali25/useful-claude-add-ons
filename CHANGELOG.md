@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added - `crew` (version allocated at land): the recurring-findings checklist in the review prompt (L-0601, L-0592 PR 2)
+### Added - `crew` 1.0.141: the recurring-findings checklist in the review prompt (L-0601, L-0592 PR 2)
 
 - **What.** `review_prompt.build` now appends `recurring_findings.review_block` after the development
   standards checklist and before the web tests, so every reviewer (Codex, Copilot or the Claude
