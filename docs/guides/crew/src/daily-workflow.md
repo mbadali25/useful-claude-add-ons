@@ -54,7 +54,11 @@ approving it, it refuses here and tells you which. Assuming it passes, it
 records the scope base (`scope_base.py --record`), works the plan step by
 step — test first, watch it fail, implement, watch it pass — and the
 **plan-approval + scope guard hook** blocks any write outside the spec's
-Touch globs before it happens, not after.
+Touch globs before it happens, not after. Before the first step it prints the
+recurring-findings checklist (`recurring_findings.py --ticket T-0091`): the
+defect classes earlier reviews kept finding on paths like the spec's Touch
+list, a few probes each, kept open while the plan is worked and handed to
+whichever developer types.
 
 **5–6. Tests and docs.** Coverage lands as part of implementing the plan's
 steps. `/crew:docs` runs next and usually says "none" — most tickets touch no

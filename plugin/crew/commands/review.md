@@ -467,7 +467,7 @@ ROUND=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --tic
 # ... dispatch crew:reviewer; write its output to $SCRATCH/out.txt ...
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider claude --round "$ROUND" \
-  --output "$SCRATCH/out.txt" --exit-code 0
+  --output "$SCRATCH/out.txt" --exit-code 0 --note "codex-probe=${PROBE_STATUS:-not-run}"
 ```
 
 An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 5 above, or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
@@ -480,10 +480,11 @@ provider: identical instructions are what make a differing defect count a fact a
 rather than about the prompt.
 
 Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
-**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0 with every
-part acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a
-skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as clean. Only a `tool` INCOMPLETE
-(no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
+**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0, every part acknowledged,
+no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray prose (the script ignores it and names
+it on a `review: FINDINGS kept; ...` line); a non-zero exit, empty output, a possibly misformatted contract line,
+a line admitting the review fell short, a skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as
+clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
 
 **Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
 guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
@@ -495,11 +496,10 @@ is a BLOCK, not a NIT — a check that has never been shown to fail is the defec
 loses the most time to.
 
 **Step 3 — act.**
-1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
-   showing me. State the review range and file list **from `$MANIFEST`**, not
-   by re-deriving it: base, head, branch, whether the tree was dirty, and
-   which category (committed / staged / unstaged / untracked) each changed
-   file fell into is the one record of what was actually reviewed.
+1. Report every BLOCK and FIX line verbatim; do not soften or argue first. If a `review: FINDINGS kept; ...` line
+   printed, also show every ignored line verbatim (`review.json` `ignored_text`, counted by `ignored_lines`): the script
+   ignored them, it did not read them for defects. State the review range and file list **from `$MANIFEST`**, not re-derived:
+   base, head, branch, dirty or not, and each changed file's category (committed / staged / unstaged / untracked).
 2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
    counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
    release: stop, say so, and replan the ticket; there is no third round.
@@ -524,11 +524,9 @@ loses the most time to.
 5. If `notify.provider` is not `none`, send one line:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
-6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
-   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0; a round a Codex limit sent to step 2c is `claude (same-family: codex limit)`, never a bare `claude`)
-   Reviewer cell: `(r<N>, std:<first 8 of the standards digest>)` — the `std:` token step 2a's
-   `review_run.py` printed on stderr (`review-run: standards self-check current (std:...)`) —
-   or `std:none` if it printed that the gate did not apply, or stood down in an incident.
+6. The metrics row is `review_run.py`'s, not yours (L-0578: hand rows were skipped for 118 of 162 rounds): it appends `<date> | <ticket> | <provider>/<model> (r<N>, std:..., <family>) | <n BLOCK> | <n FIX>`
+   to the MAIN checkout's `.crew/metrics.md` (also from a worktree) and prints `review: metrics row appended to <path>`. INCOMPLETE is written as INCOMPLETE, a Codex-limit fallback as `same-family: codex limit`.
+   **Never append a scored row by hand** - a second row for a round is a second divisor. If it printed `metrics row NOT written` or `PARTLY written`, append (or replace with) exactly the row it quoted.
 7. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py proposals --root . --ticket "$TICKET" --scratch "$SCRATCH" --round <N>`,
    then fill each finding's row as the `crew-standards` skill says; I approve or reject each.
    An INCOMPLETE round's `out.txt` is refused (exit 1, nothing written): report that, not "no findings".
@@ -538,7 +536,7 @@ loses the most time to.
    to find, and a rule naming an agent this box does not have fails the same way while looking even
    more normal — there is nothing to skip, so nothing feels skipped.
 
-   Record the not-installed ones in `.crew/metrics.md` too. `/crew:status` reads that file, and
+   Record the not-installed ones too, as a `-`-count row in the file step 6's `review:` line named. `/crew:status` reads that file, and
    "this rule has asked for `security-auditor` eleven times and never got it" is exactly the
    evidence that should drive either installing it or deleting the rule.
 9. Name the author family **and its source** in the same breath as the reviewer: `recorded dispatch
