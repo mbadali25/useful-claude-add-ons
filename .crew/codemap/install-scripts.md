@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@a0143b4b
+anchor: useful-claude-add-ons@38d7e1a1
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -1541,3 +1541,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `decb2b49` -> `6e09bf2d` on 2026-10-03 (T-0009: the autouse-fixture import in `plugin/crew/tests/test_cloud_guard_deploy.py` marked `# noqa: F401` for the ruff no-new-findings gate, crew stepped back to 1.0.139 at `d52f10c2` and 1.0.145 re-set last at `6e09bf2d`). Current despite the lag.** `git diff --name-only decb2b49 6e09bf2d` outside the refresh artifacts is that one test file plus the version files; the edit is in place on `:165`, so no line of any file moved and no citation changed. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28).
 
 **Re-anchored `6e09bf2d` -> `a0143b4b` on 2026-10-03 (T-0009: the `prodUnattended` sabotage entry in `plugin/crew/tests/sabotage_cloud.py` re-anchored onto `cloud_guard.py`'s one-line statement at `1c62c16f`, same line count; crew stepped back to 1.0.139 at `a7cec311` and 1.0.145 re-set last at `a0143b4b`). Current despite the lag.** `git diff --name-only 6e09bf2d a0143b4b` outside the refresh artifacts and version files is that one test file, which this map cites by no line.
+
+**Re-anchored `a0143b4b` -> `38d7e1a1` on 2026-10-03 (T-0009 round-6 self-check fixes: a workflow name holding a character that does not show is unknown, `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/tests/test_cloud_guard_deploy.py`, `plugin/crew/tests/sabotage_cloud.py`, README/CONFIG/BUDGETS/CHANGELOG; crew stepped back to 1.0.139 at `37c5067e` and 1.0.145 re-set at `4d09beaa`).** This map cites none of the moved lines.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@a0143b4b
+anchor: useful-claude-add-ons@38d7e1a1
 verified: 2026-10-03
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -440,7 +440,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2589-2596` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2591-2598` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -697,7 +697,7 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2589-2596` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2591-2598` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -2266,3 +2266,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `decb2b49` -> `6e09bf2d` on 2026-10-03 (T-0009: the autouse-fixture import in `plugin/crew/tests/test_cloud_guard_deploy.py` marked `# noqa: F401` for the ruff no-new-findings gate, crew stepped back to 1.0.139 at `d52f10c2` and 1.0.145 re-set last at `6e09bf2d`). Current despite the lag.** `git diff --name-only decb2b49 6e09bf2d` outside the refresh artifacts is that one test file plus the version files; the edit is in place on `:165`, so no line of any file moved and no citation changed. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28).
 
 **Re-anchored `6e09bf2d` -> `a0143b4b` on 2026-10-03 (T-0009: the `prodUnattended` sabotage entry in `plugin/crew/tests/sabotage_cloud.py` re-anchored onto `cloud_guard.py`'s one-line statement at `1c62c16f`, same line count; crew stepped back to 1.0.139 at `a7cec311` and 1.0.145 re-set last at `a0143b4b`). Current despite the lag.** `git diff --name-only 6e09bf2d a0143b4b` outside the refresh artifacts and version files is that one test file, which this map cites by no line.
+
+**Re-anchored `a0143b4b` -> `38d7e1a1` on 2026-10-03 (T-0009 round-6 self-check fixes: a workflow name holding a character that does not show is unknown, `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/tests/test_cloud_guard_deploy.py`, `plugin/crew/tests/sabotage_cloud.py`, README/CONFIG/BUDGETS/CHANGELOG; crew stepped back to 1.0.139 at `37c5067e` and 1.0.145 re-set at `4d09beaa`).** CONFIG.md moved +2 at its dispatch subsection: the live `CONFIG.md:2591-2598` citations re-mapped.

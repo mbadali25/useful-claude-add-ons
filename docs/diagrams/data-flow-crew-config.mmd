@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@decb2b49 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@38d7e1a1 on 2026-10-03. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py, plugin/crew/hooks/scripts/cloud_guard.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -622,7 +622,7 @@ flowchart TB
 
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
         direction TB
-        RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:532-559<br/><b>14 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all ELEVEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, deployWorkflow (T-0009), prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :833<br/>via crew_guards.effective_ratcheted() :574, called<br/>at crew_config.py:877"]
+        RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:533-560<br/><b>14 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all ELEVEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, deployWorkflow (T-0009), prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :833<br/>via crew_guards.effective_ratcheted() :574, called<br/>at crew_config.py:877"]
         RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2553<br/>(extended through :2676)<br/><b>15 keys</b>: the same fourteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
         RSHAPE["Confirmed by import + diff + type(), not<br/>asserted: 13-key intersection, pm.authority the<br/>only difference (`set(_RATCHETED) -<br/>set(RATCHETED_KEYS) == {'pm.authority'}`), and<br/>the tuple field order STILL differs -- (function,<br/>function, dict) here, (tuple, function, function)<br/>there -- so the two still cannot be collapsed<br/>into one table as written"]
         RG --- RC --- RSHAPE
@@ -711,11 +711,11 @@ flowchart TB
 
     subgraph Except["Thirteen keys do NOT follow the precedence above (read-side ratchet)"]
         direction TB
-        E1["<b>Every key in crew_guards.RATCHETED_KEYS :532-559 --<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended and all ELEVEN guards.* -- resolves by the LOWER rank, not<br/>by repo-beats-global.</b> CONFIG.md section 15 covers<br/>install.policy, section 16 the guards, section 18<br/>guards.roleWrites; environments.* is a subsection<br/>of section 16."]
+        E1["<b>Every key in crew_guards.RATCHETED_KEYS :533-560 --<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended and all ELEVEN guards.* -- resolves by the LOWER rank, not<br/>by repo-beats-global.</b> CONFIG.md section 15 covers<br/>install.policy, section 16 the guards, section 18<br/>guards.roleWrites; environments.* is a subsection<br/>of section 16."]
         E2["The effective value at each key is the <b>lower-ranked<br/>of the two layers</b> - crew_guards.effective_ratcheted<br/>:574, reached through crew_config.resolve_ratcheted<br/>:833."]
         E3["Why: crew reads config out of CLONED repositories.<br/>A repo shipping install.policy: auto, or<br/>guards.cloudGuard: report, would, under precedence,<br/>override a machine owner who chose manual or off."]
         E4["Absent counts as the narrowest tier on either side<br/>for TWELVE of the fourteen, so the WIDEST grant requires<br/>BOTH layers to agree."]
-        E5["<b>guards.roleWrites and guards.cloudGuard are the two<br/>exceptions to E4, and the only keys here whose<br/>DEFAULT is not their FLOOR.</b> ROLE_WRITE_POLICIES is<br/>(block, report, off); ROLE_WRITE_DEFAULT is <b>off</b>,<br/>the WIDEST tier, for both names - cloudGuard reuses<br/>roleWrites' own normalise/rank functions rather than<br/>growing a second copy (crew_guards.py:460-497,<br/>guard_tiers() :500-514)."]
+        E5["<b>guards.roleWrites and guards.cloudGuard are the two<br/>exceptions to E4, and the only keys here whose<br/>DEFAULT is not their FLOOR.</b> ROLE_WRITE_POLICIES is<br/>(block, report, off); ROLE_WRITE_DEFAULT is <b>off</b>,<br/>the WIDEST tier, for both names - cloudGuard reuses<br/>roleWrites' own normalise/rank functions rather than<br/>growing a second copy (crew_guards.py:461-498,<br/>guard_tiers() :500-514)."]
         E6["install.policy: auto is safe only because no<br/>repo-controlled string can become a command -<br/>crew_guards.INSTALLABLE maps a name to a literal<br/>argv tuple, consulted BEFORE the policy. Asserted in<br/>tests/test_install_policy.py."]
         E1 --- E2 --- E3 --- E4 --- E5 --- E6
     end
@@ -820,6 +820,10 @@ flowchart TB
 %% +12 lines on L-0572's verify-gate `coveredBy` rule (cited by name only). No node or edge changed.
 %% Re-anchored -> a81e4382 (L-0555 merges main 0487fc39: L-0575 #311, L-0599 #315, rerere off): main's body and its L-0575 re-anchor notes were taken. L-0555 touches no Anchors path. No node or edge changed.
 
+%% Re-anchored decb2b49 -> 38d7e1a1 (T-0009 round-6 self-check fixes; crew 1.0.145 re-set): crew_guards.py gained an import (+1 from :33),
+%% 4 comment lines and 1 tuple at _WORKFLOW_NON_LITERAL_RE (+5 from ~:2090) and 2 lines in _workflow_literal (+7 from ~:2720);
+%% every crew_guards citation here re-mapped by difflib and re-read by symbol (6 Dispatch, RATCHETED_KEYS, dispatch_answer :2935).
+%% DGATE's could-not-tell edge names the unseen-character rule. CONFIG.md moved +2 at its dispatch subsection; no CONFIG line is cited.
 %% Re-anchored a81e4382 (main) and 59e91ecc (T-0009) -> decb2b49 (T-0009 merges main 2a2d6e07, L-0592 #325, rerere off; crew 1.0.145):
 %% the header took main's sha and T-0009's Anchors line (cloud_guard.py stays on it: the Dispatch subgraph cites it); both provenance
 %% blocks kept, main's first. Main changed no Anchors code path; of the Anchors paths only CONFIG.md changed on both sides, and the
@@ -834,11 +838,11 @@ flowchart TB
     subgraph Dispatch["environments.workflows's one reader - the grammar runs before the parser (T-0009)"]
         direction TB
         DENV["cloud_guard.environments_config(root)<br/>plugin/crew/hooks/scripts/cloud_guard.py:2539<br/>workflows from the REPO file only;<br/>a malformed repo block empties it and sets problem;<br/>dispatchProblem :2574 adds the GLOBAL block's<br/>(crew_config.global_environments_problem :1083) -<br/>dispatches only, terraform still reads problem"]
-        DGATE{"crew_guards.dispatch_answer<br/>plugin/crew/hooks/scripts/crew_guards.py:2928<br/>dispatch_trigger :2546 (a run-time command word<br/>by its argv's shape, _hole_shape :2178; a PowerShell<br/>launcher or alias only with full parameter names,<br/>_ps_untrusted_dispatch :2287), then<br/>dispatch_first_non_literal :2646 -<br/>BEFORE any parsing"}
+        DGATE{"crew_guards.dispatch_answer<br/>plugin/crew/hooks/scripts/crew_guards.py:2935<br/>dispatch_trigger :2551 (a run-time command word<br/>by its argv's shape, _hole_shape :2183; a PowerShell<br/>launcher or alias only with full parameter names,<br/>_ps_untrusted_dispatch :2292), then<br/>dispatch_first_non_literal :2651 -<br/>BEFORE any parsing"}
         DCNT>"could not tell: unknown, op line-not-literal<br/>asks when attended, denied unattended"]
-        DPARSE["dispatch_scopes :2811, then<br/>dispatch_environment :2858<br/>nonProd / prod / unknown / unlisted"]
+        DPARSE["dispatch_scopes :2818, then<br/>dispatch_environment :2865<br/>nonProd / prod / unknown / unlisted"]
         DENV --> DGATE
-        DGATE -->|"a word or operator not plain, unseen,<br/>stdin or file read, a malformed block<br/>in either layer"| DCNT
+        DGATE -->|"a word or operator not plain, unseen,<br/>a workflow name holding a character<br/>that does not show (round 6),<br/>stdin or file read, a malformed block<br/>in either layer"| DCNT
         DGATE -->|"every word plain or single-quoted"| DPARSE
     end
 
