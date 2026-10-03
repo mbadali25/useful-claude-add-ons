@@ -646,7 +646,7 @@ def test_ship_merge_command_is_merge_commit_without_admin(tmp_path, monkeypatch)
 
     assert (fake.ran("pr", "merge"), [c for c in fake.calls if {"--squash", "--rebase",
                                                                  "--admin"} & set(c)]) == (
-        [crew_autopilot.merge_argv(7, head)], [])
+        [["pr", "merge", "7", "--merge", "--match-head-commit", head]], [])
 
 
 def test_ship_pr_policy_opens_and_never_merges(tmp_path, monkeypatch):
@@ -926,7 +926,7 @@ def test_ship_with_no_new_commit_merges_the_head_it_pushed(tmp_path, monkeypatch
     got = crew_autopilot.ship(str(root), T)
 
     assert (got["action"], fake.ran("pr", "merge")) == (
-        "merged", [crew_autopilot.merge_argv(7, head_a)])
+        "merged", [["pr", "merge", "7", "--merge", "--match-head-commit", head_a]])
 
 
 def _successor_ledger(root):
@@ -953,8 +953,23 @@ def test_ship_stops_when_the_ledger_is_replaced_after_the_last_poll(tmp_path, mo
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert (got["stop"], "ledger changed" in got["reason"], fake.ran("pr", "merge")) == (
-        True, True, [])
+    assert (got["stop"], "ledger changed after the review families were read" in got["reason"],
+            fake.ran("pr", "merge")) == (True, True, [])
+
+
+def test_ship_stops_when_the_ledger_is_replaced_during_the_queue_read(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("gpt",))
+
+    def queue(_top, _number):
+        _successor_ledger(root)
+        return False
+    monkeypatch.setattr(crew_autopilot, "read_merge_queue", queue)
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "ledger changed just before the merge" in got["reason"],
+            fake.ran("pr", "merge")) == (True, True, [])
 
 
 def test_ship_unchanged_ledger_merges_on_the_gates_families(tmp_path, monkeypatch):
