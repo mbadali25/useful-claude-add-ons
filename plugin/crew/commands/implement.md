@@ -38,10 +38,10 @@ me `tracker not updated: <reason>` and keep going — a tracker never blocks wor
 ## 2. Work the plan's steps in order
 
 Print what earlier reviews kept finding on this ticket's paths and keep each item open while you work:
-`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket $1` (exit 1: read its UNKNOWN
-line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`. Per step: write the test it names, watch
-it fail, implement the minimal change, watch it pass, then the next step. A step whose Expected does not match reality
-is a plan defect — rule on it, note the ruling and why in your report, and keep going; do not silently deviate.
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket $1` (exit 1: read its UNKNOWN,
+UNREADABLE or PROBLEM line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`. Per step: write the
+test it names, watch it fail, make the minimal change, watch it pass, then the next step. A step whose Expected does not
+match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 
 Who types is not assumed: read the effective dev table with
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
