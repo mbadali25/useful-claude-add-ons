@@ -825,8 +825,9 @@ stale and unknown stop `in-flight`, an ended-elsewhere record stops `handover-el
 (`FIXED_STOPS` `:207`, waiting on the owner, `WAITING` `:1384`). `plugin/crew/commands/autopilot.md`
 runs `begin` after picking the ticket (`:55`) and `end` before every stop (`:99`).
 Tests `test_crew_inflight.py`, `test_crew_holder.py`, `test_crew_autopilot_inflight.py`; the suite's
-session default is `plugin/crew/tests/conftest.py`'s autouse `_a_session`; mutations
-`INFLIGHT_MUTATIONS` in `sabotage_inflight.py` (21), appended in `plugin/crew/tests/sabotage.py`;
+session default is `plugin/crew/tests/conftest.py`'s autouse `_a_session`. The in-flight
+sabotage mutations are not on this branch: they move to L-0613, the tooling PR that follows (a
+harness change lands alone, `scripts/check-tooling-pr.py`);
 `.crew/verify.json:483-490` is its rule. Wave (L-0588) and goal (L-0589) runners are not wired yet.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
