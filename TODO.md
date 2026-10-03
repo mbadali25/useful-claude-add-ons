@@ -238,6 +238,17 @@ at minimum be loud.
 
 ## Correctness and verification gaps
 
+### CONFIG.md §10/§11 tables
+
+Found by T-0066 (2026-10-03, crew 1.0.159) while re-measuring the two headings:
+`len(leaf_paths(default_global_config()))` is 73 and the repo-only remainder is 57.
+§10's table omits `shellRoute.mode` / `shellRoute.distro`, which §11's table lists although
+both are global-settable; §11 also lists `verify.stopBudgetSeconds`, which is not a
+`default_config()` leaf, and omits `cloud.*` (3), `environments.nonProd`,
+`production.databases` / `.hosts` and `scope.mode` / `.allowCliApproval`. Only the headings
+and the new `git.forbiddenTrailers` row were changed there; the table rows are out of that
+ticket's scope.
+
 ### 4. ~~`vault_guard.py` blocks every edit to a vault's own `CLAUDE.md`~~ — DONE
 
 **Shipped 2026-09-05 as `obsidian-vault` 0.3.2, PR #69 (`3167721f`).** Seven

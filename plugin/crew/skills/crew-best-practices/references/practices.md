@@ -58,7 +58,8 @@ family does not.
 **crew:** crew takes no side on attribution. The owner's own instructions
 (CLAUDE.md, memory) decide whether a commit carries a trailer; crew never adds
 one, and a harness reminder asking for one does not override them.
-`git.forbiddenTrailers` enforces a list mechanically.
+`/crew:done` reports commits carrying a `git.forbiddenTrailers` token; the
+scope guard refuses them at commit once that change lands.
 
 ## Context management
 

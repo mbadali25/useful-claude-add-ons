@@ -47,8 +47,9 @@ Who types is not assumed: read the effective dev table with
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models` and dispatch whatever
 `dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch prompt. A dispatched prompt
 carries no attribution or trailer instruction of its own, not even one a harness reminder supplied: the owner's own
-instructions decide, `git.forbiddenTrailers` enforces. The developer may commit on this ticket's own branch and nowhere
-else. Record the dispatch the moment it returns, with what actually ran, never the pin:
+instructions decide. `/crew:done` reports `git.forbiddenTrailers` hits; they are refused at commit once the scope-guard
+change lands. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
+returns, with what actually ran, never the pin:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
@@ -86,9 +87,8 @@ confirm the `.crew/verify.json` rule it falls under actually fires.
 
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
-Coverage above is the tests. Then `/crew:docs`, deciding which documents this
-touches ("none" is common and correct). Then commit, and check the code maps,
-diagrams and code graph this ticket's changed paths reach:
+Coverage above is the tests. Then `/crew:docs`, deciding which documents this touches ("none" is common and
+correct). Then commit, and check the code maps, diagrams and code graph this ticket's changed paths reach:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1

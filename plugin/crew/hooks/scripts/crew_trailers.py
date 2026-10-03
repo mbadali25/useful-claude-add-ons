@@ -14,8 +14,11 @@ both layers means nothing is forbidden and nothing here refuses. Three uses:
   value that is not a list of trailer tokens, is "could not tell" -- its own
   value, never read as `[]`.
 * `commit_refusal(command, tokens, cwd)` -- why one Bash/PowerShell command
-  is refused, or None. `scope_guard.decide` calls it in EVERY `scope.mode`,
-  including `off`; the `[]` default is what keeps it inert.
+  is refused, or None. Written for `scope_guard.decide` to call in EVERY
+  `scope.mode`, including `off`, with the `[]` default keeping it inert. That
+  wiring touches review/gate harness paths (`HARNESS` in
+  `scripts/check-tooling-pr.py`), so it lands in its own change; until then
+  nothing calls this function and nothing refuses.
 * `--check --root DIR --ticket ID` -- `/crew:done`'s report over the
   ticket's commits (`<scope base>..HEAD`). It REPORTS and never refuses:
   a refusal would be curable only by a history rewrite, which is the owner's
@@ -54,6 +57,8 @@ import re
 import subprocess
 import sys
 
+import crew_common
+
 KEY = "git.forbiddenTrailers"
 TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 GIT_TIMEOUT = 60
@@ -78,16 +83,21 @@ def _config():
 
 
 def _layers(root, global_path=None):
-    """`([(label, tokens), ...], unknown)` for the repo then the global layer.
-    `unknown` is a sentence naming the file and key, or None."""
+    """`([(path, tokens), ...], unknown)` for the repo then the global layer.
+    The repo layer is the `.crew/` `crew_common.repo_config_dir` resolves (a
+    linked worktree with none reads the main checkout's). `unknown` is a
+    sentence naming the file and key, or None."""
     config = _config()
-    paths = (("repo", config.repo_config_path(root)),
-             ("global", config.GLOBAL_CONFIG_PATH if global_path is None else global_path))
+    crew_dir, source, detail = crew_common.repo_config_dir(root)
+    if source == crew_common.SOURCE_UNKNOWN:
+        return [], f"which repo config is in force could not be told ({detail})"
+    paths = (os.path.join(crew_dir, "config.json"),
+             config.GLOBAL_CONFIG_PATH if global_path is None else global_path)
     out = []
-    for label, path in paths:
+    for path in paths:
         state = config.layer_state(path)
         if state == "absent":
-            out.append((label, ()))
+            out.append((path, ()))
             continue
         if state != "ok":
             return out, f"{path} is unreadable or not a JSON object ({state})"
@@ -97,7 +107,7 @@ def _layers(root, global_path=None):
         except (OSError, ValueError) as exc:
             return out, f"{path} could not be read ({type(exc).__name__})"
         if "git" not in parsed:
-            out.append((label, ()))
+            out.append((path, ()))
             continue
         block = parsed["git"]
         if not isinstance(block, dict):
@@ -107,7 +117,7 @@ def _layers(root, global_path=None):
                 isinstance(item, str) and TOKEN_RE.match(item) for item in value):
             return out, (f"{path}: {KEY} is not a list of trailer tokens "
                          "(letters, digits and '-', no ':')")
-        out.append((label, tuple(value)))
+        out.append((path, tuple(value)))
     return out, None
 
 
@@ -130,8 +140,7 @@ def forbidden(root, global_path=None):
 def set_by(root, global_path=None):
     """The config files whose list is non-empty, for the refusal message."""
     layers, _ = _layers(root, global_path)
-    names = {"repo": ".crew/config.json", "global": "~/.claude/crew/config.json"}
-    return [names[label] for label, values in layers if values]
+    return [path for path, values in layers if values]
 
 
 def _trailer_re(token):
@@ -183,7 +192,7 @@ def _git_commit_at(words, i):
 
 
 def _gh_merge_at(words, i):
-    rest = [w for w in words[i + 1:]]
+    rest = list(words[i + 1:])
     plain, skip = [], False
     for word in rest:
         if skip:
@@ -332,9 +341,9 @@ def check(root, ticket, global_path=None):
         return 0, [f"trailers: clean ({KEY} is empty - nothing forbidden)"]
     import scope_base  # pylint: disable=import-outside-toplevel
     base, source, reason = scope_base.resolve(root, ticket)
-    if not base or source == "head":
-        # `head` is scope_base's last resort: HEAD..HEAD reads nothing, and
-        # "clean (0 commits)" would be a false all-clear.
+    if not base:
+        # No base at all. scope_base's `head` last resort (HEAD..HEAD) reads
+        # no commit and is caught below with every such fallback.
         return 2, [f"trailers: unknown - no base for {ticket}: {reason}"]
     messages = _log_messages(root, base)
     if messages is None:

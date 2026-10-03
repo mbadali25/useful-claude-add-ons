@@ -4,6 +4,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.159: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
+
+- `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
+  `Co-Authored-By` and wins: the owner's own instructions decide attribution, crew never adds a
+  trailer, and a harness reminder asking for one does not override them.
+- `/crew:implement` step 2: a dispatched prompt carries no attribution or trailer instruction of
+  its own, not even one a harness reminder supplied (autopilot follows that procedure).
+- New config key `git.forbiddenTrailers` (default `[]`) in both layers, combined by UNION rather
+  than precedence, so a cloned repo's `[]` never disarms the machine owner's list; a corrupt layer
+  or malformed value is unknown, never `[]`. Template leaf count 129 -> 130; CONFIG.md §22.
+- `crew_trailers.py --check --root . --ticket <id>` reports `trailers: clean (<n> commits)`,
+  `trailers: FINDING <sha7> <Token>` per offending commit in `<scope base>..HEAD`, or
+  `trailers: unknown - <why>` (exit 0/1/2). `/crew:done` runs it as a report: it never refuses
+  and crew never rewrites the commits. History is left as it is.
+- Not in this release: the scope guard's refusal of a commit carrying a listed trailer, its
+  must-block/must-allow suite and its sabotage entries. They touch review/gate harness paths
+  (`scripts/check-tooling-pr.py` `HARNESS`), so they land in their own change.
+- Owner step after merge: `python3 plugin/crew/hooks/scripts/crew_config.py --set
+  'git.forbiddenTrailers=["Co-Authored-By"]' --apply`.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

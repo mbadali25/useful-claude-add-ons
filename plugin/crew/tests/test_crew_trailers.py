@@ -1,8 +1,9 @@
 """crew_trailers.py (T-0066): the `git.forbiddenTrailers` list, the textual
-command check the scope guard runs, and `/crew:done`'s report.
+command check written for the scope guard, and `/crew:done`'s report.
 
-Every behaviour here has a mutation in sabotage_trailers.py that turns its
-test red. Fixtures live in `tmp_path`; the global layer is always an explicit
+The sabotage entries for these tests (sabotage_trailers.py) live under a
+harness path and land with the scope-guard wiring, in their own change.
+Fixtures live in `tmp_path`; the global layer is always an explicit
 `tmp_path` file (conftest's autouse fixture already points the default away
 from the real `~/.claude`).
 """
@@ -71,6 +72,17 @@ def test_forbidden_deduplicates_case_insensitively(tmp_path):
     glob = _global_layer(tmp_path, {"git": {"forbiddenTrailers": ["Co-Authored-By"]}})
 
     assert crew_trailers.forbidden(str(root), glob) == (("co-authored-by",), None)
+
+
+def test_a_linked_worktree_reads_the_main_checkouts_list(tmp_path):
+    """`.crew/*` is gitignored, so a lane worktree has no config of its own
+    and reads the main checkout's (crew_common.repo_config_dir, T-0088)."""
+    main = init_repo(tmp_path / "main")
+    _repo_layer(main, {"git": {"forbiddenTrailers": ["X-Lane"]}})
+    git(main, "worktree", "add", "-q", str(tmp_path / "lane"))
+
+    assert crew_trailers.forbidden(str(tmp_path / "lane"), str(tmp_path / "absent.json")) == (
+        ("X-Lane",), None)
 
 
 @pytest.mark.parametrize("where", ["repo-json", "global-json", "repo-directory"])

@@ -674,12 +674,13 @@ them:
 
 ---
 
-## 10. Global-settable keys — 68
+## 10. Global-settable keys — 73
 
-68 measured (`leaf_paths(default_global_config())`, crew 1.0.46); the table
-below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+73 measured (`len(leaf_paths(default_global_config()))`, crew 1.0.159, T-0066);
+the table below lists 67 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
-global-settable and not tabled here.
+global-settable and not tabled here, and `shellRoute.mode` / `shellRoute.distro`
+are global-settable but still tabled in §11 (TODO.md, "CONFIG.md §10/§11 tables").
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -760,6 +761,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `change.category` | string or `null`, see §17 | `null` |
 | `resume.auto` | `true` or `null`; **only the machine layer can arm it**, a repo `false` vetoes it (§14a) | `null` |
 | `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
+| `git.forbiddenTrailers` | list of trailer tokens; the two layers combine by **union**, not precedence (§22) | `[]` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
@@ -782,7 +784,11 @@ that role — `/crew:review` resolves `review`'s model that way
 
 ---
 
-## 11. Repo-only keys — all 41
+## 11. Repo-only keys — 57
+
+57 measured (`leaf_paths(default_config())` minus §10's 73, crew 1.0.159);
+the table below predates eight of them and carries three rows that are not
+repo-only keys (TODO.md, "CONFIG.md §10/§11 tables").
 
 Refused in the global file by `plan_global_write`, and pruned out of it by
 `filter_global` if some other tool wrote one. Each is a fact about one
@@ -2627,3 +2633,51 @@ to `/crew:approve`, a `continue` whose next step is approval asks instead, and
 `--harness codex` no line is emitted, because the Skill tool it names does not
 exist there. With `memory.inject: false` the hook emits nothing, route line
 included.
+
+---
+
+## 22. `git.forbiddenTrailers` — commit trailers the owner forbids
+
+`git.forbiddenTrailers` (T-0066, since 1.0.159) is a list of commit trailer
+tokens, such as `["Co-Authored-By"]`, that the owner does not want on any commit
+crew's sessions make. crew takes no side on attribution: the owner's own
+instructions (CLAUDE.md, memory) decide, crew never adds a trailer, and a
+harness reminder asking for one does not override them. This key states the
+owner's answer mechanically. The list is the switch: `[]`, the default in both
+layers, means nothing is forbidden.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `git.forbiddenTrailers` | `[]` | `crew_trailers.forbidden` | A value that is not a list of tokens (letters, digits and `-`, no `:`), a `git` that is not an object, or a config file `crew_config.layer_state` calls corrupt is **unknown**, never `[]`: `/crew:done` prints `trailers: unknown - <why>`. |
+
+**Union, not precedence.** Both layers are read raw and their lists are
+combined, case-insensitively and without duplicates. A repo can add a token and
+can never remove the machine owner's: a cloned repo carrying `[]` must not
+silently disarm the owner, which ordinary precedence would let it do (the same
+reason §15's ratchet exists). The repo layer is the `.crew/config.json` in force:
+a linked worktree with none of its own reads the main checkout's, and when that
+cannot be told, the list is unknown.
+
+**What reads it.** `/crew:done` runs
+`crew_trailers.py --check --root . --ticket <id>` over the ticket's commits
+(`<scope base>..HEAD`) and prints `trailers: clean (<n> commits)`, one
+`trailers: FINDING <sha7> <Token>` per offending commit, or
+`trailers: unknown - <why>` (no base, git failed, config unreadable), exiting
+0 / 1 / 2. It is a report: it never refuses done and crew never rewrites the
+commits, because a rewrite is the owner's decision and stales the review
+receipt. A line derived from a fallback scope base says so.
+
+**The textual rule.** A message matches when it contains
+`<Token>` followed by optional spaces and `:` or `=`, case-insensitively (git
+treats trailer keys that way). So prose saying "no Co-Authored-By trailers"
+passes, and prose "Co-Authored-By: lines" is matched — conservative on purpose.
+
+**Refusing at commit time** is the scope guard's half of T-0066. It touches
+review/gate harness paths (`HARNESS` in `scripts/check-tooling-pr.py`), so it
+lands in its own change; until then this key is reported, not enforced.
+
+**Setting it machine-wide:**
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_config.py --set 'git.forbiddenTrailers=["Co-Authored-By"]' --apply
+```

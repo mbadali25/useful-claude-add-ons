@@ -533,6 +533,14 @@
       "run": ["python3 -m pytest plugin/crew/tests/test_pytest_rule.py -q"],
       "reach": "local",
       "why": "pytest_rule.py runs the crew rules above that call it: `-n auto -m \"not wallclock\"` then `-m wallclock` serially, the way pytest-crew.yml runs the suite, or one serial run without xdist. Its exit code is what the gate reads, so the suite pins every combination: exit 5 from one half is not a failure, from both it is, and a half killed by a signal is a failure (max() of the codes would have read 0). 1.6s here. reach: local - a unit suite with the pytest calls stubbed."
+    },
+    {
+      "paths": ["plugin/crew/hooks/scripts/crew_trailers.py", "plugin/crew/tests/test_crew_trailers.py"],
+      "seconds": 2,
+      "coveredBy": "crew-suite",
+      "run": ["python3 -m pytest plugin/crew/tests/test_crew_trailers.py -q"],
+      "reach": "local",
+      "why": "T-0066's git.forbiddenTrailers: the two-layer UNION (a repo [] never disarms the global list), a corrupt layer or malformed value as unknown rather than [], the textual commit check over every must-block and must-allow command, and the /crew:done --check report (clean / FINDING / unknown, exit 0/1/2) over real git repos in tmp_path. 1.3s wall (51 passed, one more for the linked-worktree read) measured 2026-10-03 on the Linux cloud container (4 CPUs; one 47s run under a load average of 6.8 from other jobs is not the price). The scope-guard wiring, its suite and the sabotage entries touch harness paths and land in their own change, which extends this rule."
     }
   ],
 
