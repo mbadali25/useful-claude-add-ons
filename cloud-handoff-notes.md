@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:32 UTC
+Last updated: 2026-10-03 23:33 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:33: #372 red Windows fan-in on bf87f024 = default/slow jobs CANCELLED by the 11d5194e push (wallclock passed); not a failure. #337 round-5 FIX pushed (4e77771a, crew 1.0.222): stems stay out of 'by' names, GAP names the word. Round-6 Sonnet re-review started.
 - 23:32: #358 T-0022 built + pushed 99409651 (crew 1.0.191): docs + tracker autopilot phases, crew_docs_check.py; suite 8869 passed; 21/21 sabotage red; harness follow-up sabotage_docs.py. Sonnet review of #358 started. Port T-0051 (#362, 1.0.197, WIP-unverified) started in /home/user/pr-362. #337 round-6 commits made locally (to 1.0.222), gating.
 - 23:31: #372 merge-only re-review on 11d5194e: CLEAN (0/0/0). Review rule satisfied on the current head; waiting for CI on 11d5194e, then merge.
 - 23:30: #352 T-0069 built + pushed eaae7b72 (crew 1.0189): 4/6 fixes (T-0023 x2, T-0042 x2); T-0024's two + sabotage entries -> harness-only PR. Suite 8823 passed. Sonnet review of #352 started. Port T-0064 (#367, 1.0.198) started in /home/user/pr-367. Merge-only re-review of #372 running.
