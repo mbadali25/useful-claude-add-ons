@@ -4,6 +4,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.140: the verify map's crew test rules run under xdist, wallclock tests serially
+
+- `plugin/crew/tests/pytest_rule.py` runs a verify rule's crew test files as `-n auto -m "not
+  wallclock"` and then `-m wallclock` serially, the way `pytest-crew.yml` runs the suite, or as one
+  serial run without pytest-xdist. Exit 5 from one half is not a failure, from both it is, and a
+  half killed by a signal is a failure (a `max()` of the codes would have read 0). It refuses a
+  `-m` or `-n` of its own. `tests/test_pytest_rule.py` pins every combination; red with `max()`.
+- The 17 crew pytest rules in `.crew/verify.json` priced at 15s or more call it, and are re-priced
+  from a measurement of each, old and new command back to back on a 4-CPU container: the same
+  tests collected both ways, 2-4x faster (rule 4: 50s -> 17s; rule 6: 105s -> 29s; rule 27: 71s ->
+  25s). Rules 4, 8, 26, 27 and 46, declared 45-96s, now fit the 60s Stop budget alone and run at
+  Stop instead of being chronic. Each `why` says where and how it was timed.
+- `test_verify_gate_subset_cover.py`'s plausibility check for `coveredBy` subsets accepts the
+  `pytest_rule.py` runner, whose two halves select exactly what the plain command did.
+
 ### Fixed — `crew` 1.0.136: `/crew:config`'s menu stops deep-copying the whole default config per key lookup; Windows CI shards split by measured time; lock-window tests stop sleeping
 
 - `crew_config._shape`, `_is_open_table` and `_content_problem`'s default lookup read one cached
