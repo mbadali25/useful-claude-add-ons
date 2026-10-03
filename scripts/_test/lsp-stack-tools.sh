@@ -4,7 +4,7 @@
 # install_typescript_lsp_binary/install_angular_language_server/install_tflint/
 # install_ruff/install_sqlfluff/install_shellcheck/install_psscriptanalyzer in
 # scripts/install-prerequisites.sh, and their Install-LspBinary/tflint/ruff/sqlfluff/
-# shellcheck/PSScriptAnalyzer equivalents in scripts/install-prerequisites.ps1.
+# ShellCheck/PSScriptAnalyzer equivalents in scripts/install-prerequisites.ps1.
 #
 # Idempotency is the point (CLAUDE.md: "both install scripts are idempotent - a new
 # step needs a detection branch reporting 'already installed'"), so every function

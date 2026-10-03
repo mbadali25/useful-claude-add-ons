@@ -55,6 +55,29 @@ All notable changes to this repository are documented here. Format follows [Keep
   line was added, so no line citation moves. Pylint on the file under 3.11 now exits 0 (was 2);
   3.12 and 3.13 exit 0 as before.
 
+### Fixed — `scripts/install-prerequisites.sh` and `scripts/_test/lsp-stack-tools.sh` parse under ShellCheck again; repository tooling, no plugin version (L-0587)
+
+- **What was wrong.** `install-prerequisites.sh:1675` read
+  `# shellcheck disable=SC2059 - the template is ours, from GROUP_LABEL.`; ShellCheck takes the
+  ` - reason` tail as part of the directive, reports SC1073/SC1072 and stops checking the whole
+  file. `lsp-stack-tools.sh:7` was header prose that began with the lowercase word
+  `shellcheck/...`, which ShellCheck also reads as a directive. Neither file had been checked past
+  those lines. Measured with shellcheck 0.11.0 and 0.9.0 (the version on GitHub's ubuntu-24.04).
+- **Fix.** Comments only: `:1675` uses the documented trailing-comment form
+  (`# shellcheck disable=SC2059 # the template is ours, ...`), so SC2059 stays suppressed on the
+  `GROUP_LABEL` printf; `:7` now reads `ShellCheck/...`. `install-prerequisites.ps1` is unchanged:
+  it formats the same label with `-f` and carries no PSScriptAnalyzer suppression to keep in step.
+- **New suite.** `scripts/_test/shellcheck-directives.py` (stdlib) fails on any own-line
+  `# shellcheck` comment in a tracked `*.sh` that the directive grammar rejects (keys and their
+  values, as measured under 0.9.0 and 0.11.0), with must-block
+  and must-allow cases, an empty-extraction check and, when `shellcheck` is on PATH, a cross-check
+  against real ShellCheck (SKIPPED, loudly, when it is not). It runs as a `marketplace.yml` step,
+  in `scripts/gate-runner.py`'s table and in `.crew/verify.json`'s `scripts/**` rule.
+- **Not fixed here.** Now that ShellCheck reads both files, it reports 28 findings under 0.11.0
+  (30 under 0.9.0: SC2034, SC2004, SC2016, SC2155 and a few others). They are out of scope and left
+  for a follow-up.
+- **README.** The install URLs are re-pinned to the merge commit in a follow-up PR.
+
 ### Added - `crew` 1.0.129: a recurring-findings checklist, scoped to a ticket's paths, for the implementer (L-0575)
 
 - **What.** `plugin/crew/skills/crew-qa-standards/references/recurring-findings.md` lists seven
