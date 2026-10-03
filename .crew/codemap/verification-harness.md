@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7bdb1196
+anchor: useful-claude-add-ons@5a403ab5
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2346,3 +2346,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `52f03271` -> `eab5ff10` on 2026-10-03 (L-0522 PR 1 review round 1 fixes): the landing order now reads "..., gate the merged head, review it again if `review_ledger.py --check-receipt` reads stale, then check-land again" in `crew_train.py` (`LANDING_ORDER`, one line longer, one docstring line), `done.md`, `implement.md:114`, README and `daily-workflow.md`; the bare `crew_train.py` citations in this note's merge-train section re-mapped by difflib.**
 
 **Re-anchored `452b30cc` (main) and L-0522's `eab5ff10` -> `7bdb1196` on 2026-10-03 (L-0522 PR 1 merges origin/main `f808e5f0` (#330 CI receipt, #329 verify/review harness; crew 1.0.154) at `e8a2b197`, rerere off; both provenance histories kept, main's first; citations re-mapped by difflib).**
+
+**Re-anchored `f808e5f0`/`7bdb1196` -> `5a403ab5` on 2026-10-03 (L-0522 PR 1 merges origin/main `0c115dd2` (L-0600 #332, the crew.md citation correction) at `4b980080`, rerere off; main's text taken for the conflicted refresh artifacts, then L-0522's citation changes re-applied by difflib).**
