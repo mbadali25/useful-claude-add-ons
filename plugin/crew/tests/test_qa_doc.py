@@ -5,6 +5,7 @@ import json
 import re
 
 import context  # noqa: F401  pylint: disable=unused-import
+import qa_audit_env
 import qa_doc
 
 
@@ -112,3 +113,8 @@ def test_html_escapes_repo_content(tmp_path):
         {"paths": ["<script>"], "run": ["echo <b>x</b>"], "reach": "local", "seconds": 1}]}))
     html = qa_doc.render_html(qa_doc.collect(str(tmp_path)))
     assert "<script>\"" not in html and "&lt;script&gt;" in html
+
+
+def test_printed_paths_use_forward_slashes_on_every_os():
+    """crew-windows-default printed `docs\\qa\\README.md`; output must not depend on the OS."""
+    assert qa_audit_env.posix("docs\\qa\\README.md") == "docs/qa/README.md"

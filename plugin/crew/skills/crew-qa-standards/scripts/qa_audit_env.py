@@ -52,6 +52,13 @@ _LAST_VERIFIED_RE = re.compile(r"last[ _-]?verified\s*[:=]\s*(\d{4}-\d{2}-\d{2})
 _VERIFY_REF_RE = re.compile(r"(?:^|[\s/])(_verify/[\w./-]+)")
 
 
+def posix(rel):
+    """A repo-relative path with `/` separators, whatever OS built it: CI paths
+    come from os.path.join, so on Windows they carry backslashes, and every
+    comparison and every line of evidence must read the same on both."""
+    return rel.replace("\\", "/")
+
+
 def _row(rule, title, status, evidence):
     return {"rule": rule, "title": title, "status": status, "evidence": evidence,
             "fix": f"{REF}, {rule}"}
@@ -387,7 +394,7 @@ def check_deploy_ref(root, ci, tests):
         hits += [where for where, cmd in map_commands(vmap)
                  if where.startswith("environments.") and where.endswith(".deploy")
                  and _REV_PARSE_HEAD_RE.search(cmd)]
-    for rel, text in ci:
+    for rel, text in ((posix(r), t) for r, t in ci):
         if "deploy" not in (rel + text).lower():
             continue
         hits += [f"{rel}:{n}" for n, ln in enumerate(text.split("\n"), 1)
@@ -405,7 +412,7 @@ def check_deploy_ref(root, ci, tests):
 def check_deploy_workflows(root, ci, tests):
     """E4 (standard 17, defect D2): deploy workflows fail loudly."""
     title = "Deploy workflows fail loudly"
-    deploys = [(rel, text) for rel, text in ci if "deploy" in (rel + text).lower()]
+    deploys = [(posix(rel), text) for rel, text in ci if "deploy" in (rel + text).lower()]
     if not deploys:
         return _row("E4", title, NA if ci else UNKNOWN,
                     "no deploy workflow" if ci else "no CI configuration was found")

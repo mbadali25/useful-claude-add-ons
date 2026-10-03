@@ -5,7 +5,7 @@
 
 | Item | Value |
 |---|---|
-| Commit | `a7cf0783` |
+| Commit | `c5fd58de` |
 | Generated | 2026-10-03 |
 | Verify map | ok (49 rule(s)) |
 | Environments | none declared |
@@ -105,7 +105,7 @@ UNKNOWN means the audit could not tell. It is not a pass.
 
 | Rule | Status | Check | Evidence |
 |---|---|---|---|
-| H2 | GAP | Parallel test runner | pytest without -n on a large suite: .github/workflows/pytest-crew.yml:286 (5779 tests), .github/workflows/pytest-crew.yml:289 (5779 tests), .github/workflows/pytest-crew.yml:337 (4654 tests), .github/workflows/pytest-crew.yml:380 (4654 tests); serial and small enough that workers would cost more: .github/workflows/pytest-crew.yml:146 (137 tests), .github/workflows/pytest-crew.yml:160 (31 tests) |
+| H2 | GAP | Parallel test runner | pytest without -n on a large suite: .github/workflows/pytest-crew.yml:286 (5781 tests), .github/workflows/pytest-crew.yml:289 (5781 tests), .github/workflows/pytest-crew.yml:337 (4656 tests), .github/workflows/pytest-crew.yml:380 (4656 tests); serial and small enough that workers would cost more: .github/workflows/pytest-crew.yml:146 (137 tests), .github/workflows/pytest-crew.yml:160 (31 tests) |
 | H6 | GAP | Fast linter: rule set named, version pinned | ruff installed unpinned at .github/workflows/verify-gate.yml:69 |
 | E7 | GAP | CI runs the _verify entry points the gate runs | run locally, never in CI (mark the rule `localOnly` if that is deliberate): _verify/smoke.sh |
 | H3 | PASS | Wall-clock tests run serially | parallel runs exclude a marker that a serial run selects; not judged (select a marker subset): .github/workflows/pytest-crew.yml:209, .github/workflows/pytest-crew.yml:386 |

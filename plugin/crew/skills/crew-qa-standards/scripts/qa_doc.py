@@ -355,14 +355,14 @@ def main(argv):
     files = outputs(root)
     if not args.write:
         for rel, text in files.items():
-            print(f"would write {rel} ({len(text.splitlines())} lines)")
+            print(f"would write {qa_audit_env.posix(rel)} ({len(text.splitlines())} lines)")
         print("dry run: nothing written; re-run with --write")
         return 0
     written, refused = write(root, files)
     for rel in written:
-        print(f"wrote {rel}")
+        print(f"wrote {qa_audit_env.posix(rel)}")
     for rel in refused:
-        print(f"REFUSED {rel}: it exists and is not marked '{GENERATED}' -- move it aside or "
+        print(f"REFUSED {qa_audit_env.posix(rel)}: it exists and is not marked '{GENERATED}' -- move it aside or "
               "merge by hand", file=sys.stderr)
     return 1 if refused else 0
 

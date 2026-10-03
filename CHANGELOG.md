@@ -4,8 +4,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.158: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.159: QA standards for repositories crew sets up (L-0618)
 
+- On Windows, E4 read CI paths as `.github\workflows\...` and so never asked a GitHub deploy
+  workflow for its `concurrency:` group; every comparison and every printed path is now `/`
+  separated (`qa_audit_env.posix`). Found by `crew-windows-default`.
 - G1 asks the Stop gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) which
   undeclared rules it defers, and names only those as skipped: a plain local command without
   `reach` still runs on Stop, so the review's "every rule without `reach` is skipped" overstated

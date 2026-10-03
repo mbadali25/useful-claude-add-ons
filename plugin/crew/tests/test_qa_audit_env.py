@@ -256,6 +256,14 @@ def test_e4_swallowed_exit_and_no_concurrency_are_gaps(tmp_path):
     assert row["status"] == qa_audit.GAP and "swallows" in row["evidence"] and "concurrency" in row["evidence"]
 
 
+def test_e4_a_windows_built_ci_path_is_still_checked_for_concurrency(tmp_path):
+    """On Windows, ci_files() builds `.github\\workflows\\deploy.yml`; E4 must still
+    see it as a GitHub workflow (crew-windows-default found it skipped)."""
+    text = "name: deploy\njobs:\n  d:\n    steps:\n    - run: ./deploy.sh\n"
+    row = qa_audit_env.check_deploy_workflows(str(tmp_path), [(".github\\workflows\\deploy.yml", text)], [])
+    assert row["status"] == qa_audit.GAP and ".github/workflows/deploy.yml: no `concurrency:`" in row["evidence"]
+
+
 def test_e4_a_loud_deploy_workflow_passes(tmp_path):
     _write(tmp_path, ".github/workflows/deploy.yml",
            "name: deploy\nconcurrency: deploy-${{ inputs.env }}\njobs:\n  d:\n    steps:\n"
