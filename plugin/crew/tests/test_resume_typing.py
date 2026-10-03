@@ -736,6 +736,59 @@ def test_resume_mode_failure_keeps_context_output(fx, monkeypatch):
     assert [r["resumeTyping"] for r in _typing_log(fx)] == ["failed"]
 
 
+def _ps1_tmux_refusal():
+    """auto-clear.ps1's own refusal text for method tmux, read from the script."""
+    with open(os.path.join(_SCRIPTS, "auto-clear.ps1"), encoding="utf-8") as handle:
+        got = re.search(r'"tmux"\s*\{\s*Stop-CrewAutoClear "([^"]+)"', handle.read())
+    assert got, "auto-clear.ps1 no longer refuses method tmux by name"
+    return got.group(1)
+
+
+@pytest.mark.parametrize("reason,expected", [
+    (crew_autocycle.resolve_method({"method": "sendkeys"}, {})["reason"],
+     "Auto-resume was left to the PowerShell hook (auto-clear.ps1): this flavour does not type method sendkeys."),
+    (_ps1_tmux_refusal(),
+     "Auto-resume was left to the bash hook (auto-clear.sh): this flavour does not type method tmux."),
+    (f"the input line of {PANE} is not empty, so nothing was typed - run {PROMPT} yourself",
+     f"Auto-resume was not typed: the input line of {PANE} is not empty, so nothing was typed - run {PROMPT} "
+     "yourself."),
+    (f"the input line of {PANE} did not become ready within 1s (last probe: busy)",
+     f"Auto-resume was not typed: the input line of {PANE} did not become ready within 1s (last probe: busy)."),
+])
+def test_not_typed_line_tells_the_other_flavours_job_from_a_real_refusal(reason, expected):
+    """On Windows both flavours run: a refusal that only says "the other
+    flavour types this method" must never read as "not typed", because the
+    other flavour may be typing it. Every other refusal still says so. The
+    two other-flavour texts are each sender's own, so a reworded one fails."""
+    assert crew_context.not_typed_line({"status": "refused", "text": f"refused - {reason}"}) == expected
+
+
+@needs_bash
+def test_sh_hook_with_sendkeys_leaves_the_resume_to_the_ps1(fx):
+    """Windows with method sendkeys: the sh hook can win the context claim
+    before the ps1 sender records its run, so decide still reads `run`. Its
+    context must not say the resume was not typed."""
+    fx.machine(auto_clear={"method": "sendkeys"})
+
+    _done, text = _hook(fx, _start(fx), tmux=False)
+
+    assert f"Auto-resume: ready to run {PROMPT}." in text, text
+    assert "was not typed" not in text, text
+    assert "Auto-resume was left to the PowerShell hook (auto-clear.ps1): this flavour does not type method " \
+        "sendkeys." in text, text
+    assert ([r["resumeTyping"] for r in _typing_log(fx)], os.path.exists(fx.marker)) == (["refused"], False)
+
+
+@needs_bash
+def test_sh_hook_with_a_real_refusal_still_says_not_typed(fx):
+    fx.machine(auto_clear={"method": "tmux"})
+
+    _done, text = _hook(fx, _start(fx), tmux=False)
+
+    assert "Auto-resume was not typed: " in text and "$TMUX is unset" in text, text
+    assert "was left to the" not in text, text
+
+
 def test_codex_harness_never_types(fx, monkeypatch):
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(fx.global_path))
 

@@ -759,6 +759,26 @@ def _resume_typing_logged(root, payload, flavour, harness):
     return typing
 
 
+# A refusal that only means "the other flavour types this method": the sh
+# sender declining sendkeys (crew_autocycle.resolve_method) or the ps1 sender
+# declining tmux (auto-clear.ps1). On Windows both flavours run, so this one
+# saying "not typed" would be false whenever the other one types.
+_OTHER_FLAVOURS_JOB = re.compile(r"^refused - method (\S+) is auto-clear\.(sh|ps1)'s job\b")
+_FLAVOUR_HOOK = {"sh": "bash", "ps1": "PowerShell"}
+
+
+def not_typed_line(typing):
+    """The context line for a sender that refused or failed a `run`: why it
+    was not typed, or -- when the refusal names the other flavour's job -- that
+    it was left to that flavour's hook, which may be typing it right now."""
+    elsewhere = _OTHER_FLAVOURS_JOB.match(typing["text"])
+    if typing["status"] == "refused" and elsewhere:
+        method, flavour = elsewhere.groups()
+        return (f"Auto-resume was left to the {_FLAVOUR_HOOK[flavour]} hook (auto-clear.{flavour}): "
+                f"this flavour does not type method {method}.")
+    return f"Auto-resume was not typed: {typing['text'].split(' - ', 1)[-1]}."
+
+
 def typing_line(prompt, typing):
     """The context line for a sender that is typing `prompt`."""
     detail = typing["text"][len("typing "):] if typing["text"].startswith("typing ") else typing["text"]
@@ -987,14 +1007,15 @@ def build(root, payload, cfg, state, harness, typing=None):
         # T-0013: this flavour's sender ran before the claim. Typing recorded
         # the run, so the decision above now reads "already resumed": the
         # sender's own line wins. A sender that refused a `run` keeps T-0006's
-        # line and says why after the handoff.
+        # line and says why after the handoff -- unless it refused only because
+        # the method is the other flavour's (not_typed_line).
         not_typed = ""
         if typing and typing["status"] == "typing":
             prompt = typing["text"][len("typing "):].partition(" in ")[0]
             resume = {"action": "typed", "prompt": prompt, "reason": ""}
             resume_text = typing_line(prompt, typing)
         elif typing and typing["status"] in ("refused", "failed") and resume["action"] == "run":
-            not_typed = f"\nAuto-resume was not typed: {typing['text'].split(' - ', 1)[-1]}."
+            not_typed = "\n" + not_typed_line(typing)
         if resume["action"] != "off":
             extra["resume"] = {"action": resume["action"], "reason": resume.get("reason") or "",
                                "prompt": resume.get("prompt") or ""}

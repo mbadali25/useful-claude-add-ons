@@ -1223,8 +1223,9 @@ terminal, exactly as for `/clear`: `method`, `windowTitle`, `onlyRepos`,
 
 Both are read from `~/.claude/crew/config.json` only
 (`crew_autocycle.resume_typing`); a repo copy is declared, because every
-global key is a repo key, but never read. A value that is not a whole number,
-or is negative, is the default.
+global key is a repo key, but never read. A fractional number is cut to its
+whole part (`7.5` is `7`); any other value that is not a whole number, or is
+negative, is the default.
 
 Order, first refusal wins, and each is logged to `.crew/.autoclear.log`
 (off is silent: not armed, or outside `onlyRepos`/`onlySessions`):
