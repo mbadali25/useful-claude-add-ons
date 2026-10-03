@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@39ebbc18 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@b4fb3e41 on 2026-10-03. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -171,7 +171,7 @@
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
 %% digest (:609-630); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
-%% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
+%% (plugin/crew/hooks/scripts/completion_audit.py:243-255). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
 %% Re-anchored 8de3c669 -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077's Windows directory holds); it is cited
@@ -518,3 +518,4 @@ flowchart TB
 %% Re-anchored a81e4382 -> 4fc93b19 (L-0587 merges main ffeb0e2f: L-0598 #321, rerere off). Of the Anchors paths only crew_standards.py changed (+4 lines at :729, in proposals); the one node citing a line range (:105-109) is not in that file. No node or edge changed.
 %% Re-anchored a81e4382 -> 6475c41c (L-0592): of the Anchors paths only implement.md changed, step 2 re-wrapped in its same lines (:40-44, the exit-1 note now names UNKNOWN, UNREADABLE and PROBLEM). im2's label and citation still hold. No node or edge changed.
 %% Re-anchored 4fc93b19 (main) -> 39ebbc18 (L-0592 merges main 6ac3b1b3): of the Anchors paths only implement.md changed since main's anchor (step 2 re-wrapped in its same lines). No node or edge changed.
+%% Re-anchored 39ebbc18 -> b4fb3e41 (T-0046 merges main 2a2d6e07, crew 1.0.147): of the Anchors paths only completion_audit.py changed (the BUDGETS.md claim allowance: a docstring paragraph, two functions above audit() and one call inside it); the comment citing audit()'s approval refusal moved :204-215 -> :243-255 (difflib, same text plus the one inserted call). No node or edge changed.
