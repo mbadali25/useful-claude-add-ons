@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.222: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.225: QA standards for repositories crew sets up (L-0618)
 
 - E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
   `n`, `false` are no), a live credential's reach must name a known or declared environment
@@ -13,7 +13,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   with an optional `by <Name>` (1-3 capitalised ASCII words) and date, either order; a name
   without `by` is UNKNOWN. A refusal word or stem (`no`, `not`, `revok`, `cancel`, `maybe`,
   `draft`, ...) is not an acceptance, and the GAP names that word; inside a `by` name only a whole
-  refusal word counts, so `accepted by Denise` is a name, and any other text (`accepted Under Review`,
+  refusal word counts (`no`, `revoked`, `withdrew`, ...), so `accepted by Denise` is a name and
+  `accepted by No One` is not, and any other text (`accepted Under Review`,
   `approved`, `ok`) is UNKNOWN, never accepted. An unparseable `.crew/verify.json` makes E5 UNKNOWN. Header columns match whole words,
   so "Delivered" is not `live`. An unreadable runbook, `.gitignore` or inventory is UNKNOWN, not
   missing; `qa_doc.py --write` refuses an unreadable file instead of overwriting it; a failed
