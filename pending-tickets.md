@@ -7,7 +7,7 @@ from this file and updates **Status** as work lands.
 Status values: `needs ticket`, `ready`, `in progress`, `in review (PR #n)`, `blocked: <why>`,
 `done (PR #n)`, `owner action`.
 
-Last updated: 2026-10-03.
+Last updated: 2026-10-03 (PRs #350-#373 added).
 
 ## Summary
 
@@ -24,6 +24,38 @@ Last updated: 2026-10-03.
 | 9 | _new_ | Refresh the crew code map after #337 (`TRIGGERS` gains `qaAuditStale`) | needs ticket | #1 |
 | 10 | _new_ | Apply the diagram standard to the other diagram-producing skills | needs ticket | #4 |
 | 11 | owner | Tell the two production repositories' sessions about D10 and the audit | owner action | #1, #2 merged |
+
+## PRs #350-#373 (handed over from another cloud session, 2026-10-03)
+
+Crew versions are allocated here so parallel PRs do not collide. A PR re-bumps above `main` when
+it merges if its number has been passed.
+
+| PR | Ticket | State | Blocked by | Crew version |
+|---|---|---|---|---|
+| #350 | T-0061 | built; merging main and verifying | | 1.0.184 |
+| #351 | T-0066 | built; merging main and verifying | | 1.0.185 |
+| #355 | T-0013 | built; merging main and verifying | | 1.0.186 |
+| #360 | T-0048 | built; merging main and verifying | | 1.0.183 |
+| #368 | T-0063 | built; merging main and verifying | | 1.0.182 |
+| #371 | T-0100 | built; harness files, may need a tooling-PR split | | 1.0.166 |
+| #337 | L-0618 | in review | | 1.0.187 |
+| #375 | row 4 | in review | | 1.0.188 |
+| #352 | T-0069 | ready to build | | 1.0.189 |
+| #357 | T-0020 | ready to build | | 1.0.190 |
+| #358 | T-0022 | ready to build | | 1.0.191 |
+| #359 | T-0025 | ready to build | | 1.0.192 |
+| #361 | T-0050 | ready to build | | 1.0.193 |
+| #369 | T-0044 | ready to build | | 1.0.194 |
+| #370 | T-0038 | ready to build; carries #337's `/crew:upgrade` step 5c into `/crew:migrate` | | 1.0.195 |
+| #353 | T-0011 | real code on a base 1,855 commits old; port to main | | 1.0.196 |
+| #362 | T-0051 | unverified WIP on an old base; port and verify | | 1.0.197 |
+| #367 | T-0064 | real code on an old base; port to main | | 1.0.198 |
+| #354 | T-0012 | blocked | T-0019 (#379) | |
+| #356 | T-0017 | blocked | T-0016 (not started) | |
+| #363 | T-0060 | blocked | T-0051 (#362), T-0049 (not started) | |
+| #364 | T-0052 | blocked | T-0019 (#379), T-0037 (not started) | |
+| #365 | T-0058 | blocked | T-0052, T-0012, T-0019 | |
+| #366 | T-0059 | blocked | T-0011 (#353), T-0037, T-0052 | |
 
 ## Owner decisions (2026-10-03)
 
