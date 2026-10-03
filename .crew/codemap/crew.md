@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@586cabe0
+anchor: useful-claude-add-ons@aab858e9
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:223` states the identical three numbers (4
 agents, 36 commands, 31 skills) in its `crew` entry's description, and `:224`
-the version, 1.0.147 (T-0046's number, allocated by the coordinator 2026-10-03, re-set last at `586cabe0` after T-0046 merged main `3a064f4f` (L-0510 #318, whose crew is 1.0.142, set by L-0510 and not recorded in this sentence on main); 1.0.143-1.0.146 held by other lanes); before that 1.0.140 (L-0574's claim, allocated by the coordinator 2026-10-03, set last after L-0574 merged main `2a2d6e07` (L-0592 #325, 1.0.139), whose crew is 1.0.139; L-0574 held 1.0.136 after merging main `ffeb0e2f` (L-0598 #321, 1.0.135) and `6ac3b1b3`, whose crew was 1.0.135; L-0574 had earlier merged main `e0c70fc9` (L-0555 #310 1.0.132, #317 1.0.134, L-0597 #316), whose crew was 1.0.134; L-0574 was 1.0.131 after merging main `0487fc39` (L-0599 #315, L-0575 1.0.129), whose crew was 1.0.129; L-0574 had earlier merged main `7ba4f9ea` (L-0593 #312, L-0572 #309, #295), whose crew was 1.0.126; that 1.0.126 is L-0572's bump after merging main `d2ec37d3` (W-0120 #307/#308, 1.0.119), past 1.0.120-1.0.125, held or burned by other lanes; before that 1.0.119 (L-0578's bump after merging main `ffd11270` (L-0557 #300, 1.0.114), past 1.0.115-1.0.118, held or burned by other lanes; before that 1.0.114 (L-0557's re-set at `6053b65d` after merging main `2906dcbd` (L-0516 #298, 1.0.110) at `2f3fb34c`, past 1.0.111 (W-0117-land), 1.0.112 (L-0510) and 1.0.113 (T-0504); L-0557 was 1.0.111 at `c43a9ce3` after merging main `ddcbf90d` (W-0115 #299, 1.0.106) at `0597e5c6`, past 1.0.107 (T-0504), 1.0.108 (L-0510), 1.0.109 (T-0501) and 1.0.110 (L-0516); L-0557 was 1.0.105 at `773ce841` after merging main `05a679bf` (L-0558 #293, 1.0.102) at `2169bd11`, unchanged by the merge of main `cacf7ff0` (L-0513 #301, no plugin version) at `a9608aa5`, skipping 1.0.103 (L-0510) and 1.0.104 (L-0516); these two citations read `:217`/`:218` before this pass, which on this tree are another entry's description and version; L-0557 was 1.0.101 at `90186613` after merging main `52489039` at `327e6ec1`: past main's 1.0.98 (T-0040 #290), skipping 1.0.100 (L-0516) and L-0558's 1.0.95 (#293); L-0557 was 1.0.99 at `4fc11923`, after merging main `44d3dbc6` (T-0110 #297, 1.0.97); L-0557 was 1.0.96 at `97ace923` and `550c39cd`, when main was 1.0.92 (T-0505 #296); before T-0505 main was 1.0.89 (W-0116 #292); L-0557 was 1.0.95 at `d9ccfd5a` and 1.0.89 at `b1d8a4e8`; main's 1.0.86 before W-0116 is L-0520 PR 1's re-set at `14b52c91` after merging main `bd4b2f30`, past main's 1.0.85 and skipping 1.0.84, which T-0505 targets; 1.0.84 on L-0520's branch at `e60d88f2`; main's 1.0.85 is T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.158 (T-0046's number, allocated by the coordinator 2026-10-03, set last at `aab858e9` after T-0046 merged main `f808e5f0` (#328, #329, #330, whose crew is 1.0.154); 1.0.147 was T-0046's earlier number, spent when main passed it); before that 1.0.140 (L-0574's claim, allocated by the coordinator 2026-10-03, set last after L-0574 merged main `2a2d6e07` (L-0592 #325, 1.0.139), whose crew is 1.0.139; L-0574 held 1.0.136 after merging main `ffeb0e2f` (L-0598 #321, 1.0.135) and `6ac3b1b3`, whose crew was 1.0.135; L-0574 had earlier merged main `e0c70fc9` (L-0555 #310 1.0.132, #317 1.0.134, L-0597 #316), whose crew was 1.0.134; L-0574 was 1.0.131 after merging main `0487fc39` (L-0599 #315, L-0575 1.0.129), whose crew was 1.0.129; L-0574 had earlier merged main `7ba4f9ea` (L-0593 #312, L-0572 #309, #295), whose crew was 1.0.126; that 1.0.126 is L-0572's bump after merging main `d2ec37d3` (W-0120 #307/#308, 1.0.119), past 1.0.120-1.0.125, held or burned by other lanes; before that 1.0.119 (L-0578's bump after merging main `ffd11270` (L-0557 #300, 1.0.114), past 1.0.115-1.0.118, held or burned by other lanes; before that 1.0.114 (L-0557's re-set at `6053b65d` after merging main `2906dcbd` (L-0516 #298, 1.0.110) at `2f3fb34c`, past 1.0.111 (W-0117-land), 1.0.112 (L-0510) and 1.0.113 (T-0504); L-0557 was 1.0.111 at `c43a9ce3` after merging main `ddcbf90d` (W-0115 #299, 1.0.106) at `0597e5c6`, past 1.0.107 (T-0504), 1.0.108 (L-0510), 1.0.109 (T-0501) and 1.0.110 (L-0516); L-0557 was 1.0.105 at `773ce841` after merging main `05a679bf` (L-0558 #293, 1.0.102) at `2169bd11`, unchanged by the merge of main `cacf7ff0` (L-0513 #301, no plugin version) at `a9608aa5`, skipping 1.0.103 (L-0510) and 1.0.104 (L-0516); these two citations read `:217`/`:218` before this pass, which on this tree are another entry's description and version; L-0557 was 1.0.101 at `90186613` after merging main `52489039` at `327e6ec1`: past main's 1.0.98 (T-0040 #290), skipping 1.0.100 (L-0516) and L-0558's 1.0.95 (#293); L-0557 was 1.0.99 at `4fc11923`, after merging main `44d3dbc6` (T-0110 #297, 1.0.97); L-0557 was 1.0.96 at `97ace923` and `550c39cd`, when main was 1.0.92 (T-0505 #296); before T-0505 main was 1.0.89 (W-0116 #292); L-0557 was 1.0.95 at `d9ccfd5a` and 1.0.89 at `b1d8a4e8`; main's 1.0.86 before W-0116 is L-0520 PR 1's re-set at `14b52c91` after merging main `bd4b2f30`, past main's 1.0.85 and skipping 1.0.84, which T-0505 targets; 1.0.84 on L-0520's branch at `e60d88f2`; main's 1.0.85 is T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -234,8 +234,8 @@ landed) into T-0023, module resolved from this checkout
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **127** | `plugin/crew/hooks/scripts/crew_config.py:244` |
-| `default_global_config()` | **70** | `plugin/crew/hooks/scripts/crew_config.py:405` |
+| `default_config()` | **127** | `plugin/crew/hooks/scripts/crew_config.py:245` |
+| `default_global_config()` | **70** | `plugin/crew/hooks/scripts/crew_config.py:422` |
 | repo-only | **57** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
@@ -279,9 +279,9 @@ Re-executed on T-0040's branch (off `6387ab49`): 125 / 70 / 55 / 0 - T-0040 adde
 `shellRoute.mode` and `shellRoute.distro` to both `default_config()` and
 `default_global_config()`, so repo-only is unchanged. Re-executed on T-0040's landing merge of
 `6a8c60b1`: 127 / 70 / 57 / 0 - T-0010's two repo-only keys and T-0040's two in both layers
-(`plugin/crew/hooks/scripts/crew_config.py:339` and `:579`).
+(`plugin/crew/hooks/scripts/crew_config.py:340` and `:579`).
 Re-executed on T-0040-land's merge of main `844bfc36`: 129 / 72 / 57 / 0 - T-0028's two and
-T-0040's two, all in both layers. `plugin/crew/tests/test_crew_config.py:310` asserts 129. T-0004's `CHANGELOG.md` entry
+T-0040's two, all in both layers. `plugin/crew/tests/test_crew_config.py:347` asserts 129. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:703-704` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:692-693` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
@@ -361,7 +361,7 @@ before the subcommand (`crew_guards.tf_skip_options` `:1541`, used by `_terrafor
 `:1540`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
 wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1560`). DERIVED from the code cited.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2510-2622`)
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2527-2639`)
 now holds 14 keys**, built in seven steps (a literal dict of two at `:2510`, four `.update()`
 calls at `:2525`, `:2538`, `:2549` and `:2559`, and two single-key assignments at `:2595` and
 `:2618`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
@@ -411,7 +411,7 @@ closed by where the check sits, not by a patch at the call site.
   original may have no other name; Windows: `os.rename`); `move_aside` (`:494`) is that move plus
   the moved bytes, `create_bytes` (`:503`) a new file by the same move.
 - **Per-leaf judgement and per-leaf writing, shared by both planners.** `leaf_updates`
-  (`crew_config.py:2643`) flattens every update to its leaves, a whole-block value included, so a
+  (`crew_config.py:2660`) flattens every update to its leaves, a whole-block value included, so a
   consent key cannot ride inside a block; `value_allowed` (`:2716`) judges each leaf: the layer's
   path rule (`MACHINE_REFUSED` `:2636` via `_consent_refusal` `:2688`, and `is_global_path` `:705`
   at the machine layer; `REPO_REFUSED` `:2928`, `is_repo_path` `:2985` (`_shape` `:2647` is a leaf
@@ -509,7 +509,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1276`, through `crew_common.repo_config_file`
+  (`plugin/crew/hooks/scripts/crew_config.py:1293`, through `crew_common.repo_config_file`
   since T-0088, which in a linked worktree with no config of its own reads the
   main checkout's; and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
@@ -761,7 +761,7 @@ a module importing it keeps its own setting. `main` registers `deploy-allowed` a
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1097-1098`,
 `{"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk"}`
 since T-0072 and T-0010 merged), deep-copied into `default_config()`
-(`plugin/crew/hooks/scripts/crew_config.py:393`). It registers no hook -
+(`plugin/crew/hooks/scripts/crew_config.py:394`). It registers no hook -
 `plugin/crew/hooks/hooks.json` is unchanged since `a0c0847e`.
 
 `crew_ticket.parse_risk` (`plugin/crew/hooks/scripts/crew_ticket.py:509`)
@@ -894,7 +894,7 @@ picks the shell crew's long-running jobs run in on native Windows. It is a CLI
 everything: off native Windows `probe` returns `n/a`, `status_line` returns None, and `run`
 (`:768`) execs `["bash", "-c", cmd]` with no config read and no message, mapping a
 signal-killed child's -N to 128+N as `bash -c` does. The preference is
-`shellRoute.mode`/`.distro` in both config layers (`plugin/crew/hooks/scripts/crew_config.py:339`
+`shellRoute.mode`/`.distro` in both config layers (`plugin/crew/hooks/scripts/crew_config.py:340`
 and `:579`), read through `resolve_config` by `settings` (`:444`). The repo layer's `mode`
 is null (review round 2), so a repo that chose nothing inherits the machine's value; `mode`
 (`:465`) reads an unset value as `auto`, and an unrecognised one as `auto` naming it. The probe
@@ -943,14 +943,14 @@ writable (`:1697-1704`), rather than falling back to the old pipe form.
 
 - **The captured output is capped at 1 MiB (1048576 bytes), read as the
   LAST N bytes (`tail -c`), not the first.** `RULE_OUT_CAP`
-  (`verify-gate.sh:1663`) defaults to 1048576 and is clamped into `[1,
+  (`verify-gate.sh:1740`) defaults to 1048576 and is clamped into `[1,
   1048576]` (`:1677-1683`); a rule that legitimately writes more than that
   before backgrounding something no longer turns a bounded gate into an
   unbounded read. `tail -c`, not `head -c` (`:1684-1694`): what a failing
   rule needs downstream is its actual error, which for noisy output sits at
   the end.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from
-  crew 1.0 entirely**, per the comment at `verify-gate.sh:1628-1639` and
+  crew 1.0 entirely**, per the comment at `verify-gate.sh:1705-1716` and
   CHANGELOG 1.0.21 (both cited in the file itself, `:599-600`): a signalled
   gate no longer TERM/KILLs whatever a rule's own escaped background work
   left running. What remains is only the isolation and prompt-signal
@@ -1143,7 +1143,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   The ticket note (`_note_text` `:1225`) is an exclusive create
   (`_create_note_once` `:1234`, `_NOTE_FLAGS` `:290`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:61`,
-  `implement.md:34` and `:112`, `done.md:67` and `fix.md:27`, `:73`, `:81`,
+  `implement.md:34` and `:112`, `done.md:72` and `fix.md:27`, `:73`, `:81`,
   `:89`, `:91` (all under `plugin/crew/commands/`); brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
@@ -1176,7 +1176,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - `/crew:implement` step 6 (`plugin/crew/commands/implement.md:88-117`) runs
   it after `/crew:docs` and before `/crew:review` (`:95`), runs each named
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
-- `/crew:done` Check 4 (`plugin/crew/commands/done.md:58-69`) runs it again
+- `/crew:done` Check 4 (`plugin/crew/commands/done.md:63-74`) runs it again
   and refuses on `stale` or `unknown` without refreshing (`:64-67`).
 - `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:236-241`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
@@ -1374,7 +1374,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   only `model` (`plugin/crew/hooks/scripts/crew_state.py:1166`, `:1175`). `family`
   (`plugin/crew/hooks/scripts/crew_state.py:1454`) answers `kimi` for the `kimi` provider before
   it reads the model (`:1496-1497`), since the Kimi Code id `k3` would otherwise read as family
-  `k`. `crew_config.PATH_PROVIDERS` (`plugin/crew/hooks/scripts/crew_config.py:135`) asks `which`
+  `k`. `crew_config.PATH_PROVIDERS` (`plugin/crew/hooks/scripts/crew_config.py:136`) asks `which`
   about `kimi`, presence only.
 - **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:81`), only `ok`
   launchable (`:194`); `resolve_alias` (`:257`) maps an id to the config.toml alias served by a
@@ -1391,13 +1391,13 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `unknown`; config.toml is opened once, non-blocking, and checked and read through that handle
   (`_read_config`, `:348`).
 - **DERIVED**: the launch gate. `crew_config.review_launchable`
-  (`plugin/crew/hooks/scripts/crew_config.py:1867`) is `review_run.LAUNCHED` plus the in-session
+  (`plugin/crew/hooks/scripts/crew_config.py:1884`) is `review_run.LAUNCHED` plus the in-session
   `claude`, None when that list cannot be read; `order_candidates` (`:1878`) refuses a `qa.order`
   provider outside it ("/crew:review cannot launch `kimi` yet") and None admits nothing. It is the
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
 - **DERIVED**: nothing launches Kimi for a review yet. `review_run.py`'s `--provider` choices are
-  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:946`), and
+  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:941`, `PROVIDERS`, the `--provider` choices at `:952`), and
   `commands/review.md` has no Kimi row; L-0527 (tooling only) adds the launch, and adding `kimi`
   to `review_run.LAUNCHED` makes Kimi eligible with no crew_config change.
 
@@ -1411,7 +1411,7 @@ then the train is advisory.
 
 - **What it is.** One locked queue per clone serialising gate+land per overlapping Touch set;
   lanes still implement in parallel. State under `<git-common-dir>/crew/train/` via `train_dir`
-  (`plugin/crew/hooks/scripts/crew_train.py:276`, on `crew_ticket.state_dir`): `state.json`
+  (`plugin/crew/hooks/scripts/crew_train.py:278`, on `crew_ticket.state_dir`): `state.json`
   (`SCHEMA` `:126`), `events.jsonl` (`read_events` `:584`), `merge-log/<id>.jsonl`
   (`merge_log_path` `:291`, `read_merge_log` `:1164`). No config key: `arm`
   (`:796`) publishes a complete `state.json` with `os.link`, which fails if it exists; `disarm`
@@ -1469,11 +1469,11 @@ then the train is advisory.
 - `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
 - `plugin/crew/hooks/scripts/crew_state.py:2942` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:244` / `:405` —
+- `plugin/crew/hooks/scripts/crew_config.py:245` / `:405` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2510` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2527` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:3105` / `:3131` — `plan_repo_write` /
+- `plugin/crew/hooks/scripts/crew_config.py:3122` / `:3131` — `plan_repo_write` /
   `write_repo_config`, the one repo-layer writer (T-0075); `:2905` / `:2924` — the machine pair.
 - `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and
   compare-and-swap both writers stand on (T-0075).
@@ -3634,3 +3634,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
 
 **Re-anchored `452b30cc` -> `586cabe0` on 2026-10-03 (T-0046 merges origin/main `3a064f4f`, L-0510 #318, at `9e6d8b0f`, rerere disabled; crew 1.0.147 re-set at `586cabe0`).** Main's maps were taken in the merge. T-0046 is split under the tooling-PR rule: its change is the new BUDGETS.md claim-number predicate module under the crew hooks and its test, one verify-map rule appended at the end, the version files and CHANGELOG; the hook consumers move to L-0610. The version sentence names 1.0.147. The new predicate module is not imported by anything yet (the hooks are wired by L-0610), so no claim of this map about the scope guard or the completion audit changes.
+
+**Re-anchored `586cabe0` -> `aab858e9` on 2026-10-03 (T-0046 merges origin/main `f808e5f0` - #328, #329, #330, crew 1.0.154 - at `cbe74d03`, rerere disabled; crew 1.0.158 set last at `aab858e9`).** Main's three PRs changed crew_config.py, verify-gate.sh/.ps1, verify_record.py, review_run.py, crew_train.py, done.md, review.md, CONFIG.md, README.md and .crew/verify.json without moving these maps. Every body citation to a file changed since `586cabe0` was re-mapped by a line diff (difflib, equal blocks only) and rewritten where it moved; a citation whose own line changed was re-read by hand. `.crew/verify.json` rules 1-48 keep their line ranges (main edited their content in place: `seconds`, `coveredBy`, `why`), so rule citations stand; the prose describing those rules' prices and coverage was not re-verified against main's edits. Moved: the crew_config.py, verify-gate.sh, done.md and crew_train.py citations by a line diff; `review_run.py:946` is now `:941` (`PROVIDERS`) with the `--provider` choices at `:952`; the version sentence names 1.0.158.

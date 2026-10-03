@@ -1,4 +1,5 @@
-%% Generated from useful-claude-add-ons@452b30cc on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@aab858e9 on 2026-10-03. Verify before trusting.
+%% Re-anchored 452b30cc (main) -> aab858e9 (T-0046 merges origin/main f808e5f0 at cbe74d03, rerere off): three done.md citations moved by a line diff; main's #330 (/crew:done accepts a CI receipt for HEAD) is not drawn here; no node or edge changed.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -180,7 +181,7 @@
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
 %% AFTER approval - plan.md:60 (`planned`), implement.md:112 (`review`) and
-%% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
+%% done.md:66 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
 %% (plugin/crew/hooks/scripts/crew_ticket.py:534-575), which normalises only line
@@ -376,8 +377,8 @@ flowchart TB
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
-        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:87-90"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:93-97"}
         ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
         ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
     end

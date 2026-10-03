@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@586cabe0
+anchor: useful-claude-add-ons@aab858e9
 verified: 2026-10-03
 
 # localgpu
@@ -510,7 +510,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:130-131` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
   *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `c43a54c1`, where both
   tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
@@ -758,7 +758,7 @@ never matches and has to be counted on its own):
   `plugin/localgpu/mcp/store.py:620-674` (and its internal `:637`, `:639-648`,
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
-  `plugin/crew/hooks/scripts/crew_config.py:127-128`,
+  `plugin/crew/hooks/scripts/crew_config.py:128-129`,
   `plugin/crew/hooks/scripts/crew_state.py:1540-1541`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
@@ -812,7 +812,7 @@ For the record, what was wrong and how it was found:
    tuples were cited at `plugin/localgpu/commands/crew.md:29-30` (that is the
    prose sentence introducing them); the literal tuples are at `:33-34`.
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
-   re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
+   re-export (`plugin/crew/hooks/scripts/crew_config.py:128-129`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
    `plugin/crew/hooks/scripts/crew_state.py:1540-1541`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
@@ -1866,3 +1866,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
 
 **Re-anchored `452b30cc` -> `586cabe0` on 2026-10-03 (T-0046 merges origin/main `3a064f4f`, L-0510 #318, at `9e6d8b0f`, rerere disabled; crew 1.0.147 re-set at `586cabe0`).** Main's maps were taken in the merge. T-0046 is split under the tooling-PR rule: its change is the new BUDGETS.md claim-number predicate module under the crew hooks and its test, one verify-map rule appended at the end, the version files and CHANGELOG; the hook consumers move to L-0610. No body citation in this map points at a line that moved.
+
+**Re-anchored `586cabe0` -> `aab858e9` on 2026-10-03 (T-0046 merges origin/main `f808e5f0` - #328, #329, #330, crew 1.0.154 - at `cbe74d03`, rerere disabled; crew 1.0.158 set last at `aab858e9`).** Main's three PRs changed crew_config.py, verify-gate.sh/.ps1, verify_record.py, review_run.py, crew_train.py, done.md, review.md, CONFIG.md, README.md and .crew/verify.json without moving these maps. Every body citation to a file changed since `586cabe0` was re-mapped by a line diff (difflib, equal blocks only) and rewritten where it moved; a citation whose own line changed was re-read by hand. `.crew/verify.json` rules 1-48 keep their line ranges (main edited their content in place: `seconds`, `coveredBy`, `why`), so rule citations stand; the prose describing those rules' prices and coverage was not re-verified against main's edits. Moved: three crew_config.py citations, one line each, by a line diff.
