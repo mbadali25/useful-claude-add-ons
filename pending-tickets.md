@@ -37,10 +37,10 @@ it merges if its number has been passed.
 | #355 | T-0013 | merged with main, verified; in review | | 1.0.186 |
 | #360 | T-0048 | merged with main, verified; in review | | 1.0.200 |
 | #368 | T-0063 | merged with main, verified; in review. Guide DOCX/PDF need a LibreOffice rebuild | | 1.0.201 |
-| #371 | T-0100 | built; harness files, may need a tooling-PR split | | 1.0.202 |
-| #337 | L-0618 | in review | | 1.0.187 |
-| #375 | row 4 | in review | | 1.0.188 |
-| #372 | L-0562 | in review; re-bumped after main's #327 | | 1.0.199 |
+| #371 | T-0100 | merged with main, verified; harness PR, no split needed (tooling-pr OK). Contains #378; merge after it | #378 | 1.0.202 |
+| #337 | L-0618 | in review | | 1.0.204 |
+| #375 | row 4 | in review | | 1.0.205 |
+| #372 | L-0562 | in review | | 1.0.203 |
 | #352 | T-0069 | ready to build | | 1.0.189 |
 | #357 | T-0020 | ready to build | | 1.0.190 |
 | #358 | T-0022 | ready to build | | 1.0.191 |
@@ -67,7 +67,9 @@ it merges if its number has been passed.
 | T-0013 (#355) | `sabotage_resume_typing.py` registered in `sabotage.py` | needs ticket |
 | T-0063 (#368) | Its 16 sabotage mutations registered in `sabotage.py` | needs ticket |
 
-**Re-bumps:** merging `main` always needs a new crew version set after the merge (the drift check dates a version from the first commit that declared it). 1.0.180 -> 1.0.199 (#372), 1.0.183 -> 1.0.200 (#360), 1.0.182 -> 1.0.201 (#368), 1.0.166 -> 1.0.202 (#371). Next free: 1.0.203.
+**Re-bumps:** merging `main` always needs a new crew version set after the merge (the drift check dates a version from the first commit that declared it). 1.0.180 -> 1.0.199 (#372), 1.0.183 -> 1.0.200 (#360), 1.0.182 -> 1.0.201 (#368), 1.0.166 -> 1.0.202 (#371). Then main took #334 (1.0.163), so the front of the merge order re-merged again: #372 -> 1.0.203, #337 -> 1.0.204, #375 -> 1.0.205. Next free: 1.0.206.
+
+**Policy:** when `main` moves, only the PRs at the front of the merge order are re-merged and re-bumped; the rest are re-merged when they reach the front, so version numbers and CI runs are not burned on every landing.
 
 **Not started anywhere (no branch, nothing on `main`):** T-0016, T-0037 and T-0049. Together they block
 #356, #363, #364, #365 and #366. Owner's ticket agent: confirm that each ticket exists and is ready to
