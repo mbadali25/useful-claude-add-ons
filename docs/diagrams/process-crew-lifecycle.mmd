@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@7bdb1196 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -13,7 +13,7 @@
 %% blocks kept, main's first; neither side changed an Anchors path line this diagram cites. No node or edge changed.
 %% Merged a98be035 (L-0510) + ec95c8aa (main, crew 1.0.110) at d4193b70 (rerere off), re-anchored to 8f0df4ca: both provenance blocks kept,
 %% main's first; main changed no review.md / review_run.py line and L-0510 no line main cites here. No node or edge changed.
-%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/review_verdict.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
@@ -179,8 +179,8 @@
 %%     :75 one-step plan, still /crew:approve; :94 one review round.
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
-%% AFTER approval - plan.md:60 (`planned`), implement.md:111 (`review`) and
-%% done.md:70 (`status: done`). Until T-0026 the receipt hashed both files whole,
+%% AFTER approval - plan.md:60 (`planned`), implement.md:112 (`review`) and
+%% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
 %% (plugin/crew/hooks/scripts/crew_ticket.py:534-575), which normalises only line
@@ -339,8 +339,8 @@ flowchart TB
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:105-109"]
-        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-112"]
-        im4 --> im5["then /crew:review last<br/>:113"]
+        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-113"]
+        im4 --> im5["then /crew:review last<br/>:114"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
@@ -355,31 +355,31 @@ flowchart TB
         pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:850-861" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-28, :451"]
-        rv1 --> rv2{"verdict (the script's)<br/>:440, :483"}
-        rv2 -- CLEAN --> rcpt["receipt written<br/>:510"]
-        rv2 -- FINDINGS --> rv3{"final round, 0 BLOCK?<br/>else fix, or the<br/>owner accepts<br/>:503, :505-508"}
+        rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
+        rv2 -- "CLEAN (exact: no other line)" --> rcpt["receipt written<br/>:510"]
+        rv2 -- "FINDINGS (stray prose beside findings<br/>ignored and named: review_verdict.py:210-213)" --> rv3{"report findings and every<br/>ignored line verbatim (:498-500);<br/>final round, 0 BLOCK?<br/>else fix, or the<br/>owner accepts<br/>:503, :505-508"}
         rv3 -- "auto-accept (L-0510): eligible,<br/>no specialist/control BLOCK;<br/>one follow-up ticket :505-506<br/>- or the owner accepts :508" --> rcpt
         rv3 -- "fix, round 2" --> rv1
         rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> rv1
-        rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
+        rv2 -- "INCOMPLETE (reviewer / tree, a contract-like<br/>or shortfall stray line): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
 
 
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:40-53"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:68-79"]
+        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:35-48"}
+        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
+        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:63-74"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:87-90"}
-        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:93-97"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :98-99"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:99-104" --> im5
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
     end
 
     fix -.-> BR
@@ -572,7 +572,11 @@ flowchart TB
 %% (merge 58fc8da8, rerere off), re-anchored to 5254bbfe (crew 1.0.103): header and provenance conflicted,
 %% both provenance blocks kept, main's first; review.md / review_run.py citations (L-0510's) and implement.md / done.md / crew_refresh_check.py
 %% citations (main's) re-read on the merged tree with sed -n; each on the same text. No node or edge changed.
-
-%% Re-anchored d95d8b25 -> 52f03271 (L-0522 PR 1, on main 8123fe74): done.md's catch-up refusal now names the landing order (catch up, resolve, bump, refresh, commit, gate, rerun), so the ln1 edge reads :95-98 with that order; implement.md step 6 joined two lines and gained one, so im4 reads :110-112, im5 :113 and the status-edit note implement.md:111; crew_train.py's refusal text changed, no node cites its lines. No node added or removed.
-%% Re-anchored 52f03271 -> eab5ff10 (L-0522 PR 1 review round 1 fixes): done.md's landing order gained 'review it again if review_ledger.py --check-receipt reads stale', one line longer, so the ln1 edge reads :95-99 and names it; implement.md:114 (after im5's :113) now also names the anchor-only re-anchor rule; no node added or removed.
-%% Re-anchored 452b30cc (main) and eab5ff10 (L-0522) -> 7bdb1196 (L-0522 PR 1 merges main f808e5f0, crew 1.0.154): main grew done.md check 2 by five lines (the CI receipt), so dn2 reads :21-38 and names the CI receipt, dn3 :40-53, dn5 :55-66, dn4 :68-79, ln0 :87-90, ln1 :93-97, ln2 :98-99, the refusal edge :99-104 and the status-edit note done.md:70; review_run.py cites are main's.
+%% Re-drawn 452b30cc -> f808e5f0 (L-0600 merges main f808e5f0, crew 1.0.154; refresh artifacts only). L-0576
+%% (#306, at a9b4734d) changed what the verdict edges mean and no re-anchor since redrew them: review_verdict.parse
+%% keeps a FINDINGS round when its only contract break is stray prose beside findings (review_verdict.py:210-213),
+%% CLEAN stays exact, and a contract-like or shortfall stray line keeps the round INCOMPLETE; /crew:review step 3.1
+%% shows the ignored lines verbatim (review.md:498-500). The CLEAN, FINDINGS and reviewer/tree INCOMPLETE edges and
+%% the rv3 node are relabelled in place (L-0510's auto-accept wording kept), and review_verdict.py joins the Anchors
+%% line. The verdict cite :483 is now the paragraph :482-486; the refund cite :485-486 holds. No other node or edge
+%% changed.
