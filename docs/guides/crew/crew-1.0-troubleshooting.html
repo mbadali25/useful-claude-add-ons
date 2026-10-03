@@ -287,7 +287,7 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   or web-test report changed under the reviewer. <code>reviewer</code> means the output arrived and broke the
   contract. Harmless prose, a heading or a code fence beside well-formed findings, with every part
   acknowledged and exit 0, no longer does that: the round is FINDINGS, and the ignored lines are
-  printed on a <code>review: FINDINGS kept; ...</code> line and kept in <code>review.json</code>'s <code>ignored_lines</code>. A
+  printed on a <code>review: FINDINGS kept; ...</code> line and kept in <code>review.json</code>'s <code>ignored_text</code> (<code>ignored_lines</code> is their count). A
   stray line beside <code>CLEAN</code>, a misformatted contract line (<code>- FIX|...</code>, <code>fix|...</code>, a <code>|</code> table row)
   or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
   INCOMPLETE <code>reviewer</code>.
