@@ -1672,7 +1672,7 @@ menu_label() {
   local i="$1" idx prefix
   if idx="$(group_index_for "${MENU_KEYS[$i]}")"; then
     prefix="${GROUP_PREFIXES[$idx]}"
-    # shellcheck disable=SC2059 - the template is ours, from GROUP_LABEL.
+    # shellcheck disable=SC2059 # the template is ours, from GROUP_LABEL.
     printf "${GROUP_LABEL[$idx]}" \
       "$(group_selected_count "$prefix")" "$(group_count "$prefix")"
   else
