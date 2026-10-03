@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@0620587f on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -13,7 +13,7 @@
 %% blocks kept, main's first; neither side changed an Anchors path line this diagram cites. No node or edge changed.
 %% Merged a98be035 (L-0510) + ec95c8aa (main, crew 1.0.110) at d4193b70 (rerere off), re-anchored to 8f0df4ca: both provenance blocks kept,
 %% main's first; main changed no review.md / review_run.py line and L-0510 no line main cites here. No node or edge changed.
-%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/review_verdict.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
@@ -354,14 +354,14 @@ flowchart TB
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
         pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:850-861" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> sc1
-        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt carries the standards checklist,<br/>then the recurring-findings checklist,<br/>then any web tests<br/>review.md:25-28, :451"]
-        rv1 --> rv2{"verdict (the script's)<br/>:440, :483"}
-        rv2 -- CLEAN --> rcpt["receipt written<br/>:510"]
-        rv2 -- FINDINGS --> rv3{"final round, 0 BLOCK?<br/>else fix, or the<br/>owner accepts<br/>:503, :505-508"}
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-28, :451"]
+        rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
+        rv2 -- "CLEAN (exact: no other line)" --> rcpt["receipt written<br/>:510"]
+        rv2 -- "FINDINGS (stray prose beside findings<br/>ignored and named: review_verdict.py:210-213)" --> rv3{"report findings and every<br/>ignored line verbatim (:498-500);<br/>final round, 0 BLOCK?<br/>else fix, or the<br/>owner accepts<br/>:503, :505-508"}
         rv3 -- "auto-accept (L-0510): eligible,<br/>no specialist/control BLOCK;<br/>one follow-up ticket :505-506<br/>- or the owner accepts :508" --> rcpt
         rv3 -- "fix, round 2" --> rv1
         rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> rv1
-        rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
+        rv2 -- "INCOMPLETE (reviewer / tree, a contract-like<br/>or shortfall stray line): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
 
@@ -572,4 +572,11 @@ flowchart TB
 %% (merge 58fc8da8, rerere off), re-anchored to 5254bbfe (crew 1.0.103): header and provenance conflicted,
 %% both provenance blocks kept, main's first; review.md / review_run.py citations (L-0510's) and implement.md / done.md / crew_refresh_check.py
 %% citations (main's) re-read on the merged tree with sed -n; each on the same text. No node or edge changed.
-%% Re-anchored 452b30cc (main) -> 0620587f (L-0601 merges main f808e5f0): body citations into files main changed after 452b30cc moved by difflib; no node or edge re-derived. Node rv1 says the prompt carries the standards checklist, then the recurring-findings checklist, then any web tests.
+%% Re-drawn 452b30cc -> f808e5f0 (L-0600 merges main f808e5f0, crew 1.0.154; refresh artifacts only). L-0576
+%% (#306, at a9b4734d) changed what the verdict edges mean and no re-anchor since redrew them: review_verdict.parse
+%% keeps a FINDINGS round when its only contract break is stray prose beside findings (review_verdict.py:210-213),
+%% CLEAN stays exact, and a contract-like or shortfall stray line keeps the round INCOMPLETE; /crew:review step 3.1
+%% shows the ignored lines verbatim (review.md:498-500). The CLEAN, FINDINGS and reviewer/tree INCOMPLETE edges and
+%% the rv3 node are relabelled in place (L-0510's auto-accept wording kept), and review_verdict.py joins the Anchors
+%% line. The verdict cite :483 is now the paragraph :482-486; the refund cite :485-486 holds. No other node or edge
+%% changed.
