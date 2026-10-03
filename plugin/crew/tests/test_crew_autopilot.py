@@ -36,14 +36,6 @@ HEADER = "status: spec   risk: high"
 
 # --- fixtures ----------------------------------------------------------------
 
-@pytest.fixture(autouse=True)
-def _a_session(monkeypatch):
-    """T-0049: `next` stops `in-flight` when who is asking cannot be told (no
-    CLAUDE_CODE_SESSION_ID), so every case here runs as a session, as
-    autopilot does; test_crew_autopilot_inflight.py covers the absence."""
-    if not os.environ.get("CLAUDE_CODE_SESSION_ID"):
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "test-session")
-
 def _write(path, text):
     os.makedirs(os.path.dirname(str(path)), exist_ok=True)
     with open(str(path), "w", encoding="utf-8", newline="\n") as handle:

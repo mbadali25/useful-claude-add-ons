@@ -122,6 +122,23 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
 # `-n auto` (pytest-xdist: optional, not a dependency) works with all three.
 
 
+@pytest.fixture(autouse=True)
+def _a_session(monkeypatch):
+    """T-0049, owner decision 2026-09-30: give every test a session.
+
+    `crew_autopilot.py next` and `crew_inflight.py begin` stop as in-flight
+    when CLAUDE_CODE_SESSION_ID is absent, because who is asking cannot be
+    told. Claude Code always sets it and CI never does, so without this
+    default the same suite is green under Claude Code and red in CI. Set only
+    when absent or empty; a test that needs the variable absent or specific
+    sets or deletes it in its own body, and `monkeypatch` undoes this at
+    teardown. The no-session stop itself stays in the scripts and is covered
+    by test_crew_autopilot_inflight.py and test_crew_inflight.py.
+    """
+    if not os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "test-session")
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--run-slow", action="store_true", default=False,
