@@ -4,6 +4,22 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
+
+- `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local
+  gate evidence, or a CI receipt (`ci_receipt.check`) proving the self-hosted gate passed on exactly
+  HEAD's committed tree. Only a receipt VERIFIED upgrades; UNVERIFIED, UNKNOWN and NO_GATE leave
+  the local refusal standing with the receipt's reason appended. Four new `test_crew_train.py`
+  cases; red when check-land goes back to `gate_state`.
+- `/crew:done` Check 2 passes on every rule `pass`, or else on `ci_receipt.py check` exiting 0 with
+  `CI_RECEIPT VERIFIED` or 4 `NO_GATE` (no verify map, or the gate stood down: what `check-land` and
+  `/crew:review` already pass); any other exit refuses and its `CI_RECEIPT` line is reported.
+- `README.md` stops saying nothing accepts the receipt: its section names the three consumers and
+  why the Stop hook is not one, and the land check counts a receipt VERIFIED as `VERIFIED`
+  (review round 1).
+- `ci_receipt.py`'s docstring names its three consumers, and why the Stop hook is not one: network
+  calls in a hook that runs every turn, to save a run the 60s Stop budget already keeps short.
+
 ### Changed — `crew` 1.0.153: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
 
 - Review round 1 on the tree-pass cache. Its key now includes every ref (`git for-each-ref`): a
