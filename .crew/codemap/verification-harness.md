@@ -623,7 +623,9 @@ and 1 on every other event, so a main push runs one Python leg at a time on the
 self-hosted host. The required `test (3.11|3.12|3.13)` checks are the `test` fan-in
 (`:206`): `needs: test-set`, `if: always()`, red unless `needs.test-set.result` is
 `success` and, where its `RUN_LEG` is true, both `test-ran-<set>-<python>` marker
-artifacts (uploaded by a leg's last step only after every step passed) are present.
+artifacts (uploaded by a leg's last step only after every step passed) are present; both sides
+keep the marker under `runner.temp`, emptied at every job start, never in the persistent
+self-hosted workspace.
 `needs.test-set.result` spans all six legs, so on a non-PR event one failed leg reds all
 three `test (3.x)` checks. `pytest-crew.yml` gained a `crew-shell-matrix` job
 (`:256`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell

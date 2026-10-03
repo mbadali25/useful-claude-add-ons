@@ -15,7 +15,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   host. The ubuntu `crew-shell-matrix` leg runs `-n 8` instead of `-n auto`.
 - **Required checks unchanged.** `test (3.11)`, `test (3.12)`, `test (3.13)` are now a fan-in
   (`if: always()`) that fails unless every `test-set` leg succeeded and, for a version that does
-  work, both its legs uploaded a marker written only after all their steps passed. Sabotage
+  work, both its legs uploaded a marker written only after all their steps passed. Markers are
+  written and read under `runner.temp`, which the runner empties at every job start, because a
+  self-hosted workspace keeps what earlier runs left in it. Sabotage
   dispatch runs proved both paths red: a wallclock leg selecting nothing (run 37084028539) and
   wallclock legs whose steps were skipped (run 37084031107). Behaviour change: on a non-PR event
   one failed leg turns all three `test (3.x)` checks red; the `test-<set> (<python>)` checks name
