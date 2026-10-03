@@ -18,6 +18,77 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Dropped.** T-0046's second part, listing graphify outputs by hash in the review bundle, was
   dropped by owner decision: main's T-0092 already excludes `graphify-out/` from the bundle.
 
+### Changed — `crew` 1.0.142: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
+
+Bumped `1.0.139 -> 1.0.142` (main's 1.0.139 taken in the merge; 1.0.142 allocated by the coordinator) after merging
+origin/main `2a2d6e07` (L-0592 #325, L-0587 re-pin #322, crew 1.0.139), and kept 1.0.142 after merging origin/main
+`8123fe74` (L-0574 #323, crew 1.0.140). Before it `1.0.134 -> 1.0.137` (main's 1.0.134 taken
+in the merge; 1.0.137 allocated by the coordinator) after merging
+origin/main `e0c70fc9` (#317 ci_receipt/verify-gate.yml, L-0597 #316, L-0555 #310, crew 1.0.134), and kept
+1.0.137 after merging origin/main `bd3e9ad1` (L-0598 #321, L-0587 #319, crew 1.0.135). Before it
+`1.0.129 -> 1.0.130` (main's 1.0.129 taken in the merge) after merging origin/main `0487fc39`
+(L-0599 #315, crew 1.0.129); before it `1.0.121 -> 1.0.130` after merging origin/main `7ba4f9ea` (crew 1.0.126, L-0572);
+1.0.130 allocated by the coordinator. Before it, `1.0.114 -> 1.0.121` after merging origin/main `ffd11270` (L-0557, crew 1.0.114);
+1.0.113-1.0.120 are claimed by other lanes and 1.0.112 is released (burned). Before that,
+`1.0.110 -> 1.0.112` after merging origin/main `2906dcbd` (crew 1.0.110). Before that, `1.0.103 -> 1.0.108` for the family rule (owner decision
+2026-10-01 #3). Earlier: `1.0.98 -> 1.0.103` after
+merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1.0.94, 1.0.103,
+1.0.108, 1.0.112, 1.0.121, 1.0.130 and 1.0.137 were branch versions and were never published.
+
+- **Behaviour change for every install (owner policy 2026-09-30).** A review round that is the
+  last one the budget allows under the current plan, completed as `FINDINGS` with 0 BLOCK, is
+  accepted by the new ledger verb `review_ledger.py --ticket <id> --auto-accept --follow-up <id>`.
+  It takes no `--by`: the receipt is kind `auto-accepted`, `accepted_by` is fixed to
+  `auto: 0 BLOCK, owner policy 2026-09-30`, and it carries the round's FIX/NIT lines verbatim,
+  the follow-up id, the provider and the model family. `/crew:review` step 3 then files ONE follow-up ticket
+  whose `direction.md` quotes every line. No flag or config key turns it off.
+- **The guard is in the ledger, and every unknown is a refusal.** Refused, changing nothing: a
+  round not reviewed by another model family than the author's (owner decision 2026-10-01: the
+  row's provider must be `codex` or `kimi` and its family recorded and not `claude`, so a
+  Claude-fallback round, a missing provider or family, and Copilot or any other provider are
+  refused); any BLOCK; any verdict but exactly `FINDINGS` (INCOMPLETE of every class, refunded or not, and
+  CLEAN); counts missing, not a dict, or a BLOCK/FIX/NIT that is not a non-negative int (a bool
+  is refused); finding lines missing, holding a `BLOCK|` line, a line of no known severity or a line
+  carrying an embedded `\n`/`\r` (it could hide a BLOCK behind a FIX prefix), or disagreeing
+  with the FIX count or the NIT count (each compared on its own, never only the total);
+  `webtest_open` missing, unread or non-zero; a non-final round; a stale tree; `NEEDS_REPLAN`; a
+  superseded plan's round; a round recorded before this release. Any BLOCK or refusal still stops
+  for the owner, now with 2-4 options, recommended first.
+- **A verdict recovered from stray lines never auto-accepts** (owner decision 2026-10-01): the
+  row's `ignored_lines` (L-0576's count) above 0, or this round's `review.json` count (an int) above 0, is
+  refused as recovered; a missing, mistyped or unreadable count or `review.json` is refused as
+  could-not-tell, never read as 0. L-0576 (crew 1.0.128, merged here) writes the count on every round;
+  a round recorded before it carries none and stops for the owner.
+- **An auto receipt binds the `review.json` it read** (review round 6): it carries
+  `review_json_sha256` (of the exact bytes) and `ignored_lines`, and `--check-receipt` and autopilot
+  re-read the file, so an edited, missing, linked or unreadable `review.json` means the receipt does
+  not stand. `review.json` is read without following a link, with a duplicate key at any depth
+  refused as could-not-tell, and must name the round's number (never a bool) and bundle.
+  `--check-follow-up` reads `direction.md` with `newline=""` and splits on `\n` only (a CRLF line
+  drops its one `\r`; a bare CR, U+2028, U+2029, U+0085, `\v` and `\f` are text). `/crew:review` step
+  3's closure commands quote `${CLAUDE_PLUGIN_ROOT}`.
+- **The ledger, `review_run.py` and `crew_autopilot.py` write UTF-8 whatever the console code
+  page**, so a finding carrying U+2028 or any character cp1252 lacks no longer raises
+  `UnicodeEncodeError` on a Windows console after the receipt is written (found by the native
+  Windows run at `75bd0aea`).
+- **`--check-follow-up` splits `direction.md` on `\n` only**, never `splitlines()`, so a U+2028
+  inside a quoted finding stays on its line. `/crew:autopilot` section 4's no-new-ticket stop
+  (T-0012) names the step 3.3 follow-up as its one exception (review round 4).
+- **`--accept --by` refuses a name starting `auto:`**, so the auto string comes only from the
+  guarded verb; the owner's `--accept` is otherwise unchanged.
+- **One predicate, `review_ledger.receipt_stands`,** decides whether a FINDINGS receipt stands for
+  both `--check-receipt` and `crew_autopilot`; an auto receipt stands only while its round still
+  passes the guard and its lines, provider and family equal the row's, and a CLEAN round only under a `clean`
+  receipt. The new `--check-follow-up` matches every line verbatim and as often as the receipt
+  carries it; a non-UTF-8 `direction.md` or a receipt of an unknown kind is a named could-not-tell
+  refusal. `/crew:done` does not run it yet: L-0568 adds it to check 1.
+- **`review_run.py`** records `findings` and `webtest_open` on the ledger row and in review.json,
+  and prints `review: auto-accept: eligible` or `review: auto-accept: refused - <reason>` after a
+  FINDINGS round. Autopilot's review phase runs step 2d and the auto-accept after an eligible
+  round, never a fix or a rerun.
+- **Boundary with L-0514 (INCOMPLETE retry):** disjoint. No INCOMPLETE is ever auto-accepted, and
+  a refunded round never counts toward "final"; L-0514 is not implemented here.
+
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 
 - **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt

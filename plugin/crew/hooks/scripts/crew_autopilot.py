@@ -211,7 +211,9 @@ HUMAN_STOPS = (
     ("plan-approval", ("plan approval: the human types /crew:approve <id>, unless "
                        "autopilot.approval allows `crew_autopilot.py approve` "
                        "(needs scope.allowCliApproval: true)")),
-    ("review-acceptance", "accepting review FINDINGS is the owner's, at every setting"),
+    ("review-acceptance", ("accepting review FINDINGS with any BLOCK, or any round "
+                           "review_ledger.py --auto-accept refuses, is the owner's, at "
+                           "every setting")),
     ("open-questions", "an open question in direction.md, spec.md or plan.md is answered "
                        "by a person, unless autopilot.questions takes the researched "
                        "recommendation"),
@@ -507,11 +509,18 @@ def _review_phase(top, ticket, evidence, answer):
                       "result: a reviewer is running or died, and another /crew:review "
                       "spends the next round - a human decides")
     receipt = ledger.get("receipt") or {}
-    if latest.get("verdict") == "FINDINGS" and not (
-            receipt.get("kind") == "owner-accepted"
-            and receipt.get("round") == latest.get("round")):
-        return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS: "
-                      "the owner accepts with review_ledger.py --accept --by <owner>, "
+    # L-0510: the ledger's one predicate decides whether a FINDINGS receipt
+    # stands (owner-accepted, or auto-accepted with its row still passing the
+    # guard), so this and /crew:done's --check-receipt cannot disagree.
+    if latest.get("verdict") == "FINDINGS" and not review_ledger.receipt_stands(receipt, latest, top, ticket):
+        data, state = review_ledger.load(ledger["path"])
+        refusal = (review_ledger.auto_accept_refusal(data, ticket) if state == "ok"
+                   else f"ledger is {state}: could not tell")
+        how = ("the --auto-accept guard passes but no receipt was written: run "
+               "review_ledger.py --auto-accept --follow-up <id> (/crew:review step 3), or "
+               if refusal is None else f"review_ledger.py --auto-accept refuses it ({refusal}): ")
+        return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS; "
+                      f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
                       "or fixes then /crew:review")
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
@@ -1651,6 +1660,9 @@ def _cli_deploy(args):
 
 
 def main(argv):
+    # `next` quotes the ledger's auto-accept refusal, which can quote reviewer
+    # text: write UTF-8 whatever the console code page (review_ledger.utf8_stdio).
+    review_ledger.utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
     for name in ("next", "resume", "settings", "stops", "route", "status", "approve",
