@@ -2169,6 +2169,29 @@ The implementing session checks for these before writing anything, so it wires i
 what exists instead of building a parallel suite that will drift out of
 agreement with it.
 
+### The verify gate on CI: a receipt, diagnostic for now
+
+This repository's `.github/workflows/verify-gate.yml` runs `verify-gate.sh --all`
+on a pushed lane branch (`L-*`, `T-*`, `W-*`) on the self-hosted runner pool, only
+while the repo variable `CREW_RUNNER` is `self-hosted`, and uploads a receipt
+built by `hooks/scripts/ci_receipt.py build`. The receipt binds the verdict
+(`review_gate.gate_state` asked on the runner, not the job's exit code) to the
+head sha, its tree, the `.crew/verify.json` blob and a digest of the gate
+implementation.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .
+```
+
+prints `CI_RECEIPT <STATE> head=<sha> <reason>` and exits 0 VERIFIED, 1
+UNVERIFIED, 3 UNKNOWN (could not tell: `gh`, the network or the artifact
+unreadable) or 4 NO_GATE. VERIFIED needs the newest run for HEAD to have
+succeeded, that attempt's one artifact to match HEAD, its tree and map exactly,
+a clean local tree, and no change on this branch to the gate implementation or
+the producer. **Nothing accepts the receipt yet**: `/crew:done`, `/crew:review`
+and `crew_train.py check-land` still read the local gate. Wiring them to it is a
+separate tooling change.
+
 ### Linters
 
 Path-scoped rules in `verify.json`, per the `crew-lint` skill: `ruff` for Python,
