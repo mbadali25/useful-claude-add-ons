@@ -6,42 +6,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed - repository CI: Linux pytest legs tuned on the self-hosted pool (L-0590)
 
-- **What.** `.github/workflows/pytest-crew.yml`'s Linux suites run as one `test-set` matrix,
-  python version x set: `test-default (3.x)` (crew's default set and the skill suites, now
-  `-n 16 --dist worksteal`, then cisco-meraki and wazuh-onprem) and `test-wallclock (3.x)` (crew's
-  `-m wallclock` set, serially). On a pull request the two 3.12 legs run side by side instead of
-  one after the other; on every other event (push to main, schedule, dispatch) `max-parallel: 1`
-  runs one leg at a time, so a main push no longer puts three Python legs on the one 16-vCPU
-  host. The ubuntu `crew-shell-matrix` leg runs `-n 8` instead of `-n auto`.
-- **Required checks unchanged.** `test (3.11)`, `test (3.12)`, `test (3.13)` are now a fan-in
-  (`if: always()`) that fails unless every `test-set` leg succeeded and, for a version that does
-  work, both its legs uploaded a marker written only after all their steps passed. Markers are
-  written and read under `runner.temp`, which the runner empties at every job start, because a
-  self-hosted workspace keeps what earlier runs left in it. Sabotage
-  dispatch runs proved both paths red: a wallclock leg selecting nothing (run 37084028539) and
-  wallclock legs whose steps were skipped (run 37084031107). Behaviour change: on a non-PR event
-  one failed leg turns all three `test (3.x)` checks red; the `test-<set> (<python>)` checks name
-  the leg.
-- **Measured, not assumed.** On the self-hosted pool `-n auto` meant 4 workers. A serial
-  benchmark (5 runs per setting, runs 37058615163 and 37080675891): the default set p50 260 s at
-  4/load, 211 s at 8/load, 171 s at 12/load, 145 s at 8/worksteal, and beside the slow-set chain
-  221 s at 8/worksteal, 197 s at 12, 135 s at 16; the slow set p50 154 s at 4, 92 s at 8,
-  worksteal no better (161 s / 98 s). Collected tests are identical to main's (node ids
-  diffed; 9646 default, 32 wallclock and 1712 slow at the before/after base).
-- **Before/after on the real workflow** (same 9646 / 32 / 1712 collected; PR runs interleaved
-  on an idle host). Time from a PR run's start to `test (3.12)`: p50 437 s before (draft PR #320,
-  run 37084943274 attempts 6-10) -> 180 s after (PR #324, run 37093280549 attempts 7-11; 15 more
-  attempts p50 179 s). The ubuntu slow leg on a PR: 163 s -> 160 s (no gain there, beside 16
-  default-set workers); on dispatch 219 s -> 167 s. A non-PR run's Linux span grows, as intended by
-  the serialisation: dispatch p50 575 s -> 899 s (528 s -> 770 s on an idle host).
-- **Flake, stated.** One wallclock failure in 36 legs after
-  (`test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate`, `BrokenPipeError` in the test's
-  own `proc.stdin.close()` teardown, a failure L-0557 also saw on an unchanged tree) against 1 in
-  163 wallclock steps on CI before. One event each: not shown to be unchanged.
-- **Dropped.** A pip/uv cache: `Install pytest` already takes 0-2 s on the pool (runs
-  37057371538, 37055674723, 37053380475, 37051933552, 37051464436), so there is nothing to save.
-- `scripts/gate-runner.py`'s CI drift strings follow the new commands; `EXCLUDED_CI` gains the
-  marker's `mkdir`.
+- **What.** In `.github/workflows/pytest-crew.yml` the `test` job's default set runs
+  `-n 16 --dist worksteal` instead of `-n auto` (which is 4 workers on the self-hosted pool, the
+  runners' PYTEST_XDIST_AUTO_NUM_WORKERS), still followed by the `-m wallclock` set serially. On
+  every event but a pull request the three Python legs run one at a time (`max-parallel` 1), so a
+  main push no longer puts three Python legs on the one 16-vCPU host. The ubuntu `crew-shell-matrix`
+  leg runs `-n 8`. Required check names are unchanged.
+- **Measured.** Serial benchmark, 5 runs per setting (runs 37058615163, 37080675891): default set
+  p50 260 s at 4/load, 211 s at 8/load, 171 s at 12/load, 145 s at 8/worksteal; beside the slow-set
+  chain 221 s at 8/worksteal, 197 s at 12, 135 s at 16. Slow set p50 154 s at 4, 92 s at 8;
+  worksteal no better there. On the real workflow, PR runs interleaved before/after on a mostly idle
+  host with identical collections (9985 default, 32 wallclock, 1712 slow): time to `test (3.12)`
+  p50 420 s / p90 464 s before (draft PR #326, run 37117690372 attempts 2-6) -> p50 292 s / p90
+  307 s after (PR #324, run 37117665998 attempts 2-6). The ubuntu slow leg on a PR: 162 s -> 159 s.
+- **Dropped, with numbers.** Running the wallclock set as its own parallel job (PR p50 180 s) was
+  dropped by the owner after review: in 36 legs it failed once beside the default set's workers
+  (`test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate`, `BrokenPipeError` in its own
+  teardown). A pip/uv cache: `Install pytest` already takes 0-2 s on the pool.
+- `scripts/gate-runner.py`'s CI drift strings follow the two changed commands.
 
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 
