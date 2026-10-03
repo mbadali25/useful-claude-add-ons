@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:19: #368 code-map citations re-derived and pushed (ca084ea2; 56 moved, 2 pre-existing wrong fixed; no plugin change). Sonnet re-review of #368 started. Red CI on #337 4aa98c36, #372 cc96f702 and #374 6b98600c are superseded heads (cancelled), not failures.
 - 23:19: #337 round-3 re-review: FAIL, 1 BLOCK (acceptance 'name' slot takes any lowercase word: 'accepted revoked/expired/maybe' PASS). Reach + map fixes confirmed. Decision: strict whole-cell grammar (accepted|yes [by Capitalised Name<=3] [ISO date]; refusal word -> no; else UNKNOWN). Sent to fixer; target 1.0.219. Next free: 1.0.220.
 - 23:18: #357 T-0020 built + pushed d4dd47a3 (crew 1.0.190): focus = existing pointer, no new hook; full suite 8891 passed; 22/22 sabotage red. Harness follow-up: 4 mutations in sabotage_autopilot.py. Note: autopilot.md now 117/120 lines (tight for T-0012/T-0019). Sonnet review of #357 started. Ports T-0051/T-0064 held until a build finishes (load ~25).
 - 23:17: #375 re-review on 16e92602: original BLOCK + 6 FIX resolved (all 33 real renders PASS), but 4 new FIX (arc flags not 0/1-validated, 2nd M joined by a segment, unrecognised edges -> PASS with 0 edges, mtime freshness not proof). Sent back to fixer; target crew 1.0.218. Next free: 1.0.219.
