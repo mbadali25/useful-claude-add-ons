@@ -257,9 +257,20 @@ anything itself: a write after review would stale the receipt.</p>
 <code>plugin/crew/hooks/scripts/completion_audit.py</code>,
 <code>plugin/crew/hooks/scripts/cloud_guard.py</code> and
 <code>plugin/crew/hooks/scripts/promote-gate.sh</code>.</p>
-<p>Every hook that can block ships disabled: <code>scope.mode</code> is <code>off</code> unless
-<code>/crew:init</code> set it, and <code>guards.cloudGuard</code> and <code>guards.roleWrites</code> are
-<code>off</code>.</p>
+<p>What is on by default, and what is not:</p>
+<ul>
+<li><strong>Off until you arm it:</strong> the scope guard (<code>scope.mode</code> is <code>off</code> unless
+  <code>/crew:init</code> set it), the cloud guard's hook (<code>guards.cloudGuard: off</code>) and
+  the role-write guard (<code>guards.roleWrites: off</code>).</li>
+<li><strong><code>block</code> by default:</strong> the six policy guards (<code>guards.terraformApply</code>,
+  <code>forcePush</code>, <code>adminMerge</code>, <code>mergeGate</code>, <code>cloudDestructive</code>,
+  <code>sqlDestructive</code>) and the two production guards (<code>prodDatabase</code>,
+  <code>prodServer</code>, which default to <code>none</code>). The policy guards take effect only
+  once <code>guards.cloudGuard</code> is armed, except <code>mergeGate</code>, which <code>/crew:gate</code>
+  reads.</li>
+<li><strong>On by default:</strong> the Stop verify gate (<code>verifyGate: true</code>) blocks when a
+  verify rule fails.</li>
+</ul>
 <p><strong>The scope guard</strong> (<code>scope.mode</code>) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
 approval, or when the target is outside Touch. It also refuses a shell command
@@ -380,13 +391,17 @@ Cause: any edit to a <code>plugin/crew/*.md</code> file moves the total that
 re-measure it. Fix: add it to Touch and re-measure. T-0046 plans to admit
 release bookkeeping like this without a Touch entry.</p>
 <p><strong>A background agent dies part-way.</strong>
-Cause: the account's session limit stopped it, not the work. Fix: check what
-it committed, then resume from the handoff rather than starting again.</p>
+Possible cause: something outside the work stopped it, such as a usage or
+session limit on the account. Fix: check what it committed, then resume from
+the handoff rather than starting again.</p>
 <p><strong><code>pwsh</code> crashes on start with <code>Stack overflow.</code></strong>
-Cause: on a snap install, a torn write left a corrupt
-<code>StartupProfileData-NonInteractive</code> file in <code>~/.cache/powershell</code>. Fix: move
-that file aside; pwsh rebuilds it on the next start. Ticket T-0506 tracks the
-cause.</p>
+Cause: a corrupt <code>StartupProfileData-NonInteractive</code> file in
+<code>~/.cache/powershell</code>. The leading explanation, not yet confirmed, is a torn
+write: several pwsh processes (a snap install, here) rewriting that one file
+at once. Fix: move that file aside; pwsh rebuilds it on the next start. crew's
+own test suites now give every pwsh they spawn a throwaway <code>XDG_CACHE_HOME</code>,
+so they cannot corrupt it (<code>plugin/crew/README.md</code>, section 25). Ticket
+T-0506 tracks the cause.</p>
 <p><strong><code>--accept</code> refuses: "the tree has changed since that review".</strong>
 Cause: you ran <code>review_ledger.py --accept</code> from a checkout whose tree is not
 the one reviewed, often the main checkout instead of the ticket's worktree.
