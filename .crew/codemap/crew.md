@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0e36a87d
+anchor: useful-claude-add-ons@5bd4fae2
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -3717,3 +3717,5 @@ After PR #368 was pushed, `f0d40c66` fixed the Windows CI failure (`_rel_inside`
 ## Version re-allocation - 1.0.182 -> 1.0.201, 2026-10-03 (T-0063, after the merge of main `4f6ef540`)
 
 The coordinator re-allocated T-0063's crew version to 1.0.201 after the merge. The version sentence above, the T-0063 autopilot paragraph and the `fresh` means committed bullet now name 1.0.201; the README, the troubleshooting guide's source and HTML, the CHANGELOG heading, `plugin/PLUGINS.md` and both manifests changed with it (version mentions edited in place, no line moved). The anchor stays `0e36a87d`: no other line any citation here covers changed. Notes above that name 1.0.182 are history.
+
+**Re-anchored `0e36a87d` -> `5bd4fae2` on 2026-10-03 (T-0063, crew 1.0.201). Current despite the lag.** `5bd4fae2` re-states the crew version as 1.0.201 in place (manifests, `plugin/PLUGINS.md`, the CHANGELOG heading, four mentions in `plugin/crew/README.md`, the troubleshooting guide's source and HTML); no line moved, so no body citation changed.
