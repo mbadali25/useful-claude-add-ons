@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@452b30cc
+anchor: useful-claude-add-ons@7bdb1196
 verified: 2026-10-01
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -705,3 +705,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `d95d8b25` -> `52f03271` on 2026-10-03 (L-0522 PR 1 at 52f03271, on main 8123fe74 (L-0574 #323, crew 1.0.140): `crew_train.py` check-land's two catch-up refusals name the landing order (`LANDING_ORDER`, six lines added above `check_land`, three in the module docstring); `done.md`, `implement.md` step 6, the README train section and `daily-workflow.md` say the same; BUDGETS re-measured; citations re-mapped by difflib).**
 
 **Re-anchored `52f03271` -> `eab5ff10` on 2026-10-03 (L-0522 PR 1 review round 1 fixes): the landing order now reads "..., gate the merged head, review it again if `review_ledger.py --check-receipt` reads stale, then check-land again" in `crew_train.py` (`LANDING_ORDER`, one line longer, one docstring line), `done.md`, `implement.md:114`, README and `daily-workflow.md`; the bare `crew_train.py` citations in this note's merge-train section re-mapped by difflib.**
+
+**Re-anchored `452b30cc` (main) and L-0522's `eab5ff10` -> `7bdb1196` on 2026-10-03 (L-0522 PR 1 merges origin/main `f808e5f0` (#330 CI receipt, #329 verify/review harness; crew 1.0.154) at `e8a2b197`, rerere off; both provenance histories kept, main's first; citations re-mapped by difflib).**
