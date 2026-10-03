@@ -1591,7 +1591,7 @@ then the train is advisory.
   key or anything but a list of non-blank strings as
   `excluded: not recorded by this manifest (unknown)` (T-0099)
   (`plugin/crew/hooks/scripts/review_prompt.py:111`).
-- DERIVED (T-0100, crew 1.0.166): `merged_main.resolve`
+- DERIVED (T-0100, crew 1.0.202): `merged_main.resolve`
   (`plugin/crew/hooks/scripts/merged_main.py:67`) names the latest merged
   integration commit, `git merge-base HEAD <ref>` with `<ref>` from T-0061's
   `scope_base.base_branch` (`tickets.baseBranch`, else origin/HEAD's target,

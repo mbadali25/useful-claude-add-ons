@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.166: the review bundle and the completion audit account for merged main (T-0100)
+### Changed — `crew` 1.0.202: the review bundle and the completion audit account for merged main (T-0100)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
   latest merged integration commit (`git merge-base HEAD <ref>`, `<ref>` from
@@ -37,7 +37,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   accepted receipt current (the line says how many paths it left out); one
   that changes a reviewed path stales it, conflict or not (that file's diff
   now starts from main's version), and names the merged commit. A
-  receipt recorded before 1.0.166 on a branch that had already merged main
+  receipt recorded before 1.0.202 on a branch that had already merged main
   reads stale once. The same fix landing byte-identical on main and on the
   ticket drops out of both.
 - **Unchanged.** HEAD on the integration branch itself, or no merge of it past
@@ -74,9 +74,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `core.fileMode` ignored, `fork_reason` never written, the stderr count
   printed on a failed lookup, the prompt clause dropped, the receipt note
   dropped; each run by hand, RED on an assertion, restored to its HEAD blob.
-- Bumped to `1.0.166` (the coordinator's assigned number; 1.0.55, 1.0.60, 1.0.62, 1.0.70,
-  1.0.71 and 1.0.76 on its branch before it, each re-set after a merge of main). Built on
-  origin/main at crew 1.0.154 merged with T-0061's harness half (`origin/T-0061-harness`,
+- Bumped to `1.0.202` (the coordinator's assigned number; 1.0.55, 1.0.60, 1.0.62, 1.0.70,
+  1.0.71, 1.0.76 and 1.0.166 on its branch before it, each re-set after a merge of main). Built on
+  origin/main at crew 1.0.154 (since merged up to main 4f6ef540, crew 1.0.162) merged with T-0061's harness half (`origin/T-0061-harness`,
   PR #378, which lands first). `merged_main.resolve` now reads the integration ref through
   T-0061's `scope_base.base_branch` (so `tickets.baseBranch` decides it), and a configured
   base branch that names no commit is could-not-tell with T-0061's own reason, never a fall
