@@ -64,7 +64,7 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
 No output, a traceback or a non-zero exit is a stop.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
-  named and commit it, or run `commit-refresh`'s `git add -- ... && git commit` exactly as printed. Then `LAST=<c>`, `N+=1`, again.
+  named and commit it, or run `commit-refresh`'s `git add -- ... && git commit ... -- ...` exactly as printed. Then `LAST=<c>`, `N+=1`, again.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
 - any other `stop=1` - print the phase, the reason and the command the human types (may be
   empty), then **stop** - never run it yourself.

@@ -887,7 +887,7 @@ Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of
 | no receipt stands and no review round is left | `review` | stop — `/crew:review` would reserve a third round and write NEEDS_REPLAN, which only a new approved plan leaves; revert the edit that staled the receipt, or replan |
 | latest round INCOMPLETE, a refunded tool failure | `review` (`refresh` first when stale) | runs `/crew:review` |
 | latest round INCOMPLETE (not refunded) | `accept-review` | stop — it cannot be accepted; a human reruns review or replans |
-| artifacts `fresh-uncommitted`, receipt current or not | `commit-refresh` | runs `git add -- <the listed paths> && git commit -m "<id>: commit refreshed artifacts"` as printed — the commit changes no byte of the working state the review bundle is built from, so a receipt stays current; stop when the check names no path |
+| artifacts `fresh-uncommitted`, receipt current or not | `commit-refresh` | runs `git add -- <the listed paths> && git commit -m "<id>: commit refreshed artifacts" -- <the same paths>` as printed, which commits only those paths (anything else already staged stays staged) — the commit changes no byte of the working state the review bundle is built from, so a receipt stays current; stop when the check names no path |
 | receipt not current, artifacts stale | `refresh` | runs the command T-0008's check names |
 | receipt not current, an artifact unknown for a cause a refresh cannot settle | `refresh` | stop |
 | receipt not current, artifacts fresh | `review` | runs `/crew:review` |

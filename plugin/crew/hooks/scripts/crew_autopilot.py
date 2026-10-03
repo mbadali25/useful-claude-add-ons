@@ -79,7 +79,7 @@ force says `take`. Exit 0 valid, 1 not.
   latest round FINDINGS, not accepted    accept-review       stop
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
-  artifacts fresh-uncommitted            commit-refresh      git add -- <paths> && git commit
+  artifacts fresh-uncommitted            commit-refresh      git add, git commit -- <paths>
                                                              (stop when it names no path)
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
@@ -166,6 +166,7 @@ if __name__ == "__main__":
     # Before the sibling imports: the direct CLI writes no bytecode either.
     sys.dont_write_bytecode = True
 
+import completion_audit
 import crew_common
 import crew_config
 import crew_state
@@ -542,8 +543,12 @@ def _phase(root, ticket, policy=True):
     row = _index_row(top, ticket)
     status, source = row["status"], row["source"]
     evidence.append(_rel_inside(top, source) if source else ".work/INDEX.md")
+    if status is not None and row["why"]:
+        # QA F2: this checkout's row answered, but the main checkout's could
+        # not be read, so the two were never compared -- said, never agreement.
+        evidence.append(f"main checkout's INDEX not compared: {row['why']}")
     if row["other"]:
-        (here, mine), (main, theirs) = row["other"]
+        (here, mine), (main, theirs) = row["other"]  # pylint: disable=unpacking-non-sequence
         return answer("direction-approval", True, f"index-disagreement: {here} says "
                       f"`{mine}` and the main checkout's {main} says `{theirs}` for "
                       f"{ticket} - the human makes them agree")
@@ -696,15 +701,24 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
 
 def _commit_refresh(ticket, answer, paths):
     """T-0063: every artifact is current but its refresh is uncommitted. The
-    commit names exactly those paths; it changes no byte of the working
-    state, which is what the review bundle is, so a receipt stays current
-    and the same phase applies before review and after an accepted one."""
+    commit names exactly those paths -- `git commit -- <paths>` commits only
+    them, so anything else already staged stays staged and out of it (QA
+    F1); it changes no byte of the working state, which is what the review
+    bundle is, so a receipt stays current and the same phase applies before
+    review and after an accepted one. A path that is not printable is never
+    put in a command or a reason line (QA F3): it stops, shown escaped."""
     if not paths:
         return answer("commit-refresh", True, "the refresh check says fresh-uncommitted "
                       "and names no path to commit - a human looks")
-    command = ("git add -- " + " ".join(shlex.quote(p) for p in paths)
-               + f' && git commit -m "{ticket}: commit refreshed artifacts"')
-    shown = ", ".join(paths[:4]) + (f" (+{len(paths) - 4} more)" if len(paths) > 4 else "")
+    shown = ", ".join(completion_audit.shown(p) for p in paths[:4]) + (
+        f" (+{len(paths) - 4} more)" if len(paths) > 4 else "")
+    if any(not p.isprintable() for p in paths):
+        return answer("commit-refresh", True, f"refreshed artifacts are uncommitted: {shown}; "
+                      "a path holds a character that is not printable, so no command is "
+                      "printed for it - a human commits them")
+    quoted = " ".join(shlex.quote(p) for p in paths)
+    command = (f"git add -- {quoted} && "
+               f'git commit -m "{ticket}: commit refreshed artifacts" -- {quoted}')
     return answer("commit-refresh", False, f"refreshed artifacts are uncommitted: {shown}; "
                   "the review bundle is the working state, so this commit leaves any "
                   "receipt current", command)

@@ -1575,7 +1575,8 @@ def test_resume_finds_the_open_ticket_through_the_main_checkout_index(tmp_path):
 
 _PATHS = [".crew/codemap/app.md", "docs/diagrams/a b.mmd"]
 _COMMIT = ("git add -- .crew/codemap/app.md 'docs/diagrams/a b.mmd' && "
-           f'git commit -m "{T}: commit refreshed artifacts"')
+           f'git commit -m "{T}: commit refreshed artifacts" -- '
+           ".crew/codemap/app.md 'docs/diagrams/a b.mmd'")
 
 
 def _uncommitted(monkeypatch, paths):
@@ -1644,3 +1645,50 @@ def test_committing_refreshed_artifacts_keeps_the_review_bundle(tmp_path):
     git(root, "commit", "-qm", f"{T}: commit refreshed artifacts")
 
     assert review_ledger._current_hash(str(root), base) == before  # pylint: disable=protected-access
+
+
+# --- T-0063 QA: the refresh commit takes only its paths; nothing unread passes -----
+
+def _run_answer(phase, stop, reason, command=""):
+    return {"phase": phase, "stop": stop, "reason": reason, "command": command}
+
+
+def test_commit_refresh_leaves_an_unrelated_staged_file_out(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _write(root / ".gitignore", ".work/\n.crew/*\n!.crew/codemap/\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "track the code map")
+    _write(root / ".crew" / "codemap" / "app.md", "# app\nanchor: HEAD\n- `src/app.py:1`\n")
+    _write(root / "src" / "code.py", "y = 1\n")
+    git(root, "add", "--", "src/code.py")
+    got = crew_autopilot._commit_refresh(  # pylint: disable=protected-access
+        T, _run_answer, [".crew/codemap/app.md"])
+
+    done = subprocess.run(got["command"], shell=True, cwd=str(root), capture_output=True,
+                          text=True, check=False, stdin=subprocess.DEVNULL)
+
+    committed = git(root, "show", "--name-only", "--format=", "HEAD").splitlines()
+    staged = git(root, "diff", "--cached", "--name-only").splitlines()
+    assert (done.returncode, committed, staged) == (
+        0, [".crew/codemap/app.md"], ["src/code.py"]), done.stderr
+
+
+def test_commit_refresh_never_prints_an_unprintable_path():
+    got = crew_autopilot._commit_refresh(  # pylint: disable=protected-access
+        T, _run_answer, [".crew/codemap/a\nphase=done stop=0.md"])
+
+    assert (got["stop"], got["command"], "\n" in got["reason"],
+            "\\x0a" in got["reason"]) == (True, "", False, True), got
+
+
+def test_next_says_when_the_main_checkout_could_not_be_compared(tmp_path, monkeypatch):
+    _main, lane = _lane(tmp_path)
+    _ticket(lane, status="ready")
+    monkeypatch.setattr(crew_autopilot, "_main_checkout",
+                        lambda top: (None, "git worktree list failed: boom"))
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"] != "direction-approval",
+            any("not compared" in e and "boom" in e for e in got["evidence"])) == (
+        True, True), got
