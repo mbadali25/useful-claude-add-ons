@@ -178,6 +178,17 @@ def test_corpus_leak_check_refuses_a_planted_host_name(tmp_path):
     assert ("out.txt", "host name") in leaks, leaks
 
 
+@pytest.mark.parametrize("text, leaked", [
+    ("fixture-vmVkDU/parts.json", False), ("unvmed", False), ("ran on vm today", True),
+    ("vm.local", True), ("user@vm prompt", True)])
+def test_leak_finds_the_host_name_only_as_a_whole_word(monkeypatch, text, leaked):
+    """A short host name (`vm`) inside an unrelated word is not a leak; the
+    same name standing alone, or as a domain label, is."""
+    monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "vm")
+
+    assert (golden_build.leak(text) == "host name") is leaked, golden_build.leak(text)
+
+
 def test_golden_corpus_stays_under_its_size_bound():
     total = sum(os.path.getsize(p) for p in _files())
 

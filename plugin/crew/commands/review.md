@@ -297,10 +297,10 @@ AUTHOR_SOURCE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).g
 # already applied the guard -- this is the list to pick from, in order, and an
 # empty one is the "no independent reviewer" state, not an error.
 ELIGIBLE=$(python3 -c '
-import json, sys
-report = json.load(open(sys.argv[1]))
-print(" ".join(c["provider"] for c in report.get("qaFallThrough") or []
-                if c.get("eligible")))' "$REPORT")
+import json, sys  # kimi has no review_run.py runner (T-0028): named on stderr, never tried
+report = json.load(open(sys.argv[1])); ok = [c["provider"] for c in report.get("qaFallThrough") or [] if c.get("eligible")]
+[sys.stderr.write("review: " + p + " is eligible but has no review runner - skipped\n") for p in ok if p not in ("codex", "copilot", "claude")]
+print(" ".join(p for p in ok if p in ("codex", "copilot", "claude")))' "$REPORT")
 echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
 ```
 

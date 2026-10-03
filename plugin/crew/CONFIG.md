@@ -2334,6 +2334,22 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   chronic, and still blocks the sha marker exactly as before this feature —
   that case really is unverified for THIS commit, not permanently
   unverifiable, and freezing the baseline is the correct answer for it.
+- **Pricing**. A rule's cost is its declared `seconds`, or the
+  smaller of that and a measurement of it on this machine
+  (`.crew/.verify-gate.timings.json`), never the larger: a stale
+  over-statement stops reading as chronic once one clean run measures it.
+- **The tree-pass cache**. At Stop, a command that passed is credited,
+  not re-run, while the tree is byte-for-byte the tree it passed on
+  (`.crew/.verify-gate.passes.json`, keyed on HEAD, every ref,
+  `.crew/verify.json`, `.crew/config.json` and every tracked and untracked
+  path's bytes, type and mode). A rule all of whose commands are credited
+  costs nothing, so an acute deferral on an unchanged tree runs what it has
+  not run yet instead of the same rules again. `/crew:verify --all` never
+  credits; it runs everything and saves its passes. If the tree changes
+  during a run that credited something, the credits are withdrawn and the
+  run does not count as verified. Any edit anywhere, or a fetch, empties it; ignored files (`node_modules`, a
+  venv) are not in the key, as they are not in the fingerprint. Set
+  `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
 - A rule declaring `"reach"` other than `"local"` is recorded as
   `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
   and the merge gate. Declaring `"reach": "local"` runs on Stop with NO
