@@ -15,9 +15,11 @@ SVG works) and measures the drawing itself rather than trusting the source:
 A diagram PASSes only with at least one measured node box, zero of the first
 three and a size within the limit. A flowchart is the only kind measured: a
 sequence, state or ER diagram is reported NOT CHECKED, never PASS. An SVG that
-cannot be parsed, has no measurable node, or whose geometry the checker cannot
-read (a scale/rotate/matrix/skew transform above a measured element, path data
-it cannot parse) is UNKNOWN -- "could not tell" is never a PASS.
+cannot be parsed, has no measurable node, has a line outside the nodes that is
+not a recognised edge (or a non-empty edgePaths group and no edge), or whose
+geometry the checker cannot read (a scale/rotate/matrix/skew transform above a
+measured element, path data it cannot parse) is UNKNOWN -- "could not tell" is
+never a PASS. Each subpath of an edge is its own line: a moveto is a gap.
 
 Geometry: every `translate()` from the root down is accumulated, curves and
 arcs are sampled into polylines, and an intersection inside (or within EDGE_SLACK of)
@@ -76,19 +78,53 @@ def _local(tag):
     return tag.rsplit("}", 1)[-1]
 
 
-_PATH_TOKEN = re.compile(rf"\s*,?\s*([MLHVCSQTAZmlhvcsqtaz]|{_NUM})")
+_NOT_DRAWN = ("defs", "marker", "symbol", "clipPath", "mask", "pattern")
 _PATH_ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
+_SEP = re.compile(r"\s*,?\s*")
+_NUM_AT = re.compile(_NUM)
+_CMD_AT = re.compile(r"[MLHVCSQTAZmlhvcsqtaz]")
 
 
-def _path_tokens(d):
-    tokens, pos, d = [], 0, (d or "").rstrip()
-    while pos < len(d):
-        m = _PATH_TOKEN.match(d, pos)
+class _PathScanner:
+    """SVG path data read the way the grammar reads it: a number where a
+    number belongs, a one-character 0/1 flag where an arc flag belongs (so
+    `a10 10 0 0110 10` is flags 0 and 1, then 10 10). Anything else raises
+    ValueError."""
+
+    def __init__(self, d):
+        self.d, self.pos = (d or "").strip(), 0
+
+    def _skip(self):
+        self.pos = _SEP.match(self.d, self.pos).end()
+
+    def done(self):
+        self._skip()
+        return self.pos >= len(self.d)
+
+    def command(self):
+        self._skip()
+        m = _CMD_AT.match(self.d, self.pos)
+        if m:
+            self.pos = m.end()
+            return m.group(0)
+        if self.pos < len(self.d) and self.d[self.pos].isalpha():
+            raise ValueError(f"unknown path command {self.d[self.pos]!r}")
+        return None
+
+    def number(self):
+        self._skip()
+        m = _NUM_AT.match(self.d, self.pos)
         if not m:
-            raise ValueError(f"unreadable path data at {d[pos:pos + 12]!r}")
-        tokens.append(m.group(1))
-        pos = m.end()
-    return tokens
+            raise ValueError(f"expected a number at {self.d[self.pos:self.pos + 12]!r}")
+        self.pos = m.end()
+        return float(m.group(0))
+
+    def flag(self):
+        self._skip()
+        if self.pos >= len(self.d) or self.d[self.pos] not in "01":
+            raise ValueError(f"arc flag must be 0 or 1 at {self.d[self.pos:self.pos + 12]!r}")
+        self.pos += 1
+        return self.d[self.pos - 1] == "1"
 
 
 def _arc(p0, rx, ry, phi_deg, large, sweep, p1):
@@ -129,52 +165,59 @@ def _arc(p0, rx, ry, phi_deg, large, sweep, p1):
     return pts
 
 
-def path_points(d, origin=(0.0, 0.0)):
-    """Path data as a sampled polyline: every SVG path command, absolute and
-    relative. Edges use absolute commands, but shapes do not -- a cylinder is
-    drawn with relative arcs (`a`) and lines (`l`). Curves and arcs are sampled
-    (an arc through its centre parameterisation), S/T reflect the previous
-    control point. Path data this cannot read raises ValueError, never a guess."""
-    tokens = _path_tokens(d)
-    pts, i, cmd, cur, start = [], 0, None, (0.0, 0.0), (0.0, 0.0)
+def path_subpaths(d, origin=(0.0, 0.0)):
+    """Path data as sampled polylines, one per subpath: every SVG path command,
+    absolute and relative. A moveto starts a new subpath -- no line joins it to
+    the last point. Edges use absolute commands, but shapes do not -- a cylinder
+    is drawn with relative arcs (`a`) and lines (`l`). Curves and arcs are
+    sampled (an arc through its centre parameterisation), S/T reflect the
+    previous control point. Path data this cannot read raises ValueError,
+    never a guess."""
+    sc = _PathScanner(d)
+    subs, cmd, cur, start = [], None, (0.0, 0.0), (0.0, 0.0)
     ctrl, prev = (0.0, 0.0), None  # last control point (read only after C/S/Q/T), last command
-    while i < len(tokens):
-        if tokens[i].isalpha():
-            cmd = tokens[i]
-            i += 1
+    while not sc.done():
+        letter = sc.command()
+        if letter:
+            cmd = letter
         elif cmd is None:
             raise ValueError("path data does not start with a command")
         elif cmd in "Zz":
             raise ValueError("numbers after a closepath (Z) with no command")
         up, rel = cmd.upper(), cmd.islower()
+        if up != "M" and not subs:
+            raise ValueError("path data does not start with a moveto")
         if up == "Z":
             cur, prev = start, "Z"
-            pts.append(cur)
+            subs[-1].append(cur)
+            subs.append([cur])  # what follows Z starts again from the subpath start
             continue
-        vals = [float(t) for t in tokens[i:i + _PATH_ARGS[up]]]
-        if len(vals) < _PATH_ARGS[up] or any(t.isalpha() for t in tokens[i:i + _PATH_ARGS[up]]):
-            raise ValueError(f"truncated {cmd!r} in path data")
-        i += _PATH_ARGS[up]
+        if up == "A":
+            vals = [sc.number(), sc.number(), sc.number(), sc.flag(), sc.flag(), sc.number(), sc.number()]
+        else:
+            vals = [sc.number() for _ in range(_PATH_ARGS[up])]
         ox, oy = cur if rel else (0.0, 0.0)
         p0 = cur
+        pts = []
         if up in ("M", "L", "T"):
             end = (vals[0] + ox, vals[1] + oy)
             if up == "T":
                 c = (2 * p0[0] - ctrl[0], 2 * p0[1] - ctrl[1]) if prev in ("Q", "T") else p0
-                pts += _bezier([p0, c, end])
+                pts = _bezier([p0, c, end])
                 ctrl = c
-            else:
-                pts.append(end)
+            elif up == "L":
+                pts = [end]
             cur = end
             if up == "M":
                 start = cur
+                subs.append([cur])
                 cmd = "l" if rel else "L"  # implicit lineto after a moveto
         elif up == "H":
             cur = (vals[0] + ox, cur[1])
-            pts.append(cur)
+            pts = [cur]
         elif up == "V":
             cur = (cur[0], vals[0] + oy)
-            pts.append(cur)
+            pts = [cur]
         elif up in ("C", "S"):
             if up == "C":
                 c1, rest = (vals[0] + ox, vals[1] + oy), vals[2:]
@@ -182,18 +225,30 @@ def path_points(d, origin=(0.0, 0.0)):
                 c1 = (2 * p0[0] - ctrl[0], 2 * p0[1] - ctrl[1]) if prev in ("C", "S") else p0
                 rest = vals
             c2, end = (rest[0] + ox, rest[1] + oy), (rest[2] + ox, rest[3] + oy)
-            pts += _bezier([p0, c1, c2, end])
+            pts = _bezier([p0, c1, c2, end])
             cur, ctrl = end, c2
         elif up == "Q":
             c, end = (vals[0] + ox, vals[1] + oy), (vals[2] + ox, vals[3] + oy)
-            pts += _bezier([p0, c, end])
+            pts = _bezier([p0, c, end])
             cur, ctrl = end, c
         else:  # A: rx ry rotation large-arc sweep x y
             end = (vals[5] + ox, vals[6] + oy)
-            pts += _arc(p0, abs(vals[0]), abs(vals[1]), vals[2], vals[3] != 0, vals[4] != 0, end)
+            pts = _arc(p0, abs(vals[0]), abs(vals[1]), vals[2], vals[3], vals[4], end)
             cur = end
+        subs[-1] += pts
         prev = up
-    return [(x + origin[0], y + origin[1]) for x, y in pts]
+    return [[(x + origin[0], y + origin[1]) for x, y in sp] for sp in subs if sp]
+
+
+def path_points(d, origin=(0.0, 0.0)):
+    """Every sampled point of a path, subpaths concatenated: for a bounding box
+    only. Segments must come from path_subpaths(), which never joins subpaths."""
+    return [p for sp in path_subpaths(d, origin) for p in sp]
+
+
+def _segments(subs):
+    """The drawn segments of a list of subpath polylines."""
+    return [(a, b) for sp in subs for a, b in zip(sp, sp[1:])]
 
 
 def _bezier(ctl):
@@ -246,15 +301,26 @@ def _union(boxes):
             max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
+def _descendants(el, base):
+    """(descendant, its offset) for everything under `el`, every translate()
+    on the way down accumulated; any other transform raises ValueError."""
+    for child in el:
+        here = _offset(child, base)
+        yield child, here
+        yield from _descendants(child, here)
+
+
 def collect(root):
-    """(nodes, edges, labels, lines): nodes {id: box}, edges [(id, polyline)],
+    """(nodes, edges, labels, lines, stray): nodes {id: box}, edges [(id, segments)],
     labels [(x0, y0, x1, y1, owning edge id or None, lines of text)],
     lines {node id: lines of text in its box}."""
     nodes, edges, labels = {}, [], []
-    unmeasured, lines = [], {}
+    unmeasured, lines, stray, containers = [], {}, [], []
 
     def walk(el, base, bad=None):
         cls, tag = _classes(el), _local(el.tag)
+        if tag in _NOT_DRAWN:  # arrowheads and icons: templates, not lines on the page
+            return
         try:
             here = _offset(el, base)
         except ValueError as exc:
@@ -284,25 +350,31 @@ def collect(root):
         if tag == "path" and "flowchart-link" in cls:
             eid = el.get("id") or f"edge{len(edges)}"
             try:
-                poly = path_points(el.get("d"), here)
+                segs = _segments(path_subpaths(el.get("d"), here))
             except ValueError as exc:
                 raise ValueError(f"edge {_short(eid)}: {exc}") from exc
-            if len(poly) < 2:
+            if not segs:
                 raise ValueError(f"edge {_short(eid)} has no line to measure")
-            edges.append((eid, poly))
+            edges.append((eid, segs))
             return
         if tag == "g" and "edgeLabel" in cls:
             owner = next((g.get("data-id") for g in el.iter() if g.get("data-id")), None)
-            for fo in el.iter():
+            for fo, inner in _descendants(el, here):
                 if _local(fo.tag) == "foreignObject":
                     w, h = float(fo.get("width") or 0), float(fo.get("height") or 0)
                     if w > 0 and h > 0:
-                        inner = here
-                        for g in el:
-                            if _local(g.tag) == "g":
-                                inner = _offset(g, here)
                         labels.append((inner[0], inner[1], inner[0] + w, inner[1] + h, owner,
                                        round(h / LINE_HEIGHT)))
+            return
+        if tag == "g" and "edgePaths" in cls and len(el):
+            containers.append(el)
+        if "edge-thickness-invisible" in cls:  # a `~~~` layout link: never drawn
+            return
+        if tag in ("path", "line", "polyline"):
+            # A line outside every node that is not a recognised edge: if
+            # Mermaid renames its edge class, the edges must not vanish into
+            # a PASS with 0 edges.
+            stray.append(el.get("id") or el.get("class") or tag)
             return
         for child in el:
             walk(child, here, bad)
@@ -313,7 +385,9 @@ def collect(root):
         # that is "could not tell", never a quiet PASS.
         raise ValueError(f"{len(unmeasured)} node shape(s) not measurable: "
                          + ", ".join(_short(n) for n in unmeasured[:4]))
-    return nodes, edges, labels, lines
+    if containers and not edges:
+        stray.append("an edgePaths group with content")
+    return nodes, edges, labels, lines, stray
 
 
 def _inside(p, box, pad=0.0):
@@ -339,11 +413,11 @@ def _seg_hits_box(a, b, box):
     return any(_seg_cross(a, b, corners[k], corners[(k + 1) % 4]) for k in range(4))
 
 
-def _ends(poly, nodes):
+def _ends(segs, nodes):
     """The node boxes nearest each end of an edge: its source and target."""
     def nearest(p):
         return min(nodes, key=lambda n: _box_dist(p, nodes[n])) if nodes else None
-    return {nearest(poly[0]), nearest(poly[-1])} - {None}
+    return {nearest(segs[0][0]), nearest(segs[-1][1])} - {None}
 
 
 def _box_dist(p, box):
@@ -381,21 +455,27 @@ def measure(svg_text):
         return {"status": UNKNOWN, "why": f"checker error: {type(exc).__name__}: {exc}"}
 
 
-def _judge(nodes, edges, labels, lines):
-    """The verdict on collected geometry. No measured node is no measurement."""
+def _judge(nodes, edges, labels, lines, stray):  # pylint: disable=too-many-locals
+    """The verdict on collected geometry. No measured node is no measurement,
+    and a line outside the nodes that is not a recognised edge is a line no
+    crossing was tested against."""
     if not nodes:
         return {"status": UNKNOWN, "nodes": 0, "edges": len(edges),
                 "why": (f"{len(edges)} edge(s) but no node box measured" if edges
                         else "no node boxes found: nothing was measured")}
+    if stray:
+        return {"status": UNKNOWN, "nodes": len(nodes), "edges": len(edges),
+                "why": (f"{len(stray)} line(s) outside the nodes not recognised as an edge "
+                        f"({', '.join(_short(x) for x in stray[:3])}); {len(edges)} edge(s) measured")}
     ends = [(eid, poly, _ends(poly, nodes)) for eid, poly in edges]
     crossings = []
     for i, (ida, pa, ea) in enumerate(ends):
         for idb, pb, eb in ends[i + 1:]:
             near = [nodes[n] for n in ea | eb]
-            for s in range(len(pa) - 1):
+            for sa in pa:
                 hit = None
-                for t in range(len(pb) - 1):
-                    x = _seg_cross(pa[s], pa[s + 1], pb[t], pb[t + 1])
+                for sb in pb:
+                    x = _seg_cross(sa[0], sa[1], sb[0], sb[1])
                     if x and not any(_inside(x, box, EDGE_SLACK) for box in near):
                         hit = x
                         break
@@ -410,7 +490,7 @@ def _judge(nodes, edges, labels, lines):
             inner = _shrink(box, NODE_SHRINK)
             if inner[0] >= inner[2] or inner[1] >= inner[3]:
                 continue
-            if any(_seg_hits_box(poly[k], poly[k + 1], inner) for k in range(len(poly) - 1)):
+            if any(_seg_hits_box(a, b, inner) for a, b in poly):
                 through.append(f"{_short(eid)} through {_short(nid)}")
     overlaps = []
     for k, lab in enumerate(labels):
@@ -424,7 +504,7 @@ def _judge(nodes, edges, labels, lines):
         if inner[0] < inner[2] and inner[1] < inner[3]:
             overlaps += [f"{_short(eid)} through {name}" for eid, poly, _ in ends
                          if not (owner and eid.endswith(owner))
-                         and any(_seg_hits_box(poly[i], poly[i + 1], inner) for i in range(len(poly) - 1))]
+                         and any(_seg_hits_box(a, b, inner) for a, b in poly)]
     wordy = [f"{_short(n)} ({k} lines)" for n, k in lines.items() if k > MAX_BOX_LINES]
     wordy += [f"label of {_short(lab[4]) if lab[4] else '?'} ({lab[5]} lines)"
               for lab in labels if lab[5] > MAX_BOX_LINES]

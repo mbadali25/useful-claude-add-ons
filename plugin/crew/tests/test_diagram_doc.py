@@ -3,6 +3,9 @@ sources and readability; the verdict comes from a render, never a guess; a
 hand-written README is refused."""
 import os
 import shutil
+import subprocess
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import diagram_doc
@@ -24,6 +27,9 @@ def _dir(tmp_path, rendered=None):
         (d / "out").mkdir()
         shutil.copy(os.path.join(FIX, rendered), d / "out" / "process-merge.svg")
         _age(d / "process-merge.mmd", 60)  # the render is newer than its source
+        # what render.sh records beside the SVG: the sha256 of the source it rendered
+        (d / "out" / "process-merge.svg.src").write_text(
+            diagram_doc.source_hash(str(d / "process-merge.mmd")) + "\n", encoding="utf-8")
     return d
 
 
@@ -107,8 +113,10 @@ def test_an_edge_note_is_read_by_its_src_dst_id(tmp_path):
 # --- review of PR #375 ------------------------------------------------------
 
 def test_a_render_older_than_its_source_is_out_of_date_not_pass(tmp_path):
+    """No .src beside the render: file times are the only evidence."""
     d = _dir(tmp_path, rendered="clean.svg")
-    assert diagram_doc.verdict(str(d), "process-merge.mmd").startswith("PASS")
+    (d / "out" / "process-merge.svg.src").unlink()
+    assert diagram_doc.verdict(str(d), "process-merge.mmd").startswith("PASS (freshness by mtime only): ")
     _age(d / "out" / "process-merge.svg", 120)  # the source was edited after the render
     diagram_doc.main(["--dir", str(d), "--write"])
     md = (d / "README.md").read_text(encoding="utf-8")
@@ -129,3 +137,52 @@ def test_a_file_quoting_the_marker_below_its_head_is_still_refused(tmp_path):
     (d / "README.md").write_text(own, encoding="utf-8")
     assert diagram_doc.main(["--dir", str(d), "--write"]) == 1
     assert (d / "README.md").read_text(encoding="utf-8") == own
+
+
+# --- review of PR #375, round 2: freshness by source hash -------------------
+
+def test_a_matching_source_hash_is_a_plain_pass_whatever_the_file_times(tmp_path):
+    d = _dir(tmp_path, rendered="clean.svg")
+    _age(d / "out" / "process-merge.svg", 600)  # a checkout touched the source after the render
+    assert diagram_doc.verdict(str(d), "process-merge.mmd") == (
+        "PASS: 8 nodes, no crossings, nothing drawn through a node")
+
+
+def test_a_different_source_hash_is_out_of_date_even_when_the_render_is_newer(tmp_path):
+    d = _dir(tmp_path, rendered="clean.svg")
+    (d / "process-merge.mmd").write_text(SOURCE + "  b --> c\n", encoding="utf-8")
+    _age(d / "process-merge.mmd", 600)  # the edit keeps an older time (a checkout, a copy)
+    assert diagram_doc.verdict(str(d), "process-merge.mmd").startswith("render out of date")
+
+
+RENDER_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "crew-diagrams",
+                         "scripts", "render.sh")
+FAKE_MMDC = """#!/usr/bin/env bash
+# stands in for mermaid-cli: writes a small file at -o, logs each call
+out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
+echo "<svg/>" > "$out"; echo "$out" >> "$MMDC_LOG"
+"""
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or not (shutil.which("sha256sum") or shutil.which("shasum")),
+                    reason="needs bash and a sha256 tool")
+def test_render_sh_records_the_source_hash_and_rerenders_on_a_new_one(tmp_path):
+    d = _dir(tmp_path)
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    (tools / "mmdc").write_text(FAKE_MMDC, encoding="utf-8", newline="\n")
+    os.chmod(tools / "mmdc", 0o755)
+    env = dict(os.environ, PATH=f"{tools}{os.pathsep}{os.environ['PATH']}", MMDC_LOG=str(tmp_path / "log"))
+
+    def render():
+        subprocess.run(["bash", RENDER_SH, str(d), "--svg-only"], env=env, check=True, capture_output=True)
+        return (tmp_path / "log").read_text(encoding="utf-8").count("process-merge")
+
+    assert render() == 1
+    src = d / "out" / "process-merge.svg.src"
+    assert src.read_text(encoding="utf-8").strip() == diagram_doc.source_hash(str(d / "process-merge.mmd"))
+    assert render() == 1  # same hash: skipped
+    (d / "process-merge.mmd").write_text(SOURCE + "  b --> c\n", encoding="utf-8")
+    _age(d / "process-merge.mmd", 600)  # older than the SVG, so the time rule alone would skip it
+    assert render() == 2
+    assert src.read_text(encoding="utf-8").strip() == diagram_doc.source_hash(str(d / "process-merge.mmd"))

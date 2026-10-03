@@ -114,6 +114,16 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_doc.py --dir 
 Only flowcharts are measured; a sequence, state or ER diagram is reported NOT
 CHECKED, never PASS. Without `mmdc` nothing is rendered, so nothing is
 measured: say NOT VERIFIED and give the install line, never "looks fine".
+A drawing the checker cannot fully read (no box measured, a line outside the
+boxes that is not a recognised edge, a scale/rotate transform, path data it
+cannot parse) is UNKNOWN, also never PASS.
+
+The page trusts a render only when it came from the current source:
+`render.sh` writes `out/<name>.svg.src`, the sha256 of the `.mmd` it rendered,
+and `diagram_doc.py` compares it with the `.mmd` now. A different hash reads
+"render out of date (run render.sh ...)". A render with no `.src` (made by
+hand, or where neither `sha256sum` nor `shasum` exists) falls back to file
+times, and its verdict says "(freshness by mtime only)".
 
 **How a FAIL is usually fixed:**
 
@@ -153,7 +163,8 @@ bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/render.sh docs/diagrams
 ```
 
 That script renders every `.mmd` to `out/*.png` and `out/*.svg`, skipping files
-whose source has not changed.
+whose source has not changed: for an SVG, whose recorded `out/<name>.svg.src`
+hash still matches the `.mmd` (file times only when there is no `.src`).
 
 Notes that will otherwise cost you time:
 

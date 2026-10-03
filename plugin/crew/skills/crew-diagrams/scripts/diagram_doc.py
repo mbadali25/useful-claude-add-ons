@@ -13,8 +13,10 @@ readable drawing loses nothing.
 The purpose comes from the source's `%% Purpose:` lines (any `%%` comment that
 is not provenance, when there are none). The readability verdict comes from
 diagram_check.py on `out/<name>.svg` when render.sh has produced it, and is
-"not rendered" otherwise, and "render out of date" when the .mmd is newer
-than its render -- never a guessed PASS.
+"not rendered" otherwise, and "render out of date" when the sha256 render.sh
+recorded in `out/<name>.svg.src` is not the .mmd's. A render with no `.src`
+falls back to file times (out of date unless the SVG is newer) and its verdict
+says "(freshness by mtime only)" -- never a guessed PASS.
 
 DRY RUN BY DEFAULT. `--write` writes both files and never overwrites one that
 lacks the GENERATED marker: a hand-written README.md is refused (exit 1).
@@ -23,6 +25,7 @@ Usage: diagram_doc.py [--dir docs/diagrams] [--write]
 Exit: 0 printed or written; 1 a file was refused; 2 usage.
 """
 import argparse
+import hashlib
 import html
 import os
 import re
@@ -83,26 +86,43 @@ def read_source(path):
     return name.replace("-", " ").capitalize(), purpose, anchors, body
 
 
+def source_hash(path):
+    """sha256 of a file's bytes: what render.sh writes to out/<name>.svg.src."""
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
 def verdict(directory, source):
-    """The readability of `out/<name>.svg`, only if that render is newer than
-    its source: a verdict on an old drawing is not a verdict on this one."""
+    """The readability of `out/<name>.svg`, only if that render came from this
+    source. render.sh records the source's sha256 in `out/<name>.svg.src`; a
+    different hash is out of date. Without that file, file times are the only
+    evidence, and the verdict says so."""
+    mmd = os.path.join(directory, source)
     svg = os.path.join(directory, "out", os.path.splitext(source)[0] + ".svg")
     if not os.path.isfile(svg):
         return "not rendered (run render.sh, then this again)"
-    if os.stat(svg).st_mtime_ns <= os.stat(os.path.join(directory, source)).st_mtime_ns:
-        return "render out of date (run render.sh, then this again)"
+    stale = "render out of date (run render.sh, then this again)"
+    caveat = ""
+    if os.path.isfile(svg + ".src"):
+        with open(svg + ".src", encoding="utf-8") as fh:
+            if fh.read().strip() != source_hash(mmd):
+                return stale
+    elif os.stat(svg).st_mtime_ns <= os.stat(mmd).st_mtime_ns:
+        return stale
+    else:
+        caveat = " (freshness by mtime only)"
     with open(svg, encoding="utf-8") as fh:
         r = diagram_check.measure(fh.read())
     if r["status"] == diagram_check.PASS:
-        return f"PASS: {r['nodes']} nodes, no crossings, nothing drawn through a node"
+        return f"PASS{caveat}: {r['nodes']} nodes, no crossings, nothing drawn through a node"
     if r["status"] == diagram_check.FAIL:
         parts = [f"{len(r[k])} {label}" for k, label in
                  (("crossings", "crossing(s)"), ("through", "edge(s) through a node"),
                   ("overlaps", "label overlap(s)")) if r[k]]
         if r.get("why"):
             parts.append(r["why"])
-        return "FAIL: " + "; ".join(parts)
-    return f"{r['status']}: {r.get('why', '')}"
+        return f"FAIL{caveat}: " + "; ".join(parts)
+    return f"{r['status']}{caveat}: {r.get('why', '')}"
 
 
 def collect(directory):

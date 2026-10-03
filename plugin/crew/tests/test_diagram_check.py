@@ -182,7 +182,7 @@ def test_numbers_after_closepath_are_a_value_error_not_a_key_error():
 def test_an_unexpected_checker_error_is_unknown_never_a_crash(monkeypatch):
     def boom(*_):
         raise KeyError("Z")
-    monkeypatch.setattr(diagram_check, "path_points", boom)
+    monkeypatch.setattr(diagram_check, "path_subpaths", boom)
     r = diagram_check.measure(_svg(_node("a", 50, 50) + _edge("a", "a", "M0,0L1,1")))
     assert r["status"] == diagram_check.UNKNOWN and "KeyError" in r["why"]
 
@@ -233,3 +233,68 @@ def test_an_arc_edge_is_sampled_along_its_curve():
     svg = _svg(_node("a", -40, 0, w=40) + _node("b", 240, 0, w=40) + _node("top", 100, -100, w=20, h=10)
                + _edge("a", "b", "M0,0 A100,100 0 0,1 200,0"))
     assert diagram_check.measure(svg)["through"] == ["a->b through top"]
+
+
+# --- review of PR #375, round 2 ---------------------------------------------
+
+def _raises(d):
+    try:
+        diagram_check.path_subpaths(d)
+    except ValueError:
+        return True
+    return False
+
+
+def test_an_arc_flag_other_than_0_or_1_is_unreadable():
+    assert _raises("M0 0 a10 10 0 2 3 10 10")
+    svg = _svg(_node("a", 0, 0) + _node("b", 0, 200) + _edge("a", "b", "M0,20 a10 10 0 2 3 0 160"))
+    assert diagram_check.measure(svg)["status"] == diagram_check.UNKNOWN
+
+
+def test_merged_arc_flags_are_split_per_the_grammar():
+    assert diagram_check.path_points("M0 0 a10 10 0 0110 10") == diagram_check.path_points("M0 0 a10 10 0 0 1 10 10")
+    assert _raises("M0 0 a10 10 0 01 10 10 5")  # a 5 left over is a truncated second arc
+
+
+def test_a_moveto_starts_a_new_subpath_with_no_joining_segment():
+    subs = diagram_check.path_subpaths("M0 0 L5 5 M 50 50 L 60 60")
+    assert subs == [[(0.0, 0.0), (5.0, 5.0)], [(50.0, 50.0), (60.0, 60.0)]]
+    segs = diagram_check._segments(subs)  # pylint: disable=protected-access
+    assert ((5.0, 5.0), (50.0, 50.0)) not in segs
+    # Two strokes of one edge with a node in the gap between them: nothing is drawn through it.
+    svg = _svg(_node("a", 100, 50) + _node("gap", 100, 150) + _node("b", 100, 250)
+               + _edge("a", "b", "M100,70L100,110 M100,190L100,230"))
+    assert diagram_check.measure(svg)["through"] == []
+
+
+def test_a_renamed_edge_class_is_unknown_not_a_pass_with_zero_edges():
+    renamed = '<g class="edgePaths"><path class="flowchart-edge" id="x-L_a_b_0" d="M100,70L100,130"></path></g>'
+    r = diagram_check.measure(_svg(_node("a", 100, 50) + _node("b", 100, 150) + renamed))
+    assert r["status"] == diagram_check.UNKNOWN and r["edges"] == 0 and "not recognised" in r["why"]
+    # One edge still recognised, one not: the unrecognised line is not silently dropped.
+    mixed = (_node("a", 100, 50) + _node("b", 100, 150) + _node("c", 300, 150)
+             + _edge("a", "b", "M100,70L100,130") + '<path class="new-edge" d="M120,70L300,130"></path>')
+    r = diagram_check.measure(_svg(mixed))
+    assert r["status"] == diagram_check.UNKNOWN and r["edges"] == 1 and "new-edge" in r["why"]
+    wrapped = '<g class="edgePaths"><g class="something-new"></g></g>'
+    r = diagram_check.measure(_svg(_node("a", 100, 50) + wrapped))
+    assert r["status"] == diagram_check.UNKNOWN
+
+
+def test_a_node_only_diagram_with_no_edge_container_still_passes():
+    svg = _svg('<marker id="m"><path d="M0,0L1,1"></path></marker><g class="edgePaths"></g>'
+               + _node("a", 100, 50) + _node("b", 300, 50))
+    r = diagram_check.measure(svg)
+    assert r["status"] == diagram_check.PASS and r["edges"] == 0
+
+
+def test_an_invisible_layout_link_is_not_a_stray_line():
+    hidden = '<path class="edge-thickness-invisible" id="x-L_a_b_0" d="M100,70L100,130"></path>'
+    svg = _svg(_node("a", 100, 50) + _node("b", 100, 150) + hidden)
+    assert diagram_check.measure(svg)["status"] == diagram_check.PASS
+
+
+def test_a_translate_deeper_inside_an_edge_label_is_applied():
+    deep = ('<g class="edgeLabel" transform="translate(300, 50)"><g class="label" transform="translate(0, 0)">'
+            '<g transform="translate(-210, -10)"><foreignObject width="20" height="20"></foreignObject></g></g></g>')
+    assert diagram_check.measure(_svg(_node("a", 100, 50) + deep))["overlaps"] == ["label 0 on a"]

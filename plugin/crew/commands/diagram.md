@@ -15,13 +15,16 @@ Diagram: $ARGUMENTS
 3. Write Mermaid source to `docs/diagrams/<name>.mmd`, with the provenance
    comment and anchor list at the top.
    Add a `%% Purpose:` line: what a reader learns from the diagram, in a sentence.
-4. Render: `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/render.sh docs/diagrams`
+4. Render: `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/render.sh docs/diagrams`.
+   Beside each SVG it writes `out/<name>.svg.src`, the sha256 of its `.mmd`.
 5. Check: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_check.py docs/diagrams/out`.
    A FAIL is not done: redraw (a loop back gets its own end box; over 15 boxes
    splits along its subgraphs) and check again. If `mmdc` is not installed,
    nothing was measured: say NOT VERIFIED and give me the install line.
 6. Page: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_doc.py --dir docs/diagrams --write`
    writes `docs/diagrams/README.md` and `index.html` with every diagram embedded.
+   A render whose `.src` hash is not the `.mmd`'s shows "render out of date";
+   one with no `.src` is judged by file times and says "(freshness by mtime only)".
 7. Show me the source and the check table.
 
 With `refresh`: for each existing `.mmd`, diff its anchor files against HEAD.
