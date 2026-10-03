@@ -1491,12 +1491,13 @@ JUDGEMENT: nothing calls `commit_refusal` at this anchor. Its caller, the scope 
 running it ahead of `scope.mode`, touches `HARNESS` paths
 (`scripts/check-tooling-pr.py`) and lands in its own change.
 
-`check` (`:335`) is `/crew:done`'s report (`plugin/crew/commands/done.md:68-79`):
-`scope_base.resolve`, then `git log <base>..HEAD` (`_log_messages`, `:315`), printing
+`check` (`:351`) is `/crew:done`'s report (`plugin/crew/commands/done.md:68-79`):
+`scope_base.resolve`, then `git log --first-parent <base>..HEAD` (`_log_messages`, `:329`), so
+commits merged in from main are not the ticket's (a deliberate refinement of the spec), printing
 `trailers: clean (<n> commits)`, one `trailers: FINDING <sha7> <Token>` per hit, or
 `trailers: unknown - <why>`, exit 0 / 1 / 2. A `head` last-resort base, and a
 fallback base that reads no commit, are unknown; a line from any other fallback base
-says so. `main` (`:369`) is the `--check` CLI. Suite: `plugin/crew/tests/test_crew_trailers.py`,
+says so. `main` (`:385`) is the `--check` CLI; any unexpected exception, an import failure included, is `unknown` with exit 2. Suite: `plugin/crew/tests/test_crew_trailers.py`,
 mapped by `.crew/verify.json:539-546`. The practice note it replaces said a
 repository's attribution adds `Co-Authored-By`; it now says the owner's instructions
 decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
