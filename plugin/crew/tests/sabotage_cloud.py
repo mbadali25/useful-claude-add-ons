@@ -1707,4 +1707,18 @@ CLOUD_GUARD_MUTATIONS += (
      '        w if _PLAIN_WORD_RE.match(w) and "," not in w else\n',
      "        w if _PLAIN_WORD_RE.match(w) else\n",
      _DA + "[r5-ps-comma-quoted]"),
+    ("deploy r6: an unseen character in a workflow name read as a name",
+     GUARDS,
+     '        and not any(ch != " " and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     '        and not any(False and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     _ED + "test_r6_an_invisible_character_in_a_workflow_name_is_unknown"),
+    ("deploy r6: the ASCII blank in a workflow name unseen (over-block)",
+     GUARDS,
+     '        and not any(ch != " " and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     '        and not any(ch != "" and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     _ED + "test_r6_a_printable_workflow_name_still_reads"),
 )

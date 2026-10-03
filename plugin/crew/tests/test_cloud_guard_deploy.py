@@ -151,6 +151,7 @@ re-spelled: the display-name rows were single-quoted already.
 import copy
 import inspect
 import json
+import os
 import re
 import subprocess
 
@@ -1496,6 +1497,39 @@ def test_dispatch_answer_contract(text, state, op):
     assert state in ("nonProd", "prod", "unlisted") or why
 
 
+_INVISIBLE_IN_NAMES = ["\u2028", "\u2029", "\u0085", "\u202e", "\u2066",
+                       "\u200b", "\ufeff", "\u00a0", "\x7f"]
+
+
+@pytest.mark.parametrize("name", ["Deploy{}Staging", "CI{}Checks"])
+@pytest.mark.parametrize("char", _INVISIBLE_IN_NAMES,
+                         ids=lambda c: f"U+{ord(c):04X}")
+def test_r6_an_invisible_character_in_a_workflow_name_is_unknown(name, char):
+    """Round-6 self-check: a single-quoted workflow name carrying a line or
+    paragraph separator, a C1 control, a bidi or zero-width format character
+    or a non-ASCII blank is not a name crew can read. It looks like a listed
+    name (or like an unlisted one) and lands on the guard.log row verbatim,
+    so it is `unknown`, never `unlisted` or a listed workflow's class."""
+    envs = dict(_CONTRACT_ENVS, workflows=NAMED)
+    text = "gh workflow run '" + name.format(char) + "'"
+    got, why, scope = crew_guards.dispatch_answer(text, "bash", envs)
+    assert got == "unknown", (got, why, scope)
+    assert why
+
+
+@pytest.mark.parametrize("name,state", [
+    ("Deploy Staging", "nonProd"), ("CI Checks", "unlisted"),
+    ("D\u00e9ploiement", "unlisted"), ("Deploy-\u00c9t\u00e9", "unlisted"),
+])
+def test_r6_a_printable_workflow_name_still_reads(name, state):
+    """must-allow for the test above: an ASCII blank and printable
+    non-ASCII letters are still a readable name."""
+    envs = dict(_CONTRACT_ENVS, workflows=NAMED)
+    got, why, scope = crew_guards.dispatch_answer(
+        "gh workflow run '" + name + "'", "bash", envs)
+    assert got == state, (got, why, scope)
+
+
 def test_dispatch_answer_is_the_only_road():
     """`_classify`'s `gh` branch reaches the dispatch parser only through
     `dispatch_answer`, and `dispatch_answer` gates before it parses."""
@@ -1649,7 +1683,7 @@ _R4_PS_PARAMS = (
     "[switch] -and $c -notcontains $_.Name }} | % Name")
 
 
-def test_r4_ps_full_params_match_powershell():
+def test_r4_ps_full_params_match_powershell(tmp_path):
     """The launcher rule's table is what PowerShell itself reports, where
     pwsh is on the host; the docstring's measurement stands in otherwise."""
     for cmd, names in R4_MEASURED.items():
@@ -1657,10 +1691,14 @@ def test_r4_ps_full_params_match_powershell():
     pwsh = crew_fixtures.resolve_pwsh()
     if pwsh is None:
         pytest.skip("no pwsh on this host: R4_MEASURED is the record")
+    # Its own home (round 6): conftest already gave this test its own
+    # XDG_CACHE_HOME; HOME and USERPROFILE are the rest of what pwsh reads.
+    env = dict(os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path))
     for cmd, names in R4_MEASURED.items():
         out = subprocess.run(
             [pwsh, "-NoProfile", "-c", _R4_PS_PARAMS.format(cmd=cmd)],
-            capture_output=True, text=True, timeout=120, check=True).stdout
+            capture_output=True, text=True, encoding="utf-8",
+            errors="strict", timeout=120, check=True, env=env).stdout
         got = {"-" + n.strip().lower() for n in out.split()} \
             - {"-redirectstandardinput"}
         assert got == set(names), (cmd, sorted(got))

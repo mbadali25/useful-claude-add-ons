@@ -30,6 +30,7 @@ import json
 import os
 import re
 import shlex
+import unicodedata
 
 # What crew may do when a skill it needs is NOT installed. Ordered least to most
 # permissive and read only through `install_policy_rank`, the same contract
@@ -2086,8 +2087,12 @@ _DISPATCH_WORD_ENDS = " \t\n;&|<>()"
 _DISPATCH_NON_LITERAL_RE = re.compile(r"[$`*?\[\]{}()<>|;&\s'\"\0]")
 # A workflow NAME is a whole word, so a blank or a quote in it came from
 # quoting (`gh workflow run 'Deploy Staging'`). Expansion and glob characters
-# still make it unknown.
+# still make it unknown, and so does any character that does not show
+# (round 6): a control, a line or paragraph separator, a bidi or zero-width
+# format character, or a blank other than U+0020. Each looks like a name
+# it is not and lands on the guard.log row verbatim.
 _WORKFLOW_NON_LITERAL_RE = re.compile(r"[$`*?\[\]{}~\0]")
+_WORKFLOW_UNSEEN = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp", "Zs")
 
 # `gh` options that take a value, across both forms (`-R/--repo`, `-r/--ref`,
 # the fields, and `gh api`'s own). A value is never a positional word. Every
@@ -2712,7 +2717,9 @@ def _dispatch_literal(value):
 
 def _workflow_literal(value):
     return isinstance(value, str) and bool(value.strip()) \
-        and not _WORKFLOW_NON_LITERAL_RE.search(value)
+        and not _WORKFLOW_NON_LITERAL_RE.search(value) \
+        and not any(ch != " " and unicodedata.category(ch) in _WORKFLOW_UNSEEN
+                    for ch in value)
 
 
 def _field_input(raw, api):
