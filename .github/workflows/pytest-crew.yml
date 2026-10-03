@@ -271,6 +271,10 @@ jobs:
   # round-robin by name, which spreads each function's parametrisations across
   # the shards. Each shard stores its measured durations (durations.json in
   # its artifact) so that file can be built from real Windows timings.
+  # Measured 2026-10-03, run 37127570976, two attempts: a committed file
+  # merged from those artifacts balanced the shards but raised their total
+  # from 28 to ~35 min and the slowest from 11.2 to 12.5 min, so the split
+  # stays by count. Re-measure the slowest shard before trying it again.
   #
   # Runner: every crew-windows-* job takes `runs-on` from
   # crew-windows-decide's `runs-on` output, set in one line there. The Windows
