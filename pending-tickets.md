@@ -75,6 +75,48 @@ it merges if its number has been passed.
 #356, #363, #364, #365 and #366. Owner's ticket agent: confirm that each ticket exists and is ready to
 build, or create it.
 
+## Dependency map (2026-10-03)
+
+Merge left to right; nothing in a chain merges before the item to its left. Checked against each
+PR's handoff note and against `main`'s history.
+
+**Hard dependencies (the wrong order breaks something):**
+
+| Chain | Why |
+|---|---|
+| #378 (T-0061 harness) -> #350 (T-0061 feature) | #350's docs describe exit codes and `activate`, which exist only once #378 lands |
+| #378 -> #371 (T-0100) | #371 already contains #378's commits |
+| #379 (T-0019) -> #354 (T-0012) | T-0012 uses T-0019's ticket mint |
+| #379 + T-0037 -> #364 (T-0052) -> #365 (T-0058) | T-0058 also needs #354. T-0037 has no branch or PR yet |
+| #353 (T-0011) + T-0037 + #364 -> #366 (T-0059) | T-0059 ships slices through T-0011's ship policy |
+| #362 (T-0051) + T-0049 -> #363 (T-0060) | T-0060 is part 2 of the notify rebuild. T-0049 has no branch or PR yet |
+| T-0016 -> #356 (T-0017) | T-0016 has no branch or PR yet |
+| #344 (T-0035) -> #345 (T-0036) | T-0036 uses T-0035's diagram generator |
+
+**Soft dependencies (the same files or behaviour, no breakage):**
+
+| Pair | Overlap | Order |
+|---|---|---|
+| #337 (L-0618) and #370 (T-0038) | #337 adds step 5c to `/crew:upgrade`; T-0038 makes that command a stub | #337 first. T-0038 carries step 5c into `/crew:migrate` |
+| #375 (diagrams) and #344 (T-0035) | Both generate `docs/diagrams/README.md` | #375 first. T-0035 builds on its checker (owner decision pending) |
+| #372 + #337, then row 7 | G1 should point at `--stamp-reach` | Row 7 after both land |
+
+**No open dependency (already on `main`):**
+
+| PR | Depended on | On `main` as |
+|---|---|---|
+| #339 L-0563 | L-0516 | #298 |
+| #340 L-0526 | L-0520 | #287 |
+| #347 T-0047, #369 T-0044 | T-0005 | #241 |
+| #352, #357, #358, #359 | T-0004, T-0008, T-0018, T-0021, T-0023, T-0024, T-0042 | all merged |
+| #351, #355, #360, #368, #361 | T-0006 or none | merged, or none |
+
+#338, #341, #342, #343, #346, #348, #349, #376, #377, #336, #333, #331, #324, #275 and #274 name no
+dependency in their handoff notes (headers checked, not their full specs).
+
+**Unblock first:** T-0016, T-0037 and T-0049 have no branch and together block five PRs; T-0019 (#379)
+blocks three more.
+
 ## Owner decisions (2026-10-03)
 
 | # | Question | Decision |
