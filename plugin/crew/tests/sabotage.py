@@ -61,7 +61,6 @@ import io
 import os
 import shutil
 import signal
-import subprocess
 import sys
 
 from sabotage_cloud import CLOUD_GUARD_MUTATIONS
@@ -85,6 +84,7 @@ from sabotage_qa import QA_AUDIT_MUTATIONS
 from sabotage_standards import STANDARDS_MUTATIONS
 from sabotage_shell import SHELL_MUTATIONS
 from sabotage_prereview import PREREVIEW_MUTATIONS
+import sabotage_platform
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -1969,8 +1969,8 @@ MUTATIONS = (
         ENDPOINTS,
         '                path = path.replace("\\\\", "/")',
         "                pass",
-        ("tests/test_endpoints.py::"
-         "test_record_scan_artifact_stores_posix_separators"),
+        ("tests/test_endpoints.py::test_record_scan_artifact_stores_"
+         "posix_separators_whatever_the_os_returns"),
     ),
     (
         # BLOCK 2: declare_endpoint must hold the ledger lock across its
@@ -2217,7 +2217,7 @@ MUTATIONS = (
         'INSTALL_DEFAULTS = {"policy": INSTALL_POLICY_DEFAULT}',
         'INSTALL_DEFAULTS = {"policy": "auto"}',
         ("tests/test_install_policy.py::"
-         "test_the_migration_is_behaviour_neutral"),
+         "test_the_shipped_install_default_is_the_floor"),
     ),
     (
         # Restore the prefix match in read_diagrams. This is the most likely
@@ -2745,7 +2745,7 @@ MUTATIONS = (
         "    def rule_is_mandatory(ri):\n"
         "        return ri not in rule_secs\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_always_command_is_not_deferred_by_a_priced_rule"),
+         "test_an_always_command_is_not_deferred_by_a_priced_rule[sh]"),
     ),
     (
         # The matched pair's half. The budget arithmetic is a python heredoc
@@ -2759,7 +2759,7 @@ MUTATIONS = (
         " { $isMust = $true } }\n",
         "    foreach ($c in $ruleCmds[$ri]) { }\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_always_command_is_not_deferred_by_a_priced_rule"),
+         "test_an_always_command_is_not_deferred_by_a_priced_rule[ps1]"),
     ),
     (
         # The FINER half, and a separate entry because `always` still works
@@ -2774,7 +2774,7 @@ MUTATIONS = (
         "        mandatory.update(rule_cmds[ri])\n",
         "for ri in rule_order:\n    pass\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_unpriced_rule_makes_its_commands_unconditional"),
+         "test_an_unpriced_rule_makes_its_commands_unconditional[sh]"),
     ),
     (
         # Its PowerShell twin.
@@ -2786,7 +2786,7 @@ MUTATIONS = (
         "  }\n}\n",
         "foreach ($ri in $ruleOrder) { }\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_unpriced_rule_makes_its_commands_unconditional"),
+         "test_an_unpriced_rule_makes_its_commands_unconditional[ps1]"),
     ),
     (
         # A gitlink goes back to being read as a file. `open()` on a directory
@@ -2834,7 +2834,7 @@ MUTATIONS = (
         "        keep.append(_c)\n"
         "        spent += cost[_c]\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget"),
+         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget[sh]"),
     ),
     (
         # The ORDER half ALONE -- the hoist without the charge. A separate
@@ -2849,7 +2849,7 @@ MUTATIONS = (
         "    spent, keep, overrun = 0, "
         "[c for c in cmds if c in cost and c in mandatory], []\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_command_keeps_its_place_inside_its_rule"),
+         "test_a_mandatory_command_keeps_its_place_inside_its_rule[sh]"),
     ),
     (
         # The PowerShell half of the charge defect. Separate, because the
@@ -2863,7 +2863,7 @@ MUTATIONS = (
         "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c); "
         "$spent += $cost[$c] }\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget"),
+         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget[ps1]"),
     ),
     (
         # And the PowerShell half of the ORDER defect, hoist without charge.
@@ -2874,7 +2874,7 @@ MUTATIONS = (
         "  foreach ($c in @($cmds | Where-Object { $cost.ContainsKey($_) -and "
         "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c) }\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_command_keeps_its_place_inside_its_rule"),
+         "test_a_mandatory_command_keeps_its_place_inside_its_rule[ps1]"),
     ),
     (
         # work.md stops recording where the ticket starts. Everything else
@@ -3063,48 +3063,32 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
               + LIMIT_WORKTREE_MUTATIONS
               + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS
-              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS)
+              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS
+              + sabotage_platform.PLATFORM_MUTATIONS)
 
-# pytest's own exit codes (documented, not this file's invention): 0 all
-# passed; 1 at least one test FAILED (a real assertion, or an error raised
-# during a test); 2 execution interrupted; 3 an internal pytest error; 4 a
-# usage error, which is what a collection failure -- an import blowing up
-# on a SyntaxError, say -- actually produces; 5 no tests were collected at
-# all. Only 1 is evidence that the TARGET TEST caught the mutation. Finding
-# 13: the previous version of this treated every non-zero code the same,
-# so a mutation that broke the whole file's syntax (crashing collection
-# for every test in the suite, this one included) reported "RED (good)"
-# indistinguishably from a mutation the target test actually caught -- and
-# only 4 of the round's 18 new mutations had been hand-verified as the real
-# thing rather than this.
+# pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
+# internal error, 4 usage error (what a collection failure produces), 5 nothing
+# collected. Finding 13: treating every non-zero code alike called a mutation
+# that broke collection "RED (good)". L-0608: exit 0 is also an all-SKIPPED
+# run, and exit 1 a fixture error - so the verdict reads the junit report, in
+# sabotage_platform.verdict, not this code alone.
 _REAL_TEST_FAILURE = 1
 
 
 def run_test(target):
     """Run one pytest target from the crew directory; return
-    (exit_code, combined_output).
+    sabotage_platform.run_target's (code, output, report, collected, seconds,
+    timed_out).
 
-    PYTHONDONTWRITEBYTECODE=1: two mutations back to back can produce a
-    source file of the SAME byte length (many of these are single-character
-    swaps, e.g. "hits > 1" -> "hits > 0"), written within the same mtime
-    tick. Python's default (mtime, size) pyc-invalidation check cannot tell
-    those two versions apart, so the SECOND mutation's subprocess can load a
-    stale bytecode cache left by the FIRST -- observed here as an
-    intermittent "STILL GREEN" for a mutation that goes red on every
-    isolated re-run. Never writing bytecode removes the cache entirely
-    rather than trying to invalidate it correctly.
-
-    `--run-slow`: many targets name a bash or pwsh driver case, which the
-    default run deselects (conftest.py). Without it such a target collects
-    nothing and exits 5, which is not 1 -- a mutation it would have caught
-    would read as surviving.
+    PYTHONDONTWRITEBYTECODE=1: two same-length mutations written within one
+    mtime tick defeat the (mtime, size) pyc check, so the second run could
+    load the first's stale bytecode -- an intermittent "STILL GREEN" for a
+    mutation red on every isolated re-run. `--run-slow`: many targets name a
+    bash or pwsh driver case the default run deselects; without it such a
+    target collects nothing and exits 5, and a caught mutation reads as
+    surviving. Both are set in run_target, with the per-entry timeout.
     """
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    completed = subprocess.run(
-        [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
-         "--run-slow"],
-        cwd=CREW, capture_output=True, text=True, check=False, env=env)
-    return completed.returncode, completed.stdout + completed.stderr
+    return sabotage_platform.run_target(target)
 
 
 def read(target):
@@ -3209,6 +3193,7 @@ def _restore_all(*_args):
 
 
 def _on_signal(signum, _frame):
+    sabotage_platform.kill_current()  # the entry runs in its own session/job
     _restore_all()
     # SystemExit unwinds, so atexit still runs -- and every target restored
     # here is already out of `_LIVE`, which is why restoring twice is safe and
@@ -3356,38 +3341,33 @@ def main():
     _PRISTINE.clear()
     _PRISTINE.update({target: digest(target) for target in sorted(set(targets))})
 
-    ok = True
+    ok, not_here = True, 0
     for label, target, find, replace, test in MUTATIONS:
+        platforms = sabotage_platform.not_exercised_here(label)
+        if platforms:
+            # Never applied here: counted in the summary, not read as green.
+            text = sabotage_platform.not_exercised_text(platforms)
+            print(sabotage_platform.line(text, label, None))
+            not_here += 1
+            continue
         if not apply_mutation(target, find, replace):
             print(f"{'ANCHOR LOST -- suite is not testing this':40} {label}")
             ok = False
             continue
         try:
-            # `output` is deliberately dropped: a mutation's job is to make
-            # the suite go red, and the failure text is the suite's to report.
-            code, _ = run_test(test)
+            # The output is dropped: the failure text is the suite's to report.
+            code, _, report, collected, seconds, timed_out = run_test(test)
         finally:
             restore(target)
             if not _verify(target):
                 print(f"{'  ^ above, restoring for':40} {label}")
                 ok = False
-        if code == 0:
-            print(f"{'STILL GREEN -- TEST IS VACUOUS':40} {label}")
-            ok = False
-        elif code != _REAL_TEST_FAILURE:
-            # Went red, but not because the target test caught anything --
-            # a collection/import error (SyntaxError, a bad import) crashed
-            # the whole run before the test ever executed, or nothing
-            # matching `test` was even collected. Reported separately, and
-            # counted as a failure of THIS suite, because it proves nothing
-            # about whether the mutation is real.
-            print(f"{'RED BUT UNPROVEN -- exit ' + str(code) + ', not a test failure':40} "
-                  f"{label}")
-            ok = False
-        else:
-            print(f"{'RED (good)':40} {label}")
+        text, good = sabotage_platform.verdict(code, report, collected,
+                                               timed_out, seconds)
+        print(sabotage_platform.line(text, label, seconds))
+        ok = ok and good
 
-    print("\nSABOTAGE SUITE:", "PASS" if ok else "FAIL")
+    print(sabotage_platform.summary(ok, not_here))
     return 0 if ok else 1
 
 
