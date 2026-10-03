@@ -15,7 +15,7 @@ Last updated: 2026-10-03.
 |---|---|---|---|---|
 | 1 | L-0618 | QA standards: environment and gate audit, `qaAuditStale`, QA-process docs | in review (PR #337) | |
 | 2 | L-0562 | `/crew:verify --stamp-reach` | in review (PR #372) | |
-| 3 | _new_ | Run `_verify/smoke.sh` in CI; a missing `pwsh` is a SKIP | in review (PR #373) | |
+| 3 | _new_ | Run `_verify/smoke.sh` in CI; a missing `pwsh` is a SKIP | done (PR #373) | |
 | 4 | _new_ | Crew diagram readability standard, and this repo's diagrams made readable | in review (PR #375) | |
 | 5 | L-0618 | Slice b: correct-by-default `_verify` templates, `--audit --fix`, GitHub Actions CI template, `holds` | needs ticket | #1 |
 | 6 | L-0618 | Slice c: sabotage entries for every new check (harness: its own tooling PR) | needs ticket | #1, #2, #4 |
