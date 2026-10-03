@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@452b30cc
+anchor: useful-claude-add-ons@308ac2fa
 verified: 2026-10-01
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -701,3 +701,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `d95d8b25` (main) and L-0510's `a06dd790` -> `b8d09685` on 2026-10-03 (L-0510 merges origin/main `8123fe74` (L-0574 #323; crew 1.0.140) at `8c04c783`, rerere off; crew 1.0.142 set last at `b8d09685`).** Both provenance histories kept, main's first. In `crew.md` main's L-0574 `review_run.py` citations were re-derived on the merged file (L-0510 adds 8 lines above `finish` and 28 through it): by difflib, and by name for `prereview_gate` `:731` (called `:857`), `standards_gate` `:699` (at `:859`) and `review_ledger.reserve` `:863`, which main's side had stale; L-0510's `review_ledger.py` citations are unchanged. `verification-harness.md`'s `sabotage.py` citations moved +1 (main's import at `:87`; main's side had them stale). History notes were not re-mapped.
 
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
+
+**Re-anchored `452b30cc` -> `308ac2fa` on 2026-10-03 (T-0063, crew 1.0.164). Current despite the lag.** `crew_refresh_check.py` named this note reached through crew paths T-0063 changed (`plugin/crew/README.md`, `plugin/crew/commands/{autopilot,done,implement}.md`, `crew_autopilot.py`, `crew_refresh_check.py`, the crew troubleshooting guide). A difflib line map of each changed file from the scope base `34d9f267` to `308ac2fa` over every `path:line` citation in this note found none in the body covering an edited or moved line; the version-file citations it reports are in provenance notes, kept as history.

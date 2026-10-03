@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@308ac2fa on 2026-10-03. Verify before trusting.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -151,7 +151,8 @@
 %%     move --to in-progress (:36, `--reopen` on a successor plan :37); :41 steps
 %%     in order, test first; :59 changed-file list; :69 verify; :89-112 step 6:
 %%     tests, then docs, then crew_refresh_check.py (:96) and the commands its
-%%     lines name, committed, until `fresh` or a `stop`; then spec.md header
+%%     lines name, committed, until `fresh` (current AND committed since T-0063:
+%%     `fresh-uncommitted` means commit the listed paths) or a `stop`; then spec.md header
 %%     `status: review`, which keeps the approval (:107-109), and crew_tracker.py
 %%     move --to review (:110-111); then /crew:review last (:112). :114-118
 %%     step 7: done is /crew:done's.
@@ -168,7 +169,7 @@
 %%     review receipt (--check-receipt); :21-29 check 2 verify gate via
 %%     crew_status.py; :37-40 check 3 completion audit (:45-50: a refresh artifact
 %%     not admitted is listed with its reason); :52-63 check 4
-%%     crew_refresh_check.py (:55), read-only, refuses on stale/unknown and never
+%%     crew_refresh_check.py (:55), read-only, refuses on stale/unknown/fresh-uncommitted and never
 %%     refreshes; :65-71 all pass -> spec.md `status: done`, keeping the approval
 %%     (:67-68), then crew_tracker.py move --to done (:69); :76 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
@@ -337,6 +338,8 @@ flowchart TB
         im3 --> rf1{"crew_refresh_check.py<br/>:93"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
+        rf1 -- "fresh-uncommitted" --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:98"]
+        rf3 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:105-109"]
         sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-113"]
@@ -369,17 +372,17 @@ flowchart TB
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:35-48"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:63-74"]
+        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:40-53"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-71"}
+        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:73-85"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
-        dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
-        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
+        dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:92-95"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:97-102"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :103-104"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:105-106" --> im5
     end
 
     fix -.-> BR
@@ -580,3 +583,11 @@ flowchart TB
 %% the rv3 node are relabelled in place (L-0510's auto-accept wording kept), and review_verdict.py joins the Anchors
 %% line. The verdict cite :483 is now the paragraph :482-486; the refund cite :485-486 holds. No other node or edge
 %% changed.
+%% Re-drawn f808e5f0 -> 308ac2fa (T-0063, crew 1.0.164). Of the Anchors paths implement.md, done.md and
+%% crew_refresh_check.py changed. The refresh check now has `fresh-uncommitted` (current, not committed):
+%% implement.md:98 commits the listed paths and re-runs (new rf3 node and its two edges), and done.md
+%% check 4 (:55-71) refuses it (dn5's refusal edge relabelled). done.md gained five lines inside check 4,
+%% so the done subgraph's cites were re-read with grep -n on 308ac2fa (check 3 :40-53, all four :73-85,
+%% train status :92-95, check-land :97-102, merge :103-104, catch-up :105-106; the old :35-48 / :50-61 /
+%% :63-74 / :82-96 were already five behind main's done.md). implement.md's cites hold (one line edited
+%% in place, :98). crew_refresh_check.py is cited by name only. No other node or edge changed.
