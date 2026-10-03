@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@d95d8b25
-verified: 2026-10-01
+anchor: useful-claude-add-ons@6f80be41
+verified: 2026-10-03
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -693,7 +693,7 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
   no harness path for it.
-- `.crew/verify.json:519-529` (the last rule since L-0575, after L-0572's subset-cover rule at `:483-490`) — the recurring-findings checklist suite
+- `.crew/verify.json:519-528` (L-0575's rule, after L-0572's subset-cover rule at `:483-490`; T-0046's `crew_bookkeeping.py` rule follows it at `:529-534` and is now the last) — the recurring-findings checklist suite
   (`test_recurring_findings.py`) for `recurring_findings.py` and its data, priced 3s.
 - `.crew/verify.json:501-508` (rule 41) — T-0040's shell-route suites
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
@@ -2304,3 +2304,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4dcad808` -> `819a2d2b` on 2026-10-02 (L-0574: three test_review_checks.py cases made to pass on a real Windows host (PR #323 CI); citations re-mapped by difflib).**
 
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
+
+**Re-anchored `d95d8b25` -> `6f80be41` on 2026-10-03 (T-0046 merges origin/main `8123fe74`, L-0574 #323, at `597afb4e`, rerere disabled; crew 1.0.147 re-set at `6f80be41`).** Main's maps were taken in the merge. T-0046 was split under the tooling-PR rule: its change is now `crew_bookkeeping.py` (new), `test_crew_bookkeeping.py` (new), one `.crew/verify.json` rule appended at the end, the version files and CHANGELOG; the hook consumers move to L-0610. One body citation changed: `.crew/verify.json:519-529` is now `:519-528`, L-0575's rule, with T-0046's `crew_bookkeeping.py` rule after it at `:529-534`.
