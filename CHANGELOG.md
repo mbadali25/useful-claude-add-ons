@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.188: a measured readability standard for every diagram crew draws
+### Added — `crew` 1.0.205: a measured readability standard for every diagram crew draws
 
 - `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
   source: lines crossing, a line through a box that is not one of its ends, an edge label covering

@@ -541,7 +541,7 @@
       "seconds": 2,
       "run": ["python3 -m pytest plugin/crew/tests/test_diagram_check.py plugin/crew/tests/test_diagram_doc.py -q"],
       "reach": "local",
-      "why": "crew diagram readability standard (crew 1.0.188): diagram_check.py measures a rendered Mermaid SVG (crossings, a line through a box, label overlaps, box count, wordy boxes) and diagram_doc.py writes docs/diagrams/README.md and index.html. Pure Python over committed fixtures (three real Mermaid 11 renders and hand-written SVGs), so unlike the render.sh rule it needs no mmdc and never skips. 23 passed in 0.3s, 2026-10-03, 4-CPU container. Every guard sabotage-tested by hand, each red. reach: local - fixtures and tmp_path only." }
+      "why": "crew diagram readability standard (crew 1.0.205): diagram_check.py measures a rendered Mermaid SVG (crossings, a line through a box, label overlaps, box count, wordy boxes) and diagram_doc.py writes docs/diagrams/README.md and index.html. Pure Python over committed fixtures (three real Mermaid 11 renders and hand-written SVGs), so unlike the render.sh rule it needs no mmdc and never skips. 23 passed in 0.3s, 2026-10-03, 4-CPU container. Every guard sabotage-tested by hand, each red. reach: local - fixtures and tmp_path only." }
   ],
 
   "default": ["bash _verify/smoke.sh"],
