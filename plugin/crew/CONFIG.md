@@ -676,7 +676,7 @@ them:
 
 ## 10. Global-settable keys — 73
 
-73 measured (`len(leaf_paths(default_global_config()))`, crew 1.0.159, T-0066);
+73 measured (`len(leaf_paths(default_global_config()))`, crew 1.0.185, T-0066);
 the table below lists 67 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
 global-settable and not tabled here, and `shellRoute.mode` / `shellRoute.distro`
@@ -786,7 +786,7 @@ that role — `/crew:review` resolves `review`'s model that way
 
 ## 11. Repo-only keys — 57
 
-57 measured (`leaf_paths(default_config())` minus §10's 73, crew 1.0.159);
+57 measured (`leaf_paths(default_config())` minus §10's 73, crew 1.0.185);
 the table below predates eight of them and carries three rows that are not
 repo-only keys (TODO.md, "CONFIG.md §10/§11 tables").
 
@@ -2638,7 +2638,7 @@ included.
 
 ## 22. `git.forbiddenTrailers` — commit trailers the owner forbids
 
-`git.forbiddenTrailers` (T-0066, since 1.0.159) is a list of commit trailer
+`git.forbiddenTrailers` (T-0066, since 1.0.185) is a list of commit trailer
 tokens, such as `["Co-Authored-By"]`, that the owner does not want on any commit
 crew's sessions make. crew takes no side on attribution: the owner's own
 instructions (CLAUDE.md, memory) decide, crew never adds a trailer, and a

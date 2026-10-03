@@ -240,7 +240,7 @@ at minimum be loud.
 
 ### CONFIG.md §10/§11 tables
 
-Found by T-0066 (2026-10-03, crew 1.0.159) while re-measuring the two headings:
+Found by T-0066 (2026-10-03, crew 1.0.185) while re-measuring the two headings:
 `len(leaf_paths(default_global_config()))` is 73 and the repo-only remainder is 57.
 §10's table omits `shellRoute.mode` / `shellRoute.distro`, which §11's table lists although
 both are global-settable; §11 also lists `verify.stopBudgetSeconds`, which is not a
