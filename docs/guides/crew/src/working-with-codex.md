@@ -89,6 +89,13 @@ path globs meet the files the diff changes, a few probes each. It is the same li
 and an item the diff does not touch is not a finding. When the bundle's manifest cannot say which
 files changed, every class is listed under an `UNKNOWN:` line rather than none.
 
+Between the verify gate and the self-check, `review_run.py` lints the bundle's changed files with
+the linters `.crew/verify.json` lists under `preReview` (L-0574). Each file is linted at its base
+and at the bundle, and a finding the bundle adds refuses the round (exit 5, nothing spent) before
+Codex is launched. `--allow-unverified` does not override a new finding. A linter that could not run,
+or could not parse a changed file, reads `COULD NOT CHECK`, never a pass. It refuses too, unless
+`--allow-unverified` is given, and `review.json` records that override as `prereview.overridden`.
+
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits
