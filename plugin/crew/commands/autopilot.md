@@ -1,6 +1,6 @@
 ---
 description: Report a ticket's standing (status), or drive it through the lifecycle until a human is needed (run)
-argument-hint: "[status|run|assign|goal|focus] [ticket id | --goal <slug>]"
+argument-hint: "[status|run|assign|goal|focus] [ticket id | off | --goal <slug>]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
@@ -22,8 +22,8 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
 a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
-never read as a ticket; `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020). `sub=status`:
-section 1 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
+never read as a ticket; `assign`, `goal` arrive with T-0019, T-0012). `sub=status`:
+section 1 only. `sub=focus`: section 6 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
 arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 
 ## 1. status
@@ -93,7 +93,7 @@ later round, never after an accepted review (that stales the receipt): `next` en
 A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
-`max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
+`max-phases`, `no-progress`, `drift`. This procedure: `review-verdict`, `failed-done-check`,
 `failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
@@ -107,3 +107,11 @@ When context-watch asks for a handoff: finish the step in hand, run `/crew:hando
 `resume: /crew:autopilot <ticket>` (T-0006's grammar) and `branch:`/`head:` on their own lines,
 then stop. Report the ticket and its source, each phase run with its command, every
 `self-approved` and `taken:` line, where `next` stopped, why, and the command the human types next.
+
+## 6. focus - a scope lock on one ticket (T-0020)
+
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py focus --root .`, with `--ticket <ticket>`
+for `focus <ticket>`, `--off` only for route's `off=1` (the owner typed `focus off`), nothing for `focus`;
+print its output as-is, then stop. While focused, `route` refuses other work and `next` stops at `drift`.
+Never fix an out-of-scope finding in the diff: add a TODO entry (path:line, why deferred, what unblocks
+it) to the file `focus --findings --ticket <ticket>` prints. Autopilot never runs `focus off` itself.

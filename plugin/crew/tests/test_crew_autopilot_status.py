@@ -86,8 +86,8 @@ def test_route_unknown_word_refuses(tmp_path, token):
         "", True, True)
 
 
-@pytest.mark.parametrize("name,ticket", [("assign", "T-0019"), ("goal", "T-0012"),
-                                         ("focus", "T-0020")])
+# T-0020 landed `focus`: test_crew_autopilot_focus.py holds its routing.
+@pytest.mark.parametrize("name,ticket", [("assign", "T-0019"), ("goal", "T-0012")])
 def test_route_unavailable_names_its_ticket(tmp_path, name, ticket):
     root = make_repo(tmp_path, mode="off")
 

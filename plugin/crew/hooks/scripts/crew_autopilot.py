@@ -13,6 +13,8 @@
                                      (at most 12 lines; --json is one line)
     python3 crew_autopilot.py approve --root . --ticket <id>
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
+    python3 crew_autopilot.py focus --root . [--ticket <id> | --off |
+                                    --findings --ticket <id>]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -28,7 +30,28 @@ ramp's list, on a ticket's first approval; and, when the review ledger is
 NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
-keeps its own bytecode setting.
+keeps its own bytecode setting. T-0020's `focus` is a script subcommand that
+writes too, and approves nothing: `focus --ticket` and `focus --off` write only
+this worktree's entry in `<git-common-dir>/crew/active-ticket`, through
+`crew_ticket.activate` and `crew_ticket.deactivate` (below).
+
+## focus -- a scope lock on one ticket (T-0020)
+
+Focus is this worktree's active-ticket pointer and nothing else: no new state,
+no new hook. `focus_state` reads it; only `resolve_active`'s source
+`active-ticket` is a focus, never the `.work/INDEX.md` fallback. `focus_set`
+activates a ticket that has a `.work/tickets/<id>/` folder, refusing a broken
+pointer or one already naming a different ticket; `focus_off` is the module's
+one `crew_ticket.deactivate` call, reached only from the `--off` the owner's
+own `focus off` routes to. While focused, `focus_guard` refuses `run` of any
+other ticket (named, or from the handoff in `resume`), `assign` and `goal`; a
+broken pointer refuses everything but `status` and `focus off`. Once the
+focused ticket's plan is approved, every `next` runs the completion audit's own
+`audit(root, ticket)` (read-only): a changed path outside Touch, or an audit
+that could not run, stops as `drift`. `findings_target` names where an
+out-of-scope finding goes: `TODO.md` when the approved Touch covers it, else
+`.work/tickets/<id>/out-of-scope.md`. Every `focus` output ends with
+FOCUS_REMINDER: Claude Code's built-in `/focus` only toggles the display.
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -195,6 +218,8 @@ FIXED_STOPS = (
                           "approved"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
+    ("drift", "focused and approved: a changed path is outside the ticket's Touch "
+              "(completion_audit.audit), or the audit could not run"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
 )
@@ -222,8 +247,8 @@ HUMAN_STOPS = (
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
-AVAILABLE = frozenset({"status", "run"})
-ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
+AVAILABLE = frozenset({"status", "run", "focus"})
+ARRIVES = {"assign": "T-0019", "goal": "T-0012"}
 GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
@@ -576,10 +601,14 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
-    `policy=False` is `status`'s: see `_phase`."""
+    A focused, approved ticket whose tree has drifted outside Touch stops as
+    `drift` first (`_drift`). `policy=False` is `status`'s: see `_phase`."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
     rerun = result.pop("refunded_rerun", False)
+    drift = _drift(root, ticket, result)
+    if drift is not None:
+        return drift
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -599,6 +628,40 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
             f"no progress: {last_command} ran and the files on disk still name it "
             f"({result['reason']}) - a human looks at why"))
     return result
+
+
+# `next`'s phases that stop yet are not a stop for the loop: the T-0010 policy
+# may approve or answer and go round again, so drift is judged before them.
+POLICY_PHASES = ("approve", "open-questions")
+
+
+def _drift(root, ticket, result):
+    """`next`'s drift stop (T-0020), or None. Judged only when this worktree is
+    focused on `ticket` and its plan is approved (before approval the audit
+    fails every path, and spec and plan write only `.work/`, which it skips),
+    and only ahead of a phase the loop would run. `completion_audit.audit` is
+    read-only; an audit that raised, or could not be imported, stops: it is
+    never a pass."""
+    if result["stop"] and result["phase"] not in POLICY_PHASES:
+        return None
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    if focus_state(top)["focus"] != ticket:
+        return None
+    try:
+        if crew_ticket.accepted(top, ticket)["status"] != "approved":
+            return None
+        ok, lines = importlib.import_module("completion_audit").audit(top, ticket)
+    except Exception as exc:  # pylint: disable=broad-except
+        return dict(result, phase="drift", stop=True, command="", reason=(
+            f"drift: the audit could not run ({_failure(exc)}), so whether {ticket}'s tree "
+            "stays inside Touch cannot be told"))
+    if ok:
+        return None
+    shown = " ".join(" ".join(str(line).split()) for line in list(lines)[:2]) or (
+        "the completion audit failed and gave no reason")
+    return dict(result, phase="drift", stop=True, command="", reason=(
+        f"drift: {shown} - revert them, or file the finding (crew_autopilot.py focus "
+        f"--findings --ticket {ticket}) and amend Touch through /crew:plan"))
 
 
 HANDOFF_ABSENT = "no .work/HANDOFF.md"
@@ -715,7 +778,8 @@ def resume_target(root, ticket=None, policy=True):
         return stopped(source, f"{source} names {ticket}, but this worktree's active ticket "
                        f"is {active}, and the scope guard and completion audit judge edits "
                        f"by {active}'s approval and Touch. Run /crew:autopilot {active}, or "
-                       f"the human re-points it: crew_ticket.py activate --ticket {ticket}")
+                       f"the human re-points it: crew_ticket.py activate --ticket {ticket}."
+                       + _also(focus_guard(top, "run", ticket)))
     disk = next_phase(top, ticket, policy=policy)
     disagreement = ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
@@ -1296,12 +1360,16 @@ def _existing_ticket(top, token):
         return False
 
 
-def route(root, first):
+def route(root, first, ticket=""):
     """`{"sub", "stop", "reason"}` for the command's first argument. First
     match, exact and case-sensitive: a SUBCOMMANDS name; nothing or `--goal`
     (run); an INDEX-shaped id or an existing `.work/tickets/<token>/` (run).
     Anything else stops: `crew_ticket` accepts `stauts` as an id, so a typo
-    is refused here rather than driven as a ticket."""
+    is refused here rather than driven as a ticket. Then T-0020's
+    `focus_guard`, before the AVAILABLE check, so `assign` and `goal` are
+    refused under focus whether or not they have landed. `ticket` is the word
+    after the subcommand when `route_args` knows it (FOCUS_OFF for `focus
+    off`); a bare id is its own ticket."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     token = first or ""
     if token in SUBCOMMANDS:
@@ -1309,12 +1377,16 @@ def route(root, first):
     elif token == "":
         sub = "run"
     elif token == GOAL_FLAG:
+        refusal = focus_guard(top, "goal")
         return {"sub": "run", "stop": True,
-                "reason": f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
+                "reason": refusal or f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
     elif _INDEX_ID.fullmatch(token) or _existing_ticket(top, token):
-        sub = "run"
+        sub, ticket = "run", token
     else:
         return {"sub": "", "stop": True, "reason": UNKNOWN_SUB}
+    refusal = focus_guard(top, sub, ticket)
+    if refusal:
+        return {"sub": sub, "stop": True, "reason": refusal}
     if sub not in AVAILABLE:
         return {"sub": sub, "stop": True,
                 "reason": f"{AUTOPILOT} {sub} arrives with {ARRIVES.get(sub, 'a later ticket')}"}
@@ -1330,19 +1402,178 @@ def route_args(root, text):
     word after a subcommand, or a bare ticket id itself. The command passes
     `$ARGUMENTS` whole because Claude Code numbers positional arguments from
     `$0` and leaves an out-of-range `$N` literal. A second word that is not a
-    ticket, or a third word, stops; it is never read as a ticket."""
+    ticket, or a third word, stops; it is never read as a ticket -- except
+    `focus off`, exactly, which sets `off` (T-0020): the only route to
+    `focus --off`, so focus is released only when the owner's own arguments
+    say so. A ticket is held to `focus_guard` once it is known."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     words = (text or "").split()
-    got = dict(route(top, words[0] if words else ""), ticket="")
+    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    off = words[:1] == ["focus"] and rest == [FOCUS_OFF]
+    got = dict(route(top, words[0] if words else "", FOCUS_OFF if off else ""), ticket="")
+    if got["sub"] == "focus":
+        got["off"] = off
     if got["stop"]:
         return got
-    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
         return dict(route(top, GOAL_FLAG), ticket="")
+    if off:
+        return got
     if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
                                        or _existing_ticket(top, rest[0]))):
         return dict(got, stop=True, reason=NOT_A_TICKET)
+    refusal = focus_guard(top, got["sub"], rest[0]) if rest else None
+    if refusal:
+        return dict(got, stop=True, reason=refusal)
     return dict(got, ticket=rest[0] if rest else "")
+
+
+# --- focus (T-0020) -------------------------------------------------------------
+
+FOCUS_OFF = "off"
+FOCUS_RELEASE = f"{AUTOPILOT} focus off"
+FOCUS_REMINDER = ("reminder: Claude Code's built-in /focus only toggles the display (just "
+                  "your prompt, summary, and response); it does not scope work, and only "
+                  "you can type it")
+FOCUS_SCOPE_OFF = ("the scope guard is off: writes outside Touch are not refused as they "
+                   "happen; autopilot's drift stop still applies")
+FINDINGS_TODO = "TODO.md"
+FINDINGS_FILE = "out-of-scope.md"
+FINDINGS_WHY = "the scope guard exempts nothing outside Touch"
+
+
+def _also(text):
+    return f" {text}" if text else ""
+
+
+def focus_state(root):
+    """`{"focus", "broken", "why", "scope_mode"}` for this worktree. `focus` is
+    the active-ticket pointer's ticket, and only that: `resolve_active`'s
+    `.work/INDEX.md` fallback is never a focus. A broken pointer has no focus
+    and says why. `scope_mode` is `crew_ticket.configured_mode`'s value."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    active, where, broken = crew_ticket.resolve_active(top)
+    mode, _why = crew_ticket.configured_mode(top)
+    return {"focus": active if where == "active-ticket" and not broken else None,
+            "broken": bool(broken), "why": where if broken else "", "scope_mode": mode}
+
+
+def focus_guard(root, sub, ticket=""):
+    """None when `sub` (with `ticket`, "" for none, FOCUS_OFF for `focus off`)
+    may run under this worktree's focus, else the refusal, naming the focused
+    ticket and `/crew:autopilot focus off`. `status` and `focus off` always
+    run. A broken pointer refuses everything else. Focused on T-A: `run` with
+    no ticket or T-A, and `focus` alone or `focus T-A`, run; anything else --
+    another ticket, `assign`, `goal`, a subcommand this does not know -- is
+    refused."""
+    if sub == "status" or (sub == "focus" and ticket == FOCUS_OFF):
+        return None
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    state = focus_state(top)
+    if state["broken"]:
+        return (f"the active-ticket pointer is broken ({state['why']}): only status and "
+                f"{FOCUS_RELEASE} run until it is fixed (crew_ticket.py activate --ticket "
+                "<id>, typed by the human)")
+    focus = state["focus"]
+    if focus is None:
+        return None
+    if sub in ("run", "focus") and ticket in ("", focus):
+        return None
+    what = (f"{AUTOPILOT} {sub} {ticket}" if ticket else f"{AUTOPILOT} {sub}").strip()
+    return (f"focus is on {focus}: {what} would start or switch to other work, which focus "
+            f"refuses. Type {FOCUS_RELEASE} first")
+
+
+def _scope_line(mode):
+    if mode == "off":
+        return f"scope.mode=off: {FOCUS_SCOPE_OFF}"
+    return (f"scope.mode={mode}: the scope guard and the completion audit judge every write "
+            "against the active ticket's Touch")
+
+
+def focus_set(root, ticket):
+    """(ok, line). Points this worktree at `ticket` through
+    `crew_ticket.activate`, which checks the id's shape only, so the folder is
+    checked here: a pointer at a folderless ticket is a broken pointer. Refuses,
+    writing nothing, a broken pointer and a focus on another ticket; the same
+    ticket again writes nothing."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return False, f"refused: {root} is not a git repository"
+    state = focus_state(top)
+    if state["broken"]:
+        return False, (f"refused: the active-ticket pointer is broken ({state['why']}); "
+                       f"type {FOCUS_RELEASE}, or the human repairs it")
+    if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        return False, (f"refused: {ticket} has no .work/tickets/{ticket}/ folder, and a "
+                       "focus on it would be a broken pointer")
+    if state["focus"] == ticket:
+        return True, f"focus={ticket} (already; nothing written)"
+    if state["focus"]:
+        return False, (f"refused: focus is on {state['focus']}; type {FOCUS_RELEASE} "
+                       "first")
+    crew_ticket.activate(top, ticket)
+    return True, f"focus={ticket} (this worktree only: {top})"
+
+
+def focus_off(root):
+    """(ok, line). The module's one `crew_ticket.deactivate` call: it drops
+    this worktree's entry and no other. A pointer that is still broken after
+    it (a file that does not parse) is said, never read as released."""
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return False, f"refused: {root} is not a git repository"
+    was = focus_state(top)["focus"]
+    crew_ticket.deactivate(top)
+    after = focus_state(top)
+    if after["broken"]:
+        return False, (f"focus=broken {after['why']} - focus off could not clear it; the "
+                       "human repairs the file")
+    return True, f"focus=none (released {was})" if was else "focus=none (nothing was set)"
+
+
+def focus_show(root):
+    """(True, line): `focus=<id>`, `focus=none` or `focus=broken <why>`."""
+    state = focus_state(root)
+    if state["broken"]:
+        return True, f"focus=broken {state['why']}"
+    return True, f"focus={state['focus'] or 'none'}"
+
+
+def findings_target(root, ticket):
+    """`{"path", "reason"}`: where an out-of-scope finding is filed while
+    focused. `TODO.md` only when `ticket`'s APPROVED Touch covers it; else the
+    ticket's own `.work/tickets/<id>/out-of-scope.md`, which the scope guard
+    always allows and the audit skips."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    approval = crew_ticket.accepted(top, ticket)
+    touch = (approval.get("touch") or []) if approval.get("status") == "approved" else []
+    if crew_ticket.in_touch(FINDINGS_TODO, touch):
+        return {"path": FINDINGS_TODO, "reason": f"{ticket}'s approved Touch covers TODO.md"}
+    return {"path": f".work/tickets/{ticket}/{FINDINGS_FILE}",
+            "reason": f"TODO.md is not in {ticket}'s approved Touch, and {FINDINGS_WHY}"}
+
+
+def focus_text(root, ticket="", off=False, findings=False):
+    """(code, text) for the `focus` CLI: the answer, the scope.mode line, and
+    FOCUS_REMINDER last, whatever happened. Exit 1 on a refusal or a crash."""
+    try:
+        if findings:
+            got = findings_target(root, ticket)
+            ok, line = True, f"findings={got['path']} reason={got['reason']}"
+        elif off:
+            ok, line = focus_off(root)
+        elif ticket:
+            ok, line = focus_set(root, ticket)
+        else:
+            ok, line = focus_show(root)
+        mode = focus_state(root)["scope_mode"]
+        lines = [line, _scope_line(mode)]
+    except Exception as exc:  # pylint: disable=broad-except
+        ok, lines = False, [f"refused: {_failure(exc)}"]
+    return (0 if ok else 1), "\n".join(_one_line(text) for text in lines + [FOCUS_REMINDER])
 
 
 # Who acts when `next` stops at each phase it names. A phase not here -- a
@@ -1352,6 +1583,7 @@ WAITING = {phase: "owner" for phase in (
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
     "done")}
 WAITING["closed"] = "nobody"
+WAITING["drift"] = "owner"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
 # UNKNOWN is also a string a file can hold, with a count computed beside it.
@@ -1392,6 +1624,9 @@ def _waiting(top, result, bare):
         return f"unknown (phase {phase!r} is not one status maps)"
     if who == "nobody":
         return "nobody - the ticket is closed"
+    if phase == "drift":
+        return ("owner - reverts the paths outside Touch, or amends Touch and approves "
+                "again")
     if phase == "review" and result.get("stop") and _reserved_round(top, result["ticket"]):
         return "reviewer - a round is reserved with no result"
     if not result.get("stop"):
@@ -1673,6 +1908,12 @@ def main(argv):
             action.add_argument("--root", default=".")
     for name in ("next", "approve", "questions-check"):
         sub.choices[name].add_argument("--ticket", required=True)
+    focus = sub.add_parser("focus")
+    focus.add_argument("--root", default=".")
+    focus.add_argument("--ticket", default="")
+    focus_how = focus.add_mutually_exclusive_group()
+    focus_how.add_argument("--off", action="store_true")
+    focus_how.add_argument("--findings", action="store_true")
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
     given = sub.choices["route"].add_mutually_exclusive_group()
@@ -1702,6 +1943,14 @@ def main(argv):
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check"):
         return _policy_main(args)
+    if args.action == "focus":
+        if (args.off and args.ticket) or (args.findings and not args.ticket):
+            sys.stdout.write("refused: focus takes --ticket <id>, --off, or --findings "
+                             f"--ticket <id>\n{FOCUS_REMINDER}\n")
+            return 2
+        code, text = focus_text(args.root, args.ticket, args.off, args.findings)
+        sys.stdout.write(text + "\n")
+        return code
     if args.action == "status":
         try:
             result = status(args.root, args.ticket or None)
@@ -1715,8 +1964,10 @@ def main(argv):
         text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
     elif args.action == "route":
         result = route_args(args.root, args.args or "")
-        text = _line(sub=result["sub"], stop=int(result["stop"]), ticket=result["ticket"],
-                     reason=result["reason"])
+        fields = {"sub": result["sub"], "stop": int(result["stop"]), "ticket": result["ticket"]}
+        if "off" in result:
+            fields["off"] = int(result["off"])
+        text = _line(**fields, reason=result["reason"])
     elif args.action == "stops":
         result = stops()
         text = "\n".join(f"{kind} {row['id']}: {row['text']}"
