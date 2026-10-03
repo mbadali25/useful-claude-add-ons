@@ -4,6 +4,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed - repository CI: Linux pytest legs tuned on the self-hosted pool (L-0590)
+
+- **What.** In `.github/workflows/pytest-crew.yml` the `test` job's default set runs
+  `-n 16 --dist worksteal` instead of `-n auto` (which is 4 workers on the self-hosted pool, the
+  runners' PYTEST_XDIST_AUTO_NUM_WORKERS), still followed by the `-m wallclock` set serially. On
+  every event but a pull request the three Python legs run one at a time (`max-parallel` 1), so a
+  main push no longer puts three Python legs on the one 16-vCPU host. The ubuntu `crew-shell-matrix`
+  leg runs `-n 8`. Required check names are unchanged.
+- **Measured.** Serial benchmark, 5 runs per setting (runs 37058615163, 37080675891): default set
+  p50 260 s at 4/load, 211 s at 8/load, 171 s at 12/load, 145 s at 8/worksteal; beside the slow-set
+  chain 221 s at 8/worksteal, 197 s at 12, 135 s at 16. Slow set p50 154 s at 4, 92 s at 8;
+  worksteal no better there. On the real workflow, PR runs interleaved before/after on a mostly idle
+  host with identical collections (9985 default, 32 wallclock, 1712 slow): time to `test (3.12)`
+  p50 420 s / p90 464 s before (draft PR #326, run 37117690372 attempts 2-6) -> p50 292 s / p90
+  307 s after (PR #324, run 37117665998 attempts 2-6). The ubuntu slow leg on a PR: 162 s -> 159 s.
+- **Dropped, with numbers.** Running the wallclock set as its own parallel job (PR p50 180 s) was
+  dropped by the owner after review: in 36 legs it failed once beside the default set's workers
+  (`test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate`, `BrokenPipeError` in its own
+  teardown). A pip/uv cache: `Install pytest` already takes 0-2 s on the pool.
+- `scripts/gate-runner.py`'s CI drift strings follow the two changed commands.
+
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 
 - **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt

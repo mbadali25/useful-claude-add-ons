@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d95d8b25
+anchor: useful-claude-add-ons@3dfe9cbd
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -617,15 +617,19 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 `skills/jira-manager/scripts/_test/jq_absence.sh` had never once been
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
-into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
-hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
-parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+into one line. Since L-0590 the `test` job (`:25`) runs crew's default set with
+`-n 16 --dist worksteal`, then `-m wallclock` serially, and its `max-parallel` is 3 on a pull
+request and 1 on every other event, so a main push runs one Python leg at a time on the
+self-hosted host; the required `test (3.11|3.12|3.13)` checks are that job's legs, as before.
+`pytest-crew.yml` gained a `crew-shell-matrix` job
+(`:177`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
+hook matrix (`-n 8` since L-0590). On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
+parallel jobs (`:232-486`): `crew-windows-decide` (`:284`, T-0110's rule: on a
 pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
-`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
+`pytest-crew.yml`), `crew-windows-default` (`:318`, crew's default
 parity-sample set split in 3 by pytest-split, since the `test` job above only runs
-that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
-(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
+that set on Ubuntu), `crew-windows-slow` (`:370`), `crew-windows-wallclock`
+(`:413`, serial), and the fan-in `crew-windows-gate` (`:456`), named
 `crew-shell-matrix (windows-latest)` so the required check name is unchanged.
 The gate runs `if: always()` and passes only through
 `scripts/check-windows-shards.py`: every Windows job succeeded, every shard
@@ -646,8 +650,11 @@ on `make up` and unsets it on `make down`.
 Since T-0094 merged `a61a6f38` (read at `f5d0f1b1`): `pylint.yml` runs pylint with one worker per
 CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned to `ruff~=0.16.0`
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
-suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
+suites with xdist and `-m "not wallclock"` and the `wallclock`-marked tests in a serial step of
 their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
+The worker count is `-n 16 --dist worksteal` in the `test` job and `-n 8` in the ubuntu slow leg
+since L-0590 (on the self-hosted pool `auto` was 4, the runner's PYTEST_XDIST_AUTO_NUM_WORKERS);
+the Windows jobs keep `-n auto`.
 
 ## Entry points
 
@@ -2247,7 +2254,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `f937576e` -> `af59b237` on 2026-10-02 (L-0555 merges origin/main `d2ec37d3`, W-0120 #308, README install URLs re-pinned to `04dde5a2`).** The merge changed `README.md:12` and `:18` in place; no line moved. The install-URL pin landmines in `install-scripts.md` and `repo-docs.md` now state the `04dde5a2` pin, and `git log --oneline 04dde5a2..af59b237 -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is empty. No suite was executed for this note.
 
 
-**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1372` in a past-tense note, left as written. No suite was executed for this note.
+**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1414` in a past-tense note, left as written. No suite was executed for this note.
 
 
 **Re-anchored `d6e51bb8` (main) and `7e18daf8` (L-0555) -> `5467b110` on 2026-10-02 (L-0555 merges origin/main `75681fba`: L-0577 #305, T-0107 #273 (gizmoduck 0.5.5); rerere disabled; crew 1.0.127).** The header conflict took main's anchor and both sides' provenance notes, main's first; the install-URL pin bullet took main's equivalent wording. Citations moved by difflib: this lane's `CHANGELOG.md` lines in `crew.md` +86 (the entries main added). Main-side citations into files this branch changes resolve to the same text. No suite was executed for this note.
@@ -2304,3 +2311,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4dcad808` -> `819a2d2b` on 2026-10-02 (L-0574: three test_review_checks.py cases made to pass on a real Windows host (PR #323 CI); citations re-mapped by difflib).**
 
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
+
+**Re-anchored `d95d8b25` -> `3dfe9cbd` on 2026-10-03 (L-0590, repository CI tooling, no plugin version; merges origin/main `8123fe74`, L-0574 #323, rerere disabled).** L-0590 changes `.github/workflows/pytest-crew.yml` (the `test` job's default set `-n 16 --dist worksteal`, `max-parallel` 1 on non-PR events, the ubuntu slow leg `-n 8`), two `ci=` strings in `scripts/gate-runner.py`, `AGENTS.md` and `CHANGELOG.md` (+21 at the top). The code-map conflicts of the merge were resolved by taking main's maps and re-applying L-0590's CI paragraph in verification-harness.md (its `pytest-crew.yml` citations re-read at `3dfe9cbd`). Every body citation of the form `path:line` into a file changed between `d95d8b25` and `3dfe9cbd` was re-mapped by script (difflib, never guessed): only `CHANGELOG.md` citations moved (+21); version-file lines changed in place are left as cited. Nothing was executed for this note.

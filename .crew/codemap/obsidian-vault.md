@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@d95d8b25
+anchor: useful-claude-add-ons@3dfe9cbd
 verified: 2026-10-01
 
 ## Does
@@ -1220,7 +1220,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `f937576e` -> `af59b237` on 2026-10-02 (L-0555 merges origin/main `d2ec37d3`, W-0120 #308, README install URLs re-pinned to `04dde5a2`).** The merge changed `README.md:12` and `:18` in place; no line moved. The install-URL pin landmines in `install-scripts.md` and `repo-docs.md` now state the `04dde5a2` pin, and `git log --oneline 04dde5a2..af59b237 -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is empty. No suite was executed for this note.
 
 
-**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1372` in a past-tense note, left as written. No suite was executed for this note.
+**Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1414` in a past-tense note, left as written. No suite was executed for this note.
 
 
 **Re-anchored `d6e51bb8` (main) and `7e18daf8` (L-0555) -> `5467b110` on 2026-10-02 (L-0555 merges origin/main `75681fba`: L-0577 #305, T-0107 #273 (gizmoduck 0.5.5); rerere disabled; crew 1.0.127).** The header conflict took main's anchor and both sides' provenance notes, main's first; the install-URL pin bullet took main's equivalent wording. Citations moved by difflib: this lane's `CHANGELOG.md` lines in `crew.md` +86 (the entries main added). Main-side citations into files this branch changes resolve to the same text. No suite was executed for this note.
@@ -1277,3 +1277,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4dcad808` -> `819a2d2b` on 2026-10-02 (L-0574: three test_review_checks.py cases made to pass on a real Windows host (PR #323 CI); citations re-mapped by difflib).**
 
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
+
+**Re-anchored `d95d8b25` -> `3dfe9cbd` on 2026-10-03 (L-0590, repository CI tooling, no plugin version; merges origin/main `8123fe74`, L-0574 #323, rerere disabled).** L-0590 changes `.github/workflows/pytest-crew.yml` (the `test` job's default set `-n 16 --dist worksteal`, `max-parallel` 1 on non-PR events, the ubuntu slow leg `-n 8`), two `ci=` strings in `scripts/gate-runner.py`, `AGENTS.md` and `CHANGELOG.md` (+21 at the top). The code-map conflicts of the merge were resolved by taking main's maps and re-applying L-0590's CI paragraph in verification-harness.md (its `pytest-crew.yml` citations re-read at `3dfe9cbd`). Every body citation of the form `path:line` into a file changed between `d95d8b25` and `3dfe9cbd` was re-mapped by script (difflib, never guessed): only `CHANGELOG.md` citations moved (+21); version-file lines changed in place are left as cited. Nothing was executed for this note.

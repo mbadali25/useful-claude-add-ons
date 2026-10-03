@@ -189,14 +189,14 @@ TABLE = (
          (PY, "-m", "pytest", *COMBINED_DIRS, "-n", "4", "-m", "not wallclock", *NO_CACHE),
          group="A", timeout=1800, pytest=True,
          ci=(("pytest-crew.yml", "pytest " + " ".join(COMBINED_DIRS)
-              + ' -n auto -m "not wallclock" -v'),)),
+              + ' -n 16 --dist worksteal -m "not wallclock" -v'),)),
     # crew-shell-matrix's ubuntu leg: the full bash/pwsh hook matrix, which
     # plugin/crew/tests/conftest.py deselects from every run not naming `slow`.
     # 201.8s under heavy-run, 1690 passed / 22 skipped (2026-10-01).
     Step("pytest-crew-slow", "heavy",
          (PY, "-m", "pytest", "plugin/crew/tests/", "-m", "slow", "-n", "4", *NO_CACHE),
          group="A", timeout=900, pytest=True,
-         ci=(("pytest-crew.yml", "python -m pytest plugin/crew/tests -m slow -n auto -v"),)),
+         ci=(("pytest-crew.yml", "python -m pytest plugin/crew/tests -m slow -n 8 -v"),)),
 
     _bash_suite("crew-run-tests", "plugin/crew/hooks/scripts/_test/run-tests.sh", "marketplace.yml",
                 phase="heavy", group="B", timeout=900),

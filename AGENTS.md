@@ -40,7 +40,11 @@ the nightly schedule (on a pull request only the 3.12 leg does work; 3.11 and 3.
 report a skipped pass so the required check names stay satisfied; the nightly runs
 at 07:17 UTC; a newer push to a pull request cancels its older run, and a main run
 is never cancelled), alongside
-gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
+gizmoduck's and several skills' suites. Since L-0590 the default set there runs
+`-n 16 --dist worksteal` (then `-m wallclock` serially, as before), and on every event but a
+pull request the three Python legs run one at a time (`max-parallel` 1), so a main push no
+longer puts three Python legs on the one self-hosted host at once. The `crew-shell-matrix` job
+runs `-m slow` (`-n 8`)
 on `ubuntu-latest` — the full hook matrix the `test` job deselects. On Windows the
 same suite runs as parallel `crew-windows-*` jobs (L-0577): the plain default
 command split in three by pytest-split (`test` already covers that set, but only on
