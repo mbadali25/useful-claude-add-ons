@@ -705,13 +705,19 @@ def probe(args):
     return PROBE_FAILED, error or tail[0]
 
 
+# The providers this runner can launch. `qa.order` also names `kimi`, which has
+# no runner here yet; commands/review.md filters `$ELIGIBLE` to this set (and
+# says so on stderr) instead of relying on argparse's exit 2 to skip it.
+PROVIDERS = ("codex", "copilot", "claude")
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
     parser.add_argument("--scratch", required=True)
     parser.add_argument("--manifest")
-    parser.add_argument("--provider", required=True, choices=("codex", "copilot", "claude"))
+    parser.add_argument("--provider", required=True, choices=PROVIDERS)
     parser.add_argument("--model", default="")
     parser.add_argument("--effort", default="")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
