@@ -16,7 +16,7 @@ Last updated: 2026-10-03.
 | 1 | L-0618 | QA standards: environment and gate audit, `qaAuditStale`, QA-process docs | in review (PR #337) | |
 | 2 | L-0562 | `/crew:verify --stamp-reach` | in review (PR #372) | |
 | 3 | _new_ | Run `_verify/smoke.sh` in CI; a missing `pwsh` is a SKIP | in review (PR #373) | |
-| 4 | _new_ | Crew diagram readability standard, and this repo's diagrams made readable | in progress | |
+| 4 | _new_ | Crew diagram readability standard, and this repo's diagrams made readable | in review (PR #375) | |
 | 5 | L-0618 | Slice b: correct-by-default `_verify` templates, `--audit --fix`, GitHub Actions CI template, `holds` | needs ticket | #1 |
 | 6 | L-0618 | Slice c: sabotage entries for every new check (harness: its own tooling PR) | needs ticket | #1, #2, #4 |
 | 7 | _new_ | G1 points at `--stamp-reach` once both have merged | needs ticket | #1, #2 |
@@ -46,7 +46,7 @@ PR #373. Found by the QA audit (item E7). Two smoke checks ran nowhere in CI: th
 
 ### 4. Crew diagram readability standard
 
-Branch `crew-diagram-standard`. Owner request: every diagram crew draws is readable (no crossing
+PR #375 (branch `crew-diagram-standard`). Owner request: every diagram crew draws is readable (no crossing
 lines, nothing drawn through a box, labels clear, at most 15 boxes), embedded in a Markdown page with
 an HTML twin, and kept in standard locations.
 
@@ -55,7 +55,8 @@ an HTML twin, and kept in standard locations.
 - `crew-diagrams/scripts/diagram_doc.py`: writes `docs/diagrams/README.md` and `index.html`, every
   diagram embedded beside its `%% Purpose:`, anchors and readability verdict.
 - `crew-diagrams` SKILL.md and `/crew:diagram`: render, check (a FAIL is not done), then the page.
-- This repo's five failing diagrams split into readable parts.
+- This repo's five failing diagrams split into readable parts; wordy boxes shortened, detail kept in
+  `%% Note` lines shown as a "Box details" table. All 33 pass.
 
 **Acceptance:** every `docs/diagrams/*.mmd` here renders to a PASS; the page is generated; tests
 cover each checker guard with a sabotage that turns them red.
