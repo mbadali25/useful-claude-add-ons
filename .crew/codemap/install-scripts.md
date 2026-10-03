@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@ef7dad84
+anchor: useful-claude-add-ons@8fd5e8d3
 paths: plugin/crew/**, scripts/**
 verified: 2026-10-03
 
@@ -1580,3 +1580,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `39ebbc18` -> `0c683860` on 2026-10-03 (T-0049: merge of origin/main `2a2d6e07` at `b903cac7`, rerere disabled; crew 1.0.146).** Since `39ebbc18` the documented paths changed by main's L-0592 landing and by T-0049's own files (crew_inflight.py and crew_holder.py new; crew_autopilot.py, crew_state.py, autopilot.md, the crew README, CONFIG.md, verify.json, the version files, BUDGETS.md, CHANGELOG and tests). A difflib re-map of every path-qualified `path:line` citation in this map from `2a2d6e07` to `0c683860`, history sections skipped, moved no body citation; the only moved ones sit in past re-anchor notes and are left as written. No claim changed.
 
 **Re-anchored `0c683860` -> `ef7dad84` on 2026-10-03 (T-0049 split and merge of origin/main `8123fe74`, crew 1.0.140 there; T-0049 stays 1.0.146).** `1446c5f4` moved the in-flight sabotage mutations to L-0613, the tooling PR that follows (sabotage.py back to the merge base, sabotage_inflight.py removed; check-tooling-pr.py had refused the mixed diff); `ef7dad84` merged main: L-0574 (#323: review_checks.py, review_run.py's pre-review gate, review.md, verify.json's preReview block and rules). Provenance keeps both histories (main's first). Body citations were mapped from the side their line came from onto the merge with a line diff (`/root/crew-tmp/t-0049/remap_merge.py`; provenance sections left as written); the verify.json, CONFIG.md and README.md citations in the conflicted lines were re-read with `sed -n` on the merge. Main changed nothing but version and refresh files between its own anchor `d95d8b25` and `8123fe74`.
+
+**Re-anchored `ef7dad84` -> `8fd5e8d3` on 2026-10-03 (T-0049 review round 1 fixes at `0d038d6f`, the BLE001 directives at `7c3461a2`, crew 1.0.146 re-set last).** Changed since `ef7dad84`: crew_inflight.py (+17 lines), crew_holder.py (+13), crew_autopilot.py (one comment on one line), autopilot.md (begin before activate, same line count), README.md (three in-line edits), CHANGELOG.md, three test files and the version files. Every citation into crew_inflight.py, crew_holder.py and autopilot.md is in crew.md's in-flight section and was re-measured with `grep -n` there; README.md and crew_autopilot.py lines did not move.
