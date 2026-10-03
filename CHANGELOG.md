@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` VERSION-TO-ALLOCATE: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
+### Changed — `crew` 1.0.181: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
 
 - `scope_base.py` measures a ticket against the repo-only key `tickets.baseBranch` in
   `.crew/config.json` (read straight from the file by `read_base_branch` / `base_branch`): the value
@@ -15,7 +15,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 - "Could not tell" is its own answer. A configured branch naming no commit, or a config that does
   not parse, gives `resolve` source `unknown` and no base; `--record` writes nothing and exits 1;
   **`scope_base.py --base` and `--changed` print nothing and exit 3** (they used to print `HEAD` and
-  exit 0 only outside a repository, which is unchanged). It never falls back to `origin/HEAD`. The
+  exit 0 only outside a repository, which is unchanged). It never falls back to `origin/HEAD`. A
+  base branch that resolves but shares no merge-base with HEAD (a shallow clone, unrelated history)
+  is "could not tell" too, configured or default: it used to fall to HEAD, and `--record` wrote that
+  as an exact start that was never moved (QA review F1). The
   completion audit, the refresh check, `scope_report` and `webtest_guard` already treat no base as
   unmeasured or failed; tests pin each.
 - `crew_ticket.py activate` records the scope base at branch cut (an existing record is kept; a
