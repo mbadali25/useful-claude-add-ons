@@ -64,7 +64,7 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
 No output, a traceback or a non-zero exit is a stop.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
-  named and commit it. Then `LAST=<c>`, `N+=1`, again.
+  named and commit it, or run `commit-refresh`'s `git add -- ... && git commit` exactly as printed. Then `LAST=<c>`, `N+=1`, again.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
 - any other `stop=1` - print the phase, the reason and the command the human types (may be
   empty), then **stop** - never run it yourself.
@@ -86,13 +86,13 @@ are the human's. Go back through `next`: it stops at FINDINGS or an unrefunded I
 refunded one reruns, even straight after `/crew:review`). One extension, neither fixing nor rerunning (L-0510): after `review: auto-accept: eligible`, first run step 2d's control re-runs and, with no specialist or control BLOCK, step 3.3's `--auto-accept` and follow-up filing. A phase's own refusal - no approved plan, a red verify gate, a `/crew:done`
 check - stops here, reported verbatim; never retry around it or edit a gate. Implement's
 `status: review` edit keeps the approval (T-0026). Refresh runs after implement and before each
-later round, never after an accepted review (that stales the receipt): `next` enforces it.
+later round, never after an accepted review (that stales the receipt): `next` enforces it. `fresh-uncommitted` is committed (`commit-refresh`), never reviewed or closed over.
 
 ## 4. Stops
 
 A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
-`unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
+`unknown-ledger`, `failed-validate`, `direction-unknown` (no INDEX row here or in the main checkout), `index-disagreement`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
 `failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):

@@ -285,6 +285,38 @@ contract itself. This section is what goes wrong with the approval and the audit
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.
 
+## Autopilot in a worktree, and the refresh check
+
+- **Symptom: autopilot stops with `cannot tell whether <id>'s direction is approved` in a
+  worktree.** `crew_autopilot.py next` looks for the ticket's `.work/INDEX.md` row in the checkout
+  it runs in, and — since crew 1.0.164 — in the main checkout (the first record of
+  `git worktree list --porcelain`) when this one has none. `.work/` is git-ignored, so a lane
+  worktree made from another branch starts with no INDEX at all.
+  **Check:** the stop's reason names every INDEX.md it asked, or why the main checkout could not be
+  read (a failed listing, a bare repository). `--json` names the file that answered as
+  `index_source`:
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_autopilot.py" next --root . --ticket <id> --json
+  ```
+  **Fix:** add `<id> | ready | <risk> | <repo> | <title>` to either INDEX once the direction is
+  agreed. Two other stops come from the same read: `index-disagreement` (both INDEX files have a row
+  and the status cells differ — make them agree), and `folder-elsewhere` (the ticket's folder is
+  only in the main checkout). Copy the folder with the `cp -r` the reason prints; autopilot never
+  reads a spec or plan from another checkout, because the scope guard reads Touch from this one.
+
+- **Symptom: the refresh check says `fresh-uncommitted`.** Every artifact the ticket reaches is
+  current, but a refreshed file is not committed — the map, a diagram source or render, anything
+  under the graph dir, or any other path under the refresh-artifact dirs (`.claude/rules/`
+  included). `fresh` means current **and** committed, so `/crew:done` check 4 refuses it.
+  **Check:** the `uncommitted:` line lists the paths:
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_refresh_check.py" --root . --ticket <id>
+  ```
+  **Fix:** commit exactly those paths and re-run until it says `fresh`; autopilot does it for you
+  as its `commit-refresh` phase. The commit changes no byte of the working state the review bundle
+  is built from, so a review receipt stays current and no new round is needed. A file graphify
+  writes and git ignores (`manifest.json`, `cache/`) never counts.
+
 ## Promote gate blocks a worktree deploy
 
 `promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it
