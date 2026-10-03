@@ -4,6 +4,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.167: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
+
+- `crew_train.py check-land`'s two catch-up refusals (merge-tree conflict, base moved in Touch)
+  now print one order (`LANDING_ORDER`): catch up, resolve, bump the version one past the base,
+  refresh artifacts, commit, gate the merged head, review it again if `review_ledger.py
+  --check-receipt` reads stale, then check-land again - so the tree the gate passed is the tree
+  that lands. `test_check_land_refusal_names_bump_and_refresh_before_the_gate` (both refusals) is
+  red on the old text.
+- `/crew:done`, `/crew:implement` step 6, the README's train section and the daily-workflow guide
+  (rebuilt HTML, DOCX, PDF) say the same, and that a re-anchor after review changes only the
+  `anchor:` sha, its provenance going in the ticket's `notes.md`.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local
