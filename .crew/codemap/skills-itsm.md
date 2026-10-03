@@ -1,5 +1,5 @@
 # skills-itsm
-anchor: useful-claude-add-ons@7773abb2
+anchor: useful-claude-add-ons@5be137d8
 verified: 2026-10-02
 
 ## Does
@@ -222,3 +222,5 @@ and `git diff --name-only 6c497a14 f2bb919b -- skills/ plugin/gizmoduck` is empt
 **Re-anchored `40292eca` -> `91b793fa` on 2026-10-02 (T-0107 `91b793fa`, the round-1 fixes' neighbours: unowned routine files, junctions, file writes, the install hint). One cited path moved.** `git diff -U0 40292eca 91b793fa -- plugin/gizmoduck/scripts/gizmoduck.py` adds two imports (`shlex`, `stat`) at the top, so `_records_digest` `:206-225` -> `:208-227`; `_atomic_write_text` and the new `_mode_for`, `_shell_quote` and `_is_link` helpers grow the file ahead of `main()`, and `cmd_routine` grows by the unowned-file refusal. Re-read by `grep -n` / `sed -n`: `_records_digest` as above, `main()` `:1235` -> `:1281`, the digest refusal `:1406-1412` -> `:1452-1458`. Each still says what this map claims. Nothing was executed for this note.
 
 **Re-anchored `91b793fa` -> `7773abb2` on 2026-10-02 (T-0107 review round-2 fixes). One cited path moved.** `git diff -U0 91b793fa 7773abb2 -- plugin/gizmoduck/scripts/gizmoduck.py` adds `import re` and `import time` at the top, so `_records_digest` `:208-227` -> `:210-229`; the round-2 fixes (`html_to_pdf`'s timeout, the routine constants, `_replace`, the name and gate-option rules, the run lock, `_render_pdf`) grow the file ahead of `main()`, `:1281` -> `:1418`, and the digest refusal `:1452-1458` -> `:1589-1595`. Re-read by `grep -n` / `sed -n`; each still says what this map claims. gizmoduck is re-bumped to 0.5.5 in the commit carrying this note, after the last content change. Nothing was executed for this note.
+
+**Re-anchored `7773abb2` -> `5be137d8` on 2026-10-02 (L-0599, gizmoduck 0.5.6). No cited line moved.** `git diff -U0 7773abb2 5be137d8 -- plugin/gizmoduck/scripts/gizmoduck.py` is one hunk, `:924-925` in `_is_link`, two lines changed in place (a comment, and a `# pylint: disable=not-callable` on the guarded `isjunction` call), no line added or removed. Re-read by `grep -n`: `_records_digest` `:210`, `main()` `:1418`, the digest refusal at `:1590` inside `:1589-1595`. `git diff --name-only 7773abb2 5be137d8 -- skills/infra-work-ticketing/ skills/notify/` is empty. Nothing was executed for this note.
