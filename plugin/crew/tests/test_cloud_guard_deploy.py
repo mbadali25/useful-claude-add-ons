@@ -162,7 +162,7 @@ import crew_fixtures
 import crew_guards
 import test_cloud_guard as tcg
 from test_cloud_guard_environments import (  # pylint: disable=unused-import
-    UNATTENDED, _ids, _log_rows, _no_ambient_terraform_env, _run, _sample)
+    UNATTENDED, _ids, _log_rows, _no_ambient_terraform_env, _run, _sample)  # noqa: F401 - autouse fixture
 
 import cloud_guard  # noqa: E402  pylint: disable=wrong-import-position
 
