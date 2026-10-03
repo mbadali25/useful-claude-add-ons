@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@0891d6a6
+anchor: useful-claude-add-ons@4dcad808
 verified: 2026-10-01
 
 ## Does
@@ -1265,3 +1265,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `370a7a5b` -> `e2c11c0b` on 2026-10-02 (L-0574 review round 8 fixes at 0f5d76e7 (review_checks.py, review_run.py, CHANGELOG, external-tool-formats.md; install-scripts.md gains an explicit paths: line); citations re-mapped by difflib, bare review_run.py citations re-read).**
 
 **Re-anchored `e2c11c0b` -> `0891d6a6` on 2026-10-02 (L-0574 merges origin/main ffeb0e2f (L-0598 #321, crew 1.0.135; crew_standards.py proposals and references/review.md, which this map cites by name only) at 26d2c1c0, rerere disabled, then fixes review round 9 at c7e4c87f; citations re-mapped by difflib).**
+
+**Re-anchored `0891d6a6` -> `4dcad808` on 2026-10-02 (L-0574 merges origin/main 6ac3b1b3 (L-0587 #319 ShellCheck directive fixes, README re-pin #322; crew 1.0.135) at 4dcad808, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib).**
