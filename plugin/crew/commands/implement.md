@@ -7,10 +7,9 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Agent
 Implement ticket $1. Replaces `/crew:work` in 1.0; that command is now a <!-- deliberate -->
 removal stub with no behaviour.
 
-**Method adapted from `superpowers:executing-plans` (Jesse Vincent, MIT). Full
-notice in `plugin/crew/NOTICE.md`.** The backing skill is
-`plugin/crew/skills/crew-execute/SKILL.md` — load it now; it carries the
-per-step TDD discipline and the ledger this file only summarises.
+**Method adapted from `superpowers:executing-plans` (Jesse Vincent, MIT). Full notice in
+`plugin/crew/NOTICE.md`.** The backing skill is `plugin/crew/skills/crew-execute/SKILL.md` — load it now; it
+carries the per-step TDD discipline and the ledger this file only summarises.
 
 ## 0. Refuse without an approved plan
 
@@ -38,16 +37,17 @@ me `tracker not updated: <reason>` and keep going — a tracker never blocks wor
 
 ## 2. Work the plan's steps in order
 
-Read `.work/tickets/$1/plan.md`. Per step: write the test it names, watch it
-fail, implement the minimal change, watch it pass, then the next step. A step
-whose Expected does not match reality is a plan defect — rule on it, note the
-ruling and why in your report, and keep going; do not silently deviate.
+Print what earlier reviews kept finding on this ticket's paths and keep each item open while you work:
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket $1` (exit 1: read its UNKNOWN,
+UNREADABLE or PROBLEM line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`. Per step: write the
+test it names, watch it fail, make the minimal change, watch it pass, then the next step. A step whose Expected does not
+match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 
 Who types is not assumed: read the effective dev table with
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
-and dispatch whatever `dev.roles.developer` names, else `dev.provider`. The
-developer may commit on this ticket's own branch and nowhere else. Record the
-dispatch the moment it returns, with what actually ran, never the pin:
+and dispatch whatever `dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch
+prompt. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
+returns, with what actually ran, never the pin:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \

@@ -2387,6 +2387,18 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   reason: the working tree is dirty by definition during ordinary work, so a
   rule that refuses on a dirty tree is a permanent red there and a real
   check only under `--all` against a clean checkout.
+- A rule declaring `"coveredBy": "<id>"` (L-0572) names another rule's
+  `"id"` as running a superset of its checks. Under `--all` only, its
+  commands run last and are recorded as `covered` - clean, but never cached
+  as a timing - when every command of that rule exited 0 earlier in the same
+  run, a whole-tree snapshot taken before the first command still matches,
+  and `PYTEST_ADDOPTS` is empty. Anything else runs it: a superset that
+  failed, exited 77 or was killed, did not match, or changed the tree; a
+  command `always` or an undeclared rule also names; an invalid declaration
+  (unknown or duplicate id, itself, a chain, a superset with no runnable
+  command, a different `env`), which is ignored with a named notice. Stop
+  mode never credits. This repo declares `rules[9]` (the full crew suite)
+  `crew-suite` and its pytest-only subsets `coveredBy` it.
 - A rule whose command exits 77 is recorded as `"skipped"` — the
   `_verify/smoke.sh` and GNU automake convention for "skipped, environment
   absent". Not a pass, not a fail: it does not fail the Stop turn and it is

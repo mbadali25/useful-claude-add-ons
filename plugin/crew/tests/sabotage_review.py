@@ -13,6 +13,7 @@ REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
 REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
+REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -44,8 +45,9 @@ REVIEW_FIX_MUTATIONS = (
         # of generated JSON and the Claude fallback comes back INCOMPLETE.
         "the bundle diff no longer excludes graphify-out",
         REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude).crew/metrics.md"]\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -54,8 +56,8 @@ REVIEW_FIX_MUTATIONS = (
         # with the graph left out and nothing records that it was.
         "the manifest stops saying graphify-out is excluded",
         REVIEW_PATCH,
-        'EXCLUDED = (".work/", "graphify-out/")\n',
-        'EXCLUDED = (".work/",)\n',
+        'EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")\n',
+        'EXCLUDED = (".work/", ".crew/metrics.md")\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -523,5 +525,212 @@ REVIEW_FIX_MUTATIONS = (
         '    if ok and (data.get("receipt") or {}).get("kind") == "clean":\n',
         "    if ok:\n",
         "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
+    ),
+    # L-0576: harmless stray lines beside findings are recovered; CLEAN stays
+    # exact and anything that might be a contract line stays INCOMPLETE.
+    (
+        # The pre-L-0576 strictness: any stray line burns the round.
+        "a stray prose line beside findings is INCOMPLETE again",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if (False and findings and not reasons\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # Recovery reaches CLEAN: a CLEAN wrapped in prose or a fence passes.
+        "stray lines beside a CLEAN are recovered",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if ((findings or clean_lines) and not reasons\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_clean_with_any_stray_line_is_incomplete"),
+    ),
+    (
+        # A decorated or malformed finding is ignored as prose: a BLOCK the
+        # parser could not read is dropped while the round reads FINDINGS.
+        "contract-like stray lines are recovered as prose",
+        REVIEW_VERDICT,
+        "                and not any(contract_like(line) for line in unparseable)):\n",
+        "                and True):\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # Markdown decoration hides the keyword: `- FIX|...` reads as prose.
+        "contract-like check stops stripping markdown decoration",
+        REVIEW_VERDICT,
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = "" if _FENCE.match(line) else line\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # A reviewer that admits in prose it fell short is ignored as prose.
+        "a stray line admitting a shortfall is recovered as prose",
+        REVIEW_VERDICT,
+        "_ON_LINE = (re.compile(r\"\\|.*\\|.*\\|\"),) + tuple(\n"
+        "    re.compile(p, re.IGNORECASE) for p in _SHORTFALL)\n",
+        "_ON_LINE = (re.compile(r\"\\|.*\\|.*\\|\"),)\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # A lower-case keyword reads as prose: `block a.py:1 ...` is ignored.
+        "contract keywords are matched in capitals only",
+        REVIEW_VERDICT,
+        '_ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\\b", re.IGNORECASE),)\n',
+        '_ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\\b"),)\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # finish's own tree/stream reasons are added after the parse again,
+        # so a stray line is recovered on a round they make INCOMPLETE.
+        "finish adds its outside reasons after recovery",
+        REVIEW_RUN,
+        "                                  prior_reasons=extra_reasons)\n",
+        "                                  prior_reasons=())\n",
+        "tests/test_review_refund.py::test_finish_recovers_nothing_when_the_bundle_changed",
+    ),
+    (
+        # The ledger forgets that a round was recovered.
+        "the ledger row drops the ignored-line count",
+        REVIEW_LEDGER,
+        '            "ignored_lines": _ignored_count(review.get("ignored_lines")),\n',
+        '            "ignored_lines": 0,\n',
+        "tests/test_review_refund.py::test_ledger_row_counts_the_ignored_lines",
+    ),
+    (
+        # Recovery runs despite a missing READ, a bad exit or a timeout, so
+        # the stray-line reason disappears from an INCOMPLETE round.
+        "recovery ignores the round's other reasons",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if (findings\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_recovery_never_masks_another_reason"),
+    ),
+    (
+        # The ignored lines vanish from review.json.
+        "review.json drops the ignored lines",
+        REVIEW_RUN,
+        '        "ignored_lines": len(result["ignored"]), "ignored_text": result["ignored"],\n',
+        '        "ignored_lines": 0, "ignored_text": [],\n',
+        "tests/test_review_refund.py::test_finish_reports_ignored_lines",
+    ),
+    (
+        # The ignored lines are never named on a `review:` line.
+        "review_run stops printing the ignored lines",
+        REVIEW_RUN,
+        '    if result["ignored"]:\n        print(f"review: {result[\'verdict\']} kept; ',
+        '    if False:\n        print(f"review: {result[\'verdict\']} kept; ',
+        "tests/test_review_refund.py::test_finish_reports_ignored_lines",
+    ),
+    (
+        # Review round 1 FIX: a fence's info string (```FIX) read as a
+        # keyword, so a fenced, well-formed finding burned the round.
+        "a code fence's info string is read as a contract keyword",
+        REVIEW_VERDICT,
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = _DECORATION.sub("", line)\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # Review round 1 FIX: ignored lines stored stripped, not as written.
+        "ignored lines are stored stripped",
+        REVIEW_VERDICT,
+        '        unparseable.append(raw[:-1] if raw.endswith("\\r") else raw)\n',
+        "        unparseable.append(line)\n",
+        "tests/test_review_verdict.py::test_parse_ignored_lines_are_kept_verbatim",
+    ),
+    (
+        # Review round 2 FIX: a fence with a space before its info string
+        # ("``` FIX") was not a fence, so its info word read as a keyword.
+        "a fence with a space before its info string is not a fence",
+        REVIEW_VERDICT,
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[ \\t]*[\\w.+#-]*$")\n',
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[\\w.+#-]*$")\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # L-0510 lane: an unknown ignored-line count read as 0 ("none").
+        "the ledger records an unknown ignored-line count as 0",
+        REVIEW_LEDGER,
+        "        return value\n    return None\n",
+        "        return value\n    return 0\n",
+        ("tests/test_review_refund.py::"
+         "test_ledger_row_records_an_unknown_ignored_count_as_null_never_0"),
+    ),
+    (
+        # L-0578: the metrics row goes back to depending on prose step 6,
+        # which lanes skipped for 118 of 162 rounds.
+        "a recorded round writes no metrics row",
+        REVIEW_RUN,
+        "    metrics_line = review_metrics.record(args.root, args.ticket, number, review,\n",
+        '    metrics_line = "review: no row"; _unused = (\n',
+        "tests/test_review_metrics.py::test_codex_findings_round_appends_one_scored_row",
+    ),
+    (
+        # L-0578: the row the round writes changes the bundle, so a CLEAN
+        # receipt in a repo that does not gitignore .crew/ stops checking.
+        "the metrics row is reviewed as part of the bundle",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        "tests/test_review_patch.py::"
+        "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",
+    ),
+    (
+        # L-0578 review r1 BLOCK: a symlinked .crew directory is followed and
+        # the row lands in a file outside the checkout.
+        "the metrics writer follows a symlinked .crew directory",
+        REVIEW_METRICS,
+        "    if is_link_or_junction(parent):\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "    if False:\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "tests/test_review_metrics.py::test_a_junction_parent_is_refused",
+    ),
+    (
+        # L-0578 review r2 BLOCK: the open follows a .crew symlink swapped in
+        # after the pre-check (check-then-open race).
+        "the metrics open follows the .crew directory",
+        REVIEW_METRICS,
+        "    if nofollow and directory and os.open in os.supports_dir_fd:\n",
+        "    if False:\n",
+        "tests/test_review_metrics.py::"
+        "test_the_open_itself_refuses_a_crew_symlink_swapped_in_after_the_check",
+    ),
+    (
+        # L-0578 review r2 FIX: a marker naming another provider passes for a
+        # Codex limit.
+        "a limit marker of any provider claims a codex limit",
+        REVIEW_METRICS,
+        '    if not isinstance(previous, int) or isinstance(previous, bool) or provider != "codex" \\\n',
+        "    if not isinstance(previous, int) or isinstance(previous, bool) \\\n",
+        "tests/test_review_metrics.py::test_a_malformed_limit_marker_is_unreadable_not_a_limit",
+    ),
+    (
+        # L-0578 review r2 FIX: a malformed config reads as config provenance.
+        "an unreadable config is reported as config provenance",
+        REVIEW_METRICS,
+        '    if source == "config" and config_unreadable(root):\n',
+        "    if False:\n",
+        "tests/test_review_metrics.py::test_a_malformed_config_is_not_reported_as_config_provenance",
+    ),
+    (
+        # L-0578 review r2 FIX: the row takes a reservation record for
+        # another round.
+        "a reservation token for another round is used",
+        REVIEW_METRICS,
+        "                or kept.get(\"round\") != number or isinstance(kept.get(\"round\"), bool):\n",
+        "                or isinstance(kept.get(\"round\"), bool):\n",
+        "tests/test_review_metrics.py::test_a_reservation_record_for_another_round_is_not_used",
     ),
 )
