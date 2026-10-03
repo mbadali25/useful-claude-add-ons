@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:22: #372 round-3 re-review on bf87f024: CLEAN (0 BLOCK, 0 FIX, 2 NITs left alone to avoid a new review cycle). Up to date with main 7846261c. FIRST MERGE CANDIDATE: waiting for CI on bf87f024 to finish green, then merge (merge commit).
 - 23:22: #337 round-3 fix pushed (d1577de8, crew 1.0.219): strict whole-cell acceptance grammar; 'accepted revoked/expired/...' = GAP (refusal word), others UNKNOWN; 4 sabotage mutations red. Round-4 Sonnet re-review (adversarial, 40+ values) started.
 - 23:21: CLEAN: #368 re-review on ca084ea2 (0 BLOCK, 0 FIX, 2 NITs) and #357 T-0020 first review on d4dd47a3 (0 BLOCK, 0 FIX, 4 NITs). Clean set now: #371, #360, #378, #350, #351, #359, #368, #357.
 - 23:21: #372 round-2 re-review: PASS w/ 1 FIX (cache re-key only holds in the checkout that ran it) -> fixed by hand + shared-old-key test (sabotage red) -> bf87f024, crew 1.0.220; round-3 re-review started. #355 FIX fixed by agent (c2bfb51d, crew 1.0.214: 'left to the PowerShell hook' vs 'not typed'); re-review started. Next free: 1.0.221.
