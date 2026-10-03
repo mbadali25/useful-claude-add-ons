@@ -216,12 +216,13 @@
 
     { "paths": ["plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
                 "plugin/crew/tests/test_upgrade.py",
-                "plugin/crew/tests/test_sabotage_harness.py"],
-      "seconds": 5,
+                "plugin/crew/tests/test_sabotage_harness.py",
+                "plugin/crew/tests/sabotage_platform.py"],
+      "seconds": 10,
       "coveredBy": "crew-suite",
       "run": ["python3 -m pytest plugin/crew/tests/test_upgrade.py plugin/crew/tests/test_sabotage_harness.py -q"],
       "reach": "local",
-      "why": "15s. The schema migration path: a key added to the schema and announced nowhere is how install.policy reached UPGRADE.md and never the terminal. reach: local - pytest against this repo's own upgrade/sabotage-harness test modules." },
+      "why": "15s. The schema migration path: a key added to the schema and announced nowhere is how install.policy reached UPGRADE.md and never the terminal. L-0608 added sabotage_platform.py (the sabotage runner's junit verdicts, platform declarations, per-entry timeout and tree kill) and its cases to test_sabotage_harness.py, which spawn real throwaway pytest runs (one overruns a 3 s timeout); measured 7.4s wall (129 passed) on 2026-10-03, Linux, load average ~14 from other lanes, so `seconds` goes 5 -> 10 (the old 5 priced the file before these cases). reach: local - pytest against this repo's own upgrade/sabotage-harness test modules and throwaway tests under tmp_path." },
 
     { "paths": ["plugin/crew/hooks/scripts/crew_ticket.py",
                 "plugin/crew/tests/test_approval_digest.py"],

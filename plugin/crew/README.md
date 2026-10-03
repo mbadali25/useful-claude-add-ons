@@ -2910,6 +2910,21 @@ the first mutation, so a restore that silently did nothing fails the suite
 instead of passing quietly. SIGKILL is still uncatchable by anything, which is
 why the startup refusal exists.
 
+A verdict is read from each run's junit report, not its exit code
+(`tests/sabotage_platform.py`). pytest exits 0 when every test *skipped*, and
+that once read as `STILL GREEN` for thirteen entries on Linux whose tests never
+ran there. Now `RED (good)` needs exit 1 and a complete report: every collected
+case reported, at least one failed, none skipped or errored. Anything less is
+`RED BUT UNPROVEN`, an all-skipped run is `COULD-NOT-TELL`, and all of them fail
+the suite. An entry only some platforms can exercise (the PowerShell gate's,
+which are Windows-only) is declared in `PLATFORM_ONLY`. On any other host it is
+not applied, and it reads `PLATFORM-ONLY, NOT EXERCISED (win)`, counted on the
+last line, as in `SABOTAGE SUITE: PASS (N platform-only, not exercised on linux)`.
+On its own platform a skip fails like any other. Each entry runs in its own
+session (a job object on Windows) under a 900 s timeout
+(`SABOTAGE_ENTRY_TIMEOUT`). An overrun is `COULD-NOT-TELL` and its whole process
+tree is killed, as is anything the entry leaves running.
+
 `run-tests.sh` printed `RESULT: 177 passed, 0 failed` at `61af85cb`. It covers
 what the guard must block and must allow, the promotion gate, the emergency lane
 (including that the guard still blocks during one, and that an expired incident

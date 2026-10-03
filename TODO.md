@@ -3479,7 +3479,7 @@ still does not exist anywhere in this repo.
   without guessing which file it continues, and CLAUDE.md forbids the bare form
   for exactly that reason - which is a prose change to a section this ticket's
   defects do not touch, and it carries its own version bump.
-- The sabotage suite reports 11 STILL GREEN mutations on Linux, all
+- **CLOSED 2026-10-03 by L-0608** (verdicts read the junit report; the Windows-only entries are declared in `plugin/crew/tests/sabotage_platform.py` and counted; the frozen-artifact entry is re-aimed at a test that feeds a backslash path). The sabotage suite reports 11 STILL GREEN mutations on Linux, all
   pre-existing and none in `test_docs_routing.py`. Measured at this tree with
   `plugin/crew/tests/sabotage.py` run in five index slices. Ten of them report
   `1 skipped` under the mutation, so the named test never executed: nine name
@@ -4860,7 +4860,9 @@ From the Codex delta reviews of integ-ps1 (gpt-5.6-sol, high, read-only). None b
 - `plugin/crew/tests/test_auto_clear_review_fixes.py:730` (Windows-only test) - the binding test's false case uses `Hwnd=0`, which equals `GetForegroundWindow()` when Windows returns NULL (locked/headless session), so the child reaches a real `SendWait` and could type `/clear` into another application. Use a real, known non-foreground window handle (or skip the false case when GetForegroundWindow() is 0).
 - `plugin/crew/tests/test_verify_gate_stop_gate_record.py:1803` - the no-bash skip uses `crew_fixtures.resolve_bash()`, a different discovery algorithm from verify-gate.ps1's `Resolve-CrewBash` (which walks up from git.exe), so a Git for Windows install with only its `cmd` dir on PATH silently skips this test. Skip based on the gate's own `-PrintBash` result instead.
 
-## sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap (filed 2026-09-25)
+## sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap (filed 2026-09-25) - CLOSED 2026-10-03 by L-0608
+
+`sabotage.py` now reads each run's junit report (`plugin/crew/tests/sabotage_platform.py`); the Get-CrewChildTabRecheck entry is declared Windows-only and counted on other hosts.
 
 `plugin/crew/tests/sabotage.py:2928` folds `AUTOCYCLE_MUTATIONS` into its own `MUTATIONS` tuple and
 re-runs every entry through its own independent `run_test`/`main` (`plugin/crew/tests/sabotage.py:2945-3253`),
@@ -5044,7 +5046,7 @@ Ruled by the crew during the 1.0 ship pass, 2026-09-25. Each is a harness defect
 none blocks 1.0. No lane was spent on any of them. Recorded here so the deferral is distinguishable from
 nobody having noticed.
 
-1. `sabotage.py`'s 13 pwsh-dependent mutations are still GREEN at `ad18172b` - the mutations do not bite,
+1. ~~`sabotage.py`'s 13 pwsh-dependent mutations are still GREEN at `ad18172b`~~ CLOSED 2026-10-03 by L-0608: not pwsh - they are Windows-only by design (or vacuous: items 2, 3), now declared or re-aimed. - the mutations do not bite,
    so that slice of the sabotage harness is currently vacuous.
 2. `test_ps1_python_probe.py:~93` - the `.cmd` stubs pass a POSIX `/c/...` path to `CreateProcess`, which
    cannot open it. The stub branch is therefore not exercising what it claims to.
@@ -5081,7 +5083,7 @@ Filed by T-0014. Each item below has no ticket of its own (T-0002..T-0013 carry 
 - **Hooks and CLI approval read `.crew/config.json`; `/crew:migrate` writes `.crew/crew.json`** - `plugin/crew/hooks/scripts/crew_state.py:263` (`load_config`), `plugin/crew/hooks/scripts/crew_ticket.py:518` (`scope.allowCliApproval`, read at `:520`) and `:684` (`scope.mode`) read only `config.json`, while `plugin/crew/hooks/scripts/crew_migrate.py:473` writes the migrated settings to `crew.json` and keeps `config.json` (table at `:11`). The split is partial, not total: `plugin/crew/hooks/scripts/crew_context.py:121` (`load_crew_config`) reads `crew.json` before `config.json`, so `memory.inject` (`inject_enabled`, `:142`) is live from `crew.json`, and `plugin/crew/hooks/scripts/crew_autoclear_setup.py:579` rewrites `context.autoClear` in both files. A setting read through `load_config` or `crew_ticket` and changed only in `crew.json` has no effect. Pick one file as the source every hook reads, or have migrate say which settings are live where.
 - **HTTP deploys and workspace changes pass `cloud_guard.py` unclassified (deferred from T-0005/T-0009)** - under `gh`, `plugin/crew/hooks/scripts/cloud_guard.py:1131` recognises only `gh pr merge --admin`, and the file contains no `curl` handling (`grep -c curl` is 0 at `f2bb919b`). Reproduced at `f2bb919b`: `cloud_guard.scan("bash", ...)` returns no finding for `gh api -X POST repos/o/r/actions/workflows/deploy.yml/dispatches`, `gh run rerun 12345`, `gh workflow run deploy.yml`, `gh api -X DELETE repos/o/r`, or a `curl -X DELETE`/`-X POST` to `app.terraform.io/api/v2/...` (TFC/HCP workspace delete and run create). Needs a URL-and-method parser whose `unknown` environment is never allowed unattended, plus a must-block/must-allow suite, sabotage-tested, per CLAUDE.md's rule for a blocking hook.
 - **Constraint: the review bundle excludes only `.work/` and, since crew 1.0.54 (T-0092), generated `graphify-out/`** - `plugin/crew/hooks/scripts/review_patch.py:104` (`EXCLUDED = (".work/", "graphify-out/")`), so any other tracked artifact written after review (a codemap refresh, a diagram render, a TODO entry - no longer a graphify rebuild) changes the bundle and stales the receipt. Resolved by ordering in T-0004 and T-0008; recorded as a constraint on anything that writes tracked files after `/crew:review`, not as a defect to fix.
-- **`sabotage.py` ends FAIL on Linux with the same 14 non-red entries** - `python3 plugin/crew/tests/sabotage.py` ends `SABOTAGE SUITE: FAIL`; its verdict loop (`plugin/crew/tests/sabotage.py:3237`, `:3246`) checks only the exit code, with no SKIPPED-vs-PASSED distinction. Identical list at `c5f4aa62`, at T-0003's `cf3bc0d8`, and re-run for this entry at `f2bb919b`: 13 STILL GREEN, 1 RED BUT UNPROVEN (exit 4). Most target PowerShell-gate tests that skip off Windows. The Get-CrewChildTabRecheck entry is already filed above ("sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap"); the other 12 STILL GREEN, with labels exactly as `sabotage.py` spells them and the line each is defined on:
+- **CLOSED 2026-10-03 by L-0608 for the 13 STILL GREEN** (ten Windows-only by design and now declared; the bash deadline entry gained a bash-only twin; the frozen-artifact and schema-5 entries were vacuous and are re-aimed); the docs.theme exit-4 entry below stays open. **`sabotage.py` ends FAIL on Linux with the same 14 non-red entries** - `python3 plugin/crew/tests/sabotage.py` ends `SABOTAGE SUITE: FAIL`; its verdict loop (`plugin/crew/tests/sabotage.py:3237`, `:3246`) checks only the exit code, with no SKIPPED-vs-PASSED distinction. Identical list at `c5f4aa62`, at T-0003's `cf3bc0d8`, and re-run for this entry at `f2bb919b`: 13 STILL GREEN, 1 RED BUT UNPROVEN (exit 4). Most target PowerShell-gate tests that skip off Windows. The Get-CrewChildTabRecheck entry is already filed above ("sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap"); the other 12 STILL GREEN, with labels exactly as `sabotage.py` spells them and the line each is defined on:
   `promote-gate.ps1 reads an unreadable map as one that gates nothing` (`:482`);
   `the frozen artifact path is stored with native separators` (`:1868`);
   `the schema 5 migration lands install.policy above the floor` (`:2085`);

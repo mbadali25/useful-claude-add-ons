@@ -4,6 +4,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed - `crew` 1.0.151: the sabotage step finishes on Linux, and a skipped mutation never reads as green (L-0608)
+
+- **Why the step died.** The `cloud guard r1: azureProfile.json opened whatever it is` mutation makes
+  the hook read `/dev/zero` unbounded. Its test's `_run_bounded` capped time but not memory, so the
+  hook reached heavy-run's 6G cgroup in about 6 s, the kernel OOM-killed it, and systemd's
+  `OOMPolicy=stop` then SIGTERMed the whole run (rc 143 at ~570-585 s, or rc 137). On Linux the hook
+  child now has a 1 GiB address-space limit (`test_cloud_guard_environments._cap_memory`). The
+  mutation goes RED in under a second with a 965M peak.
+- **Verdicts from the junit report.** `sabotage.py` read only pytest's exit code. That code is 0 for an
+  all-skipped run, so thirteen entries read `STILL GREEN` on Linux whose tests never ran there. pwsh
+  was not the cause: the result was the same with and without it. The new
+  `tests/sabotage_platform.py` judges each entry from its `--junitxml` report plus a collection
+  plugin. `RED (good)` needs exit 1, every collected case reported, at least one failure, and no skip
+  or error. Anything else is `RED BUT UNPROVEN` or `COULD-NOT-TELL`, and all of them fail the suite.
+  The runner drops ambient `PYTEST_ADDOPTS` and its own `-x`, so every case of a parametrized target
+  runs.
+- **Platform-only entries, counted.** `PLATFORM_ONLY` declares the Windows-only PowerShell-gate
+  entries, and the two `/dev/zero` entries as Linux-only. On another host an entry is not applied: it
+  prints `PLATFORM-ONLY, NOT EXERCISED (...)` and the last line counts it. On its own platform, a skip
+  fails.
+- **Per-entry timeout.** 900 s by default (`SABOTAGE_ENTRY_TIMEOUT`). Each entry runs in its own
+  session (a kill-on-close job object on Windows). An overrun is `COULD-NOT-TELL`, and anything the
+  entry leaves running is killed before the next entry starts.
+- **Re-aimed.** `the frozen artifact path is stored with native separators` could not fail on POSIX.
+  `the schema 5 migration lands install.policy above the floor` could not fail anywhere: its test
+  stopped reading the value in 0.20.15. Each now has a test that can fail. The bash deadline entry has
+  a bash-only twin. The stop-budget entries are aimed at their `[sh]` or `[ps1]` case.
+
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 
 - **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt
