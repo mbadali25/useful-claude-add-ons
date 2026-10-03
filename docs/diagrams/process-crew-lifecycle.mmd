@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@d95d8b25 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@a538bd48 on 2026-10-03. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -567,3 +567,8 @@ flowchart TB
 %% at b1c4ac6d; crew 1.0.144): both provenance blocks kept, main's first. Of the Anchors paths only crew_ticket.py differs from
 %% main, by T-0019's mint/assign, which main did not touch: approval_digest :577, status() :604, approve :739 and the digest
 %% block :549-590 hold as T-0019's earlier notes give them (re-grepped). No node cites a line in it; no node or edge changed.
+%% Re-anchored d95d8b25 (main) and 2fbc9bf6 (T-0019) -> a538bd48 (T-0019 splits the assign route out to L-0611 and merges
+%% origin/main 8123fe74, L-0574 #323, rerere off, at 2eb66ce0; crew 1.0.144): both provenance blocks kept, main's first. Of the
+%% Anchors paths only crew_ticket.py differs from main, by T-0019's mint/assign, which main did not touch: approval_digest :577,
+%% status() :604, approve :739 and the digest block :549-590 hold as T-0019's earlier notes give them (re-grepped). No node cites
+%% a line in it; no node or edge changed.
