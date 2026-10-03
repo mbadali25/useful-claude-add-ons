@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.164: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
+### Fixed — `crew` 1.0.165: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
 
 - A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
   ran under the Stop hook, which Claude Code gives that variable, but under `/crew:verify --all` the
