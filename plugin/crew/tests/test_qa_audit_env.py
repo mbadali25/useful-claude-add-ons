@@ -348,7 +348,7 @@ def test_e5_a_live_credential_reaching_qa_unaccepted_is_a_gap(tmp_path):
 def test_e5_accepted_or_production_only_passes(tmp_path):
     _write(tmp_path, ".crew/secrets.md",
            "| Name | Reaches | Live | Accepted |\n|---|---|---|---|\n"
-           "| PAY_KEY | production | yes | |\n| MAIL_KEY | qa | yes | accepted 2026-10-01 Matthew |\n")
+           "| PAY_KEY | production | yes | |\n| MAIL_KEY | qa | yes | accepted by Matthew 2026-10-01 |\n")
     assert _row(tmp_path, "E5")["status"] == qa_audit.PASS
 
 
@@ -400,7 +400,7 @@ def test_e5_all_five_review_rows_together_are_a_gap_naming_the_unknowns(tmp_path
 
 def test_e5_affirmative_acceptances_and_explicit_no_pass(tmp_path):
     row = _e5(tmp_path, "| K1 | qa | yes | 2026-10-01 |", "| K2 | staging | y | accepted |",
-              "| K3 | dev / qa | true | accepted Matthew |", "| K4 | qa | Yes (rotated) | yes |",
+              "| K3 | dev / qa | true | accepted by Matthew |", "| K4 | qa | Yes (rotated) | yes |",
               "| K5 | staging | no | |", "| K6 | production only | ? | |")
     assert row["status"] == qa_audit.PASS, row["evidence"]
 
@@ -427,26 +427,37 @@ def test_e5_production_only_is_production(tmp_path):
     assert qa_audit_env.parse_reach("`qa`/staging", {}) == (["qa", "staging"], [])
 
 
-@pytest.mark.parametrize("value", ["no", "not accepted", "never", "denied", "rejected 2026-10-01",
-                                   "declined", "pending", "TBD", "todo", "Nobody", "none", "n/a",
-                                   "unknown", "awaiting owner", "waiting", "revoked", "expired",
-                                   "withdrawn", "refused", "accepted but expired",
-                                   "2026-10-01 not accepted", "-", "?", ""])
+@pytest.mark.parametrize("value", [
+    "no", "not accepted", "never", "denied", "rejected 2026-10-01", "declined", "pending", "TBD",
+    "todo", "Nobody", "none", "n/a", "unknown", "awaiting owner", "waiting", "revoked", "expired",
+    "withdrawn", "refused", "accepted but expired", "2026-10-01 not accepted", "-", "?", "",
+    "accepted maybe", "accepted tentatively", "accepted conditionally", "accepted by Nobody",
+    "accepted by Matthew Revoked", "Accepted, superseded", "accepted (lapsed)", "yes, disputed"])
 def test_e5_a_refusal_anywhere_is_not_an_acceptance(tmp_path, value):
     row = _e5(tmp_path, f"| X | staging | yes | {value} |")
     assert row["status"] == qa_audit.GAP and "`X`" in row["evidence"], (value, row["evidence"])
 
 
 @pytest.mark.parametrize("value", [
-    "accepted unless rotated", "accepted if approved", "accepted until prod",
-    "accepted maybe", "accepted soon", "accepted tentatively", "accepted conditionally",
+    "accepted unless rotated", "accepted if approved", "accepted until prod", "accepted soon",
     "yes eventually", "accepted (verbally)", "accepted by the owner on 2026-10-01", "\u2705", "approved",
     "ok", "y", "accepted?", "Matthew", "owner 2026-10-01", "accepted 2026-13-45",
-    "accepted 2026-10-01 2026-10-02", "accepted Matthew Badali 2026-10-01 Matthew",
-    "accepted by Ann Bea Cee Dee", "yes, ok-ish!"])
+    "accepted 2026-10-01 2026-10-02", "accepted by Ann Bea Cee Dee", "yes, ok-ish!",
+    "accepted Matthew", "accepted, Matthew", "accepted 2026-10-01 Matthew Badali", "accepted O'Neil",
+    "accepted Under Review", "accepted Re-voked", "accepted by Jos\u00e9", "accepted by matthew"])
 def test_e5_an_unrecognised_acceptance_is_unknown_not_accepted(tmp_path, value):
     row = _e5(tmp_path, f"| X | staging | yes | {value} |")
     assert row["status"] == qa_audit.UNKNOWN and "`X`" in row["evidence"], (value, row["evidence"])
+
+
+@pytest.mark.parametrize("value, want", [
+    ("accepted Maybe", "GAP"), ("accepted Cancelled", "GAP"), ("accepted Rescinded", "GAP"),
+    ("accepted Void", "GAP"), ("accepted Under Review", "UNKNOWN"), ("yes Draft", "GAP"),
+    ("accepted Reject", "GAP"), ("accepted Revoke", "GAP"), ("accepted Expire", "GAP"),
+    ("accepted by Nobody", "GAP"), ("accepted by Matthew Revoked", "GAP"),
+    ("accepted Re-voked", "UNKNOWN")])
+def test_e5_round_four_capitalised_qualifiers_never_pass(tmp_path, value, want):
+    assert _e5(tmp_path, f"| X | staging | yes | {value} |")["status"] == want, value
 
 
 @pytest.mark.parametrize("value", ["revoked", "withdrawn", "expired", "refused"])
@@ -455,11 +466,12 @@ def test_e5_accepted_followed_by_a_refusal_word_is_a_gap(tmp_path, value):
     assert row["status"] == qa_audit.GAP, (value, row["evidence"])
 
 
-@pytest.mark.parametrize("value", ["accepted", "yes", "ACCEPTED", "2026-10-01",
-                                   "accepted 2026-10-01 Matthew Badali", "Accepted by Matthew",
-                                   "accepted, Matthew", "accepted by Matthew 2026-10-01",
-                                   "yes, by Ann Lee", "accepted O'Neil", "Accepted by Jean-Luc Picard",
-                                   "**accepted** 2026-10-01"])
+@pytest.mark.parametrize("value", ["accepted", "yes", "ACCEPTED", "2026-10-01", "yes 2026-10-01",
+                                   "accepted by Matthew", "Accepted by Matthew", "accepted. By Matthew",
+                                   "Accepted by Matthew Badali 2026-10-01",
+                                   "accepted 2026-10-01 by Matthew Badali", "yes, by Ann Lee",
+                                   "accepted by O'Neil", "Accepted by Jean-Luc Picard",
+                                   "**accepted** 2026-10-01", "accepted by Noah"])
 def test_e5_the_affirmative_acceptance_forms_pass(tmp_path, value):
     row = _e5(tmp_path, f"| X | staging | yes | {value} |")
     assert row["status"] == qa_audit.PASS, (value, row["evidence"])

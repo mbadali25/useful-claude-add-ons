@@ -475,20 +475,30 @@ NONPROD_NAMES = ("dev", "development", "local", "ci", "test", "testing", "qa", "
                  "staging", "preprod", "pre-prod", "sandbox", "demo", "preview")
 # Words a reaches part may hold besides environment names: they join names, never qualify one.
 REACH_FILLER = ("only", "and")
-# One of these words anywhere in an acceptance cell refuses it.
-NOT_ACCEPTED = ("no", "n", "false", "not", "never", "denied", "rejected", "declined", "pending",
-                "tbd", "todo", "nobody", "none", "n/a", "na", "unknown", "awaiting", "waiting",
-                "revoked", "expired", "withdrawn", "refused")
+# A token (case-insensitive) that IS one of these refuses an acceptance cell...
+NOT_ACCEPTED = ("no", "n", "na", "n/a", "not", "false")
+# ...and so does a token that STARTS WITH one of these stems, anywhere in the cell,
+# a `by` name included ("accepted by Nobody", "accepted Cancelled").
+NOT_ACCEPTED_STEMS = ("revok", "reject", "deni", "deny", "refus", "expir", "withdr", "cancel",
+                      "rescind", "retract", "laps", "void", "invalid", "never", "nobody", "none",
+                      "pending", "tbd", "todo", "unknown", "await", "wait", "declin", "maybe",
+                      "perhaps", "condition", "tentativ", "provision", "draft", "unverif", "propos",
+                      "supersed", "disput", "inactiv", "disabl", "obsolet", "stale", "unaccept")
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # The acceptance grammar, over the whole cell in its ORIGINAL case: `accepted` or
-# `yes`, an optional `,` or `.`, then at most one NAME (optionally after `by`) and
-# at most one ISO date, in either order. A NAME is 1-3 words that each start with
-# an uppercase letter, so no lowercase qualifier ("revoked", "maybe") can be one.
-_NAME = r"[A-Z][A-Za-z'\u2019-]*(?:\s+[A-Z][A-Za-z'\u2019-]*){0,2}"
-_BY_NAME = rf"(?:by\s+)?{_NAME}"
+# `yes`, an optional `,` or `.`, then optionally `by NAME` and optionally an ISO
+# date, in either order; or an ISO date alone. A NAME counts only directly after
+# `by` and is 1-3 words that each start with an uppercase ASCII letter, so a
+# free-standing word of any case ("accepted Maybe", "yes Draft") never matches.
+_NAME = r"[A-Z][A-Za-z'-]*(?:\s+[A-Z][A-Za-z'-]*){0,2}"
+_BY_NAME = rf"(?i:by)\s+{_NAME}"
 _ISO = r"\d{4}-\d{2}-\d{2}"
 _ACCEPT_RE = re.compile(
-    rf"(?i:accepted|yes)[.,]?(?:\s+(?:{_BY_NAME}(?:\s+{_ISO})?|{_ISO}(?:\s+{_BY_NAME})?))?")
+    rf"(?i:accepted|yes)[.,]?(?:\s+{_BY_NAME}(?:\s+{_ISO})?|\s+{_ISO}(?:\s+{_BY_NAME})?)?")
+
+
+def _refuses(token):
+    return token in NOT_ACCEPTED or token.startswith(NOT_ACCEPTED_STEMS)
 
 
 def _header_col(header, words):
@@ -549,16 +559,18 @@ def _iso_date(token):
 def parse_acceptance(cell):
     """"yes", "no" or "unknown", judged on the cell's original case (see _ACCEPT_RE).
 
-    no:      blank or ASCII punctuation only (`-`, `?`), or a NOT_ACCEPTED word
-             anywhere ("rejected 2026-10-01", "Nobody", "accepted but expired").
+    no:      blank or ASCII punctuation only (`-`, `?`), or any token that is a
+             NOT_ACCEPTED word or starts with a NOT_ACCEPTED_STEMS stem
+             ("rejected 2026-10-01", "accepted by Nobody", "accepted Cancelled").
     yes:     the whole cell is an ISO date, or matches _ACCEPT_RE
-             ("accepted", "Accepted by Matthew", "accepted 2026-10-01 Matthew Badali").
-    unknown: everything else -- "accepted maybe", "accepted (verbally)",
-             "approved", "ok", "y", an emoji. Never read as an acceptance."""
+             ("accepted", "Accepted by Matthew", "accepted by Matthew Badali 2026-10-01").
+    unknown: everything else -- "accepted Matthew" (no `by`), "accepted Under
+             Review", "accepted (verbally)", "approved", "ok", "y", an emoji, a
+             non-ASCII name. Never read as an acceptance."""
     text = re.sub(r"[`*]", "", cell).strip()
     if re.fullmatch(r"[\s!-/:-@\[-`{-~]*", text):
         return "no"
-    if any(w in NOT_ACCEPTED for w in re.findall(r"[a-z]+(?:/[a-z]+)?", text.lower())):
+    if any(_refuses(w) for w in re.findall(r"[a-z]+(?:/[a-z]+)?", text.lower())):
         return "no"
     if not (_DATE_RE.fullmatch(text) or _ACCEPT_RE.fullmatch(text)):
         return "unknown"

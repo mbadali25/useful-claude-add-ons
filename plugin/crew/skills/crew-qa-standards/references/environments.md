@@ -127,21 +127,28 @@ Non-production held live payment and shipping credentials for weeks (D4).
   `preview`). `production only`, `prod/staging` and `prod + dev` parse; `not prod`, `all but prod`,
   `prod replica` and `non-production` do not. A live credential whose reach is blank or has a part
   that does not parse is UNKNOWN. An unparseable `.crew/verify.json` makes E5 UNKNOWN.
-- **Accepted** is a strict grammar over the whole cell, read in its original case:
-  - **Accepted:** `accepted` or `yes` (any case), an optional `,` or `.`, then optionally a NAME
-    (with or without `by` before it) and optionally an ISO date (`YYYY-MM-DD`, a real date), in
-    either order, each at most once. A NAME is 1 to 3 words, each starting with an uppercase
-    letter (`Matthew`, `Matthew Badali`, `O'Neil`, `Jean-Luc`); a lowercase word is never a name.
-    An ISO date alone also counts. Examples: `accepted`, `ACCEPTED`, `yes`, `2026-10-01`,
-    `Accepted by Matthew`, `accepted, Matthew`, `accepted by Matthew 2026-10-01`,
-    `accepted 2026-10-01 Matthew Badali`.
-  - **Not accepted (GAP):** blank or punctuation only (`-`, `?`), or any of `no`, `not`, `never`,
-    `denied`, `rejected`, `declined`, `pending`, `TBD`, `todo`, `nobody`, `none`, `n/a`,
-    `unknown`, `awaiting`, `waiting`, `revoked`, `expired`, `withdrawn`, `refused` anywhere in the
-    cell, so `accepted but expired` is a GAP.
-  - **Unknown (E5 UNKNOWN for that row):** everything else, never an acceptance: `accepted maybe`,
-    `accepted unless rotated`, `yes eventually`, `accepted (verbally)`,
-    `accepted by the owner on 2026-10-01`, `approved`, `ok`, `y`, `✅`, a bare name.
+- **Accepted** is a strict grammar over the whole cell, read in its original case. Write it as
+  `accepted by <Person> <YYYY-MM-DD>`.
+  - **Accepted:** `accepted` or `yes` (any case), an optional `,` or `.`, then optionally
+    `by <Name>` and optionally an ISO date (`YYYY-MM-DD`, a real date), in either order, each at
+    most once; or an ISO date alone. A name counts only directly after `by`, and is 1 to 3 words
+    that each start with an uppercase ASCII letter (`Matthew`, `Matthew Badali`, `O'Neil`,
+    `Jean-Luc`). Examples: `accepted`, `ACCEPTED`, `yes`, `2026-10-01`, `yes 2026-10-01`,
+    `Accepted by Matthew`, `accepted by Matthew Badali 2026-10-01`, `accepted 2026-10-01 by Matthew`.
+  - **Not accepted (GAP):** blank or punctuation only (`-`, `?`), or any word, a `by` name
+    included, that is `no`, `n`, `na`, `n/a`, `not` or `false`, or that starts with one of: revok,
+    reject, deni, deny, refus, expir, withdr, cancel, rescind, retract, laps, void, invalid, never,
+    nobody, none, pending, tbd, todo, unknown, await, wait, declin, maybe, perhaps, condition,
+    tentativ, provision, draft, unverif, propos, supersed, disput, inactiv, disabl, obsolet, stale,
+    unaccept. So `accepted Cancelled`, `yes Draft`, `accepted but expired` and `accepted by Nobody`
+    are GAPs.
+  - **Unknown (E5 UNKNOWN for that row):** everything else, never an acceptance: a name without
+    `by` (`accepted Matthew`, `accepted, Matthew`), `accepted Under Review`, `accepted soon`,
+    `accepted (verbally)`, `accepted by the owner on 2026-10-01`, `approved`, `ok`, `y`, `✅`.
+  - **Limits.** Names are ASCII only: `accepted by José` reads UNKNOWN, so write an ASCII form
+    (`accepted by Jose`). A qualifier written as a capitalised name after `by` that no stem above
+    catches (`accepted by Later`) cannot be told from a name, which is why the form is
+    `accepted by <person> <date>` and nothing else.
 
 | Name | Reaches | Live | Accepted |
 |---|---|---|---|
