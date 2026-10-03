@@ -1409,7 +1409,7 @@ def test_next_refunded_rerun_after_review_is_not_no_progress(tmp_path, monkeypat
 
     assert (got["phase"], got["stop"], got["command"], sorted(got)) == (
         "review", False, f"/crew:review {T}",
-        ["command", "evidence", "phase", "reason", "stop", "ticket"])
+        ["command", "evidence", "index_source", "phase", "reason", "stop", "ticket"])
 
 
 def test_next_refunded_round_with_a_refresh_still_stale_is_no_progress(tmp_path, monkeypatch):
@@ -1444,3 +1444,128 @@ def test_module_defines_each_function_once():
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
 
     assert sorted({n for n in names if names.count(n) > 1}) == []
+
+
+# --- T-0063: the main checkout's INDEX ---------------------------------------
+
+def _lane(tmp_path):
+    """(main, lane): a repository and a linked worktree of it. `.work/` is
+    ignored, as it is here, so the lane starts with no INDEX and no folder."""
+    main = make_repo(tmp_path / "main", mode="off")
+    lane = tmp_path / "lane"
+    git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    return main, lane
+
+
+def _folder_only(root, ticket=T):
+    """The ticket folder without the INDEX row `_ticket` writes."""
+    folder = _ticket(root, ticket=ticket)
+    (root / ".work" / "INDEX.md").unlink()
+    return folder
+
+
+def _main_index(main):
+    return os.path.join(os.path.realpath(str(main)), ".work", "INDEX.md")
+
+
+def test_next_reads_the_index_row_from_the_main_checkout(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | ready | high | r | title")
+    _folder_only(lane)
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"] != "direction-approval", got["index_source"],
+            _main_index(main) in got["evidence"]) == (True, _main_index(main), True), got
+
+
+def test_next_no_row_in_either_checkout_stops(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, "T-9 | ready | high | r | another")
+    _folder_only(lane)
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"], got["stop"], _main_index(main) in got["reason"],
+            os.path.join(".work", "INDEX.md") in got["reason"]) == (
+        "direction-approval", True, True, True), got
+
+
+def test_next_disagreeing_rows_stop(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | done | high | r | title")
+    _ticket(lane, status="ready")
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"], got["stop"], got["reason"].startswith("index-disagreement:"),
+            _main_index(main) in got["reason"], "`ready`" in got["reason"],
+            "`done`" in got["reason"]) == ("direction-approval", True, True, True, True, True), got
+
+
+def test_next_agreeing_rows_proceed(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | ready | high | r | title")
+    _ticket(lane, status="ready")
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert ("index-disagreement" in got["reason"], got["phase"] != "direction-approval") == (
+        False, True), got
+
+
+def test_next_local_row_answers_without_a_main_row(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, "T-9 | ready | high | r | another")
+    _ticket(lane, status="ready")
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"] != "direction-approval", os.path.realpath(got["index_source"])) == (
+        True, os.path.join(os.path.realpath(str(lane)), ".work", "INDEX.md")), got
+
+
+def test_next_folder_only_in_the_main_checkout_stops_naming_it(tmp_path):
+    main, lane = _lane(tmp_path)
+    _ticket(main, status="ready")
+    there = os.path.join(os.path.realpath(str(main)), ".work", "tickets", T)
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["stop"], there in got["reason"], "cp -r" in got["reason"],
+            any(e.endswith("spec.md") and str(main) in e for e in got["evidence"])) == (
+        True, True, True, False), got
+
+
+def test_resume_folder_only_in_the_main_checkout_stops_naming_it(tmp_path):
+    main, lane = _lane(tmp_path)
+    _ticket(main, status="ready")
+    there = os.path.join(os.path.realpath(str(main)), ".work", "tickets", T)
+
+    got = crew_autopilot.resume_target(str(lane), T)
+
+    assert (got["stop"], there in got["reason"], "cp -r" in got["reason"]) == (
+        True, True, True), got
+
+
+def test_an_unreadable_main_checkout_is_cannot_tell(tmp_path, monkeypatch):
+    _main, lane = _lane(tmp_path)
+    _folder_only(lane)
+    monkeypatch.setattr(crew_autopilot, "_main_checkout",
+                        lambda top: (None, "git worktree list failed: boom"))
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["stop"], "boom" in got["reason"],
+            "main checkout's .work/INDEX.md has no table row" in got["reason"]) == (
+        True, True, False), got
+
+
+def test_resume_finds_the_open_ticket_through_the_main_checkout_index(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | ready | high | r | title")
+    _folder_only(lane)
+
+    got = crew_autopilot.resume_target(str(lane))
+
+    assert (got["ticket"], got["source"]) == (T, ".work/INDEX.md (main checkout)"), got

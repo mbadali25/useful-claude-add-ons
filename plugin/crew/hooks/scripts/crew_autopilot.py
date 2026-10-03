@@ -59,7 +59,9 @@ force says `take`. Exit 0 valid, 1 not.
 
 ## next -- the phase from disk, first match wins
 
+  folder only in the main checkout       folder-elsewhere    stop, naming the copy
   no direction.md                        brainstorm          stop
+  INDEX rows here and in main differ     direction-approval  stop (index-disagreement)
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
   INDEX status done/merged/closed/...    closed              stop
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
@@ -81,6 +83,14 @@ force says `take`. Exit 0 valid, 1 not.
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+The INDEX row (T-0063) is this checkout's; with none, the main checkout's --
+the first record of `git worktree list --porcelain` -- and `index_source`
+(`--json` only) names the file that answered. Rows in both whose cells differ
+stop as `index-disagreement`; a listing that fails is could-not-tell, kept in
+the reason. The ticket folder is never read from the main checkout: one only
+there stops, naming the `cp -r` to make, since the scope guard reads Touch
+from this checkout's folder.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -193,6 +203,8 @@ FIXED_STOPS = (
     ("failed-validate", "crew_ticket.validate reports a problem in spec.md or plan.md"),
     ("direction-unknown", "no .work/INDEX.md table row says whether direction.md is "
                           "approved"),
+    ("index-disagreement", "the worktree's and the main checkout's .work/INDEX.md rows for "
+                           "the ticket disagree"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
@@ -241,19 +253,30 @@ def _rel(top, path):
         return path.replace("\\", "/")
 
 
-def _index_rows(top):
-    """[(ticket, line)] for every INDEX.md line naming a ticket, in order."""
+def _rel_inside(top, path):
+    """`path` relative to `top` when it lies inside it, else whole (T-0063: an
+    INDEX.md read from the main checkout is named in full)."""
+    rel = _rel(top, path)
+    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        return path.replace("\\", "/")
+    return rel
+
+
+def _index_rows(top, index_path=None):
+    """[(ticket, line)] for every line naming a ticket in `index_path` (this
+    checkout's `.work/INDEX.md` by default), in order."""
     rows = []
-    for line in (read_text(os.path.join(top, ".work", "INDEX.md")) or "").splitlines():
+    path = index_path or os.path.join(top, ".work", "INDEX.md")
+    for line in (read_text(path) or "").splitlines():
         found = crew_state._TICKET_RE.search(line)  # pylint: disable=protected-access
         if found:
             rows.append((found.group(1), line))
     return rows
 
 
-def _index_status(top, ticket):
+def _index_status(top, ticket, index_path=None):
     """The status cell of `ticket`'s INDEX.md table row, lower-cased, or None."""
-    for found, line in _index_rows(top):
+    for found, line in _index_rows(top, index_path):
         if found != ticket or line.count("|") < 2:
             continue
         cells = [c.strip() for c in line.split("|")]
@@ -263,6 +286,72 @@ def _index_status(top, ticket):
     return None
 
 
+def _main_checkout(top):
+    """`(path, why)` (T-0063): the main checkout of the linked worktree `top`,
+    the first record of `git worktree list --porcelain`. `(None, "")` when
+    `top` is the main checkout -- `.git` a directory needs no subprocess --
+    so there is nothing else to read. `(None, why)` when the listing failed,
+    its first record is bare, or that path cannot be read: could-not-tell,
+    never "no row there"."""
+    if os.path.isdir(os.path.join(top, ".git")):
+        return None, ""
+    out = git_out(top, "worktree", "list", "--porcelain")
+    if out is None:
+        return None, "git worktree list failed, so the main checkout cannot be named"
+    record = out.replace("\r\n", "\n").split("\n\n", 1)[0].splitlines()
+    if not record or not record[0].startswith("worktree "):
+        return None, "git worktree list named no main checkout"
+    path = record[0][len("worktree "):]
+    if "bare" in record[1:]:
+        return None, f"the first worktree, {path}, is a bare repository: no main checkout"
+    if not os.path.isdir(path):
+        return None, f"the main checkout {path} cannot be read"
+    path = os.path.realpath(path)
+    if os.path.normcase(path) == os.path.normcase(os.path.realpath(top)):
+        return None, ""
+    return path, ""
+
+
+def _index_row(top, ticket):
+    """`{"status", "source", "other", "why", "paths"}` (T-0063): this
+    checkout's INDEX row for `ticket`, else the main checkout's. `source` is
+    the INDEX.md that answered, None when none did. Rows in both whose cells
+    differ are `status` None with `other` holding both `(path, cell)`. `why`
+    is a could-not-tell about the main checkout; `paths` every file asked."""
+    here = os.path.join(top, ".work", "INDEX.md")
+    local = _index_status(top, ticket)
+    main, why = _main_checkout(top)
+    there = os.path.join(main, ".work", "INDEX.md") if main else None
+    row = {"status": local, "source": here if local is not None else None, "other": None,
+           "why": why, "paths": [here] + ([there] if there else [])}
+    if not there:
+        return row
+    found = _index_status(top, ticket, there)
+    if found is None and os.path.lexists(there) and read_text(there) is None:
+        row["why"] = f"{there} exists but could not be read"
+    elif local is not None and found is not None and found != local:
+        row.update(status=None, source=None, other=((here, local), (there, found)))
+    elif local is None and found is not None:
+        row.update(status=found, source=there)
+    return row
+
+
+def _main_folder(top, ticket):
+    """`<main>/.work/tickets/<id>/` when only the main checkout holds it --
+    named, never read: the scope guard reads Touch from this checkout."""
+    if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        return None
+    main, _why = _main_checkout(top)
+    there = crew_ticket.ticket_dir(main, ticket) if main else None
+    return there if there and os.path.isdir(there) else None
+
+
+def _folder_elsewhere(top, ticket, there):
+    return (f"{ticket}'s folder is only in the main checkout ({there}); copy it here first: "
+            f"cp -r {there} {crew_ticket.ticket_dir(top, ticket)} - autopilot never reads "
+            "a ticket's contract from another checkout")
+
+
 def _is_open(ticket, line):
     table = crew_state._table_status(line, ticket)  # pylint: disable=protected-access
     if table is not None:
@@ -270,15 +359,28 @@ def _is_open(ticket, line):
     return not crew_state._DONE_RE.search(line)  # pylint: disable=protected-access
 
 
+def _open_index_rows(top):
+    """[(ticket, from_main)] for every open INDEX.md ticket whose
+    `.work/tickets/<id>/` exists HERE, in order, once each: this checkout's
+    rows, then the main checkout's for tickets with no row here (T-0063)."""
+    main, _why = _main_checkout(top)
+    rows = [(ticket, line, False) for ticket, line in _index_rows(top)]
+    here = {ticket for ticket, _line, _main in rows}
+    if main:
+        rows += [(ticket, line, True) for ticket, line in
+                 _index_rows(top, os.path.join(main, ".work", "INDEX.md")) if ticket not in here]
+    seen = {}
+    for ticket, line, from_main in rows:
+        if ticket not in seen and _is_open(ticket, line) \
+                and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+            seen[ticket] = from_main
+    return list(seen.items())
+
+
 def open_index_tickets(top):
     """Every open INDEX.md ticket whose `.work/tickets/<id>/` exists, in order,
     once each. Unlike `crew_state.read_work`, this does not stop at the first."""
-    seen = []
-    for ticket, line in _index_rows(top):
-        if ticket not in seen and _is_open(ticket, line) \
-                and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
-            seen.append(ticket)
-    return seen
+    return [ticket for ticket, _from_main in _open_index_rows(top)]
 
 
 def _header_status(spec_text):
@@ -411,24 +513,37 @@ def _phase(root, ticket, policy=True):
     folder = crew_ticket.ticket_dir(top, ticket)
     evidence = []
 
+    source = None
+
     def answer(phase, stop, reason, command=""):
         return {"ticket": ticket, "phase": phase, "stop": stop, "reason": reason,
-                "command": command, "evidence": list(evidence)}
+                "command": command, "evidence": list(evidence), "index_source": source}
 
+    there = _main_folder(top, ticket)
+    if there:
+        return answer("folder-elsewhere", True, _folder_elsewhere(top, ticket, there))
     direction = os.path.join(folder, "direction.md")
     evidence.append(_rel(top, direction))
     if not os.path.isfile(direction):
         return answer("brainstorm", True, f"no {_rel(top, direction)}: needs "
                       "/crew:brainstorm - a human dialogue", "/crew:brainstorm")
-    evidence.append(".work/INDEX.md")
-    status = _index_status(top, ticket)
+    row = _index_row(top, ticket)
+    status, source = row["status"], row["source"]
+    evidence.append(_rel_inside(top, source) if source else ".work/INDEX.md")
+    if row["other"]:
+        (here, mine), (main, theirs) = row["other"]
+        return answer("direction-approval", True, f"index-disagreement: {here} says "
+                      f"`{mine}` and the main checkout's {main} says `{theirs}` for "
+                      f"{ticket} - the human makes them agree")
     if status == "direction":
         return answer("direction-approval", True, "INDEX.md status is `direction`: "
                       "direction.md waits for the owner's yes in /crew:brainstorm")
     if status is None:
+        asked = " or ".join(_rel_inside(top, path) for path in row["paths"])
         return answer("direction-approval", True, f"cannot tell whether {ticket}'s "
-                      f"direction is approved: .work/INDEX.md has no table row for {ticket} "
-                      "(Jira and ServiceDesk Plus modes write none). The human adds "
+                      f"direction is approved: {asked} has no table row for {ticket}"
+                      + (f" ({row['why']})" if row["why"] else "")
+                      + " (Jira and ServiceDesk Plus modes write none). The human adds "
                       f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
     if status in INDEX_DONE:
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
@@ -681,6 +796,9 @@ def resume_target(root, ticket=None, policy=True):
     hint, source, why = "", "argument", ""
     if ticket:
         crew_ticket.check_ticket(ticket)
+        there = _main_folder(top, ticket)
+        if there:
+            return stopped(source, _folder_elsewhere(top, ticket, there))
         if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             return stopped(source, f"{ticket} has no .work/tickets/ folder")
     else:
@@ -698,7 +816,8 @@ def resume_target(root, ticket=None, policy=True):
             ticket, source = active, "active-ticket"
         else:
             fallthrough.append("no active-ticket entry for this worktree")
-            candidates = open_index_tickets(top)
+            rows = _open_index_rows(top)
+            candidates = [found for found, _from_main in rows]
             if len(candidates) > 1:
                 return stopped(".work/INDEX.md", "several open tickets and no pointer: "
                                + ", ".join(candidates)
@@ -706,7 +825,8 @@ def resume_target(root, ticket=None, policy=True):
             if not candidates:
                 return stopped(".work/INDEX.md", "no open ticket with a .work/tickets/ "
                                "folder - start one with /crew:brainstorm")
-            ticket, source = candidates[0], ".work/INDEX.md"
+            ticket = candidates[0]
+            source = ".work/INDEX.md (main checkout)" if rows[0][1] else ".work/INDEX.md"
     active, where, broken = crew_ticket.resolve_active(top)
     if broken:
         return stopped("active-ticket", f"{where}; a broken pointer is not guessed past - "

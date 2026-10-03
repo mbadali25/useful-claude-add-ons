@@ -673,6 +673,30 @@ STATUS_MUTATIONS = (
 
 AUTOPILOT_MUTATIONS += STATUS_MUTATIONS
 
+# T-0063: the main checkout's INDEX row, and committing a fresh refresh. Each
+# is one way a lane worktree could drive a ticket nobody approved, read a
+# contract from another checkout, or call an unsaved refresh done.
+WORKTREE_MUTATIONS = (
+    ("the main checkout is never consulted", AUTOPILOT,
+     '    if os.path.isdir(os.path.join(top, ".git")):\n        return None, ""\n',
+     '    if True:\n        return None, ""\n',
+     _T + "test_next_reads_the_index_row_from_the_main_checkout"),
+    ("disagreeing rows: the local one wins silently", AUTOPILOT,
+     "    elif local is not None and found is not None and found != local:\n",
+     "    elif False:\n",
+     _T + "test_next_disagreeing_rows_stop"),
+    ("a main-only folder is not named", AUTOPILOT,
+     '        return answer("folder-elsewhere", True, _folder_elsewhere(top, ticket, there))\n',
+     "        pass\n",
+     _T + "test_next_folder_only_in_the_main_checkout_stops_naming_it"),
+    ("a listing failure reads as no row", AUTOPILOT,
+     """                      + (f" ({row['why']})" if row["why"] else "")\n""",
+     '                      + ""\n',
+     _T + "test_an_unreadable_main_checkout_is_cannot_tell"),
+)
+
+AUTOPILOT_MUTATIONS += WORKTREE_MUTATIONS
+
 # ---- T-0010: the approval and questions policies. One per refusing branch;
 # each names the test that must go red. Registered in sabotage.py beside
 # AUTOPILOT_MUTATIONS; test_crew_autopilot_policy.py holds every anchor to
