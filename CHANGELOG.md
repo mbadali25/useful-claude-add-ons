@@ -4,6 +4,16 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.135: the standards proposals docstring and crew-qa-standards R5 state L-0576's recovered verdict (L-0598)
+
+- `crew_standards.proposals`'s docstring no longer says any unreadable line refuses a round. A round
+  `review_verdict.parse` recovered despite harmless stray prose or a code fence is FINDINGS, and its
+  findings are proposed; a stray line that might be a misformatted contract line, or that admits the
+  review fell short, is still INCOMPLETE even beside well-formed findings.
+- `skills/crew-qa-standards/references/review.md` R5 says the same: a contract-like or shortfall
+  stray line is INCOMPLETE; harmless stray prose or a code fence beside well-formed findings is
+  ignored and reported, and the round is FINDINGS; never recovered beside CLEAN. No behaviour change.
+
 ### Fixed — `crew` 1.0.134: `ci_receipt.py check` compares receipt fields by type as well as value; the verify-gate workflow stops installing into the shared toolcache
 
 - `_mismatch` used `==` alone, which holds `1 == True` and `False == 0`, so a receipt saying
