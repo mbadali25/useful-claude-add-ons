@@ -698,6 +698,29 @@ open questions; plan approval and open questions wait for a person unless T-0010
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
 
+**The delta gate (L-0522).** DERIVED at the anchor below. `check_receipt`
+(`plugin/crew/hooks/scripts/review_ledger.py:834`, `base_sha=None`) runs check E
+(`review_delta.excluded_check`, `plugin/crew/hooks/scripts/review_delta.py:234`, called at
+`review_ledger.py:859`) before EITHER success return: `.work`, `graphify-out` and
+`.crew/metrics.md` diffed over receipt base -> reviewed head, reviewed head -> HEAD and reviewed
+head -> the index (`index_tree` `review_delta.py:177`), only `EXCLUDED_EXCEPTIONS` (`:75`, the two
+graph files, status M, mode 100644, not binary) allowed. On a hash mismatch `review_delta.judge`
+(`:644`, called at `review_ledger.py:874`) decides: the reviewed head rebuilds the reviewed
+bundle, is an ancestor of HEAD, the integration base is the pinned `base_sha` or the train
+entry's ref (`integration_ref` `:269`; never `_default_ref`), one merge base, a clean checkout
+(`_clean_head_tree` `:295`, `checkout_problem` `:306`), then the per-path interdiff of
+receipt base -> reviewed head against base -> `HEAD^{tree}`: byte identity outside the allowlist
+(`_match` `:343`, `fnmatchcase`); code maps, rules and diagrams compared with only their anchor
+sha normalised (`_anchor_normalised` `:382`; a failure there is `ANCHORED_BEYOND` `:62`);
+manifests compared as raw bytes outside the bumped plugin's version tokens
+(`_manifest_version_only` `:570`, `_json_spans` `:448`). `review_run.preflight` short-circuits a
+delta-kept CLEAN only when `review_gate.accepted_state` is VERIFIED or NO_GATE
+(`plugin/crew/hooks/scripts/review_run.py:680`); `crew_autopilot` stops for a human on
+`ANCHORED_BEYOND` before the budget refusal (`plugin/crew/hooks/scripts/crew_autopilot.py:529`)
+and routes a stale artifact after review to its refresh, then stops (`:571`). JUDGEMENT: the gate
+binds its integration ref to the merge-train entry, so in a clone whose train is not armed it
+reads stale on every catch-up (fail-closed).
+
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:491`) asks `review_ledger.receipt_stands`
 (`plugin/crew/hooks/scripts/review_ledger.py:709`) whether a FINDINGS receipt stands, the same

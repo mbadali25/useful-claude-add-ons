@@ -351,8 +351,11 @@ Notable rules, re-read directly:
   `test_review_receipt.py` and `test_webtest_guard.py`, and since review round 3 (`33521aa4`)
   `scope_base.py`, `review_patch.py`, `review_verdict.py`, `crew_incident.py`,
   `crew_migrate.py`, `crew_metrics.py` and `crew_ticket.py` (the modules the stamp, the gate,
-  `proposals` and the metric read) → `python3 -m pytest` over the five test files plus
-  `test_review_run_launch.py`, `test_review_ledger.py` and `test_lifecycle_commands.py`,
+  `proposals` and the metric read), and since L-0522 `review_delta.py`, `review_ledger.py` and
+  `test_review_delta.py` (the delta gate; its 33 controls are L-0522's entries at the end of
+  `REVIEW_FIX_MUTATIONS` in `plugin/crew/tests/sabotage_review.py`) → `python3 -m pytest` over the five test files plus
+  `test_review_run_launch.py`, `test_review_ledger.py`, `test_lifecycle_commands.py` and (L-0522)
+  `test_review_delta.py`,
   priced 41s (its `why` records 382 passed, 2 skipped in 41.28s on this host, 2026-09-29, at the
   round-3 fix tree; 327 passed in 40.9s at round 1). Before it `review_run.py` and
   `review_prompt.py` matched only rules 0 and 15. Its mutations live in
