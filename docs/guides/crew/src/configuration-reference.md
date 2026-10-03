@@ -82,7 +82,7 @@ Columns:
 
 ### Top-level keys
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `schema` | repo | `7` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Config schema version; `/crew:upgrade` migrates an older one. |
 | `tier` | repo | `0` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Setup tier recorded by `/crew:init`. |
@@ -92,7 +92,7 @@ Columns:
 
 ### `qa`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `qa.provider` | both | `"auto"` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | 0.11.0 or earlier | Who reviews: `auto` walks `qa.order`; a named provider is used as-is. |
 | `qa.order` | both | `["codex", "kimi", "copilot", "claude"]` | list of: `claude` \| `codex` \| `copilot` \| `kimi` | 0.14.6 | The reviewers `auto` tries, in order. A list is one leaf, replaced wholesale. |
@@ -105,7 +105,7 @@ Columns:
 
 ### `dev`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `dev.provider` | both | `"claude"` | `claude` \| `codex` \| `copilot` \| `kimi` | 0.14.6 | Who implements. |
 | `dev.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects model id) | 0.16.6 | Claude model used when the dev provider is unavailable. |
@@ -117,13 +117,13 @@ Columns:
 
 ### `worktree`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `worktree.root` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects path or null) | 0.16.27 | Where crew creates linked worktrees; null uses the default. |
 
 ### `secondOpinion`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `secondOpinion.provider` | both | `"none"` | not validated - read by `plugin/crew/commands/plan.md` (expects string) | 0.11.0 or earlier | Second-opinion provider for plans; `none` is off. |
 | `secondOpinion.mode` | both | `"cli"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string) | 0.11.0 or earlier | How the second opinion is reached. |
@@ -133,14 +133,14 @@ Columns:
 
 ### `jira`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `jira.project` | repo | `null` | not validated - read by `plugin/crew/commands/jira-sync.md` (expects string or null) | 0.11.0 or earlier | Jira project key. No consumer found (CONFIG.md section 9). |
 | `jira.cloudId` | repo | `null` | not validated - read by `plugin/crew/commands/jira-sync.md` (expects string or null) | 0.19.10 | Jira cloud id, cached by `/crew:jira-sync`; read by nothing. |
 
 ### `sdp`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `sdp.portal` | repo | `null` | not validated - read by `plugin/crew/commands/sdp-sync.md` (expects string or null) | 0.11.0 or earlier | ServiceDesk Plus portal. |
 | `sdp.noteVisibility` | repo | `"private"` | not validated - read by `plugin/crew/commands/sdp-sync.md` (expects string) | 0.11.0 or earlier | Visibility of notes crew writes to SDP. |
@@ -148,7 +148,7 @@ Columns:
 
 ### `obsidian`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `obsidian.vaultPath` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Vault holding the board; falls back to `memory.vaultPath` and must hold `.obsidian/`. |
 | `obsidian.boardDir` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Board folder inside the vault (relative, no `..`). |
@@ -161,7 +161,7 @@ Columns:
 
 ### `memory`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `memory.mode` | both | `"repo"` | not validated - read by `plugin/crew/skills/crew-memory/SKILL.md` (expects string) | 0.11.0 or earlier | Where memory lives (`repo`, or a vault). |
 | `memory.vaultPath` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects path or null) | 0.11.0 or earlier | The Obsidian vault used for memory. |
@@ -171,7 +171,7 @@ Columns:
 
 ### `context`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `context.enabled` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects boolean) | 0.11.0 or earlier | Run the context watcher. |
 | `context.warnAt` | repo | `0.5` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects number) | 0.11.0 or earlier | Fraction of the budget at which the watcher warns. |
@@ -195,13 +195,13 @@ Columns:
 
 ### `resume`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `resume.auto` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_resume.py`) | 1.0.40 | Auto-resume after `/clear` or a manual `/compact`. Only the machine file can arm it (exactly `true`); a repo `false` vetoes it. |
 
 ### `emergency`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `emergency.standDown` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/_common.sh` (expects boolean) | 0.11.0 or earlier | Whether a declared incident may stand gates down; `false` forbids it. |
 | `emergency.ttlMinutes` | repo | `120` | integer (coerced in `plugin/crew/hooks/scripts/crew_incident.py`) | 0.11.0 or earlier | Default incident lifetime; a non-integer reads as the default. |
@@ -209,7 +209,7 @@ Columns:
 
 ### `notify`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `notify.provider` | both | `"none"` | not validated - read by `plugin/crew/hooks/scripts/notify.sh` (expects string) | 0.11.0 or earlier | Where notifications go; `none` is off. |
 | `notify.urlEnv` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/notify.sh` (expects string or null) | 0.11.0 or earlier | Environment variable holding the webhook URL. |
@@ -219,7 +219,7 @@ Columns:
 
 ### `platform`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `platform.os` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_platform.py` (expects string or null) | 0.11.0 or earlier | Detected OS, stamped by platform-sync. |
 | `platform.wsl` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_platform.py` (expects boolean or null) | 0.11.0 or earlier | Detected WSL, stamped by platform-sync. |
@@ -228,14 +228,14 @@ Columns:
 
 ### `shellRoute`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `shellRoute.mode` | both | `null` (repo), `"auto"` (machine) | `auto` \| `wsl` \| `powershell` \| `gitbash` | 1.0.54 | The shell long-running jobs use on native Windows; null inherits, and an unknown value reads as `auto` and is named. |
 | `shellRoute.distro` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_shell.py` (expects string or null) | 1.0.54 | WSL distro to route to; null takes the default distro. |
 
 ### `pm`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `pm.enabled` | both | `true` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects boolean) | 0.11.0 or earlier | Run the PM brief. |
 | `pm.mode` | both | `"adaptive"` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects string) | 0.11.0 or earlier | How the PM brief adapts its length. |
@@ -247,7 +247,7 @@ Columns:
 
 ### `graph`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `graph.enabled` | repo | `true` | not validated - read by `plugin/crew/skills/crew-graph/SKILL.md` (expects boolean) | 0.11.0 or earlier | No consumer found (CONFIG.md section 9). |
 | `graph.tool` | repo | `"graphify"` | not validated - read by `plugin/crew/skills/crew-graph/SKILL.md` (expects string) | 0.11.0 or earlier | No consumer found (CONFIG.md section 9). |
@@ -257,14 +257,14 @@ Columns:
 
 ### `docs`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `docs.theme` | both | `null` | not validated - read by `plugin/crew/skills/crew-house-style/SKILL.md` (expects string or null) | 0.16.33 | House-style theme for built documents; null uses the skill's own choice. |
 | `docs.reportTheme` | both | `null` | not validated - read by `plugin/crew/skills/crew-house-style/SKILL.md` (expects string or null) | 0.16.33 | Theme for findings reports. |
 
 ### `bitbucket`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `bitbucket.mergeGate.enabled` | both | `false` | not validated - read by `plugin/crew/commands/promote.md` (expects boolean) | 0.16.33 | Let `/crew:promote` drive the Bitbucket merge gate. |
 | `bitbucket.mergeGate.branch` | both | `null` | not validated - read by `plugin/crew/commands/promote.md` (expects string or null) | 0.16.33 | Branch the Bitbucket merge gate protects. |
@@ -272,20 +272,20 @@ Columns:
 
 ### `github`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `github.mergeGate.enabled` | both | `false` | not validated - read by `plugin/crew/commands/promote.md` (expects boolean) | 0.19.30 | Let `/crew:promote` drive the GitHub merge gate. |
 | `github.mergeGate.branch` | both | `null` | not validated - read by `plugin/crew/commands/promote.md` (expects string or null) | 0.19.30 | Branch the GitHub merge gate protects. |
 
 ### `install`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `install.policy` | both, ratchet | `"manual"` | `manual` \| `ask` \| `auto` (ratchet: narrower layer wins; listed narrowest first) | 0.19.18 | Whether crew may install a missing prerequisite. |
 
 ### `guards`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `guards.terraformApply` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | `terraform apply` and friends. |
 | `guards.forcePush` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | `git push --force`. |
@@ -300,14 +300,14 @@ Columns:
 
 ### `production`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `production.databases` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 0.19.30 | Globs naming production databases. |
 | `production.hosts` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 0.19.30 | Globs naming production hosts. |
 
 ### `cloud`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `cloud.awsProfiles` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/cloud_guard.py` (expects list of names) | 1.0.25 | AWS profiles this repo may use. |
 | `cloud.awsRegions` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/cloud_guard.py` (expects list of names) | 1.0.25 | AWS regions this repo may use. |
@@ -315,14 +315,14 @@ Columns:
 
 ### `environments`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `environments.nonProd` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 1.0.37 | Terraform targets that are not production and may run unattended. |
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | 1.0.37 | Whether production terraform may run unattended; `true` only when both layers say so. |
 
 ### `change`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `change.requester` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Who requests the change. |
 | `change.implementor` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Who implements the change. |
@@ -333,14 +333,14 @@ Columns:
 
 ### `scope`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `scope.mode` | repo | `"off"` | `off` \| `report` \| `block` \| `auto` | 1.0.25 | Whether the scope guard enforces a ticket's Touch list; a value outside these fails closed to `block`. |
 | `scope.allowCliApproval` | repo | `false` | `false` \| `true` (checked in `plugin/crew/hooks/scripts/crew_ticket.py`) | 1.0.25 | Whether a CLI-written approval receipt counts; only exactly `true` allows it. |
 
 ### `autopilot`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `autopilot.mode` | repo | `"off"` | `off` \| `plan` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.41 | Only the exact string `plan` arms `/crew:autopilot`; anything else reads as off, with a warning. |
 | `autopilot.maxPhases` | repo | `12` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.41 | Phases one run may take; anything but a positive integer reads as 12, with a warning. |
@@ -350,7 +350,7 @@ Columns:
 
 ### `route`
 
-| Key | Layer | Default | Values | Since | Summary |
+| Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `route.enabled` | both | `false` | `false` \| `true` (checked in `plugin/crew/hooks/scripts/crew_route.py`) | 1.0.42 | Route plain-text prompts to `/crew:` commands; only the JSON value `true` arms it. |
 
@@ -360,14 +360,14 @@ Keys from approved tickets that have not landed. Each moves into the table above
 
 ### T-0009
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `guards.deployWorkflow` | new key | both, ratchet | block |  | Whether crew may dispatch a deploy workflow. |
 | `environments.workflows` | new key | repo | {} |  | Deploy workflows per environment. |
 
 ### T-0011
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `autopilot.ship` | new key | repo | merge | `pr` \| `merge` | After `/crew:done`, open a PR (`pr`) or also merge it once required checks are green (`merge`). |
 | `autopilot.knownFailures` | new key | repo | [] |  | Required checks that may fail without blocking a merge, matched by exact name. |
@@ -375,7 +375,7 @@ Keys from approved tickets that have not landed. Each moves into the table above
 
 ### T-0012
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `autopilot.maxTicketsPerRun` | new key | repo | 3 |  | Tickets one goal run may work before it stops. |
 | `autopilot.maxTokensPerSession` | new key | repo | 2000000 |  | Token cap for one goal session. |
@@ -383,34 +383,34 @@ Keys from approved tickets that have not landed. Each moves into the table above
 
 ### T-0013
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `resume.typeDelaySeconds` | new key | machine | measured by T-0013 |  | Delay before typing the resume command where no ready-probe exists. |
 | `resume.readyTimeoutSeconds` | new key | machine | 15 |  | How long the ready-probe waits before giving up. |
 
 ### T-0017
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `context.autoClear.wrapUp` | new key | machine-arms | null |  | Machine opt-in for the automatic wrap-up; only exactly `true` arms it. |
 
 ### T-0029
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `autopilot.maxLanes` | new key | repo | the resolved pm.maxDispatches |  | Parallel lanes one autopilot wave may run; may only lower the limit. |
 | `autopilot.reviewPolicy` | new key | repo | stop | `stop` \| `clean-only` \| `fix-and-rereview` | What a lane does with review findings. |
 
 ### T-0030
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `coord.ttlMinutes` | new key | set when T-0030 lands | 30 |  | Lifetime of a cross-session coordination claim (1-10080). |
 | `coord.channel` | new key | set when T-0030 lands | set when T-0030 lands |  | Where sessions coordinate. |
 
 ### T-0050
 
-| Key | Change | Layer | Default | Values | Summary |
+| Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
 | `autopilot.mode` | changes layer | both, stricter wins | off |  | The personal autopilot keys become settable in the global file; the stricter layer wins. |
 | `scope.allowCliApproval` | changes layer | both, stricter wins | false |  | Becomes settable in the global file; the stricter layer wins. |

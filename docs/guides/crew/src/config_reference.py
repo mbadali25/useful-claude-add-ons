@@ -253,7 +253,7 @@ def render_reference(model=None):
         groups.setdefault(head, []).append(key)
     for head, members in groups.items():
         out += [f"### `{head}`" if head != "(top level)" else "### Top-level keys", "",
-                "| Key | Layer | Default | Values | Since | Summary |",
+                "| Setting | Layer | Default | Values | Since | Summary |",
                 "|---|---|---|---|---|---|"]
         for key in members:
             row = keys.KEY_META[key]
@@ -271,7 +271,7 @@ def render_reference(model=None):
         tickets.setdefault(row["ticket"], []).append(row)
     for ticket in sorted(tickets):
         out += [f"### {ticket}", "",
-                "| Key | Change | Layer | Default | Values | Summary |",
+                "| Setting | Change | Layer | Default | Values | Summary |",
                 "|---|---|---|---|---|---|"]
         for row in tickets[ticket]:
             vals = " | ".join(_code(v) for v in row["values"]) if row["values"] else ""
