@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.220: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
+### Added — `crew` 1.0.223: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
 
 - `hooks/scripts/verify_reach.py`: for each rule without `reach`, proposes `local` when the Stop
   gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) already runs it and `network`
