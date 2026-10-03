@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8fd5e8d3
+anchor: useful-claude-add-ons@3cec4f78
 verified: 2026-10-03
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -37,9 +37,9 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 49 rules
+## `.crew/verify.json` — 50 rules
 
-**DERIVED via `json.load` on T-0049's merge of origin/main `8123fe74` (crew 1.0.140 there, 1.0.146 here): 541 lines, 49 rules.** Main's 48 plus T-0049's in-flight rule at `.crew/verify.json:510-516` (`crew_inflight.py`, `crew_holder.py`, `crew_autopilot.py` and their suites, priced 14s; the in-flight sabotage mutations move to L-0613, the tooling PR after this one), placed after T-0040's `crew_shell.py` rule (`:501-509`) and before L-0555's `ci_receipt.py` rule (`:517-518`); L-0572's subset-cover rule is `:519-527` and L-0575's the last at `:527-538`; `default` is `:539` and `unmapped` `:540`. The paragraphs below read older trees.
+**DERIVED via `json.load` on T-0049's merge of origin/main `f808e5f0` (crew 1.0.154 there, 1.0.155 here): 549 lines, 50 rules.** Main's 49 plus T-0049's in-flight rule at `.crew/verify.json:510-516` (`crew_inflight.py`, `crew_holder.py`, `crew_autopilot.py` and their suites, priced 14s; the in-flight sabotage mutations move to L-0613, the tooling PR after this one), placed after T-0040's `crew_shell.py` rule (`:501-508`) and before L-0555's `ci_receipt.py` rule (`:517-518`); L-0572's subset-cover rule is `:519-526`, L-0575's `:527-536`, and #328's `pytest_rule.py` rule the last at `:537-546`; `default` is `:547` and `unmapped` `:548`. The paragraphs below read older trees.
 
 **DERIVED, read with `json.load` on L-0574 after merging main `e0c70fc9` (2026-10-02): 533 lines, 48 rules.** Main's `e0c70fc9` map is 506 lines and 48 rules (rule 46 L-0555's `ci_receipt.py`, 47 L-0572's subset cover, 48 L-0575's recurring findings, last); L-0574 adds no rule, only the top-level `preReview` block and its `_note_preReview`. The "45 rules" heading above this note was already behind main's map before L-0574 merged it.
 
@@ -444,7 +444,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1526-1535` and `plugin/crew/CONFIG.md:2436-2443` both state
+  `verify-gate.sh:1588-1597` and `plugin/crew/CONFIG.md:2452-2459` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -496,12 +496,12 @@ that changed shape or are newly documented here:
   superset's command positions); `plugin/crew/hooks/scripts/verify_record.py:571`
   `tree_snapshot` hashes HEAD, the index, every tracked/untracked path and its mode or symlink target, and refuses FIFOs and skip-worktree/assume-unchanged entries.
   The `.sh` calls the planner only when `budget is None`
-  (`plugin/crew/hooks/scripts/verify-gate.sh:1241`) and credits a position in
-  `cover_credit` (`plugin/crew/hooks/scripts/verify-gate.sh:1557`) only when
+  (`plugin/crew/hooks/scripts/verify-gate.sh:1296`) and credits a position in
+  `cover_credit` (`plugin/crew/hooks/scripts/verify-gate.sh:1624`) only when
   every guard position is `pass` and the snapshot taken before the first
   command equals the one at the first credit; the `.ps1` reaches the same
   planner through `verify_record.py cover-plan`
-  (`plugin/crew/hooks/scripts/verify-gate.ps1:1349`). A credited command is
+  (`plugin/crew/hooks/scripts/verify-gate.ps1:1413`). A credited command is
   logged `COVERED by rules[N]` and synced as status `covered`, which `_sync`
   treats as clean but never caches as a timing. JUDGEMENT: this repo declares
   `rules[9]` as `crew-suite`; with xdist installed its non-wallclock tests run
@@ -661,7 +661,7 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   exit-77 port.
 - `plugin/crew/hooks/scripts/verify-gate.sh:63-66` — the bounded single-read
   stdin gate.
-- `plugin/crew/hooks/scripts/verify-gate.sh:1689-1794` /
+- `plugin/crew/hooks/scripts/verify-gate.sh:1766-1871` /
   `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
 - `.crew/verify.json:311` (rule 24) — the `.claude/rules/` sync check.
@@ -695,13 +695,13 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
   no harness path for it.
-- `.crew/verify.json:527-538` (the last rule since L-0575, after L-0572's subset-cover rule at `:519-527` and T-0049's in-flight rule at `:510-516`) — the recurring-findings checklist suite
+- `.crew/verify.json:527-536` (L-0575's rule, before #328's `pytest_rule.py` rule at `:537-546` and after L-0572's subset-cover rule at `:519-526` and T-0049's in-flight rule at `:510-516`) — the recurring-findings checklist suite
   (`test_recurring_findings.py`) for `recurring_findings.py` and its data, priced 3s.
 - `.crew/verify.json:501-508` (rule 41) — T-0040's shell-route suites
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
-- `plugin/crew/hooks/scripts/verify-gate.sh:1526-1535` /
-  `plugin/crew/CONFIG.md:2436-2443` — the descoped per-rule process-group kill,
+- `plugin/crew/hooks/scripts/verify-gate.sh:1588-1597` /
+  `plugin/crew/CONFIG.md:2452-2459` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -2348,3 +2348,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `0c683860` -> `ef7dad84` on 2026-10-03 (T-0049 split and merge of origin/main `8123fe74`, crew 1.0.140 there; T-0049 stays 1.0.146).** `1446c5f4` moved the in-flight sabotage mutations to L-0613, the tooling PR that follows (sabotage.py back to the merge base, sabotage_inflight.py removed; check-tooling-pr.py had refused the mixed diff); `ef7dad84` merged main: L-0574 (#323: review_checks.py, review_run.py's pre-review gate, review.md, verify.json's preReview block and rules). Provenance keeps both histories (main's first). Body citations were mapped from the side their line came from onto the merge with a line diff (`/root/crew-tmp/t-0049/remap_merge.py`; provenance sections left as written); the verify.json, CONFIG.md and README.md citations in the conflicted lines were re-read with `sed -n` on the merge. Main changed nothing but version and refresh files between its own anchor `d95d8b25` and `8123fe74`.
 
 **Re-anchored `ef7dad84` -> `8fd5e8d3` on 2026-10-03 (T-0049 review round 1 fixes at `0d038d6f`, the BLE001 directives at `7c3461a2`, crew 1.0.146 re-set last).** Changed since `ef7dad84`: crew_inflight.py (+17 lines), crew_holder.py (+13), crew_autopilot.py (one comment on one line), autopilot.md (begin before activate, same line count), README.md (three in-line edits), CHANGELOG.md, three test files and the version files. Every citation into crew_inflight.py, crew_holder.py and autopilot.md is in crew.md's in-flight section and was re-measured with `grep -n` there; README.md and crew_autopilot.py lines did not move.
+
+**Re-anchored `8fd5e8d3` -> `3cec4f78` on 2026-10-03 (T-0049 review round 2 fixes at `9e5f8486` and the merge of origin/main `f808e5f0` (#328 faster suite and xdist verify rules, #329 measured pricing and tree-pass cache, #330 CI receipt for check-land; crew 1.0.154) at `6619e390`; T-0049 set to crew 1.0.155 last).** Provenance keeps both histories (main's first). Body citations were mapped from the side their line came from onto the merge with a line diff (`/root/crew-tmp/t-0049/remap_merge.py`, provenance left as written); verify.json rule ranges whose `why` main re-timed were re-measured by rule extent; crew.md's conflicted crew_autopilot.py citations were mapped from `8fd5e8d3` and the stale ones re-read (`resume_target` `:709`, `_toward_review` `:556`, the no-progress stop `:638`, `_review_phase` `:497`); the in-flight section, the verify.json heading (50 rules, 549 lines) and the process-group kill citations were re-measured with `grep -n` on the merge.

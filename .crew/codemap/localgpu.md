@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8fd5e8d3
+anchor: useful-claude-add-ons@3cec4f78
 verified: 2026-10-03
 
 # localgpu
@@ -510,7 +510,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:130-131` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
   *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `c43a54c1`, where both
   tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
@@ -758,7 +758,7 @@ never matches and has to be counted on its own):
   `plugin/localgpu/mcp/store.py:620-674` (and its internal `:637`, `:639-648`,
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
-  `plugin/crew/hooks/scripts/crew_config.py:127-128`,
+  `plugin/crew/hooks/scripts/crew_config.py:128-129`,
   `plugin/crew/hooks/scripts/crew_state.py:1540-1541`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
@@ -812,7 +812,7 @@ For the record, what was wrong and how it was found:
    tuples were cited at `plugin/localgpu/commands/crew.md:29-30` (that is the
    prose sentence introducing them); the literal tuples are at `:33-34`.
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
-   re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
+   re-export (`plugin/crew/hooks/scripts/crew_config.py:128-129`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
    `plugin/crew/hooks/scripts/crew_state.py:1540-1541`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
@@ -1870,3 +1870,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `0c683860` -> `ef7dad84` on 2026-10-03 (T-0049 split and merge of origin/main `8123fe74`, crew 1.0.140 there; T-0049 stays 1.0.146).** `1446c5f4` moved the in-flight sabotage mutations to L-0613, the tooling PR that follows (sabotage.py back to the merge base, sabotage_inflight.py removed; check-tooling-pr.py had refused the mixed diff); `ef7dad84` merged main: L-0574 (#323: review_checks.py, review_run.py's pre-review gate, review.md, verify.json's preReview block and rules). Provenance keeps both histories (main's first). Body citations were mapped from the side their line came from onto the merge with a line diff (`/root/crew-tmp/t-0049/remap_merge.py`; provenance sections left as written); the verify.json, CONFIG.md and README.md citations in the conflicted lines were re-read with `sed -n` on the merge. Main changed nothing but version and refresh files between its own anchor `d95d8b25` and `8123fe74`.
 
 **Re-anchored `ef7dad84` -> `8fd5e8d3` on 2026-10-03 (T-0049 review round 1 fixes at `0d038d6f`, the BLE001 directives at `7c3461a2`, crew 1.0.146 re-set last).** Changed since `ef7dad84`: crew_inflight.py (+17 lines), crew_holder.py (+13), crew_autopilot.py (one comment on one line), autopilot.md (begin before activate, same line count), README.md (three in-line edits), CHANGELOG.md, three test files and the version files. Every citation into crew_inflight.py, crew_holder.py and autopilot.md is in crew.md's in-flight section and was re-measured with `grep -n` there; README.md and crew_autopilot.py lines did not move.
+
+**Re-anchored `8fd5e8d3` -> `3cec4f78` on 2026-10-03 (T-0049 review round 2 fixes at `9e5f8486` and the merge of origin/main `f808e5f0` (#328 faster suite and xdist verify rules, #329 measured pricing and tree-pass cache, #330 CI receipt for check-land; crew 1.0.154) at `6619e390`; T-0049 set to crew 1.0.155 last).** Provenance keeps both histories (main's first). Body citations were mapped from the side their line came from onto the merge with a line diff (`/root/crew-tmp/t-0049/remap_merge.py`, provenance left as written); verify.json rule ranges whose `why` main re-timed were re-measured by rule extent; crew.md's conflicted crew_autopilot.py citations were mapped from `8fd5e8d3` and the stale ones re-read (`resume_target` `:709`, `_toward_review` `:556`, the no-progress stop `:638`, `_review_phase` `:497`); the in-flight section, the verify.json heading (50 rules, 549 lines) and the process-group kill citations were re-measured with `grep -n` on the merge.
