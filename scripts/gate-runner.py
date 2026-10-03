@@ -165,6 +165,7 @@ TABLE = (
     _bash_suite("check-powershell-suite", "scripts/_test/check-powershell.sh", "marketplace.yml"),
     _bash_suite("ps-install-keys", "scripts/_test/ps-install-keys.sh", "marketplace.yml"),
     _bash_suite("uv-install", "scripts/_test/uv-install.sh", "marketplace.yml"),
+    _bash_suite("smoke", "_verify/smoke.sh", "marketplace.yml"),
     _bash_suite("mcp-preflight-catalog", "scripts/_test/mcp-preflight-catalog.sh", "marketplace.yml"),
     Step("validate-prompts", "cheap", (PY, "hooks/scripts/_test/validate-prompts.py"),
          cwd="plugin/crew",

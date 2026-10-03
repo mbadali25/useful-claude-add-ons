@@ -23,6 +23,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   split into overviews plus parts, and wordy boxes are shortened with their detail moved to notes.
   All 33 pass. Every original box, line and comment is accounted for (checked by script per file).
 
+### Changed — repository: `_verify/smoke.sh` runs in CI, and a missing `pwsh` is a SKIP
+
+- `marketplace.yml` runs `_verify/smoke.sh` after the Claude Code CLI install. Two of its checks
+  ran nowhere in CI: the crew-setup `canon()` round-trip, and version agreement across
+  `pyproject.toml`, `plugin.json`, `marketplace.json` and the Python-source copies. Found by
+  crew's QA audit (L-0618, item E7). `scripts/gate-runner.py`'s table lists it, so
+  `--check-ci` holds the two in step.
+- `smoke.sh`'s PowerShell check reports SKIP (NOT VERIFIED) when `pwsh` is absent instead of
+  FAIL, as its `claude plugin validate` check already does: a missing tool is not a broken check.
+  CI is unaffected: the runner carries `pwsh`, and the "PowerShell static checks" step fails if
+  it ever does not.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local
