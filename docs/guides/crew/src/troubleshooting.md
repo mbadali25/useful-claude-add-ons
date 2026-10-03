@@ -166,7 +166,8 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   committed on a clean checkout, the receipt is kept (`receipt kept by delta gate: ...`) when the
   ticket's own delta is byte-identical to the reviewed one. Its stale line names what differed
   (`delta gate: <path> ...`, `excluded path changed`, `not clean`, `no train entry binds the
-  integration ref`); a code map, rules file or diagram may move only its anchor sha after review.
+  integration ref` - the merge train is not armed in this clone, so the gate keeps nothing yet); a
+  code map, rules file or diagram may move only its anchor sha after review.
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.
 
