@@ -32,7 +32,7 @@ it merges if its number has been passed.
 
 | PR | Ticket | State | Blocked by | Crew version |
 |---|---|---|---|---|
-| #350 | T-0061 | built; merging main and verifying | | 1.0.184 |
+| #350 | T-0061 | built; merging main and verifying (harness half is #378, 1.0.181) | | 1.0.184 |
 | #351 | T-0066 | built; merging main and verifying | | 1.0.185 |
 | #355 | T-0013 | built; merging main and verifying | | 1.0.186 |
 | #360 | T-0048 | built; merging main and verifying | | 1.0.183 |
@@ -40,6 +40,7 @@ it merges if its number has been passed.
 | #371 | T-0100 | built; harness files, may need a tooling-PR split | | 1.0.166 |
 | #337 | L-0618 | in review | | 1.0.187 |
 | #375 | row 4 | in review | | 1.0.188 |
+| #372 | L-0562 | in review; re-bumped after main's #327 | | 1.0.199 |
 | #352 | T-0069 | ready to build | | 1.0.189 |
 | #357 | T-0020 | ready to build | | 1.0.190 |
 | #358 | T-0022 | ready to build | | 1.0.191 |
