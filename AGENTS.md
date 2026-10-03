@@ -34,14 +34,21 @@ what most local runs and most changes need. To run the full matrix too, use
 `plugin/crew/tests/conftest.py`'s own header comment for the three forms.
 
 The two CI jobs in `.github/workflows/pytest-crew.yml` split the same way:
-the `test` job runs the DEFAULT command above (no `-m`, no `--run-slow`),
+the `test` checks cover the DEFAULT command above (no `-m`, no `--run-slow`),
 on `ubuntu-latest` across three Python versions on main pushes, manual dispatch and
 the nightly schedule (on a pull request only the 3.12 leg does work; 3.11 and 3.13
 report a skipped pass so the required check names stay satisfied; the nightly runs
 at 07:17 UTC; a newer push to a pull request cancels its older run, and a main run
 is never cancelled), alongside
-gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
-on `ubuntu-latest` — the full hook matrix the `test` job deselects. On Windows the
+gizmoduck's and several skills' suites. Since L-0590 the work runs in one `test-set`
+matrix, python version x set: `test-default (3.x)` (the default command with
+`-n 16 --dist worksteal`, then cisco-meraki and wazuh-onprem) and `test-wallclock (3.x)` (`-m
+wallclock`, serially), side by side on a pull request and one leg at a time on every other
+event, so a main push no longer puts three Python legs on the one self-hosted host at once.
+The required `test (3.x)` checks are a fan-in over that matrix: they pass only when every
+leg succeeded and, for a version that does work, both of its legs left their marker. The
+`crew-shell-matrix` job runs `-m slow` (`-n 8`)
+on `ubuntu-latest` — the full hook matrix `test-default` deselects. On Windows the
 same suite runs as parallel `crew-windows-*` jobs (L-0577): the plain default
 command split in three by pytest-split (`test` already covers that set, but only on
 ubuntu, so the PowerShell parity-sample cases run natively nowhere else), `-m slow`,
@@ -54,7 +61,7 @@ a skipped pass. Neither job substitutes for the other: a change to `conftest.py`
 slow-marker logic, or to a hook only the matrix exercises, can pass one and still be wrong.
 
 Both jobs' `ubuntu-latest` placement is the default, not a fixed fact: when the
-repo variable `CREW_RUNNER` is `self-hosted`, the `test` job and the
+repo variable `CREW_RUNNER` is `self-hosted`, the `test-set` and `test` jobs and the
 `crew-shell-matrix` ubuntu leg run on the owner's self-hosted pool
 (`[self-hosted, linux, x64, crew]`) instead; the `windows-latest` jobs and every
 other job and workflow stay GitHub-hosted. Fork pull requests never reach the
