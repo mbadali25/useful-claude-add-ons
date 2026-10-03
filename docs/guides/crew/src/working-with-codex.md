@@ -81,6 +81,13 @@ approval receipt is told the gate does not apply, and during a declared incident
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 5) before it.
 
+Between the verify gate and the self-check, `review_run.py` lints the bundle's changed files with
+the linters `.crew/verify.json` lists under `preReview` (L-0574). Each file is linted at its base
+and at the bundle, and a finding the bundle adds refuses the round (exit 5, nothing spent) before
+Codex is launched. `--allow-unverified` does not override a new finding. A linter that could not run,
+or could not parse a changed file, reads `COULD NOT CHECK`, never a pass. It refuses too, unless
+`--allow-unverified` is given, and `review.json` records that override as `prereview.overridden`.
+
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits
