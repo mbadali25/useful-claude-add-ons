@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:03: Re-review #378 + #350: both PASS, all 4 earlier FIX resolved. Pair note: #350 must be merged forward after #378 lands (planned re-merge step). Uncommitted qa_audit_env.py in the primary checkout is the #337 fix agent's work in progress, not abandoned.
 - 23:03: Helper in place: each action from now appends one line here and pushes.
 - 23:03: Started this file (owner request). Earlier entries are in order, without exact times.
 - Fix agent started for #355 (1 FIX).
