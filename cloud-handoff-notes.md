@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:15 UTC
+Last updated: 2026-10-03 23:16 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:16: #337 round-2 fixes pushed (a9c56d43, crew 1.0.215): acceptance allow-list (parse_acceptance yes/no/unknown; bare name no longer accepted), qualified reach UNKNOWN, unparseable map UNKNOWN, parse_live trailing text UNKNOWN. Round-3 Sonnet re-review started.
 - 23:15: #351 round-3 re-review on c610fe28: PASS, 0 BLOCK, 0 FIX (1 NIT) -> CLEAN. #375 red crew-shell-matrix on f6208e20/be507112: Windows jobs 'cancelled' by newer pushes (log: DEFAULT/SLOW/WALLCLOCK_RESULT cancelled), not failures; head is 16e92602. #337 round-2 fixer has 3 local commits (to 1.0.215), gating before push.
 - 23:15: Fixes pushed: #372 a2651e47 (1.0.208, rekey cache, null reach, cwd classify, --map removed); #375 be507112 + 16e92602 (1.0.210, parser/UNKNOWN fixes; 7 stale diagrams re-rendered, all 33 PASS); #351 c610fe28 (1.0.217, --first-parent limit documented); #359 built + pushed 66d25049 (1.0.216). Sonnet re-reviews started: #372, #375, #351 (round 3); first review: #359. Next free version: 1.0.218.
 - 23:12: #359 T-0025 built (11/11 sabotage red, suite 8924 passed pre-fix) but not pushed: version commit was not last. Decision: version-only final commit 1.0.216 (no reset), remove docs/tickets/T-0025, then push. Harness follow-ups: scope_guard deny text, review.md no-ticket stop, sabotage_help.py. After merge: re-pin README install URLs (both install scripts' label changed 36->37 commands). Next free: 1.0.217.
