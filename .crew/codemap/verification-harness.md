@@ -157,10 +157,10 @@ Notable rules, re-read directly:
   holds it, imported at `plugin/crew/tests/sabotage.py:87`. Its `PLATFORM_MUTATIONS` are appended
   last in the `MUTATIONS +=` statement (`plugin/crew/tests/sabotage.py:3069`), and `run_test`
   (`plugin/crew/tests/sabotage.py:3080`) delegates to `run_target`
-  (`plugin/crew/tests/sabotage_platform.py:241`). That function runs each entry's pytest with
+  (`plugin/crew/tests/sabotage_platform.py:253`). That function runs each entry's pytest with
   `--junitxml`, a collection plugin, no `-x`, and ambient `PYTEST_ADDOPTS` dropped. It runs in the
   entry's own session (a job object on Windows) under a 900 s timeout, and the tree is always killed
-  after. `verdict` (`plugin/crew/tests/sabotage_platform.py:298`) gives `RED (good)` only on exit 1
+  after. `verdict` (`plugin/crew/tests/sabotage_platform.py:310`) gives `RED (good)` only on exit 1
   with every collected case reported, at least one failed, and none skipped or errored. An
   all-skipped run is COULD-NOT-TELL. `PLATFORM_ONLY` (`plugin/crew/tests/sabotage_platform.py:53`)
   entries are not applied off their platforms and are counted in the summary. The signal handler

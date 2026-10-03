@@ -5145,7 +5145,7 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
 Found by L-0608's full Linux run (the first to reach its summary since the azureProfile OOM), and by
 L-0605's gate at main: `the marker's shape check is dropped` and `a round of true passes for round 1`
 (both RED in L-0520's runs, STILL GREEN since), and `install-scripts' paths are left to citation
-counts` (`plugin/crew/tests/sabotage_prereview.py`). Their targets ran and passed under the mutation:
+counts` (`plugin/crew/tests/sabotage_prereview.py`; RED again after main's f808e5f0), and since #329 `auto-accept defaults a missing ignored_lines to 0` (`tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-missing]`). Their targets ran and passed under the mutation:
 real vacuity, not a platform skip. Each needs its target test re-checked against the code it guards.
 Also still open: `docs.theme default goes back to the string neutral` exits 4 (its target does not
 collect).
