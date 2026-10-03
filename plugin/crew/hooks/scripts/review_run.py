@@ -387,16 +387,27 @@ def _launch(job, cmd, root, timeout):
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        notes, tree_ended = [], False
         if job is not None:
             # By handle: safe whether or not the leader has already exited.
-            job.terminate()
+            try:
+                job.terminate()
+                tree_ended = True
+            except OSError as exc:
+                notes.append(f"job termination failed ({exc})")
         escaped = False
         if proc.poll() is None:
-            killer = review_checks.taskkill() if os.name == "nt" else None
-            if os.name == "nt" and killer:
-                # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
-                subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
-                               capture_output=True, timeout=30, check=False)
+            if review_checks._WINDOWS:  # pylint: disable=protected-access
+                # Never os.killpg here: Windows has none (L-0605, review round
+                # 10 FIX :400). Only a job's terminate() establishes that the
+                # tree ended; taskkill /T walks parent pids, so even its exit 0
+                # cannot reach a child whose parent already exited.
+                if not tree_ended:
+                    _windows_taskkill(proc, notes)
+                try:
+                    proc.kill()  # TerminateProcess by the handle Popen holds
+                except OSError:
+                    pass  # already exited
             else:
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
@@ -408,6 +419,8 @@ def _launch(job, cmd, root, timeout):
             # is safe here. Without a job, whatever kept the pipe open is on
             # its own; with one, job.terminate() above already ended it.
             escaped = job is None
+        if review_checks._WINDOWS:  # pylint: disable=protected-access
+            escaped = escaped or not tree_ended
         try:
             stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)
         except subprocess.TimeoutExpired as exc:
@@ -415,12 +428,32 @@ def _launch(job, cmd, root, timeout):
             stdout = _decode_partial(exc.output)
             stderr = _decode_partial(exc.stderr)
         if escaped:
+            why = (f" ({'; '.join(notes)}: only the reviewer process itself is known to have "
+                   "ended)") if notes else ""
             stderr = (stderr or "") + (
                 "\nreview-run: a descendant process may have escaped the "
                 f"{timeout}s timeout and is still holding the output pipe "
-                "open; proceeding with whatever output had already arrived\n")
+                f"open{why}; proceeding with whatever output had already arrived\n")
         return stdout, stderr, None, True
     return stdout, stderr, proc.returncode, False
+
+
+def _windows_taskkill(proc, notes):
+    """`taskkill /T /F` the leader's tree, adding to `notes` why the tree is
+    still not known to have ended. Never raises (L-0605)."""
+    killer = review_checks.taskkill()
+    if not killer:
+        notes.append("no taskkill.exe")
+        return
+    # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
+    try:
+        done = subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
+                              capture_output=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        notes.append(f"taskkill failed ({exc})")
+        return
+    notes.append("no job object: taskkill /T cannot reach a child whose parent already exited"
+                 if done.returncode == 0 else f"taskkill exited {done.returncode}")
 
 
 def bundle_problems(manifest):

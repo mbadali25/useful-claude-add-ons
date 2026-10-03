@@ -2142,3 +2142,28 @@ def test_a_reaped_linter_s_group_is_never_signalled(tmp_path, fake, monkeypatch)
     rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
 
     assert seen == [], seen
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a real job object exists only on Windows")
+def test_windows_job_terminate_failure_raises():
+    """L-0605: TerminateJobObject's failure is no longer discarded, so a
+    caller never reads an unended tree as ended."""
+    job = rc.WindowsJob(kill_on_close=True)
+
+    class _Refusing:
+        def __init__(self, real):
+            self._real = real
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+        @staticmethod
+        def TerminateJobObject(handle, code):  # pylint: disable=invalid-name
+            return 0
+
+    job._k32 = _Refusing(job._k32)  # pylint: disable=protected-access
+    try:
+        with pytest.raises(OSError, match="TerminateJobObject failed"):
+            job.terminate()
+    finally:
+        job.close()

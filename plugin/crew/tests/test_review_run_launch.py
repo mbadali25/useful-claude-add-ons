@@ -40,9 +40,10 @@ import subprocess
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import review_checks
 import review_run
 
-pytestmark = pytest.mark.skipif(
+_POSIX_ONLY = pytest.mark.skipif(
     os.name == "nt", reason="review_run.launch's POSIX killpg branch only")
 
 
@@ -58,6 +59,7 @@ class _FakeProc:
         self.poll_result = poll_result
         self.second_raises = second_raises
         self.communicate_calls = 0
+        self.kills = 0
 
     def communicate(self, timeout=None):
         self.communicate_calls += 1
@@ -86,11 +88,15 @@ class _FakeProc:
     def poll(self):
         return self.poll_result
 
+    def kill(self):
+        self.kills += 1
+
 
 def _patch_popen(monkeypatch, fake):
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: fake)
 
 
+@_POSIX_ONLY
 def test_killpg_runs_when_the_leader_is_still_alive(monkeypatch):
     fake = _FakeProc(poll_result=None, second_raises=False)
     _patch_popen(monkeypatch, fake)
@@ -104,6 +110,7 @@ def test_killpg_runs_when_the_leader_is_still_alive(monkeypatch):
     assert (stdout, stderr) == ("partial stdout", "partial stderr")
 
 
+@_POSIX_ONLY
 def test_killpg_is_skipped_once_the_leader_has_already_exited(monkeypatch):
     """Must-refuse: once `poll()` shows the leader gone, its pid is free
     for reuse and must not be signalled by bare number."""
@@ -120,6 +127,7 @@ def test_killpg_is_skipped_once_the_leader_has_already_exited(monkeypatch):
     assert "escaped" in stderr
 
 
+@_POSIX_ONLY
 def test_post_kill_communicate_is_bounded_and_keeps_the_partial_output(monkeypatch):
     """A descendant that escaped the kill keeps holding the pipe open, so
     the bounded follow-up `communicate()` also times out -- `launch` must
@@ -140,3 +148,102 @@ def test_post_kill_communicate_is_bounded_and_keeps_the_partial_output(monkeypat
     assert stdout == "partial stdout bytes"
     assert "partial stderr bytes" in stderr
     assert "escaped" in stderr
+
+
+class _FakeJob:
+    """A job object that records what was asked of it; `fail` makes
+    `terminate()` raise as a real TerminateJobObject failure does."""
+
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    def adopt(self, proc):
+        self.calls.append("adopt")
+
+    def terminate(self):
+        self.calls.append("terminate")
+        if self.fail:
+            raise OSError(5, "TerminateJobObject failed")
+
+    def close(self):
+        self.calls.append("close")
+
+
+def _windows(monkeypatch, job, killer):
+    """Drive launch's Windows branch on any host, with no os.killpg at all."""
+    monkeypatch.setattr(review_checks, "_WINDOWS", True)
+    monkeypatch.setattr(review_checks, "taskkill", lambda: killer)
+    if job is None:
+        def no_job(kill_on_close):
+            raise OSError(1, "no job here")
+        monkeypatch.setattr(review_checks, "new_job", no_job)
+    else:
+        monkeypatch.setattr(review_checks, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(review_run, "_launch_flags", lambda j: {})
+    monkeypatch.delattr(review_run.os, "killpg", raising=False)
+    fake = _FakeProc(poll_result=None, second_raises=False)
+    _patch_popen(monkeypatch, fake)
+    return fake
+
+
+@pytest.mark.parametrize("with_job", [False, True])
+def test_windows_timeout_without_taskkill_never_calls_killpg(monkeypatch, with_job):
+    """L-0605, review round 10 FIX review_run.py:400: with no taskkill the
+    old code fell to os.killpg, which Windows does not have."""
+    job = _FakeJob() if with_job else None
+    fake = _windows(monkeypatch, job, None)
+
+    _, stderr, code, timed_out = review_run.launch(["fake"], ".", 1)
+
+    assert ((code, timed_out), fake.kills, "escaped" in stderr, "no taskkill.exe" in stderr) == (
+        (None, True), 1, not with_job, not with_job), stderr
+
+
+def test_windows_timeout_with_taskkill_uses_it(monkeypatch):
+    """taskkill /T walks parent pids, so even its exit 0 never establishes
+    that a child whose parent already exited was ended: no job, escaped."""
+    fake = _windows(monkeypatch, None, r"C:\Windows\System32\taskkill.exe")
+    seen = []
+    monkeypatch.setattr(review_run.subprocess, "run", lambda argv, **k: seen.append(argv) or
+                        subprocess.CompletedProcess(argv, 0, b"", b""))
+
+    _, stderr, _, timed_out = review_run.launch(["fake"], ".", 1)
+
+    assert (seen, timed_out, "escaped" in stderr,
+            "taskkill /T cannot reach a child whose parent already exited" in stderr) == (
+        [[r"C:\Windows\System32\taskkill.exe", "/T", "/F", "/PID", str(fake.pid)]], True,
+        True, True), stderr
+
+
+@pytest.mark.parametrize("with_job", [False, True])
+@pytest.mark.parametrize("outcome, text", [
+    ("oserror", "taskkill failed"), ("timeout", "taskkill failed"), ("exit1", "taskkill exited 1")])
+def test_windows_timeout_when_taskkill_fails_kills_the_leader(monkeypatch, outcome, text, with_job):
+    """A taskkill that raises or exits nonzero is not a kill: the held
+    leader is ended by handle and the run says what may have escaped. With
+    a job, its terminate() fails so that taskkill is reached at all."""
+    job = _FakeJob(fail=True) if with_job else None
+    fake = _windows(monkeypatch, job, r"C:\Windows\System32\taskkill.exe")
+
+    def run(argv, **kwargs):
+        if outcome == "oserror":
+            raise OSError(2, "boom")
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired("taskkill", 30)
+        return subprocess.CompletedProcess(argv, 1, b"", b"")
+    monkeypatch.setattr(review_run.subprocess, "run", run)
+
+    _, stderr, _, timed_out = review_run.launch(["fake"], ".", 1)
+
+    assert (timed_out, fake.kills, text in stderr, "escaped" in stderr) == (
+        True, 1, True, True), stderr
+
+
+def test_windows_timeout_when_the_job_cannot_end_says_escaped(monkeypatch):
+    job = _FakeJob(fail=True)
+    fake = _windows(monkeypatch, job, None)
+
+    _, stderr, _, timed_out = review_run.launch(["fake"], ".", 1)
+
+    assert (timed_out, fake.kills, "escaped" in stderr, "job termination failed" in stderr) == (
+        True, 1, True, True), stderr

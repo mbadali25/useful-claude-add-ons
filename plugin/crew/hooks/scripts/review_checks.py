@@ -643,7 +643,10 @@ class WindowsJob:
             raise OSError(errno.EIO, "NtResumeProcess failed")
 
     def terminate(self):
-        self._k32.TerminateJobObject(self._handle, 1)
+        """End every process in the job; OSError when Windows says it did not
+        (L-0605: a discarded failure read as "the tree ended")."""
+        if not self._k32.TerminateJobObject(self._handle, 1):
+            raise OSError(self._ctypes.get_last_error(), "TerminateJobObject failed")
 
     def close(self):
         if self._handle:
