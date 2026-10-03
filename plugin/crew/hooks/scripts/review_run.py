@@ -583,7 +583,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))
     rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
     stream_reasons = list(extra_reasons)
-    extra_reasons = list(extra_reasons) + manifest_reasons + bundle_problems(manifest)
+    extra_reasons = list(extra_reasons) + bundle_problems(manifest)
+    extra_reasons += manifest_reasons
     extra_reasons += webtest_reasons
     # The outside reasons go INTO the parse, so a stray line is never
     # recovered on a round they make INCOMPLETE (L-0576).
