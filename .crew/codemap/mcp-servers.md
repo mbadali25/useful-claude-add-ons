@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@a81e4382
+anchor: useful-claude-add-ons@6475c41c
 verified: 2026-10-02
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -617,3 +617,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5467b110` -> `2594c90f` on 2026-10-02 (L-0555 merges origin/main `a9b4734d`, L-0576 #306, crew 1.0.128; rerere disabled; crew 1.0.132).** No citation in this map moved.
 
 **Re-anchored `2594c90f` (L-0555) and `273ec0f6` (main) -> `a81e4382` on 2026-10-02 (L-0555 merges origin/main `0487fc39`: L-0575 #311, crew 1.0.129, and L-0599 #315, gizmoduck 0.5.6; rerere disabled; crew 1.0.132 re-set after the merge).** The anchor, INDEX and provenance hunks conflicted: both sides' provenance was kept, main's first. Citation-number hunks took main's side. No citation in this map moved.
+
+**Re-anchored `a81e4382` -> `6475c41c` on 2026-10-02 (L-0592, L-0575's round-2 fixes to the recurring-findings checklist; origin/main `ffeb0e2f` merged first as a fast-forward, rerere disabled).** `git diff --name-only a81e4382 6475c41c` against this map's paths returns `plugin/crew/README.md`, `plugin/crew/commands/implement.md`, `plugin/crew/hooks/scripts/recurring_findings.py`, `plugin/crew/tests/test_lifecycle_commands.py` and `plugin/crew/tests/test_recurring_findings.py`. README.md changes one line in place (`:727`) and implement.md re-wraps step 2 in its same five lines (`:40-44`), so no line moves; no citation in this map points at a changed line or at recurring_findings.py or either test. No claim changed.
