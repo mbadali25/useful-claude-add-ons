@@ -469,3 +469,82 @@ if os.path.isfile(CHECKER) and os.path.isfile(VERIFY_JSON):
             _RULE_PATHS,
         ),
     )
+
+# crew 1.0.137 / 1.0.139: the Stop gate's measured pricing and tree-pass cache.
+# Kept here, not in sabotage.py, which sits at pylint's 3400-line module cap.
+TOOLING_MUTATIONS += (
+    (
+        # min(declared, measured) turned into "measured wins": a stale cache
+        # ABOVE the declared price makes a rule that fits chronic, and Stop
+        # stops running it. The whole safety argument is the minimum.
+        "a dearer cached measurement replaces a declared price",
+        GATE_SH,
+        "                            and 0 < cached < secs):\n",
+        "                            and 0 < cached):\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_dearer_measurement_never_defers_a_declared_rule"),
+    ),
+    (
+        # A JSON true is an int in python; without the bool test a cached
+        # `true` prices a 90s rule at 1s.
+        "a cached true prices a declared rule",
+        GATE_SH,
+        "                    if (isinstance(cached, int) and not isinstance(cached, bool)\n"
+        "                            and 0 < cached < secs):\n",
+        "                    if (isinstance(cached, int)\n"
+        "                            and 0 < cached < secs):\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_an_unusable_measurement_leaves_the_declared_price"),
+    ),
+    (
+        # The tree-pass cache stops zeroing a fully-credited rule's price: it
+        # is credited if it runs, but it still spends the budget, so the rule
+        # it was deferring stays deferred on every Stop of an unchanged tree.
+        "a rule that passed on this exact tree still spends the Stop budget",
+        GATE_SH,
+        "        rule_secs[_ri] = 0\n",
+        "        pass\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_an_acutely_deferred_stop_converges_on_an_unchanged_tree"),
+    ),
+    (
+        # Passes saved although the tree moved while the rules ran: they then
+        # describe no single tree, and the next run credits them anyway.
+        "the tree-pass cache is saved after the tree moved during the run",
+        GATE_SH,
+        '  if [ -n "$TREE_PRE" ] && [ "$TREE_PRE" = "$TREE_POST" ]; then\n',
+        '  if [ -n "$TREE_PRE" ]; then\n',
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_rule_that_edits_the_tree_leaves_no_cache"),
+    ),
+)
+if shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            # Its PowerShell twin.
+            "the PowerShell gate lets a dearer measurement replace a declared price",
+            GATE_PS1,
+            "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0 -and\n"
+            "                  $cached -lt [double]$r.seconds) {\n",
+            "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0) {\n",
+            ("tests/test_verify_gate_stop_budget.py::"
+             "test_a_dearer_measurement_never_defers_a_declared_rule"),
+        ),
+        (
+            # Its PowerShell twin.
+            "the PowerShell gate charges a rule that passed on this exact tree",
+            GATE_PS1,
+            "    $ruleSecs[$ri] = [double]0\n",
+            "    $null = $ri\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_an_acutely_deferred_stop_converges_on_an_unchanged_tree"),
+        ),
+        (
+            "the PowerShell gate saves the tree-pass cache after the tree moved",
+            GATE_PS1,
+            "    if ($treePre -and $treePre -eq $treePost) {\n",
+            "    if ($treePre) {\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_a_rule_that_edits_the_tree_leaves_no_cache"),
+        ),
+    )

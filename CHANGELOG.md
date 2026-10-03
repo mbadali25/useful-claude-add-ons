@@ -4,7 +4,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.144: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
+### Changed — `crew` 1.0.145: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
+
+- The seven new gate mutations live in `sabotage_tooling.py`, not `sabotage.py`, which sits at
+  pylint's 3400-line module cap (`C0302`, red on CI's `build (3.12)` at 3469 lines).
 
 **A CI receipt for HEAD lets `/crew:review` go ahead without a local `verify-gate --all`.**
 
