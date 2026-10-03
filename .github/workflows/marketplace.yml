@@ -88,6 +88,14 @@ jobs:
         run: python3 scripts/sync-updates.py --check
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
+      # An own-line `# shellcheck` comment ShellCheck cannot parse is SC1073, and
+      # ShellCheck then stops checking the WHOLE file. install-prerequisites.sh
+      # and scripts/_test/lsp-stack-tools.sh were unchecked that way until L-0587.
+      # The suite's grammar check is stdlib; its cross-check uses the runner
+      # image's own shellcheck (0.9.0 on ubuntu-24.04) and prints SKIPPED only
+      # where shellcheck is absent.
+      - name: ShellCheck directive suite
+        run: python3 scripts/_test/shellcheck-directives.py
       # Runs here because it needs nothing but bash: the end-to-end cases use --dry-run
       # or a stub 'claude'. The drift suite is the one that cannot - it drives the real
       # Claude Code CLI.
