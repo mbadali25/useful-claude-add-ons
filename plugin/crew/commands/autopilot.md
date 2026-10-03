@@ -86,7 +86,7 @@ check - stops here, reported verbatim; never retry around it or edit a gate. Imp
 later round, never after an accepted review (that stales the receipt): `next` enforces it, and docs runs before
 refresh (a document owed after the receipt is `docs-after-review`). The tracker step (T-0022), after each phase and
 after `/crew:done` succeeds, moves the tracker to the status on disk and records each `/crew:docs` run (`next`
-stops once two leave a document `MISSING`); no tracker write enters the review bundle:
+stops once two leave a document `MISSING`, and at once on `docs-unknown`); no tracker write enters the review bundle:
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py tracker --root . --ticket <ticket> --after "<c>"`
 `tracker=delegated`: run its `command=` (Jira, SDP) here. `stop=1`: print the reason and the `command=` retry, stop.
 
@@ -95,7 +95,7 @@ stops once two leave a document `MISSING`); no tracker write enters the review b
 A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
-`max-phases`, `no-progress`, `docs-missing`, `docs-after-review`; the tracker step: `tracker-failed`, `tracker-unavailable`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
+`max-phases`, `no-progress`, `docs-missing`, `docs-unknown`, `docs-after-review`; the tracker step: `tracker-failed`, `tracker-unavailable`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.

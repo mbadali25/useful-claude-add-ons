@@ -14,6 +14,8 @@ import os
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
 import crew_docs_check
+import scope_base
+from review_fixtures import git
 from test_crew_autopilot import (T, _approved, _ledger, _receipt, _receipt_ok, _refresh,
                                  _round, _snapshot)
 
@@ -54,23 +56,38 @@ def test_next_docs_ok_goes_on_to_refresh(tmp_path, monkeypatch):
     assert _next(root)["phase"] == "refresh"
 
 
-def test_next_docs_unknown_reads_missing(tmp_path, monkeypatch):
+def test_next_docs_unknown_stops_at_once(tmp_path, monkeypatch):
     root = _before_review(tmp_path, monkeypatch, refresh="fresh")
     _docs(monkeypatch, "unknown", reason="no scope base for T-1 (none recorded)")
 
     got = _next(root)
 
-    assert (got["phase"], got["stop"], "no scope base" in got["reason"]) == ("docs", False, True)
+    assert (got["phase"], got["stop"], got["command"]) == ("docs-unknown", True, "")
+    assert "no scope base" in got["reason"] and "cannot settle" in got["reason"]
 
 
-def test_next_docs_check_that_raises_reads_missing(tmp_path, monkeypatch):
+def test_next_docs_unknown_never_reruns_docs(tmp_path, monkeypatch):
+    """No recorded attempt, and none would help: the first answer is the stop."""
+    root = _before_review(tmp_path, monkeypatch, refresh="stale")
+    _docs(monkeypatch, "unknown", reason="git could not read TODO.md at abc")
+    record = os.path.join(str(root), ".work", "tickets", T, crew_autopilot.DOCS_RECORD)
+
+    got = _next(root, phases_run=0, max_phases=12)
+
+    assert (got["phase"], got["stop"], os.path.exists(record)) == ("docs-unknown", True, False)
+
+
+def test_next_docs_check_that_raises_stops(tmp_path, monkeypatch):
     root = _before_review(tmp_path, monkeypatch, refresh="fresh")
 
     def boom(root, ticket):
         raise RuntimeError("git vanished")
     monkeypatch.setattr(crew_docs_check, "ticket_docs", boom)
 
-    assert _next(root)["phase"] == "docs"
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "git vanished" in got["reason"]) == (
+        "docs-unknown", True, True)
 
 
 def test_next_docs_two_attempts_then_stop(tmp_path, monkeypatch):
@@ -154,5 +171,40 @@ def test_next_done_when_documents_ok_after_review(tmp_path, monkeypatch):
 
 def test_docs_stops_are_listed():
     ids = [slug for slug, _text in crew_autopilot.FIXED_STOPS]
-    assert {"docs-missing", "docs-after-review", "tracker-failed",
+    assert {"docs-missing", "docs-unknown", "docs-after-review", "tracker-failed",
             "tracker-unavailable"} <= set(ids)
+
+
+# --- integration: the real ticket_docs through next_phase (review round 1 FIX) ----
+# No stub of `_docs_state` or `ticket_docs` here: a field `_docs_state` reads
+# that `ticket_docs` renamed or dropped shows up as a wrong phase.
+
+def _write(root, rel, text):
+    path = os.path.join(str(root), *rel.split("/"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
+def test_real_docs_check_drives_next_from_missing_changelog_to_review(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _write(root, ".claude-plugin/marketplace.json", json.dumps({"name": "m", "plugins": [
+        {"name": "widget", "source": "./plugin/widget", "version": "0.2.0"}]}))
+    _write(root, "plugin/widget/app.py", "x = 1\n")
+    _write(root, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [0.1.0]\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "a marketplace with one plugin")
+    scope_base.record(str(root), T)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+    _write(root, "plugin/widget/app.py", "x = 2\n")
+
+    owed = _next(root)
+    _write(root, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n"
+           "- `widget` 0.2.0: app counts to two\n\n## [0.1.0]\n")
+    written = _next(root)
+
+    assert (owed["phase"], owed["stop"], owed["command"]) == ("docs", False, f"/crew:docs {T}")
+    assert "CHANGELOG.md (widget 0.2.0)" in owed["reason"]
+    assert (written["phase"], written["stop"]) == ("review", False), written

@@ -188,6 +188,7 @@ def test_cli_tracker_after_docs_records_the_attempt(tmp_path):
     record = root / ".work" / "tickets" / T / crew_autopilot.DOCS_RECORD
 
     _cli(root, "--after", f"/crew:review {T}")
+    _cli(root, "--after", "/crew:docs T-9")  # another ticket's run is not this one's
     assert not record.exists()
     done = _cli(root, "--after", f"/crew:docs {T}")
 

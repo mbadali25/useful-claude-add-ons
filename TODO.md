@@ -8,7 +8,7 @@ be wrong can be closed on evidence.
   rule: `plugin/crew/tests/sabotage*.py` is `HARNESS` in `scripts/check-tooling-pr.py`, so it
   cannot ride with the feature): add `plugin/crew/tests/sabotage_docs.py` with `DOCS_MUTATIONS`
   (a docs.json reason waives CHANGELOG -> `test_changelog_reason_does_not_waive`; `unknown`
-  read as ok -> `test_next_docs_unknown_reads_missing`; docs ordered after review ->
+  read as ok or rerun -> `test_next_docs_unknown_stops_at_once`; docs ordered after review ->
   `test_next_docs_before_refresh`; tracker `could not update` read as `unchanged` ->
   `test_tracker_step_could_not_update_stops`, plus the rest run by hand in T-0022's PR body),
   register it in `plugin/crew/tests/sabotage.py`, add

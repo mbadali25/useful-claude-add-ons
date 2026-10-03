@@ -375,6 +375,55 @@ def test_docs_json_misshapen_unknown(tmp_path, body):
     assert _check(root)["status"] == "unknown"
 
 
+# --- git that cannot answer is unknown, never "absent" (review round 1 FIX) --------
+
+def _git_fails_at_base(monkeypatch):
+    real = crew_docs_check._git_bytes  # pylint: disable=protected-access
+
+    def failing(top, *args):
+        if args and args[0] in ("ls-tree", "cat-file"):
+            return None
+        return real(top, *args)
+    monkeypatch.setattr(crew_docs_check, "_git_bytes", failing)
+
+
+def test_todo_base_unreadable_is_unknown_not_updated(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _write(root, "TODO.md", "# TODO\n- T-0099: already filed before this ticket\n")
+    _git(root, "commit", "-qam", "file T-0099 earlier")
+    scope_base.record(str(root), "T-3")
+    _write(root, "src/lib.py", "y = 2\n")
+    _write(root, ".work/tickets/T-3/docs.json",
+           json.dumps({"reasons": {}, "deferred": [{"key": "T-0099", "why": "x", "unblock": "y"}]}))
+    _git_fails_at_base(monkeypatch)
+
+    got = crew_docs_check.ticket_docs(str(root), "T-3")
+
+    rows = {d["doc"]: d["verdict"] for d in got["documents"]}
+    assert (got["status"], rows["TODO.md"]) == ("unknown", "unknown")
+
+
+def test_changelog_base_unreadable_is_unknown_not_updated(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _write(root, "plugin/crew/hooks/scripts/app.py", "x = 2\n")
+    _changelog(root, "- `crew` 1.0.0: already released")
+    _git_fails_at_base(monkeypatch)
+
+    got = _check(root)
+
+    assert (got["status"], _verdict(got, "CHANGELOG.md (crew 1.0.0)")[0]) == ("unknown", "unknown")
+    assert crew_docs_check.exit_code(got) == 1
+
+
+def test_todo_absent_at_base_counts_every_line_added(tmp_path):
+    root = _repo(tmp_path, todo=False)
+    _write(root, "src/lib.py", "y = 2\n")
+    _write(root, "TODO.md", "# TODO\n- T-0099: deferred here\n")
+    _docs_json(root, deferred=[{"key": "T-0099", "why": "x", "unblock": "y"}])
+
+    assert _verdict(_check(root), "TODO.md")[0] == "updated"
+
+
 # --- the CLI ---------------------------------------------------------------------
 
 def _cli(root, *extra):

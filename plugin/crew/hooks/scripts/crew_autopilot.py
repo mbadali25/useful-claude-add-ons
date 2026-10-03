@@ -81,7 +81,8 @@ force says `take`. Exit 0 valid, 1 not.
   latest round FINDINGS, not accepted    accept-review       stop
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
-  receipt not current, documents owed    docs                /crew:docs <id>
+  receipt not current, docs unknown      docs-unknown        stop at once
+  receipt not current, a doc MISSING     docs                /crew:docs <id>
     ... after two recorded runs          docs                stop
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
@@ -111,9 +112,11 @@ not landed)" -- never skipped.
 ## docs and tracker (T-0022)
 
 The docs phase runs before the refresh and every review round, so the review
-receipt covers the documents. "Documents owed" is `crew_docs_check.ticket_docs`
-not saying `ok`: a MISSING line, or `unknown` (no scope base, an unreadable
-docs.json, a check that raised), which reads as owed, never as ok. After each
+receipt covers the documents. A MISSING line from `crew_docs_check.ticket_docs`
+is owed, and `/crew:docs` can write it; its `unknown` (no trusted scope base,
+an unreadable docs.json, git that could not read a base blob) and a check that
+raised or will not import stop at once as `docs-unknown`, because another run
+cannot settle them -- never read as ok, never rerun. After each
 `/crew:docs <id>` the command runs `tracker --after "/crew:docs <id>"`, which
 records the attempt; two attempts recorded since
 the latest review round stop with the documents named, and only a recorded
@@ -210,6 +213,7 @@ REFRESH_UNAVAILABLE = "refresh-artifacts unavailable (T-0008 not landed)"
 # T-0022: the docs phase and the tracker step.
 DOCS_OK = "ok"
 DOCS_MISSING = "missing"
+DOCS_UNKNOWN = "unknown"
 DOCS_ATTEMPTS = 2
 DOCS_RECORD = "autopilot-docs.json"
 DOCS_UNAVAILABLE = "docs check unavailable (crew_docs_check.py could not be imported)"
@@ -237,8 +241,10 @@ FIXED_STOPS = (
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
-    ("docs-missing", "a document is still MISSING (or the docs check is unknown) after "
-                     "two /crew:docs runs"),
+    ("docs-missing", "a document is still MISSING after two /crew:docs runs"),
+    ("docs-unknown", "the docs check cannot tell (no trusted scope base, an unreadable "
+                     "docs.json, git failed, the check raised): another /crew:docs run "
+                     "cannot settle it"),
     ("docs-after-review", "a document is MISSING after an accepted review: writing it now "
                           "stales the receipt"),
     ("tracker-failed", "the tracker step could not update the tracker (could not update, "
@@ -426,25 +432,29 @@ def _refresh_state(root, ticket):
 
 
 def _docs_state(root, ticket):
-    """`{"state": ok|missing, "missing": [...], "reason"}` from T-0022's
-    `crew_docs_check.ticket_docs`. Its `unknown` -- no scope base, an
-    unreadable docs.json, a check that raised -- reads as `missing`: never
-    `ok` unless the check said so."""
+    """`{"state": ok|missing|unknown, "missing": [...], "reason"}` from
+    T-0022's `crew_docs_check.ticket_docs`. `missing` only for the check's
+    own `missing`, which a `/crew:docs` run can fix; anything else -- its
+    `unknown`, a status it does not name, a check that raised or will not
+    import -- is `unknown`, never `ok` and never another docs run."""
     try:
         check = importlib.import_module("crew_docs_check")
     except ImportError:
-        return {"state": DOCS_MISSING, "missing": [], "reason": DOCS_UNAVAILABLE}
+        return {"state": DOCS_UNKNOWN, "missing": [], "reason": DOCS_UNAVAILABLE}
     try:
         result = check.ticket_docs(root, ticket)
     except Exception as exc:  # pylint: disable=broad-except
-        return {"state": DOCS_MISSING, "missing": [],
+        return {"state": DOCS_UNKNOWN, "missing": [],
                 "reason": f"the docs check could not run ({exc})"}
-    if result.get("status") == DOCS_OK:
+    status = result.get("status")
+    if status == DOCS_OK:
         return {"state": DOCS_OK, "missing": [], "reason": ""}
     missing = check.missing_documents(result)
-    reason = (f"docs check says {result.get('status')}: "
-              + ("MISSING: " + "; ".join(missing) if missing else str(result.get("reason"))))
-    return {"state": DOCS_MISSING, "missing": missing, "reason": reason}
+    if status == DOCS_MISSING and missing:
+        return {"state": DOCS_MISSING, "missing": missing,
+                "reason": "docs check says missing: MISSING: " + "; ".join(missing)}
+    return {"state": DOCS_UNKNOWN, "missing": missing,
+            "reason": f"docs check says {status}: {result.get('reason')}"}
 
 
 def _docs_record_path(top, ticket):
@@ -737,6 +747,9 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     receipt stands. `note` prefixes the review reason (a refunded round)."""
     if not ok:
         docs = _docs_state(top, ticket)
+        if docs["state"] == DOCS_UNKNOWN:
+            return answer("docs-unknown", True, f"{docs['reason']} - another /crew:docs run "
+                          "cannot settle this; a human looks")
         if docs["state"] != DOCS_OK:
             tried = _docs_attempts(top, ticket)
             if tried >= DOCS_ATTEMPTS:
@@ -762,8 +775,9 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
                       f"decides. {refresh['reason']}")
     docs = _docs_state(top, ticket)
     if docs["state"] != DOCS_OK:
-        return answer("docs-after-review", True, "a document is MISSING after an accepted "
-                      "review; writing it now stales the receipt - human decides. "
+        return answer("docs-after-review", True, "a document is MISSING (or the docs check "
+                      "cannot tell) after an accepted review; writing it now stales the "
+                      "receipt - human decides. "
                       f"{docs['reason']}")
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
@@ -1554,7 +1568,7 @@ def route_args(root, text):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done")}
+    "done", "docs", "docs-unknown", "docs-after-review")}
 WAITING["closed"] = "nobody"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
@@ -1826,7 +1840,7 @@ def _tracker_main(args):
     `next` does: a crash, or a docs run that could not be recorded, is
     `stop=1`, never silence."""
     try:
-        if args.after.split()[:1] == ["/crew:docs"]:
+        if args.after.split()[:2] == ["/crew:docs", args.ticket]:
             record_docs_attempt(args.root, args.ticket)
         result = tracker_step(args.root, args.ticket)
     except Exception as exc:  # pylint: disable=broad-except

@@ -11,11 +11,13 @@ prints one line per document:
   not needed (<reason>)   nothing triggers it, or docs.json says why not
   MISSING                 a trigger fired and neither an edit nor a reason
   not applicable          the repo has no such document
+  unknown                 git could not read the document at the base, so what
+                          this ticket added cannot be told (never `updated`)
 
 plus `adr, runbooks: not measured` -- those stay `/crew:docs` judgement.
 Exit 0 only when no line is MISSING and nothing was unknown; 1 otherwise; 2
 usage. It never writes: git is asked through plumbing only (`diff-index`,
-`cat-file`, `ls-files`), never `git diff`, which can rewrite `.git/index`.
+`ls-tree`, `cat-file`, `ls-files`), never `git diff`, which can rewrite `.git/index`.
 
 ## The changed set
 
@@ -136,8 +138,12 @@ def read_docs_json(top, ticket):
             "deferred": deferred}, None
 
 
+class GitFailed(RuntimeError):
+    """git could not answer (error, timeout, not runnable): never "absent"."""
+
+
 def _git_bytes(top, *args):
-    """stdout bytes, or None when git fails (the blob is absent at that ref)."""
+    """stdout bytes, or None when git fails for any reason."""
     try:
         done = subprocess.run(["git", "-C", top] + list(args), capture_output=True,
                               env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"),
@@ -148,8 +154,22 @@ def _git_bytes(top, *args):
 
 
 def _base_text(top, base, rel):
+    """`rel`'s text at `base`, or None when `base` has no such file. Raises
+    GitFailed when git cannot say which: a None there would read every line
+    of the file as added (review round 1 FIX), so the row is `unknown`."""
+    listing = _git_bytes(top, "ls-tree", "-z", base, "--", rel)
+    if listing is None:
+        raise GitFailed(f"git could not list {rel} at {base[:12]}")
+    if not listing.strip(b"\0"):
+        return None
     data = _git_bytes(top, "cat-file", "blob", f"{base}:{rel}")
-    return None if data is None else data.decode("utf-8", errors="replace")
+    if data is None:
+        raise GitFailed(f"git could not read {rel} at {base[:12]}")
+    return data.decode("utf-8", errors="replace")
+
+
+def _unknown_row(doc, exc):
+    return _row(doc, UNKNOWN, f"{exc} - could not tell what this ticket added")
 
 
 def _disk_text(top, rel):
@@ -245,7 +265,11 @@ def _changelog_rows(top, base, changed, changed_raw, entries, reasons):
     if not touched:
         return [_row(CHANGELOG, NOT_NEEDED, "no marketplace entry's source changed")]
     span = unreleased_range(now)
-    added = [line for index, line in added_lines(_base_text(top, base, CHANGELOG), now)
+    try:
+        old = _base_text(top, base, CHANGELOG)
+    except GitFailed as exc:
+        return [_unknown_row(f"{CHANGELOG} ({e['name']} {e['version']})", exc) for e in touched]
+    added = [line for index, line in added_lines(old, now)
              if span and span[0] <= index < span[1]]
     rows = []
     for entry in touched:
@@ -278,7 +302,10 @@ def _readme_rows(top, base, changed, changed_raw, entries, reasons):
         rows.append(_judged(doc, changed_raw, reasons, f"{hits[0]} changed"
                             + (f" (+{len(hits) - 1} more)" if len(hits) > 1 else "")))
     if entries is not None:
-        old = _base_text(top, base, MARKETPLACE)
+        try:
+            old = _base_text(top, base, MARKETPLACE)
+        except GitFailed as exc:
+            return rows + [_unknown_row(README, exc)]
         old_entries = _entries(old) if old is not None else []
         before = {e["name"] for e in old_entries or []}
         after = {e["name"] for e in entries}
@@ -309,7 +336,11 @@ def _todo_rows(top, base, deferred):
     if not keys:
         return [_row(TODO, NOT_NEEDED, "nothing deferred")]
     now = _disk_text(top, TODO)
-    added = "\n".join(line for _i, line in added_lines(_base_text(top, base, TODO), now))
+    try:
+        old = _base_text(top, base, TODO)
+    except GitFailed as exc:
+        return [_unknown_row(TODO, exc)]
+    added = "\n".join(line for _i, line in added_lines(old, now))
     absent = [k for k in keys if now is None or k not in added]
     if absent:
         return [_row(TODO, MISSING, "deferred in docs.json but not added to TODO.md: "
@@ -371,7 +402,8 @@ def ticket_docs(root, ticket):
                  + _readme_rows(top, base, changed, changed_raw, entries, reasons)
                  + _security_rows(top, changed, changed_raw, reasons)
                  + _todo_rows(top, base, record["deferred"]))
-    status = MISSING_STATUS if any(d["verdict"] == MISSING for d in documents) else OK
+    verdicts = {d["verdict"] for d in documents}
+    status = (UNKNOWN if UNKNOWN in verdicts else MISSING_STATUS if MISSING in verdicts else OK)
     return _result(status, f"scope base {base[:12]} ({why})", documents, source)
 
 
