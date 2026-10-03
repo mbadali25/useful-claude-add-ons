@@ -641,7 +641,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
 def gate_record(args):
     """The gate state for review.json: observed now, plus whether this round
     was told to go ahead regardless."""
-    state, reason = review_gate.gate_state(args.root)
+    state, reason = review_gate.accepted_state(args.root)
     return {"state": state, "reason": reason,
             "overridden": bool(getattr(args, "allow_unverified", False))
             and state in (review_gate.UNVERIFIED, review_gate.UNKNOWN)}
@@ -680,7 +680,7 @@ def preflight(args):
         if args.provider not in LAUNCHED:
             _out("ALREADY_CLEAN=1")
         return EXIT_CLEAN
-    state, reason = review_gate.gate_state(args.root)
+    state, reason = review_gate.accepted_state(args.root)
     if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):
         if args.allow_unverified:
             _err(f"review-run: gate {state}: {reason}. Reviewing anyway "
@@ -935,6 +935,12 @@ def probe(args):
     return PROBE_FAILED, error or tail[0]
 
 
+# The providers this runner can launch. `qa.order` also names `kimi`, which has
+# no runner here yet; commands/review.md filters `$ELIGIBLE` to this set (and
+# says so on stderr) instead of relying on argparse's exit 2 to skip it.
+PROVIDERS = ("codex", "copilot", "claude")
+
+
 def main(argv):
     # Finding text and refusals quoting it reach stdout; see utf8_stdio.
     review_ledger.utf8_stdio()
@@ -943,7 +949,7 @@ def main(argv):
     parser.add_argument("--ticket", required=True)
     parser.add_argument("--scratch", required=True)
     parser.add_argument("--manifest")
-    parser.add_argument("--provider", required=True, choices=("codex", "copilot", "claude"))
+    parser.add_argument("--provider", required=True, choices=PROVIDERS)
     parser.add_argument("--model", default="")
     parser.add_argument("--effort", default="")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)

@@ -162,3 +162,35 @@ def _gate_state(root):
                             f"{current} now)")
     return VERIFIED, (f"clean pass at HEAD {head[:12]} covering the {len(changed)} changed "
                       f"path(s), fingerprint {current}")
+
+
+def accepted_state(root, fetch=None):
+    """(state, reason) a CONSUMER acts on: `gate_state`, upgraded to VERIFIED
+    when the local evidence does not hold but a CI receipt
+    (`ci_receipt.check`) proves the gate passed on exactly this committed tree.
+
+    WHY. A local `verify-gate.sh --all` costs 17-20 minutes; the self-hosted
+    pool runs the same gate on every pushed lane branch and leaves a receipt
+    bound to HEAD, its tree, the verify map and the gate implementation.
+    Re-running the gate locally to prove what that receipt already proves is
+    the single most expensive duplicate in the review path.
+
+    ONLY EVER AN UPGRADE. The receipt is consulted only when the local answer
+    is UNVERIFIED or UNKNOWN, and anything but a receipt VERIFIED leaves the
+    local answer standing with the receipt's own reason appended -- an
+    unreadable receipt (UNKNOWN: gh, the network, the artifact) never moves a
+    verdict either way. NO_GATE is never consulted about. `gate_state` itself
+    stays local-only: `ci_receipt build` asks it on the runner, and a receipt
+    that consulted receipts could vouch for itself.
+
+    The checks that need no network come first in `ci_receipt.check` (map,
+    local edits, origin/main, a branch that changes the gate, a GitHub
+    origin), so a dirty tree or a fixture repo is answered without a call."""
+    state, reason = gate_state(root)
+    if state not in (UNVERIFIED, UNKNOWN):
+        return state, reason
+    import ci_receipt  # pylint: disable=import-outside-toplevel  # it imports this module
+    r_state, r_reason, _ = ci_receipt.check(root, fetch=fetch)
+    if r_state == VERIFIED:
+        return VERIFIED, f"{r_reason} (the local gate evidence said {state}: {reason})"
+    return state, f"{reason}; CI receipt {r_state}: {r_reason}"
