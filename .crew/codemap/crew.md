@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c9867c59
+anchor: useful-claude-add-ons@0e36a87d
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -3709,3 +3709,7 @@ T-0063 changed `crew_autopilot.py` (the main checkout's INDEX row, `folder-elsew
 ## Re-anchor provenance - `308ac2fa` -> `c9867c59`, 2026-10-03 (T-0063, crew 1.0.182)
 
 After PR #368 was pushed, `f0d40c66` fixed the Windows CI failure (`_rel_inside` no longer re-slashes a path outside the checkout; its docstring grew three lines, so every `crew_autopilot.py` citation below `:266` moved +3, re-mapped by the same difflib script from `308ac2fa`) and the README and troubleshooting guide name crew 1.0.182; `c9867c59` sets 1.0.182. The version sentence (`:59`) and the two T-0063 paragraph headings now say 1.0.182. No claim changed.
+
+## Re-anchor provenance - `c9867c59` -> `0e36a87d`, 2026-10-03 (T-0063 merges origin/main, crew 1.0.182)
+
+**Re-anchored `c9867c59` (T-0063) and main's `0620587f`/`42effe14` -> `0e36a87d` on 2026-10-03 (T-0063 merges origin/main `4f6ef540`, L-0601 #327, crew 1.0.162; crew stays 1.0.182).** Main's text was taken in every conflict and T-0063's notes re-applied after it. The only source file both sides changed is `plugin/crew/README.md`, and main's edit there is one line in place (`:768`), so no citation on either side moved; the runbooks-index citation `plugin/crew/README.md:2320` was re-read with `grep -n` on the merge. Main's other changes (`review_prompt.py`, `review.md`, `sabotage.py`, `sabotage_recurring.py`, `test_review_prompt.py`, the working-with-codex guide, `scripts/gate-runner.py`, `_verify/smoke.sh`, the marketplace workflow) touch no file T-0063 changed and were carried by main's own maps. No claim re-derived.

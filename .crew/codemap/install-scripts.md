@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@c9867c59
+anchor: useful-claude-add-ons@0e36a87d
 paths: plugin/crew/**, scripts/**
 verified: 2026-10-01
 
@@ -1624,3 +1624,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` -> `308ac2fa` on 2026-10-03 (T-0063, crew 1.0.164). Current despite the lag.** `crew_refresh_check.py` named this note reached through crew paths T-0063 changed (`plugin/crew/README.md`, `plugin/crew/commands/{autopilot,done,implement}.md`, `crew_autopilot.py`, `crew_refresh_check.py`, the crew troubleshooting guide). A difflib line map of each changed file from the scope base `34d9f267` to `308ac2fa` over every `path:line` citation in this note found none in the body covering an edited or moved line; the version-file citations it reports are in provenance notes, kept as history.
 
 **Re-anchored `308ac2fa` -> `c9867c59` on 2026-10-03 (T-0063, crew 1.0.182). Current despite the lag.** `f0d40c66` changes `crew_autopilot.py` (`_rel_inside`, +3 docstring lines), `test_crew_autopilot.py`, two version mentions in `plugin/crew/README.md` (edited in place, no line moved) and the troubleshooting guide; no body citation in this note covers a changed or moved line.
+
+**Re-anchored `c9867c59` (T-0063) and main's `0620587f`/`42effe14` -> `0e36a87d` on 2026-10-03 (T-0063 merges origin/main `4f6ef540`, L-0601 #327, crew 1.0.162; crew stays 1.0.182).** Main's text was taken in every conflict and T-0063's notes re-applied after it. The only source file both sides changed is `plugin/crew/README.md`, and main's edit there is one line in place (`:768`), so no citation on either side moved; the runbooks-index citation `plugin/crew/README.md:2320` was re-read with `grep -n` on the merge. Main's other changes (`review_prompt.py`, `review.md`, `sabotage.py`, `sabotage_recurring.py`, `test_review_prompt.py`, the working-with-codex guide, `scripts/gate-runner.py`, `_verify/smoke.sh`, the marketplace workflow) touch no file T-0063 changed and were carried by main's own maps. No claim re-derived.
