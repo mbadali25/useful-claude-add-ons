@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@e8e7b388
+anchor: useful-claude-add-ons@1e6dfc2f
 verified: 2026-10-01
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -705,3 +705,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` -> `afaad3a8` on 2026-10-03 (L-0608 merges origin/main f808e5f0 (crew 1.0.154: #328, #329, #330) at 10594367 with rerere on (CHANGELOG only), then aims eight sabotage entries; crew is set to 1.0.165).** L-0608's own change is `plugin/crew/tests/sabotage_platform.py` (new), `sabotage.py`, `sabotage_standards.py`, `test_sabotage_harness.py`, `test_cloud_guard_environments.py`, `test_endpoints.py`, `test_install_policy.py`, `.crew/verify.json` (upgrade/sabotage-harness rule), README, TODO and CHANGELOG. Every full `path:line` citation into a file changed since `452b30cc` (main's 28 commits included) was re-mapped by script (difflib), with `.crew/verify.json` ranges whose end line changed taken from the nearest unchanged line; two citations main moved by editing the line itself were re-read by hand (`review_run.py:952`, `verify_record.py:571`). Version and count lines stay on the lines they cite. No suite was executed for this note.
 
 **Re-anchored `afaad3a8` -> `e8e7b388` on 2026-10-03 (L-0608: the gate's full sabotage run re-aimed eighteen of #329's entries in `sabotage_tooling.py` at their `[sh]`/`[ps1]` case and declared six Windows-only in `sabotage_platform.py`).** No line moved in `sabotage_tooling.py` (each target string grew in place); `sabotage_platform.py`'s `run_target`/`verdict` citations re-read by hand (`:255`, `:312`). No suite was executed for this note.
+
+**Re-anchored `e8e7b388` -> `1e6dfc2f` on 2026-10-03 (L-0608: the Windows taskkill fallback in `sabotage_platform.py` bounded; `run_target`/`verdict` re-read at `:255`/`:312`).** No suite was executed for this note.
