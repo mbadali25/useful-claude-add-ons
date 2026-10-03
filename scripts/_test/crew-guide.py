@@ -14,7 +14,12 @@ script can check:
 (c) every ticket id the guide names is in `crew_keys.COMING` or in the
     guide's own "What is coming" table, so no promise goes unlisted;
 (d) no line states a key count (`\\d+ keys` / `\\d+ settings`): counts belong to
-    the generated reference, whose staleness check covers them.
+    the generated reference, whose staleness check covers them;
+(e) in "## Autopilot today", a sentence naming `scope.allowCliApproval` ties it
+    to plan approval only: it says "approval" outside the key, and if it names
+    an open question it says the question does not need it.
+    `crew_autopilot.question_policy` has no `allowCliApproval` rule; only
+    `approval_policy` checks it.
 
 It also runs `docs/guides/crew/src/build.py --check`: exit 0 on the tree, 1 for
 a temp copy whose guide changed by one character, and 2 when `markdown`
@@ -95,6 +100,22 @@ def coming_table(text):
     return set(TICKET.findall("\n".join(rows)))
 
 
+def cli_approval_claims(text):
+    """Rule (e): sentences in "## Autopilot today" that tie
+    `scope.allowCliApproval` to anything but plan approval."""
+    m = re.search(r"^## Autopilot today\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    body = " ".join((m.group(1) if m else "").split())
+    found = []
+    for sentence in re.split(r"(?<=[.;])\s+", body):
+        if "allowCliApproval" not in sentence:
+            continue
+        rest = re.sub(r"`[^`]*allowCliApproval[^`]*`", "", sentence).lower()
+        if "approval" not in rest or ("question" in rest and "does not" not in rest):
+            found.append(f"Autopilot today: '{sentence}' ties scope.allowCliApproval to "
+                         "more than plan approval (question_policy has no such rule)")
+    return found
+
+
 def problems(text, files, coming, commands_dir=COMMANDS):
     found = []
     listed = coming | coming_table(text)
@@ -122,7 +143,7 @@ def problems(text, files, coming, commands_dir=COMMANDS):
             if path in files or any(f.startswith(path + "/") for f in files):
                 continue
             found.append(f"line {n}: `{token}` is not a path at HEAD")
-    return found
+    return found + cli_approval_claims(text)
 
 
 def run_build_check(src_dir, extra=None):
@@ -188,6 +209,13 @@ def main():
         ("an orphan ticket id", base + "\nThis arrives with T-9998.\n"),
         ("a key count", base + "\ncrew has 129 keys.\n"),
         ("a missing directory", base + "\nLook in `docs/guides/nosuch/`.\n"),
+        ("questions tied to allowCliApproval (Both)", base
+         + "\n## Autopilot today\n\nPlan approval and open questions stop too, unless\n"
+           "`autopilot.approval` and `autopilot.questions` allow otherwise. Both also need\n"
+           "`scope.allowCliApproval: true`. Autopilot never merges.\n"),
+        ("questions tied to allowCliApproval (named)", base
+         + "\n## Autopilot today\n\nPlan approval and open questions also need\n"
+           "`scope.allowCliApproval: true`.\n"),
     ]
     for label, text in blocks:
         got = problems(text, files, set())
@@ -199,6 +227,9 @@ def main():
         ("a runtime path", base + "\nIt writes `.crew/config.json` and `.work/tickets/`.\n"),
         ("a placeholder path", base + "\nUnder `.crew/codemap/<subsystem>.md`.\n"),
         ("a ticket in COMING", base + "\nShipping arrives with T-0011.\n"),
+        ("allowCliApproval for plan approval only", base
+         + "\n## Autopilot today\n\nPlan approval also needs\n"
+           "`scope.allowCliApproval: true`; an open question does not. Autopilot never.\n"),
     ]
     for label, text in allows:
         got = problems(text, files, coming)

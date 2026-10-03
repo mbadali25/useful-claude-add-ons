@@ -253,11 +253,11 @@ What always stops for a person, at any setting:
 - a review ledger at `NEEDS_REPLAN`, or anything autopilot cannot tell.
 
 Plan approval and open questions stop too, unless `autopilot.approval` and
-`autopilot.questions` allow otherwise. Both also need
-`scope.allowCliApproval: true`. Autopilot never merges, pushes, opens a pull
-request or deploys today. Shipping arrives with T-0011, goals and backlogs
-with T-0012, and deploy dispatch with T-0045. `/crew:autopilot status`
-prints where a ticket stands, read-only.
+`autopilot.questions` allow otherwise. Plan approval also needs
+`scope.allowCliApproval: true`; an open question does not. Autopilot never
+merges, pushes, opens a pull request or deploys today. Shipping arrives with
+T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
+`/crew:autopilot status` prints where a ticket stands, read-only.
 
 A separate autopilot guide with worked examples is planned as T-0054.
 

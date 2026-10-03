@@ -313,11 +313,11 @@ in the repo's <code>.crew/config.json</code>.</p>
 <li>a review ledger at <code>NEEDS_REPLAN</code>, or anything autopilot cannot tell.</li>
 </ul>
 <p>Plan approval and open questions stop too, unless <code>autopilot.approval</code> and
-<code>autopilot.questions</code> allow otherwise. Both also need
-<code>scope.allowCliApproval: true</code>. Autopilot never merges, pushes, opens a pull
-request or deploys today. Shipping arrives with T-0011, goals and backlogs
-with T-0012, and deploy dispatch with T-0045. <code>/crew:autopilot status</code>
-prints where a ticket stands, read-only.</p>
+<code>autopilot.questions</code> allow otherwise. Plan approval also needs
+<code>scope.allowCliApproval: true</code>; an open question does not. Autopilot never
+merges, pushes, opens a pull request or deploys today. Shipping arrives with
+T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
+<code>/crew:autopilot status</code> prints where a ticket stands, read-only.</p>
 <p>A separate autopilot guide with worked examples is planned as T-0054.</p>
 <h2 id="trackers">Trackers</h2>
 <p>Source: <code>plugin/crew/hooks/scripts/crew_tracker.py</code> and
