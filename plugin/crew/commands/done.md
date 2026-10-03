@@ -45,11 +45,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/completion_audit.py --check --ticket
 
 Diffs the whole tree against this ticket's scope base, the same way the Stop
 hook's scope audit does, but as a pre-close confirmation rather than a
-per-turn block. A path byte-identical to the merged integration commit (after
-a merge of main) is not counted; the verdict's `merged main` line names that
-commit and the count, and `merged main: could not tell` (on a pass too) means
-every path was counted. A non-zero exit names the out-of-scope path, or a
-refresh artifact with the reason it was not admitted (`[anchor did not move]`,
+per-turn block. A non-zero exit names the out-of-scope path, or a refresh
+artifact with the reason it was not admitted (`[anchor did not move]`,
 `[no changed path reaches it]`, `[bytes differ from expected_rules ...]`,
 `[could not tell: ...]`): re-anchor or regenerate it in `/crew:implement $1`
 step 6, or put it in Touch. File any other out-of-scope path to `TODO.md`, not

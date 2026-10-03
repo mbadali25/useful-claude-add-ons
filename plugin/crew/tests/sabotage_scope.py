@@ -398,6 +398,16 @@ SCOPE_MUTATIONS = (
      "    if not commit:\n",
      '    commit = commit or "HEAD"\n    if False:\n',
      _MM + "test_could_not_tell_drops_nothing[merge-base-fails]"),
+    # On T-0061's base branch: a configured `tickets.baseBranch` naming no
+    # commit must stay could-not-tell, never fall back to origin/main.
+    ("MERGED MAIN: a base branch naming no commit falls back to origin/main", MERGED_MAIN,
+     "    ref, problem = scope_base.base_branch(root)\n",
+     '    ref, problem = (scope_base.base_branch(root)[0] or "origin/main"), None\n',
+     _MM + "test_could_not_tell_drops_nothing[base-branch-names-no-commit]"),
+    ("MERGED MAIN: the base branch's problem is not named", MERGED_MAIN,
+     '                "reason": f"{UNKNOWN}: {problem}; nothing dropped"}\n',
+     '                "reason": f"{UNKNOWN}: no integration ref names a commit; nothing dropped"}\n',
+     _MM + "test_could_not_tell_names_t0061s_reason_for_a_configured_base_branch"),
     ("MERGED MAIN: HEAD at the merged commit reads as no merge", MERGED_MAIN,
      "    before = _is_ancestor(root, commit, base_sha)\n",
      "    before = _is_ancestor(root, commit, base_sha) or (\n"

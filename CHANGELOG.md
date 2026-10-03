@@ -77,8 +77,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Bumped to `1.0.166` (the coordinator's assigned number; 1.0.55, 1.0.60, 1.0.62, 1.0.70,
   1.0.71 and 1.0.76 on its branch before it, each re-set after a merge of main). Built on
   origin/main at crew 1.0.154 merged with T-0061's harness half (`origin/T-0061-harness`,
-  PR #378, which lands first): `merged_main.resolve` reads the integration ref through
-  T-0061's `scope_base` unchanged by this entry.
+  PR #378, which lands first). `merged_main.resolve` now reads the integration ref through
+  T-0061's `scope_base.base_branch` (so `tickets.baseBranch` decides it), and a configured
+  base branch that names no commit is could-not-tell with T-0061's own reason, never a fall
+  back to `origin/main`; two new `test_merged_main.py` cases and two sabotage entries pin it.
+- **Harness PR.** Every production file here is review/gate harness (owner rule T-0087):
+  `merged_main.py` joins `HARNESS` in `scripts/check-tooling-pr.py` (and the harness rule's
+  paths in `.crew/verify.json`), because the review bundle and the completion audit both run
+  its rule. The `/crew:done` check 3 paragraph, a prompt outside the harness, is left at
+  main's text and filed to `TODO.md` for its own PR.
 
 ### Changed — `crew` 1.0.181: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
 

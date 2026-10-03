@@ -72,7 +72,13 @@ def test_a_fallback_base_equal_to_the_merge_base_changes_nothing(tmp_path):
 
 
 def _no_ref(monkeypatch, _root):
-    monkeypatch.setattr(scope_base, "_default_ref", lambda root: None)
+    monkeypatch.setattr(scope_base, "base_branch", lambda root: (None, None))
+
+
+def _base_branch_names_no_commit(_monkeypatch, root):
+    """T-0061: a configured `tickets.baseBranch` naming no commit is its own
+    could-not-tell, never a fall back to origin/HEAD's main."""
+    write(root, ".crew/config.json", '{"tickets": {"baseBranch": "nope"}}\n')
 
 
 def _detached(_monkeypatch, root):
@@ -93,8 +99,10 @@ def _is_ancestor_fails(monkeypatch, _root):
     monkeypatch.setattr(merged_main, "_is_ancestor", lambda root, older, newer: None)
 
 
-@pytest.mark.parametrize("cause", [_no_ref, _detached, _merge_base_fails, _is_ancestor_fails],
-                         ids=["no-ref", "detached-head", "merge-base-fails", "is-ancestor-fails"])
+@pytest.mark.parametrize("cause", [_no_ref, _detached, _merge_base_fails, _is_ancestor_fails,
+                                   _base_branch_names_no_commit],
+                         ids=["no-ref", "detached-head", "merge-base-fails", "is-ancestor-fails",
+                              "base-branch-names-no-commit"])
 def test_could_not_tell_drops_nothing(tmp_path, monkeypatch, cause):
     root, upstream, sha = build(tmp_path)
     ticket_commit(root, "src/t.txt", "ticket line\n")
@@ -106,6 +114,47 @@ def test_could_not_tell_drops_nothing(tmp_path, monkeypatch, cause):
 
     assert (got["applies"], got["commit"], got["reason"].startswith("could not tell")) == (
         False, None, True)
+
+
+def test_could_not_tell_names_t0061s_reason_for_a_configured_base_branch(tmp_path):
+    """The reason carries `scope_base.base_branch`'s own problem, not a claim
+    that origin/HEAD, origin/main and main were tried."""
+    root, upstream, sha = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    merge_main(root)
+    write(root, ".crew/config.json", '{"tickets": {"baseBranch": "nope"}}\n')
+
+    got = merged_main.resolve(str(root), sha["base"])
+
+    assert ("tickets.baseBranch 'nope' names no commit here" in got["reason"],
+            "origin/HEAD, origin/main, main" in got["reason"]) == (True, False)
+
+
+def test_the_configured_base_branch_is_the_integration_ref(tmp_path):
+    """T-0061: with `tickets.baseBranch: development` the merged commit is the
+    merge-base with origin/development, although origin/HEAD names main; and
+    HEAD on development itself never applies."""
+    root, upstream, sha = build(tmp_path)
+    git(upstream, "branch", "development", "main")
+    git(root, "fetch", "-q", "origin")
+    git(root, "checkout", "-q", "-B", "T-1", "origin/development")
+    write(root, ".crew/config.json", '{"tickets": {"baseBranch": "development"}}\n')
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    git(upstream, "checkout", "-q", "development")
+    advance_main(upstream)
+    git(upstream, "checkout", "-q", "main")
+    git(root, "fetch", "-q", "origin")
+    git(root, "merge", "-q", "--no-edit", "origin/development")
+    merged = git(root, "rev-parse", "origin/development")
+    on_branch = merged_main.resolve(str(root), sha["base"])
+    git(root, "checkout", "-q", "-b", "development", "origin/development")
+
+    on_development = merged_main.resolve(str(root), sha["base"])
+
+    assert ((on_branch["ref"], on_branch["commit"], on_branch["applies"]),
+            (on_development["applies"], "HEAD is on development itself" in on_development["reason"])
+            ) == (("origin/development", merged, True), (False, True))
 
 
 def test_is_ancestor_answers_true_false_and_none_when_git_cannot(tmp_path):

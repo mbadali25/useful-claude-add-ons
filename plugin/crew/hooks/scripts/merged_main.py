@@ -17,9 +17,11 @@ of `<ref>` is the merged commit, and after a second merge the newer one.
 from the start AND differs from the merged commit. So a ticket edit on top of
 main's edit to the same file stays, as does any edit after the merge.
 
-`<ref>` is `scope_base._default_ref` (origin/HEAD's target, origin/main, main),
-read through that one helper so T-0061 (`tickets.baseBranch`) swaps it for
-both consumers at once.
+`<ref>` is the ticket base branch, `scope_base.base_branch` (T-0061:
+`tickets.baseBranch` in `.crew/config.json` when set, else origin/HEAD's target,
+origin/main, main), read through that one helper so both consumers measure
+against the same branch the scope base does. A configured branch that names no
+commit is could-not-tell with T-0061's own reason, never a fall back.
 
 It never applies -- behaviour is exactly the recorded-start diff -- when:
   * HEAD's branch IS `<ref>` (or `<ref>` without `origin/`): there
@@ -28,8 +30,8 @@ It never applies -- behaviour is exactly the recorded-start diff -- when:
   * the merged commit is an ancestor of the start: no merge of `<ref>` past
     the start is reachable from HEAD.
 
-COULD NOT TELL. No ref names a commit, HEAD is detached, or git gives no
-answer: `resolve` returns `commit None`, `applies False` and a reason that
+COULD NOT TELL. No base branch names a commit (or the configured one does
+not), HEAD is detached, or git gives no answer: `resolve` returns `commit None`, `applies False` and a reason that
 starts "could not tell". Nothing is dropped, and every line derived from it
 (manifest, review-patch stderr, the prompt's bundle block, the audit verdict,
 the receipt check) says so -- an unknown never reads as "nothing merged".
@@ -65,7 +67,10 @@ def _is_ancestor(root, older, newer):
 def resolve(root, base_sha):
     """{"ref", "commit", "applies", "reason"} for the ticket that started at
     `base_sha`. `commit` is None only on could-not-tell."""
-    ref = scope_base._default_ref(root)  # pylint: disable=protected-access
+    ref, problem = scope_base.base_branch(root)
+    if problem:
+        return {"ref": None, "commit": None, "applies": False,
+                "reason": f"{UNKNOWN}: {problem}; nothing dropped"}
     if not ref:
         return {"ref": None, "commit": None, "applies": False,
                 "reason": f"{UNKNOWN}: no integration ref (origin/HEAD, origin/main, main) "

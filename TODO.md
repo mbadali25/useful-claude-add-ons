@@ -5138,6 +5138,12 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
   main `/crew:implement` step 3 prints every file main changed. T-0100 narrowed only
   `review_patch.compute` and `completion_audit.audit`, through `merged_main.resolve` / `keep`
   (`plugin/crew/hooks/scripts/merged_main.py`); the same two calls would narrow this print.
+- **crew: `/crew:done` check 3's paragraph does not mention the merged-main verdict line** (follow-up
+  to T-0100). `plugin/crew/commands/done.md` check 3 should say that a path byte-identical to the
+  merged integration commit is not counted, that the verdict's `merged main` line names the commit
+  and the count, and that `merged main: could not tell` (on a pass too) means every path was
+  counted. T-0100 is a harness PR (owner rule T-0087) and `done.md` is a prompt outside `HARNESS`,
+  so that paragraph lands in its own PR; the README's `completion_audit.py` row already says it.
 
 ## gizmoduck: follow-ups filed by T-0107 (the routine CLI, 2026-09-29)
 
