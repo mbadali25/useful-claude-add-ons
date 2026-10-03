@@ -52,11 +52,25 @@
 #   pwsh -File auto-clear.ps1 -Session ID           # apply the conditions, then send
 #   pwsh -File auto-clear.ps1 -Session ID -DryRun   # print the plan, send nothing
 #   pwsh -File auto-clear.ps1 -Force                # skip the handoff conditions
+#   pwsh -File auto-clear.ps1 -Resume -Session ID -Source clear -Python PY [-DryRun]
+#
+# `-Resume` (T-0013) is started by the context hook on SessionStart: it types
+# T-0006's rendered resume prompt instead of /clear. Consent is `resume.auto`
+# (decided in python, `crew_autocycle.py resume-plan --flavour ps1`, which is
+# why the hook hands over -Python); the window, focus and tab rules below are
+# the same ones, unchanged. It claims a per-handoff marker instead of the
+# per-session one, records the run before spawning, and prints one
+# `autoresume:` line for the hook. No probe exists here: the child's delay is
+# a guess, and the focus and tab rechecks after it cover the wrong window,
+# not an input box that is not ready yet.
 param(
   [switch]$DryRun,
   [switch]$Force,
   [string]$Session = "",
-  [string]$Root = ""
+  [string]$Root = "",
+  [switch]$Resume,
+  [string]$Source = "",
+  [string]$Python = ""
 )
 
 # Native Windows only, and this check is not cosmetic. The send path is
@@ -99,6 +113,12 @@ function Write-CrewAutoClearNote([string]$Message) {
 }
 
 function Stop-CrewAutoClear([string]$Reason) {
+  if ($Resume) {
+    # The context hook names this line in the session's context.
+    Write-CrewAutoClearNote "refusing - auto-resume: $Reason"
+    Write-Output "autoresume: refused - $Reason"
+    exit 0
+  }
   Write-CrewAutoClearNote "refusing - $Reason"
   exit 0
 }
@@ -144,6 +164,9 @@ $globalAuto = Get-CrewChild (Get-CrewChild $globalCfg "context") "autoClear"
 # even get a log file out of this.
 $enabled = (Test-CrewTrue (Get-CrewChild $globalAuto "enabled")) -and
            -not (Test-CrewFalse (Get-CrewChild $repoAuto "enabled"))
+# Resume mode's consent is `resume.auto`, not this switch: the python plan
+# below decides it, and is silent when it is off.
+if ($Resume) { $enabled = $true }
 if (-not $enabled) { exit 0 }
 
 # onlyRepos / onlySessions NARROW the machine opt-in, and are read from the
@@ -465,7 +488,23 @@ if ($sessionKey.Length -gt 100) { $sessionKey = $sessionKey.Substring(0, 100) }
 if (-not $sessionKey) { $sessionKey = "nosession" }
 $sentMarker = ".crew/.autoclear-sent-$sessionKey"
 
-if (-not $Force) {
+if ($Resume) {
+  # T-0006's decide, onlyRepos/onlySessions, the typed text, the delay and
+  # the per-handoff marker, from the one place they are decided. The method
+  # is resolved natively below: `sendkeys` is this flavour's.
+  if (-not $Python) { Stop-CrewAutoClear "no python was handed to resume mode, so nothing was decided" }
+  $planLines = @(& $Python (Join-Path $PSScriptRoot "crew_autocycle.py") resume-plan "--root=$((Get-Location).Path)" `
+                   "--session=$Session" "--source=$Source" --flavour ps1 2>$null |
+                 ForEach-Object { ([string]$_).TrimEnd("`r") })
+  if ($planLines.Count -lt 12) { Stop-CrewAutoClear "could not read the resume plan from crew_autocycle.py" }
+  # Off is silent, as for /clear.
+  if ($planLines[0] -eq "off") { exit 0 }
+  if ($planLines[0] -ne "send") { Stop-CrewAutoClear $planLines[1] }
+  $command = $planLines[5]
+  $delay = Get-CrewAutoClearInt $planLines[6] 2 -RejectNegative
+  $sentMarker = $planLines[9]
+  $decisionJson = $planLines[10]
+} elseif (-not $Force) {
   if (-not $Session) { Stop-CrewAutoClear "no session id, so no way to tell whose handoff this is" }
   $markerPath = ".crew/.handoff-requested-$sessionKey"
   if (-not (Test-Path -LiteralPath $markerPath)) { Stop-CrewAutoClear "no wrap-up was requested in this session" }
@@ -517,6 +556,21 @@ switch ($method) {
   "none"     { Stop-CrewAutoClear "method none" }
   "tmux"     { Stop-CrewAutoClear "method tmux is auto-clear.sh's job; this is the native-Windows flavour. Both are registered, so the bash one will have handled it" }
   default    { Stop-CrewAutoClear "method '$method' is not supported here (auto, notify, sendkeys, none)" }
+}
+
+if ($method -eq "notify" -and $Resume) {
+  # Types nothing, so it neither claims the handoff nor records a run: the
+  # human starts the command, and decide still sees the note as unused.
+  if ($DryRun) {
+    Write-Output "autoresume: would send"
+    Write-Output "  method: notify"
+    Write-Output "  command: $command"
+    Write-Output "  delay: n/a (notify types nothing)"
+    exit 0
+  }
+  Write-CrewAutoClearNote "auto-resume: method notify - run $command yourself (nothing typed)"
+  Write-Output "autoresume: notify - run $command yourself"
+  exit 0
 }
 
 if ($method -eq "notify") {
@@ -775,6 +829,8 @@ if (-not $ownerKnown) {
 # disambiguate -- falls straight through to sendkeys below, unchanged.
 
 if ($declineReason) {
+  # Resume mode declines without claiming: nothing was typed or recorded.
+  if ($Resume) { Stop-CrewAutoClear "declined sendkeys - $declineReason" }
   if ($DryRun) {
     Write-Output "autoclear: would decline sendkeys - $declineReason"
     Write-Output "  falling back to notify: would say it is safe to run $command yourself"
@@ -816,7 +872,23 @@ if ($DryRun) {
 # means the second lands in the fresh session. Absolute path: [System.IO.File]
 # resolves a relative one against [Environment]::CurrentDirectory, which
 # Set-Location does not update.
-if (-not $Force) {
+if ($Resume) {
+  # T-0013: the per-handoff marker (an absolute path from the plan), claimed
+  # LAST, after every refusal above. Then the run is recorded BEFORE anything
+  # is spawned: a run the loop guard cannot see is never typed.
+  try {
+    $claim = [System.IO.File]::Open($sentMarker, [System.IO.FileMode]::CreateNew)
+    $claim.Close()
+  } catch { Stop-CrewAutoClear "this handoff was already typed once (marker $(Split-Path -Leaf $sentMarker) exists)" }
+  $recordOut = $decisionJson | & $Python (Join-Path $PSScriptRoot "crew_resume.py") record `
+                 "--root=$((Get-Location).Path)" --decision-json - 2>$null
+  $recorded = $null
+  try { $recorded = ($recordOut | Out-String) | ConvertFrom-Json -ErrorAction Stop } catch { }
+  if ($null -eq $recorded -or -not (Test-CrewTrue (Get-CrewChild $recorded "ok"))) {
+    $why = [string](Get-CrewChild $recorded "reason"); if (-not $why) { $why = "no answer from crew_resume.py" }
+    Stop-CrewAutoClear "could not record the run ($why) - nothing typed"
+  }
+} elseif (-not $Force) {
   try {
     $claim = [System.IO.File]::Open(
       (Join-Path (Get-Location).Path $sentMarker), [System.IO.FileMode]::CreateNew)
@@ -1133,4 +1205,5 @@ Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList (Get-CrewSendKeys
   -WindowTitle $windowTitle -IsWindowsTerminal $isWindowsTerminal) | Out-Null
 
 Write-CrewAutoClearNote "sent - method sendkeys, target $label, command '$command' in ${delay}s (only if that window still has focus)"
+if ($Resume) { Write-Output "autoresume: typing $command in ${delay}s (method sendkeys)" }
 exit 0

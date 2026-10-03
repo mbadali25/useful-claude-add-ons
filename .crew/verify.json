@@ -533,6 +533,24 @@
       "run": ["python3 -m pytest plugin/crew/tests/test_pytest_rule.py -q"],
       "reach": "local",
       "why": "pytest_rule.py runs the crew rules above that call it: `-n auto -m \"not wallclock\"` then `-m wallclock` serially, the way pytest-crew.yml runs the suite, or one serial run without xdist. Its exit code is what the gate reads, so the suite pins every combination: exit 5 from one half is not a failure, from both it is, and a half killed by a signal is a failure (max() of the codes would have read 0). 1.6s here. reach: local - a unit suite with the pytest calls stubbed."
+    },
+    {
+      "paths": [
+        "plugin/crew/hooks/scripts/auto-clear.sh",
+        "plugin/crew/hooks/scripts/auto-clear.ps1",
+        "plugin/crew/hooks/scripts/crew_autocycle.py",
+        "plugin/crew/hooks/scripts/crew-context.sh",
+        "plugin/crew/hooks/scripts/crew-context.ps1",
+        "plugin/crew/tests/test_resume_typing.py",
+        "plugin/crew/tests/test_resume_typing_structure.py"
+      ],
+      "seconds": 72,
+      "coveredBy": "crew-suite",
+      "run": [
+        "python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_resume_typing.py plugin/crew/tests/test_resume_typing_structure.py plugin/crew/tests/test_auto_cycle.py -q"
+      ],
+      "reach": "local",
+      "why": "T-0013 auto-resume typing: crew_autocycle.resume_plan (decide, then onlyRepos/onlySessions, then the method: tmux into an ancestor pane, auto never sendkeys on Windows, wtype and xdotool refused, notify types nothing), the tmux ready probe, both senders' resume mode (per-handoff marker claimed after every refusal, the run recorded before the spawn, delay -> probe -> inhibit -> send-keys; the .ps1 child's delay -> focus -> tab recheck -> inhibit -> SendWait), and the context hook starting its own flavour's sender before its claim. test_auto_cycle.py rides along because it drives the same auto-clear scripts for /clear. 72s serial (204 passed, 12 skipped, then 1 wallclock) measured 2026-10-03 on a 4-CPU Linux container without pytest-xdist, load average 5.8-6.7, pwsh 7.4.6 on PATH; above the 60s Stop budget alone, so a Stop that packs it overruns, bounded by the Stop hook's 600s timeout (hooks.json). The .ps1 cases skip without pwsh. Every case sets CREW_AUTOCLEAR_INHIBIT, a tmux stub that records its argv and a stub window list. The sabotage entries for this suite are not in this lane: tests/sabotage*.py is harness (T-0087), so they land as their own tooling PR. reach: local - every case builds a throwaway repo and HOME under tmp_path."
     }
   ],
 
