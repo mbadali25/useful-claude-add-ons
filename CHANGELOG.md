@@ -4,6 +4,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed - `crew` version allocated at land: the shortfall rule says its wording list cannot be complete (L-0604)
+
+- crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and the
+  troubleshooting guide (rebuilt) no longer say any admission that the review fell short is
+  INCOMPLETE. Only a stray line matching `review_verdict._SHORTFALL` is; that list is wording and
+  cannot be complete, so an admission it misses ("I only inspected one of the nine files") is
+  recovered as prose beside findings, the round is FINDINGS, and the line is reported as ignored.
+- Two tests pin that: `review_verdict.parse` on the repro is FINDINGS with the line in `ignored`,
+  and `proposals` proposes its FIX without the admission. No behaviour change.
+  `commands/review.md`'s Step 2c sentence says the same thing and is a review-harness file, so it
+  follows in its own tooling PR.
+
 ### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
 
 - **No hang on a FIFO.** `recurring_findings.py` reads a spec or its data file only when it is a

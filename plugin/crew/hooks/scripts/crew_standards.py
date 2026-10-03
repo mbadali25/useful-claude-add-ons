@@ -728,13 +728,18 @@ def proposals(root, ticket, scratch, round_no):
 
     An out.txt the verdict parser calls INCOMPLETE -- empty, a line that might
     be a contract line it cannot read (a finding behind a bullet), a stray
-    line admitting the review fell short ("could not review ..."), even
-    beside well-formed findings, or neither CLEAN nor a finding -- is refused
-    and nothing is written: "could not tell" never becomes "no findings", and
-    the exclusive create is left free for the corrected run (GEN-01). A round
-    the parser recovered despite harmless stray lines (prose or a code fence
-    beside well-formed findings, L-0576) is FINDINGS, and its findings are
-    proposed like any other."""
+    line matching the shortfall wording list (`review_verdict._SHORTFALL`:
+    "could not review ...", "skipped", ...), even beside well-formed
+    findings, or neither CLEAN nor a finding -- is refused and nothing is
+    written: "could not tell" never becomes "no findings", and the exclusive
+    create is left free for the corrected run (GEN-01). A round the parser
+    recovered despite harmless stray lines (prose or a code fence beside
+    well-formed findings, L-0576) is FINDINGS, and its findings are proposed
+    like any other. That wording list cannot be complete, so an admission it
+    misses ("I only inspected one of the nine files") is recovered as prose
+    and the round is FINDINGS: such a line is in the parser's `ignored`, which
+    /crew:review always reports (`review.json`'s `ignored_text`), and is not
+    written here."""
     import review_verdict  # pylint: disable=import-outside-toplevel
     source = os.path.join(scratch, "out.txt")
     raw, why = _read_bytes(source)
