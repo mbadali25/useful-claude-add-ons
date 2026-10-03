@@ -177,3 +177,94 @@ def test_prompt_lists_the_overlay_and_its_supplements(repo):
     text = rp.build(str(repo), "T9", LISTED)
 
     assert ("REPO-01 Local rule" in text, "LOCAL-SUPPLEMENT-TEXT" in text) == (True, True)
+
+
+# --- docs/review/08 defects 1 and 2 ------------------------------------------
+
+import review_gate  # noqa: E402  pylint: disable=wrong-import-position
+
+
+def _gate(monkeypatch, answer):
+    calls = []
+
+    def fake(root, fetch=None):  # pylint: disable=unused-argument
+        calls.append(root)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    monkeypatch.setattr(review_gate, "accepted_state", fake)
+    return calls
+
+
+def _record(repo):
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / ".verify-gate.record.json").write_text(
+        '{"rules": {"k": {"label": "smoke", "reason": "over budget"}}}', encoding="utf-8")
+
+
+def test_a_ci_receipt_the_gate_accepts_is_what_the_reviewer_is_told(repo, monkeypatch):
+    """Defect 1: review_run proceeds on accepted_state, which takes a verified
+    CI receipt for HEAD. The prompt used to read only the local marker, so the
+    reviewer was told MISSING -- the sentence 16 earlier BLOCKs quote."""
+    _record(repo)
+    _gate(monkeypatch, (review_gate.VERIFIED, "the self-hosted gate passed on HEAD abc"))
+
+    text = rp.build(str(repo), "T9", MANIFEST)
+
+    block = text[text.index("== Test receipts (verify gate) =="):]
+    block = block[:block.index("\n\n")]
+    assert "CI receipt: VERIFIED for HEAD - the self-hosted gate passed on HEAD abc" in block
+    assert "MISSING" not in block
+    assert "NOT been through the gate" not in block
+    assert "superseded for HEAD by the CI receipt: NOT VERIFIED: smoke: over budget" in block
+
+
+@pytest.mark.parametrize("answer", [
+    (review_gate.UNVERIFIED, "no clean pass; CI receipt UNKNOWN: gh is not installed"),
+    (review_gate.UNKNOWN, "git failed; CI receipt UNVERIFIED: 2 path(s) differ"),
+])
+def test_a_receipt_the_gate_does_not_accept_leaves_the_local_answer(repo, monkeypatch, answer):
+    """Only a VERIFIED answer changes what the reviewer reads; any other keeps
+    the local MISSING line and says what the gate concluded."""
+    _gate(monkeypatch, answer)
+
+    text = rp.build(str(repo), "T9", MANIFEST)
+
+    assert "MISSING: no .crew/.verify-verified-at" in text
+    assert f"Gate answer for HEAD: {answer[0]}: {answer[1]}" in text
+    assert "CI receipt: VERIFIED" not in text
+
+
+def test_a_gate_question_that_raises_is_unknown_never_a_pass(repo, monkeypatch):
+    _gate(monkeypatch, RuntimeError("boom"))
+
+    text = rp.build(str(repo), "T9", MANIFEST)
+
+    assert "MISSING: no .crew/.verify-verified-at" in text
+    assert "Gate answer for HEAD: UNKNOWN: RuntimeError: boom" in text
+    assert "CI receipt: VERIFIED" not in text
+
+
+def test_a_clean_local_pass_on_head_asks_no_receipt(repo, monkeypatch):
+    """The local evidence already proves HEAD: no receipt is fetched."""
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / ".verify-verified-at").write_text(git(repo, "rev-parse", "HEAD") + "\n",
+                                                        encoding="utf-8")
+    calls = _gate(monkeypatch, RuntimeError("must not be asked"))
+
+    text = rp.build(str(repo), "T9", dict(MANIFEST, dirty=False))
+
+    assert "= HEAD, tree clean." in text
+    assert calls == []
+    assert "Gate answer for HEAD" not in text
+
+
+def test_the_recurring_findings_block_reaches_the_reviewer(repo):
+    """Defect 2: recurring_findings.review_block was written for the reviewer
+    and had no caller. It follows the standards checklist, scoped to the
+    bundle's changed files."""
+    text = rp.build(str(repo), "T9", LISTED)
+
+    header = "== Recurring review findings for these paths (appendix) =="
+    assert header in text
+    assert text.index("== Development standards checklist (appendix) ==") < text.index(header)

@@ -379,6 +379,24 @@ TOOLING_MUTATIONS += (
         "tests/test_verify_gate_tree_cache.py::test_the_cache_can_always_be_refused",
     ),
     (
+        # docs/review/08 defect 1: the prompt reads the local marker only, so
+        # a round the gate reserved on a CI receipt is told MISSING.
+        "review_prompt: a CI receipt the gate accepted is not shown to the reviewer",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "        if state == review_gate.VERIFIED:\n",
+        "        if False:  # pylint: disable=using-constant-test\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_ci_receipt_the_gate_accepts_is_what_the_reviewer_is_told"),
+    ),
+    (
+        # docs/review/08 defect 2: the recurring-findings block has no caller.
+        "review_prompt: the recurring-findings block never reaches the reviewer",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "                  recurring_findings.review_block(root, manifest),\n",
+        "",
+        "tests/test_review_prompt.py::test_the_recurring_findings_block_reaches_the_reviewer",
+    ),
+    (
         "review_gate: a receipt that is not VERIFIED still upgrades the gate",
         os.path.join(SCRIPTS, "review_gate.py"),
         "    if r_state == VERIFIED:\n",

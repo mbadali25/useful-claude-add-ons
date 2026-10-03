@@ -4,6 +4,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.155: the review prompt shows the gate's real answer and the recurring-findings classes (docs/review/08, defects 1 and 2)
+
+- `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
+  `review_run.py` had reserved on a verified CI receipt for HEAD (`review_gate.accepted_state`, crew
+  1.0.153): the prompt read the local marker only. When the marker does not show HEAD clean it now
+  asks `accepted_state`, the answer the round was reserved on. A receipt VERIFIED reads
+  `CI receipt: VERIFIED for HEAD - <reason>`, with the local record's rows marked superseded; any
+  other answer keeps the local lines and adds `Gate answer for HEAD: <state>: <reason>`; a call that
+  raises is `UNKNOWN`, never a pass. A clean local pass on HEAD asks no receipt. Both analyses in
+  `docs/review/08-qa-rounds-analysis.md` found this; 16 earlier BLOCKs quote the MISSING sentence.
+- `recurring_findings.review_block` was written for the reviewer and had no caller. `review_prompt.build`
+  now appends it after the standards checklist, scoped to the bundle's changed files.
+- Five new `test_review_prompt.py` cases, four red before the fix (the fifth pins that a clean local
+  pass asks no receipt); two mutations registered in `sabotage_tooling.py`, both red.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

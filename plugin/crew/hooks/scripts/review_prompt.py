@@ -10,14 +10,19 @@ script writes the part of it that is about the ticket rather than the diff:
     files-mode ticket with no spec.md yet, `.work/tickets/<id>.md`);
   - the plan, `.work/tickets/<id>/plan.md`, in full;
   - the test receipts: the verify gate's last verified commit
-    (`.crew/.verify-verified-at`) against HEAD, and every rule its record
-    (`.crew/.verify-gate.record.json`) still lists as NOT VERIFIED.
+    (`.crew/.verify-verified-at`) against HEAD and, when that does not show
+    HEAD clean, `review_gate.accepted_state` -- the answer `review_run.py`
+    reserved the round on, which accepts a CI receipt for HEAD -- and every
+    rule the local record (`.crew/.verify-gate.record.json`) still lists as
+    NOT VERIFIED (marked superseded when the receipt covers HEAD).
 
   - the development standards checklist (T-0085): the effective standards
     set's ids, rules and self-check questions from `crew_standards.
     checklist_block`, stating that the author's self-check answers are
     withheld (`selfcheck.md` is never read here) and that the list does not
     bound the review; an unreadable overlay is written `UNREADABLE: ...`.
+  - the recurring-findings classes keyed to the bundle's changed files
+    (`recurring_findings.review_block`), after the standards checklist.
 
 Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
@@ -44,6 +49,8 @@ import subprocess
 import sys
 
 import crew_standards
+import recurring_findings
+import review_gate
 import review_verdict
 import verify_record
 
@@ -156,20 +163,43 @@ def _head(root):
         return ""
 
 
+def _gate_answer(root):
+    """(state, reason) from `review_gate.accepted_state`, the answer
+    `review_run.py` reserved this round on; a call that raises is UNKNOWN,
+    never a pass."""
+    try:
+        return review_gate.accepted_state(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return review_gate.UNKNOWN, f"{exc.__class__.__name__}: {exc}"
+
+
 def _receipts_block(root, manifest):
+    """The verify evidence, as the gate that reserved this round judged it
+    (docs/review/08, defect 1). The local marker is read first; only when it
+    does not show HEAD clean is `accepted_state` asked, so a CI receipt for
+    HEAD -- which `review_run.py` already accepted -- is what the reviewer is
+    told, instead of a MISSING line that contradicts the gate."""
     out = ["== Test receipts (verify gate) =="]
     marker = os.path.join(root, ".crew", ".verify-verified-at")
     verified = (_read(marker) or "").strip()
     head = _head(root)
-    if not verified:
-        out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has not recorded "
-                   "a clean pass in this checkout.")
-    elif verified == head and not manifest.get("dirty"):
+    receipt = False
+    if verified and verified == head and not manifest.get("dirty"):
         out.append(f"Last clean verify pass: {verified[:12]} = HEAD, tree clean.")
     else:
-        out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
-                   f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after that "
-                   "pass have NOT been through the gate.")
+        state, reason = _gate_answer(root)
+        if state == review_gate.VERIFIED:
+            receipt = True
+            out.append(f"CI receipt: VERIFIED for HEAD - {reason}")
+        elif not verified:
+            out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has not "
+                       "recorded a clean pass in this checkout.")
+        else:
+            out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
+                       f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after "
+                       "that pass have NOT been through the gate.")
+        if not receipt:
+            out.append(f"Gate answer for HEAD: {state}: {reason}")
     state, rules = verify_record.read_record(root)
     shown = verify_record.RECORD_PATH.replace("\\", "/")
     if state == "absent":
@@ -181,9 +211,11 @@ def _receipts_block(root, manifest):
     elif not rules:
         out.append("Per-rule record: no rule is outstanding.")
     else:
+        prefix = "Local record, superseded for HEAD by the CI receipt: " if receipt else ""
         for info in rules.values():
             if isinstance(info, dict):
-                out.append(f"NOT VERIFIED: {info.get('label', '?')}: {info.get('reason', '')}")
+                out.append(f"{prefix}NOT VERIFIED: {info.get('label', '?')}: "
+                           f"{info.get('reason', '')}")
     return out
 
 
@@ -265,6 +297,7 @@ def build(root, ticket, manifest, out_dir=None):
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
                   crew_standards.checklist_block(root, manifest),
+                  recurring_findings.review_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):
         if not block:
             continue
