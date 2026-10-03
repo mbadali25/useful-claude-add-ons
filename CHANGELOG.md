@@ -4,8 +4,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.146: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
+### Changed — `crew` 1.0.147: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
 
+- `tests/test_review_eligible.py` runs the `$ELIGIBLE` snippet in `crew_fixtures.resolve_bash()` with
+  `python3` mapped to the test's own interpreter: on windows-latest a bare `bash` plus Git Bash's
+  missing `python3` exited 1 (root CLAUDE.md, Landmines).
 - `verify-gate.ps1`'s four tree-cache python calls are fed `$null |`, the convention its git calls
   already follow: a native child inheriting the hook's open, never-closed stdin parks on Windows,
   and `test_40` / `test_40b` timed out at 20s on windows-latest without it.

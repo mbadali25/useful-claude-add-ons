@@ -10,9 +10,15 @@ import json
 import os
 import re
 import subprocess
+import sys
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
 import review_run
+
+_BASH = crew_fixtures.resolve_bash()
 
 _REVIEW_MD = os.path.join(context._ROOT, "commands", "review.md")  # pylint: disable=protected-access
 
@@ -26,10 +32,17 @@ def _snippet():
 
 
 def _eligible(tmp_path, fall_through):
+    """Run the snippet in a PROVEN bash (crew_fixtures.resolve_bash: on Windows a
+    bare `bash` can be WSL's), with `python3` mapped to this interpreter: Git
+    Bash ships without python3 (root CLAUDE.md, Landmines), and this test is
+    about the snippet's filter, not about which python a shell resolves."""
+    if _BASH is None:
+        pytest.skip("needs a working bash")
     report = tmp_path / "report.json"
     report.write_text(json.dumps({"qaFallThrough": fall_through}), encoding="utf-8")
-    script = _snippet() + '\nprintf "%s" "$ELIGIBLE"\n'
-    done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+    py = '"' + sys.executable.replace("\\", "/") + '"'
+    script = _snippet().replace("python3 -c", py + " -c", 1) + '\nprintf "%s" "$ELIGIBLE"\n'
+    done = subprocess.run([_BASH, "-c", script], capture_output=True, text=True,
                           env=dict(os.environ, REPORT=str(report)), check=True, timeout=30)
     return done.stdout, done.stderr
 
