@@ -33,11 +33,11 @@ it merges if its number has been passed.
 | PR | Ticket | State | Blocked by | Crew version |
 |---|---|---|---|---|
 | #350 | T-0061 | built; merging main and verifying (harness half is #378, 1.0.181) | | 1.0.184 |
-| #351 | T-0066 | built; merging main and verifying | | 1.0.185 |
+| #351 | T-0066 | part 1 merged with main, verified; in review | | 1.0.185 |
 | #355 | T-0013 | built; merging main and verifying | | 1.0.186 |
-| #360 | T-0048 | built; merging main and verifying | | 1.0.183 |
-| #368 | T-0063 | built; merging main and verifying | | 1.0.182 |
-| #371 | T-0100 | built; harness files, may need a tooling-PR split | | 1.0.166 |
+| #360 | T-0048 | merged with main, verified; in review | | 1.0.200 |
+| #368 | T-0063 | built; merging main and verifying | | 1.0.201 |
+| #371 | T-0100 | built; harness files, may need a tooling-PR split | | 1.0.202 |
 | #337 | L-0618 | in review | | 1.0.187 |
 | #375 | row 4 | in review | | 1.0.188 |
 | #372 | L-0562 | in review; re-bumped after main's #327 | | 1.0.199 |
@@ -57,6 +57,15 @@ it merges if its number has been passed.
 | #364 | T-0052 | blocked | T-0019 (#379), T-0037 (not started) | |
 | #365 | T-0058 | blocked | T-0052, T-0012, T-0019 | |
 | #366 | T-0059 | blocked | T-0011 (#353), T-0037, T-0052 | |
+
+**Harness-only follow-ups (each lands alone, per `CLAUDE.md` T-0087):**
+
+| For | Work | Status |
+|---|---|---|
+| T-0066 (#351) part 2 | The scope guard refuses a commit carrying a `git.forbiddenTrailers` trailer: `scope_guard.py`, `test_scope_guard_trailers.py` (must-block/must-allow), `sabotage_trailers.py` + `sabotage.py` entry, the scope-guard doc rows | needs ticket |
+| T-0048 (#360) | `sabotage_keys.py` (ten mutations, shown red by hand) registered in `sabotage.py` | needs ticket |
+
+**Re-bumps:** merging `main` always needs a new crew version set after the merge (the drift check dates a version from the first commit that declared it). 1.0.180 -> 1.0.199 (#372), 1.0.183 -> 1.0.200 (#360), 1.0.182 -> 1.0.201 (#368), 1.0.166 -> 1.0.202 (#371). Next free: 1.0.203.
 
 **Not started anywhere (no branch, nothing on `main`):** T-0016, T-0037 and T-0049. Together they block
 #356, #363, #364, #365 and #366. Owner's ticket agent: confirm that each ticket exists and is ready to
