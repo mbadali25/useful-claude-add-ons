@@ -4,6 +4,22 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.164: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
+
+- A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
+  ran under the Stop hook, which Claude Code gives that variable, but under `/crew:verify --all` the
+  Bash tool substitutes it into the command text and is not documented to export it to the gate's
+  children. That rule could then fail, or exit 77 and leave the verified baseline frozen, depending on
+  which path ran the gate. `verify-gate.sh` and `verify-gate.ps1` now set it to the plugin's own root
+  (two levels above the script) when the caller did not, and leave a caller's value alone: the hook's
+  value is a native path on Windows, which the shell's `pwd` form is not. Groundwork for a rule that
+  checks `AGENTS.md` against `verify.json` with crew's own generator.
+- `test_verify_gate_plugin_root.py` runs the real gate in both flavours with a rule that reads the
+  variable from its own process environment (a value visible only to the gate's shell, and not
+  exported, does not pass): unset → the gate's own plugin root; set → kept. Two mutations against
+  `verify-gate.sh` registered in `sabotage_tooling.py`, one per behaviour. The `.ps1` cases run only
+  on native Windows (CI's Windows jobs). The file joins `.crew/verify.json`'s verify-gate rule.
+
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
