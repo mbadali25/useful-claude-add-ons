@@ -152,6 +152,11 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   fails unless the hash still matches, the receipt is for the **latest** recorded round, and the
   state is not `NEEDS_REPLAN` — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
+  One exception, the delta gate: after a catch-up merge, a version bump or an anchor-only refresh,
+  committed on a clean checkout, the receipt is kept (`receipt kept by delta gate: ...`) when the
+  ticket's own delta is byte-identical to the reviewed one. Its stale line names what differed
+  (`delta gate: <path> ...`, `excluded path changed`, `not clean`, `no train entry binds the
+  integration ref`); a code map, rules file or diagram may move only its anchor sha after review.
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.
 
@@ -183,7 +188,8 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   everything.
   **Fix:** wait for the holder to land and release, then acquire again before reviewing; fix an
   undeclared Touch in the spec. `merge <base> first` means the base moved in this ticket's Touch:
-  run `crew_train.py catch-up --ticket <id>` and review the merged head. `could not tell` (exit 3)
+  run `crew_train.py catch-up --ticket <id>`, then bump, refresh and commit; the delta gate keeps the
+  receipt when none of the ticket's own code moved, otherwise review the merged head. `could not tell` (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.
 
 - **Symptom: a lane holds the train and its session died.** `status` prints `stale?:` beside it

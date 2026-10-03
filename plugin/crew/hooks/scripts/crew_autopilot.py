@@ -79,7 +79,9 @@ force says `take`. Exit 0 valid, 1 not.
   latest round INCOMPLETE                accept-review       stop
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
-  receipt current, artifacts stale       stale-after-review  stop, nothing written
+  receipt changed beyond an anchor      stale-after-review  stop (L-0522), before the budget
+  receipt current, artifacts stale       refresh             stop: run it, commit, rerun
+  receipt current, unsettled artifact    stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
@@ -154,6 +156,7 @@ import crew_common
 import crew_config
 import crew_state
 import crew_ticket
+import review_delta
 import review_ledger
 from crew_common import git_out, read_text
 
@@ -514,6 +517,13 @@ def _review_phase(top, ticket, evidence, answer):
                       "the owner accepts with review_ledger.py --accept --by <owner>, "
                       "or fixes then /crew:review")
     ok, message = review_ledger.check_receipt(top, ticket)
+    if not ok and review_delta.ANCHORED_BEYOND in message:
+        # A refresh after the review that moved more than an anchor sha
+        # (L-0522): a human decides, before the budget refusal can hide why,
+        # and never an automatic round.
+        return answer("stale-after-review", stop=True, reason=(
+            f"the refresh changed more than anchor lines: {message} - revert the extra "
+            "lines, or /crew:review spends a round"))
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
         return answer("review", True, f"no review round left and no receipt stands "
@@ -549,9 +559,16 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     if not ok:
         return answer("review", False, f"{note}{message}; artifacts fresh",
                       f"/crew:review {ticket}")
+    if refresh["state"] == STALE and refresh["command"]:
+        # The delta gate keeps a receipt across an anchor-only refresh
+        # (L-0522), but only on a committed, clean tree: stop here, and the
+        # next run re-checks the receipt on what was committed.
+        return answer("refresh", True, f"run {refresh['command']}, commit the anchor-only "
+                      "refresh, then rerun autopilot: an anchor-only refresh keeps the "
+                      f"receipt (delta gate). {refresh['reason']}", refresh["command"])
     if refresh["state"] != FRESH:
         return answer("stale-after-review", True, "an artifact is stale after an "
-                      "accepted review; refreshing now would stale the receipt - human "
+                      "accepted review and no refresh command settles it - human "
                       f"decides. {refresh['reason']}")
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 

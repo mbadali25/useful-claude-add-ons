@@ -886,7 +886,9 @@ Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of
 | receipt not current, artifacts stale | `refresh` | runs the command T-0008's check names |
 | receipt not current, an artifact unknown for a cause a refresh cannot settle | `refresh` | stop |
 | receipt not current, artifacts fresh | `review` | runs `/crew:review` |
-| receipt current, artifacts not fresh | `stale-after-review` | stop, nothing written — a refresh now would stale the receipt |
+| receipt changed beyond an anchor sha | `stale-after-review` | stop, before the budget check — a refresh after review moved more than an anchor (L-0522) |
+| receipt current, artifacts stale | `refresh` | stop with the refresh command: run it, commit, rerun — the delta gate keeps the receipt across an anchor-only refresh |
+| receipt current, artifact unsettled | `stale-after-review` | stop, nothing written |
 | receipt current, artifacts fresh | `done` | runs `/crew:done` |
 
 **Implement's status edit keeps the approval.** `/crew:implement` step 7 writes `status: review` into spec.md's header, which T-0026's approval digest normalises, so `next` moves on. An approval that edit still stales — a receipt written before T-0026, or a value outside `crew_ticket.STATUS_VALUES` — stops at `approve`; when changing only that `status:` word back makes spec.md hash to the approved bytes (and plan.md is unchanged), the reason says only the header changed, so it reads differently from a Touch widened mid-implement.

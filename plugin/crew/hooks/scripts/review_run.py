@@ -97,7 +97,9 @@ then `prereview_gate`, then `standards_gate`):
      nothing has changed since a clean review, so no round is spent: the
      verdict is that receipt's CLEAN, said as such. An owner-accepted
      FINDINGS receipt does not short-circuit -- that is a person's call about
-     one round, not a clean review of the tree.
+     one round, not a clean review of the tree. A receipt the delta gate KEPT
+     across a catch-up (L-0522) short-circuits only once question 2 answers
+     VERIFIED or NO_GATE: the merged tree is not the tree that was gated.
   2. Has the verify gate passed on this tree (`review_gate.gate_state`)? A
      tree it has not passed, or one whose state could not be read, is refused
      with exit 5 and no round spent: a reviewer's opinion on code the gate
@@ -643,7 +645,20 @@ def preflight(args):
     having reserved nothing. See BEFORE ANY ROUND IS RESERVED above."""
     ok, message = review_ledger.check_receipt(args.root, args.ticket)
     data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
-    if ok and (data.get("receipt") or {}).get("kind") == "clean":
+    clean = ok and (data.get("receipt") or {}).get("kind") == "clean"
+    if clean and message.startswith("receipt kept by delta gate"):
+        # A delta-kept receipt stands over a MERGED tree the verify gate may
+        # never have passed (L-0522): CLEAN only once the gate is VERIFIED or
+        # NO_GATE; otherwise on to the gate handling below, as for a new round.
+        state, reason = review_gate.gate_state(args.root)
+        if state in (review_gate.VERIFIED, review_gate.NO_GATE):
+            _out(f"review: CLEAN from the existing receipt ({message}) - kept by the delta "
+                 "gate: nothing of the ticket's own changed since that clean round, and the "
+                 f"verify gate is {state} on this tree, so no round was spent")
+            if args.provider not in LAUNCHED:
+                _out("ALREADY_CLEAN=1")
+            return EXIT_CLEAN
+    elif clean:
         _out(f"review: CLEAN from the existing receipt ({message}) - nothing in the bundle "
               "changed since that clean round, so no round was spent")
         if args.provider not in LAUNCHED:
