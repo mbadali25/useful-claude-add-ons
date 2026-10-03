@@ -1157,7 +1157,7 @@ menu procedure, `commands/config.md`, `config-setup.md`, `global-config.md`, `pl
 re-measured (19,280 lines across 128 files) and the bump. The merge's provenance sections keep both
 sides, main's first. Each citation into a path `git diff --name-only 764f6018 7d217751` names was
 checked against the tree it was written for (`git blame` on this note gives the commit) and re-read
-at `7d217751` with `sed -n`/`grep -n`; `plugin/crew/README.md:2227` (`docs/runbooks/INDEX.md`) holds from the merge;
+at `7d217751` with `sed -n`/`grep -n`; `plugin/crew/README.md:2228` (`docs/runbooks/INDEX.md`) holds from the merge;
 the troubleshooting guide's source changed (`docs/guides/crew/src/troubleshooting.md`, the
 `/crew:config` delete sentence) and its HTML, DOCX and PDF were rebuilt at `cb67a6ef`;
 `CHANGELOG.md` carries T-0075's successor entry first. `docs/diagrams/data-flow-crew-config.mmd` is
@@ -1173,7 +1173,7 @@ mutation re-anchored in `sabotage.py`, each found by the first full suite run af
 `crew_autopilot._rel`, their tests and mutations, three `plugin/crew/README.md` lines and its
 `CHANGELOG.md` entry; main's notes were not refreshed for it) and the bump. Citations into the
 paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff -U0` and each
-moved one checked by content at `8cabe586`; `plugin/crew/README.md:2227` holds (T-0077's three README lines are above it and
+moved one checked by content at `8cabe586`; `plugin/crew/README.md:2228` holds (T-0077's three README lines are above it and
 net zero); `CHANGELOG.md` gained T-0077's entry after T-0075's and T-0024's. The three crew
 diagrams were re-anchored to `8cabe586` in the same change. Nothing was executed for this note.
 
@@ -1299,7 +1299,7 @@ note carries its line (`07032fc7` or `e878cc31`) and mapped to `cd106b8b` throug
 `sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were
 that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another file's mention) and hold.
 
-`plugin/crew/README.md:2262` (the runbooks-index sentence) was re-read with `grep -n`; the
+`plugin/crew/README.md:2263` (the runbooks-index sentence) was re-read with `grep -n`; the
 troubleshooting guide's sources (`troubleshooting.md`, `auto-cycle.md`) merged both sides and
 `docs/guides/crew/src/build.py --guide troubleshooting` reproduced the merged HTML byte-identically.
 Nothing else was executed for this note.
@@ -1350,7 +1350,7 @@ import at `plugin/crew/tests/sabotage.py:82` puts the `MUTATIONS +=` statement a
 `:340-365`, after T-0024's rule 31 at `:332-339`. Nothing was executed for this note; the suites ran
 with the build.
 
-In this note: the runbook-index README citation is `plugin/crew/README.md:2267` on this tree.
+In this note: the runbook-index README citation is `plugin/crew/README.md:2268` on this tree.
 
 ## Re-anchor provenance - `9e38a891` -> `78b7080a`, 2026-09-30 (`T-0087-build` merges T-0088's main `a61a6f38`)
 
@@ -1511,7 +1511,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `328fdf4a` (main) / `3bb32980` (T-0040-land) -> `a54ca704` on 2026-09-30 (T-0040-land's merge of origin/main `844bfc36`, T-0028 landed as crew 1.0.85).** The merge note above names every citation the merge re-took; nothing else moved. No suite was executed for this note beyond the merge's.
 
-**Merged `0c3508e9` (main) + `a54ca704` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `66651b69`: L-0520 PR 1 #287, the merge train, landed as crew 1.0.86; anchored at that main tip).** Three hunks of this file conflicted: the anchor, the runbooks-index README citation and the provenance tail. Both sides' provenance is kept, main's first. The runbooks-index sentence (`docs/runbooks/INDEX.md` lists symptom ...) is `plugin/crew/README.md:2314` on the merged tree, re-found with `grep -n` (main's L-0520 section and T-0040's section both sit above it). Every other `plugin/crew/README.md` line number this map carries outside that sentence is inside a dated note, as of its own commit. No suite was executed for this note.
+**Merged `0c3508e9` (main) + `a54ca704` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `66651b69`: L-0520 PR 1 #287, the merge train, landed as crew 1.0.86; anchored at that main tip).** Three hunks of this file conflicted: the anchor, the runbooks-index README citation and the provenance tail. Both sides' provenance is kept, main's first. The runbooks-index sentence (`docs/runbooks/INDEX.md` lists symptom ...) is `plugin/crew/README.md:2315` on the merged tree, re-found with `grep -n` (main's L-0520 section and T-0040's section both sit above it). Every other `plugin/crew/README.md` line number this map carries outside that sentence is inside a dated note, as of its own commit. No suite was executed for this note.
 
 **Merged `9580571e` (main) + `66651b69` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `44d3dbc6`: runner auto-start #294, T-0505 #296 and T-0110 #297, crew 1.0.97, with rerere off; anchored at that main tip).** Two hunks of this file conflicted: the anchor and the provenance tail. Both sides' provenance is kept, main's first. Every `path:line` either side added into a file the other side changed was mapped through a line diff onto the merged tree, and every citation into a file both sides changed was compared by text. No suite was executed for this note.
 
@@ -1693,7 +1693,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `bee8b203` -> `52e309cf` on 2026-10-01 (L-0510 review fix round, crew re-bumped to 1.0.94).** `git diff --name-only bee8b203 52e309cf` returns, outside refresh artifacts, `review_ledger.py` (the per-severity count check, the CLEAN receipt-kind check and `check_follow_up`'s kind allowlist, UTF-8 refusal and verbatim counted match), its tests and sabotage rows, `plugin/crew/README.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/review.md`, `plugin/crew/BUDGETS.md`, the troubleshooting guide and its rendered outputs, CHANGELOG.md and the version files. A body-only line diff moved no citation here. No suite was executed for this note.
 
-**Merged `490f4ec1` (L-0510) + `52489039` (main) on L-0510-build, 2026-10-01 (merge `58fc8da8` of origin/main `52489039`: T-0040 #290, crew 1.0.98, with rerere off), then re-anchored to `5254bbfe` (L-0510 re-bumped to crew 1.0.103).** The code paths are disjoint: main touched none of `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, and L-0510 touched none of T-0040's files. The anchor and the provenance tail conflicted in every map (both sides' provenance kept, main's first); `crew.md`'s T-0087 refund paragraph keeps L-0510's `review_run.py` / `review_ledger.py` / `crew_autopilot.py` positions with main's `plugin/crew/hooks/scripts/crew_status.py:140`, and `repo-docs.md`'s runbooks-index citation was re-grepped on the merged tree (`plugin/crew/README.md:2287`). Every body `path:line` into a file either side changed was checked against the parent whose copy of the map carries that line verbatim, by a line diff of that file onto the merged tree (`/root/crew-tmp/l-0510/tools/merge_cites2.py`, machine-local): none moved. `5254bbfe` itself changes only release bookkeeping (version files, CHANGELOG, BUDGETS count). No suite was executed for this note.
+**Merged `490f4ec1` (L-0510) + `52489039` (main) on L-0510-build, 2026-10-01 (merge `58fc8da8` of origin/main `52489039`: T-0040 #290, crew 1.0.98, with rerere off), then re-anchored to `5254bbfe` (L-0510 re-bumped to crew 1.0.103).** The code paths are disjoint: main touched none of `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, and L-0510 touched none of T-0040's files. The anchor and the provenance tail conflicted in every map (both sides' provenance kept, main's first); `crew.md`'s T-0087 refund paragraph keeps L-0510's `review_run.py` / `review_ledger.py` / `crew_autopilot.py` positions with main's `plugin/crew/hooks/scripts/crew_status.py:140`, and `repo-docs.md`'s runbooks-index citation was re-grepped on the merged tree (`plugin/crew/README.md:2288`). Every body `path:line` into a file either side changed was checked against the parent whose copy of the map carries that line verbatim, by a line diff of that file onto the merged tree (`/root/crew-tmp/l-0510/tools/merge_cites2.py`, machine-local): none moved. `5254bbfe` itself changes only release bookkeeping (version files, CHANGELOG, BUDGETS count). No suite was executed for this note.
 
 **Re-anchored `5254bbfe` -> `a98be035` on 2026-10-01 (L-0510, owner decision 2026-10-01 #3: the family rule).** `git diff --name-only 5254bbfe a98be035` returns `review_ledger.py`, its two test files and `sabotage_review.py`, `commands/review.md`, README, CONFIG, PLUGINS.md, BUDGETS.md, CHANGELOG, the troubleshooting guide and its three outputs, and refresh artifacts. Line counts are unchanged in every file except `review_ledger.py` (+37, cited only in `crew.md`, re-read there), CONFIG.md (+1 at `:2510`, past every CONFIG citation in these maps) and CHANGELOG.md (+3 at `:21`; the CHANGELOG line numbers in these maps are history notes of earlier anchors, not re-cited).
 
