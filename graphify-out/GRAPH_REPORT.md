@@ -1,7 +1,7 @@
 # Graph Report - uca-l0574  (2026-10-02)
 
 ## Corpus Check
-- 1144 files · ~2,678,910 words
+- 1144 files · ~2,679,279 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 63 file(s) not represented in the graph (top: (none) 34, .mmd 8, .jsonl 5)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7d69ee98`
+- Built from commit: `8671a39a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1103,7 +1103,7 @@ Nodes (138): Added, Re-anchor provenance - `3724731b` + `9631c707` -> `938e3b11`
 
 ### Community 27 - "_edit"
 Cohesion: 0.09
-Nodes (64): _edit(), _linter(), _one(), _pssa_present(), The neighbour on the config side: a symlink's blob is its target text, which…, Every (tool, key) TOOL_KEYS accepts reaches the run: args into argv, rules into…, Round 7 BLOCK :679: the finding-bearing file is linted as itself, never as the…, A repo whose base commit holds `files`, its sha in .base (untracked, ignored by… (+56 more)
+Nodes (64): _edit(), _linter(), _one(), _pssa_present(), The neighbour on the config side: a symlink's blob is its target text, which…, Every (tool, key) TOOL_KEYS accepts reaches the run: args into argv, rules into…, Round 7 BLOCK :679: the finding-bearing file is linted as itself, never as the…, Round 7 BLOCK :630: valid rows and exit 4. A NEW finding among them still… (+56 more)
 
 ### Community 28 - "check_self_claims"
 Cohesion: 0.03
