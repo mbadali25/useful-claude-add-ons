@@ -4,7 +4,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.204: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.209: QA standards for repositories crew sets up (L-0618)
+
+- E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
+  `n`, `false` are no), a live credential's reach must name a known or declared environment
+  (`production only` is production), and acceptance must be affirmative (a date, a name, `accepted`
+  or `yes`; `no`, `pending`, `TBD`, `-`, `?` and blank are not). Header columns match whole words,
+  so "Delivered" is not `live`. An unreadable runbook, `.gitignore` or inventory is UNKNOWN, not
+  missing; `qa_doc.py --write` refuses an unreadable file instead of overwriting it; a failed
+  `git ls-files` makes G4 UNKNOWN. Found in review of PR #337.
 
 - On Windows, E4 read CI paths as `.github\workflows\...` and so never asked a GitHub deploy
   workflow for its `concurrency:` group; every comparison and every printed path is now `/`
