@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@a469b131
+anchor: useful-claude-add-ons@452b30cc
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -247,7 +247,7 @@ Notable rules, re-read directly:
   mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 72 since the
   partial-state fix before T-0042 review round 2, 69 after round 1, 66 before it, 44 before T-0042;
   counted with `len()` at `53f5482c`), imported by
-  `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3058`.
+  `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3059`.
 - **Rule 27**, new at `07ca3972` (`.crew/verify.json:345-354` since T-0094 review round 2 and the merge of `8ab733d7`, `:302-310` since T-0094 grew rule 25, `:299-307` since T-0075's rule-7 paths, `:293-301` on main, `:296-304` before, T-0004, widened by T-0018 and
   T-0072; rule 26 until T-0005's rule 6 merged in):
   `paths` `crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot.py`,
@@ -261,7 +261,7 @@ Notable rules, re-read directly:
   since T-0010) and exact-CLI checks. Its mutations live in
   `plugin/crew/tests/sabotage_autopilot.py` (`AUTOPILOT_MUTATIONS`, `:28`, with T-0072's
   `DEPLOY_MUTATIONS` appended at `:473` and T-0018's `STATUS_MUTATIONS` at `:674`), imported by
-  `plugin/crew/tests/sabotage.py:77` and appended at `:3058`; `test_crew_autopilot.py` asserts
+  `plugin/crew/tests/sabotage.py:77` and appended at `:3059`; `test_crew_autopilot.py` asserts
   every `STATUS_MUTATIONS` entry reaches `sabotage.MUTATIONS`. The rule's `why` states no
   mutation count (it said "six" until the refresh commit after `07ca3972`, while the tuple
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 27
@@ -289,7 +289,7 @@ Notable rules, re-read directly:
   `python3 -m pytest plugin/crew/tests/test_crew_tracker.py -q`, priced 4s (its `why` records
   3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
   `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 87 by `len()` at `8cabe586`: 81 after review rounds 3 and 4, six more net from T-0077),
-  imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3058`.
+  imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3059`.
 - **Rule 30**, new at `eba11657` (`.crew/verify.json:371-380` on T-0094's merge of `8ab733d7`, `:323-331` since T-0010's merge of `e878cc31`, `:318-326` since T-0018 landed on T-0010-solo, `:315-323` on main at `3648f59a`, `:309-317` before, T-0023; rule 27 until T-0005's
   rule 6 merged in, rule 28 until T-0021's tracker rule landed ahead of it, rule 29 until T-0010's merge): `paths`
   `crew_route.py`, `crew_context.py`, `test_crew_route.py`, `test_crew_route_hook.py` and
@@ -299,7 +299,7 @@ Notable rules, re-read directly:
   with bash and pwsh present).
   `crew_context.py` is also a rule-26 path (the auto-resume suite), so an edit to it runs both suites. Its mutations
   live in `plugin/crew/tests/sabotage_route.py` (`ROUTE_MUTATIONS`), imported by
-  `plugin/crew/tests/sabotage.py:79` and appended at `:3058`; the rule's `why` states no count.
+  `plugin/crew/tests/sabotage.py:79` and appended at `:3059`; the rule's `why` states no count.
   The config half of T-0023 is not on rule 30: `crew_config.py`, the two templates and
   `CONFIG.md` ride rule 7, whose suite (`test_crew_config.py`) carries the leaf count and the
   template-drift tests. `plugin/crew/skills/crew-setup/SKILL.md`, whose inline config copy
@@ -318,7 +318,7 @@ Notable rules, re-read directly:
   whole-suite rule and CI's `-m slow` job do. Its mutations live in
   `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 65 entries by
   `len()` at `45345812` — count them there, the `why` states no number), imported by
-  `plugin/crew/tests/sabotage.py:81` and appended at `:3059` (`:3058` before T-0094 merged `a7524aac`, which brought T-0087's `sabotage_tooling` import; `:3056` before T-0085's landing merge of main `a61a6f38`; `:3055` before T-0085's merge of `8ab733d7`; `:80` and `:3054` before T-0075's `sabotage_config` import). `crew_ticket.py` is named by
+  `plugin/crew/tests/sabotage.py:81` and appended at `:3060` (`:3059` before T-0094 merged `a7524aac`, which brought T-0087's `sabotage_tooling` import; `:3057` before T-0085's landing merge of main `a61a6f38`; `:3056` before T-0085's merge of `8ab733d7`; `:80` and `:3055` before T-0075's `sabotage_config` import). `crew_ticket.py` is named by
   rules 11, 31, 36 and 38 (T-0010's owner-only refusal in `crew_ticket.approve` runs under 11 and 31;
   T-0085's rule 36 names it since review round 3, for `gate_applies`' approval-receipt read; 38 is T-0087's harness rule, 37 on main).
 - **Rule 32**, new in T-0094 review round 2 (`.crew/verify.json:392-400`; the last rule until T-0094 merged `a61a6f38`, which brought main's rules 33-35 in after it):
@@ -375,7 +375,7 @@ Notable rules, re-read directly:
   cases in throwaway repos; count them there) and the golden, contract, canary, refund,
   external-tool-format and status pytest files. Its mutations are
   `plugin/crew/tests/sabotage_tooling.py` (`TOOLING_MUTATIONS`; count them by `len()`), imported by
-  `plugin/crew/tests/sabotage.py:82` and appended at `:3061` (`:3060` before its merge of `9af34e57`; `:81` and `:3057` on `T-0087-build` at `0ef73f74`). The checker's and `verify.json`'s
+  `plugin/crew/tests/sabotage.py:82` and appended at `:3062` (`:3061` before its merge of `9af34e57`; `:81` and `:3058` on `T-0087-build` at `0ef73f74`). The checker's and `verify.json`'s
   entries are appended only where those repo files exist, and run the suite through
   `test_tooling_alone_checker_passes_its_must_block_must_allow_suite`. JUDGEMENT: it overlaps rules 0, 9, 11, 15, 31 and 35 by
   path; that overlap is the point, since it adds the tooling-alone check those rules lack.
@@ -664,27 +664,27 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   no-pipe fallback refusal.
 - `.crew/verify.json:311` (rule 24) — the `.claude/rules/` sync check.
 - `.crew/verify.json:312-331` (rule 25) — the T-0008 refresh-check suite;
-  `plugin/crew/tests/sabotage.py:75`, `:3057` — `sabotage_refresh.py`'s
+  `plugin/crew/tests/sabotage.py:75`, `:3058` — `sabotage_refresh.py`'s
   registration.
 - `.crew/verify.json:333-344` (rule 26) — the T-0006 auto-resume suite;
-  `plugin/crew/tests/sabotage.py:76`, `:3058` — `sabotage_resume.py`'s registration.
+  `plugin/crew/tests/sabotage.py:76`, `:3059` — `sabotage_resume.py`'s registration.
 - `.crew/verify.json:345-354` (rule 27) — the T-0004/T-0018/T-0072 autopilot suite;
-  `plugin/crew/tests/sabotage.py:77`, `:3058` — `sabotage_autopilot.py`'s registration.
+  `plugin/crew/tests/sabotage.py:77`, `:3059` — `sabotage_autopilot.py`'s registration.
 - `.crew/verify.json:355-362` (rule 28) — the T-0010 policy suite; `plugin/crew/tests/sabotage.py:77`,
   `:3059` register its `POLICY_MUTATIONS`.
 - `.crew/verify.json:363-371` (rule 29) — the T-0021 tracker suite;
-  `plugin/crew/tests/sabotage.py:78`, `:3058` — `sabotage_tracker.py`'s registration.
+  `plugin/crew/tests/sabotage.py:78`, `:3059` — `sabotage_tracker.py`'s registration.
 - `.crew/verify.json:372-381` (rule 30) — the T-0023 plain-text routing suite;
-  `plugin/crew/tests/sabotage.py:79`, `:3058` — `sabotage_route.py`'s registration.
+  `plugin/crew/tests/sabotage.py:79`, `:3059` — `sabotage_route.py`'s registration.
 - `.crew/verify.json:383-391` (rule 31) — the T-0024 group-approval suite;
-  `plugin/crew/tests/sabotage.py:81`, `:3059` — `sabotage_approval.py`'s registration.
+  `plugin/crew/tests/sabotage.py:81`, `:3060` — `sabotage_approval.py`'s registration.
 - `.crew/verify.json:392-400` (rule 32) — T-0094's refresh-admission suite, split out of rule 25.
 - `.crew/verify.json:425-438` (rule 36) — the T-0085 standards suite;
-  `plugin/crew/tests/sabotage.py:85`, `:3062` — `sabotage_standards.py`'s registration.
+  `plugin/crew/tests/sabotage.py:85`, `:3063` — `sabotage_standards.py`'s registration.
 - `.crew/verify.json:439` (rule 37) — L-0520's merge train suite (`crew_train.py`,
   `test_crew_train.py`); its sabotage entries are L-0526.
 - `.crew/verify.json:440-465` (rule 38) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
-  and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3061` —
+  and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3062` —
   `sabotage_tooling.py`'s registration.
 - `.crew/verify.json:467-480` (rule 39) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
   its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
@@ -2305,4 +2305,38 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
 
-**Re-anchored `d95d8b25` -> `a469b131` on 2026-10-03 (L-0605 at a469b131, on origin/main 8123fe74: per-path check over plugin/crew/** finds review_checks.py, review_run.py, sabotage_prereview.py, three test files, README.md and docs/external-tool-formats.md; this map cites none of their lines (re-grepped for `review_run.py:` and `review_checks.py:`), so no claim moved).**
+**Re-anchored `0c3508e9` -> `963d2905` on 2026-09-30 (L-0510: review closure, a final 0-BLOCK round auto-accepts, crew 1.0.90).** `git diff --name-only 0c3508e9 963d2905` returns, outside refresh artifacts, main's L-0561 README repin and L-0510's files (review_ledger.py, review_run.py, crew_autopilot.py, review.md, done.md, autopilot.md, README.md, CONFIG.md, BUDGETS.md, PLUGINS.md, the troubleshooting guide, CHANGELOG.md, two tests, sabotage_review.py and the version files); path-qualified citations outside dated provenance checked by a line diff: no body citation moved: provenance paragraphs keep their dated numbers, and the only cited lines that changed are version lines (plugin.json, PLUGINS.md, BUDGETS.md), unchanged in place. No suite was executed for this note.
+
+**Re-anchored `963d2905` -> `bee8b203` on 2026-09-30 (L-0510 suite fixes, crew re-bumped to 1.0.93).** `git diff --name-only 963d2905 bee8b203` returns, outside refresh artifacts, `sabotage_review.py` (one row's find string), `plugin/crew/docs/external-tool-formats.md` (four `review_run.py` citations), CHANGELOG.md and the version files; a body-only line diff moved no citation here (`docs/diagrams/data-flow-crew-config.mmd:1-2` is its re-written header, still lines 1-2). No suite was executed for this note.
+
+**Re-anchored `bee8b203` -> `52e309cf` on 2026-10-01 (L-0510 review fix round, crew re-bumped to 1.0.94).** `git diff --name-only bee8b203 52e309cf` returns, outside refresh artifacts, `review_ledger.py` (the per-severity count check, the CLEAN receipt-kind check and `check_follow_up`'s kind allowlist, UTF-8 refusal and verbatim counted match), its tests and sabotage rows, `plugin/crew/README.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/review.md`, `plugin/crew/BUDGETS.md`, the troubleshooting guide and its rendered outputs, CHANGELOG.md and the version files. A body-only line diff moved no citation here. No suite was executed for this note.
+
+**Merged `490f4ec1` (L-0510) + `52489039` (main) on L-0510-build, 2026-10-01 (merge `58fc8da8` of origin/main `52489039`: T-0040 #290, crew 1.0.98, with rerere off), then re-anchored to `5254bbfe` (L-0510 re-bumped to crew 1.0.103).** The code paths are disjoint: main touched none of `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, and L-0510 touched none of T-0040's files. The anchor and the provenance tail conflicted in every map (both sides' provenance kept, main's first); `crew.md`'s T-0087 refund paragraph keeps L-0510's `review_run.py` / `review_ledger.py` / `crew_autopilot.py` positions with main's `plugin/crew/hooks/scripts/crew_status.py:140`, and `repo-docs.md`'s runbooks-index citation was re-grepped on the merged tree (`plugin/crew/README.md:2287`). Every body `path:line` into a file either side changed was checked against the parent whose copy of the map carries that line verbatim, by a line diff of that file onto the merged tree (`/root/crew-tmp/l-0510/tools/merge_cites2.py`, machine-local): none moved. `5254bbfe` itself changes only release bookkeeping (version files, CHANGELOG, BUDGETS count). No suite was executed for this note.
+
+**Re-anchored `5254bbfe` -> `a98be035` on 2026-10-01 (L-0510, owner decision 2026-10-01 #3: the family rule).** `git diff --name-only 5254bbfe a98be035` returns `review_ledger.py`, its two test files and `sabotage_review.py`, `commands/review.md`, README, CONFIG, PLUGINS.md, BUDGETS.md, CHANGELOG, the troubleshooting guide and its three outputs, and refresh artifacts. Line counts are unchanged in every file except `review_ledger.py` (+37, cited only in `crew.md`, re-read there), CONFIG.md (+1 at `:2510`, past every CONFIG citation in these maps) and CHANGELOG.md (+3 at `:21`; the CHANGELOG line numbers in these maps are history notes of earlier anchors, not re-cited).
+
+**Merged `a98be035`/`8c82f974` (L-0510) + `5ffffbe3` (main) on L-0510-build, 2026-10-01 (merge `d4193b70` of origin/main `2906dcbd`, crew 1.0.110, rerere off), then re-anchored to `8f0df4ca` (L-0510 re-bumped to crew 1.0.112).** Both provenance blocks are kept above, main's first. Main touched none of `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, so every L-0510 citation reads as L-0510 drew it, except `review_ledger.py`, which L-0510's review round 3 FIX 2 (`8c82f974`: `_receipt_names_the_reviewer`) grew by 10 lines below `:590`; `crew.md`'s citations of it were re-read with `grep -n '^def '` on the merged tree and moved (`check_receipt` `:691`, `check_follow_up` `:620`, `continue_with_successor_plan` `:742`, `summary` `:781`). Main's citations are main's, unchanged by L-0510's side.
+
+**Re-anchored `8f0df4ca` -> `39e1237a` on 2026-10-02 (L-0510 review round 4 fixes, owner decision 2026-10-01 #5).** `3181121c` changed `review_ledger.py` (`_auto_row_problem` +6 lines: the embedded line-break refusal; `check_follow_up` +3: newline-only split), `commands/autopilot.md` (one sentence extended in place, line count unchanged) and the L-0510 tests; `00450ce0` CHANGELOG and README text; `fb33f9dc`/`39e1237a` un-set and re-set crew 1.0.112. `crew.md`'s `review_ledger.py` citations were re-read with `grep -n '^def '` and moved (`receipt_stands` `:596`, `check_receipt` `:700`, `_receipt_names_the_reviewer` `:618`, `auto_accept_refusal` `:528`, `auto_accept` `:562`, `check_follow_up` `:626`, `continue_with_successor_plan` `:751`, `summary` `:790`, `load` `:787`). No other note cites a moved line.
+
+**Merged `39e1237a`/`ecc76d10` (L-0510) + `6053b65d` (main, L-0557 #300) on L-0510-build, 2026-10-02 (merge `122fc10d` of origin/main `ffd11270`, crew 1.0.114, rerere off), then re-anchored to `6ffb589d` (L-0510 at crew 1.0.121).** Both provenance blocks are kept above, main's first. L-0557 touched none of `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`. L-0510's own changes since `39e1237a`: `156882d2` (decision #6: `_auto_row_problem` +12 lines, `_review_json_problem` new at `:578`, `auto_accept` +3) and `ecc76d10`/`7d32fbc6` (docs and the rebuilt troubleshooting guide); `crew.md`'s `review_ledger.py` citations were re-read with `grep -n '^def '` and moved (`receipt_stands` `:641`, `check_receipt` `:745`, `auto_accept` `:604`, `check_follow_up` `:671`, `continue_with_successor_plan` `:796`, `summary` `:835`). Main's citations are main's.
+
+**Merged `979ea023` (L-0510) + `8d84786d` (main: T-0503 #270 bitbucket 1.2.3, W-0117 #302 crew 1.0.115) on L-0510-build, 2026-10-02 (merge `9f39dd61`, rerere off, owner decision #9), anchored at `9f39dd61`.** Both provenance blocks are kept above, main's first. Neither T-0503 nor W-0117 touched `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, so L-0510's citations read as L-0510 drew them at `e7227a2b` (`receipt_stands` `:644`, `check_receipt` `:748`, `auto_accept` `:607`, `_review_json_problem` `:578`, `check_follow_up` `:674`, `summary` `:838`). Main's citations are main's.
+
+**Merged L-0510 (`553f4aa0`, the UTF-8 console fix) + `04dde5a2` (main: L-0578 #304 crew 1.0.119, W-0120 #307) on L-0510-build, 2026-10-02 (merge `41aa4e2a`, rerere off, standing go #9), anchored at `2b372b84`.** Both provenance blocks are kept above, main's first. L-0578 changed `review_run.py` (the metrics row) and `commands/review.md` step 6; every `review_run.py` citation in this note was re-derived on the merged file by difflib from each parent and read with `sed -n` (preflight `:555`, called at `:642`; `--provider` `:739`; `finish`'s parts `:438`/`:440`; `failure_class` `:458`; refund lines `:508`/`:511`; `_webtest_open` `:412`; `auto_accept_line` `:421`). `review_ledger.py` gained `utf8_stdio` after `summary` (`:838`), so no earlier citation moved.
+
+**Re-anchored `2b372b84` -> `252dd5d4` on 2026-10-02 (L-0510 review round 6 fixes, owner decision #10; merge `24f3ec25` of origin/main `d2ec37d3`, README only).** `d551680c` changed `review_ledger.py` (`read_review_json` `:599` and `_receipt_binds_review_json` `:721` new, `receipt_stands` gained `root, ticket`, `hashlib` imported, docstring +5), `crew_autopilot.py` (one line edited in place), `commands/review.md` (step 3 quoted in place), the L-0510 tests, CHANGELOG and README. `crew.md`'s `review_ledger.py` citations were re-read with `grep -n` by name (`receipt_stands` `:695`, `check_receipt` `:819`, `auto_accept` `:655`, `check_follow_up` `:742`, `summary` `:909`, `BUDGET` `:132`, `REFUND_LIMIT` `:135`). No other note cites a moved line.
+
+**Re-anchored `252dd5d4` -> `97b65952` on 2026-10-02 (L-0510, merge `48cf52dd` of origin/main `7ba4f9ea`, crew 1.0.126 -> 1.0.130).** Main brought L-0572's `verify-gate.sh`/`.ps1`, `verify_record.py`, CONFIG.md and its own codemap edits; it touched none of the files L-0510's citations name (`review_ledger.py`, `crew_autopilot.py`, `review_run.py`, `commands/review.md`, `commands/autopilot.md`), so no L-0510 citation moved; L-0572's citations were written against main and carried by the merge unchanged.
+
+**Re-anchored `273ec0f6` (main) and L-0510's `97b65952` -> `d05b0211` on 2026-10-02 (L-0510 merges origin/main `0487fc39` (L-0599 #315, crew 1.0.129; L-0576, L-0577, T-0107, L-0575 before it) at `ec508e5e`, rerere off; crew 1.0.130 set last at `d05b0211`).** Both provenance histories kept, main's first. In `crew.md` the `review_ledger.py`, `review_run.py` and `review_verdict.py` citations were re-derived on the merged files by function name (`grep -n '^def '`) and difflib from the tree each line came from: L-0510's ledger lines moved +14 (L-0576's `_ignored_count` and `record` row above them), `review_run.py`'s preflight `:563`/`:650`, provider list `:747` and refund lines `:517`/`:520`, `review_verdict.py`'s `VERDICTS`/`FINDING_FORM`/class names `:90`/`:93`/`:95`; main's L-0576 paragraph's three stale lines set to `review_run.py:447`, `:467`, `:513` and `review_ledger.py:394`. One L-0510 sentence that said the field was not written now says L-0576 writes it. Other maps: no cited line moved. History notes were not re-mapped.
+
+**Re-anchored `a81e4382` (main) and L-0510's `d05b0211` -> `77e8dcfd` on 2026-10-02 (L-0510 merges origin/main `e0c70fc9` (#317, L-0597 #316, L-0555 #310; crew 1.0.134) at `e6dc6b1b`, rerere off; crew 1.0.137 set last at `77e8dcfd`).** Both provenance histories kept, main's first. Main touched none of `review_ledger.py`, `review_run.py`, `review_verdict.py`, `crew_autopilot.py`, `review.md` or `autopilot.md`; `crew.md`'s `crew_autopilot.py` `questions_check` `:1246` / `QUESTIONS_SHAPE` `:1154` are L-0510's merged-file lines (main's side read `:1232` / `:1140` without L-0510's autopilot change); `repo-docs.md`'s README citation is `:2314` on the merged README (L-0555 +23). History notes were not re-mapped.
+
+**Re-anchored `4fc93b19` (main) and L-0510's `77e8dcfd` -> `96a69068` on 2026-10-03 (L-0510 merges origin/main `bd3e9ad1` (L-0598 #321, L-0587 #319; crew 1.0.135) at `d3f26a4b`, rerere off; crew 1.0.137 set last at `96a69068`).** Both provenance histories kept, main's first. Main touched no file L-0510's citations name; L-0510's `c86365ee` (a test helper) moves no cited line. History notes were not re-mapped.
+
+**Re-anchored `39ebbc18` (main) and L-0510's `96a69068` -> `a06dd790` on 2026-10-03 (L-0510 merges origin/main `2a2d6e07` (L-0592 #325, L-0587 re-pin #322; crew 1.0.139) at `39c290be`, rerere off; crew 1.0.142 set last at `a06dd790`).** Both provenance histories kept, main's first. Main touched no file L-0510's citations name (its README edit is one line, no cited line moved). History notes were not re-mapped.
+
+**Re-anchored `d95d8b25` (main) and L-0510's `a06dd790` -> `b8d09685` on 2026-10-03 (L-0510 merges origin/main `8123fe74` (L-0574 #323; crew 1.0.140) at `8c04c783`, rerere off; crew 1.0.142 set last at `b8d09685`).** Both provenance histories kept, main's first. In `crew.md` main's L-0574 `review_run.py` citations were re-derived on the merged file (L-0510 adds 8 lines above `finish` and 28 through it): by difflib, and by name for `prereview_gate` `:731` (called `:857`), `standards_gate` `:699` (at `:859`) and `review_ledger.reserve` `:863`, which main's side had stale; L-0510's `review_ledger.py` citations are unchanged. `verification-harness.md`'s `sabotage.py` citations moved +1 (main's import at `:87`; main's side had them stale). History notes were not re-mapped.
+
+**Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.

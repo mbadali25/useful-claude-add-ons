@@ -83,19 +83,18 @@ A review phase ends at its verdict: stop following `review.md` once the round is
 `/crew:review` or inside `/crew:implement` step 6; never fix and rerun inside the phase. Report
 BLOCK and FIX lines verbatim; fixing, `review_ledger.py --accept` and `gh pr review`
 are the human's. Go back through `next`: it stops at FINDINGS or an unrefunded INCOMPLETE (a
-refunded one reruns, even straight after `/crew:review`). A phase's own refusal - no approved plan, a red verify gate, a `/crew:done`
+refunded one reruns, even straight after `/crew:review`). One extension, neither fixing nor rerunning (L-0510): after `review: auto-accept: eligible`, first run step 2d's control re-runs and, with no specialist or control BLOCK, step 3.3's `--auto-accept` and follow-up filing. A phase's own refusal - no approved plan, a red verify gate, a `/crew:done`
 check - stops here, reported verbatim; never retry around it or edit a gate. Implement's
 `status: review` edit keeps the approval (T-0026). Refresh runs after implement and before each
 later round, never after an accepted review (that stales the receipt): `next` enforces it.
 
 ## 4. Stops
 
-A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS are the
-owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
+A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
-`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012), lane or writer.
+`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.

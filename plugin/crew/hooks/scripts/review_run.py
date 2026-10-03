@@ -79,7 +79,15 @@ None when the check does not apply; any open row makes a CLEAN verdict
 FINDINGS, named in `webtest_verdict`, because a healer skip is a finding
 whether or not the reviewer carried it. When the prompt overflowed its inline
 rows into `webtest-findings.txt` in the scratch directory, that file is an
-expected READ like a bundle part.
+expected READ like a bundle part. The ledger row and review.json also carry
+`webtest_open` for the auto-accept guard (L-0510): the number of open rows,
+`review_ledger.WEBTEST_NA` when the check did not apply, or None when it
+applied and its findings could not be read -- could not tell, never 0.
+
+AUTO-ACCEPT (L-0510). The row and review.json carry `findings`, the
+reviewer's SEVERITY lines verbatim. After a FINDINGS round a `review:
+auto-accept:` line says whether `review_ledger.py --auto-accept` would take
+it (`eligible`) or why not (`refused - <reason>`); this script never accepts.
 
 FAILURE CLASS AND REFUNDS (T-0087). An INCOMPLETE round is classed by
 `review_verdict.failure_class`: `tree` when a bundle or webtest reason was
@@ -572,6 +580,26 @@ def _finish_manifest(args):
     return manifest, []
 
 
+def _webtest_open(rows, webtest_record):
+    """The ledger's `webtest_open`: open rows counted, WEBTEST_NA when the
+    check did not apply (no record), None when it applied and could not be
+    read -- `rows is None` alone cannot tell those two apart."""
+    if rows is not None:
+        return len(rows)
+    return review_ledger.WEBTEST_NA if webtest_record is None else None
+
+
+def auto_accept_line(root, ticket):
+    """The `review: auto-accept:` line, from the ledger as now recorded."""
+    data, state = review_ledger.load(review_ledger.ledger_path(root, ticket))
+    refusal = (review_ledger.auto_accept_refusal(data, ticket) if state == "ok"
+               else f"ledger is {state}: could not tell")
+    if refusal:
+        return f"review: auto-accept: refused - {refusal}"
+    return (f"review: auto-accept: eligible (run review_ledger.py --ticket {ticket} "
+            "--auto-accept --follow-up <id>)")
+
+
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
     manifest, manifest_reasons = _finish_manifest(args)
@@ -617,6 +645,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "base": manifest.get("base"), "head": manifest.get("head"),
         "exit_code": exit_code, "timed_out": timed_out,
         "webtest_findings": rows, "webtest_check": webtest_record,
+        "findings": result["findings"], "webtest_open": _webtest_open(rows, webtest_record),
         "webtest_verdict": webtest_verdict,
         "gate": gate_record(args),
         "written_at": datetime.datetime.now(datetime.timezone.utc).isoformat(
@@ -673,6 +702,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         _out(f"review: round {number} is INCOMPLETE ({failure}) and counts against the budget")
     if webtest_verdict:
         _out(f"review: {result['verdict']} because {webtest_verdict}")
+    if result["verdict"] == review_verdict.FINDINGS:
+        _out(auto_accept_line(args.root, args.ticket))
     return {review_verdict.CLEAN: EXIT_CLEAN, review_verdict.FINDINGS: EXIT_FINDINGS}.get(
         result["verdict"], EXIT_INCOMPLETE)
 
@@ -680,7 +711,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
 def gate_record(args):
     """The gate state for review.json: observed now, plus whether this round
     was told to go ahead regardless."""
-    state, reason = review_gate.gate_state(args.root)
+    state, reason = review_gate.accepted_state(args.root)
     return {"state": state, "reason": reason,
             "overridden": bool(getattr(args, "allow_unverified", False))
             and state in (review_gate.UNVERIFIED, review_gate.UNKNOWN)}
@@ -719,7 +750,7 @@ def preflight(args):
         if args.provider not in LAUNCHED:
             _out("ALREADY_CLEAN=1")
         return EXIT_CLEAN
-    state, reason = review_gate.gate_state(args.root)
+    state, reason = review_gate.accepted_state(args.root)
     if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):
         if args.allow_unverified:
             _err(f"review-run: gate {state}: {reason}. Reviewing anyway "
@@ -974,13 +1005,21 @@ def probe(args):
     return PROBE_FAILED, error or tail[0]
 
 
+# The providers this runner can launch. `qa.order` also names `kimi`, which has
+# no runner here yet; commands/review.md filters `$ELIGIBLE` to this set (and
+# says so on stderr) instead of relying on argparse's exit 2 to skip it.
+PROVIDERS = ("codex", "copilot", "claude")
+
+
 def main(argv):
+    # Finding text and refusals quoting it reach stdout; see utf8_stdio.
+    review_ledger.utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
     parser.add_argument("--scratch", required=True)
     parser.add_argument("--manifest")
-    parser.add_argument("--provider", required=True, choices=("codex", "copilot", "claude"))
+    parser.add_argument("--provider", required=True, choices=PROVIDERS)
     parser.add_argument("--model", default="")
     parser.add_argument("--effort", default="")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
