@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@39ebbc18
-verified: 2026-10-02
+anchor: useful-claude-add-ons@decb2b49
+verified: 2026-10-03
 
 ## Re-derive provenance
 
@@ -481,18 +481,18 @@ closed by where the check sits, not by a patch at the call site.
   the moved bytes, `create_bytes` (`:503`) a new file by the same move.
 - **Per-leaf judgement and per-leaf writing, shared by both planners.** `leaf_updates`
   (`crew_config.py:2697`) flattens every update to its leaves, a whole-block value included, so a
-  consent key cannot ride inside a block; `value_allowed` (`:2716`) judges each leaf: the layer's
-  path rule (`MACHINE_REFUSED` `:2636` via `_consent_refusal` `:2688`, and `is_global_path` `:705`
-  at the machine layer; `REPO_REFUSED` `:2928`, `is_repo_path` `:2985` (`_shape` `:2647` is a leaf
-  or open; since round 5 `_shape` also returns `under` for a path past a template leaf, `:2655`) and `REPO_VETO_ONLY` `:2949` by identity, `is_repo_veto` `:2952`, at the repo layer), a
+  consent key cannot ride inside a block; `value_allowed` (`:2813`) judges each leaf: the layer's
+  path rule (`MACHINE_REFUSED` `:2733` via `_consent_refusal` `:2785`, and `is_global_path` `:719`
+  at the machine layer; `REPO_REFUSED` `:3026`, `is_repo_path` `:3083` (`_shape` `:2744` is a leaf
+  or open; since round 5 `_shape` also returns `under` for a path past a template leaf, `:2655`) and `REPO_VETO_ONLY` `:3047` by identity, `is_repo_veto` `:3050`, at the repo layer), a
   path under a leaf (`:2724`) and an object at a leaf (both round 5, both layers), a
-  block emptied or replaced by a scalar, the null rule (`null_means`, `:2673`), then membership in
-  `enum_values` (`:2582`). `assignments` (`:2619`) is what is WRITTEN: the same leaves for a block
+  block emptied or replaced by a scalar, the null rule (`null_means`, `:2770`), then membership in
+  `enum_values` (`:2679`). `assignments` (`:2716`) is what is WRITTEN: the same leaves for a block
   (its untouched siblings, unknown keys included, survive; the widening is marked on the leaf),
-  and one whole pin per role for an open role table. `_plan_on` (`:2829`) is both planners on an
-  already-read file. `merged_problems` (`:2775`) then judges the FILE the write would produce,
-  every known leaf by `_content_problem` (`:2748`): an enum value outside its tuple (a legacy null
-  tolerated), a key under a leaf or an object at a leaf (`:2761-2764`, round 5, fixable in the
+  and one whole pin per role for an open role table. `_plan_on` (`:2926`) is both planners on an
+  already-read file. `merged_problems` (`:2872`) then judges the FILE the write would produce,
+  every known leaf by `_content_problem` (`:2845`): an enum value outside its tuple (a legacy null
+  tolerated), a key under a leaf or an object at a leaf (`:2845-2848`, round 5, fixable in the
   same write since a leaf under a touched key is skipped), a consent key in the machine file, an armed veto-only key in the repo file, each
   named "pre-existing"; unknown keys and write-only refusals (`REPO_REFUSED` keys in the repo file,
   a repo-only key in the machine file) are not judged (JUDGEMENT in the docstring). Then
@@ -503,23 +503,23 @@ closed by where the check sits, not by a patch at the call site.
   not an object or `null`, and an entry under it that is not a pin object or `null`, before the
   pin's provider check - so `qa.roles=1` can no longer wipe every pin, at either layer, in the
   update, the merged file and the menu's probe alike.
-- **Machine:** `plan_global_write` (`:2862`) on `global_snapshot` (`:2813`, strict: an
+- **Machine:** `plan_global_write` (`:2959`) on `global_snapshot` (`:2910`, strict: an
   unparsable or non-object machine file is refused, never merged onto `{}`; absent is `ABSENT`) /
-  `write_global_config` (`:2881`), which re-runs `_plan_on` on the bytes `update_json` read under
+  `write_global_config` (`:2978`), which re-runs `_plan_on` on the bytes `update_json` read under
   the lock, `expect` (a digest or `ABSENT`) refusing a changed file (`GlobalWriteConflict`);
   any other `OSError` from the directory, the lock or the write is a `GlobalWriteRefused`
   naming the path (`:2904`, round 5), exit 2 and never a traceback.
-- **Repo:** `plan_repo_write` (`:3061`) on `repo_snapshot` (`:3049`, strict: absent or malformed
-  is refused, never created) and `machine_view` (`:3080`, the filtered machine file and its
-  `state_digest` from one `read_tolerant`) / `write_repo_config` (`:3087`), the same
+- **Repo:** `plan_repo_write` (`:3159`) on `repo_snapshot` (`:3147`, strict: absent or malformed
+  is refused, never created) and `machine_view` (`:3178`, the filtered machine file and its
+  `state_digest` from one `read_tolerant`) / `write_repo_config` (`:3185`), the same
   compare-and-swap (`RepoWriteConflict`), plus `expect_global`: the machine file is read once under
   `machine_lock` (taken before the repo lock, even when `~/.claude/crew/` is absent) and a changed
   one is refused; an `OSError` from the machine directory, either lock or the write is a
   `RepoWriteRefused` (`:3118`, round 5). `!` on a widening: the ratchet by what is in force (`repo_widens`, `:2993`) and
-  the `_REPO_WIDENING` table (`:2962`).
+  the `_REPO_WIDENING` table (`:3060`).
 - **CLI:** `--set PATH=JSON [--repo] [--apply [--expect DIGEST|absent] [--expect-global
-  DIGEST|absent]]` through `_set_layer` (`:3207`), which prints `digest:` of the bytes the plan
-  read and, with `--repo`, `machine digest:`; `main` (`:3241`) refuses a malformed path, value or
+  DIGEST|absent]]` through `_set_layer` (`:3305`), which prints `digest:` of the bytes the plan
+  read and, with `--repo`, `machine digest:`; `main` (`:3339`) refuses a malformed path, value or
   digest with exit 2. `wc -l` is 3399 at `3648f59a`, under `.pylintrc`'s 3400.
 
 `plugin/crew/hooks/scripts/crew_config_menu.py` (new) is what the menu procedure
@@ -1439,7 +1439,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`_read_config`, `:348`).
 - **DERIVED**: the launch gate. `crew_config.review_launchable`
   (`plugin/crew/hooks/scripts/crew_config.py:1908`) is `review_run.LAUNCHED` plus the in-session
-  `claude`, None when that list cannot be read; `order_candidates` (`:1878`) refuses a `qa.order`
+  `claude`, None when that list cannot be read; `order_candidates` (`:1931`) refuses a `qa.order`
   provider outside it ("/crew:review cannot launch `kimi` yet") and None admits nothing. It is the
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
@@ -1521,7 +1521,7 @@ then the train is advisory.
 - `plugin/crew/hooks/scripts/crew_config.py:2553` — `_RATCHETED`, the
   15-key ratchet table (seven construction steps).
 - `plugin/crew/hooks/scripts/crew_config.py:3159` / `:3185` — `plan_repo_write` /
-  `write_repo_config`, the one repo-layer writer (T-0075); `:2905` / `:2924` — the machine pair.
+  `write_repo_config`, the one repo-layer writer (T-0075); `:2959` / `:2978` — the machine pair.
 - `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and
   compare-and-swap both writers stand on (T-0075).
 - `plugin/crew/hooks/scripts/crew_config_menu.py:1051` — `main()`, the `spec` / `save` /
@@ -3691,3 +3691,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4fc93b19` (main, L-0587) and `35b9e6d9` (L-0592) -> `39ebbc18` on 2026-10-02 (L-0592 merges origin/main 6ac3b1b3, L-0587 #319 and #322; rerere disabled; crew 1.0.139).** Main's maps, INDEX and diagram were taken and L-0592's notes re-applied after main's. Since main's anchor, L-0592 changed five files under the crew plugin (README, the implement command, recurring_findings.py, two test modules) with no line moved, and main's re-pin changed two root README lines in place. No citation moved; no claim changed.
 
 **Merged `d0627649` (T-0009) + `8d84786d` (main) -> `f7bb1af2`, then re-anchored to `59e91ecc` on 2026-10-02 (T-0009 merges origin/main `8d84786d`, W-0117 #302, crew 1.0.115, with rerere disabled; crew 1.0.124).** Twelve hunks of this file conflicted. Before the three-way merge each side's line citations into `cloud_guard.py`, `crew_config.py` and `crew_guards.py` - the three files both sides changed - were re-mapped onto the merged files by a line-level `difflib` match (an explicit `path:line` and the relative `:N` within 80 characters after it; provenance sections and citations marked "at"/"on"/"before" another commit were left as written), and the T-0009 paragraph's relative citations were then re-taken by symbol with `grep -n`. Resolved: the anchor and version sentence (main's, re-set here); the leaf table and paragraph (main's, plus T-0009's two keys); `_literal_gate`, `_terraform_verdict`, `GATE_HELPERS` and the ratchet registry (T-0009's text, re-taken: literal `:2553`, updates `:2568`, `:2592`, `:2603`, `:2613`, assignments `:2649`, `:2672`, `guards.deployWorkflow`'s allow note `:2579`); the writers, autopilot and entry-point hunks (main's, the ratchet table named 15-key); the provenance tail (both, T-0009's first). After the merge `5207bfc9` joined two continuation lines in `cloud_guard.py` to keep it at `.pylintrc`'s 3400 lines, so its citations past `:2575` moved by -1 and past `:2793` by -2, re-taken with `grep -n` (`GATE_HELPERS` `:2792`, `_literal_gate` `:2795` called at `:2844`, `_terraform_verdict` `:2992`, `scan`'s dispatch gate `:2946`, `_judge_one`'s dispatch branch `:3092`). Re-executed on the merged tree: leaves 131 / 73 / 58 / 0, `len(crew_config._RATCHETED)` 15, `len(crew_guards.RATCHETED_KEYS)` 14, `len(crew_guards.ALL_GUARD_NAMES)` 11; `plugin/crew/tests/test_crew_config.py:315` asserts 131, run on the merged tree. Citations main's side carried into files T-0009 did not change were not re-checked here (some were already behind main's own files, e.g. the writers section's `plan_global_write` `:2862` against `:2959`); see "Unverified at this anchor".
+
+**Re-anchored `39ebbc18` (main) and `dd6dce61` (T-0009) -> `decb2b49` on 2026-10-03 (T-0009 merges origin/main `2a2d6e07`, L-0592 #325, crew 1.0.139, at `34fbaa44` with rerere disabled, and sets crew 1.0.145).** The header conflict took main's anchor and both sides' provenance notes were kept, main's first. `git diff --name-only 39ebbc18 decb2b49` over this map's cited paths returns T-0009's files (the cloud guard's workflow-dispatch gate: `cloud_guard.py`, `crew_guards.py`, `crew_config.py`, their tests and sabotage entries, `CONFIG.md`, `README.md`, the two crew skills, the templates, `.crew/verify.json`'s cloud-guard rule, the troubleshooting guide), `CHANGELOG.md`, `plugin/crew/BUDGETS.md` and the version files. Every live body citation into a file both sides changed was re-mapped by a line-level `difflib` match from the side its line came from (`/root/crew-tmp/t-0009/merge-1003/remap3.py`, machine-local); citations inside provenance entries describe their own commits and were left as written. The version sentence now reads 1.0.145 (coordinator-allocated; 1.0.140-1.0.144 held by other lanes) and the Workflow dispatches paragraph names 1.0.145. A second pass over bare `:N` continuations found the ratchet-registry and writer paragraphs (`:484`-`:522`), `order_candidates` (`:1442`) and the machine-pair line (`:1524`) citing `crew_config.py` at pre-T-0009 offsets (stale on both sides before this merge, not caused by it): 29 citations re-pointed to the `def`/`class`/assignment of the symbol each names, each found exactly once in the file and re-read with `sed -n`. Left as written because the citation names a point inside a function, not a definition, and no single line can be confirmed mechanically: `:2655` (`_shape` returning `under`), `:2724` (a path under a leaf), `:2904` (`GlobalWriteRefused` raise), `:3118` (`RepoWriteRefused` raise); re-derive these with `/crew:onboard --refresh crew`. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); nothing was executed for this note beyond `git diff`, `sed -n` and that match.
