@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:34 UTC
+Last updated: 2026-10-03 23:35 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:35: #358 review: PASS 0 BLOCK, 3 FIX (_base_text git-fail collapses to 'all added'; implement.md says unknown stops but autopilot reruns -> decided: stop at once on unknown; no integration test of real ticket_docs via next_phase). Sent to builder, target 1.0.226. Next free: 1.0.227.
 - 23:34: #337 round 6: FAIL, 1 BLOCK ('accepted by No One' PASS: 'no' dropped inside names) + 2 FIX (bare verbs Retract/Decline as names; 2nd-by evidence word). Name-fix confirmed, no boundary leaks. Sent to fixer, target 1.0.225. Round-7 reviewer scope: an unlisted word in the name slot is a DOCUMENTED LIMIT (needs owner OK). Next free: 1.0.226.
 - 23:33: #352 review: PASS 0 BLOCK, 2 FIX (both unlink+blank fail -> stale author record still trusted, must wait; remove docs/tickets/T-0069). Sent to builder; target 1.0.224. Next free: 1.0.225. #372: waiting CI on 11d5194e (bf87f024 run was cancelled).
 - 23:33: #372 red Windows fan-in on bf87f024 = default/slow jobs CANCELLED by the 11d5194e push (wallclock passed); not a failure. #337 round-5 FIX pushed (4e77771a, crew 1.0.222): stems stay out of 'by' names, GAP names the word. Round-6 Sonnet re-review started.
