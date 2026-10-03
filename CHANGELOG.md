@@ -10,9 +10,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) already runs it and `network`
   when it defers it for a remote verb. `--apply` writes those, then moves each stamped rule's
   entries in `.crew/.verify-gate.timings.json` and `.crew/.verify-gate.record.json` to its new
-  `rule_key` (which hashes `reach`), so it changes neither what Stop runs nor what it costs; an
+  `rule_key` (which hashes `reach`), so in that checkout it changes neither what Stop runs nor what
+  it costs (another checkout, whose caches are local, runs `/crew:verify --all` once); an
   unreadable cache is named and left alone. A `"reach": null` rule counts as undeclared, as in
-  the gate. It classifies from `--root` as its cwd, as the gate does, and `--map` is gone. The
+  the gate. It classifies from `--root` as its cwd, as the gate does (there is no `--map`). The
   table shows a `requiresCleanTree` rule as skipped on Stop.
   A rule deferred for shell syntax or a wrapper script is listed as undecided and written only by
   `--set N=local|network|host`. The map is edited as text in place and refused unless it parses

@@ -132,9 +132,9 @@ Declares `reach` on every rule that has none (absent or `null`), from the gate's
 own classifier (below), run from `--root` as the gate runs from the project root:
 a rule the gate already runs gets `local`, one it defers for a remote verb gets
 `network`. `reach` is part of `rule_key`, so it then moves each stamped rule's
-measured timing and record entry to the new key: `--apply` changes neither what
-Stop runs nor what it costs. Syntax- and wrapper-deferred rules are undecided,
-written only by `--set N=...`. Dry run by default. It edits the map's text in
+measured timing and record entry to the new key: in this checkout `--apply` changes
+neither what Stop runs nor what it costs (another checkout re-measures: `--all` once
+there). Syntax-/wrapper-deferred rules: `--set N=...` only. Dry run; edits the map's text in
 place, refusing unless it parses back to the original plus exactly the new keys.
 Show the table, ask, then commit the diff on its own, as with `--price`.
 

@@ -104,6 +104,22 @@ def test_apply_never_changes_what_the_stop_gate_runs(tmp_path):
     assert rec == {verify_record.rule_key(after[2]): owed}  # the obligation moved, not orphaned
 
 
+def test_an_old_key_another_rule_still_has_keeps_its_entry(tmp_path):
+    """Two identical rules share one rule_key; stamping only one must copy the
+    cached price to the new key and leave the old entry for its twin."""
+    text = json.dumps({"rules": [{"paths": ["a/**"], "run": ["bash -c 'x'"]},
+                                 {"paths": ["a/**"], "run": ["bash -c 'x'"]}]}, indent=2)
+    _repo(tmp_path, text)
+    old = verify_record.rule_key(json.loads(text)["rules"][0])
+    timings = tmp_path / ".crew" / ".verify-gate.timings.json"
+    timings.write_text(json.dumps({"rules": {old: 9}}), encoding="utf-8")
+    assert _run(tmp_path, "--apply", "--set", "0=local") == 0
+    after = json.loads((tmp_path / ".crew" / "verify.json").read_text(encoding="utf-8"))["rules"]
+    assert [r.get("reach") for r in after] == ["local", None]
+    cache = json.loads(timings.read_text(encoding="utf-8"))["rules"]
+    assert cache == {old: 9, verify_record.rule_key(after[0]): 9}
+
+
 def test_an_unreadable_cache_is_named_and_the_map_still_written(tmp_path, capsys):
     path = _repo(tmp_path, CACHED)
     (tmp_path / ".crew" / ".verify-gate.timings.json").write_text("{ nope", encoding="utf-8")
