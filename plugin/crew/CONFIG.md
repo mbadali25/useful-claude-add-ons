@@ -2413,7 +2413,7 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   rule that refuses on a dirty tree is a permanent red there and a real
   check only under `--all` against a clean checkout.
 - A rule declaring `"coveredBy": "<id>"` (L-0572) names another rule's
-  `"id"` as running a superset of its checks. Under `--all` only, its
+  `"id"` as running a superset of its checks. Under `--all` or `--ci` only, its
   commands run last and are recorded as `covered` - clean, but never cached
   as a timing - when every command of that rule exited 0 earlier in the same
   run, a whole-tree snapshot taken before the first command still matches,
@@ -2436,6 +2436,51 @@ in root `CLAUDE.md`), so an automatic `--price` would dirty a committed file
 on every Stop. `verify-gate.sh --price [path] [--force]` /
 `verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]` is reachable only
 by typing the flag; the Stop hook (`hooks.json`) never passes it.
+
+**`--ci` / `-Ci` is the gate as a pull request's CI job (crew 1.0.230), and
+it is not a spelling of `--all`.** Its scope is the whole map with no budget
+and no fingerprint skip, over TRACKED files only (`git ls-files`, staged
+deletions and renames included): a CI workspace's untracked files (a crew
+checkout, a `.venv`, build output) are not the change and do not trip
+`"unmapped": "fail"`. Its reach filter is Stop's: a `"reach_declared"` rule,
+an undeclared one `scan_reach` will not clear, and an `always`/`default`
+command it will not clear are named and not run, because a CI runner has
+none of the credentials or network paths they were written against. One
+`verify-gate --ci:` line counts them; they do not fail the run, and they run
+only under `--all`. A `"requiresCleanTree"` rule RUNS, because a CI checkout
+is the clean tree it was sent to. A failing command, a command exiting 77
+(`a skip is not a pass in CI`) and any deferral exit 2.
+
+Under `--ci`, every path that would end having checked nothing exits 2 with
+a named `verify-gate --ci:` reason, where Stop exits 0: `verifyGate: false`,
+no map and no `_verify/smoke.sh`, a project directory the gate cannot enter,
+no tracked files (not a git work tree, or git refused the checkout), zero
+commands to run (every matched rule reach-excluded, nothing matched and
+`always`/`default` added nothing, or every command blank), a lock held by
+another gate run, and the `.ps1` run off Windows (use the `.sh` there). The
+Stop-only stand-downs do not apply: `--ci` reads no stdin (so a
+`stop_hook_active` payload cannot end it), the emergency lane does not stand
+it down (an `.crew/incident.json` is named and the rules run), and the
+`.deploy-in-flight` check is skipped without touching the marker.
+
+`--ci` never writes `.crew/.verify-verified-at` or the fingerprint, even on a
+full pass, and the pass line says why. It still writes the gate's other
+machine-local files: the per-rule record (synced with `all` false), and the
+timings and tree-pass caches as on any run. Arguments are checked strictly
+in every mode: the `.sh` accepts only `--all` and `--ci` (in any position)
+and `--price` (first only), so `-ci`, `--CI` or `--ci=1` is a usage error rather than a
+Stop run in CI; the `.ps1` refuses an argument PowerShell's binder would
+have passed through (`-Bogus`, `--ci=1`, a bare word). `--ci` with `--all`
+or `--price` (`-Ci` with `-All` or `-Price`) is a usage error too. Run it from the job's checkout:
+`bash <crew>/hooks/scripts/verify-gate.sh --ci`.
+
+**The map comes from the PR head, so a PR can weaken its own gate.** `--ci`
+reads `.crew/verify.json` from the checkout it is verifying: a PR that drops
+a rule, narrows its `paths` or declares it `network` changes what its own
+job checks. (`verifyGate: false` cannot do it: `--ci` fails on that.) With no
+map, a passing `_verify/smoke.sh` passes, unscoped and unfiltered as on Stop.
+Review a `.crew/verify.json` change as code, and do not treat a green `--ci`
+job as evidence about a map the same PR rewrote.
 
 **Environment pinning is unconditional, not a config key either.** Every rule
 command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`, `AWS_DEFAULT_REGION`,
