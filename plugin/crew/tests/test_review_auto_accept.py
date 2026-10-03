@@ -850,8 +850,8 @@ def _cp1252_cli(repo, *args):
     result = subprocess.run([sys.executable, _LEDGER, "--root", str(repo), "--ticket", T]
                             + list(args), capture_output=True, stdin=subprocess.DEVNULL,
                             check=False, env=env)
-    return (result.returncode, result.stdout.decode("utf-8"),
-            result.stderr.decode("utf-8"))
+    return (result.returncode, result.stdout.decode("utf-8").replace("\r\n", "\n"),
+            result.stderr.decode("utf-8").replace("\r\n", "\n"))
 
 
 def test_auto_accept_prints_a_non_cp1252_finding_on_a_cp1252_console(repo):
