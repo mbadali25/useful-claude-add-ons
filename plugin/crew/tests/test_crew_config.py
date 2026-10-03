@@ -346,7 +346,7 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     assert "dev.kimi.model" in declared
     # 131 with T-0013: `resume.typeDelaySeconds` and
     # `resume.readyTimeoutSeconds`, measured by running this test after
-    # merging main for crew 1.0.160.
+    # merging main 4f6ef540 for crew 1.0.186.
     assert {"resume.typeDelaySeconds", "resume.readyTimeoutSeconds"} <= declared
     assert len(declared) == 131
 
