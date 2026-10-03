@@ -9,7 +9,7 @@ Handed to a cloud session on 2026-10-03 by owner instruction. Do not pick up loc
 - **Review ledger:** none (no review round reserved)
 - **Branch:** `L-0509-build`
 - **Ticket files published here:** `docs/tickets/L-0509/direction.md`, `docs/tickets/L-0509/plan.md`, `docs/tickets/L-0509/spec.md`
-- **Branch state:** existing local branch, 0 commit(s) not on main; pushed as is
+- **Branch state:** new branch from origin/main; no implementation yet (docs only)
 
 The ticket files are copies of the gitignored `.work/tickets/L-0509/` as of 2026-10-03. `direction.md` is the approved direction, `spec.md` the ticket contract, and `plan.md` the approved step plan where present. Read them before writing code.
 
