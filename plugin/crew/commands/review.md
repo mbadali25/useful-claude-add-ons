@@ -117,11 +117,11 @@ for the same reason `$SCRATCH` is carried:
 ```bash
 # The ticket's START, recorded by /crew:implement (`scope_base.py --record`):
 # the same range /crew:implement's scope evidence covers, so the bundle -- and the
-# receipt bound to its hash -- is this ticket's change, not everything on the
-# branch since the trunk. With no record, or one this clone no longer holds,
-# scope_base.py itself falls back to the merge-base with the default branch
-# and says "(fallback)" on stderr; repeat that word in the verdict when it does.
-BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base "$TICKET")
+# receipt bound to its hash -- is this ticket's change, not the whole branch. With no
+# usable record scope_base.py falls back to the merge-base with tickets.baseBranch (default
+# origin/HEAD) and says "(fallback)"; repeat it in the verdict. Exit 3 = could not tell: stop.
+BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base "$TICKET"); SB_RC=$?
+if [ "$SB_RC" -eq 3 ]; then echo "review base: could not tell - stopping (see scope-base line above)" >&2; exit 3; fi
 if [ -z "$BASE" ]; then
   # scope_base.py did not run at all (no python3). The stated fallback:
   # the merge-base. `... | sed ... || echo main` does NOT work: the || binds

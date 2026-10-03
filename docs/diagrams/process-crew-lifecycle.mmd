@@ -1,4 +1,9 @@
 %% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% T-0061: im1 relabelled - `crew_ticket.py activate` now records the scope base at branch cut, so
+%% /crew:implement step 1 may report `kept`, and a `tickets.baseBranch` naming no commit exits 1 "could not tell".
+%% Its cites re-read with sed -n on the merged tree: scope_base --record is implement.md:27 and crew_tracker :32 (were
+%% :28, :33, one line off before T-0061). review.md step 1a was edited in place, so no review.md cite moved. This
+%% diagram has no autopilot node, so activate's record on the autopilot path is not drawn.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -330,7 +335,7 @@ flowchart TB
     subgraph implement["/crew:implement"]
         planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:17-23"}
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
-        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
+        im0 -- yes --> im1["scope_base --record (kept if activate<br/>recorded; exit 1 could not tell), then<br/>crew_tracker.py move --to in-progress<br/>:27, :32"]
         im1 --> im2["recurring-findings checklist<br/>for the Touch paths, then<br/>steps in order, test first<br/>:38-42; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
         im2 --> im3a["changed-file list, verify<br/>:57, :67"]
         im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]

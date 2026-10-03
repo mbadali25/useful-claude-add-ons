@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` VERSION-TO-ALLOCATE: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
+
+- `scope_base.py` measures a ticket against the repo-only key `tickets.baseBranch` in
+  `.crew/config.json` (read straight from the file by `read_base_branch` / `base_branch`): the value
+  as given when it contains `/`, then `origin/<value>`, then `<value>`. Unset or `null` keeps the old
+  chain (`origin/HEAD`'s target, `origin/main`, `main`). TSS-510's repro: a branch cut from
+  `development` with origin/HEAD on `main` recorded the merge-base with `main`, 492 files for a
+  19-file ticket; with the key it records HEAD, exact.
+- "Could not tell" is its own answer. A configured branch naming no commit, or a config that does
+  not parse, gives `resolve` source `unknown` and no base; `--record` writes nothing and exits 1;
+  **`scope_base.py --base` and `--changed` print nothing and exit 3** (they used to print `HEAD` and
+  exit 0 only outside a repository, which is unchanged). It never falls back to `origin/HEAD`. The
+  completion audit, the refresh check, `scope_report` and `webtest_guard` already treat no base as
+  unmeasured or failed; tests pin each.
+- `crew_ticket.py activate` records the scope base at branch cut (an existing record is kept; a
+  failure or "could not tell" is printed to stderr and the pointer is still set).
+- A fallback entry guessed against another ref than today's base branch (`merge-base with
+  origin/main` once the key names `development`) is re-derived by the first-record rule, the old
+  provenance kept as `was`; an exact entry (`from: HEAD`) is never re-derived, and a fallback
+  against the same ref is kept. The gone and not-ancestor reasons now start "could not tell where
+  <ticket> started".
+- `/crew:review` step 1a stops on exit 3 instead of bundling; `/crew:autopilot` says activate also
+  records. Six new sabotage entries, each RED on its named test; two existing scope-base anchors
+  re-pointed onto the same lines' new text. `test_scope_base_branch.py` joins verify rules 11 and
+  25. The verify gate's own fallback base is unchanged and filed to `TODO.md`.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

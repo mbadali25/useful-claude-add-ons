@@ -44,6 +44,11 @@ marked `from: merge-base`, and every line derived from it -- `resolve`'s
 source and reason, `--record`'s own line on every later re-record,
 `scope_report`'s `outside-scope:` line -- carries the fallback marker.
 Provenance is part of the entry and a second `--record` never upgrades it.
+The one exception (T-0061): a fallback guessed against a DIFFERENT ref than
+the current base branch -- `origin/main` before `tickets.baseBranch` named
+`development` -- was a guess against the wrong branch, so it is re-derived by
+the first-record rule and the old provenance is kept in the entry as `was`.
+An exact entry (`from: HEAD`) is never re-derived, whatever the config says.
 That over-reports on a branch carrying two tickets -- the safe direction,
 and stated as such. Another ticket's entry is never evidence about this
 one's start: T-1 recorded on `main` is an ancestor of every branch, and
@@ -53,19 +58,33 @@ letting it stand in for T-2's start hid T-2's commits (Codex, round 2).
 
 When the entry is missing, names a commit this repository no longer contains,
 or names one that is no longer an ancestor of HEAD, `resolve` falls back to
-the merge-base with the default branch: everything on the branch, a superset
-of anything the ticket did. It never falls back to the verification marker,
-which is the narrower base this module exists to replace. The default branch
-is resolved as `origin/HEAD`, then `origin/main`, then `main`, in that
-order -- a clone made with `git clone -b <ticket-branch>` has no local `main`
-at all, and trying only that name fell through to HEAD, the narrowest answer
-(Codex, round 1). The reason names which ref was used. On the default branch
-itself the merge-base IS HEAD, so the last resort is the working tree alone,
-stated rather than silent.
+the merge-base with the base branch: everything on the branch, a superset
+of anything the ticket did, with a reason that starts "could not tell where
+<ticket> started" for the last two. It never falls back to the verification
+marker, which is the narrower base this module exists to replace.
+
+The base branch is the repo-only key `tickets.baseBranch` in
+`.crew/config.json` (T-0061): a repository whose ticket branches are cut from
+`development` measured them against `main` and reviewed the whole integration
+branch. A value is tried as given when it contains `/`, then as
+`origin/<value>`, then as `<value>`. With the key unset it is `origin/HEAD`,
+then `origin/main`, then `main`, in that order -- a clone made with
+`git clone -b <ticket-branch>` has no local `main` at all, and trying only
+that name fell through to HEAD, the narrowest answer (Codex, round 1). The
+reason names which ref was used. On the default branch itself the merge-base
+IS HEAD, so the last resort is the working tree alone, stated rather than
+silent.
+
+A configured branch that names no commit here, or a config that does not
+parse, is "could not tell": `resolve` returns no base with source `unknown`,
+`--record` writes nothing and exits 1, and `--base`/`--changed` print nothing
+and exit 3. It never falls back to `origin/HEAD`: that is the base the key
+exists to replace, and using it silently is the defect T-0061 closed.
 
 `source` tells a caller mechanically what the reason tells a human:
 `"record"` is the one non-fallback value. Everything else --
-`"record-fallback"`, `"merge-base"`, `"head"`, None -- is a fallback, and a
+`"record-fallback"`, `"merge-base"`, `"head"`, None -- is a fallback
+(`"unknown"` has no base at all), and a
 caller printing a line derived from the base must mark that line, not only
 some other line nearby: an unknown has to survive into every line derived
 from it, or the reassuring line and the uninformative one look the same.
@@ -81,6 +100,9 @@ RECORD = os.path.join(".crew", ".scope-base")
 
 # The only source that is not a fallback.
 RECORDED = "record"
+# No base: the configured base branch could not be read or names no commit.
+UNKNOWN = "unknown"
+CONFIG = os.path.join(".crew", "config.json")
 
 _REASON_RECORDED = "the commit {ticket} started from, recorded by /crew:work"
 _REASON_RECORDED_FALLBACK = (
@@ -88,9 +110,14 @@ _REASON_RECORDED_FALLBACK = (
     "already past it when {ticket} was first recorded here, so the true "
     "start is unknown and this shows MORE")
 _REASON_NO_RECORD = "no scope base recorded for {ticket}"
-_REASON_GONE = "start commit {sha} not in this clone"
-_REASON_NOT_ANCESTOR = ("start commit {sha} is no longer an ancestor of HEAD "
-                        "(rebased?)")
+_REASON_GONE = ("could not tell where {ticket} started: start commit {sha} "
+                "not in this clone")
+_REASON_NOT_ANCESTOR = ("could not tell where {ticket} started: start commit "
+                        "{sha} is no longer an ancestor of HEAD (rebased?)")
+_REASON_OTHER_REF = ("the record for {ticket} was a merge-base guess against "
+                     "{old}, and the base branch is now {ref}")
+_COULD_NOT_TELL = ("could not tell {ticket}'s scope base: {problem}; set "
+                   "tickets.baseBranch to a branch this clone has, or unset it")
 _FALLBACK = "; evidence is against merge-base {base} with {ref} (fallback)"
 _LAST_RESORT = ("; no default branch to take a merge-base with, so the working "
                 "tree alone (fallback)")
@@ -110,27 +137,99 @@ def _is_ancestor(root, sha):
         root, "merge-base", "--is-ancestor", sha, "HEAD") is not None
 
 
-def _default_ref(root):
-    """The first of `origin/HEAD` (as the ref it points at), `origin/main`,
-    `main` that names a commit here, or None. Named in every reason, since
-    which one answered decides what the merge-base is."""
+def read_base_branch(root):
+    """`(value, problem)` for `tickets.baseBranch` in `.crew/config.json`.
+
+    Absent file, absent `tickets` block or `null` is `(None, None)`: today's
+    default. A file that cannot be read or parsed, a `tickets` that is not an
+    object, or a value that is not a non-empty string is `(None, problem)` --
+    the fail-closed rule of `crew_ticket.configured_mode`, because guessing
+    the default there is exactly the silent fallback the key replaces."""
+    path = os.path.join(root, CONFIG)
+    text = crew_common.read_text(path)
+    if text is None:
+        if os.path.exists(path):
+            return None, f"{CONFIG} exists but cannot be read"
+        return None, None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None, f"{CONFIG} does not parse"
+    if not isinstance(data, dict):
+        return None, f"{CONFIG} is not a JSON object"
+    tickets = data.get("tickets")
+    if tickets is None:
+        return None, None
+    if not isinstance(tickets, dict):
+        return None, f"tickets in {CONFIG} is not an object"
+    value = tickets.get("baseBranch")
+    if value is None:
+        return None, None
+    if not isinstance(value, str) or not value.strip():
+        return None, (f"tickets.baseBranch {value!r} in {CONFIG} is not a "
+                      "branch name")
+    return value.strip(), None
+
+
+def base_branch(root):
+    """`(ref, problem)`: the branch ticket branches are cut from, as a ref
+    that names a commit here. Named in every reason, since which one answered
+    decides what the merge-base is.
+
+    With `tickets.baseBranch` set, the candidates are the value as given when
+    it contains `/`, then `origin/<value>`, then `<value>`; none naming a
+    commit is a problem, never a fall back to `origin/HEAD`. Unset, the first
+    of `origin/HEAD` (as the ref it points at), `origin/main`, `main`, with
+    `(None, None)` when none resolves (the working tree alone, as before)."""
+    value, problem = read_base_branch(root)
+    if problem:
+        return None, problem
+    if value:
+        candidates = []
+        for ref in ([value] if "/" in value else []) + [f"origin/{value}", value]:
+            if ref not in candidates:
+                candidates.append(ref)
+        for ref in candidates:
+            if _is_commit(root, ref):
+                return ref, None
+        return None, (f"tickets.baseBranch {value!r} names no commit here "
+                      f"(tried {', '.join(candidates)})")
     sym = crew_common.git_out(root, "symbolic-ref", "--short",
                               "refs/remotes/origin/HEAD")
-    candidates = [sym, "origin/main", "main"]
-    for ref in candidates:
+    for ref in (sym, "origin/main", "main"):
         if ref and _is_commit(root, ref):
-            return ref
-    return None
+            return ref, None
+    return None, None
+
+
+def _default_ref(root):
+    """`base_branch`'s ref alone, or None. Kept by name for
+    `crew_refresh_check._fallback_hides` and `crew_train`."""
+    return base_branch(root)[0]
 
 
 def _merge_base(root):
-    """`(ref, sha)` for the merge-base with the default branch, or
-    `(None, None)`."""
-    ref = _default_ref(root)
+    """`(ref, sha, problem)` for the merge-base with the base branch.
+    `problem` is set (and the rest None) when the base branch could not be
+    told; `(None, None, None)` when there is simply none to take."""
+    ref, problem = base_branch(root)
+    if problem:
+        return None, None, problem
     if not ref:
-        return None, None
+        return None, None, None
     base = crew_common.git_out(root, "merge-base", "HEAD", ref)
-    return (ref, base) if base else (None, None)
+    return (ref, base, None) if base else (None, None, None)
+
+
+def _other_ref(root, entry):
+    """For a fallback entry: the current base branch when it is known and
+    differs from the ref the entry was guessed against, else None."""
+    if not _is_fallback_entry(entry):
+        return None
+    ref, problem = base_branch(root)
+    if problem or not ref or ref == _fallback_ref(entry):
+        return None
+    return ref
 
 
 def read_record(root):
@@ -192,23 +291,32 @@ def record(root, ticket):
     commit is not in this clone -- `resolve` will fall back and say so),
     `"recorded"` (HEAD written),
     `"recorded-fallback"` (the merge-base written because HEAD was already
-    past it; see the module header), or `None` with `sha` None when nothing
-    could be recorded -- not a repository, or no commit yet -- and nothing
-    was written.
+    past it; see the module header), `"re-recorded"` /
+    `"re-recorded-fallback"` (the same two, replacing a fallback guessed
+    against another ref than the current base branch), `UNKNOWN` with `sha`
+    None when the base branch could not be told and nothing was written, or
+    `None` with `sha` None when nothing could be recorded -- not a
+    repository, or no commit yet -- and nothing was written.
     """
     rec = read_record(root) or {}
     entry = _entry(rec, ticket)
+    was = None
     if entry:
         # NEVER overwritten, whatever state the commit is in -- and never
         # upgraded either: an entry recorded as a fallback stays a fallback
         # on every later read and re-record. Provenance is part of the entry
         # (Codex round 2: a second `--record` after `/clear` said "kept ...
-        # as the start" over a merge-base guess).
+        # as the start" over a merge-base guess). The single exception is a
+        # fallback guessed against another ref than today's base branch
+        # (T-0061): it was a guess against the wrong branch, not a start.
         if not _is_commit(root, entry["base"]):
             return entry["base"], "kept-missing"
-        if _is_fallback_entry(entry):
+        if _other_ref(root, entry):
+            was = entry["from"]
+        elif _is_fallback_entry(entry):
             return entry["base"], "kept-fallback"
-        return entry["base"], "kept"
+        else:
+            return entry["base"], "kept"
     head = crew_common.git_out(root, "rev-parse", "HEAD")
     if not head:
         return None, None
@@ -222,19 +330,25 @@ def record(root, ticket):
     # one exists this function has already returned above. So a branch that
     # carries two tickets over-reports the first's commits as the second's,
     # labelled as a fallback on every derived line: the safe direction.
-    ref, merge_base = _merge_base(root)
+    ref, merge_base, problem = _merge_base(root)
+    if problem:
+        return None, UNKNOWN
     if merge_base and merge_base != head:
         base, source = merge_base, f"merge-base with {ref}"
         status = "recorded-fallback"
     else:
         base, source, status = head, "HEAD", "recorded"
-    updated = dict(rec)
-    updated[ticket] = {
+    fresh = {
         "base": base,
         "from": source,
         "recordedAt": datetime.datetime.now(
             datetime.timezone.utc).isoformat(timespec="seconds"),
     }
+    if was:
+        fresh["was"] = was
+        status = "re-" + status
+    updated = dict(rec)
+    updated[ticket] = fresh
     _write(root, updated)
     return base, status
 
@@ -243,28 +357,35 @@ def resolve(root, ticket):
     """`(base, source, reason)` -- the commit the ticket's evidence diffs from.
 
     `source` is `"record"` for a start recorded at HEAD, and otherwise one of
-    the fallbacks named in the module header, or None when git could not
-    answer at all (not a repository), in which case `base` is None too. The
-    reason is a sentence for a human and carries "(fallback)" whenever the
-    source is not `"record"`.
+    the fallbacks named in the module header, `UNKNOWN` (base None) when the
+    base branch could not be told, or None when git could not answer at all
+    (not a repository), in which case `base` is None too. The reason is a
+    sentence for a human and carries "(fallback)" whenever a base is given
+    and the source is not `"record"`.
     """
     entry = _entry(read_record(root), ticket)
+    other = _other_ref(root, entry) if entry else None
     if entry is None:
         why = _REASON_NO_RECORD.format(ticket=ticket)
     elif not _is_commit(root, entry["base"]):
-        why = _REASON_GONE.format(sha=entry["base"][:12])
+        why = _REASON_GONE.format(ticket=ticket, sha=entry["base"][:12])
     elif not _is_ancestor(root, entry["base"]):
-        why = _REASON_NOT_ANCESTOR.format(sha=entry["base"][:12])
-    elif _is_fallback_entry(entry):
+        why = _REASON_NOT_ANCESTOR.format(ticket=ticket, sha=entry["base"][:12])
+    elif not _is_fallback_entry(entry):
+        return entry["base"], RECORDED, _REASON_RECORDED.format(ticket=ticket)
+    elif other:
+        why = _REASON_OTHER_REF.format(ticket=ticket, old=_fallback_ref(entry),
+                                       ref=other)
+    else:
         return entry["base"], "record-fallback", _REASON_RECORDED_FALLBACK.format(
             ref=_fallback_ref(entry), ticket=ticket)
-    else:
-        return entry["base"], RECORDED, _REASON_RECORDED.format(ticket=ticket)
 
     head = crew_common.git_out(root, "rev-parse", "HEAD")
     if not head:
         return None, None, why + _NO_GIT
-    ref, base = _merge_base(root)
+    ref, base, problem = _merge_base(root)
+    if problem:
+        return None, UNKNOWN, _COULD_NOT_TELL.format(ticket=ticket, problem=problem)
     if base:
         return base, "merge-base", why + _FALLBACK.format(base=base[:12], ref=ref)
     return head, "head", why + _LAST_RESORT
@@ -291,30 +412,49 @@ def _usage():
             "<ticket>\n")
 
 
-def _record_message(root, ticket, sha, status):
+def record_message(root, ticket, sha, status):
+    """The one stderr line for `record`'s `(sha, status)`, shared by
+    `--record` and `crew_ticket.py activate`."""
+    if status == UNKNOWN:
+        problem = _merge_base(root)[2] or "the base branch could not be told"
+        return (f"scope-base: {_COULD_NOT_TELL.format(ticket=ticket, problem=problem)}"
+                f"; nothing recorded ({RECORD})\n")
+    if not sha:
+        return (f"scope-base: could not record a start for {ticket} - "
+                f"{root} is not a git repository or has no commit yet\n")
     if status == "kept-missing":
-        _ref, merge_base = _merge_base(root)
+        _ref, merge_base, problem = _merge_base(root)
         against = (f"merge-base {merge_base[:12]}" if merge_base
+                   else f"nothing: could not tell ({problem})" if problem
                    else "the working tree alone")
         return (f"scope-base: start commit {sha[:12]} not in this clone; "
                 f"evidence is against {against} (fallback); the record for "
                 f"{ticket} is kept\n")
-    if status in ("recorded-fallback", "kept-fallback"):
-        verb = "kept" if status == "kept-fallback" else "recorded"
+    entry = _entry(read_record(root), ticket) or {}
+    was = (f" (was a merge-base guess against {_fallback_ref({'from': entry['was']})})"
+           if status.startswith("re-") and entry.get("was") else "")
+    if status in ("recorded-fallback", "kept-fallback", "re-recorded-fallback"):
+        verb = {"kept-fallback": "kept", "recorded-fallback": "recorded",
+                "re-recorded-fallback": "re-derived"}[status]
+        ref = (_fallback_ref(entry) if _is_fallback_entry(entry)
+               else "the base branch")
         return (f"scope-base: (fallback) {verb} {sha[:12]} as the start of "
-                f"{ticket} - the merge-base with the default branch, because "
+                f"{ticket} - the merge-base with {ref}, because "
                 f"HEAD was already past it when first recorded, so the true "
-                f"start is unknown and this shows MORE ({RECORD})\n")
-    verb = "kept" if status == "kept" else "recorded"
-    return f"scope-base: {verb} {sha[:12]} as the start of {ticket} ({RECORD})\n"
+                f"start is unknown and this shows MORE{was} ({RECORD})\n")
+    verb = {"kept": "kept", "re-recorded": "re-derived"}.get(status, "recorded")
+    return (f"scope-base: {verb} {sha[:12]} as the start of {ticket}{was} "
+            f"({RECORD})\n")
 
 
 def main(argv):
     """`--record` exits 1 when nothing could be recorded, because it is run
     once by a person at the start of work and a silent no-op there is the
     moving-base defect waiting to happen again. `--base` and `--changed`
-    always exit 0: they always have an answer, and the reason on stderr says
-    how good it is."""
+    exit 0 whenever they have an answer, and the reason on stderr says how
+    good it is. They exit 3 with NOTHING on stdout when the base branch could
+    not be told (T-0061): printing `HEAD` there would make a review bundle of
+    the working tree alone, the narrowest answer dressed as an answer."""
     root = os.getcwd()
     action = None
     ticket = None
@@ -335,16 +475,16 @@ def main(argv):
 
     if action == "--record":
         sha, status = record(root, ticket)
+        sys.stderr.write(record_message(root, ticket, sha, status))
         if not sha:
-            sys.stderr.write(
-                f"scope-base: could not record a start for {ticket} - "
-                f"{root} is not a git repository or has no commit yet\n")
             return 1
-        sys.stderr.write(_record_message(root, ticket, sha, status))
         sys.stdout.write(sha + "\n")
         return 0
 
-    base, _source, reason = resolve(root, ticket)
+    base, source, reason = resolve(root, ticket)
+    if source == UNKNOWN:
+        sys.stderr.write(f"scope-base: {reason}\n")
+        return 3
     if base is None:
         sys.stderr.write(f"scope-base: ({reason})\n")
         # Something a shell can still hand to `git diff` and get a loud error
