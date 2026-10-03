@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:27 UTC
+Last updated: 2026-10-03 23:30 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:30: main took #380 (crew 1.0.167, verify-gate CLAUDE_PLUGIN_ROOT). #372 re-merged main (version/CHANGELOG conflicts only) -> 11d5194e, crew 1.0.223; gates pass, reach + gate tests 23 passed. Needs fresh CI, plus a merge-only Sonnet re-review. #375 round-3 re-review CLEAN (e22687da). #337 round 5: 0 BLOCK, 1 FIX (refusal stems hit names like Denise) -> fixer, target 1.0.222. Next free: 1.0.224.
 - 23:27: #375 round-2 fixes pushed (e22687da, crew 1.0.218): char-level path parser (arc flags), per-subpath segments, renamed/stray edges UNKNOWN (invisible links excluded), render.sh writes .svg.src source hash. 33 real renders still PASS. Round-3 Sonnet re-review started.
 - 23:26: #337 round-4 fix pushed (2f0bdf32, crew 1.0.221): names only after 'by'; refusal stems by prefix; limits documented. Round-5 Sonnet re-review started. If round 5 fails, recommend owner switch secrets.md acceptance to structured columns.
 - 23:25: #355 re-review on c2bfb51d: CLEAN (0 BLOCK, 0 FIX, 2 NITs). Clean set: #371, #360, #378, #350, #351, #359, #368, #357, #355. Pending: #372 CI; #337 round 5 fixing; #375 round 2 fixing.
