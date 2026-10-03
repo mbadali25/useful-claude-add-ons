@@ -58,7 +58,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   `GROUP_LABEL` printf; `:7` now reads `ShellCheck/...`. `install-prerequisites.ps1` is unchanged:
   it formats the same label with `-f` and carries no PSScriptAnalyzer suppression to keep in step.
 - **New suite.** `scripts/_test/shellcheck-directives.py` (stdlib) fails on any own-line
-  `# shellcheck` comment in a tracked `*.sh` that the directive grammar rejects, with must-block
+  `# shellcheck` comment in a tracked `*.sh` that the directive grammar rejects (keys and their
+  values, as measured under 0.9.0 and 0.11.0), with must-block
   and must-allow cases, an empty-extraction check and, when `shellcheck` is on PATH, a cross-check
   against real ShellCheck (SKIPPED, loudly, when it is not). It runs as a `marketplace.yml` step,
   in `scripts/gate-runner.py`'s table and in `.crew/verify.json`'s `scripts/**` rule.

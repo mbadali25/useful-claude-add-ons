@@ -16,6 +16,16 @@ the real-ShellCheck cross-check instead, which runs when `shellcheck` is on PATH
 not. The cross-check writes its fixtures under `tempfile.mkdtemp` and nowhere
 else.
 
+The grammar checks each key's value, not only its shape: a directive that
+parses but whose value ShellCheck rejects (`shell=bogus` is SC1103,
+`disable=bogus` is SC1073) is malformed too, and the cross-check flags every
+directive error code measured below, not SC1073 alone.
+
+Known over-match, in the failing direction: the grammar reads lines, not shell
+syntax, so heredoc or multi-line string text that starts `# shellcheck` is
+checked as if it were a comment. ShellCheck would ignore it and this suite
+fails on it; reword the line. No tracked file has such a line today.
+
 The must-block cases are the defects this was written for; the must-allow cases
 keep the grammar from failing correct lines. An empty extraction - no shell file
 or no directive read - is a failure, not a pass.
@@ -37,16 +47,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKERS = 4
 
-# The directive keys ShellCheck documents
-# (https://github.com/koalaman/shellcheck/wiki/Directive). `extended-analysis`
-# is left out on purpose: shellcheck 0.9.0, the version on the CI runner image,
-# reports it as SC1107 "unknown" and ignores the directive.
-KEYS = ("disable", "enable", "source", "source-path", "shell", "external-sources")
+# The in-script directive keys ShellCheck documents
+# (https://github.com/koalaman/shellcheck/wiki/Directive), each with the values
+# both 0.9.0 (the CI runner image's) and 0.11.0 accept without a directive
+# error, measured 2026-10-02. Left out on purpose: `extended-analysis` (SC1107
+# "unknown" on 0.9.0), `external-sources` (SC1144: valid only in .shellcheckrc),
+# `shell=busybox` (SC1103 on 0.9.0), `enable=SC2250` (SC1125: enable takes check
+# names), lowercase `sc2034` and a space after a comma (both SC1073).
+_CODE = r"(?:SC)?\d+(?:-(?:SC)?\d+)?"
+_VALUES = {
+    "disable": rf"(?:{_CODE}|all)(?:,(?:{_CODE}|all))*",
+    "enable": r"[a-z][a-z0-9-]*(?:,[a-z][a-z0-9-]*)*",
+    "source": r"[^\s#]+",
+    "source-path": r"[^\s#]+",
+    "shell": r"(?:sh|bash|dash|ksh)",
+}
+KEYS = tuple(_VALUES)
 
 TRIGGER = re.compile(r"^\s*#\s*shellcheck\b")
-VALID = re.compile(
-    r"^\s*#\s*shellcheck(?:\s+(?:" + "|".join(map(re.escape, KEYS)) + r")=[^\s#]+)+\s*(?:#.*)?$"
-)
+_PAIR = "(?:" + "|".join(f"{re.escape(k)}={v}" for k, v in _VALUES.items()) + ")"
+VALID = re.compile(r"^\s*#\s*shellcheck(?:\s+" + _PAIR + r")+\s*(?:#.*)?$")
 
 # (line, the code real ShellCheck reports for it), measured under 0.11.0 and 0.9.0.
 MUST_BLOCK = (
@@ -56,6 +76,13 @@ MUST_BLOCK = (
     ("# shellcheck", "SC1073"),
     ("#shellcheck disable=SC2034 - x", "SC1073"),
     ("# shellcheck frobnicate=1", "SC1107"),
+    ("# shellcheck disable=bogus", "SC1073"),
+    ("# shellcheck disable=sc2034", "SC1073"),
+    ("# shellcheck disable=SC2034, SC2016", "SC1073"),
+    ("# shellcheck shell=bogus", "SC1103"),
+    ("# shellcheck enable=SC2250", "SC1125"),
+    ("# shellcheck external-sources=true", "SC1144"),
+    ("# shellcheck external-sources=maybe", "SC1145"),
 )
 
 MUST_ALLOW = (
@@ -64,13 +91,20 @@ MUST_ALLOW = (
     "# shellcheck source=/dev/null",
     "# shellcheck disable=SC1090 source=lib.sh",
     "  # shellcheck shell=bash",
+    "# shellcheck shell=sh",
+    "# shellcheck disable=all",
+    "# shellcheck disable=2034",
+    "# shellcheck disable=SC2034-SC2040",
+    "# shellcheck enable=require-variable-braces",
+    "# shellcheck source-path=SCRIPTDIR",
     "# ShellCheck/PSScriptAnalyzer equivalents in scripts/install-prerequisites.ps1.",
     "#!/usr/bin/env bash",
     'echo "# shellcheck - in a string"',
     "# a comment mentioning shellcheck later",
 )
 
-PARSE_CODES = ("[SC1073]", "[SC1107]")
+# Every code ShellCheck reported for a bad directive in the measurements above.
+DIRECTIVE_CODES = ("[SC1073]", "[SC1103]", "[SC1107]", "[SC1125]", "[SC1144]", "[SC1145]")
 
 
 def malformed(text: str) -> list[tuple[int, str]]:
@@ -138,20 +172,20 @@ def cross_check(sc: str, files: list[str]) -> list[str]:
                                 f"(exit {status}): {report.strip()}")
             elif code is not None and f"[{code}]" not in report:
                 failures.append(f"real shellcheck did not report {code} for must-block {line!r}")
-            elif code is None and any(c in report for c in PARSE_CODES):
+            elif code is None and any(c in report for c in DIRECTIVE_CODES):
                 failures.append(f"real shellcheck rejected must-allow {line!r}: {report.strip()}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     # One file per process, WORKERS at a time: on 2026-10-02, shellcheck 0.9.0,
-    # one process over every tracked *.sh took 16s and this took 4s for the whole suite.
+    # one process over every tracked *.sh took 16s and the whole suite takes 7s.
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        reports = pool.map(lambda rel: _shellcheck(sc, ["-S", "error", rel], str(ROOT)), files)
+        reports = pool.map(lambda rel: _shellcheck(sc, [rel], str(ROOT)), files)
         for rel, (status, report) in zip(files, reports):
             if status not in (0, 1):
                 failures.append(f"real shellcheck could not check {rel} (exit {status}): "
                                 f"{report.strip()}")
             failures.extend(f"real shellcheck: {line}" for line in report.splitlines()
-                            if "[SC1073]" in line)
+                            if any(c in line for c in DIRECTIVE_CODES))
     return failures
 
 
@@ -166,6 +200,10 @@ def main() -> int:
                         "an empty extraction is not a pass")
     failures.extend(f"malformed directive: {hit}" for hit in hits)
     sc = shutil.which("shellcheck")
+    if sc is not None:
+        # Absolute, because the fixture runs use the temp directory as cwd and a
+        # relative PATH entry (`./bin`) would resolve against that instead.
+        sc = os.path.abspath(sc)
     if sc is None:
         print("SKIPPED: shellcheck not on PATH - grammar check only, no real-ShellCheck cross-check")
     else:
