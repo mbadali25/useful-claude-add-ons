@@ -28,11 +28,11 @@ receipt, not your read of the plan, is what the completion audit checks later.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --record $1
 ```
 
-HEAD now, or `kept` if `crew_ticket.py activate` recorded it; never moved. Exit 1 "could not tell": stop, fix
-`tickets.baseBranch`. Every changed-file list below diffs from this, not from the verify gate's own marker. Then
+HEAD now, or `kept` if `crew_ticket.py activate` recorded it; never moved. Exit 1 is "could not tell" (no commit
+yet, or `tickets.baseBranch` names nothing): stop and fix that. Changed-file lists below diff from this. Then
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to in-progress`
 (add `--reopen` on a successor plan, whose ticket is already `review`):
-print its lines verbatim; on exit 3 run the command it printed; on exit 1 tell
+print its lines verbatim; on its exit 3 run the command it printed; on its exit 1 tell
 me `tracker not updated: <reason>` and keep going — a tracker never blocks work.
 
 ## 2. Work the plan's steps in order

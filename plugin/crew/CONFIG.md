@@ -677,12 +677,13 @@ them:
 
 ---
 
-## 10. Global-settable keys — 68
+## 10. Global-settable keys — 72
 
-68 measured (`leaf_paths(default_global_config())`, crew 1.0.46); the table
-below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+72 measured (`leaf_paths(default_global_config())`, crew 1.0.206); the table
+below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
-global-settable and not tabled here.
+global-settable and not tabled here; `shellRoute.mode` and `shellRoute.distro`
+are tabled in §11 with both layers' defaults.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
