@@ -42,7 +42,7 @@ cleanly, clear, and pick up where it stopped.
    unknown command, or an excluded one such as `/crew:approve`); the note's `branch:` or `head:`
    does not match the checkout; the ticket directory or goal file is missing; the command is not
    installed; `handoff-author.json` could not be read; no record of which session wrote this
-   handoff; the handoff changed since its author session wrote it; the handoff was written by
+   handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the handoff was written by
    another session; this session's process could not be identified (always on a host without
    `/proc`, such as native Windows or macOS); the record of past auto-resumes (`resume-state.json`)
    could not be read, or its directory cannot be searched; this handoff was already resumed; the

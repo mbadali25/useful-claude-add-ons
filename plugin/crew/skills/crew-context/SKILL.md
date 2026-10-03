@@ -154,7 +154,7 @@ automatic PreCompact skeleton; no resume line, `resume: none`, or a refused
 line; the `branch:`/`head:` line does not match the checkout; the ticket
 directory or goal file is missing; the command is not installed;
 `handoff-author.json` could not be read; no record of which session wrote
-this handoff; the handoff changed since its author session wrote it; the
+this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
 identified (always without `/proc`: native Windows, macOS);
 `resume-state.json` could not be read, or its directory cannot be searched;

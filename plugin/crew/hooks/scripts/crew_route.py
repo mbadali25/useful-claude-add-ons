@@ -15,7 +15,8 @@ A prompt routes only when the WHOLE prompt, normalised, matches a row: strip,
 collapse whitespace, drop one trailing `.` or `!`, drop one leading `please`,
 `ok`, `now` or `let's`; matched case-insensitively. Never a match inside a
 longer sentence, never a question (`?` is not dropped), never a prompt with
-any line boundary `str.splitlines` knows, over MAX_PROMPT_CHARS, starting with `/`, `<` or a backtick.
+any line boundary `str.splitlines` knows, over MAX_PROMPT_CHARS, starting
+with `/`, `<` or a backtick.
 `AMBIGUOUS` phrases ("do it", "yes", bare "done"...) route nowhere whatever a
 row says: they usually answer Claude's last question, and the conversation is
 the better judge of that.
@@ -187,7 +188,7 @@ def _routable(command):
 
 def _unroutable_reason(command):
     return (f"the command it would run is not passed on cut or reflowed "
-            f"({len(str(command or ''))} characters, limit {FIELD_CHARS['command']})")
+            f"({len(str(command or ''))} characters, limit {FIELD_CHARS['command']}, whitespace collapsed)")
 
 
 def _route(found, command, **fields):

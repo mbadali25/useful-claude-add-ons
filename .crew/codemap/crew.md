@@ -546,8 +546,8 @@ they disagree:
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
   move it to .crew/config.json", `:814-818`, in `_settings_at` `:788`). T-0023's
-  `crew_route.settings` (`plugin/crew/hooks/scripts/crew_route.py:335`) does
-  the same for `route` (`:360-363`) - and it is the sharper case, because
+  `crew_route.settings` (`plugin/crew/hooks/scripts/crew_route.py:336`) does
+  the same for `route` (`:361-364`) - and it is the sharper case, because
   its only caller is `crew_context.route_item`, inside the one hook that reads
   `crew.json` first for `memory.inject`: one hook, two files, by key.
   Flagging it is this
@@ -608,7 +608,7 @@ skeleton - `crew_autocycle.SKELETON_MARK` - is refused whole before any line is 
 the opt-in (`settings`, `:173` - armed only when the
 machine file `~/.claude/crew/config.json` says `resume.auto: true`; a repo
 `false` in `.crew/crew.json` or `.crew/config.json` vetoes, a repo `true`
-grants nothing) and the read-only `decide` (`:682`), where the first failing
+grants nothing) and the read-only `decide` (`:738`), where the first failing
 check wins and every "could not tell" is `wait`, never `run`. It registers no
 hook. `crew_context.py`'s SessionStart branch calls it through
 `resume_decision` (`plugin/crew/hooks/scripts/crew_context.py:662`) for
@@ -618,10 +618,10 @@ rule that raises as stale; `resume_line` (`:688`) renders the one injected
 line. Nothing starts on its own - the command is named, never sent as
 `initialUserMessage`. On `PreCompact` both `handoff-write` flavours call its
 `precompact` CLI (`write_precompact_record`,
-`plugin/crew/hooks/scripts/crew_resume.py:592`); `decide` trusts a `manual`
+`plugin/crew/hooks/scripts/crew_resume.py:648`); `decide` trusts a `manual`
 record for 600 s and never one it could not have replaced
-(`_compact_was_manual`, `:658`). A record a later PreCompact could neither remove nor empty
-is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:567`, `_mark_stuck` `:575`;
+(`_compact_was_manual`, `:714`). A record a later PreCompact could neither remove nor empty
+is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:623`, `_mark_stuck` `:631`;
 the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:52-53`,
 `plugin/crew/hooks/scripts/handoff-write.ps1:330-331`), and a compact is not manual while that
 marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out with the records.
@@ -634,26 +634,30 @@ through the never-raising `_record_author_logged` `:1022` from `run` `:997`, bef
 `plugin/crew/hooks/scripts/crew_resume.py:271`: the note's sha256, `session_id`, and
 `session_process()` `:221` - the nearest `claude` ancestor as `{pid, start}`, `None` on any host
 without `/proc`). A recorder that cannot take the author lock, or whose write fails - including
-one that was only REMOVING this worktree's entry - drops the whole file (`_drop_author` `:335`:
-unlinked by `_unlink_author` `:349`, or, where the directory refuses that, blanked in place by
-`_blank` `:646`, which reads as unreadable and waits - T-0069) and says when even that failed, so
-the previous entry never vouches for a note another session wrote last (T-0042 review rounds 1-2). `decide` asks `_author_refusal` (`:424`) after the command checks and before
+one that was only REMOVING this worktree's entry - drops the whole file (`_drop_author` `:351`:
+unlinked by `_unlink_author` `:392`, or, where the directory refuses that, blanked in place by
+`_blank` `:702`, which reads as unreadable and waits - T-0069). When even that fails it leaves
+`handoff-author.json.stuck` (`_mark_author_stuck` `:370`, `author_stuck_path` `:204`), which
+`_author_refusal` waits on (present or unknown) until a later record lands and removes it; a
+marker that cannot be written either leaves `_author_refusal`'s replaceability check - a record
+neither its file nor its directory lets anyone replace or remove is not trusted. So the previous
+entry never vouches for a note another session wrote last (T-0042 review rounds 1-2, T-0069). `decide` asks `_author_refusal` (`:472`) after the command checks and before
 the state file: `compact` must match the session id, `clear` the process; a missing, unreadable
 or sha-mismatched record, or an unidentifiable process, is a `wait`, never a match. `record_run`
-(`:743`) is the only writer of
+(`:799`) is the only writer of
 `<git-common-dir>/crew/resume-state.json`, and nothing in the plugin calls it
 yet (T-0013's contract). A state file that exists and cannot be read or is not
-the shape `record_run` writes is an unknown (`_read_state` `:377`, `_entry` `:399`
+the shape `record_run` writes is an unknown (`_read_state` `:420`, `_entry` `:442`
 return `None`): `decide` waits and `record_run` refuses rather than overwriting it. A PARTIAL
 record is that shape too (T-0042, before review round 2): a file with no `worktrees` key, or an
 entry of this worktree missing `consumed`, `last`, or last's string `prompt`/`fingerprint`, is
 `None`, not "nothing consumed, no loop history"; no entry for this worktree is still `{}`.
-Whether it exists at all goes through `_absent` (`:360`): only `FileNotFoundError` /
+Whether it exists at all goes through `_absent` (`:403`): only `FileNotFoundError` /
 `NotADirectoryError` is absence, any other stat error is `None` - the round-4 FIX, since
 `os.path.lexists` read an unsearchable directory as "no file". `.work/INDEX.md` goes through the
-same helper (`_index_rows` `:481`), so an unstat-able index makes the fingerprint unknown.
+same helper (`_index_rows` `:537`), so an unstat-able index makes the fingerprint unknown.
 `record_run` asks consumed-once and the loop guard again under its lock through
-the same `_already` (`:454`) `decide` uses, so of two senders holding one `run`
+the same `_already` (`:510`) `decide` uses, so of two senders holding one `run`
 only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/test_crew_resume_hook.py`; mutations
 `plugin/crew/tests/sabotage_resume.py` (72 by `len(RESUME_MUTATIONS)` at `53f5482c`); `.crew/verify.json`
@@ -819,29 +823,29 @@ registered at `plugin/crew/tests/sabotage.py:77` and `:3065`; `.crew/verify.json
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 
 DERIVED at `eba11657`, re-read after review round 1. `plugin/crew/hooks/scripts/crew_route.py`
-(398 lines) decides whether a short plain-text prompt names a lifecycle command. The table
-is `PHRASES` (`:85`): brainstorm, spec, plan, implement, review, done,
-continue, status - no approve row. `match` (`:143`) matches the WHOLE prompt
-after `normalise` (`:120`) refuses a line break - `\n`, `\r`, or any other
-boundary `str.splitlines` knows (`_OTHER_LINE_BREAKS` `:106`, T-0069) - more than
-`MAX_PROMPT_CHARS` (`:65`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:99`) phrases
+(399 lines) decides whether a short plain-text prompt names a lifecycle command. The table
+is `PHRASES` (`:86`): brainstorm, spec, plan, implement, review, done,
+continue, status - no approve row. `match` (`:144`) matches the WHOLE prompt
+after `normalise` (`:121`) refuses a line break - `\n`, `\r`, or any other
+boundary `str.splitlines` knows (`_OTHER_LINE_BREAKS` `:107`, T-0069) - more than
+`MAX_PROMPT_CHARS` (`:66`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:100`) phrases
 ("do it", "yes", bare "done"...) return None whatever a row says. `decide`
-(`:242`) returns `route`, `ask` or `none`; `_resolve` (`:201`) takes an
+(`:243`) returns `route`, `ask` or `none`; `_resolve` (`:202`) takes an
 explicit id only with a `.work/tickets/<id>/` folder, then
 `crew_ticket.resolve_active`'s `active-ticket` source, then
 `crew_autopilot.open_index_tickets` with exactly one ticket - never
 `resolve_active`'s own first-open-line INDEX answer. `continue` goes through
-`_continue` (`:222`) to `crew_autopilot.next_phase`; a stop, an exception, or
+`_continue` (`:223`) to `crew_autopilot.next_phase`; a stop, an exception, or
 a command naming approve is an `ask`. Every route answer goes through `_route`
-(`:193`): a command `_routable` (`:181`) says `_clip` would change - cut past
+(`:194`): a command `_routable` (`:182`) says `_clip` would change - cut past
 `FIELD_CHARS["command"]` (200) or reflowed whitespace - is an `ask`, never a
 route of a different command (T-0069), and `render`'s route branch refuses one
-the same way through `_run_clause` (`:273`). `render` (`:289`) clips every other
+the same way through `_run_clause` (`:274`). `render` (`:290`) clips every other
 variable-length field it reads to its own `FIELD_CHARS` cap with `_clip`
-(`:260`), so the line is at most `MAX_LINE_CHARS` (`:74`, 1400) and always
+(`:261`), so the line is at most `MAX_LINE_CHARS` (`:75`, 1400) and always
 fits the UserPromptSubmit budget (`crew_context.TURN_CHARS`, 2000) as the
 first item: `fit` keeps whole items or none, and before review round 1 a long
-open question dropped the ask entirely. `settings` (`:335`) reads
+open question dropped the ask entirely. `settings` (`:336`) reads
 `crew_config.resolve_config` and arms only on `is True`. The one consumer is
 `crew_context.route_item` (`plugin/crew/hooks/scripts/crew_context.py:839`),
 called first in the UserPromptSubmit branch (`:937`): Claude harness only,
@@ -1509,8 +1513,8 @@ then the train is advisory.
   `main()` at `:1662` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` / `deploy-allowed` / `approve` / `questions-check` CLI
   `plugin/crew/commands/autopilot.md` calls.
-- `plugin/crew/hooks/scripts/crew_route.py:242` — `decide`, read-only
-  route / ask / none for a prompt; `main()` at `:371` is the `settings` /
+- `plugin/crew/hooks/scripts/crew_route.py:243` — `decide`, read-only
+  route / ask / none for a prompt; `main()` at `:372` is the `settings` /
   `decide` CLI. Its hook caller is `crew_context.route_item`
   (`plugin/crew/hooks/scripts/crew_context.py:839`).
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,

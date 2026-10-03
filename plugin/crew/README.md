@@ -2100,7 +2100,7 @@ unknown or excluded command such as `/crew:approve`); the `branch:` or
 `head:` line does not match the checkout; the ticket's `.work/tickets/<id>/`
 (or the goal file) does not exist; the command is not installed;
 `handoff-author.json` could not be read; no record of which session wrote
-this handoff; the handoff changed since its author session wrote it; the
+this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
 identified (always on a host without `/proc` — native Windows, macOS); the
 record of past auto-resumes (`resume-state.json`) could not be read, or its

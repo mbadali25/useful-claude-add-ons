@@ -1141,7 +1141,7 @@ line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin; a
 `handoff-author.json` that could not be read; no record of which session wrote
-this handoff; the handoff changed since its author session wrote it; the
+this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
 identified; a `<git-common-dir>/crew/resume-state.json` that cannot be read,
 is not the shape `record_run` writes, or whose directory cannot be searched

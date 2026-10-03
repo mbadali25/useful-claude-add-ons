@@ -1461,6 +1461,123 @@ def test_an_undeletable_author_record_is_blanked_and_waits(fx, monkeypatch, fail
             os.path.getsize(path)) == (False, False, "wait", True, 0), (reason, got)
 
 
+def _stuck_by(fx, monkeypatch, failure, marker=True):
+    """s1 binds; s2 rewrites the note and its record fails (`failure`), and the
+    old record can be neither unlinked nor blanked; with `marker=False` the
+    stuck marker cannot be written either. Returns s2's (ok, reason)."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+    path = crew_resume.author_path(str(fx.root))
+    _refuse_author(monkeypatch, path, blank=False)
+    real_open = crew_resume.__dict__["open"]
+
+    def refuse(target, *args, **kwargs):
+        name = str(target)
+        if (failure == "write" and name.endswith(".tmp") and ".stuck." not in name) or \
+                (not marker and ".stuck." in name):
+            raise PermissionError(13, "Permission denied")
+        return real_open(target, *args, **kwargs)
+    monkeypatch.setattr(crew_resume, "open", refuse, raising=False)
+    if failure == "lock":
+        monkeypatch.setattr(crew_resume.crew_context, "acquire_lock", lambda *_a, **_k: False)
+    got = fx.bind(session="s2")
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
+    return got
+
+
+@pytest.mark.parametrize("failure", ["lock", "write"])
+def test_an_author_record_that_cannot_be_dropped_or_blanked_is_marked_stuck_and_waits(
+        fx, monkeypatch, failure):
+    """T-0069 review round 1 FIX: unlink AND blank both refused (a read-only
+    record in a 0555 directory). Only the reason text used to change, and s1
+    still resumed on the stale entry; the stuck marker now makes it wait."""
+    ok, reason = _stuck_by(fx, monkeypatch, failure)
+    marker = crew_resume.author_stuck_path(str(fx.root))
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (ok, "may still stand" in reason, os.path.exists(marker), got["action"],
+            "could not replace or remove" in got["reason"]) == \
+        (False, True, True, "wait", True), (reason, got)
+
+
+def test_an_unwritable_stuck_marker_still_waits_on_a_record_nobody_can_replace(fx, monkeypatch):
+    """The marker cannot be written either (the same read-only directory):
+    `_author_refusal` does not trust a record that neither its file nor its
+    directory lets anyone replace or remove. As root `os.access` says
+    writable whatever the mode, so the read-only state is stubbed."""
+    ok, _ = _stuck_by(fx, monkeypatch, "lock", marker=False)
+    path = crew_resume.author_path(str(fx.root))
+    frozen = {os.path.normcase(path), os.path.normcase(os.path.dirname(path))}
+    real_access = os.access
+    monkeypatch.setattr(crew_resume.os, "access", lambda p, mode: os.path.normcase(str(p)) not in frozen
+                        and real_access(p, mode))
+
+    got = fx.decide(source="clear", session="s1", bound=False)
+
+    assert (ok, os.path.exists(crew_resume.author_stuck_path(str(fx.root))), got["action"],
+            "neither replaced nor removed" in got["reason"]) == (False, False, "wait", True), got
+
+
+def test_a_stuck_marker_that_cannot_be_stat_ed_waits(fx, monkeypatch):
+    """A marker whose presence cannot be told is as good as one that is
+    there: an unknown never collapses into "no marker"."""
+    marker = crew_resume.author_stuck_path(str(fx.root))
+    real_absent = crew_resume._absent  # pylint: disable=protected-access
+    fx.bind(session="s1")
+    monkeypatch.setattr(crew_resume, "_absent", lambda p: None if p == marker else real_absent(p))
+
+    got = fx.decide(session="s1", bound=False)
+
+    assert (got["action"], "could not replace or remove" in got["reason"]) == ("wait", True), got
+
+
+def test_a_writable_record_without_a_marker_still_resumes(fx):
+    """The neighbour of the replaceability check: an ordinary record in a
+    writable directory, with no marker, is trusted as before."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+
+    got = fx.decide(source="compact", session="s1")
+
+    assert (got["action"], os.path.exists(crew_resume.author_stuck_path(str(fx.root)))) == \
+        ("run", False), got
+
+
+def test_a_later_author_record_that_lands_clears_the_stuck_marker(fx, monkeypatch):
+    _stuck_by(fx, monkeypatch, "lock")
+    marker = crew_resume.author_stuck_path(str(fx.root))
+    before = os.path.exists(marker)
+
+    ok, _ = fx.bind(session="s1")
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (before, ok, os.path.exists(marker), got["action"]) == (True, True, False, "run"), got
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0,
+                    reason="root ignores chmod; run under setpriv on a root host")
+def test_a_read_only_author_record_in_a_read_only_directory_waits_as_a_non_root_user(fx):
+    """The FIX's scenario with real permissions: handoff-author.json 0444 in a
+    0555 state directory. s2's record cannot land, the old record can be
+    neither removed nor blanked, and no marker can be written; s1 waits."""
+    text = _handoff(fx.root, written=fx.written)
+    fx.bind(text, session="s1")
+    crew_dir = crew_resume.state_dir(str(fx.root))
+    path = crew_resume.author_path(str(fx.root))
+    os.chmod(path, 0o444)
+    os.chmod(crew_dir, 0o555)
+    try:
+        ok, _ = fx.bind(text, session="s2")
+        got = fx.decide(text=text, source="clear", session="s1", bound=False)
+    finally:
+        os.chmod(crew_dir, 0o755)
+        os.chmod(path, 0o644)
+
+    assert (ok, got["action"], "neither replaced nor removed" in got["reason"]) == \
+        (False, "wait", True), got
+
+
 @pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0,
                     reason="root unlinks in a chmod 555 directory anyway; run under setpriv on a root host")
 def test_an_undeletable_author_record_waits_as_a_non_root_user(fx):
@@ -1515,6 +1632,7 @@ _DOCS = ("plugin/crew/README.md", "plugin/crew/skills/crew-context/SKILL.md",
 _REASON_PHRASES = ("internal error", "automatic PreCompact skeleton", "written by another session",
                    "no record of which session wrote", "could not be identified",
                    "changed since its author session wrote it", "handoff-author.json",
+                   "could not replace or remove", "neither replaced nor removed",
                    "resume-state.json", "cannot be searched")
 
 
