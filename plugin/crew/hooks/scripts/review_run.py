@@ -633,7 +633,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     if webtest_verdict:
         _out(f"review: {result['verdict']} because {webtest_verdict}")
     if result["verdict"] == review_verdict.FINDINGS:
-        print(auto_accept_line(args.root, args.ticket))
+        _out(auto_accept_line(args.root, args.ticket))
     return {review_verdict.CLEAN: EXIT_CLEAN, review_verdict.FINDINGS: EXIT_FINDINGS}.get(
         result["verdict"], EXIT_INCOMPLETE)
 
