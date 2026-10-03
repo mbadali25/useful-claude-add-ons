@@ -1,4 +1,8 @@
-%% Generated from useful-claude-add-ons@42effe14 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@11b03045 on 2026-10-03. Verify before trusting.
+%% Re-drawn for T-0022 at 11b03045 (crew 1.0.191): implement.md step 6 gains the docs check between /crew:docs and the
+%% refresh (:88-95; refresh check :93 -> :99, self-check :105-109 -> :107-110, status edit and tracker :110-113 -> :111-114,
+%% /crew:review :114 -> :115), and /crew:done gains check 5, crew_docs_check.py (:68-76), after check 4; the done step and
+%% train lines re-read (:80-90, :97-111). crew_docs_check.py joins Anchors. Main's 42effe14 notes below are kept as history.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -13,8 +17,8 @@
 %% blocks kept, main's first; neither side changed an Anchors path line this diagram cites. No node or edge changed.
 %% Merged a98be035 (L-0510) + ec95c8aa (main, crew 1.0.110) at d4193b70 (rerere off), re-anchored to 8f0df4ca: both provenance blocks kept,
 %% main's first; main changed no review.md / review_run.py line and L-0510 no line main cites here. No node or edge changed.
-%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/review_verdict.py, plugin/crew/hooks/scripts/crew_train.py
-%% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_docs_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/review_verdict.py, plugin/crew/hooks/scripts/crew_train.py
+%% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> docs -> refresh artifacts -> standards self-check -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
 %% f2bb919b (review.md read at its step headings and verdict/round lines only).
@@ -333,14 +337,17 @@ flowchart TB
         im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
         im1 --> im2["recurring-findings checklist<br/>for the Touch paths, then<br/>steps in order, test first<br/>:38-42; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
         im2 --> im3a["changed-file list, verify<br/>:57, :67"]
-        im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
-        im3 --> rf1{"crew_refresh_check.py<br/>:93"}
+        im3a --> im3["step 6: tests, then /crew:docs id<br/>(records docs.json)<br/>:86-89"]
+        im3 --> dc1{"crew_docs_check.py, read-only:<br/>a document MISSING?<br/>:91-95"}
+        dc1 -- "MISSING (first run)" --> im3
+        dc1 -- "MISSING after the second run,<br/>or unknown" --> dcx([report it, stop])
+        dc1 -- "none MISSING" --> rf1{"crew_refresh_check.py<br/>:99"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
-        rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:105-109"]
-        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-113"]
-        im4 --> im5["then /crew:review last<br/>:114"]
+        rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:107-110"]
+        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:111-114"]
+        im4 --> im5["then /crew:review last<br/>:115"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
@@ -366,20 +373,22 @@ flowchart TB
     end
 
 
-    subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
+    subgraph done["/crew:done - all five or nothing<br/>done.md:7"]
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
         dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:35-48"}
         dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:63-74"]
+        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only,<br/>never edits a document<br/>:68-76"}
+        dn6 -- "none MISSING" --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:80-90"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
-        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
+        dn6 -- "MISSING / unknown" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:97-99"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:101-107"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :108-109"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:110-111" --> im5
     end
 
     fix -.-> BR
