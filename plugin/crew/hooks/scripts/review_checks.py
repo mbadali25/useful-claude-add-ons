@@ -160,8 +160,11 @@ try {
 
 
 # C0, DEL, C1 and the Unicode line/paragraph separators: anything that can
-# start a new line on a terminal or in a log (review round 7 FIX :847).
-_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029\ud800-\udfff]")
+# start a new line on a terminal or in a log (review round 7 FIX :847); and
+# Unicode's Bidi_Control set, a closed list, which can visually reorder a
+# status line (L-0605, review round 10 FIX :159).
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2028\u2029"
+                      "\u2066-\u2069\ud800-\udfff]")
 
 
 def one_line(text):

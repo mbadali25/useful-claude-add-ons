@@ -2060,6 +2060,41 @@ def test_a_verify_map_with_a_duplicate_key_is_could_not_check(tmp_path, fake):
         True, [("config", rc.COULD_NOT)]), results
 
 
+_BIDI = ["\u061c", "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+         "\u2066", "\u2067", "\u2068", "\u2069"]
+
+
+@pytest.mark.parametrize("char", _BIDI, ids=[f"U+{ord(c):04X}" for c in _BIDI])
+def test_one_line_escapes_every_bidi_control(char):
+    """Review round 10 FIX :159: every Bidi_Control code point is escaped, so
+    a name or message cannot visually reorder a status line."""
+    assert rc.one_line("a" + char + "b") == "a\\u%04xb" % ord(char)
+
+
+def test_a_bidi_control_in_a_changed_name_prints_escaped(tmp_path, fake):
+    name = "x\u202e.py"
+    repo = _start(tmp_path, {"m.py": "x\n"}, [_linter(fake, "ruff")])
+    try:
+        _edit(repo, name, "# LINT BLE001 new\n")
+    except OSError:
+        pytest.skip("this filesystem refuses a bidi control in a file name")
+
+    printed = rc.lines([_one(repo, tmp_path)])
+
+    assert ([l for l in printed if "\\u202e" in l and "NEW" in l] != [],
+            [l for l in printed if "\u202e" in l]) == (True, []), printed
+
+
+def test_a_bidi_control_in_a_rule_name_is_a_config_problem(tmp_path, fake):
+    repo = _start(tmp_path, {"a.ps1": "x\n"},
+                  [_linter(fake, "psscriptanalyzer", rules=["PSAvoidUsingEmptyCatchBlock\u202e"])])
+    _edit(repo, "a.ps1", "y\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert any("rules must not hold a control character" in r["detail"] for r in results), results
+
+
 def test_a_lone_surrogate_prints_escaped():
     """Round 9 FIX :165: one_line escapes a lone surrogate too, so a strict
     UTF-8 stream never raises on it."""
