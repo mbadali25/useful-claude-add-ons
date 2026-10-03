@@ -496,11 +496,19 @@ def test_cover_plan_cli_refuses_malformed_input(payload):
 
 # --- this repo's own map ------------------------------------------------------
 
+# The two runners a subset rule may use. pytest_rule.py runs the same targets
+# as `-n auto -m "not wallclock"` then `-m wallclock`, which together select
+# exactly what the plain command does, so the full-suite superset covers it
+# on the same terms (test_pytest_rule.py pins that split).
+_SUBSET_RUNNERS = (["python3", "-m", "pytest"], ["python3", "plugin/crew/tests/pytest_rule.py"])
+
+
 def _pytest_targets_are_inside_the_suite(cmd):
     parts = cmd.split()
-    if parts[:3] != ["python3", "-m", "pytest"] or parts[-1] != "-q":
+    runner = next((r for r in _SUBSET_RUNNERS if parts[:len(r)] == r), None)
+    if runner is None or parts[-1] != "-q":
         return False
-    targets = parts[3:-1]
+    targets = parts[len(runner):-1]
     if not targets or any(t.startswith("-") for t in targets):
         return False
     suite = os.path.normcase(os.path.normpath(os.path.join(_REPO, "plugin", "crew", "tests")))
