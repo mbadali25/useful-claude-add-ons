@@ -235,8 +235,11 @@ def _receipts_block(root, manifest):
                                f"{head[:12]}"
                                f"{', tree dirty' if manifest.get('dirty') else ''}. Changes "
                                "after that pass have NOT been through the gate.")
-                out.append(f"Gate answer for HEAD: {local}: "
-                           f"{_reason(f'{local_why}; CI receipt {r_state}: {r_reason}')}")
+                # Each part capped on its own: one cap over both let a long
+                # local reason (up to three record rows) cut the receipt's
+                # answer off entirely (review r3).
+                out.append(f"Gate answer for HEAD: {local}: {_reason(local_why)}; "
+                           f"CI receipt {r_state}: {_reason(r_reason)}")
     state, rules = verify_record.read_record(root)
     shown = verify_record.RECORD_PATH.replace("\\", "/")
     if state == "absent":
