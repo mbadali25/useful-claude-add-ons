@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@452b30cc
-verified: 2026-10-01
+anchor: useful-claude-add-ons@7d14a9ad
+verified: 2026-10-03
 
 # localgpu
 
@@ -510,7 +510,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:130-131` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
   *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `c43a54c1`, where both
   tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
@@ -1864,3 +1864,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `d95d8b25` (main) and L-0510's `a06dd790` -> `b8d09685` on 2026-10-03 (L-0510 merges origin/main `8123fe74` (L-0574 #323; crew 1.0.140) at `8c04c783`, rerere off; crew 1.0.142 set last at `b8d09685`).** Both provenance histories kept, main's first. In `crew.md` main's L-0574 `review_run.py` citations were re-derived on the merged file (L-0510 adds 8 lines above `finish` and 28 through it): by difflib, and by name for `prereview_gate` `:731` (called `:857`), `standards_gate` `:699` (at `:859`) and `review_ledger.reserve` `:863`, which main's side had stale; L-0510's `review_ledger.py` citations are unchanged. `verification-harness.md`'s `sabotage.py` citations moved +1 (main's import at `:87`; main's side had them stale). History notes were not re-mapped.
 
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
+
+**Re-anchored `452b30cc` (main) and L-0604's `f98444b9` -> `7d14a9ad` on 2026-10-03 (L-0604 merges origin/main `f808e5f0` (#328 crew 1.0.144, #329 1.0.153, #330 1.0.154) at `2a448f13`, rerere off; crew 1.0.163 set last).** Main's maps, INDEX, diagrams and rules were taken and this note replaces L-0604's two earlier ones (`3eb9fa1f`: R5, the proposals docstring, the README verdict row, the troubleshooting guide, two tests; `f98444b9`: the README recovery paragraph, in place). Main's three PRs since `452b30cc` did not refresh the maps, so every body citation of the form path:N into a file changed since `452b30cc` was re-mapped by script (difflib from `452b30cc` to this tree; equal hunks, and same-size replaced hunks by position; provenance sections not re-mapped; a bare :N binds to the last path named on its line): 1 moved in this map, none unmappable. Each moved line was compared old against new; one differs in text, review_run.py's --provider argument now reads the PROVIDERS tuple, which still names codex, copilot and claude. Line positions only: claims describing #328-#330's behaviour (the CI receipt in /crew:done check 2 and check-land, the tree-pass cache, measured pricing, xdist rules) were not re-verified by this note. Nothing was executed for it beyond the script and grep.
