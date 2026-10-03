@@ -448,7 +448,7 @@ contract itself. This section is what goes wrong with the approval and the audit
 <ul>
 <li><strong>Symptom: autopilot stops with <code>cannot tell whether &lt;id&gt;'s direction is approved</code> in a
   worktree.</strong> <code>crew_autopilot.py next</code> looks for the ticket's <code>.work/INDEX.md</code> row in the checkout
-  it runs in, and — since crew 1.0.201 — in the main checkout (the first record of
+  it runs in, and — since crew 1.0.213 — in the main checkout (the first record of
   <code>git worktree list --porcelain</code>) when this one has none. <code>.work/</code> is git-ignored, so a lane
   worktree made from another branch starts with no INDEX at all.
   <strong>Check:</strong> the stop's reason names every INDEX.md it asked, or why the main checkout could not be
