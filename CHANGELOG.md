@@ -28,6 +28,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   221 s at 8/worksteal, 197 s at 12, 135 s at 16; the slow set p50 154 s at 4, 92 s at 8,
   worksteal no better (161 s / 98 s). Collected tests are identical to main's (node ids
   diffed; 9646 default, 32 wallclock and 1712 slow at the before/after base).
+- **Before/after on the real workflow** (same 9646 / 32 / 1712 collected; PR runs interleaved
+  on an idle host). Time from a PR run's start to `test (3.12)`: p50 437 s before (draft PR #320,
+  run 37084943274 attempts 6-10) -> 180 s after (PR #324, run 37093280549 attempts 7-11; 15 more
+  attempts p50 179 s). The ubuntu slow leg on a PR: 163 s -> 160 s (no gain there, beside 16
+  default-set workers); on dispatch 219 s -> 167 s. A non-PR run's Linux span grows, as intended by
+  the serialisation: dispatch p50 575 s -> 899 s (528 s -> 770 s on an idle host).
+- **Flake, stated.** One wallclock failure in 36 legs after
+  (`test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate`, `BrokenPipeError` in the test's
+  own `proc.stdin.close()` teardown, a failure L-0557 also saw on an unchanged tree) against 1 in
+  163 wallclock steps on CI before. One event each: not shown to be unchanged.
 - **Dropped.** A pip/uv cache: `Install pytest` already takes 0-2 s on the pool (runs
   37057371538, 37055674723, 37053380475, 37051933552, 37051464436), so there is nothing to save.
 - `scripts/gate-runner.py`'s CI drift strings follow the new commands; `EXCLUDED_CI` gains the
