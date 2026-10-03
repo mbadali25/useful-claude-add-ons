@@ -328,15 +328,15 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:573, :745"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:641, :815"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
-        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :630"}
+        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :700"}
         pr0 -- "NEW finding: exit 5, no round spent,<br/>not overridable; or COULD NOT CHECK:<br/>exit 5 unless --allow-unverified<br/>review.md:450" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:749-760" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:819-830" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
         rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
