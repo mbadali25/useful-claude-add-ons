@@ -4,9 +4,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.137: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
+### Changed — `crew` 1.0.142: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
 
-Bumped `1.0.134 -> 1.0.137` (main's 1.0.134 taken in the merge; 1.0.137 allocated by the coordinator) after merging
+Bumped `1.0.139 -> 1.0.142` (main's 1.0.139 taken in the merge; 1.0.142 allocated by the coordinator) after merging
+origin/main `2a2d6e07` (L-0592 #325, L-0587 re-pin #322, crew 1.0.139). Before it `1.0.134 -> 1.0.137` (main's 1.0.134 taken
+in the merge; 1.0.137 allocated by the coordinator) after merging
 origin/main `e0c70fc9` (#317 ci_receipt/verify-gate.yml, L-0597 #316, L-0555 #310, crew 1.0.134), and kept
 1.0.137 after merging origin/main `bd3e9ad1` (L-0598 #321, L-0587 #319, crew 1.0.135). Before it
 `1.0.129 -> 1.0.130` (main's 1.0.129 taken in the merge) after merging origin/main `0487fc39`
@@ -16,7 +18,7 @@ origin/main `e0c70fc9` (#317 ci_receipt/verify-gate.yml, L-0597 #316, L-0555 #31
 `1.0.110 -> 1.0.112` after merging origin/main `2906dcbd` (crew 1.0.110). Before that, `1.0.103 -> 1.0.108` for the family rule (owner decision
 2026-10-01 #3). Earlier: `1.0.98 -> 1.0.103` after
 merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1.0.94, 1.0.103,
-1.0.108, 1.0.112, 1.0.121 and 1.0.130 were branch versions and were never published.
+1.0.108, 1.0.112, 1.0.121, 1.0.130 and 1.0.137 were branch versions and were never published.
 
 - **Behaviour change for every install (owner policy 2026-09-30).** A review round that is the
   last one the budget allows under the current plan, completed as `FINDINGS` with 0 BLOCK, is
@@ -71,6 +73,20 @@ merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1
   round, never a fix or a rerun.
 - **Boundary with L-0514 (INCOMPLETE retry):** disjoint. No INCOMPLETE is ever auto-accepted, and
   a refunded round never counts toward "final"; L-0514 is not implemented here.
+
+### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
+
+- **No hang on a FIFO.** `recurring_findings.py` reads a spec or its data file only when it is a
+  regular file: refused by its stat before any open, then opened non-blocking and refused by
+  `fstat` if one was swapped in. A FIFO, device or directory `spec.md` is now `UNKNOWN:` (exit 1)
+  instead of hanging the implementer; as the data file it is `UNREADABLE:`.
+- **A Touch file is a file.** A Touch match needs the repository root (`matches` and `select`
+  raise `ValueError` without one), so an existing regular file no longer covers paths under it.
+- **UNKNOWN survives a full block.** The 60-line block keeps every `UNKNOWN:` line and drops only
+  data notes, counted in one line; a header too long to leave room raises instead of overflowing.
+- **Tests and docs.** The shipped-data test pins RF-01..RF-07; `/crew:implement` step 2 and the
+  README say exit 1 prints an `UNKNOWN`, `UNREADABLE` or `PROBLEM` line. Each fix was sabotaged by
+  hand and went red; the committed sabotage entries and the reviewer-prompt wiring follow in L-0601.
 
 ### Changed — `crew` 1.0.135: the standards proposals docstring and crew-qa-standards R5 state L-0576's recovered verdict (L-0598)
 
