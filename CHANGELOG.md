@@ -4,6 +4,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.141: a CI receipt for HEAD lets `/crew:review` go ahead without a local `verify-gate --all`
+
+- `review_gate.accepted_state` is what `review_run.py` now acts on, before reserving a round and in
+  `review.json`'s gate record: the local `gate_state`, upgraded to VERIFIED when it is UNVERIFIED or
+  UNKNOWN but `ci_receipt.check` proves the self-hosted gate passed on exactly this committed tree
+  (HEAD, its tree, the verify map, the gate implementation, the newest run). A review round no
+  longer needs a 17-20 minute local `verify-gate --all` to prove what the receipt proves.
+- Only ever an upgrade. Local VERIFIED and NO_GATE never consult a receipt; any receipt answer but
+  VERIFIED (UNVERIFIED, UNKNOWN, NO_GATE) leaves the local verdict standing with the receipt's
+  reason appended. `gate_state` stays local-only, and `ci_receipt build` keeps calling it, so a
+  receipt can never vouch for itself; `tests/test_review_gate_receipt.py` checks that from the
+  syntax tree. `ci_receipt.check` answers a dirty tree, a branch that changes the gate, or a
+  checkout with no `origin/main` or no GitHub origin before any network call.
+- `/crew:done`, `crew_train.py check-land` and the Stop hook do not consult receipts yet: they
+  sit outside the review harness and follow in a separate change, with `ci_receipt.py`'s docstring
+  (which still calls the receipt diagnostic-only).
+- 13 new cases; sabotage-checked five ways (never upgrade, upgrade on any answer, consult for a
+  verified tree, `review_run` back on `gate_state`, the builder on `accepted_state`), two of them
+  registered in `sabotage_tooling.py`.
+
 ### Changed — `crew` 1.0.139: the verify gate does not re-run what already passed on this exact tree
 
 - Both gate flavours credit a command that passed on this exact tree instead of re-running it.

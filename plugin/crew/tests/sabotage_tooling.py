@@ -378,6 +378,20 @@ TOOLING_MUTATIONS += (
         '    if not snapshot:\n',
         "tests/test_verify_gate_tree_cache.py::test_the_cache_can_always_be_refused",
     ),
+    (
+        "review_gate: a receipt that is not VERIFIED still upgrades the gate",
+        os.path.join(SCRIPTS, "review_gate.py"),
+        "    if r_state == VERIFIED:\n",
+        "    if r_state != NO_GATE:\n",
+        "tests/test_review_gate_receipt.py::test_any_other_receipt_answer_leaves_the_local_verdict",
+    ),
+    (
+        "review_gate: a receipt is consulted for a tree already VERIFIED or with no gate",
+        os.path.join(SCRIPTS, "review_gate.py"),
+        "    if state not in (UNVERIFIED, UNKNOWN):\n        return state, reason\n",
+        "",
+        "tests/test_review_gate_receipt.py::test_a_verdict_that_needs_no_upgrade_never_asks_for_a_receipt",
+    ),
 )
 if shutil.which("pwsh"):
     TOOLING_MUTATIONS += (

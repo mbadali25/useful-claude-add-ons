@@ -501,7 +501,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
 def gate_record(args):
     """The gate state for review.json: observed now, plus whether this round
     was told to go ahead regardless."""
-    state, reason = review_gate.gate_state(args.root)
+    state, reason = review_gate.accepted_state(args.root)
     return {"state": state, "reason": reason,
             "overridden": bool(getattr(args, "allow_unverified", False))
             and state in (review_gate.UNVERIFIED, review_gate.UNKNOWN)}
@@ -540,7 +540,7 @@ def preflight(args):
         if args.provider not in LAUNCHED:
             print("ALREADY_CLEAN=1")
         return EXIT_CLEAN
-    state, reason = review_gate.gate_state(args.root)
+    state, reason = review_gate.accepted_state(args.root)
     if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):
         if args.allow_unverified:
             sys.stderr.write(f"review-run: gate {state}: {reason}. Reviewing anyway "
