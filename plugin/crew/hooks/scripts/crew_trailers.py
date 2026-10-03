@@ -20,9 +20,17 @@ both layers means nothing is forbidden and nothing here refuses. Three uses:
   `scripts/check-tooling-pr.py`), so it lands in its own change; until then
   nothing calls this function and nothing refuses.
 * `--check --root DIR --ticket ID` -- `/crew:done`'s report over the
-  ticket's commits (`<scope base>..HEAD`). It REPORTS and never refuses:
-  a refusal would be curable only by a history rewrite, which is the owner's
-  decision and stales the review receipt.
+  ticket's commits: `git log --first-parent <scope base>..HEAD`. The spec
+  says `<scope base>..HEAD`; `--first-parent` is a deliberate refinement of
+  it. A ticket branch merges origin/main, and the plain range then holds
+  every commit that merge brought in -- other people's, many carrying the
+  trailer. Following first parents keeps the ticket's own commits, a merge
+  commit made on the ticket branch included, and drops what it merged in.
+  It REPORTS and never refuses: a refusal would be curable only by a
+  history rewrite, which is the owner's decision and stales the review
+  receipt. Any unexpected exception, an import failure included, is
+  `trailers: unknown - <Type>: <msg>` and exit 2, never 1 (the FINDING
+  code).
 
 ## What the command check judges
 
@@ -57,8 +65,6 @@ import re
 import subprocess
 import sys
 
-import crew_common
-
 KEY = "git.forbiddenTrailers"
 TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 GIT_TIMEOUT = 60
@@ -77,6 +83,14 @@ _FILE_OPTS = ("-F", "--file", "--body-file")
 _UNRESOLVABLE = ("$", "%", "`")
 
 
+# Sibling modules are imported where they are used, not at the top: an import
+# failure must reach `main`'s catch-all and be "unknown" (exit 2), not a
+# traceback, whose exit 1 is the FINDING code.
+def _common():
+    import crew_common  # pylint: disable=import-outside-toplevel
+    return crew_common
+
+
 def _config():
     import crew_config  # pylint: disable=import-outside-toplevel
     return crew_config
@@ -87,9 +101,9 @@ def _layers(root, global_path=None):
     The repo layer is the `.crew/` `crew_common.repo_config_dir` resolves (a
     linked worktree with none reads the main checkout's). `unknown` is a
     sentence naming the file and key, or None."""
-    config = _config()
-    crew_dir, source, detail = crew_common.repo_config_dir(root)
-    if source == crew_common.SOURCE_UNKNOWN:
+    config, common = _config(), _common()
+    crew_dir, source, detail = common.repo_config_dir(root)
+    if source == common.SOURCE_UNKNOWN:
         return [], f"which repo config is in force could not be told ({detail})"
     paths = (os.path.join(crew_dir, "config.json"),
              config.GLOBAL_CONFIG_PATH if global_path is None else global_path)
@@ -313,10 +327,12 @@ def commit_refusal(command, tokens, cwd, unknown=None):
 
 
 def _log_messages(root, base):
-    """`[(sha, message), ...]` for `base..HEAD`, or None when git failed."""
+    """`[(sha, message), ...]` for the ticket's own commits in `base..HEAD`
+    (first parents only, module docstring), or None when git failed."""
     try:
         done = subprocess.run(
-            ("git", "log", "--format=%H%x00%B%x1e", f"{base}..HEAD"), cwd=root,
+            ("git", "log", "--first-parent", "--format=%H%x00%B%x1e", f"{base}..HEAD"),
+            cwd=root,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=GIT_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
@@ -368,7 +384,16 @@ def check(root, ticket, global_path=None):
 
 def main(argv):
     """`--check --root DIR --ticket ID [--global-path P]`: exit 0 clean,
-    1 a finding, 2 unknown or a usage error."""
+    1 a finding, 2 unknown or a usage error. An unexpected exception is
+    unknown: it prints `trailers: unknown - <Type>: <msg>` and exits 2."""
+    try:
+        return _main(argv)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        sys.stdout.write(f"trailers: unknown - {type(exc).__name__}: {exc}\n")
+        return 2
+
+
+def _main(argv):
     args = list(argv)
     opts = {"--root": ".", "--ticket": None, "--global-path": None}
     if "--check" not in args:

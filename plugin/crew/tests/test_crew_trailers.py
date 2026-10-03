@@ -277,6 +277,70 @@ def test_check_reports_unknown_for_a_corrupt_layer(tmp_path):
     assert code == 2 and lines[0].startswith("trailers: unknown - ") and "corrupt" in lines[0]
 
 
+def test_check_ignores_commits_merged_in_from_main(tmp_path):
+    # A ticket branch merges main, and main carries other people's commits
+    # with the trailer: only the ticket's own commits (first-parent, the merge
+    # commit included) are reported, not what the merge brought in.
+    glob = _global_layer(tmp_path, {"git": {"forbiddenTrailers": ["Co-Authored-By"]}})
+    root = _ticket_repo(tmp_path, [])
+    git(root, "checkout", "-q", "-b", "T-1-build")
+    (root / "ticket.txt").write_text("t", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "ticket work")
+    git(root, "checkout", "-q", "main")
+    (root / "main.txt").write_text("m", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "someone else", "-m", "Co-Authored-By: X <x@y>")
+    git(root, "checkout", "-q", "T-1-build")
+    git(root, "merge", "-q", "--no-edit", "main")
+
+    assert _check(root, glob) == (0, ["trailers: clean (2 commits)"])
+
+
+def test_check_still_reports_a_merge_commit_made_on_the_ticket(tmp_path):
+    glob = _global_layer(tmp_path, {"git": {"forbiddenTrailers": ["Co-Authored-By"]}})
+    root = _ticket_repo(tmp_path, [])
+    git(root, "checkout", "-q", "-b", "side")
+    (root / "side.txt").write_text("s", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "side")
+    git(root, "checkout", "-q", "main")
+    git(root, "merge", "-q", "--no-ff", "side", "-m", "merge", "-m", "Co-Authored-By: Y <y@z>")
+    sha = git(root, "log", "--format=%h", "--abbrev=7", "-1")
+
+    assert _check(root, glob) == (1, [f"trailers: FINDING {sha} Co-Authored-By"])
+
+
+@pytest.mark.parametrize("where", ["check", "import"])
+def test_main_turns_an_unexpected_exception_into_unknown(monkeypatch, capsys, where):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("kaboom")
+    if where == "check":
+        monkeypatch.setattr(crew_trailers, "check", boom)
+    else:
+        monkeypatch.setattr(crew_trailers, "_config", boom)
+
+    code = crew_trailers.main(["--check", "--root", ".", "--ticket", "T-1"])
+
+    assert code == 2
+    assert capsys.readouterr().out == "trailers: unknown - RuntimeError: kaboom\n"
+
+
+def test_a_failed_module_import_is_unknown_not_a_finding(tmp_path):
+    # crew_common missing from the script's directory: the import fails at the
+    # top of the module, which must still exit 2, never 1 (the FINDING code).
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    copy = alone / "crew_trailers.py"
+    copy.write_text(open(SCRIPT, encoding="utf-8").read(), encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, str(copy), "--check", "--root", str(tmp_path), "--ticket", "T-1"],
+        capture_output=True, text=True, check=False, timeout=60)
+
+    assert done.returncode == 2
+    assert done.stdout.startswith("trailers: unknown - ModuleNotFoundError: ")
+
+
 def test_check_with_an_empty_list_reports_clean_and_says_off(tmp_path):
     root = _ticket_repo(tmp_path, [["-m", "one", "-m", "Co-Authored-By: A"]])
 

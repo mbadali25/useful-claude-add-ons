@@ -2659,11 +2659,17 @@ a linked worktree with none of its own reads the main checkout's, and when that
 cannot be told, the list is unknown.
 
 **What reads it.** `/crew:done` runs
-`crew_trailers.py --check --root . --ticket <id>` over the ticket's commits
-(`<scope base>..HEAD`) and prints `trailers: clean (<n> commits)`, one
-`trailers: FINDING <sha7> <Token>` per offending commit, or
-`trailers: unknown - <why>` (no base, git failed, config unreadable), exiting
-0 / 1 / 2. It is a report: it never refuses done and crew never rewrites the
+`crew_trailers.py --check --root . --ticket <id>` over the ticket's own commits
+(`git log --first-parent <scope base>..HEAD`) and prints
+`trailers: clean (<n> commits)`, one `trailers: FINDING <sha7> <Token>` per
+offending commit, or `trailers: unknown - <why>` (no base, git failed, config
+unreadable, or any unexpected error, printed as `<Type>: <message>`), exiting
+0 / 1 / 2. `--first-parent` is a deliberate refinement of the spec's literal
+`<scope base>..HEAD`: a ticket branch merges origin/main, and the plain range
+would then report every commit that merge brought in (other people's, many
+carrying the trailer). Following first parents keeps the ticket's own commits,
+including a merge commit made on the ticket branch, and leaves out what it
+merged in. It is a report: it never refuses done and crew never rewrites the
 commits, because a rewrite is the owner's decision and stales the review
 receipt. A line derived from a fallback scope base says so.
 
