@@ -97,6 +97,7 @@ _verify/                   # from template, NOT filled in
   cases/                   # one file per concern
 docs/adr/0001-adopt-crew.md
 CLAUDE.md                  # created if absent; if present, sections APPENDED, never overwritten
+AGENTS.md                  # generated (step 4); a hand-written one is left alone
 ```
 
 `config.json` — this JSON is a COPY, kept here for a human reading the skill.
@@ -430,6 +431,11 @@ shows up as noise in every `git status` rather than as a failure.
 Read `claude-md-authoring.md` before writing a line of it. It covers
 the triage question (does this rule belong here at all), what to do
 when the repo already has a CLAUDE.md, and the files to read first.
+
+Then `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" agents --root .`
+writes `AGENTS.md`, what Codex and other agents read: how to verify a change, and where things
+are. `/crew:verify` and `/crew:onboard` regenerate it. Report its output; never replace a
+hand-written one.
 
 ## 5. Stop and say this out loud
 

@@ -4,6 +4,41 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.168: setup, onboard and verify generate `AGENTS.md`, and the gate keeps it current
+
+- `crew_instructions.py agents` had no caller: only `rules` was run, so a crew repo told Codex and
+  other agents nothing about how to verify a change. `crew-setup` (step 4), `/crew:onboard` (step 6)
+  and `/crew:verify` (step 7) now run it; a hand-written `AGENTS.md` is still left alone.
+- `/crew:verify` adds the rule `crew_instructions.py agents-rule` prints: `agents --check` whenever
+  `AGENTS.md`, `CLAUDE.md`, `.crew/verify.json`, `.crew/codemap/**` or `_verify/smoke.sh` changes, so
+  the file cannot drift from the map. Exit 77 (SKIP) when `CLAUDE_PLUGIN_ROOT` is absent; the gate
+  sets it itself from 1.0.166 on. A map without that rule gets a `note:` line from `agents`, which is
+  never counted as drift. A stale `--check` names the command that regenerates the file.
+- What `AGENTS.md` says: `bash _verify/smoke.sh` first when it exists; how to pick the commands that
+  apply and that exit 77 is SKIP; how many commands past the first six were left out; and, when a
+  shown command needs `$CLAUDE_PLUGIN_ROOT`, what it is. The line claiming Claude Code reads the file
+  through `@AGENTS.md` is printed only when a line of `CLAUDE.md` is that import; otherwise the file
+  says Claude Code does not load it. `docs/review/04-redesign.md` targets a `CLAUDE.md` of
+  `@AGENTS.md` plus ten lines; setup's template does not do that today, and this change does not
+  either.
+- Two inputs no longer differ between clones. The title keeps the repo name from the existing file
+  instead of the checkout directory's name. The "where things are" scopes are judged against
+  `git ls-files`, not the disk (`crew_context.subsystems(root, tracked)`; the rules generator and the
+  hooks keep the disk), so a gitignored file a note cites cannot make a committed `AGENTS.md` stale in
+  CI. The cost: a cited file counts only once it is tracked, so on a fresh repo the first `--check`
+  after the first commit reads stale; regenerate once. Where `git ls-files` fails (no git, a
+  dubious-ownership refusal), `agents` says so in a `note:` and the disk decides.
+- `test_crew_instructions.py` gains cases for each of these, including one running the rule's own
+  shell command unset (77), set (0) and stale (1), one per rule source proving it changes the output,
+  one proving an untracked cited file does not, and the tracked branch's positive scope, cited
+  directories and non-git fallback. The behaviours were sabotaged by hand, round 2's surviving
+  mutants included, and each turned a test red; none is registered, because every mutation registry
+  is a harness path under T-0087.
+- Review (Sonnet 5.5): round 1, 0 BLOCK, 2 FIX (the disk-dependent scopes; a circular step 7 in
+  `/crew:verify`), 7 NIT; all taken but a false positive on a command that merely echoes the rule.
+  Round 2, 0 BLOCK, 1 FIX (step 7 named a directory an LLM could take as the working directory, and
+  could add the rule twice), 5 NIT; all taken.
+
 ### Added — `VERIFYING.md`: how to verify a change, for people and any AI agent
 
 - A root page mapping every verification layer to its command, when to run it and what it costs,
