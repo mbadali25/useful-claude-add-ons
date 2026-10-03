@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d95d8b25
+anchor: useful-claude-add-ons@a469b131
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1304,7 +1304,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` first calls main's `preflight`
-  (`plugin/crew/hooks/scripts/review_run.py:641`, at `:815`; #264): a CLEAN receipt covering the
+  (`plugin/crew/hooks/scripts/review_run.py:711`, at `:885`; #264): a CLEAN receipt covering the
   bundle answers CLEAN with no round and no self-check, and a verify gate that has not passed
   the tree is refused with exit 5 before the self-check is asked for (owner decision
   2026-09-30, "Preflight first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`).
@@ -1324,7 +1324,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:635`, behind
   `gate_problems` `:629`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
   note carries `std:<first 8 of the digest>` for the metrics row. Problems return
-  `EXIT_USAGE` (`review_run.py:693`) unless `crew_incident.read_state` is active, which logs
+  `EXIT_USAGE` (`review_run.py:763`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:683`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:267`, defined at `crew_standards.py:664`)
@@ -1379,7 +1379,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
 - **DERIVED**: nothing launches Kimi for a review yet. `review_run.py`'s `--provider` choices are
-  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:913`), and
+  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:983`), and
   `commands/review.md` has no Kimi row; L-0527 (tooling only) adds the launch, and adding `kimi`
   to `review_run.LAUNCHED` makes Kimi eligible with no crew_config change.
 
@@ -1581,8 +1581,8 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/review_prompt.py:93`) and on the webtest
   overflow line (`plugin/crew/hooks/scripts/review_prompt.py:253`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:512`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:514`). `parse` and
+  (`plugin/crew/hooks/scripts/review_run.py:581`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:583`). `parse` and
   `codex_final_message` split reviewer output on `\n` only, never
   `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
   (`plugin/crew/hooks/scripts/review_verdict.py:170`,
@@ -1591,10 +1591,10 @@ then the train is advisory.
 - DERIVED (L-0576): `parse` recovers a FINDINGS round despite stray lines
   (`plugin/crew/hooks/scripts/review_verdict.py:210`): only beside a finding, with no
   other reason (`prior_reasons` lead the list, `:190`; `review_run.finish` passes its
-  bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:521`), and
+  bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:591`), and
   only when no stray line is `contract_like` (`plugin/crew/hooks/scripts/review_verdict.py:135`;
   the shortfall wording net `_SHORTFALL` is `:125`). The ignored lines go to
-  review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:541`), a
+  review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:611`), a
   `review: FINDINGS kept; ...` line (`:593`) and, as a count, the ledger row
   (`plugin/crew/hooks/scripts/review_ledger.py:339`; null when review.json's value is missing or not a non-negative int, never 0).
 - DERIVED (T-0087, crew 1.0.53): an INCOMPLETE round is classed by
@@ -1604,7 +1604,7 @@ then the train is advisory.
   else `reviewer`. `VERDICTS`, `FINDING_FORM` and the class names are at
   `plugin/crew/hooks/scripts/review_verdict.py:90`, `:93` and `:95`, and the Codex
   event and item vocabularies start at `:98`. `review_run.finish` computes the class at
-  `plugin/crew/hooks/scripts/review_run.py:532` and prints the refund line at `:597`
+  `plugin/crew/hooks/scripts/review_run.py:602` and prints the refund line at `:667`
   (not refunded, `:600`). The ledger refunds a `tool` round up to `REFUND_LIMIT`
   (`plugin/crew/hooks/scripts/review_ledger.py:96`; `BUDGET` `:93` unchanged).
   `_refunded` (`:232`) counts refunded rows after the successor boundary
@@ -3578,3 +3578,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4dcad808` -> `819a2d2b` on 2026-10-02 (L-0574: three test_review_checks.py cases made to pass on a real Windows host (PR #323 CI); citations re-mapped by difflib).**
 
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
+
+**Re-anchored `d95d8b25` -> `a469b131` on 2026-10-03 (L-0605 at a469b131, on origin/main 8123fe74 (L-0574 #323, crew 1.0.140): review_run.py gains `_windows_taskkill`, `_manifest_problem` and `_finish_manifest` above `finish`, so its lines below :421 move by +70; the eight review_run.py citations in the pre-review and verdict sections re-mapped by difflib against 8123fe74 (identical to d95d8b25 for that file): :641/:815 -> :711/:885, :693 -> :763, :913 -> :983, :512/:514 -> :581/:583, :521 -> :591, :541 -> :611, :532/:597 -> :602/:667. review_checks.py is not cited by line here. Citations that were already off at d95d8b25 (prereview_gate `:577`/`:678`, standards_gate `:551`/`:680`) are left for L-0600).**

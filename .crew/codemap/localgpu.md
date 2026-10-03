@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d95d8b25
+anchor: useful-claude-add-ons@a469b131
 verified: 2026-10-01
 
 # localgpu
@@ -1828,3 +1828,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4dcad808` -> `819a2d2b` on 2026-10-02 (L-0574: three test_review_checks.py cases made to pass on a real Windows host (PR #323 CI); citations re-mapped by difflib).**
 
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
+
+**Re-anchored `d95d8b25` -> `a469b131` on 2026-10-03 (L-0605 at a469b131, on origin/main 8123fe74: the per-path check for this map's documented paths finds no change beyond the repo-wide version files and refresh artifacts; no claim moved).**
