@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed - `crew` version allocated at land: the shortfall rule says its wording list cannot be complete (L-0604)
+### Changed - `crew` 1.0.163: the shortfall rule says its wording list cannot be complete (L-0604)
 
 - crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and
   recovery paragraph, and the troubleshooting guide (rebuilt) no longer say any admission that
