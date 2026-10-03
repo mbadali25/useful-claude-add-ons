@@ -332,7 +332,8 @@ def test_a_failed_module_import_is_unknown_not_a_finding(tmp_path):
     alone = tmp_path / "alone"
     alone.mkdir()
     copy = alone / "crew_trailers.py"
-    copy.write_text(open(SCRIPT, encoding="utf-8").read(), encoding="utf-8")
+    with open(SCRIPT, encoding="utf-8") as handle:
+        copy.write_text(handle.read(), encoding="utf-8")
     done = subprocess.run(
         [sys.executable, str(copy), "--check", "--root", str(tmp_path), "--ticket", "T-1"],
         capture_output=True, text=True, check=False, timeout=60)
