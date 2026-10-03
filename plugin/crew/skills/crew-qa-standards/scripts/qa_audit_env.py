@@ -477,11 +477,18 @@ NONPROD_NAMES = ("dev", "development", "local", "ci", "test", "testing", "qa", "
 REACH_FILLER = ("only", "and")
 # One of these words anywhere in an acceptance cell refuses it.
 NOT_ACCEPTED = ("no", "n", "false", "not", "never", "denied", "rejected", "declined", "pending",
-                "tbd", "todo", "nobody", "none", "n/a", "na", "unknown", "awaiting", "waiting")
-ACCEPT_WORDS = ("accepted", "yes")
+                "tbd", "todo", "nobody", "none", "n/a", "na", "unknown", "awaiting", "waiting",
+                "revoked", "expired", "withdrawn", "refused")
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-_NAME_WORD_RE = re.compile(r"[a-z][a-z.'-]*")
-MAX_NAME_WORDS = 3
+# The acceptance grammar, over the whole cell in its ORIGINAL case: `accepted` or
+# `yes`, an optional `,` or `.`, then at most one NAME (optionally after `by`) and
+# at most one ISO date, in either order. A NAME is 1-3 words that each start with
+# an uppercase letter, so no lowercase qualifier ("revoked", "maybe") can be one.
+_NAME = r"[A-Z][A-Za-z'\u2019-]*(?:\s+[A-Z][A-Za-z'\u2019-]*){0,2}"
+_BY_NAME = rf"(?:by\s+)?{_NAME}"
+_ISO = r"\d{4}-\d{2}-\d{2}"
+_ACCEPT_RE = re.compile(
+    rf"(?i:accepted|yes)[.,]?(?:\s+(?:{_BY_NAME}(?:\s+{_ISO})?|{_ISO}(?:\s+{_BY_NAME})?))?")
 
 
 def _header_col(header, words):
@@ -540,34 +547,22 @@ def _iso_date(token):
 
 
 def parse_acceptance(cell):
-    """"yes", "no" or "unknown" -- an allow-list, so text nobody wrote a rule
-    for is never read as an acceptance.
+    """"yes", "no" or "unknown", judged on the cell's original case (see _ACCEPT_RE).
 
-    no:      blank, punctuation only (`-`, `?`), or a NOT_ACCEPTED word anywhere
-             ("rejected 2026-10-01", "2026-10-01 not accepted", "Nobody").
-    yes:     the whole cell is an ISO date, or `accepted` / `yes` followed by at
-             most one date and a name of up to MAX_NAME_WORDS words, in either
-             order ("accepted 2026-10-01 Matthew", "yes, by Ann Lee").
-    unknown: anything else, including "accepted?" and a bare name."""
-    text = _plain(cell)
-    if not re.search(r"[a-z0-9]", text):
+    no:      blank or ASCII punctuation only (`-`, `?`), or a NOT_ACCEPTED word
+             anywhere ("rejected 2026-10-01", "Nobody", "accepted but expired").
+    yes:     the whole cell is an ISO date, or matches _ACCEPT_RE
+             ("accepted", "Accepted by Matthew", "accepted 2026-10-01 Matthew Badali").
+    unknown: everything else -- "accepted maybe", "accepted (verbally)",
+             "approved", "ok", "y", an emoji. Never read as an acceptance."""
+    text = re.sub(r"[`*]", "", cell).strip()
+    if re.fullmatch(r"[\s!-/:-@\[-`{-~]*", text):
         return "no"
-    if any(w in NOT_ACCEPTED for w in re.findall(r"[a-z]+(?:/[a-z]+)?", text)):
+    if any(w in NOT_ACCEPTED for w in re.findall(r"[a-z]+(?:/[a-z]+)?", text.lower())):
         return "no"
-    if _iso_date(text):
-        return "yes"
-    tokens = [t for t in re.split(r"[\s,;:()]+", text) if t]
-    if not tokens or tokens[0] not in ACCEPT_WORDS:
+    if not (_DATE_RE.fullmatch(text) or _ACCEPT_RE.fullmatch(text)):
         return "unknown"
-    dates = names = 0
-    for token in tokens[1:]:
-        if _iso_date(token):
-            dates += 1
-        elif token == "by" or _NAME_WORD_RE.fullmatch(token):
-            names += token != "by"
-        else:
-            return "unknown"
-    return "yes" if dates <= 1 and names <= MAX_NAME_WORDS else "unknown"
+    return "yes" if all(_iso_date(d) for d in _DATE_RE.findall(text)) else "unknown"
 
 
 def check_secrets_inventory(root, ci, tests):
@@ -608,12 +603,13 @@ def check_secrets_inventory(root, ci, tests):
             continue
         if unparsed:
             unknown.append(f"`{name}` is live and its reach `{', '.join(unparsed)}` names no known environment")
-        accepted = parse_acceptance(_cell(r, accept_col)) if nonprod else "yes"
+        raw = r[accept_col].strip() if accept_col is not None and accept_col < len(r) else ""
+        accepted = parse_acceptance(raw) if nonprod else "yes"
         if accepted == "no":
             bad.append(f"`{name}` is live and reaches {', '.join(nonprod)} with no owner acceptance")
         elif accepted == "unknown":
             unknown.append(f"`{name}` is live and reaches {', '.join(nonprod)}; its acceptance "
-                           f"`{_cell(r, accept_col)}` is not a recognised form")
+                           f"`{raw}` is not a recognised form")
     if bad:
         return _row("E5", title, GAP, "; ".join(bad[:5])
                     + (f"; also could not tell: {'; '.join(unknown[:5])}" if unknown else ""))

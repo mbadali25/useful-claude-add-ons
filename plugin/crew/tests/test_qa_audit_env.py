@@ -348,7 +348,7 @@ def test_e5_a_live_credential_reaching_qa_unaccepted_is_a_gap(tmp_path):
 def test_e5_accepted_or_production_only_passes(tmp_path):
     _write(tmp_path, ".crew/secrets.md",
            "| Name | Reaches | Live | Accepted |\n|---|---|---|---|\n"
-           "| PAY_KEY | production | yes | |\n| MAIL_KEY | qa | yes | accepted 2026-10-01 owner |\n")
+           "| PAY_KEY | production | yes | |\n| MAIL_KEY | qa | yes | accepted 2026-10-01 Matthew |\n")
     assert _row(tmp_path, "E5")["status"] == qa_audit.PASS
 
 
@@ -427,25 +427,49 @@ def test_e5_production_only_is_production(tmp_path):
     assert qa_audit_env.parse_reach("`qa`/staging", {}) == (["qa", "staging"], [])
 
 
-@pytest.mark.parametrize("value", ["denied", "never", "Nobody", "rejected 2026-10-01",
-                                   "2026-10-01 not accepted", "accepted by nobody", "-", ""])
+@pytest.mark.parametrize("value", ["no", "not accepted", "never", "denied", "rejected 2026-10-01",
+                                   "declined", "pending", "TBD", "todo", "Nobody", "none", "n/a",
+                                   "unknown", "awaiting owner", "waiting", "revoked", "expired",
+                                   "withdrawn", "refused", "accepted but expired",
+                                   "2026-10-01 not accepted", "-", "?", ""])
 def test_e5_a_refusal_anywhere_is_not_an_acceptance(tmp_path, value):
     row = _e5(tmp_path, f"| X | staging | yes | {value} |")
     assert row["status"] == qa_audit.GAP and "`X`" in row["evidence"], (value, row["evidence"])
 
 
-@pytest.mark.parametrize("value", ["accepted?", "Matthew", "owner 2026-10-01", "accepted 2026-13-45",
-                                   "accepted 2026-10-01 2026-10-02", "yes, ok-ish!"])
+@pytest.mark.parametrize("value", [
+    "accepted unless rotated", "accepted if approved", "accepted until prod",
+    "accepted maybe", "accepted soon", "accepted tentatively", "accepted conditionally",
+    "yes eventually", "accepted (verbally)", "accepted by the owner on 2026-10-01", "\u2705", "approved",
+    "ok", "y", "accepted?", "Matthew", "owner 2026-10-01", "accepted 2026-13-45",
+    "accepted 2026-10-01 2026-10-02", "accepted Matthew Badali 2026-10-01 Matthew",
+    "accepted by Ann Bea Cee Dee", "yes, ok-ish!"])
 def test_e5_an_unrecognised_acceptance_is_unknown_not_accepted(tmp_path, value):
     row = _e5(tmp_path, f"| X | staging | yes | {value} |")
     assert row["status"] == qa_audit.UNKNOWN and "`X`" in row["evidence"], (value, row["evidence"])
 
 
-@pytest.mark.parametrize("value", ["2026-10-01", "accepted", "yes", "Accepted 2026-10-01 Matthew",
-                                   "accepted Matthew 2026-10-01", "yes, by Ann Lee", "**accepted** (2026-10-01)"])
+@pytest.mark.parametrize("value", ["revoked", "withdrawn", "expired", "refused"])
+def test_e5_accepted_followed_by_a_refusal_word_is_a_gap(tmp_path, value):
+    row = _e5(tmp_path, f"| X | staging | yes | accepted {value} |")
+    assert row["status"] == qa_audit.GAP, (value, row["evidence"])
+
+
+@pytest.mark.parametrize("value", ["accepted", "yes", "ACCEPTED", "2026-10-01",
+                                   "accepted 2026-10-01 Matthew Badali", "Accepted by Matthew",
+                                   "accepted, Matthew", "accepted by Matthew 2026-10-01",
+                                   "yes, by Ann Lee", "accepted O'Neil", "Accepted by Jean-Luc Picard",
+                                   "**accepted** 2026-10-01"])
 def test_e5_the_affirmative_acceptance_forms_pass(tmp_path, value):
     row = _e5(tmp_path, f"| X | staging | yes | {value} |")
     assert row["status"] == qa_audit.PASS, (value, row["evidence"])
+
+
+def test_e5_a_declared_hyphenated_environment_is_read(tmp_path):
+    _map(tmp_path, environments={"staging-eu": {}})
+    row = _e5(tmp_path, "| K | staging-eu | yes | |")
+    assert row["status"] == qa_audit.GAP and "staging-eu" in row["evidence"]
+    assert qa_audit_env.parse_reach("staging-eu", {}) == ([], ["staging-eu"])
 
 
 @pytest.mark.parametrize("reach", ["not production", "not prod", "all but prod", "prod replica",

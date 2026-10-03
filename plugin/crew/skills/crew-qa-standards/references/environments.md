@@ -127,12 +127,21 @@ Non-production held live payment and shipping credentials for weeks (D4).
   `preview`). `production only`, `prod/staging` and `prod + dev` parse; `not prod`, `all but prod`,
   `prod replica` and `non-production` do not. A live credential whose reach is blank or has a part
   that does not parse is UNKNOWN. An unparseable `.crew/verify.json` makes E5 UNKNOWN.
-- **Accepted** is an allow-list. Accepted: an ISO date alone (`2026-10-01`), or `accepted` / `yes`
-  followed by at most one date and a name of up to three words, in either order
-  (`accepted 2026-10-01 Matthew`, `yes, by Ann Lee`). Not accepted, so a GAP: blank, `-`, `?`, or
-  any of `no`, `not`, `never`, `denied`, `rejected`, `declined`, `pending`, `TBD`, `todo`,
-  `nobody`, `none`, `n/a`, `unknown`, `awaiting`, `waiting` anywhere in the cell. Anything else,
-  `accepted?` or a bare name included, is UNKNOWN for that row, never an acceptance.
+- **Accepted** is a strict grammar over the whole cell, read in its original case:
+  - **Accepted:** `accepted` or `yes` (any case), an optional `,` or `.`, then optionally a NAME
+    (with or without `by` before it) and optionally an ISO date (`YYYY-MM-DD`, a real date), in
+    either order, each at most once. A NAME is 1 to 3 words, each starting with an uppercase
+    letter (`Matthew`, `Matthew Badali`, `O'Neil`, `Jean-Luc`); a lowercase word is never a name.
+    An ISO date alone also counts. Examples: `accepted`, `ACCEPTED`, `yes`, `2026-10-01`,
+    `Accepted by Matthew`, `accepted, Matthew`, `accepted by Matthew 2026-10-01`,
+    `accepted 2026-10-01 Matthew Badali`.
+  - **Not accepted (GAP):** blank or punctuation only (`-`, `?`), or any of `no`, `not`, `never`,
+    `denied`, `rejected`, `declined`, `pending`, `TBD`, `todo`, `nobody`, `none`, `n/a`,
+    `unknown`, `awaiting`, `waiting`, `revoked`, `expired`, `withdrawn`, `refused` anywhere in the
+    cell, so `accepted but expired` is a GAP.
+  - **Unknown (E5 UNKNOWN for that row):** everything else, never an acceptance: `accepted maybe`,
+    `accepted unless rotated`, `yes eventually`, `accepted (verbally)`,
+    `accepted by the owner on 2026-10-01`, `approved`, `ok`, `y`, `✅`, a bare name.
 
 | Name | Reaches | Live | Accepted |
 |---|---|---|---|
