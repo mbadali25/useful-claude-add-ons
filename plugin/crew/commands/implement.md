@@ -7,10 +7,9 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Agent
 Implement ticket $1. Replaces `/crew:work` in 1.0; that command is now a <!-- deliberate -->
 removal stub with no behaviour.
 
-**Method adapted from `superpowers:executing-plans` (Jesse Vincent, MIT). Full
-notice in `plugin/crew/NOTICE.md`.** The backing skill is
-`plugin/crew/skills/crew-execute/SKILL.md` — load it now; it carries the
-per-step TDD discipline and the ledger this file only summarises.
+**Method adapted from `superpowers:executing-plans` (Jesse Vincent, MIT). Full notice in
+`plugin/crew/NOTICE.md`.** The backing skill is `plugin/crew/skills/crew-execute/SKILL.md` — load it now; it
+carries the per-step TDD discipline and the ledger this file only summarises.
 
 ## 0. Refuse without an approved plan
 
@@ -19,11 +18,9 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py validate --ticket $1
 ```
 
 **This command refuses to edit anything unless that call reports the plan
-approved.** No approval, a stale one (the plan changed after approval), or no
-plan at all — stop, say which, and point at `/crew:plan $1` or
-`/crew:plan $1 --approve`. Do not proceed "since the plan looks fine" — the
-receipt, not your read of the plan, is what the completion audit checks
-later.
+approved.** No approval, a stale one (the plan changed since) or no plan: stop,
+say which, and point at `/crew:plan $1` or `/crew:plan $1 --approve`. The
+receipt, not your read of the plan, is what the completion audit checks later.
 
 ## 1. Record where this ticket starts
 
@@ -40,16 +37,17 @@ me `tracker not updated: <reason>` and keep going — a tracker never blocks wor
 
 ## 2. Work the plan's steps in order
 
-Read `.work/tickets/$1/plan.md`. Per step: write the test it names, watch it
-fail, implement the minimal change, watch it pass, then the next step. A step
-whose Expected does not match reality is a plan defect — rule on it, note the
-ruling and why in your report, and keep going; do not silently deviate.
+Print what earlier reviews kept finding on this ticket's paths and keep each item open while you work:
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket $1` (exit 1: read its UNKNOWN,
+UNREADABLE or PROBLEM line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`. Per step: write the
+test it names, watch it fail, make the minimal change, watch it pass, then the next step. A step whose Expected does not
+match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 
 Who types is not assumed: read the effective dev table with
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
-and dispatch whatever `dev.roles.developer` names, else `dev.provider`. The
-developer may commit on this ticket's own branch and nowhere else. Record the
-dispatch the moment it returns, with what actually ran, never the pin:
+and dispatch whatever `dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch
+prompt. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
+returns, with what actually ran, never the pin:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
@@ -68,15 +66,14 @@ ticket's spec.Touch. File it to `TODO.md`, not to the diff.
 
 ## 4. Verify
 
-Run the checks your changed paths map to in `.crew/verify.json`, or
-`./_verify/smoke.sh` when there is no map. Fix and rerun on red. A changed
-path mapping to no rule gets one before you finish (step 6).
+Run the checks your changed paths map to in `.crew/verify.json` (no map: `./_verify/smoke.sh`). Fix and
+rerun on red. A changed path mapping to no rule gets one before you finish (step 6). On native Windows,
+run each check through `crew_shell.py run -- "<command>"` and quote its `crew-shell:` route line (crew-setup/platform.md).
 
 ## 5. Specialists, endpoints, coverage
 
-Auth/input/SQL/secrets/IaC → `crew:security`. Migration/schema/big-table query
-→ load the `stack-sql` skill. A new externally reachable route declared
-now, never later:
+Auth/input/SQL/secrets/IaC → `crew:security`. Migration/schema/big-table query → load the `stack-sql`
+skill. A new externally reachable route declared now, never later:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
@@ -96,17 +93,22 @@ diagrams and code graph this ticket's changed paths reach:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1
 ```
 
-For each `refresh with` line, run the command it names, commit the result and
-re-run until it says `fresh` — an `unknown` whose anchor names no commit (a
-squash-merged branch) included: the refresh re-anchors it. These writes need no
-Touch entry; the scope guard and completion audit allow the refresh-artifact
-paths for an approved ticket. A `stop` anywhere ends the loop, on an artifact
-line (a missing tool, git unable to diff) or on the top line (a scope base that
-hides or may hide the change, an unreadable config): report it with its reason.
-Documents read `not measured` — `/crew:docs`'s judgement, never a pass. Commit
-the refresh before `/crew:review $1` builds its bundle. Set `spec.md`'s header
-to `status: review` — that edit keeps the approval: the digest normalises only
-the header's status value — and run
+For each `refresh with` line, run the command it names, commit the result and re-run until it says
+`fresh` — an `unknown` whose anchor names no commit (a squash-merged branch) included: the refresh
+re-anchors it. These writes need no Touch entry when they are what a refresh writes: the completion
+audit admits an artifact a path you changed reaches, as a re-anchor (`anchor:` or provenance sha moved
+forward, to HEAD or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py
+rules`, the graph after a code change); anything else there needs Touch, and the audit names the reason.
+A `stop` ends the loop, on an artifact line (a missing tool, git unable to diff) or on the top line (a
+base that hides or may hide the change, an unreadable config): report it. Documents read `not measured`,
+never a pass. Commit the refresh before `/crew:review $1` builds its bundle.
+Then the **required self-check** (`crew-standards` skill): run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
+every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1`
+until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
+Set `spec.md`'s header to `status: review` — that edit keeps the approval: the
+digest normalises only the header's status value — and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
 handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.

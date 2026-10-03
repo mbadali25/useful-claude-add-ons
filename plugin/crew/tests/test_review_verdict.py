@@ -164,11 +164,129 @@ def test_parse_clean_beside_a_finding_is_incomplete():
 
 @pytest.mark.parametrize("text", ["```\nCLEAN\n```\n", "```text\nCLEAN\n```\n"])
 def test_parse_a_code_fence_is_incomplete(text):
-    """Tolerating fences was fail-open: a fence is not part of the contract,
-    and whatever it wrapped was never read as one."""
+    """A fence beside CLEAN is never recovered: CLEAN is exact (L-0576), so
+    skipping fences here would let a wrapped CLEAN pass as one."""
     result = rv.parse(text, 0)
 
     assert result["verdict"] == rv.INCOMPLETE
+
+
+FIX_LINE = "FIX|a.py:1|breaks|run it"
+BLOCK_LINE = "BLOCK|b.py:2|breaks badly|call it"
+
+
+@pytest.mark.parametrize("before,after", [
+    ([], ["The sabotage entries need `--run-slow`; sabotage.py passes it, so they are fine."]),
+    (["## Findings"], []),
+    (["```"], ["```"]),
+    (["```text"], ["```"]),
+    (["```FIX"], ["```"]),
+    (["``` FIX"], ["```"]),
+    (["~~~  text"], ["~~~"]),
+    (["~~~"], ["~~~"]),
+    (["Two defects below."], ["", "Everything else reads correctly."]),
+])
+def test_parse_harmless_stray_lines_beside_findings_are_recovered(before, after):
+    """T-0100 round 2: both parts READ, four well-formed findings, exit 0,
+    and one trailing paragraph scored the round INCOMPLETE (L-0576)."""
+    text = ACKS + "\n".join(before + [FIX_LINE, BLOCK_LINE] + after) + "\n"
+
+    result = rv.parse(text, 0, expected_parts=PARTS)
+
+    assert (result["verdict"], result["reasons"], result["ignored"], result["counts"]) == (
+        rv.FINDINGS, [], [line for line in before + after if line],
+        {"BLOCK": 1, "FIX": 1, "NIT": 0})
+
+
+def test_parse_ignored_lines_are_kept_verbatim():
+    """Review round 1 FIX: the ignored lines were stored stripped."""
+    text = ACKS + f"{FIX_LINE}\n  Closing note, indented.  \r\n"
+
+    result = rv.parse(text, 0, expected_parts=PARTS)
+
+    assert (result["verdict"], result["ignored"]) == (
+        rv.FINDINGS, ["  Closing note, indented.  "])
+
+
+@pytest.mark.parametrize("stray", ["Looks fine.", "## Verdict", "```"])
+def test_parse_clean_with_any_stray_line_is_incomplete(stray):
+    result = rv.parse(ACKS + f"{stray}\nCLEAN\n", 0, expected_parts=PARTS)
+
+    assert (result["verdict"], result["ignored"]) == (rv.INCOMPLETE, [])
+
+
+@pytest.mark.parametrize("stray", [
+    "- FIX|a.py:1|breaks|repro",
+    "`BLOCK|a.py:1|breaks|repro`",
+    "**FIX**|a.py:1|breaks|repro",
+    "1. NIT|a.py:1|typo|read it",
+    "fix|a.py:1|breaks|repro",
+    "Block: a.py:1 breaks on empty input",
+    "- **BLOCK** a.py:1 breaks on empty input",
+    "**FIX:** a.py:1 leaks a handle",
+    "> READ part-002-of-002.patch",
+    "BLOCK a.py:1 breaks on empty input",
+    "FIX|a.py:1|breaks",
+    "READ part-001-of-002.patch",
+    "read|part-001-of-002.patch",
+    "Clean.",
+    "| a.py:1 | breaks | repro |",
+    "a.py:1 | breaks | repro | more",
+    "INCOMPLETE: I did not read all 30 patch parts in full.",
+    "``` FIX a.py:1 breaks on empty input",
+    "``` FIX|a.py:1|breaks|repro",
+    "Note: this review is incomplete; part 2 was skimmed.",
+    "block a.py:1 deletes user data",
+    "Fix the retry loop in a.py:1 before landing.",
+    "I could not review part 2; its contents were truncated.",
+    "Part 2 was not fully read.",
+    "Skipped the generated files.",
+    "I ran out of time before the last part.",
+    "Only a partial pass over the tests.",
+])
+def test_parse_a_contract_like_stray_line_is_incomplete(stray):
+    """A line that may be a finding, READ or verdict the parser failed to
+    read is "could not tell", never ignorable prose (L-0576)."""
+    result = rv.parse(ACKS + f"{FIX_LINE}\n{stray}\n", 0, expected_parts=PARTS)
+
+    assert (result["verdict"], result["ignored"]) == (rv.INCOMPLETE, [])
+    assert any("match no part of the contract" in r for r in result["reasons"]), result
+
+
+@pytest.mark.parametrize("acks,exit_code,timed_out", [
+    ("READ|part-001-of-002.patch\n", 0, False),
+    (ACKS, 1, False),
+    (ACKS, None, False),
+    (ACKS, 0, True),
+])
+def test_parse_recovery_never_masks_another_reason(acks, exit_code, timed_out):
+    result = rv.parse(acks + f"{FIX_LINE}\nSome prose.\n", exit_code, timed_out,
+                      expected_parts=PARTS)
+
+    assert (result["verdict"], result["ignored"]) == (rv.INCOMPLETE, [])
+    assert any("match no part of the contract" in r for r in result["reasons"]), result
+
+
+def test_parse_a_prior_reason_rules_recovery_out():
+    """A reason found outside the text (a Codex stream error, a bundle part
+    that changed) makes the round INCOMPLETE before recovery is considered."""
+    result = rv.parse(ACKS + f"{FIX_LINE}\nSome prose.\n", 0, expected_parts=PARTS,
+                      prior_reasons=["bundle part changed"])
+
+    assert (result["verdict"], result["ignored"], result["reasons"][0]) == (
+        rv.INCOMPLETE, [], "bundle part changed")
+    assert any("match no part of the contract" in r for r in result["reasons"]), result
+
+
+@pytest.mark.parametrize("text,verdict", [
+    (ACKS + "CLEAN\n", rv.CLEAN),
+    (ACKS + FIX_LINE + "\n", rv.FINDINGS),
+    ("Only prose here.\n", rv.INCOMPLETE),
+])
+def test_parse_ignored_is_empty_when_nothing_was_ignored(text, verdict):
+    result = rv.parse(text, 0, expected_parts=PARTS if text.startswith("READ") else ())
+
+    assert (result["verdict"], result["ignored"]) == (verdict, [])
 
 
 @pytest.mark.parametrize("line", [

@@ -1,0 +1,30 @@
+READ|part-001-of-024.patch
+READ|part-002-of-024.patch
+READ|part-003-of-024.patch
+READ|part-004-of-024.patch
+READ|part-005-of-024.patch
+READ|part-006-of-024.patch
+READ|part-007-of-024.patch
+READ|part-008-of-024.patch
+READ|part-009-of-024.patch
+READ|part-010-of-024.patch
+READ|part-011-of-024.patch
+READ|part-012-of-024.patch
+READ|part-013-of-024.patch
+READ|part-014-of-024.patch
+READ|part-015-of-024.patch
+READ|part-016-of-024.patch
+READ|part-017-of-024.patch
+READ|part-018-of-024.patch
+READ|part-019-of-024.patch
+READ|part-020-of-024.patch
+READ|part-021-of-024.patch
+READ|part-022-of-024.patch
+READ|part-023-of-024.patch
+READ|part-024-of-024.patch
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2087|Filtered stdin is trusted as unchanged literal JSON, allowing production as nonProd|With cloudGuard armed, deployWorkflow=ask in both layers, staging nonProd and deploy.yml mapped to input:environment, run echo '{"environment":"staging"}' followed by a pipeline through sed s/staging/production/ into gh workflow run deploy.yml --json; the guard allows staging while gh receives production.
+BLOCK|plugin/crew/hooks/scripts/cloud_guard.py:2250|An input-file redirect does not invalidate the literal pipeline body used to authorize deployment|With cloudGuard armed, deployWorkflow=ask in both layers and deploy.yml mapped to input:environment, pipe echo '{"environment":"staging"}' into gh workflow run deploy.yml --json < prod.json, where prod.json contains {"environment":"production"}; the guard allows staging although the redirect supplies production.
+BLOCK|plugin/crew/hooks/scripts/cloud_guard.py:2250|The deploy classifier trusts unsafe shell-variable substitution, allowing production as staging|With cloudGuard armed, deployWorkflow=ask in both layers, staging nonProd and deploy.yml mapped to input:environment, run ENV=production; env=staging; gh workflow run deploy.yml -f environment=$ENV; the scanner conflates Bash variable names by case and allows staging while Bash passes production. Likewise, ENV=staging followed by read ENV from production-valued input leaves a stale staging authorization.
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:1985|Valid clustered short flags make REST production dispatches disappear from classification|With cloudGuard armed and deploy.yml listed, run gh api -iX POST repos/o/r/actions/workflows/deploy.yml/dispatches -f ref=main -f 'inputs[environment]=production'; gh parses -i and -X POST, but _gh_words treats POST as the endpoint, yielding no deploy finding even under deployWorkflow=block.
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2294|Approval markers omit stdin, so approving one deployment authorizes different deployment inputs|With deploy.yml mapped to input:environment and deployWorkflow=ask, approve a literal JSON dispatch to production-one through gh workflow run deploy.yml --json; change only the JSON environment to production-two and rerun unattended within the marker TTL. Both findings hash the identical argv text, so the second deployment runs without approval.
+FIX|plugin/crew/hooks/scripts/crew_guards.py:2246|Quoted workflow display names containing spaces are treated as unknown, breaking listed-name matching and the unlisted-workflow exclusion|With cloudGuard armed and a nonempty workflow map, gh workflow run 'CI Checks' is denied unattended although unlisted; adding "Deploy Staging":"staging" with staging nonProd also fails to allow gh workflow run 'Deploy Staging', because _dispatch_literal rejects whitespace after dequoting.

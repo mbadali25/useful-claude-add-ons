@@ -10,8 +10,23 @@ script writes the part of it that is about the ticket rather than the diff:
     files-mode ticket with no spec.md yet, `.work/tickets/<id>.md`);
   - the plan, `.work/tickets/<id>/plan.md`, in full;
   - the test receipts: the verify gate's last verified commit
-    (`.crew/.verify-verified-at`) against HEAD, and every rule its record
-    (`.crew/.verify-gate.record.json`) still lists as NOT VERIFIED.
+    (`.crew/.verify-verified-at`) against HEAD and, when that does not show
+    HEAD clean, the local gate's answer (`review_gate.gate_state`: `Local
+    gate: VERIFIED`, `No verify gate`) or, only when that is UNVERIFIED or
+    UNKNOWN, the CI receipt for HEAD -- the upgrade `review_run.py` reserves
+    on -- and every rule the local record (`.crew/.verify-gate.record.json`)
+    still lists as NOT VERIFIED (marked superseded when the receipt covers
+    HEAD).
+
+  - the development standards checklist (T-0085): the effective standards
+    set's ids, rules and self-check questions from `crew_standards.
+    checklist_block`, stating that the author's self-check answers are
+    withheld (`selfcheck.md` is never read here) and that the list does not
+    bound the review; an unreadable overlay is written `UNREADABLE: ...`.
+  - the recurring-findings checklist (L-0575, L-0601): the defect classes
+    earlier reviews kept finding, keyed to the bundle's changed files, from
+    `recurring_findings.review_block`; it says the list does not bound the
+    review, and an unusable manifest lists every class under `UNKNOWN:`.
 
 Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
@@ -37,7 +52,13 @@ import re
 import subprocess
 import sys
 
+import ci_receipt
+import crew_standards
+import recurring_findings
+import review_checks
+import review_gate
 import review_verdict
+import verify_record
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
 WEBTEST_FINDINGS_MAX = 50
@@ -86,9 +107,15 @@ def _bundle_block(manifest):
            "other directory counts for nothing; a part with no READ line makes the review "
            "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
+    # Three states, one line each (T-0099): an empty list is a manifest saying
+    # nothing was left out; no key, or anything but a list of non-blank strings,
+    # is one that cannot say, and must not read as either of the known answers.
     excluded = manifest.get("excluded")
-    out.append(f"  excluded (never in the bundle): {', '.join(excluded)}" if excluded
-               else "  excluded: none recorded")
+    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):
+        out.append("  excluded (never in the bundle): "
+                   + (", ".join(excluded) if excluded else "none"))
+    else:
+        out.append("  excluded: not recorded by this manifest (unknown)")
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
     for key, label in (("renames", "renamed"), ("mode_changes", "mode changed"),
@@ -142,38 +169,95 @@ def _head(root):
         return ""
 
 
+REASON_MAX = 400
+
+
+def _reason(text):
+    """A gate reason as ONE line: control characters escaped (a git or gh
+    stderr carried in a reason can be multi-line, and a line of its own in
+    the prompt reads as an instruction) and capped at REASON_MAX."""
+    one = review_checks.one_line(str(text))
+    return one if len(one) <= REASON_MAX else one[:REASON_MAX] + "... (truncated)"
+
+
+def _ask(question, root):
+    """(state, reason) from a gate question; a call that raises is UNKNOWN,
+    never a pass."""
+    try:
+        return question(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return review_gate.UNKNOWN, f"{exc.__class__.__name__}: {exc}"
+
+
+def _receipt(root):
+    """(state, reason) of the CI receipt alone (`ci_receipt.check`), never
+    the local gate. `accepted_state` is NOT asked here: it re-asks
+    `gate_state`, so a local pass that lands between two calls (the Stop gate
+    finishing while the prompt is built) would come back VERIFIED and be
+    printed as a receipt (review r2). This is the same upgrade
+    `accepted_state` makes, on the ONE local answer this block already holds."""
+    state, reason, _ = ci_receipt.check(root)
+    return state, reason
+
+
 def _receipts_block(root, manifest):
+    """The verify evidence, as the gate that reserved this round judged it
+    (docs/review/08, defect 1). A clean local pass on HEAD needs no question.
+    Otherwise the LOCAL gate is asked ONCE (`review_gate.gate_state`): a
+    dirty tree its fingerprint covers is a local VERIFIED, and a repo with no
+    gate is NO_GATE -- neither is a receipt, and neither is MISSING. Only a
+    local UNVERIFIED or UNKNOWN asks the CI receipt (`_receipt`), the upgrade
+    `review_gate.accepted_state` makes for `review_run.py`; then, and only
+    then, the local record's rows are marked superseded, because a receipt is
+    a `--all` run with nothing outstanding."""
     out = ["== Test receipts (verify gate) =="]
     marker = os.path.join(root, ".crew", ".verify-verified-at")
     verified = (_read(marker) or "").strip()
     head = _head(root)
-    if not verified:
-        out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has not recorded "
-                   "a clean pass in this checkout.")
-    elif verified == head and not manifest.get("dirty"):
-        out.append(f"Last clean verify pass: {verified[:12]} = HEAD, tree clean.")
+    receipt = False
+    if verified and verified == head and not manifest.get("dirty"):
+        out.append(f"Last clean verify pass: {_reason(verified[:12])} = HEAD, tree clean.")
     else:
-        out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
-                   f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after that "
-                   "pass have NOT been through the gate.")
-    record_path = os.path.join(root, ".crew", ".verify-gate.record.json")
-    raw = _read(record_path)
-    if raw is None:
-        out.append("MISSING: no .crew/.verify-gate.record.json (no per-rule record).")
+        local, local_why = _ask(review_gate.gate_state, root)
+        if local == review_gate.VERIFIED:
+            out.append(f"Local gate: VERIFIED - {_reason(local_why)}")
+        elif local == review_gate.NO_GATE:
+            out.append(f"No verify gate: {_reason(local_why)}")
+        else:
+            r_state, r_reason = _ask(_receipt, root)
+            if r_state == review_gate.VERIFIED:
+                receipt = True
+                out.append(f"CI receipt: VERIFIED for HEAD - {_reason(r_reason)}")
+            else:
+                if not verified:
+                    out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has "
+                               "not recorded a clean pass in this checkout.")
+                else:
+                    out.append(f"Last clean verify pass: {_reason(verified[:12])}; HEAD is "
+                               f"{head[:12]}"
+                               f"{', tree dirty' if manifest.get('dirty') else ''}. Changes "
+                               "after that pass have NOT been through the gate.")
+                # Each part capped on its own: one cap over both let a long
+                # local reason (up to three record rows) cut the receipt's
+                # answer off entirely (review r3).
+                out.append(f"Gate answer for HEAD: {local}: {_reason(local_why)}; "
+                           f"CI receipt {r_state}: {_reason(r_reason)}")
+    state, rules = verify_record.read_record(root)
+    shown = verify_record.RECORD_PATH.replace("\\", "/")
+    if state == "absent":
+        out.append(f"MISSING: no {shown} (no per-rule record).")
         return out
-    try:
-        rules = json.loads(raw).get("rules")
-    except (ValueError, AttributeError):
-        rules = None
-    if not isinstance(rules, dict):
-        out.append("UNREADABLE: .crew/.verify-gate.record.json does not parse; which rules "
+    if state != "ok":
+        out.append(f"UNREADABLE: {shown} does not parse; which rules "
                    "are unverified is UNKNOWN.")
     elif not rules:
         out.append("Per-rule record: no rule is outstanding.")
     else:
+        prefix = "Local record, superseded for HEAD by the CI receipt: " if receipt else ""
         for info in rules.values():
             if isinstance(info, dict):
-                out.append(f"NOT VERIFIED: {info.get('label', '?')}: {info.get('reason', '')}")
+                out.append(f"{prefix}NOT VERIFIED: {info.get('label', '?')}: "
+                           f"{info.get('reason', '')}")
     return out
 
 
@@ -254,6 +338,8 @@ def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
+                  crew_standards.checklist_block(root, manifest),
+                  recurring_findings.review_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):
         if not block:
             continue

@@ -83,9 +83,10 @@ as the full `/crew:plan`. Once approved,
 ## 4. Implement, tests, docs
 
 Same as `/crew:implement` steps 0–6, compressed by the plan already being one
-step: refuse without the approval receipt, record scope base, implement,
-verify, print the changed-file list, `/crew:docs` (usually "none" at this
-scope). The tracker moves as there:
+step: refuse without the approval receipt, record scope base, print the
+recurring-findings checklist for the ticket's paths and keep it open while you
+implement, verify, print the changed-file list, `/crew:docs` (usually "none" at this
+scope), then the self-check and its stamp. The tracker moves as there:
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to in-progress`
 when implementing starts, and
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to review`

@@ -23,12 +23,14 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from unittest import mock
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+import poll_fixtures
 import event_claim
 from review_fixtures import init_repo
 
@@ -211,9 +213,17 @@ def test_the_key_names_the_event_and_the_unique_field(tmp_path):
 
 # --- :126 intent, then sent --------------------------------------------------------
 
+@pytest.mark.wallclock
 def test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission(tmp_path):
     """The review's reproduction through the CLI: the winner is 'paused' --
-    it got exit 0 and never reported sent -- and the twin runs."""
+    it got exit 0 and never reported sent -- and the twin runs.
+
+    `wallclock` (T-0110): `3 < waited < 10` is elapsed time, and the grace
+    the twin waits out runs from the WINNER's claim, so a winner slowed down
+    between claiming and exiting shortens the twin's wait. Under -n auto on
+    Windows CI that read `assert (0, 0, False) == (0, 0, True)` (job
+    109855785945); locally, beside a 20-worker run, a 2.70 s winner left the
+    twin 1.82 s. Serially the bound holds."""
     root = _repo(tmp_path)
     cmd = CLAIM + ["notify", ".", "sh"]
     winner = subprocess.run(cmd, input=NOTE, cwd=root, capture_output=True, check=False, timeout=30)
@@ -225,6 +235,7 @@ def test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission(tmp_path):
     assert (winner.returncode, twin.returncode, 3 < waited < 10) == (0, 0, True)
 
 
+@pytest.mark.wallclock
 def test_the_twin_stands_down_as_soon_as_the_winner_reports_sent(tmp_path):
     root = _repo(tmp_path)
     token = event_claim.decide(root, "notify", NOTE)[1]
@@ -486,13 +497,7 @@ def _tools(tmp_path):
     """/usr/bin and /bin minus anything named python*/py*."""
     tools = tmp_path / "tools"
     tools.mkdir()
-    for source in ("/usr/bin", "/bin"):
-        if not os.path.isdir(source):
-            continue
-        for name in os.listdir(source):
-            if name.startswith(("python", "py")) or (tools / name).exists():
-                continue
-            os.symlink(os.path.join(source, name), tools / name)
+    crew_fixtures.link_path_dirs(tools, skip=lambda name: name.startswith(("python", "py")))
     return tools
 
 
@@ -630,6 +635,9 @@ def test_ps1_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
         "it 'claimed' forever")
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): took=[3.09, 4.78] and [4.35, 5.85] against the grace; serially it passes.
+@pytest.mark.wallclock
 @needs_bash
 @needs_pwsh
 def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):
@@ -764,17 +772,35 @@ def _reap(pids):
             pass
 
 
+def _probe_token(tmp_path):
+    """A survivor token unique to this call, not just to this test.
+
+    `tmp_path.name` is the same in every pytest process that runs the test
+    (the node name cut to 30 characters plus a counter), so two CI legs on one
+    host would share it and could read, or reap, each other's child through
+    `/proc`. The uuid suffix makes the token this process's own (L-0516 spec E14).
+    """
+    return f"crew-probe-child-{tmp_path.name}-{uuid.uuid4().hex}"
+
+
+def test_probe_tokens_are_unique_per_call(tmp_path):
+    a, b = _probe_token(tmp_path), _probe_token(tmp_path)
+
+    assert (a != b, a.startswith("crew-probe-child-"), b.startswith("crew-probe-child-")) == (
+        True, True, True)
+
+
 @pytest.mark.skipif(not os.path.isdir("/proc"), reason="needs /proc to find the child")
 @needs_pwsh
 def test_the_ps1_probe_timeout_kills_the_launchers_child_too(tmp_path):
-    token = f"crew-probe-child-{tmp_path.name}"
+    token = _probe_token(tmp_path)
     launcher = _launcher(tmp_path, token)
     real = tmp_path / "real"
     _stub(real, "python3", f'exec "{REAL}" "$@"')
 
     resolved = _print_python([launcher, real, _tools(tmp_path)])
-    time.sleep(0.5)
-    left = _survivors(token)
+    left = poll_fixtures.poll_until(lambda: _survivors(token), done=lambda pids: not pids,
+                                   timeout=10)
     _reap(left)
 
     assert (resolved, left) == (REAL, [])
@@ -784,7 +810,7 @@ def test_the_ps1_probe_timeout_kills_the_launchers_child_too(tmp_path):
 @needs_bash
 @pytest.mark.wallclock
 def test_the_bash_probe_is_bounded_and_kills_the_launchers_child_too(tmp_path):
-    token = f"crew-probe-child-{tmp_path.name}"
+    token = _probe_token(tmp_path)
     launcher = _launcher(tmp_path, token)
     real = tmp_path / "real"
     _stub(real, "python3", f'exec "{REAL}" "$@"')

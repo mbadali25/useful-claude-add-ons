@@ -1300,9 +1300,8 @@ SKILL_KEYS=(
   "bitbucket"
   "checkpoint-email"
   "cisco-meraki"
-  "claude-code-defaults"
-  "claude-code-tuneup"
   "cloudflare"
+  "config-tuneup"
   "doc-builder"
   "drata"
   "exchange-mailbox-cleanup"
@@ -1313,6 +1312,7 @@ SKILL_KEYS=(
   "intune-graph"
   "jira-manager"
   "knowbe4-admin"
+  "mailgun"
   "mermaid-svg-bitbucket"
   "notify"
   "obsidian-canvas"
@@ -1320,6 +1320,7 @@ SKILL_KEYS=(
   "power-automate-api"
   "repo-docs"
   "report-builder"
+  "session-defaults"
   "shipstation"
   "solomon-doc-builder"
   "solomon-sop-maker"
@@ -1336,9 +1337,8 @@ SKILL_NAME=(
   "bitbucket               - Bitbucket Cloud: git auth, PRs, pipelines, REST API"
   "checkpoint-email        - Check Point Email Security: phishing triage, quarantine"
   "cisco-meraki            - Meraki Dashboard API: inventory, events, config changes"
-  "claude-code-defaults    - Claude Code config: settings.json, permissions, hooks"
-  "claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context"
   "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
+  "config-tuneup           - Audit a slow Claude Code setup: dupes, hooks, context"
   "doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style"
   "drata                   - Drata: controls, monitors, evidence, audit prep"
   "exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export"
@@ -1349,6 +1349,7 @@ SKILL_NAME=(
   "intune-graph            - Intune via Graph: devices, compliance, app deployment"
   "jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog"
   "knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes"
+  "mailgun                 - Mailgun API: send, receive, events, stats, domain config"
   "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
   "notify                  - Ping your phone or inbox: Telegram bot (two-way) or email"
   "obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams"
@@ -1356,6 +1357,7 @@ SKILL_NAME=(
   "power-automate-api      - Power Automate flows via API: definitions, auth errors"
   "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
   "report-builder          - Deprecated - use doc-builder"
+  "session-defaults        - Claude Code config: settings.json, permissions, hooks"
   "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
   "solomon-doc-builder     - Brand pack only: Solomon house style for doc-builder"
   "solomon-sop-maker       - Deprecated - use doc-builder + solomon-doc-builder"
@@ -1670,7 +1672,7 @@ menu_label() {
   local i="$1" idx prefix
   if idx="$(group_index_for "${MENU_KEYS[$i]}")"; then
     prefix="${GROUP_PREFIXES[$idx]}"
-    # shellcheck disable=SC2059 - the template is ours, from GROUP_LABEL.
+    # shellcheck disable=SC2059 # the template is ours, from GROUP_LABEL.
     printf "${GROUP_LABEL[$idx]}" \
       "$(group_selected_count "$prefix")" "$(group_count "$prefix")"
   else

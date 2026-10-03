@@ -8,6 +8,11 @@ import os
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QA_AUDIT = os.path.join(CREW, "skills", "crew-qa-standards", "scripts", "qa_audit.py")
 _T = "tests/test_qa_audit.py::"
+# L-0529 / L-0531: the shared python-free bin fixture. Not a qa_audit mutation;
+# it rides in this tuple because sabotage.py is at max-module-lines and this is
+# the smallest sibling it already sums.
+FIXTURES = os.path.join(CREW, "tests", "crew_fixtures.py")
+_F = "tests/test_path_link_farm.py::"
 
 QA_AUDIT_MUTATIONS = (
     (
@@ -51,5 +56,23 @@ QA_AUDIT_MUTATIONS = (
         '            rows.append(_row(check.__name__, check.__name__, UNKNOWN,\n',
         '            continue\n            rows.append(_row(check.__name__, check.__name__, UNKNOWN,\n',
         _T + "test_a_check_that_raises_is_unknown_not_dropped",
+    ),
+    (
+        # A source dir reached through an alias (`/bin -> usr/bin`) is listed
+        # and walked a second time.
+        "link_path_dirs stops skipping a dir whose realpath was already linked",
+        FIXTURES,
+        "        if real in seen:\n            continue\n",
+        "",
+        _F + "test_a_dir_already_linked_through_an_alias_is_not_listed_again",
+    ),
+    (
+        # `exists` follows the link, so a dangling entry reads as absent and
+        # the same name is linked twice: the 36735895881 FileExistsError.
+        "link_path_dirs checks a linked name with exists instead of lexists",
+        FIXTURES,
+        "            if skip(name) or os.path.lexists(target):\n",
+        "            if skip(name) or os.path.exists(target):\n",
+        _F + "test_a_dangling_entry_in_the_first_dir_still_shadows_the_same_name_later",
     ),
 )

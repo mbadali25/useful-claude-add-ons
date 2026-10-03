@@ -73,6 +73,7 @@ the others. It is a matched pair for the same reason
 Run:  python3 hooks/scripts/_test/test_flavour_guard.py
 Exit 0 = all pass, 1 = something regressed, 77 = pwsh unavailable (skipped).
 """
+import atexit
 import json
 import os
 import pathlib
@@ -167,8 +168,19 @@ def _split_args(tail):
 # --------------------------------------------------------------------------
 PWSH = shutil.which("pwsh") or shutil.which("powershell")
 
+# One startup-profile cache per run of this script (L-0557): pwsh reads and
+# rewrites `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`, and
+# concurrent pwsh sharing the user's copy can crash at start-up (-6/-11). This
+# script runs its pwsh one at a time, so one dir per run is enough. A no-op for
+# Windows pwsh, which keeps the profile under LOCALAPPDATA.
+_XDG = tempfile.mkdtemp(prefix="flavour-guard-xdg-")
+atexit.register(shutil.rmtree, _XDG, ignore_errors=True)
+
 
 def pwsh(command, env=None, cwd=None, stdin=""):
+    env = dict(os.environ if env is None else env)
+    # Assigned, not setdefault: an ambient XDG_CACHE_HOME is the shared one.
+    env["XDG_CACHE_HOME"] = _XDG
     proc = subprocess.run(
         [PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         input=stdin, capture_output=True, text=True, env=env, cwd=cwd, timeout=120,
@@ -214,6 +226,7 @@ $out | ConvertTo-Json -Depth 6 -Compress
         [PWSH, "-NoProfile", "-NonInteractive", "-Command",
          script.replace("__PATHS__", literal)],
         capture_output=True, text=True, timeout=180,
+        env=dict(os.environ, XDG_CACHE_HOME=_XDG),
         # check=False: the next line inspects returncode itself and raises
         # SystemExit carrying BOTH streams. CalledProcessError would print the
         # argv and swallow the parser output that says what actually failed.

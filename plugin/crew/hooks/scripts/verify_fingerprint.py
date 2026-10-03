@@ -171,6 +171,10 @@ _GATE_OWNED_FILES = frozenset({
     # -- see the note above this set for why a blanket exclusion is wrong.
     ".crew/.verify-gate.record.json",
     ".crew/.verify-gate.timings.json",
+    # The tree-pass cache (verify_record.PASSES_PATH), same reason again: it
+    # is written after the run, and hashing it would make every run look
+    # like a change to the tree the next one compares against.
+    ".crew/.verify-gate.passes.json",
 })
 _GATE_OWNED_DIRS = (".crew/.verify-gate.lock/",)
 
