@@ -170,8 +170,8 @@ REVIEW_FIX_MUTATIONS = (
         "review.md bundles from the merge-base instead of the ticket start",
         REVIEW_DOC,
         "BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . "
-        "--base \"$TICKET\")\n",
-        "BASE=$(git merge-base HEAD main)\n",
+        "--base \"$TICKET\"); SB_RC=$?\n",
+        "BASE=$(git merge-base HEAD main); SB_RC=$?\n",
         ("tests/test_review_base.py::"
          "test_review_base_comes_from_scope_base_first"),
     ),

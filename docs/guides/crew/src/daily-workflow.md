@@ -51,7 +51,9 @@ the receipt no longer matches.
 **4. Implement.** You type `/crew:implement T-0091`. First thing it does:
 checks the receipt. If you skipped step 3, or edited the plan after
 approving it, it refuses here and tells you which. Assuming it passes, it
-records the scope base (`scope_base.py --record`), works the plan step by
+records the scope base (`scope_base.py --record`; kept if `crew_ticket.py
+activate` already recorded it, and measured against `tickets.baseBranch`
+when your branches come from `development`), works the plan step by
 step — test first, watch it fail, implement, watch it pass — and the
 **plan-approval + scope guard hook** blocks any write outside the spec's
 Touch globs before it happens, not after. Before the first step it prints the

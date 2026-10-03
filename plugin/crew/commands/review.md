@@ -115,13 +115,14 @@ step 1, and carry `$BASE` forward — step 2 reuses it rather than recomputing i
 for the same reason `$SCRATCH` is carried:
 
 ```bash
-# The ticket's START, recorded by /crew:implement (`scope_base.py --record`). The
-# bundle diffs from it but leaves out paths byte-identical to merged main (T-0100:
-# manifest `merged_main`, stderr `merged-main=`; could-not-tell leaves nothing out),
-# so it and its receipt are this ticket's change. With no record, or one this clone
-# no longer holds, scope_base.py falls back to the merge-base with the default branch
-# and says "(fallback)" on stderr; repeat that word in the verdict when it does.
-BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base "$TICKET")
+# The ticket's START, recorded by /crew:implement (`scope_base.py --record`). The bundle
+# diffs from it but leaves out paths byte-identical to merged main (T-0100: manifest
+# `merged_main`, stderr `merged-main=`; could-not-tell leaves nothing out), so it and its
+# receipt are this ticket's change. With no usable record scope_base.py falls back to the
+# merge-base with tickets.baseBranch (default origin/HEAD) and says "(fallback)"; repeat it
+# in the verdict. Exit 3 = could not tell: stop.
+BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base "$TICKET"); SB_RC=$?
+if [ "$SB_RC" -eq 3 ]; then echo "review base: could not tell - stopping (see scope-base line above)" >&2; exit 3; fi
 if [ -z "$BASE" ]; then
   # scope_base.py did not run at all (no python3). The stated fallback:
   # the merge-base. `... | sed ... || echo main` does NOT work: the || binds

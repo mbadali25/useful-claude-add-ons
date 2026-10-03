@@ -279,6 +279,19 @@ contract itself. This section is what goes wrong with the approval and the audit
   the out-of-scope change. Files git ignores (including everything under `.crew/`) and `.work/`
   itself are outside what the audit can see at all — that is by design, not a gap to work around.
 
+- **Symptom: the scope base is the merge-base with `main` on a repo whose branches come from
+  `development`.** `scope_base.py --record` says "(fallback) recorded ... the merge-base with
+  origin/main", and the review bundle or the completion audit lists hundreds of files the ticket
+  never touched. With no `tickets.baseBranch`, the base branch is `origin/HEAD`'s target, then
+  `origin/main`, then `main`, so a branch cut from `development` is measured against `main` and
+  the whole integration branch looks like this ticket's change.
+  **Fix:** set `"tickets": {"baseBranch": "development"}` in the repo's `.crew/config.json`, then
+  `scope_base.py --root . --record <id>`. A fallback recorded against the old branch is re-derived
+  ("re-derived ... was a merge-base guess against origin/main"); an exact record is never moved.
+  A value that names no commit here, or a config that does not parse, reads as **could not tell**:
+  `--record` exits 1, `--base` exits 3 with nothing on stdout, and the audit fails. It never falls
+  back to `origin/HEAD` silently. Fix the value; do not unset it to make the error go away.
+
 - **`scope.mode` values, and what "auto" means:** `off` (hooks do nothing, the default), `report`
   (allows everything, logs the row to `.crew/guard.log`), `block` (refuses out-of-scope writes and
   fails the completion audit), `auto` (`report` for the first ten tickets approved in this repo,

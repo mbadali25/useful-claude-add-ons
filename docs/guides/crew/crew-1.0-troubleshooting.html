@@ -436,6 +436,20 @@ contract itself. This section is what goes wrong with the approval and the audit
   itself are outside what the audit can see at all — that is by design, not a gap to work around.</p>
 <ul>
 <li>
+<p><strong>Symptom: the scope base is the merge-base with <code>main</code> on a repo whose branches come from
+  <code>development</code>.</strong> <code>scope_base.py --record</code> says "(fallback) recorded ... the merge-base with
+  origin/main", and the review bundle or the completion audit lists hundreds of files the ticket
+  never touched. With no <code>tickets.baseBranch</code>, the base branch is <code>origin/HEAD</code>'s target, then
+  <code>origin/main</code>, then <code>main</code>, so a branch cut from <code>development</code> is measured against <code>main</code> and
+  the whole integration branch looks like this ticket's change.
+  <strong>Fix:</strong> set <code>"tickets": {"baseBranch": "development"}</code> in the repo's <code>.crew/config.json</code>, then
+  <code>scope_base.py --root . --record &lt;id&gt;</code>. A fallback recorded against the old branch is re-derived
+  ("re-derived ... was a merge-base guess against origin/main"); an exact record is never moved.
+  A value that names no commit here, or a config that does not parse, reads as <strong>could not tell</strong>:
+  <code>--record</code> exits 1, <code>--base</code> exits 3 with nothing on stdout, and the audit fails. It never falls
+  back to <code>origin/HEAD</code> silently. Fix the value; do not unset it to make the error go away.</p>
+</li>
+<li>
 <p><strong><code>scope.mode</code> values, and what "auto" means:</strong> <code>off</code> (hooks do nothing, the default), <code>report</code>
   (allows everything, logs the row to <code>.crew/guard.log</code>), <code>block</code> (refuses out-of-scope writes and
   fails the completion audit), <code>auto</code> (<code>report</code> for the first ten tickets approved in this repo,
