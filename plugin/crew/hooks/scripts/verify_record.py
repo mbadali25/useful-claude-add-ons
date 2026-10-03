@@ -905,7 +905,10 @@ def _sync(sha, matched, cmd_log, all_run=False):
         # Only a rule whose every command actually RAN has a wall time worth
         # caching. A credited command took 0s here and costs its full price
         # wherever it runs, so caching it would price the rule as free.
-        if rule.get("unknown") and all(s == "pass" for s in statuses):
+        # Cached for EVERY rule, declared `seconds` or not: the gates price a
+        # declared rule at min(declared, cached), so a stale over-statement
+        # stops reading as chronic once one clean run here measures it.
+        if all(s == "pass" for s in statuses):
             # STORE EVEN 0s, as max(1, ceil(...)). `if total > 0` used to
             # discard a subsecond measurement outright, so a genuinely fast
             # rule with no declared `seconds` never got cached at all and

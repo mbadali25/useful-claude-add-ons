@@ -346,9 +346,16 @@ TOOLING_MUTATIONS += (
     (
         "record: a credited command's 0s is cached as the rule's cost",
         VERIFY_RECORD,
-        '        if rule.get("unknown") and all(s == "pass" for s in statuses):\n',
-        '        if rule.get("unknown"):\n',
+        '        if all(s == "pass" for s in statuses):\n',
+        '        if True:\n',
         _COVER + "test_record_covered_is_clean_and_never_cached",
+    ),
+    (
+        "record: a rule with a declared price is never measured again",
+        VERIFY_RECORD,
+        '        if all(s == "pass" for s in statuses):\n',
+        '        if rule.get("unknown") and all(s == "pass" for s in statuses):\n',
+        "tests/test_verify_gate_stop_budget.py::test_a_declared_rule_that_passes_is_measured",
     ),
 )
 if shutil.which("pwsh"):

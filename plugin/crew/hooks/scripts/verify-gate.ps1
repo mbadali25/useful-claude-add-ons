@@ -1076,6 +1076,7 @@ try {
   }
 } catch { $timings = @{} }
 $measuredUsed = @{}   # rule index -> $true when cost came from the cache
+$measuredBelow = @{}  # rule index -> declared seconds a cheaper measurement replaced
 $trulyUnknown = @{}   # rule index -> $true when it needs a fresh measurement
 # COMMAND IDENTITY includes the rule's declared env - the twin of the same
 # fix in verify-gate.sh, where the full rationale lives. Two rules running
@@ -1118,6 +1119,21 @@ foreach ($f in $changed) {
           $ruleKeys[$ri] = $key
           if (Test-CrewSeconds $r.seconds) {
             $ruleSecs[$ri] = [double]$r.seconds
+            # A cheaper measurement on this machine wins, a dearer one never
+            # does - the twin of verify-gate.sh's block, where the full
+            # rationale lives. A TYPE test, not [int]::TryParse: TryParse
+            # reads the JSON string "3" as 3, which the .sh side's
+            # int-not-bool test refuses (measured: the pair disagreed on it).
+            # ConvertFrom-Json yields [long] (7.x) or [int] (5.1) for a JSON
+            # integer, [bool] for true and [double] for 2.5.
+            if ($timings.ContainsKey($key)) {
+              $cached = $timings[$key]
+              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0 -and
+                  $cached -lt [double]$r.seconds) {
+                $ruleSecs[$ri] = [double]$cached
+                $measuredBelow[$ri] = [double]$r.seconds
+              }
+            }
           } elseif ($timings.ContainsKey($key)) {
             $cached = 0
             if ([int]::TryParse([string]$timings[$key], [ref]$cached) -and $cached -gt 0) {
@@ -1242,6 +1258,9 @@ foreach ($fn in $fallbackNotices) {
 }
 foreach ($ri in ($measuredUsed.Keys | Sort-Object)) {
   [void]$notices.Add("verify-gate: rules[$ri] priced from a cached measurement ($([int]$ruleSecs[$ri])s, measured not declared) - add ``seconds`` to verify.json to make this permanent")
+}
+foreach ($ri in ($measuredBelow.Keys | Sort-Object)) {
+  [void]$notices.Add("verify-gate: rules[$ri] priced at $([int]$ruleSecs[$ri])s, measured on this machine, below its declared $($measuredBelow[$ri])s")
 }
 $chronicRules = [System.Collections.ArrayList]@()
 $acuteRules = [System.Collections.ArrayList]@()

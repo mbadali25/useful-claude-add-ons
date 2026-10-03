@@ -4,6 +4,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.137: the Stop gate prices a declared rule at min(declared, measured here)
+
+- `verify-gate.sh` / `.ps1` price a rule that declares `seconds` at the smaller of that and a cached
+  measurement from this machine, and say so (`priced at 3s, measured on this machine, below its
+  declared 90s`). A declared price is timed once on one host and goes stale; a rule stated over
+  the Stop budget alone is chronic and never runs at Stop, however fast it is here. The minimum can
+  only make a rule cheaper, so it can turn a chronic deferral into a run and never a run into a
+  deferral. Only a positive JSON integer prices a rule (not true, 2.5, "3", 0, -1 or null), in
+  both flavours.
+- `verify_record.py` caches the wall time of every rule whose commands all ran and passed, not
+  only rules with no declared `seconds`, so there is a measurement to take the minimum of. Credited
+  (covered) commands are still never cached.
+- Nine new cases in `test_verify_gate_stop_budget.py` (sh here; ps1 on Windows): cheaper runs,
+  dearer never defers, six unusable values leave the declared price, a declared pass is measured.
+  Sabotage-checked: replace instead of min, never apply the measurement, accept a bool, cache only
+  undeclared rules, each red. The `.ps1` twin was run under `pwsh` 7.4 on Linux with `OS=Windows_NT`
+  across all eight cache values and agrees with the `.sh` side; that run first caught it accepting
+  the string "3" through `[int]::TryParse`, now a type test.
+- `sabotage.py` registers three mutations (a dearer measurement replaces the declared price, sh and
+  ps1; a cached `true` prices a rule) and `sabotage_tooling.py` one (a declared rule is never
+  measured); the existing credited-command entry is re-anchored to the new cache condition. On
+  Linux the sh and record entries go red; the ps1 entry, like the other ps1 entries, needs Windows.
+
 ### Changed — `crew` 1.0.135: the standards proposals docstring and crew-qa-standards R5 state L-0576's recovered verdict (L-0598)
 
 - `crew_standards.proposals`'s docstring no longer says any unreadable line refuses a round. A round

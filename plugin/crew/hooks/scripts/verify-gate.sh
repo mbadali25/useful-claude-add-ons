@@ -991,6 +991,7 @@ def _rule_key(rule):
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 measured_used = {}   # rule index -> True when its cost came from the cache
+measured_below = {} # rule index -> declared seconds a cheaper measurement replaced
 truly_unknown = {}   # rule index -> True when it needs a fresh measurement
 
 # COMMAND IDENTITY includes the rule's declared env, not just its text. Two
@@ -1024,6 +1025,19 @@ for f in changed:
                 if (isinstance(secs, (int, float))
                         and not isinstance(secs, bool) and secs >= 0):
                     rule_secs[ri] = secs
+                    # A measurement on THIS machine below the declared price
+                    # wins; one above it never does. Declared `seconds` are
+                    # timed on one host and go stale, and an over-stated rule
+                    # that reads as over the budget alone is chronic: never
+                    # run at Stop at all. min() can only make a rule cheaper,
+                    # so it can turn a chronic deferral into a run, and never
+                    # a run into a deferral. The cache is rewritten from every
+                    # clean run, so a rule that slows down re-prices upward.
+                    cached = _timings.get(key)
+                    if (isinstance(cached, int) and not isinstance(cached, bool)
+                            and 0 < cached < secs):
+                        rule_secs[ri] = cached
+                        measured_below[ri] = secs
                 else:
                     cached = _timings.get(key)
                     if isinstance(cached, int) and cached > 0:
@@ -1131,6 +1145,9 @@ for _fn in fallback_notices:
 for _ri in sorted(measured_used):
     notices.append("verify-gate: rules[%d] priced from a cached measurement (%ss, measured not declared) - "
                     "add `seconds` to verify.json to make this permanent" % (_ri, int(rule_secs[_ri])))
+for _ri in sorted(measured_below):
+    notices.append("verify-gate: rules[%d] priced at %ss, measured on this machine, below its declared %ss"
+                   % (_ri, int(rule_secs[_ri]), measured_below[_ri]))
 
 if budget is not None:
     unknown = [c for c in cmds if c not in cost]

@@ -2788,6 +2788,39 @@ MUTATIONS = (
          "test_an_unpriced_rule_makes_its_commands_unconditional"),
     ),
     (
+        # min(declared, measured) turned into "measured wins": a stale cache
+        # ABOVE the declared price makes a rule that fits chronic, and Stop
+        # stops running it. The whole safety argument is the minimum.
+        "a dearer cached measurement replaces a declared price",
+        VERIFY_SH,
+        "                            and 0 < cached < secs):\n",
+        "                            and 0 < cached):\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_dearer_measurement_never_defers_a_declared_rule"),
+    ),
+    (
+        # Its PowerShell twin.
+        "the PowerShell gate lets a dearer measurement replace a declared price",
+        VERIFY_PS1,
+        "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0 -and\n"
+        "                  $cached -lt [double]$r.seconds) {\n",
+        "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0) {\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_dearer_measurement_never_defers_a_declared_rule"),
+    ),
+    (
+        # A JSON true is an int in python; without the bool test a cached
+        # `true` prices a 90s rule at 1s.
+        "a cached true prices a declared rule",
+        VERIFY_SH,
+        "                    if (isinstance(cached, int) and not isinstance(cached, bool)\n"
+        "                            and 0 < cached < secs):\n",
+        "                    if (isinstance(cached, int)\n"
+        "                            and 0 < cached < secs):\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_an_unusable_measurement_leaves_the_declared_price"),
+    ),
+    (
         # A gitlink goes back to being read as a file. `open()` on a directory
         # raises, so the submodule hashes to the same "absent" constant a
         # DELETED file gets -- which is why nothing about it looked wrong. A
