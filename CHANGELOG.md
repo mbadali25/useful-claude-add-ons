@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.186: auto-resume types the resume command into its own session (T-0013)
+### Added — `crew` 1.0.214: auto-resume types the resume command into its own session (T-0013)
 
 - On the SessionStart after `/clear` or a manual `/compact`, an armed machine (`resume.auto`, T-0006)
   now TYPES the command `decide` rendered, where the terminal can be driven. The context hook runs its
