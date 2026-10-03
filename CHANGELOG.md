@@ -4,8 +4,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.145: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
+### Changed — `crew` 1.0.146: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
 
+- `verify-gate.ps1`'s four tree-cache python calls are fed `$null |`, the convention its git calls
+  already follow: a native child inheriting the hook's open, never-closed stdin parks on Windows,
+  and `test_40` / `test_40b` timed out at 20s on windows-latest without it.
 - The seven new gate mutations live in `sabotage_tooling.py`, not `sabotage.py`, which sits at
   pylint's 3400-line module cap (`C0302`, red on CI's `build (3.12)` at 3469 lines).
 

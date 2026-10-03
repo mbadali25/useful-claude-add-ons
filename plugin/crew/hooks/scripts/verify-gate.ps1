@@ -1263,6 +1263,10 @@ foreach ($ri in ($measuredBelow.Keys | Sort-Object)) {
   [void]$notices.Add("verify-gate: rules[$ri] priced at $([int]$ruleSecs[$ri])s, measured on this machine, below its declared $($measuredBelow[$ri])s")
 }
 # --- the tree-pass cache - the twin of verify-gate.sh's block ---------------
+# Every python call below is fed `$null |`, the convention this file's git
+# calls follow: a native child that inherits the hook's own stdin - held
+# open and never closed by the caller - parks on Windows, and the gate never
+# returns (test_40 / test_40b, red on windows-latest without it).
 # A command that passed on this exact tree (verify_record.py tree-snapshot
 # --stable) is credited by the run loop, not re-run; a rule every one of
 # whose commands is credited costs nothing, so it cannot spend the budget or
@@ -1273,11 +1277,11 @@ if ($matchPy -and (Test-Path $verifyRecordScript)) {
   Push-Location $root
   try {
     $global:LASTEXITCODE = 0
-    $snapOut = (& $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
+    $snapOut = ($null | & $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
     if ($LASTEXITCODE -eq 0) { $treeSnap = $snapOut.Trim() }
     if ($treeSnap) {
       $global:LASTEXITCODE = 0
-      $loadOut = (& $matchPy $verifyRecordScript passes-load $treeSnap 2>$null) | Out-String
+      $loadOut = ($null | & $matchPy $verifyRecordScript passes-load $treeSnap 2>$null) | Out-String
       if ($LASTEXITCODE -eq 0 -and $loadOut.Trim()) {
         foreach ($id in @($loadOut | ConvertFrom-Json -ErrorAction Stop)) {
           if ($id -is [string]) { $treeCached[$id] = $true }
@@ -1679,7 +1683,7 @@ function Get-CrewStableSnapshot {
   Push-Location $root
   try {
     $global:LASTEXITCODE = 0
-    $out = (& $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
+    $out = ($null | & $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
     if ($LASTEXITCODE -eq 0) { return $out.Trim() }
     return ""
   } catch { return "" } finally { Pop-Location }
@@ -2041,7 +2045,7 @@ if ($matchPy -and (Test-Path $verifyRecordScript)) {
       $logLines = @($cmdLog | ForEach-Object { ConvertTo-Json -Compress -Depth 5 -InputObject $_ }) -join "`n"
       $logLines | & $matchPy $verifyRecordScript passes-save $treePre 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
     } else {
-      & $matchPy $verifyRecordScript passes-clear *> $null
+      $null | & $matchPy $verifyRecordScript passes-clear *> $null
     }
   } catch { }
 }
