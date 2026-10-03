@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.166: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
+### Fixed — `crew` 1.0.167: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
 
 - A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
   ran under the Stop hook, which Claude Code gives that variable, but under `/crew:verify --all` the
@@ -28,6 +28,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   Bash's `/d/...` form, the relative start, the untested empty value), 3 NIT; all fixed but the
   `.ps1` cases running off Windows, which the gate's own Windows-only guard rules out. Round 2: 0
   BLOCK, 0 FIX, 3 NIT (`CDPATH`, a mutation comment, the untested unresolvable branch), all taken.
+- `test_verify_gate_rule_env_leak.py` lists `CLAUDE_PLUGIN_ROOT` among the variables the gate exports
+  on purpose; it still watches `GATE_PLUGIN_ROOT`, the shell variable the value is copied from.
+  CI caught this on Linux and Windows; the review rounds and the mapped rules did not run that file.
 
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
