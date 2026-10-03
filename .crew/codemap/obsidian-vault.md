@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@39ebbc18
+anchor: useful-claude-add-ons@a06dd790
 verified: 2026-10-02
 
 ## Does
@@ -1267,3 +1267,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `a81e4382` (main) and L-0510's `d05b0211` -> `77e8dcfd` on 2026-10-02 (L-0510 merges origin/main `e0c70fc9` (#317, L-0597 #316, L-0555 #310; crew 1.0.134) at `e6dc6b1b`, rerere off; crew 1.0.137 set last at `77e8dcfd`).** Both provenance histories kept, main's first. Main touched none of `review_ledger.py`, `review_run.py`, `review_verdict.py`, `crew_autopilot.py`, `review.md` or `autopilot.md`; `crew.md`'s `crew_autopilot.py` `questions_check` `:1246` / `QUESTIONS_SHAPE` `:1154` are L-0510's merged-file lines (main's side read `:1232` / `:1140` without L-0510's autopilot change); `repo-docs.md`'s README citation is `:2314` on the merged README (L-0555 +23). History notes were not re-mapped.
 
 **Re-anchored `4fc93b19` (main) and L-0510's `77e8dcfd` -> `96a69068` on 2026-10-03 (L-0510 merges origin/main `bd3e9ad1` (L-0598 #321, L-0587 #319; crew 1.0.135) at `d3f26a4b`, rerere off; crew 1.0.137 set last at `96a69068`).** Both provenance histories kept, main's first. Main touched no file L-0510's citations name; L-0510's `c86365ee` (a test helper) moves no cited line. History notes were not re-mapped.
+
+**Re-anchored `39ebbc18` (main) and L-0510's `96a69068` -> `a06dd790` on 2026-10-03 (L-0510 merges origin/main `2a2d6e07` (L-0592 #325, L-0587 re-pin #322; crew 1.0.139) at `39c290be`, rerere off; crew 1.0.142 set last at `a06dd790`).** Both provenance histories kept, main's first. Main touched no file L-0510's citations name (its README edit is one line, no cited line moved). History notes were not re-mapped.
