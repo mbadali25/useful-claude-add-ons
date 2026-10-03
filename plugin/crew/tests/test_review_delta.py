@@ -298,7 +298,7 @@ def test_unchanged_tree_still_takes_the_fast_path(world):
 
     assert code == 0, out
     assert out == (f"review-ledger: receipt current: round 1 clean, bundle "
-                   f"{manifest['bundle_sha256'][:12]}\n"), out
+                   f"{str(manifest['bundle_sha256'])[:12]}\n"), out
 
 
 def test_unchanged_bundle_with_rebuilt_graph_keeps_the_fast_path(world):
@@ -452,7 +452,6 @@ def test_manifest_raw_byte_changes_are_stale(world, edit):
 
 def test_manifest_duplicate_key_is_stale(world):
     _review(world)
-    path = "plugin/p/.claude-plugin/plugin.json"
     files = _bump_plugin(world, PLUGIN.format(name="p", v="1.0.1").replace(
         '"flag": true', '"flag": true,\n  "flag": false'))
     _commit(world.lane, files, "dupe")
@@ -799,7 +798,7 @@ def test_git_failing_inside_the_gate_reads_could_not_tell(world, tmp_path):
 
 def test_needs_replan_and_later_rounds_are_refused_before_the_gate(world):
     _review(world)
-    ok, number, _ = rl.reserve(str(world.lane), TICKET, "codex")
+    ok, _number, _ = rl.reserve(str(world.lane), TICKET, "codex")
     assert ok
     _main(world, {"lib.py": "def lib():\n    return 2\n"})
     _catch_up(world)
@@ -1048,5 +1047,5 @@ def test_preflight_fast_path_clean_unchanged(world, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert code == review_run.EXIT_CLEAN
     assert out.startswith(f"review: CLEAN from the existing receipt (receipt current: round 1 "
-                          f"clean, bundle {manifest['bundle_sha256'][:12]}) - nothing in the "
+                          f"clean, bundle {str(manifest['bundle_sha256'])[:12]}) - nothing in the "
                           "bundle changed since that clean round, so no round was spent"), out
