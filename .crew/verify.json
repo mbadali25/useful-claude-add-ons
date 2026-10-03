@@ -535,6 +535,24 @@
       "run": ["python3 -m pytest plugin/crew/tests/test_pytest_rule.py -q"],
       "reach": "local",
       "why": "pytest_rule.py runs the crew rules above that call it: `-n auto -m \"not wallclock\"` then `-m wallclock` serially, the way pytest-crew.yml runs the suite, or one serial run without xdist. Its exit code is what the gate reads, so the suite pins every combination: exit 5 from one half is not a failure, from both it is, and a half killed by a signal is a failure (max() of the codes would have read 0). 1.6s here. reach: local - a unit suite with the pytest calls stubbed."
+    },
+    {
+      "paths": [
+        "plugin/crew/hooks/scripts/crew_docs_check.py",
+        "plugin/crew/tests/test_docs_check.py",
+        "plugin/crew/tests/test_crew_autopilot_docs.py",
+        "plugin/crew/tests/test_crew_autopilot_tracker.py",
+        "plugin/crew/hooks/scripts/crew_autopilot.py",
+        "plugin/crew/commands/docs.md",
+        "plugin/crew/commands/implement.md",
+        "plugin/crew/commands/done.md",
+        "plugin/crew/skills/crew-docs/SKILL.md"
+      ],
+      "seconds": 8,
+      "coveredBy": "crew-suite",
+      "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_docs_check.py plugin/crew/tests/test_crew_autopilot_docs.py plugin/crew/tests/test_crew_autopilot_tracker.py -q"],
+      "reach": "local",
+      "why": "T-0022. crew_docs_check.py is the read-only docs check /crew:docs <id>, /crew:implement step 6 and /crew:done check 5 run: each document updated, not needed (<reason>) or MISSING, a changed marketplace entry's CHANGELOG line never waived by a docs.json reason, and unknown (no scope base, an unreadable docs.json) refusing like MISSING. It can refuse done, so test_docs_check.py carries must-refuse (no CHANGELOG line, a reason offered for one, a README or SECURITY.md trigger with no reason, a deferral missing from TODO.md, no scope base, a corrupt docs.json) and must-allow (release bookkeeping alone, a recorded reason, nothing deferred) cases, plus the command-order tests for docs.md, implement.md and done.md. crew_autopilot.py's docs phase and tracker step are in test_crew_autopilot_docs.py (docs before refresh, two recorded runs then a stop, unknown read as owed, docs-after-review writes nothing) and test_crew_autopilot_tracker.py (unchanged, could not update, delegated, T-0021 absent, and review_patch's bundle hash unchanged by a move for files, an Obsidian vault outside the worktree and an ignored one inside it, with T-0021 refusing an unignored one). 7.0s wall (60 passed) through pytest_rule.py on a 4-CPU Linux container (load average 5-7), 2026-10-03; the same files ran 16.5s wall serially. 8 is the xdist figure rounded up. Its mutations are not registered in sabotage.py yet: sabotage*.py is review harness and lands in its own PR (T-0087), so each was run by hand instead (the PR body records them). reach: local - every case builds a throwaway git repository and vault under pytest's tmp_path."
     }
   ],
 

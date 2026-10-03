@@ -37,6 +37,15 @@ HEADER = "status: spec   risk: high"
 
 # --- fixtures ----------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _documents_ok(monkeypatch):
+    """T-0022's docs phase reads `crew_docs_check`; these tests are about the
+    other phases, so the documents read ok unless a test says otherwise
+    (test_crew_autopilot_docs.py owns the docs phase)."""
+    monkeypatch.setattr(crew_autopilot, "_docs_state", lambda root, ticket: {
+        "state": crew_autopilot.DOCS_OK, "missing": [], "reason": ""})
+
+
 def _write(path, text):
     os.makedirs(os.path.dirname(str(path)), exist_ok=True)
     with open(str(path), "w", encoding="utf-8", newline="\n") as handle:

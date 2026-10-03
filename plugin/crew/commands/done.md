@@ -1,10 +1,10 @@
 ---
-description: Close a ticket - needs an accepted review receipt, a clean verify gate, a passing completion audit, current artifacts
+description: Close a ticket - needs an accepted review receipt, a clean gate, a passing completion audit, current artifacts and docs
 argument-hint: <ticket id>
 allowed-tools: Read, Write, Edit, Bash
 ---
 
-Close ticket $1. **All four checks below must pass. Any one failing refuses
+Close ticket $1. **All five checks below must pass. Any one failing refuses
 done** — there is no partial close.
 
 ## Check 1 — the review receipt
@@ -63,9 +63,19 @@ what the line says — `refresh with <command>`, or `stop` with its reason (a
 missing tool, or a scope base that hides the change). **Do not run the refresh here — a write now
 stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh,
 commit, then `/crew:review $1` again, then rerun this command. Documents read
-`not measured`, which is `/crew:docs`'s judgement, not a pass or a refusal.
+`not measured` here: check 5 judges them.
 
-## On all four passing
+## Check 5 — the documents this change owes
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket "$1"
+```
+
+Read-only. Any `MISSING` line, or `unknown`, refuses done: quote it. **Do not edit a document
+here — a write now stales check 1's receipt.** Fix it in `/crew:implement $1` step 6 (`/crew:docs $1`),
+commit, then `/crew:review $1` again, then rerun this command.
+
+## On all five passing
 
 1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
    that value keeps the approval, so the checks above stay true. Then move the
@@ -100,6 +110,6 @@ printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A
 refusal names `crew_train.py catch-up` (a merge, never a rebase): catch up,
 gate the merged head again, rerun this command.
 
-Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing"
+Do not run step 4 before checks 1–5 pass. "Done" that means "I stopped typing"
 is the reason nobody trusts a notification channel — the same line `/crew:work`
 opened with. <!-- deliberate -->

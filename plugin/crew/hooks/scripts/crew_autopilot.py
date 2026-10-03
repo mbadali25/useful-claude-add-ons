@@ -13,6 +13,7 @@
                                      (at most 12 lines; --json is one line)
     python3 crew_autopilot.py approve --root . --ticket <id>
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
+    python3 crew_autopilot.py tracker --root . --ticket <id> [--after CMD] [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -28,7 +29,10 @@ ramp's list, on a ticket's first approval; and, when the review ledger is
 NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
-keeps its own bytecode setting.
+keeps its own bytecode setting. T-0022's `tracker` writes too, never into a
+review bundle: what `crew_tracker.move` writes, and, with `--after
+/crew:docs ...`, one attempt appended to `.work/tickets/<id>/autopilot-docs.json`
+(below).
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -77,9 +81,12 @@ force says `take`. Exit 0 valid, 1 not.
   latest round FINDINGS, not accepted    accept-review       stop
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
+  receipt not current, documents owed    docs                /crew:docs <id>
+    ... after two recorded runs          docs                stop
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
+  receipt current, documents owed        docs-after-review   stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
@@ -101,6 +108,30 @@ that raised -- stops, as `/crew:implement` step 6 does. When the module
 cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008
 not landed)" -- never skipped.
 
+## docs and tracker (T-0022)
+
+The docs phase runs before the refresh and every review round, so the review
+receipt covers the documents. "Documents owed" is `crew_docs_check.ticket_docs`
+not saying `ok`: a MISSING line, or `unknown` (no scope base, an unreadable
+docs.json, a check that raised), which reads as owed, never as ok. After each
+`/crew:docs <id>` the command runs `tracker --after "/crew:docs <id>"`, which
+records the attempt; two attempts recorded since
+the latest review round stop with the documents named, and only a recorded
+attempt exempts the rerun from `no-progress`. A document owed after an
+accepted receipt stops as `docs-after-review`: writing it would stale the
+receipt.
+
+`tracker` derives the status from disk (`disk_status`: done or review from
+spec.md's header, in-progress once a non-fallback scope base is recorded,
+planned once approved, spec, direction) and calls T-0021's
+`crew_tracker.move`. updated, unchanged, not applicable: continue; delegated:
+the command to run in-session (Jira, SDP); could not update: stop with the
+reason and the `crew_tracker.py move` retry. No `crew_tracker` module stops as
+"tracker interface unavailable (T-0021 not landed)". Safe after a receipt
+only because every tracker write lands outside the bundle (`.work/INDEX.md`,
+a vault outside the worktree or one git ignores; T-0021 refuses one it does
+not), which `test_tracker_move_after_receipt_keeps_bundle_hash` measures.
+
 ## resume -- which ticket
 
 0. `--ticket <id>` (the command's `$1`), when given.
@@ -118,7 +149,8 @@ both: the scope guard and the completion audit judge edits by the pointer.
 With no pointer, `activate` tells the command to set it to the ticket it drives.
 
 Exit 0 always, but for `approve` and `questions-check` (above); the answer is
-in the output. An exception inside `next` or `resume` prints `stop=1` with its reason: a crash is "cannot tell", never
+in the output. An exception inside `next`, `resume`
+or `tracker` prints `stop=1` with its reason: a crash is "cannot tell", never
 silence the command could read as permission.
 
 ## deploy-allowed -- may autopilot deploy here without asking (T-0072)
@@ -155,6 +187,7 @@ import crew_config
 import crew_state
 import crew_ticket
 import review_ledger
+import scope_base
 from crew_common import git_out, read_text
 
 AUTOPILOT = "/crew:autopilot"
@@ -174,6 +207,13 @@ FALLBACK_BASE = "[fallback base]"
 # receipt or a value outside STATUS_VALUES; the stop then says so.
 HEADER_STATUSES = crew_ticket.STATUS_VALUES + ("ready", "direction", "implement")
 REFRESH_UNAVAILABLE = "refresh-artifacts unavailable (T-0008 not landed)"
+# T-0022: the docs phase and the tracker step.
+DOCS_OK = "ok"
+DOCS_MISSING = "missing"
+DOCS_ATTEMPTS = 2
+DOCS_RECORD = "autopilot-docs.json"
+DOCS_UNAVAILABLE = "docs check unavailable (crew_docs_check.py could not be imported)"
+TRACKER_UNAVAILABLE = "tracker interface unavailable (T-0021 not landed)"
 # INDEX.md status cells that say direction.md was approved: `/crew:brainstorm`
 # step 5 writes `ready`, and every later phase's own word. Any other cell --
 # blank, a typo, `parked` -- cannot tell, so it stops (a closed list, not "not
@@ -197,6 +237,13 @@ FIXED_STOPS = (
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
+    ("docs-missing", "a document is still MISSING (or the docs check is unknown) after "
+                     "two /crew:docs runs"),
+    ("docs-after-review", "a document is MISSING after an accepted review: writing it now "
+                          "stales the receipt"),
+    ("tracker-failed", "the tracker step could not update the tracker (could not update, "
+                       "or the status on disk could not be told)"),
+    ("tracker-unavailable", "the tracker interface (crew_tracker.py, T-0021) is absent"),
 )
 # Enforced by the command's procedure, not by `next` (which sees them only as
 # `no-progress` when the same command comes round again).
@@ -378,6 +425,146 @@ def _refresh_state(root, ticket):
     return {"state": STALE, "command": pending[0]["command"], "reason": reason}
 
 
+def _docs_state(root, ticket):
+    """`{"state": ok|missing, "missing": [...], "reason"}` from T-0022's
+    `crew_docs_check.ticket_docs`. Its `unknown` -- no scope base, an
+    unreadable docs.json, a check that raised -- reads as `missing`: never
+    `ok` unless the check said so."""
+    try:
+        check = importlib.import_module("crew_docs_check")
+    except ImportError:
+        return {"state": DOCS_MISSING, "missing": [], "reason": DOCS_UNAVAILABLE}
+    try:
+        result = check.ticket_docs(root, ticket)
+    except Exception as exc:  # pylint: disable=broad-except
+        return {"state": DOCS_MISSING, "missing": [],
+                "reason": f"the docs check could not run ({exc})"}
+    if result.get("status") == DOCS_OK:
+        return {"state": DOCS_OK, "missing": [], "reason": ""}
+    missing = check.missing_documents(result)
+    reason = (f"docs check says {result.get('status')}: "
+              + ("MISSING: " + "; ".join(missing) if missing else str(result.get("reason"))))
+    return {"state": DOCS_MISSING, "missing": missing, "reason": reason}
+
+
+def _docs_record_path(top, ticket):
+    return os.path.join(crew_ticket.ticket_dir(top, ticket), DOCS_RECORD)
+
+
+def _review_rounds(top, ticket):
+    """Rounds under the current plan, or -1 when the ledger cannot say."""
+    try:
+        return len(_current_rounds(review_ledger.status(top, ticket)))
+    except Exception:  # pylint: disable=broad-except
+        return -1
+
+
+def _docs_attempts(top, ticket):
+    """`/crew:docs` runs autopilot recorded since the latest review round. An
+    unreadable record counts as spent: it can only stop, never loop."""
+    path = _docs_record_path(top, ticket)
+    if not os.path.lexists(path):
+        return 0
+    data = _read_json(path)
+    attempts = data.get("attempts") if isinstance(data, dict) else None
+    if not isinstance(attempts, list):
+        return DOCS_ATTEMPTS
+    rounds = _review_rounds(top, ticket)
+    return sum(1 for a in attempts if isinstance(a, dict) and a.get("round") == rounds)
+
+
+def record_docs_attempt(root, ticket):
+    """Append one `/crew:docs` run to `.work/tickets/<id>/autopilot-docs.json`
+    (under `.work/`, so outside every review bundle), computed in full and
+    written once through a temp file. Returns the attempts since the latest
+    review round, this one included."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    path = _docs_record_path(top, ticket)
+    data = _read_json(path) if os.path.lexists(path) else {"attempts": []}
+    attempts = data.get("attempts") if isinstance(data, dict) else None
+    if not isinstance(attempts, list):
+        # Never reset a record that cannot be read: it reads as spent.
+        raise RuntimeError(f"{_rel(top, path)} is unreadable; not overwritten")
+    docs = _docs_state(top, ticket)
+    attempts.append({"round": _review_rounds(top, ticket), "missing": docs["missing"],
+                     "state": docs["state"]})
+    text = json.dumps({"ticket": ticket, "attempts": attempts}, indent=2) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temp = path + ".tmp"
+    with open(temp, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    os.replace(temp, path)
+    return _docs_attempts(top, ticket)
+
+
+def disk_status(root, ticket):
+    """The lifecycle status files on disk say, or None when none can be told:
+    done/review from spec.md's header, in-progress once a non-fallback scope
+    base is recorded, planned once the approval is accepted, spec once spec.md
+    exists, direction once direction.md does."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    folder = crew_ticket.ticket_dir(top, ticket)
+    spec = read_text(os.path.join(folder, "spec.md"))
+    header = _header_status(spec) if spec is not None else None
+    if header in ("done", "review"):
+        return header
+    if scope_base.resolve(top, ticket)[1] == scope_base.RECORDED:
+        return "in-progress"
+    if spec is not None and crew_ticket.accepted(top, ticket).get("status") == "approved":
+        return "planned"
+    if spec is not None:
+        return "spec"
+    if os.path.isfile(os.path.join(folder, "direction.md")):
+        return "direction"
+    return None
+
+
+def _retry(ticket, status):
+    return (f"python3 ${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew_tracker.py move --root . "
+            f"--ticket {ticket} --to {status}")
+
+
+def tracker_step(root, ticket):
+    """T-0022's tracker step: move the tracker to `disk_status` through
+    T-0021's `crew_tracker.move`. `{"state", "stop", "status", "command",
+    "reason", "lines"}`; `state` is updated, unchanged, not applicable,
+    delegated (run `command` in-session) or stop. Writes only what
+    `crew_tracker.move` writes: `.work/INDEX.md`, a vault outside the
+    worktree or one git ignores, or nothing (Jira, SDP)."""
+    crew_ticket.check_ticket(ticket)
+    try:
+        tracker = importlib.import_module("crew_tracker")
+    except ImportError:
+        return {"state": "stop", "stop": True, "status": None, "command": "",
+                "reason": TRACKER_UNAVAILABLE, "lines": []}
+    status = disk_status(root, ticket)
+    if not status:
+        return {"state": "stop", "stop": True, "status": None, "command": "",
+                "reason": f"could not tell {ticket}'s status from disk (no direction.md)",
+                "lines": []}
+    report = tracker.move(root, ticket, status)
+    results = report.get("results") or []
+    lines = [tracker._line(r) for r in results]  # pylint: disable=protected-access
+    failed = [r for r in results if r.get("state") not in (
+        tracker.UPDATED, tracker.UNCHANGED, tracker.NOT_APPLICABLE, tracker.DELEGATED)]
+    if failed or not results:
+        why = "; ".join(f"{r.get('backend')}: {r.get('reason')}" for r in failed) \
+            or "the tracker returned no result"
+        return {"state": "stop", "stop": True, "status": status, "command": _retry(ticket, status),
+                "reason": f"tracker could not update to {status}: {why}", "lines": lines}
+    delegated = [r for r in results if r.get("state") == tracker.DELEGATED]
+    if delegated:
+        return {"state": tracker.DELEGATED, "stop": False, "status": status,
+                "command": delegated[0].get("command") or "",
+                "reason": delegated[0].get("reason") or "", "lines": lines}
+    state = (tracker.UPDATED if any(r.get("state") == tracker.UPDATED for r in results)
+             else tracker.UNCHANGED if any(r.get("state") == tracker.UNCHANGED for r in results)
+             else tracker.NOT_APPLICABLE)
+    return {"state": state, "stop": False, "status": status, "command": "",
+            "reason": "; ".join(lines), "lines": lines}
+
+
 def _header_only_change(contract, receipt):
     """The spec header status the approval was taken at, when changing only
     that `status:` word back makes spec.md hash to the approved bytes and
@@ -548,6 +735,17 @@ def _review_phase(top, ticket, evidence, answer):
 def _toward_review(top, ticket, answer, ok, message, note=""):
     """Refresh before the next review round, then review; or done once a
     receipt stands. `note` prefixes the review reason (a refunded round)."""
+    if not ok:
+        docs = _docs_state(top, ticket)
+        if docs["state"] != DOCS_OK:
+            tried = _docs_attempts(top, ticket)
+            if tried >= DOCS_ATTEMPTS:
+                return answer("docs", True, f"documents still MISSING after {tried} "
+                              f"/crew:docs runs: {docs['reason']} - a human looks",
+                              f"/crew:docs {ticket}")
+            found = answer("docs", False, f"before the refresh and the next review round - "
+                           f"{docs['reason']}", f"/crew:docs {ticket}")
+            return dict(found, docs_rerun=tried > 0)
     refresh = _refresh_state(top, ticket)
     if refresh["state"] == UNAVAILABLE:
         return answer("refresh", True, refresh["reason"])
@@ -562,6 +760,11 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
         return answer("stale-after-review", True, "an artifact is stale after an "
                       "accepted review; refreshing now would stale the receipt - human "
                       f"decides. {refresh['reason']}")
+    docs = _docs_state(top, ticket)
+    if docs["state"] != DOCS_OK:
+        return answer("docs-after-review", True, "a document is MISSING after an accepted "
+                      "review; writing it now stales the receipt - human decides. "
+                      f"{docs['reason']}")
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
@@ -580,6 +783,7 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
     rerun = result.pop("refunded_rerun", False)
+    rerun = result.pop("docs_rerun", False) or rerun
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -1616,6 +1820,26 @@ def _policy_main(args):
     return code
 
 
+def _tracker_main(args):
+    """`tracker` (T-0022): with `--after "/crew:docs ..."`, record that docs
+    run first; then the tracker step. Exit 0 with the answer in the line, as
+    `next` does: a crash, or a docs run that could not be recorded, is
+    `stop=1`, never silence."""
+    try:
+        if args.after.split()[:1] == ["/crew:docs"]:
+            record_docs_attempt(args.root, args.ticket)
+        result = tracker_step(args.root, args.ticket)
+    except Exception as exc:  # pylint: disable=broad-except
+        result = {"state": "stop", "stop": True, "status": None, "command": "",
+                  "reason": _failure(exc), "lines": []}
+    text = _line(tracker=result["state"].replace(" ", "-"), stop=int(result["stop"]),
+                 status=result["status"] or "", command=result["command"],
+                 reason=_one_line(result["reason"]))
+    text += "".join(f"\n{_one_line(row)}" for row in result["lines"])
+    sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    return 0
+
+
 def _cli_value(value, token=False):
     """`value` as one field of deploy-allowed's one line: itself when it is a
     printable string (for a `token`, non-empty with no whitespace either),
@@ -1666,13 +1890,14 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
     for name in ("next", "resume", "settings", "stops", "route", "status", "approve",
-                 "questions-check"):
+                 "questions-check", "tracker"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
-    for name in ("next", "approve", "questions-check"):
+    for name in ("next", "approve", "questions-check", "tracker"):
         sub.choices[name].add_argument("--ticket", required=True)
+    sub.choices["tracker"].add_argument("--after", default="")
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
     given = sub.choices["route"].add_mutually_exclusive_group()
@@ -1702,6 +1927,8 @@ def main(argv):
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check"):
         return _policy_main(args)
+    if args.action == "tracker":
+        return _tracker_main(args)
     if args.action == "status":
         try:
             result = status(args.root, args.ticket or None)

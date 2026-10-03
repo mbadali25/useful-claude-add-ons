@@ -85,36 +85,36 @@ confirm the `.crew/verify.json` rule it falls under actually fires.
 
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
-Coverage above is the tests. Then `/crew:docs`, deciding which documents this
-touches ("none" is common and correct). Then commit, and check the code maps,
-diagrams and code graph this ticket's changed paths reach:
+Coverage above is the tests. Then `/crew:docs $1`, which records each `not needed` reason and deferral
+in `.work/tickets/$1/docs.json` ("none" is common and correct), and its read-only check:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket $1
+```
+
+On `MISSING` run `/crew:docs $1` again; `MISSING` after the second run, or `unknown`: stop and report.
+Then commit, and check the code maps, diagrams and code graph this ticket's changed paths reach:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1
 ```
 
-For each `refresh with` line, run the command it names, commit the result and re-run until it says
-`fresh` — an `unknown` whose anchor names no commit (a squash-merged branch) included: the refresh
-re-anchors it. These writes need no Touch entry when they are what a refresh writes: the completion
-audit admits an artifact a path you changed reaches, as a re-anchor (`anchor:` or provenance sha moved
-forward, to HEAD or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py
-rules`, the graph after a code change); anything else there needs Touch, and the audit names the reason.
-A `stop` ends the loop, on an artifact line (a missing tool, git unable to diff) or on the top line (a
-base that hides or may hide the change, an unreadable config): report it. Documents read `not measured`,
-never a pass. Commit the refresh before `/crew:review $1` builds its bundle.
+For each `refresh with` line, run its command, commit, re-run until `fresh` (an `unknown` whose anchor
+names no commit, a squash-merged branch, included). The audit admits a re-anchor or regeneration of an
+artifact a changed path reaches with no Touch entry, and names the reason for anything else. A `stop`
+ends the loop, on an artifact line (a missing tool, git unable to diff) or on the top line (a base that
+hides the change, an unreadable config): report it. Commit the refresh before `/crew:review $1` builds its bundle.
 Then the **required self-check** (`crew-standards` skill): run
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
-every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1`
-until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
-Set `spec.md`'s header to `status: review` — that edit keeps the approval: the
-digest normalises only the header's status value — and run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer every row of
+`.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1` until it exits 0.
+`/crew:review` refuses without a current stamp; any later edit re-stamps. Set `spec.md`'s header to
+`status: review` — that edit keeps the approval: the digest normalises only the header's status value — and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
 handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.
 
 ## 7. Done is not this command's
 
-`/crew:done $1` moves it to `done` once the review receipt, the gate, the
-completion audit and the artifact check all pass — this command does not set
-`done` itself.
+`/crew:done $1` moves it to `done` once the review receipt, the gate, the completion audit, the artifact
+check and the docs check all pass — this command does not set `done` itself.

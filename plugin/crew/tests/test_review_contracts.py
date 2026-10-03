@@ -209,6 +209,9 @@ def test_autopilot_reads_a_ledger_the_real_api_wrote(tmp_path, monkeypatch, verd
     monkeypatch.setattr(review_ledger, "check_receipt", lambda root, ticket: (False, "no receipt"))
     monkeypatch.setattr(crew_autopilot, "_refresh_state", lambda root, ticket: {
         "state": crew_autopilot.FRESH, "command": "", "reason": ""})
+    # T-0022's docs phase precedes the refresh; this test is about the ledger.
+    monkeypatch.setattr(crew_autopilot, "_docs_state", lambda root, ticket: {
+        "state": crew_autopilot.DOCS_OK, "missing": [], "reason": ""})
 
     def answer(phase, stop, reason, command=""):
         return {"phase": phase, "stop": stop, "reason": reason, "command": command}
