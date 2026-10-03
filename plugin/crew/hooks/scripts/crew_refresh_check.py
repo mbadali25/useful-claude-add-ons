@@ -74,10 +74,18 @@ a subject that does not name it is not caught -- the limit of reading
 subjects. `--json` carries `base_source`, so a caller need not parse prose
 to tell a recorded base from a fallback.
 
-## Four values, and the unknowns stay unknown
+## Five values, and the unknowns stay unknown
 
-`fresh`, `stale`, `unknown`, and `not applicable` for a repo with no graph
-file. An anchor that is absent (codemap) or names no commit here, a map that
+`fresh`, `fresh-uncommitted`, `stale`, `unknown`, and `not applicable` for a
+repo with no graph file. `fresh` means current AND committed (T-0063):
+an artifact whose refresh is right but whose own file -- the map, the diagram
+source or a same-stem render, anything under `graph.out` -- has uncommitted
+changes is `fresh-uncommitted`, and so is the whole answer when any path
+under REFRESH_ARTIFACT_PATHS is modified, staged, or untracked and not
+ignored, owned by an in-scope artifact or not (`uncommitted` lists them).
+It refuses as `stale` does, and the fix is a commit, not a refresh.
+Precedence is `unknown` > `stale` > `fresh-uncommitted` > `fresh`; a listing
+git cannot give is `unknown`, never clean. An anchor that is absent (codemap) or names no commit here, a map that
 cites no path, a diff git could not run, a graph with no `built_at_commit`,
 graphify missing on this machine, a scope base that hides or may hide the
 change, an artifact dir that cannot be listed, an artifact that cannot be read,
@@ -218,6 +226,7 @@ from crew_freshness import (
 )
 
 FRESH = "fresh"
+FRESH_UNCOMMITTED = "fresh-uncommitted"
 STALE = "stale"
 UNKNOWN = "unknown"
 NOT_APPLICABLE = "not applicable"
@@ -417,6 +426,30 @@ def _judge(root, sha, reached, untracked):
     if pending:
         return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True
     return STALE, f"{_few(sorted(moved))} changed since its anchor {sha[:12]}", True
+
+
+def _uncommitted(top, dirs, untracked):
+    """Sorted paths under `dirs` that differ between HEAD and the working
+    tree -- modified or staged -- plus the members of `untracked` (never an
+    ignored file) under them; None when git could not answer, which is
+    never read as clean (T-0063)."""
+    moved = _moved_in_tree(top, "HEAD", dirs)
+    if moved is None:
+        return None
+    new = [p for p in untracked if any(_reaches(d, p) for d in dirs)]
+    return sorted(set(moved) | set(new))
+
+
+def _owned(item, uncommitted, diagrams, graph_out):
+    """The uncommitted paths that are `item`'s own refreshed file: its map,
+    its diagram source or a same-stem render beside it, or the graph dir."""
+    kind, name = item["kind"], item["name"]
+    if kind == "codemap":
+        return [p for p in uncommitted if p == f".crew/codemap/{name}.md"]
+    if kind == "diagram":
+        return [p for p in uncommitted if p.rsplit("/", 1)[0] == diagrams
+                and os.path.splitext(p.rsplit("/", 1)[-1])[0] == name]
+    return [p for p in uncommitted if _reaches(graph_out, p)] if kind == "graph" else []
 
 
 def _reaches(entry, path):
@@ -1296,7 +1329,7 @@ def _unconfirmed(result, stop, reason):
     reason; an artifact already unknown keeps its own, and a missing graph
     file stays not applicable -- no base changes either."""
     for item in result["artifacts"]:
-        if item["status"] in (FRESH, STALE):
+        if item["status"] in (FRESH, FRESH_UNCOMMITTED, STALE):
             item.update(status=UNKNOWN, refreshable=False,
                         reason=f"{stop} - measured {item['status']} against it, "
                                "which confirms nothing")
@@ -1306,16 +1339,17 @@ def _unconfirmed(result, stop, reason):
 
 def _unmeasured(reason, stop, source):
     return {"status": UNKNOWN, "reason": reason, "stop": stop, "base_source": source,
-            "artifacts": [], "documents": NOT_MEASURED}
+            "artifacts": [], "documents": NOT_MEASURED, "uncommitted": []}
 
 
 def ticket_freshness(root, ticket, which=shutil.which):
     """`{"status", "reason", "stop", "base_source", "artifacts": [{"kind",
     "name", "status", "reason", "command", "refreshable"}], "documents": "not
-    measured"}`.
+    measured", "uncommitted": [path, ...]}`.
 
     `status` is `unknown` if any artifact is unknown, else `stale` if any is
-    stale, else `fresh` -- unless the scope base cannot be trusted, which is
+    stale, else `fresh-uncommitted` if any artifact is or `uncommitted` is
+    not empty, else `fresh` -- unless the scope base cannot be trusted, which is
     `unknown` whatever the artifacts say, and then so is every artifact that
     was measured against it. A recorded base is doubted as a fallback is when
     a commit behind it names the ticket. `stop` is None, or the short reason
@@ -1350,7 +1384,8 @@ def ticket_freshness(root, ticket, which=shutil.which):
     info = _read_graph(top, cfg)
     graph_out = _relative(top, os.path.dirname(info["path"]))
     diagrams = contained_path(top, _diagrams_dir(cfg), DIAGRAMS_DIR_DEFAULT)
-    own = refresh_artifact_paths(top, cfg) + [".work"]
+    dirs = refresh_artifact_paths(top, cfg)
+    own = dirs + [".work"]
     changed = {p for p in every
                if not _bookkeeping(p) and not any(_reaches(o, p) for o in own)}
     code = sorted(p for p in changed if not _is_noncode(p, graph_out))
@@ -1361,10 +1396,21 @@ def ticket_freshness(root, ticket, which=shutil.which):
     if graph:
         artifacts.append(graph)
 
+    dirty = _uncommitted(top, dirs, untracked)
+    for item in artifacts:
+        owned = _owned(item, dirty or [], _relative(top, diagrams), graph_out)
+        if item["status"] == FRESH and owned:
+            item.update(status=FRESH_UNCOMMITTED, reason=item["reason"] + (
+                f"; its refreshed file is uncommitted ({_few(owned)}): commit it"))
     statuses = {a["status"] for a in artifacts}
-    overall = UNKNOWN if UNKNOWN in statuses else STALE if STALE in statuses else FRESH
+    overall = (UNKNOWN if UNKNOWN in statuses else STALE if STALE in statuses
+               else FRESH_UNCOMMITTED if FRESH_UNCOMMITTED in statuses or dirty else FRESH)
     result = {"status": overall, "reason": f"scope base {base[:12]} ({why})", "stop": None,
-              "base_source": source, "artifacts": artifacts, "documents": NOT_MEASURED}
+              "base_source": source, "artifacts": artifacts, "documents": NOT_MEASURED,
+              "uncommitted": dirty or []}
+    if dirty is None:
+        result.update(status=UNKNOWN, stop="git could not list uncommitted refresh artifacts",
+                      reason=f"git could not list uncommitted refresh artifacts ({why})")
     if source == scope_base.RECORDED:
         doubt = _named_behind(top, base, ticket)
         if doubt:
@@ -1392,6 +1438,8 @@ def _render(ticket, result):
     top = f"refresh-check {ticket}: {result['status']} - {result['reason']}"
     if result.get("stop"):
         top += f"; stop - {result['stop']}"
+    elif result["status"] == FRESH_UNCOMMITTED:
+        top += "; commit the refreshed artifacts, then re-run"
     lines = [top]
     for item in result["artifacts"]:
         line = f"  {item['kind']} {item['name']}: {item['status']} - {item['reason']}"
@@ -1400,8 +1448,10 @@ def _render(ticket, result):
         elif item["status"] == UNKNOWN:
             line += "; stop - a refresh cannot settle this, report it"
         lines.append(line)
+    if result.get("uncommitted"):
+        lines.append(f"  uncommitted: {_few(result['uncommitted'])} - commit these, then re-run")
     if not result["artifacts"]:
-        if result["status"] in (FRESH, STALE):
+        if result["status"] in (FRESH, FRESH_UNCOMMITTED, STALE):
             lines.append("  no codemap, diagram or graph cites a path this ticket changed")
         else:
             lines.append(f"  not measured - {result.get('stop') or result['reason']}")
@@ -1410,7 +1460,7 @@ def _render(ticket, result):
 
 
 def main(argv):
-    """Exit 0 fresh, 1 stale or unknown, 2 usage error."""
+    """Exit 0 fresh, 1 fresh-uncommitted, stale or unknown, 2 usage error."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
