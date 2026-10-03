@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.185: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
+### Changed — `crew` 1.0.211: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
   `Co-Authored-By` and wins: the owner's own instructions decide attribution, crew never adds a
@@ -15,8 +15,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   than precedence, so a cloned repo's `[]` never disarms the machine owner's list; a corrupt layer
   or malformed value is unknown, never `[]`. Template leaf count 129 -> 130; CONFIG.md §22.
 - `crew_trailers.py --check --root . --ticket <id>` reports `trailers: clean (<n> commits)`,
-  `trailers: FINDING <sha7> <Token>` per offending commit in `<scope base>..HEAD`, or
-  `trailers: unknown - <why>` (exit 0/1/2). `/crew:done` runs it as a report: it never refuses
+  `trailers: FINDING <sha7> <Token>` per offending commit in
+  `git log --first-parent <scope base>..HEAD` (the ticket's own commits, not what a merge of main
+  brought in), or `trailers: unknown - <why>`, including any unexpected error (exit 0/1/2). `/crew:done` runs it as a report: it never refuses
   and crew never rewrites the commits. History is left as it is.
 - Not in this release: the scope guard's refusal of a commit carrying a listed trailer, its
   must-block/must-allow suite and its sabotage entries. They touch review/gate harness paths
