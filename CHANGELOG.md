@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.187: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.204: QA standards for repositories crew sets up (L-0618)
 
 - On Windows, E4 read CI paths as `.github\workflows\...` and so never asked a GitHub deploy
   workflow for its `concurrency:` group; every comparison and every printed path is now `/`
