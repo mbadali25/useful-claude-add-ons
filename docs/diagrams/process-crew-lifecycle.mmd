@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@d95d8b25 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@52f03271 on 2026-10-03. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -163,7 +163,7 @@
 %%     :75 one-step plan, still /crew:approve; :94 one review round.
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
-%% AFTER approval - plan.md:60 (`planned`), implement.md:112 (`review`) and
+%% AFTER approval - plan.md:60 (`planned`), implement.md:111 (`review`) and
 %% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
@@ -323,8 +323,8 @@ flowchart TB
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:105-109"]
-        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-113"]
-        im4 --> im5["then /crew:review last<br/>:114"]
+        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-112"]
+        im4 --> im5["then /crew:review last<br/>:113"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
@@ -363,7 +363,7 @@ flowchart TB
         dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
         ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
         ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit,<br/>gate the merged head<br/>:95-98" --> im5
     end
 
     fix -.-> BR
@@ -546,3 +546,4 @@ flowchart TB
 %% Re-anchored e2c11c0b -> 0891d6a6 (L-0574 merges main ffeb0e2f, L-0598 #321, at 26d2c1c0, then the round-9 fixes in review_checks.py): main changed crew_standards.py from :726 (proposals), past every line this diagram cites (sc1 :105-109 is implement.md); review_run.py did not change. No node or edge changed.
 %% Re-anchored 0891d6a6 -> 4dcad808 (L-0574 merges main 6ac3b1b3 at 4dcad808, rerere disabled): main changed none of the files this diagram cites (L-0587 touched scripts/, .crew/verify.json, a workflow and README's pin); both provenance histories kept. No node or edge changed.
 %% Re-anchored 4dcad808 -> d95d8b25 (L-0574 merges main 2a2d6e07, L-0592 #325, at d95d8b25, rerere disabled): implement.md step 2 re-wrapped in place by L-0592, line count unchanged, so im2 :38-42 and im0 :17-23 hold; review_run.py did not change. No node or edge changed.
+%% Re-anchored d95d8b25 -> 52f03271 (L-0522 PR 1, on main 8123fe74): done.md's catch-up refusal now names the landing order (catch up, resolve, bump, refresh, commit, gate, rerun), so the ln1 edge reads :95-98 with that order; implement.md step 6 joined two lines and gained one, so im4 reads :110-112, im5 :113 and the status-edit note implement.md:111; crew_train.py's refusal text changed, no node cites its lines. No node added or removed.

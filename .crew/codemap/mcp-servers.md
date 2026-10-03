@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@d95d8b25
+anchor: useful-claude-add-ons@52f03271
 verified: 2026-10-01
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -665,3 +665,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4dcad808` -> `819a2d2b` on 2026-10-02 (L-0574: three test_review_checks.py cases made to pass on a real Windows host (PR #323 CI); citations re-mapped by difflib).**
 
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
+
+**Re-anchored `d95d8b25` -> `52f03271` on 2026-10-03 (L-0522 PR 1 at 52f03271, on main 8123fe74 (L-0574 #323, crew 1.0.140): `crew_train.py` check-land's two catch-up refusals name the landing order (`LANDING_ORDER`, six lines added above `check_land`, three in the module docstring); `done.md`, `implement.md` step 6, the README train section and `daily-workflow.md` say the same; BUDGETS re-measured; citations re-mapped by difflib).**
