@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.156: the review prompt shows the gate's real answer and the recurring-findings classes (docs/review/08, defects 1 and 2)
+### Fixed — `crew` 1.0.157: the review prompt shows the gate's real answer and the recurring-findings classes (docs/review/08, defects 1 and 2)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
   `review_run.py` had reserved on a verified CI receipt for HEAD (`review_gate.accepted_state`, crew
@@ -26,6 +26,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   receipt asked on a clean pass). `test_build_states_every_missing_piece` now expects `No verify gate`
   for its gate-less fixture. Three mutations registered in `sabotage_tooling.py`, all red; Sonnet 5.5
   review round 1 (1 BLOCK, 4 FIX, 3 NIT) closed.
+- Review round 2 (0 BLOCK, 2 FIX, 3 NIT). The receipt is asked through `ci_receipt.check` itself, not
+  `accepted_state`: that re-asks `gate_state`, so a local pass landing between the two calls (the Stop
+  gate finishing mid-build) came back VERIFIED and was printed as a receipt. The block now holds ONE
+  local answer and asks only the receipt after it; its `Gate answer` line states both, as
+  `accepted_state`'s reason does. The marker file's own text is folded too, and every gate line is
+  tested for it. Eleven more cases (the race, a local UNKNOWN or raising local gate still taking a
+  receipt, a marker behind HEAD, the fold on every line); a fourth mutation registered. Eight
+  mutations that survived or would have are red.
 
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
