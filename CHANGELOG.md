@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.158: the review prompt shows the gate's real answer and the recurring-findings classes (docs/review/08, defects 1 and 2)
+### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
   `review_run.py` had reserved on a verified CI receipt for HEAD (`review_gate.accepted_state`, crew
@@ -22,14 +22,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   stderr cannot open lines of its own in the prompt and a long local reason cannot hide the
   receipt's answer. Building the prompt on a tree the marker does not cover can now make the
   receipt's `gh api` calls, as `review_run.py` already does.
-- `recurring_findings.review_block` was written for the reviewer and had no caller. `review_prompt.build`
-  now appends it after the standards checklist, scoped to the bundle's changed files. `README.md`
-  and `review.md`'s comment list both additions.
-- `test_review_prompt.py` grows from 21 to 41 cases; four were red on main before the fix. The rest
+- Defect 2 (`recurring_findings.review_block` had no caller) was fixed independently by L-0601 (#327,
+  crew 1.0.162), which landed first; this change keeps its one call, its tests and its mutation, and
+  drops the duplicates this branch had. `README.md` and `review.md` name the receipt wording.
+- `test_review_prompt.py` gains 18 receipt-block cases; four were red on main before the fix. The rest
   pin what three Sonnet 5.5 review rounds found (round 1: 1 BLOCK, 4 FIX, 3 NIT, the BLOCK a local
   pass on a dirty tree printed as a receipt; round 2: 0 BLOCK, 2 FIX, 3 NIT, the same label reached
   by a race; round 3: 0 BLOCK, 0 FIX, 4 NIT). `test_build_states_every_missing_piece` now expects
-  `No verify gate` for its gate-less fixture. Four mutations are registered in `sabotage_tooling.py`,
+  `No verify gate` for its gate-less fixture. Three mutations are registered in `sabotage_tooling.py`,
   all red; each mutation a review round found surviving was re-run by hand and is red.
 
 ### Changed — repository: `_verify/smoke.sh` runs in CI, and a missing `pwsh` is a SKIP
@@ -44,6 +44,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   CI is unaffected: the runner carries `pwsh`, and the "PowerShell static checks" step fails if
   it ever does not.
 
+### Added - `crew` 1.0.162: the recurring-findings checklist in the review prompt (L-0601, L-0592 PR 2)
+
+- **What.** `review_prompt.build` now appends `recurring_findings.review_block` after the development
+  standards checklist and before the web tests, so every reviewer (Codex, Copilot or the Claude
+  fallback) reads the same recurring-findings classes the implementer saw, scoped to the bundle's
+  changed files. The block says it does not bound the review; an unusable manifest lists every class
+  under `UNKNOWN:`.
+- **Sabotage.** New `plugin/crew/tests/sabotage_recurring.py` (seventeen entries: L-0575's checklist
+  guards, L-0592's eight fixes, and the prompt dropping the block), appended to `sabotage.py`'s
+  MUTATIONS; each goes red on its named test.
+- **Docs.** `/crew:review`'s contract comment, the crew README's prompt paragraph, the
+  working-with-codex guide (rebuilt), the crew code map and the lifecycle diagram. `.crew/verify.json`'s
+  recurring-findings rule now also runs `test_review_prompt.py`.
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

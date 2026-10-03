@@ -6,6 +6,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import review_prompt as rp
+import recurring_findings
 import review_verdict
 from review_fixtures import git, init_repo
 
@@ -276,16 +277,6 @@ def test_a_clean_local_pass_on_head_asks_no_receipt(repo, monkeypatch):
     assert "Gate answer for HEAD" not in text
 
 
-def test_the_recurring_findings_block_reaches_the_reviewer(repo):
-    """Defect 2: recurring_findings.review_block was written for the reviewer
-    and had no caller. It follows the standards checklist, scoped to the
-    bundle's changed files."""
-    text = rp.build(str(repo), "T9", LISTED)
-
-    header = "== Recurring review findings for these paths (appendix) =="
-    assert header in text
-    assert text.index("== Development standards checklist (appendix) ==") < text.index(header)
-
 
 def test_a_local_pass_on_a_dirty_tree_is_never_called_a_ci_receipt(repo, monkeypatch):
     """Review r1 BLOCK: the marker at HEAD plus a dirty tree its fingerprint
@@ -427,10 +418,39 @@ def test_an_unknown_local_gate_still_takes_a_ci_receipt(repo, monkeypatch, local
     assert len(calls) == 1
 
 
-def test_the_recurring_findings_block_is_scoped_to_the_bundle(repo):
-    """Review r1: the block is keyed to the manifest's changed files, so a
-    usable manifest never falls back to the list-everything UNKNOWN form."""
-    text = rp.build(str(repo), "T9", LISTED)
+RECURRING_HEAD = "== Recurring review findings for these paths (appendix) =="
+FILES = {"staged_files": [], "unstaged_files": [], "untracked_files": []}
 
-    block = text[text.index("== Recurring review findings for these paths (appendix) =="):]
-    assert "UNKNOWN:" not in block.split("\n\n", maxsplit=1)[0]
+
+def _webtest_findings(repo, ticket):
+    folder = repo / ".work" / "tickets" / ticket / "webtest"
+    folder.mkdir(parents=True)
+    (folder / "findings.json").write_text('{"findings": []}', encoding="utf-8")
+
+
+def test_build_carries_the_recurring_findings_block(repo):
+    """L-0575/L-0601: the reviewer gets the recurring-findings classes keyed to
+    the bundle's changed files, after the standards checklist and before the
+    web tests, and a class keyed to none of them is left out."""
+    _webtest_findings(repo, "T9")
+    ps1 = rp.build(str(repo), "T9", dict(MANIFEST, committed_files=["a/b.ps1"], **FILES))
+    docs = rp.build(str(repo), "T9", dict(MANIFEST, committed_files=["docs/a.md"], **FILES))
+    order = [ps1.index("== Development standards checklist"), ps1.index(RECURRING_HEAD),
+             ps1.index("== Web tests ==")]
+
+    assert RECURRING_HEAD in docs
+    assert "PowerShell and Bash twins drift apart" in ps1
+    assert "PowerShell and Bash twins drift apart" not in docs
+    assert order == sorted(order)
+    assert "This list does not bound the review" in ps1[order[1]:order[2]]
+
+
+def test_build_lists_every_recurring_class_when_the_manifest_cannot_say(repo):
+    """A manifest without its file lists cannot scope the checklist: every
+    class is listed under UNKNOWN, never none."""
+    text = rp.build(str(repo), "T9", MANIFEST)
+    block = text[text.index(RECURRING_HEAD):]
+    shipped = [e["id"] for e in recurring_findings.parse(recurring_findings.data_path())[0]]
+
+    assert "UNKNOWN: the manifest has no committed_files list" in block
+    assert all(f"\n{sid} " in block for sid in shipped)

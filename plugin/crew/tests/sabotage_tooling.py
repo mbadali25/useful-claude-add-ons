@@ -409,14 +409,6 @@ TOOLING_MUTATIONS += (
          "test_a_local_pass_that_lands_mid_build_is_never_a_ci_receipt"),
     ),
     (
-        # docs/review/08 defect 2: the recurring-findings block has no caller.
-        "review_prompt: the recurring-findings block never reaches the reviewer",
-        os.path.join(SCRIPTS, "review_prompt.py"),
-        "                  recurring_findings.review_block(root, manifest),\n",
-        "",
-        "tests/test_review_prompt.py::test_the_recurring_findings_block_reaches_the_reviewer",
-    ),
-    (
         "review_gate: a receipt that is not VERIFIED still upgrades the gate",
         os.path.join(SCRIPTS, "review_gate.py"),
         "    if r_state == VERIFIED:\n",

@@ -23,8 +23,10 @@ script writes the part of it that is about the ticket rather than the diff:
     checklist_block`, stating that the author's self-check answers are
     withheld (`selfcheck.md` is never read here) and that the list does not
     bound the review; an unreadable overlay is written `UNREADABLE: ...`.
-  - the recurring-findings classes keyed to the bundle's changed files
-    (`recurring_findings.review_block`), after the standards checklist.
+  - the recurring-findings checklist (L-0575, L-0601): the defect classes
+    earlier reviews kept finding, keyed to the bundle's changed files, from
+    `recurring_findings.review_block`; it says the list does not bound the
+    review, and an unusable manifest lists every class under `UNKNOWN:`.
 
 Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
