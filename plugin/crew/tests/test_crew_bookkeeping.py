@@ -110,6 +110,14 @@ MUST_BLOCK = [
      _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
     ("nested-path", "plugin/crew/docs/BUDGETS.md", BUDGETS,
      _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
+    ("short-path", "plugin/BUDGETS.md", BUDGETS,
+     _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
+    ("trailing-segment", "plugin/crew/BUDGETS.md/x", BUDGETS,
+     _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
+    ("empty-segment", "plugin//BUDGETS.md", BUDGETS,
+     _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
+    ("case-differs", "plugin/crew/budgets.md", BUDGETS,
+     _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
     ("undecodable", PATH, BUDGETS.encode("utf-8") + b"\xff",
      _swap(BUDGETS, "18,176 lines", "18,200 lines"), "could not tell"),
 ]
@@ -144,6 +152,15 @@ def test_identical_is_allowed_as_unchanged():
 @pytest.mark.parametrize("before,after", [(None, ""), (object(), "x")])
 def test_never_raises(before, after):
     assert cb.claim_numbers_only(before, after, PATH) == (False, "could not tell")
+
+
+@pytest.mark.parametrize("before,after", [("no digits\n", "no digits\n"),
+                                          ("\0N\0 lines\n", "12 lines\n")])
+def test_a_line_without_a_number_on_each_side_is_not_a_numbers_only_change(before, after):
+    """Review round 2 self-check (GEN-04): the per-line rule needs a digit run
+    on BOTH sides; without that guard a digitless line, or one spelling the
+    mask itself, would pass as numbers-only."""
+    assert cb._numbers_only(before, after) is False  # pylint: disable=protected-access
 
 
 def test_the_marker_binds_the_first_matching_line_in_its_window():
