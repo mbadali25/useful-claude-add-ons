@@ -6,9 +6,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed - `crew` version allocated at land: the shortfall rule says its wording list cannot be complete (L-0604)
 
-- crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and the
-  troubleshooting guide (rebuilt) no longer say any admission that the review fell short is
-  INCOMPLETE. Only a stray line matching `review_verdict._SHORTFALL` is; that list is wording and
+- crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and
+  recovery paragraph, and the troubleshooting guide (rebuilt) no longer say any admission that
+  the review fell short is INCOMPLETE. Only a stray line matching `review_verdict._SHORTFALL` is; that list is wording and
   cannot be complete, so an admission it misses ("I only inspected one of the nine files") is
   recovered as prose beside findings, the round is FINDINGS, and the line is reported as ignored.
 - Two tests pin that: `review_verdict.parse` on the repro is FINDINGS with the line in `ignored`,
