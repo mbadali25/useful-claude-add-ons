@@ -6,6 +6,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import review_prompt as rp
+import recurring_findings
 import review_verdict
 from review_fixtures import git, init_repo
 
@@ -177,3 +178,41 @@ def test_prompt_lists_the_overlay_and_its_supplements(repo):
     text = rp.build(str(repo), "T9", LISTED)
 
     assert ("REPO-01 Local rule" in text, "LOCAL-SUPPLEMENT-TEXT" in text) == (True, True)
+
+
+RECURRING_HEAD = "== Recurring review findings for these paths (appendix) =="
+FILES = {"staged_files": [], "unstaged_files": [], "untracked_files": []}
+
+
+def _webtest_findings(repo, ticket):
+    folder = repo / ".work" / "tickets" / ticket / "webtest"
+    folder.mkdir(parents=True)
+    (folder / "findings.json").write_text('{"findings": []}', encoding="utf-8")
+
+
+def test_build_carries_the_recurring_findings_block(repo):
+    """L-0575/L-0601: the reviewer gets the recurring-findings classes keyed to
+    the bundle's changed files, after the standards checklist and before the
+    web tests, and a class keyed to none of them is left out."""
+    _webtest_findings(repo, "T9")
+    ps1 = rp.build(str(repo), "T9", dict(MANIFEST, committed_files=["a/b.ps1"], **FILES))
+    docs = rp.build(str(repo), "T9", dict(MANIFEST, committed_files=["docs/a.md"], **FILES))
+    order = [ps1.index("== Development standards checklist"), ps1.index(RECURRING_HEAD),
+             ps1.index("== Web tests ==")]
+
+    assert RECURRING_HEAD in docs
+    assert "PowerShell and Bash twins drift apart" in ps1
+    assert "PowerShell and Bash twins drift apart" not in docs
+    assert order == sorted(order)
+    assert "This list does not bound the review" in ps1[order[1]:order[2]]
+
+
+def test_build_lists_every_recurring_class_when_the_manifest_cannot_say(repo):
+    """A manifest without its file lists cannot scope the checklist: every
+    class is listed under UNKNOWN, never none."""
+    text = rp.build(str(repo), "T9", MANIFEST)
+    block = text[text.index(RECURRING_HEAD):]
+    shipped = [e["id"] for e in recurring_findings.parse(recurring_findings.data_path())[0]]
+
+    assert "UNKNOWN: the manifest has no committed_files list" in block
+    assert all(f"\n{sid} " in block for sid in shipped)
