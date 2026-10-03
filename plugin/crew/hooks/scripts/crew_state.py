@@ -309,9 +309,17 @@ def read_metrics(root, window=METRICS_WINDOW):
     `window` bounds distinct tickets, not rows, and "last" means last
     REVIEWED: a ticket moves to the end of `by_ticket` on every row for it,
     so interleaved rounds (T-1, T-2, T-1) window by the most recent row.
+
+    The file is the main checkout's from a linked worktree (L-0582,
+    `crew_common.metrics_md_path`). When git cannot name it, the verdict is
+    `could not tell: <why>` with `rate` None - never `no data`, and never the
+    worktree's own copy.
     """
     empty = {"tickets": 0, "findings": 0, "rate": None, "verdict": "no data"}
-    text = read_text(os.path.join(root, ".crew", "metrics.md"))
+    path, problem = crew_common.metrics_md_path(root)
+    if problem:
+        return dict(empty, verdict=f"could not tell: {problem}")
+    text = read_text(path)
     if not text:
         return empty
 

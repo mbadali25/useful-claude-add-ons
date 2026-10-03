@@ -32,7 +32,7 @@ summary above or below it, and do not pad it with advice.
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
 | `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
-| `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` | - |
+| `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` - in a linked worktree, the main checkout's `.crew/`, named by its path; this worktree's own copies, if any, are named on the same line as `not counted` | `could not tell (...)` when git cannot name the main checkout; nothing is read, and the worktree's own copy is never the fallback |
 | `handoff` | `.work/HANDOFF.md` present | - |
 | `migrate` | a backup under `.crew/backups/` whose apply never finished | - |
 | `memory` | `crew_context.py --stats`, only with `--memory` | hook not installed |

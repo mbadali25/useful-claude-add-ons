@@ -177,12 +177,30 @@ def _codemap_line(root, cfg):
 
 
 def _metrics_line(root):
-    for name in ("metrics.jsonl", "metrics.md"):
-        text = read_text(os.path.join(root, ".crew", name))
+    """One line: the metrics file in the main checkout's `.crew/` from a linked
+    worktree (L-0582), `could not tell` when git cannot name it, and this
+    worktree's own stranded copies named as not counted, on the same line so
+    the 40-line budget is unchanged."""
+    crew_dir, problem = crew_common.metrics_crew_dir(root)
+    if problem:
+        return f"metrics  could not tell ({' '.join(problem.split())}) - nothing read"
+    own = os.path.normcase(os.path.realpath(os.path.join(root, ".crew")))
+    shown = None if os.path.normcase(os.path.realpath(crew_dir)) == own else crew_dir
+    line = "metrics  none recorded"
+    for name in crew_common.METRICS_NAMES:
+        path = os.path.join(crew_dir, name)
+        text = read_text(path)
         if text is not None:
-            rows = sum(1 for line in text.splitlines() if line.strip())
-            return f"metrics  .crew/{name}: {rows} row(s)"
-    return "metrics  none recorded"
+            rows = sum(1 for row in text.splitlines() if row.strip())
+            label = path if shown else f".crew/{name}"
+            line = f"metrics  {label}: {rows} row(s)"
+            break
+    if shown and line.endswith("none recorded"):
+        line += f" in the main checkout's {shown}"
+    stranded = crew_common.stranded_metrics_copies(root)
+    if stranded:
+        line += f"; this worktree's own {', '.join(stranded)} not counted"
+    return line
 
 
 def _memory_lines(root, budget):

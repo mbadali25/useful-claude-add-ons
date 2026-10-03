@@ -66,6 +66,7 @@ import stat
 import statistics
 import sys
 
+import crew_common
 import crew_ticket
 
 OVERLAY_REL = ".crew/standards.md"
@@ -827,15 +828,22 @@ def _side_text(name, side, floor):
 
 def metric(root, record=False, today=None):
     """(exit_code, lines). --record appends one line with no `|`, so neither
-    crew_state.read_metrics nor crew_migrate.metrics_rows reads it as a row."""
-    path = os.path.join(root, ".crew", "metrics.md")
+    crew_state.read_metrics nor crew_migrate.metrics_rows reads it as a row.
+
+    The file is the main checkout's from a linked worktree (L-0582). When git
+    cannot name it, exit 1 before any read or write: nothing is read, nothing
+    is recorded, and the worktree's own copy is never the fallback."""
+    path, problem = crew_common.metrics_md_path(root)
+    if problem:
+        return 1, [f"standards-metric: could not tell which .crew/metrics.md to use ({problem}); "
+                   "nothing read, nothing recorded"]
     raw, why = _read_bytes(path)
     if raw is None and why != "absent":
-        return 1, [f"standards-metric: .crew/metrics.md {why}"]
+        return 1, [f"standards-metric: {path} {why}"]
     text = raw.decode("utf-8", errors="replace") if raw is not None else ""
     found = metric_summary(text)
     floor = found["floor"]
-    lines = ["standards-metric: first-round BLOCK+FIX per ticket (.crew/metrics.md)",
+    lines = [f"standards-metric: first-round BLOCK+FIX per ticket ({path})",
              "  " + _side_text("before (no std: token)", found["before"], floor),
              "  " + _side_text("after (std: token)", found["after"], floor),
              f"  unknown-round rows {found['unknown_round']} (on neither side); first-round rows "
@@ -854,7 +862,7 @@ def metric(root, record=False, today=None):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(prefix + line + "\n")
-        lines.append(f"standards-metric: recorded in .crew/metrics.md: {line}")
+        lines.append(f"standards-metric: recorded in {path}: {line}")
     return 0, lines
 
 

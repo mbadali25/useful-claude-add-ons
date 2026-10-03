@@ -43,7 +43,7 @@ to split.
 
 | Evidence | Where |
 |---|---|
-| Findings per ticket above the healthy band | `.crew/metrics.md`, via `crew_state.py` -> `health.rate`; `HEALTHY_HIGH` is 2.0 |
+| Findings per ticket above the healthy band | `.crew/metrics.md` (the main checkout's, also from a linked worktree), via `crew_state.py` -> `health.rate`; `HEALTHY_HIGH` is 2.0; a `could not tell` verdict has no rate |
 | The `ticketsTooLarge` trigger is firing | `crew_state.py` output, `triggers` |
 | The issue names more than one subsystem | `.crew/codemap/INDEX.md`, or `crew:explorer` |
 | Acceptance criteria that cannot be verified together | the issue itself |
