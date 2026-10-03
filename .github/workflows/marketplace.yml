@@ -183,6 +183,13 @@ jobs:
       # up as a version bump here, not a silent behaviour change.
       - name: Install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code@2.1.278
+      # _verify/smoke.sh holds two checks no other step runs: the crew-setup
+      # canon() round-trip and version agreement across pyproject.toml,
+      # plugin.json, marketplace.json and every Python-source copy. It runs
+      # after the CLI install so its own `claude plugin validate` check runs
+      # rather than skipping. Found by crew's QA audit (L-0618, item E7).
+      - name: Smoke checks (_verify/smoke.sh)
+        run: bash _verify/smoke.sh
       - name: claude plugin validate --strict
         run: |
           claude plugin validate --strict .
