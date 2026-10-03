@@ -413,7 +413,9 @@ def _default_template():
     every offered choice through a planner, so a fresh deep copy per lookup
     was ~50,000 copies for one menu - 93% of a profiled `menu_spec` call.
     `default_config()` reads only module constants, so one build is current
-    for the life of the process. Writers keep calling `default_config()`."""
+    for the life of the process. Writers keep calling `default_config()`.
+    A test that monkeypatches one of those constants must call
+    `_default_template.cache_clear()`, or these readers keep the old shape."""
     return default_config()
 
 

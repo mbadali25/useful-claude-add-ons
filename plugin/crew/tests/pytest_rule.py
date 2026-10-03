@@ -4,7 +4,7 @@
 
 WHY. The verify gate runs each matched rule as one serial pytest process, and
 a Stop has a 60s budget. Measured on rule 4 (the gate/lock/promote/role-guard
-files): 49s serial, 15s split this way, same 195 tests (4 CPUs, 2026-10-03).
+files): 50s serial, 17s split this way, same tests (4 CPUs, 2026-10-03).
 
 HOW. Two pytest processes over the same arguments, the way CI runs the crew
 suite (`.github/workflows/pytest-crew.yml`):
@@ -45,9 +45,10 @@ def main(argv):
     if not argv:
         sys.stderr.write(__doc__.split("\n\n", 1)[0] + "\n")
         return 2
-    if any(a in ("-m", "-n") or a.startswith(("-m=", "-n=", "--numprocesses")) for a in argv):
+    if any(a[:2] in ("-m", "-n") or a.startswith("--numprocesses") for a in argv):
         # This script owns the marker split and the worker count; a rule's own
-        # -m or -n would be silently overridden by the later one.
+        # -m or -n, spaced or attached (-n4, -mslow), would be silently
+        # overridden by the later one. No other pytest option starts -m / -n.
         sys.stderr.write("pytest_rule.py: pass neither -m nor -n; this script sets both\n")
         return 2
     if not _has_xdist():

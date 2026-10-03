@@ -4,15 +4,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.143: faster crew tests - the config menu stops deep-copying defaults per key, verify rules run under xdist with wallclock tests serially, Windows CI shards split by measured time, lock-window tests stop sleeping
+### Changed — `crew` 1.0.144: faster crew tests - the config menu stops deep-copying defaults per key, verify rules run under xdist with wallclock tests serially, Windows CI shards split by measured time, lock-window tests stop sleeping
 
-- `crew_config._shape`, `_is_open_table` and `_content_problem`'s default lookup read one cached
+- `crew_config._shape`, `_is_open_table` and `value_allowed`'s default lookup read one cached
   `_default_template()` instead of calling `default_config()`, which deep-copies every default block.
   Building the menu probes every offered choice through a planner, so one `menu_spec` made about
   50,000 copies, 93% of its profiled time. `test_config_menu.py` went from 67s to 3s (`-n 4`, 4 CPUs;
   146 of the crew suite's 677 test-seconds before). Writers still get a fresh `default_config()`.
   Two new tests: the cache agrees with a fresh default and a caller's mutation never reaches it; and
-  a shape lookup builds no default at all, red when any of the three call sites is reverted.
+  a shape lookup builds no default at all, red when any of the three call sites is reverted (each
+  reverted in turn; the third needed a `value_allowed("pm.authority", "machine", None)` probe,
+  since `qa.order` returns early through `null_means` before reaching it).
 - `.github/crew-windows-durations.json` holds the Windows default set's measured durations, merged
   from the three shards of run 37088914100, and each `crew-windows-default` shard splits by it.
   By count the shards ran 6.8 / 10.0 / 11.2 min; by these durations they sum within 1%. Mapped
@@ -27,12 +29,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   wallclock"` and then `-m wallclock` serially, the way `pytest-crew.yml` runs the suite, or as one
   serial run without pytest-xdist. Exit 5 from one half is not a failure, from both it is, and a
   half killed by a signal is a failure (a `max()` of the codes would have read 0). It refuses a
-  `-m` or `-n` of its own. `tests/test_pytest_rule.py` pins every combination; red with `max()`.
+  `-m` or `-n` of its own, attached forms (`-n4`, `-mslow`) included. `tests/test_pytest_rule.py`
+  pins every combination, red with `max()`, and runs the real subprocess path once end to end.
 - The 17 crew pytest rules in `.crew/verify.json` priced at 15s or more call it, and are re-priced
   from a measurement of each, old and new command back to back on a 4-CPU container: the same
   tests collected both ways, 2-4x faster (rule 4: 50s -> 17s; rule 6: 105s -> 29s; rule 27: 71s ->
-  25s). Rules 4, 8, 26, 27 and 46, declared 45-96s, now fit the 60s Stop budget alone and run at
-  Stop instead of being chronic. Each `why` says where and how it was timed.
+  25s). Rules 4, 8 and 27, declared 71-96s, now fit the 60s Stop budget alone and run at Stop
+  instead of being chronic; 26 and 46 already fit and now leave more room. Each `why` says where
+  and how it was timed, and that a 1-2 CPU host runs near the serial figure, where a Stop packing
+  these rules can overrun the budget (bounded by the Stop hook's 600s timeout).
 - `test_verify_gate_subset_cover.py`'s plausibility check for `coveredBy` subsets accepts the
   `pytest_rule.py` runner, whose two halves select exactly what the plain command did.
 

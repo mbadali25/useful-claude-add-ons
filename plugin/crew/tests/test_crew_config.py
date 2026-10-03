@@ -225,8 +225,10 @@ def test_shape_readers_share_one_template_and_writers_still_get_fresh_copies():
 
 def test_shape_lookups_build_no_default_config(monkeypatch):
     """The cost guard: once the template exists, a shape lookup builds no new
-    default. Reverting any `_shape` / `_is_open_table` / `_content_problem`
-    read to `default_config()` makes this raise."""
+    default. Reverting any `_shape` / `_is_open_table` / `value_allowed`
+    read to `default_config()` makes this raise. `pm.authority` at the
+    machine layer reaches `value_allowed`'s lookup; `qa.order` there returns
+    early through `null_means` and never does."""
     crew_config._default_template()
 
     def _built(*_a, **_k):
@@ -235,6 +237,7 @@ def test_shape_lookups_build_no_default_config(monkeypatch):
     crew_config._shape("route.enabled")
     crew_config._is_open_table("qa.roles")
     crew_config._content_problem("qa.order", "repo", None)
+    crew_config.value_allowed("pm.authority", "machine", None)
 
 
 def test_docs_and_bitbucket_are_settable_globally():
