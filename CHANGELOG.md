@@ -26,7 +26,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   against the same ref is kept. The gone and not-ancestor reasons now start "could not tell where
   <ticket> started".
 - `/crew:review` step 1a stops on exit 3 instead of bundling; `/crew:autopilot` says activate also
-  records. Six new sabotage entries, each RED on its named test; two existing scope-base anchors
+  records. Six new sabotage entries (`sabotage_scope.py`; `sabotage.py` is at max-module-lines), each RED on its named test; three existing anchors
   re-pointed onto the same lines' new text. `test_scope_base_branch.py` joins verify rules 11 and
   25. The verify gate's own fallback base is unchanged and filed to `TODO.md`.
 

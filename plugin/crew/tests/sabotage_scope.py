@@ -22,6 +22,8 @@ GUARD_PS1 = os.path.join(_S, "scope-guard.ps1")
 AUDIT_SH = os.path.join(_S, "completion-audit.sh")
 AUDIT_PS1 = os.path.join(_S, "completion-audit.ps1")
 HOOK_SH = os.path.join(_S, "approval-hook.sh")
+# T-0061: the ticket base branch (`tickets.baseBranch`).
+SCOPE_BASE_PY = os.path.join(_S, "scope_base.py")
 
 _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
@@ -355,4 +357,71 @@ SCOPE_MUTATIONS = (
      "          $probe = $line | ConvertFrom-Json\n",
      "tests/test_ps1_python_probe.py::"
      "test_a_silent_candidate_is_rejected_without_writing_to_stderr"),
+    # T-0061: the ticket base branch. Each entry names the one test that
+    # sees it; the neighbour cases stay green on purpose.
+    (
+        # The key is read and thrown away: every repo measures against
+        # origin/HEAD again, and TSS-510's 492-file bundle comes back.
+        "tickets.baseBranch is ignored",
+        SCOPE_BASE_PY,
+        '    path = crew_common.repo_config_file(root, "config.json")\n',
+        "    return None, None\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_a_branch_cut_from_the_configured_base_records_exact"),
+    ),
+    (
+        # A configured branch that names no commit falls through to the old
+        # chain -- the unknown collapsing into the reassuring answer.
+        "a missing configured branch falls back to origin/HEAD",
+        SCOPE_BASE_PY,
+        '        return None, (f"tickets.baseBranch {value!r} names no commit here "\n',
+        '        _lost = (f"tickets.baseBranch {value!r} names no commit here "\n',
+        ("tests/test_scope_base_branch.py::"
+         "test_could_not_tell_never_falls_back_to_origin_head"),
+    ),
+    (
+        # `--base` answers HEAD and exit 0 on could-not-tell, so review.md
+        # step 1a bundles the working tree alone as if it were the ticket.
+        "--base prints HEAD when it could not tell",
+        SCOPE_BASE_PY,
+        '        sys.stderr.write(f"scope-base: {reason}\\n")\n'
+        "        return 3\n",
+        '        sys.stdout.write("HEAD\\n")\n'
+        "        return 0\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_a_configured_base_that_names_no_commit_could_not_tell"),
+    ),
+    (
+        # The re-derivation loses its fallback-only condition, so a known
+        # start is moved by a config change -- the defect the record exists
+        # to prevent.
+        "an exact record is re-derived",
+        SCOPE_BASE_PY,
+        "    if not _is_fallback_entry(entry):\n"
+        "        return None\n"
+        "    ref, problem = base_branch(root)\n",
+        "    ref, problem = base_branch(root)\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_an_exact_record_is_never_rederived"),
+    ),
+    (
+        # activate sets the pointer and records nothing, so the first
+        # `--record` lands after commits exist and is a fallback again.
+        "activate does not record",
+        TICKET,
+        "        sha, status = scope_base.record(top, ticket)\n",
+        "        sha, status = None, None\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_activate_records_the_scope_base"),
+    ),
+    (
+        # The not-ancestor reason reads like an ordinary fallback again; the
+        # base is still the merge-base, so only the reason's prefix sees it.
+        "the not-ancestor reason loses could-not-tell",
+        SCOPE_BASE_PY,
+        '_REASON_NOT_ANCESTOR = ("could not tell where {ticket} started: start commit "\n',
+        '_REASON_NOT_ANCESTOR = ("start commit "\n',
+        ("tests/test_scope_base_branch.py::"
+         "test_a_not_ancestor_record_says_could_not_tell_and_shows_more"),
+    ),
 )
