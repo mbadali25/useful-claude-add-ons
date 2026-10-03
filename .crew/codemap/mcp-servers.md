@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@13a240a4
+anchor: useful-claude-add-ons@a0c8055c
 verified: 2026-10-01
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -703,3 +703,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
 
 **Re-anchored `452b30cc` -> `13a240a4` on 2026-10-03 (L-0605 merges origin/main f808e5f0 at 13a240a4: the per-path check for this map's documented paths finds no change beyond the repo-wide version files and refresh artifacts; no claim moved).**
+
+**Re-anchored `13a240a4` -> `a0c8055c` on 2026-10-03 (L-0605 review round 1 fix): `a0c8055c` changes only review_run.py, sabotage_prereview.py, test_review_run_prereview.py and CHANGELOG.md; this map cites none of them by line outside its history notes, so no claim moved.**

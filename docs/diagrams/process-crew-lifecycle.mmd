@@ -1,4 +1,5 @@
-%% Generated from useful-claude-add-ons@13a240a4 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@a0c8055c on 2026-10-03. Verify before trusting.
+%% Re-anchored 13a240a4 -> a0c8055c (L-0605 review round 1: _manifest_problem gains the null-parts and NUL checks, +7 lines): pf0 :742, :916 -> :749, :923 and the budget edge :920-931 -> :927-938, mapped by difflib against 73af42d7; pr0 prereview_gate corrected :731 -> :808 (already off at 73af42d7). No node or edge changed.
 %% Re-anchored 452b30cc -> 13a240a4 (L-0605 merges origin/main f808e5f0 at 13a240a4, rerere off): review_run.py gains _windows_taskkill, _manifest_problem and _finish_manifest, so pf0 :672, :846 -> :742, :916 and the budget edge :850-861 -> :920-931, mapped by difflib against f808e5f0; the flow drawn did not change.
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
@@ -345,15 +346,15 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:742, :916"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:749, :923"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
-        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :731"}
+        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :808"}
         pr0 -- "NEW finding: exit 5, no round spent,<br/>not overridable; or COULD NOT CHECK:<br/>exit 5 unless --allow-unverified<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:920-931" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:927-938" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-28, :451"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :483"}
