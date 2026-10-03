@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.144: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
+### Added — `crew` 1.0.157: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
   (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
@@ -55,7 +55,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
   after merging main `2a2d6e07` (crew 1.0.139); 1.0.140-1.0.143 are held by
   other lanes. Re-set at 1.0.144 after the L-0611 split and the merge of main
-  `8123fe74` (crew 1.0.140, L-0574).
+  `8123fe74` (crew 1.0.140, L-0574). Then `1.0.154 -> 1.0.157` after merging
+  main `f808e5f0` (crew 1.0.154; #328 shipped 1.0.144, so T-0019's number was
+  spent), allocated by the coordinator; L-0611 is 1.0.161.
 
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
