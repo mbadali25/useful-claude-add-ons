@@ -37,11 +37,18 @@ def _files():
     return sorted(f[:-3] for f in os.listdir(_COMMANDS) if f.endswith(".md"))
 
 
+# The spec's number, written out: `crew_help.MAX_LINES` is what is under test.
+MAX = 8
+KINDS = ("where: ", "waiting on: ", "open: ", "next: ", "also: ")
+
+
 def _shape(lines):
-    """The `where` contract every state is held to."""
+    """The `where` contract every state is held to: at most 8 lines, each one
+    of the five kinds, so a line nobody asked for is caught even under the cap."""
     nexts = [line for line in lines if line.startswith("next: ")]
     also = [line for line in lines if line.startswith("also: ")]
-    return (len(lines) <= crew_help.MAX_LINES, lines[0].startswith("where: "),
+    return (len(lines) <= MAX and all(line.startswith(KINDS) for line in lines),
+            lines[0].startswith("where: "),
             lines[1].startswith("waiting on: "), len(nexts), 2 <= len(also) <= 3,
             all("\n" not in line and len(line) <= crew_help.LINE_CHARS for line in lines))
 
@@ -59,6 +66,10 @@ def _stub(monkeypatch, phase, stop, command):
 
 
 # --- step 1: where -------------------------------------------------------------
+
+def test_the_cap_is_8():
+    assert crew_help.MAX_LINES == MAX
+
 
 def test_every_phase_has_related_commands():
     assert (sorted(crew_help.RELATED), [n for n, pairs in crew_help.RELATED.items()
