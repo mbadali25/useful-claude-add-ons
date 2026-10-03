@@ -29,6 +29,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   FAIL, as its `claude plugin validate` check already does: a missing tool is not a broken check.
   CI is unaffected: the runner carries `pwsh`, and the "PowerShell static checks" step fails if
   it ever does not.
+
 ### Added - `crew` 1.0.162: the recurring-findings checklist in the review prompt (L-0601, L-0592 PR 2)
 
 - **What.** `review_prompt.build` now appends `recurring_findings.review_block` after the development
