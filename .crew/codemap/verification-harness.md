@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@0620587f
-verified: 2026-10-01
+anchor: useful-claude-add-ons@11b03045
+verified: 2026-10-03
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -37,7 +37,9 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 48 rules
+## `.crew/verify.json` — 50 rules
+
+**DERIVED, read with `json.load` on T-0022 (crew 1.0.191) after merging main `7846261c` (2026-10-03): 561 lines, 50 rules.** Main's map at `7846261c` has 49 (the `pytest_rule.py` rule is its last); T-0022 appends rule 50 (`.crew/verify.json:539-556`): `crew_docs_check.py`, `test_docs_check.py`, `test_crew_autopilot_docs.py`, `test_crew_autopilot_tracker.py`, `crew_autopilot.py`, `docs.md`, `implement.md`, `done.md` and the crew-docs skill, running the three test files through `pytest_rule.py`, priced 8s. The "48 rules" heading this replaces was already behind main's map.
 
 **DERIVED, read with `json.load` on L-0574 after merging main `e0c70fc9` (2026-10-02): 533 lines, 48 rules.** Main's `e0c70fc9` map is 506 lines and 48 rules (rule 46 L-0555's `ci_receipt.py`, 47 L-0572's subset cover, 48 L-0575's recurring findings, last); L-0574 adds no rule, only the top-level `preReview` block and its `_note_preReview`. The "45 rules" heading above this note was already behind main's map before L-0574 merged it.
 
@@ -2348,3 +2350,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored `0620587f` -> `11b03045` on 2026-10-03 (T-0022, crew 1.0.191).** T-0022 appends `.crew/verify.json` rule 50 (`:539-556`); no earlier rule moved, so every other citation into the file maps onto itself. The section heading is updated to 50 rules (it read 48, already behind main's 49). No suite was executed for this note.

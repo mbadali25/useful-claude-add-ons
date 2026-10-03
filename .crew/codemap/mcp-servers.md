@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@0620587f
-verified: 2026-10-01
+anchor: useful-claude-add-ons@11b03045
+verified: 2026-10-03
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -56,7 +56,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:218` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
+  `1f97e51c`; still open as `TODO.md:231` (item 2; was `:218` before T-0022's TODO entry, `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
@@ -64,7 +64,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:229` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:242` (item 3; was `:229` before T-0022's TODO entry, `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
   `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
@@ -78,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:310-317` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:323-330` (was `:310-317` before T-0022's TODO entry, `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -709,3 +709,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored `0620587f` -> `11b03045` on 2026-10-03 (T-0022, crew 1.0.191).** Of the files T-0022 changed this map cites only `TODO.md`, which gained 13 lines at `:7`: the three current `TODO.md` citations moved +13 (`:218` -> `:231`, `:229` -> `:242`, `:310-317` -> `:323-330`), each re-read; the old values were kept as history beside them. No claim changed; no suite was executed for this note.
