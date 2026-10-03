@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.210: a measured readability standard for every diagram crew draws
+### Added — `crew` 1.0.218: a measured readability standard for every diagram crew draws
 
 - `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
   source: lines crossing, a line through a box that is not one of its ends, an edge label covering
@@ -27,8 +27,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 - No verdict passes without measuring (PR #375 review): a drawing with no measured box, path data
   or a transform (scale, rotate, matrix, skew) the checker cannot read, or a checker error is
   UNKNOWN; every SVG path command is read (S/T reflect their control point, arcs are sampled along
-  the curve); the page shows a render older than its `.mmd` as "render out of date", and escapes
-  `<`, `>` and `&` in its tables so GitHub keeps text like `<repo>`.
+  the curve, arc flags by the grammar, each subpath as its own line); a line outside the boxes that
+  is not a recognised edge is UNKNOWN; `render.sh` records each SVG's source sha256 in
+  `out/<name>.svg.src` and the page shows a render whose hash is not the `.mmd`'s as "render out of
+  date" (file times only when there is no `.src`, said as "(freshness by mtime only)"); tables
+  escape `<`, `>` and `&` so GitHub keeps text like `<repo>`.
 
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
