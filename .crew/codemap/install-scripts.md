@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@0620587f
+anchor: useful-claude-add-ons@51b2222b
 paths: plugin/crew/**, scripts/**
 verified: 2026-10-01
 
@@ -1620,3 +1620,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored to `51b2222b` on 2026-10-03 (T-0066, crew 1.0.185: `git.forbiddenTrailers` and the `/crew:done` trailer report; `51b2222b` merges origin/main `4f6ef540`, crew 1.0.162, into `T-0066-build`).** Main's maps were taken at the merge and T-0066's edits re-applied on them. T-0066 changes, among the paths these maps cite: `.crew/verify.json` (one rule appended, `:539-546`), `plugin/crew/CONFIG.md` (section 10/11 headings, one section 10 row, new section 22), `plugin/crew/commands/done.md` (a report section after check 4, `:68-79`), `plugin/crew/commands/implement.md` (step 2 `:46-52`; still 120 lines), `plugin/crew/hooks/scripts/crew_config.py` (the `git` block, +6 after main's `:380` and +4 after its `:595`), `plugin/crew/skills/crew-setup/SKILL.md`, the two templates, `plugin/crew/tests/test_crew_config.py`, the new `crew_trailers.py` and its suite, and release bookkeeping (`CHANGELOG.md`, `TODO.md` +11 at `:241`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, both version files). Body `path:N` citations into those files were re-mapped by a difflib line diff from main `4f6ef540` to the merged tree; a bare `:N` was re-mapped only where T-0066's earlier pass (`f7fd2e78`) had read the sentence and applied it. History notes were not re-mapped. No other claim was re-derived and no suite was executed for this note.
