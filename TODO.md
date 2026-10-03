@@ -7,8 +7,10 @@ be wrong can be closed on evidence.
 - **L-0607 - follow-ups to L-0602 (/crew:done check 2)**, filed with a Backlog card;
   `.work/tickets/L-0607/direction.md` carries the evidence. F1 `crew_train.py check-land` takes
   `review_gate.gate_state` VERIFIED as "HEAD carries check 2" (`plugin/crew/hooks/scripts/crew_train.py::check_land`)
-  while check 2 now also needs an empty record and `all_clean_at` at HEAD. F2 a repo with no
-  `.crew/verify.json` can never pass check 2 (the smoke fallback writes no marker or record). F3
+  while check 2's local path also needs an empty record and `all_clean_at` at HEAD (#330 made
+  check-land use `review_gate.accepted_state`, which a CI receipt can upgrade). F2 - resolved by
+  #330: a repo with no `.crew/verify.json` now passes check 2 through `ci_receipt.py check`'s
+  NO_GATE (exit 4). F3
   `verify_fingerprint._file_digest` folds any read error into `"absent"`. F4 `--all`'s
   newline-delimited path list misses control-character names, submodule contents and ignored
   inputs. F5 edits under assume-unchanged / skip-worktree are invisible to `git diff`. F6 the marker
