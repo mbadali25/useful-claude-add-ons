@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@0620587f
-verified: 2026-10-01
+anchor: useful-claude-add-ons@36ad9c14
+verified: 2026-10-04
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -34,7 +34,7 @@ and fails if `<dir>/.claude-plugin/marketplace.json` exists.
 **DERIVED**, by the same method the previous anchor used — partition
 `marketplace.json`'s flat `plugins` array by `source` prefix
 (`./skills/` vs `./plugin/`) — and independently confirmed by running the
-gate. `scripts/check-marketplace.py:1665-1666` still derives `plugins` as
+gate. `scripts/check-marketplace.py:1751-1752` still derives `plugins` as
 `len(entries) - skills`, so an entry matching neither prefix would silently
 count as a plugin; the "neither" set is empty at this anchor, same as at
 `5d1fc5fd`.
@@ -226,7 +226,7 @@ against synthetic fixtures and never reads this repo's own docs.
 
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct
   against disk on every measured count.
-- `scripts/check-marketplace.py:1639` — `main()`, sixteen checks in the same
+- `scripts/check-marketplace.py:1724` — `main()`, sixteen checks in the same
   order as `verification-harness.md` records.
 - `scripts/check-marketplace.py:104` — `check_registration`.
 - `scripts/check-marketplace.py:301`, `:329`, `:383` — `check_catalogs`,
@@ -1530,3 +1530,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored `0620587f` -> `36ad9c14` on 2026-10-04 (T-0039 merges origin/main 155fe6d8, then adds crew_gitignore.py; crew version set last).** Each path-qualified `path:line` citation was moved by difflib from the commit its map line was last written in (`git blame`) to `affbfab0`, history notes skipped: 2 moved, exact-text, plus `plugin/PLUGINS.md:14` (the version claim line, changed in place). T-0039 registers no new entry: crew's marketplace entry, plugin.json and PLUGINS.md change only in version and the `/crew:status` row's description (now naming `gitignore`). Bare `:N` citations were not machine-moved. No suite was executed for this note.
