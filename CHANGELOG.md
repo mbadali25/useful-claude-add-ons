@@ -18,15 +18,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   anything. `/crew:status --approvals` prints one `/crew:approve <id>  (<why>)`
   line per open ticket whose spec and plan validate and whose approval is
   missing, stale or unaccepted, and leaves merged, current and spec-only
-  tickets out (`nothing needs approval` when there are none).
+  tickets out (`nothing needs approval` when there are none, `could not tell
+  (<reason>)` when `.work/INDEX.md` is missing, unreadable or not UTF-8). A
+  key or value with a control character is shown escaped, never emitted.
 - **Why.** `.crew/config.json` held `autopilot.approval: self` for days before
   the crew that read it existed, and nothing said so; 13 of 25 approvals typed
   on 2026-09-27 changed nothing. T-0010 has since landed `approval` and
   `questions`, so they are quiet now. Still named: `autopilot.ship` (T-0011),
   `reviewPolicy` and `maxLanes` (T-0029), `maxTicketsPerRun` and `mode:
-  backlog` (T-0012), and a `deploy` other than `none` (T-0045). A repo-only key
-  in `~/.claude/crew/config.json` (an `autopilot`, `scope` or `emergency`
-  block) is named `(global, repo-only)` instead of being dropped silently.
+  backlog` (T-0012), and a `deploy` other than `none` (T-0045). A key the
+  global filter drops from `~/.claude/crew/config.json` is named `(global, not
+  read)` instead of being dropped silently; that names what this crew does,
+  not which file may set it (the owner allows a global `autopilot.deploy`).
 - **Not in this change.** The machine-global autopilot preferences (the spec's
   Step 2 allow-list) are left to T-0050 (#361), which reworks the same global
   layer with `PERSONAL_KEYS` and decides `autopilot.deploy` differently; only

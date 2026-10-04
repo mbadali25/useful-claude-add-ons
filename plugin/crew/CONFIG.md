@@ -2667,9 +2667,9 @@ that brings each known-but-unbuilt key, and the values that do nothing yet:
 | `deploy: "nonprod"` or `"all"` (the key is read; nothing dispatches a deploy yet) | T-0045 |
 
 Any other unknown key is named `(unknown key)`: a typo, or a key from another
-crew version. A path the global filter drops (a repo-only key in the machine
-file, `autopilot` and `scope` and `emergency` included) is named
-`(global, repo-only)`. An entry leaves the table when its key enters
+crew version. A path the global filter drops from the machine file (this crew
+does not read it there, so it takes effect nowhere) is named
+`(global, not read)`. An entry leaves the table when its key enters
 `default_config()`, which the landing ticket does; a value-level row is deleted
 by that ticket.
 

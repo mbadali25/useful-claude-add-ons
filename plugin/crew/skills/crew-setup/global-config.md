@@ -42,7 +42,7 @@ column. Run it even when nothing needs changing.
   not describe it. Do not work around either guard; move the key into that
   repo's `.crew/config.json`. Since T-0070 such a key is not silent: every
   session start names it in its `Inert settings` line as
-  `key=value (global, repo-only)` until it is moved.
+  `key=value (global, not read)` until it is moved.
 - **A global value is still a DEFAULT, not a lock.** Everything that survives
   the filter is overridable per repo. One project may legitimately want a
   different reviewer, and step 1's `source` column is what shows which layer

@@ -998,10 +998,10 @@ Two things never go through this layering, on purpose:
   defaults — never a merge that could smuggle a global preference into a
   file every teammate who clones the repo will also read.
 
-A repo-only key in the global file (an `autopilot`, `scope` or `emergency`
-block, a `tracker`) is filtered out and takes effect nowhere. It is not silent:
+A key the global filter drops (a `scope` or `emergency` block, a `tracker`) takes
+effect nowhere. It is not silent:
 every session start names it in its `Inert settings` line as
-`key=value (global, repo-only)` (T-0070), and `/crew:config --show` lists it.
+`key=value (global, not read)` (T-0070), and `/crew:config --show` lists it.
 
 **In a linked git worktree.** `.crew/*` is gitignored, so a lane made with
 `git worktree add` starts with no `.crew/config.json` or `.crew/crew.json`. Since

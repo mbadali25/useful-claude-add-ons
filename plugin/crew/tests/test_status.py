@@ -343,6 +343,12 @@ def test_status_is_quiet_without_inert_settings(tmp_path):
     assert [l for l in crew_status.collect(str(root)) if l.startswith("inert")] == []
 
 
+def test_status_escapes_control_characters_in_inert_settings(tmp_path):
+    from test_crew_config import INERT_HOSTILE, assert_inert_escaped  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, config=INERT_HOSTILE)
+    assert_inert_escaped("\n".join(crew_status.collect(str(root))))
+
+
 def _approvals_repo(tmp_path):
     # pylint: disable=import-outside-toplevel
     import crew_ticket
@@ -389,8 +395,36 @@ def test_status_approvals_lists_only_what_needs_you(tmp_path):
 
 def test_status_approvals_says_nothing_needs_approval(tmp_path):
     root = make_repo(tmp_path, config={})
+    (root / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
+                                             encoding="utf-8")
     done = _run(root, "--approvals")
     assert (done.returncode, done.stdout.strip()) == (0, "nothing needs approval")
+
+
+def _corrupt_index(index):
+    index.write_bytes(b"| T-1 | open | t\xff\xfe1 |\n")
+
+
+def _index_is_a_directory(index):
+    index.mkdir()
+
+
+# An INDEX crew cannot read is "could not tell", never "nothing needs approval":
+# T-1..T-3 below each still have a spec and a plan that need approving.
+@pytest.mark.parametrize("damage,reason", [
+    (os.unlink, "no .work/INDEX.md"),
+    (_corrupt_index, ".work/INDEX.md is not UTF-8"),
+    (_index_is_a_directory, ".work/INDEX.md could not be read: IsADirectoryError"),
+])
+def test_status_approvals_says_unknown_when_the_index_cannot_be_read(tmp_path, damage, reason):
+    root = _approvals_repo(tmp_path)
+    index = root / ".work" / "INDEX.md"
+    index.unlink()
+    if damage is not os.unlink:
+        damage(index)
+    done = _run(root, "--approvals")
+    assert (done.returncode, done.stdout.strip()) == (0, f"could not tell ({reason})"), \
+        done.stdout + done.stderr
 
 
 def test_status_approvals_is_read_only(tmp_path):

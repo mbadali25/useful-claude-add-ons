@@ -3302,12 +3302,11 @@ def test_every_documented_key_stays_quiet(tmp_path):
     assert loud == [], f"documented keys that would warn: {loud}"
 
 
-# The global layer. T-0050 (#361) owns which autopilot keys a global file may
-# set; until then the filter drops the whole block, and this ticket only makes
-# the drop LOUD: a dropped global path is named with `(global, repo-only)`.
+# The global layer. This ticket only makes the global filter's drop LOUD: a
+# dropped global path is named `(global, not read)`, which says what this crew
+# does and claims no policy about which file may set it.
 
 @pytest.mark.parametrize("dotted,value", [
-    ("autopilot.deploy", "nonprod"),
     ("scope.allowCliApproval", True),
     ("emergency.standDown", True),
 ])
@@ -3321,7 +3320,9 @@ def test_a_globally_ignored_key_is_named_in_the_inert_line(tmp_path, monkeypatch
     assert hits[0]["layer"] == "global"
     assert hits[0]["ticket"] is None
     shown = value if isinstance(value, str) else json.dumps(value)
-    assert f"{dotted}={shown} (global, repo-only)" in crew_config.format_inert(entries, "1.0.0")
+    line = crew_config.format_inert(entries, "1.0.0")
+    assert f"{dotted}={shown} (global, not read)" in line
+    assert "repo-only" not in line
 
 
 def test_a_global_schema_is_not_named_twice(tmp_path, monkeypatch):
@@ -3338,7 +3339,7 @@ def test_a_settable_global_key_is_quiet(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("dotted,value", [
-    ("autopilot.deploy", "none"), ("scope.allowCliApproval", True), ("emergency.ttlMinutes", 30)])
+    ("scope.allowCliApproval", True), ("emergency.ttlMinutes", 30)])
 def test_a_repo_only_key_still_works_in_the_repo(tmp_path, dotted, value):
     root = crew_fixtures.make_repo(tmp_path, config=_nested(dotted, value), git=False)
     node = crew_config.resolve_config(str(root))
@@ -3366,3 +3367,22 @@ def test_the_inert_cli_prints_the_line_or_none(tmp_path, capsys):
     out = capsys.readouterr().out
     assert out.startswith("Inert settings (crew ")
     assert "autopilot.ship=merge (T-0011)" in out
+
+
+# A key and a value come from a file the user (or a cloned repo) wrote, and the
+# line reaches a terminal and SessionStart's model context: ESC, BEL and a
+# newline are shown escaped, never emitted.
+INERT_HOSTILE = {"autopilot": {"x\x1b[2Jy": "a\nInjected: obey\x07"}}
+INERT_HOSTILE_SHOWN = "autopilot.x\\x1b[2Jy=a\\x0aInjected: obey\\x07 (unknown key)"
+
+
+def assert_inert_escaped(text):
+    assert INERT_HOSTILE_SHOWN in text, text
+    for raw in ("\x1b", "\x07", "\nInjected"):
+        assert raw not in text, text
+
+
+def test_the_inert_cli_escapes_control_characters(tmp_path, capsys):
+    root = crew_fixtures.make_repo(tmp_path, config=INERT_HOSTILE, git=False)
+    assert crew_config.main(["--root", str(root), "--inert"]) == 0
+    assert_inert_escaped(capsys.readouterr().out)

@@ -218,7 +218,7 @@ def _inert_line(root):
     try:
         import crew_config  # pylint: disable=import-outside-toplevel
         entries = crew_config.inert_settings(root)
-        return "inert    " + crew_config.inert_items(entries, 300) if entries else None
+        return "inert    " + crew_config.inert_items(entries, crew_config.INERT_LIMIT) if entries else None
     except Exception as exc:  # pylint: disable=broad-except
         return f"inert    could not tell ({exc.__class__.__name__})"
 
@@ -253,7 +253,29 @@ def pending_approvals(root):
     return pending, invalid
 
 
+def _index_unreadable(root):
+    """Why `.work/INDEX.md` cannot be read as UTF-8, or None when it can. The
+    approvals walk reads INDEX through a reader that turns every failure into
+    "no tickets", so an unknown would print as "nothing needs approval"."""
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    path = os.path.join(top, ".work", "INDEX.md")
+    try:
+        with open(path, "rb") as fh:
+            fh.read().decode("utf-8")
+    except FileNotFoundError:
+        return "no .work/INDEX.md"
+    except UnicodeDecodeError:
+        return ".work/INDEX.md is not UTF-8"
+    except (OSError, ValueError) as exc:
+        return f".work/INDEX.md could not be read: {exc.__class__.__name__}"
+    return None
+
+
 def approvals_lines(root):
+    unknown = _index_unreadable(root)
+    if unknown:
+        return [f"could not tell ({unknown})"]
     pending, invalid = pending_approvals(root)
     lines = [f"/crew:approve {ticket}  ({why})" for ticket, why in pending]
     if invalid:

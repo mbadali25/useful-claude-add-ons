@@ -388,6 +388,12 @@ def test_session_start_is_quiet_without_inert_settings(tmp_path):
     assert _inert_lines(_start(root)) == []
 
 
+def test_session_start_escapes_control_characters_in_inert_settings(tmp_path):
+    from test_crew_config import INERT_HOSTILE, assert_inert_escaped  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, config=INERT_HOSTILE)
+    assert_inert_escaped(_start(root))
+
+
 def test_inert_line_is_capped_and_inside_the_startup_budget(tmp_path):
     many = {f"sub{i:02d}": ([f"s{i}/a.py"], [f"mark {i}"]) for i in range(40)}
     cfg = {"autopilot": {f"frobnicate{i:02d}": i for i in range(12)}}

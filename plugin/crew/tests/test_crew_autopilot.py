@@ -1479,9 +1479,16 @@ def test_settings_names_the_global_layer(tmp_path, monkeypatch):
 
     got = crew_autopilot.settings(str(root))
 
-    assert [w.split(" - ")[0] for w in _inert(got)] == [
-        "inert: autopilot.deploy=nonprod (global, repo-only)"]
-    assert got["deploy"] == "none"
+    # Owner, 2026-10-04: a global `autopilot.deploy` MAY be set (T-0050). Before
+    # T-0050 the filter drops it and the line says it is `not read`; after, the
+    # deploy warning names T-0045. Neither may call it repo-only or forbidden.
+    told = " ".join(got["warnings"])
+    for wrong in ("repo-only", "may not set"):
+        assert wrong not in told, got["warnings"]
+    inert = [w.split(" - ")[0] for w in _inert(got)]
+    assert inert in ([], ["inert: autopilot.deploy=nonprod (global, not read)"]), inert
+    assert inert or "T-0045" in told, got["warnings"]
+    assert got["deploy"] == ("none" if inert else "nonprod")
 
 
 def test_settings_is_quiet_for_implemented_keys(tmp_path):

@@ -1909,8 +1909,10 @@ INERT_PENDING = {
 }
 
 _UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"
-_GLOBAL_IGNORED_EFFECT = ("a global file may not set this, so it takes effect nowhere; "
-                          "set it in the repo's .crew/config.json")
+# What this crew DOES with a path `filter_global` drops, and no claim about
+# which file may set it: that policy moves (T-0050), this sentence does not.
+_GLOBAL_IGNORED_EFFECT = ("this crew does not read it from the global file, so it takes "
+                          "effect nowhere; set it in the repo's .crew/config.json")
 _INERT_SKIP = ("platform", "schema")
 
 
@@ -1990,16 +1992,25 @@ def inert_settings(root, path=None):
     return [entries[k] for k in sorted(entries)]
 
 
+def _escaped(text):
+    """`text` with every non-printable character escaped (`completion_audit.
+    shown`). An inert key and value are whatever a config file holds, and they
+    reach a terminal and SessionStart's model context: ESC, BEL or a newline is
+    shown, never emitted."""
+    from completion_audit import shown  # pylint: disable=import-outside-toplevel
+    return shown(text)
+
+
 def _inert_item(entry):
     value = entry["value"]
-    shown = value if isinstance(value, str) else json.dumps(value)
+    shown = _escaped(value if isinstance(value, str) else json.dumps(value))
     if entry["kind"] == "global-ignored":
-        why = "global, repo-only"
+        why = "global, not read"
     elif entry["ticket"]:
         why = entry["ticket"] + (", global" if entry["layer"] == "global" else "")
     else:
         why = "unknown key"
-    return f"{entry['key']}={shown} ({why})"
+    return f"{_escaped(entry['key'])}={shown} ({why})"
 
 
 def inert_items(entries, room):
@@ -2015,7 +2026,10 @@ def inert_items(entries, room):
     return f"+{len(items)} more"
 
 
-def format_inert(entries, version, limit=300):
+INERT_LIMIT = 300
+
+
+def format_inert(entries, version, limit=INERT_LIMIT):
     """One line naming every inert setting, at most `limit` characters."""
     head = (f"Inert settings (crew {version} does not act on them): " if version
             else "Inert settings (this crew does not act on them): ")
@@ -3602,7 +3616,7 @@ def main(argv=None):
         else:
             print(format_inert(entries, installed_version()))
             for entry in entries:
-                print(f"- {entry['key']}: {entry['effect']}")
+                print(f"- {_escaped(entry['key'])}: {entry['effect']}")
         return 0
 
     if args.check:
