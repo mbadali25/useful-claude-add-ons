@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 13:59 UTC
+Last updated: 2026-10-04 14:01 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:01: #366 merge review 3898b036: merge clean; 0 BLOCK / 3 FIX (step after slices drops out, glob-vs-glob overlap missed, verify.json slices test unmapped) / 2 NIT. Sent back to builder (FIX1-3 + NIT1).
 - 13:59: #356 round-2 review 2dd03d78: 0 BLOCK / 1 FIX (rename onto handoff hides source deletion -> fails open) / 3 NIT (abs handoffPath, cp1252 decode, usage layout). Sent back to builder (FIX + NIT1-2).
 - 13:55: #366 T-0059 re-merged T-0052 1b0de3cb (bb82fb2e), crew 1.0.392 placeholder -> head 3898b036; 1417 tests + 4 mutations red. Merge review started. Harness follow-ups unchanged (review_ledger slices, crew_ticket validate, sabotage_split).
 - 13:54: #356 T-0017 round-1 fixes pushed -> 2dd03d78 (BLOCK version 1.0.390, FIX1 subdir handoff exemption via porcelain -z + show-prefix, FIX2 TODO sabotage_wrapup, FIX3 --force docs). Round-2 review started.
