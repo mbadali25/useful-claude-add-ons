@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:22 UTC
 
 ## Log (newest first)
 
+- 03:22: #331 r2 on 4a368125: CLEAN (0/0/0; full crew suite 8834 passed). Harness clean set: #331, #333, #336 (needs split at landing).
 - 03:22: #378 merged main + re-bumped -> 9b701365 crew 1.0.247 pushed (CI early signal; will re-merge after #339). #333 r2 on 5b8be69d: CLEAN (0/0/0). Next free: 1.0.248.
 - 03:21: #339 merge-only review r2 on 6da2a486: CLEAN (0/0/0); CI running. #378 pre-merged main locally (not pushed): im1 relabel moved into main's split process-crew-lifecycle-implement.mmd; re-bump waits for #339 to land. Suites running.
 - 03:20: MERGED #385 (35cfcfcf: verify.json maps the handoff docs; notes). #339 re-merged main -> 6da2a486 (no plugin change, crew stays 1.0.246); merge-only review + CI next. Notes continue on a new PR from ccr-b039f2bb-6jks7g.
