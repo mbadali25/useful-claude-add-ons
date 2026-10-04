@@ -1,0 +1,63 @@
+%% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
+%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py
+%% Purpose: How render() runs mmdc, refuses an SVG with foreignObject labels, and records the result in the manifest; and where each failure lands.
+%% Part of process-bitbucket-svg.mmd (the overview, which keeps the provenance history).
+%% Every bare :NNN is a line in skills/mermaid-svg-bitbucket/scripts/render_mermaid.py; other files are cited in full.
+%% COMMIT is repeated in process-bitbucket-svg-publish.mmd as its entry.
+%% Derived by reading render_mermaid.py at this anchor and by MEASURING the
+%% foreignObject claim rather than repeating it. Same source file, two configs:
+%%   default mermaid config  ->  57 <foreignObject>,  0 <text>   (labels invisible in Bitbucket)
+%%   assets/mermaid-config.json ->  0 <foreignObject>, 57 <text>  (labels real)
+%% Measured at a573ca24 on docs/diagrams/process-crew-brief.mmd with mmdc. NOT
+%% re-measured at this anchor - the path diff above shows assets/mermaid-config.json
+%% is untouched between a573ca24 and HEAD, so the config that produced those counts
+%% is byte-identical, but the .mmd it was measured on has been redrawn since and the
+%% counts are therefore stale as counts. The DIRECTION is what the claim rests on and
+%% that is unchanged. The failure is silent by construction: mmdc exits 0 both times
+%% and both SVGs open correctly in a browser tab and a local viewer. Only the <img>
+%% embedding path differs, which is exactly the path Markdown uses and the one nobody
+%% tests in.
+%% Note R0: subprocess.run wrapped in try/except OSError :262-273. resolve_mmdc already returned a path that EXISTS; this
+%%    is the separate question of whether it RUNS - a shim pointing at a deleted install, a wrong-architecture
+%%    binary, a lost execute bit
+%% Note R1: built at :251-258 --backgroundColor :256 (default #ffffff, opaque so diagrams stay legible against dark mode)
+%%    --quiet :257, --puppeteerConfigFile :259-260 when one exists
+%% Note R5: strip mermaid's max-width style :307, then write the file back with newline="\n" :321 pinned (NEW in 1.2.5) -
+%%    the write no longer turns LF into CRLF on Windows. It does NOT make raw SVG bytes reproducible across
+%%    platforms (render_mermaid.py:93-94, and the TODO.md bullet "Real mmdc output has nothing for a line-ending
+%%    translation to act on"). Regression: tests/test_check_reads_the_svg.py:345
+%% Note TOOLGONE: An unusable launcher is unusable for EVERY diagram, so falling through to the per-file failed list would retry
+%%    each one and bury the message under N copies of the same error. The resolved path is printed alongside it
+%%    :273, because 'mmdc not found' is confusing on a machine where it demonstrably was.
+%% Note FAIL: and both exit 1 :602 - mmdc exiting non-zero :274-276, and an SVG that would be blank-labelled in Bitbucket
+%%    :295-300. The config sets htmlLabels:false, but a source can re-enable it with an inline %%{init}%% directive,
+%%    so the output is checked rather than the config trusted.
+%% Note WRITE: never before - which is also why svg_digest reads the file at that moment and not the one render() produced
+flowchart TB
+
+    subgraph Render["render() :248-278 - needs mmdc and headless Chromium"]
+        direction TB
+        R0{"<b>can the launcher actually<br/>be SPAWNED?</b>"}
+        R1["mmdc, with --configFile pointed at<br/>assets/mermaid-config.json"]
+        R2{"returncode != 0<br/><b>or</b> not svg.exists() :274<br/><i>both</i> checked - a tool that exits 0<br/>and writes nothing is caught here"}
+        R3["postprocess() :281-321<br/>the only gate that opens the output"]
+        R4{"'&lt;foreignObject' in svg :295"}
+        R5["set intrinsic width/height<br/>from the viewBox :302-305,<br/>strip max-width, write back"]
+        R1 --> R0
+        R0 -->|spawned| R2
+        R2 -->|ok| R3
+        R3 --> R4
+        R4 -->|no| R5
+    end
+
+    TOOLGONE>"<b>sys.exit with MMDC_MISSING<br/>:220-224, not RuntimeError.</b>"]
+    R0 -->|"OSError"| TOOLGONE
+
+    FAIL>"RuntimeError, caught at :544<br/>into <i>failed</i>.<br/>Both causes land here"]
+    R2 -->|"mmdc failed, or wrote nothing"| FAIL
+    R4 -->|yes| FAIL
+
+    WRITE["manifest.put(key, hash,<br/>svg, svgHash) :548-549<br/><b>after</b> a successful postprocess"]
+    R5 --> WRITE
+    WRITE --> SAVE["manifest.prune() :599 drops keys whose .mmd<br/>no longer exists, then save() :600 writes it<br/>sorted :167 - a stable diff, not a churning one"]
+    SAVE --> COMMIT[("committed together:<br/>the .mmd, the .svg, the rewritten .md,<br/>and .mermaid-svg.json")]
