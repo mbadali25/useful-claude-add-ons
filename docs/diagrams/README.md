@@ -1153,7 +1153,7 @@ flowchart TB
         rv3 -- "fix, round 2" --> again_rv1
         rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> again_rv1
         rv2 -- "INCOMPLETE (reviewer / tree, a contract-like<br/>or shortfall stray line): counts" --> again_rv1
-        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
+        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan<br/>or autopilot auto-reject])
     end
 
     again_rv1>"again: reserve a round,<br/>run the reviewers (above)"]
@@ -1173,10 +1173,11 @@ flowchart TB
 | `pf0->replan` | the budget refusal answers first, no pre-review checks, no self-check |
 | `rv2->rv3` | FINDINGS (stray prose beside findings ignored and named: review_verdict.py:210-213) |
 | `rv3->rcpt` | auto-accept (L-0510): eligible, no specialist/control BLOCK; one follow-up ticket :505-506 - or the owner accepts :508 |
+| `replan` | also reached from rv3 under autopilot (T-0074): out of rounds with a BLOCK, autopilot.maxAutoReplans 1 or more and the successor plan self-approvable, crew_autopilot.py auto-reject (auto_replan_policy) rejects it; at the cap it stops for the owner |
 
 - **Source:** `process-crew-lifecycle-review.mmd`
-- **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** FAIL: 1 label overlap(s)
+- **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`
+- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle spec plan
 

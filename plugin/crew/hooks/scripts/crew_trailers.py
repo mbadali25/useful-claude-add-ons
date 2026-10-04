@@ -334,7 +334,8 @@ def _log_messages(root, base):
     (first parents only, module docstring), or None when git failed."""
     try:
         done = subprocess.run(
-            ("git", "log", "--first-parent", "--format=%H%x00%B%x1e", f"{base}..HEAD"),
+            (_common().require_tool("git"), "log", "--first-parent", "--format=%H%x00%B%x1e",
+             f"{base}..HEAD"),
             cwd=root,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=GIT_TIMEOUT, check=False, stdin=subprocess.DEVNULL)

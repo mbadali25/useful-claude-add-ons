@@ -63,6 +63,124 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
   and #407 adopts this rule, the union included (not a block on several matches).
 
+### Added — `crew` 1.0.341: manual `/crew:autopilot sleep` and `wake` (L-0652, T-0053 slice 2)
+
+- **What changed.** `/crew:autopilot sleep` (`crew_autopilot.py sleep --root . [--by <text>]`)
+  enters sleep mode now and `/crew:autopilot wake` (`crew_autopilot.py wake --root .`) leaves it
+  now. Both keep one record, `<git-common-dir>/crew/autopilot-sleep.json`
+  (`{"state", "by", "at", "until"}`), written to a temp file and moved into place with
+  `os.replace`, shared by every worktree and never read from a worktree or `.work/`. A valid
+  record beats the schedule until `until`: for `sleep`, the end of the current window, else of
+  the next one, or 12 hours with no schedule; for `wake` inside the window, the window's end (it
+  never extends past it); `wake` outside the window removes the record. `settings`' sleep line
+  gains `source=<schedule|manual>` and, for manual, `until=<HH:MM>`; a policy reason a manual
+  sleep set ends `(asleep by hand until <HH:MM>; day value <day>)`.
+- **Until L-1504, a manual sleep only tightens (owner decision 2026-10-04, #427 review B1).** The
+  session can run `crew_autopilot.py sleep` itself (`scope_guard.py` allows it, `--by` is free
+  text): day `human` / night `self` at noon was 19 hours of self-approval. Outside the window a
+  manual `asleep` now applies a night value only where it is stricter than the day value, per key;
+  inside it the schedule's night values stand; `sleep` refuses when nothing would tighten. L-1504
+  (harness-only) makes the approval hook accept only the owner's typed `/crew:autopilot sleep` and
+  then unlocks loosening.
+- **Review NITs.** N1: `at` and `until` are stored as UTC-aware ISO and compared in UTC; a naive
+  record reads `unknown`. N2: `wake` says when whether the schedule is asleep cannot be told
+  rather than "resumes at <now>". N3: the record is read only as a regular file (`lstat`,
+  `O_NOFOLLOW|O_NONBLOCK`, `fstat`, 64 KiB cap); a FIFO, device, directory or symlink is `unknown`.
+- **Review round 2.** Each read-safety layer has its own test (a removal goes red). The cap is 24
+  wall-clock hours with a 25-real-hour backstop, so a sleep on a fall-back day (03:30, window
+  23:00-03:00) writes a record its reader trusts; `sleep` validates the record it is about to
+  write and refuses rather than report a sleep it would distrust. A spring-forward `until` at a
+  skipped time resolves forward; `wake` writes whole seconds.
+- **Refusals.** `sleep` exits 2 with `refused: ...` and writes nothing unless
+  `scope.allowCliApproval` is exactly `true`, autopilot is armed, `.crew/config.json` and its
+  `autopilot.sleep` can be read, and the window is open or an override is stricter than its day
+  value. `wake` never refuses
+  for policy; with nothing to undo it prints `already awake`. A crash in either exits 1.
+- **Fail closed, stricter than the spec's "ignored" in three places (owner may review).** A record
+  that is unreadable, not an object, missing a field, with another `state`, an `at`/`until` that
+  is not a UTC-aware ISO time, an `at` in the future or an `until` more than 24 wall-clock hours (or 25 real hours) after `at`
+  reads `unknown` with a warning naming the file (per key the stricter of the day value and the
+  night override), not "no manual state"; an expired record is ignored with a warning. A manual
+  `asleep` counts only while `scope.allowCliApproval` is exactly `true` at read time too. A
+  manual `awake` over an open window keeps any night value stricter than the day value.
+- **Writers.** `crew_autopilot.py`'s writers are now `approve`, `sleep` and `wake`; the
+  only-writer test, the module docstring, `autopilot.md`, README, CONFIG.md §20 and PLUGINS.md say
+  so. `autopilot.md` stays inside its 110-line budget (110).
+- **Not in this release.** Plain-text sleep phrases (T-0057), a sleep log and morning summary
+  (L-0653), a `deploy` override (L-0654), sabotage entries (L-0655, harness path), and no change
+  to `scope_guard.py`.
+
+### Fixed — `crew` 1.0.340: every tool runs the way it was found, no bare-name subprocess (L-1508, PR A)
+
+- **What changed.** crew ran `git`, `ps` and `xdotool` by bare name. On native
+  Windows that reaches CreateProcess, which ignores PATHEXT and tries only
+  `<name>.exe`, while bash, pwsh and `shutil.which` find a `<name>.cmd` first.
+  With a `.cmd` shim ahead of the `.exe` on PATH, crew judged a different tool
+  from the one the user's shell runs, and a guard that read its answer could
+  pass (T-0017's wrap-up veto did). New `crew_common.resolve_tool(name)` is
+  `shutil.which(name)` (no cache: ~30us a lookup against ~1.8ms to spawn git,
+  and a cache would hide a PATH change); `require_tool` raises a
+  `FileNotFoundError` naming the tool, so each site keeps its existing failure
+  path. Fixed: `ci_receipt`, `crew_common.git_out`, `crew_instructions`,
+  `crew_refresh_check`, `crew_state.in_git_repo`, `crew_status` (tree line),
+  `crew_tracker`, `crew_trailers`, `event_claim`, `crew_autocycle`'s process
+  table (`ps`; native Windows has no `/proc`) and `xdotool`, `crew_shell`'s
+  Git Bash probe (`git --exec-path`), `crew_upgrade`, and the three
+  `crew-qa-standards` scripts. `crew_status` is a `SEAM` path in
+  `scripts/check-tooling-pr.py`; its commit carries a `Tooling-seam` trailer,
+  which has no effect here because the check reads SEAM only when a harness
+  path changed, and none does.
+- **At a guard, a tool that does not resolve is "could not tell".** The CI
+  receipt reads UNKNOWN, crew status shows `tree unknown`, the tracker refuses
+  a board inside the worktree, the wrap-up veto refuses the clear.
+- **New lint.** `plugin/crew/tests/test_tool_resolution.py` AST-scans every
+  plugin and skill script and fails on a process start that names its program
+  literally: a `subprocess` argv list or tuple (or a `+` of one), a command
+  string, a name the function assigns such a value exactly once,
+  `subprocess.getoutput`, `os.system`/`os.popen`/`os.exec*p`/`os.spawn*p`,
+  `asyncio.create_subprocess_exec`, and the known argv wrappers (`crew_shell`'s
+  `runner`/`execute`, obsidian-vault's `_run_bounded`). Each exception is on an
+  allowlist naming the file, function, tool and reason: the review/gate harness
+  files (fixed in L-1508 PR B, which lands alone under T-0087); POSIX- or
+  container-only sites, each with its gate's `path:line`, whose whole line is
+  checked (`ps` in `crew_autocycle._proc`, `ip` in `crew_platform._wsl_facts`,
+  `bash -c` in `crew_shell.run`, `npx` in `webtest_guard.check_visual`);
+  obsidian-vault's macOS-only `ps` and notify's Windows-only `tasklist.exe`;
+  and L-1509's sites (repo-docs' two git calls, obsidian-vault's
+  `vault_garden` git, rule-of-two's `codex`).
+- **Not covered.** An argv built in another function, or assigned more than
+  once, is not seen.
+
+### Added — `crew` 1.0.339: autopilot rejects an out-of-rounds BLOCK review and replans, capped (T-0074)
+
+- **What changed.** A new repo-only key, `autopilot.maxAutoReplans` (default
+  `0`, off: today's behaviour). At 1 or more, with autopilot armed and
+  `autopilot.approval` allowing the successor plan, a final review round that
+  is FINDINGS with a BLOCK and no round left is no longer a stop: `next`
+  answers the new phase `auto-replan`, whose command is
+  `crew_autopilot.py auto-reject --root . --ticket <id>`. It moves the ledger
+  REVIEWED -> NEEDS_REPLAN through `review_ledger.reject` under the fixed
+  name `autopilot (policy: autopilot.maxAutoReplans)` and prints every BLOCK
+  and FIX line; `next` then names `/crew:plan` without stopping, and the
+  existing approve phase and fresh rounds follow. At the cap (every successor
+  plan on the ledger counts; the cap is at most 5) `next` stops with phase
+  `auto-replan-cap`, naming the cap and each successor plan. The non-stop
+  `replan` re-checks the rejected round (current plan, FINDINGS, a BLOCK, no
+  round left, another family), so a hand-typed reject name is the owner's stop. `settings` prints
+  `maxAutoReplans=` on its first line.
+- **Never.** Autopilot accepts no round with a BLOCK at any setting. An
+  INCOMPLETE round, a same-family or unknown reviewer, counts and finding
+  lines that disagree, a round still left, an unreadable ledger or config, or
+  a value of the wrong type is today's stop. `status` reads neither route.
+- **Tests.** `test_crew_autopilot_replan.py` (new): the setting, a refusal
+  per policy condition that leaves the ledger bytes unchanged, the routes,
+  the full reject -> plan -> approve -> implement cycle, and the family rule
+  held against `review_ledger.auto_accept_refusal`. The write-path test now
+  names two writers, `approve` and `auto-reject`.
+- **Not here.** The check that a successor plan quotes every BLOCK and FIX
+  line (L-0670) and the committed sabotage entries plus the `review.md`
+  sentence (L-0671, a tooling-only PR).
+
 ### Fixed — `crew` 1.0.338: mint never reads INDEX.md mid-replace (L-1510)
 
 - **What broke.** On the Windows runner, `test_concurrent_mints_distinct` and
