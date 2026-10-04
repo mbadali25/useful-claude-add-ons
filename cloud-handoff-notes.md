@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:10: Land-prep onto e9364a70 started: #342 (1.0.364; CONFIG §10 now generated - reconcile), #357 (1.0.365; guide may list focus as coming).
 - 12:10: #368 merge review 29889e98: 0/0/1 CLEAN (on e9364a70).
 - 12:08: #341 L-0509 review f7f052a2: 0/3/4, verdict LAND THIS HALF NOW (no guard weakened; split cases fail closed). FIX1 _phase reads archived ticket's spec as absent; FIX2 resume_target live isdir; FIX3 harness follow-up (check_ticket accepts 'Complete'). FIX1-2 sent to builder (re-version 1.0.363).
 - 12:08: #368 land-prep onto e9364a70 done: 29889e98 (1.0.361; troubleshooting guide rebuilt; no config leaf). Merge-only review started. (Pre-existing stale cite noted: repo-docs.md:313 README.md:2320 -> 2357.)
