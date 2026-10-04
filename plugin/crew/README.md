@@ -1994,6 +1994,14 @@ stopping point — finish or safely abandon the change in flight, write the
 handoff, update the ticket — before telling you it's ready. Off, it just asks
 you to write the handoff.
 
+With `context.autoClear.wrapUp` armed (machine file only, and only where
+auto-clear is armed), the warning becomes the one wrap-up procedure — finish
+the step, commit only if its `Test:` passes, run `/crew:handoff --wrap-up`,
+end the turn — and auto-clear waits until the handoff's `head:` is HEAD, its
+`branch:` matches, no tracked file is modified and its `resume:` line parses
+(or is `resume: none`). A refusal is shown to you and fed back to the session
+once. Crew checks the commit, not the test (CONFIG.md §14).
+
 It blocks **once per threshold crossing per session**: keyed on the payload's
 `session_id`, never on a `stop_hook_active` continuation, and re-armed only
 when a measured reading drops back under the threshold (a compaction). It is
@@ -2888,7 +2896,7 @@ with three hooks registered and unlisted.
 | `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
-| `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
+| `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on; with `context.autoClear.wrapUp` armed, sends the wrap-up procedure and feeds a refused wrap-up back once |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
 
