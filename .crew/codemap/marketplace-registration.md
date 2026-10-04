@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0620587f
+anchor: useful-claude-add-ons@69de978c
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -1530,3 +1530,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored `0620587f` -> `69de978c` on 2026-10-04 (T-0041 feature half, crew 1.0.308, after merging origin/main into T-0041-build).** `69de978c` changes .crew/verify.json, plugin/crew/README.md, plugin/crew/agents/{explorer,researcher,security}.md, plugin/crew/commands/{done,debug}.md, plugin/crew/hooks/scripts/_test/validate-prompts.py, plugin/crew/skills/{crew-best-practices,crew-brainstorm,crew-plan}/SKILL.md and the new plugin/crew/tests/test_verify_before_stating.py: inserted lines only, plus `**Unverified**` renamed in place in researcher.md, the crew-best-practices description (`:3`) and `.crew/verify.json:554` gaining a comma before a rule appended last. Every body citation of the form `<changed file>:N` in this note was listed by script against each file's first inserted line (verify.json 554, README 2804, explorer 55, researcher 70, security 143, debug 95, done 86, validate-prompts 106, crew-best-practices 76, crew-brainstorm 41, crew-plan 73); every hit was a line number of another file or a dated provenance position, so no body citation moved. No suite was executed for this note.
