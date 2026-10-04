@@ -4,6 +4,53 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.341: manual `/crew:autopilot sleep` and `wake` (L-0652, T-0053 slice 2)
+
+- **What changed.** `/crew:autopilot sleep` (`crew_autopilot.py sleep --root . [--by <text>]`)
+  enters sleep mode now and `/crew:autopilot wake` (`crew_autopilot.py wake --root .`) leaves it
+  now. Both keep one record, `<git-common-dir>/crew/autopilot-sleep.json`
+  (`{"state", "by", "at", "until"}`), written to a temp file and moved into place with
+  `os.replace`, shared by every worktree and never read from a worktree or `.work/`. A valid
+  record beats the schedule until `until`: for `sleep`, the end of the current window, else of
+  the next one, or 12 hours with no schedule; for `wake` inside the window, the window's end (it
+  never extends past it); `wake` outside the window removes the record. `settings`' sleep line
+  gains `source=<schedule|manual>` and, for manual, `until=<HH:MM>`; a policy reason a manual
+  sleep set ends `(asleep by hand until <HH:MM>; day value <day>)`.
+- **Until L-1504, a manual sleep only tightens (owner decision 2026-10-04, #427 review B1).** The
+  session can run `crew_autopilot.py sleep` itself (`scope_guard.py` allows it, `--by` is free
+  text): day `human` / night `self` at noon was 19 hours of self-approval. Outside the window a
+  manual `asleep` now applies a night value only where it is stricter than the day value, per key;
+  inside it the schedule's night values stand; `sleep` refuses when nothing would tighten. L-1504
+  (harness-only) makes the approval hook accept only the owner's typed `/crew:autopilot sleep` and
+  then unlocks loosening.
+- **Review NITs.** N1: `at` and `until` are stored as UTC-aware ISO and compared in UTC; a naive
+  record reads `unknown`. N2: `wake` says when whether the schedule is asleep cannot be told
+  rather than "resumes at <now>". N3: the record is read only as a regular file (`lstat`,
+  `O_NOFOLLOW|O_NONBLOCK`, `fstat`, 64 KiB cap); a FIFO, device, directory or symlink is `unknown`.
+- **Review round 2.** Each read-safety layer has its own test (a removal goes red). The cap is 24
+  wall-clock hours with a 25-real-hour backstop, so a sleep on a fall-back day (03:30, window
+  23:00-03:00) writes a record its reader trusts; `sleep` validates the record it is about to
+  write and refuses rather than report a sleep it would distrust. A spring-forward `until` at a
+  skipped time resolves forward; `wake` writes whole seconds.
+- **Refusals.** `sleep` exits 2 with `refused: ...` and writes nothing unless
+  `scope.allowCliApproval` is exactly `true`, autopilot is armed, `.crew/config.json` and its
+  `autopilot.sleep` can be read, and the window is open or an override is stricter than its day
+  value. `wake` never refuses
+  for policy; with nothing to undo it prints `already awake`. A crash in either exits 1.
+- **Fail closed, stricter than the spec's "ignored" in three places (owner may review).** A record
+  that is unreadable, not an object, missing a field, with another `state`, an `at`/`until` that
+  is not a UTC-aware ISO time, an `at` in the future or an `until` more than 24 wall-clock hours (or 25 real hours) after `at`
+  reads `unknown` with a warning naming the file (per key the stricter of the day value and the
+  night override), not "no manual state"; an expired record is ignored with a warning. A manual
+  `asleep` counts only while `scope.allowCliApproval` is exactly `true` at read time too. A
+  manual `awake` over an open window keeps any night value stricter than the day value.
+- **Writers.** `crew_autopilot.py`'s writers are now `approve`, `sleep` and `wake`; the
+  only-writer test, the module docstring, `autopilot.md`, README, CONFIG.md §20 and PLUGINS.md say
+  so. `autopilot.md` stays inside its 110-line budget (110).
+- **Not in this release.** Plain-text sleep phrases (T-0057), a sleep log and morning summary
+  (L-0653), a `deploy` override (L-0654), sabotage entries (L-0655, harness path), and no change
+  to `scope_guard.py`.
+
 ### Fixed — `crew` 1.0.340: every tool runs the way it was found, no bare-name subprocess (L-1508, PR A)
 
 - **What changed.** crew ran `git`, `ps` and `xdotool` by bare name. On native

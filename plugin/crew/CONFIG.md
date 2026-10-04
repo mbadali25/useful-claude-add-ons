@@ -2864,7 +2864,8 @@ by `settings` ("move it to .crew/config.json") rather than read as `off` with
 no word. `settings` prints `mode`, `maxPhases`, `deploy` and `maxAutoReplans`
 on its first text line, the effective `approval` and `questions` on its second, and
 `sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
-questions=<override|->` on its third; `--json` adds `day` (the two day values)
+questions=<override|-> source=<schedule|manual>` on its third (L-0652 adds
+`until=<HH:MM>` for a manual state); `--json` adds `day` (the two day values)
 and `sleep`.
 
 **Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
@@ -2905,9 +2906,53 @@ way a `taken:` line written asleep makes `questions-check` say `valid=0` by
 day when the day policy stops. The clock is local time as each process sees
 it, so it follows that process's `TZ`: `approve` and `questions-check` run in
 the model's shell environment, and a different `TZ` there moves the window.
-crew adds no variable or flag of its own that moves the clock. Not in this version: manual `sleep` / `wake`, a sleep log, a
+crew adds no variable or flag of its own that moves the clock. Not in this version: a sleep log, a
 `deploy` override (sleep leaves `deploy_allowed` unchanged), and a
 machine-global `autopilot.sleep`.
+
+**Manual sleep and wake (L-0652).** `/crew:autopilot sleep` runs
+`crew_autopilot.py sleep --root . [--by <text>]` and `/crew:autopilot wake`
+runs `crew_autopilot.py wake --root .`. Both keep one file,
+`<git-common-dir>/crew/autopilot-sleep.json` (`{"state", "by", "at",
+"until"}`, UTC-aware ISO times compared in UTC, written to a temp file and
+moved into place with `os.replace`), shared by every worktree of the
+repository and never read from a worktree or `.work/`. It is read only when
+`lstat` says it is a regular file, opened without following a symlink or
+blocking on a FIFO, re-checked with `fstat`, and read up to 64 KiB; anything
+else is `unknown` (each layer has its own test). `sleep` checks the record it
+is about to write with the same reader and refuses rather than report a sleep
+the reader would distrust; an `until` at a wall-clock time a spring-forward
+skips resolves forward to the next valid instant.
+**Until L-1504, a manual sleep only tightens** (owner decision 2026-10-04,
+review B1 of #427): the session can run `crew_autopilot.py sleep` itself
+(`scope_guard.py` lets it through and `--by` is free text), so outside the
+scheduled window a manual `asleep` applies a night value only where it is
+stricter than the day value, per key, like could-not-tell; inside the window
+the schedule's own night values stand. L-1504 (harness-only) makes the
+approval hook accept only the owner's typed `/crew:autopilot sleep`, and
+loosening is unlocked after it lands. A valid record beats the schedule until its `until`,
+then the schedule decides again. `sleep` sets `asleep` until the end of the
+current window if inside one, else the end of the next window, or for 12 hours
+with no schedule; it exits 2 with `refused: ...` and writes nothing unless
+`scope.allowCliApproval` is exactly `true`, autopilot is armed, the config and
+its `autopilot.sleep` can be read, and the window is open or at least one
+`autopilot.sleep` override is stricter than its day value (else it would
+change nothing). `wake` never
+refuses: inside the window it sets `awake` until the window's end (it never
+extends past it); outside, it removes the record and says when the schedule
+resumes, or that whether it is asleep cannot be told; with nothing to undo it
+prints `already awake`. Fail closed: a record that is unreadable, not an
+object, missing a field, with a `state` other than `asleep`/`awake`, an `at`
+or `until` that is not a UTC-aware ISO time (an old naive record included), an `at` in the future, or an `until`
+more than 24 wall-clock hours (or, as a backstop, 25 real hours, one cycle
+across a fall-back) after `at` is `unknown` with a warning naming the file —
+per key the stricter of the day value and the night override, never "not
+set", so a planted file cannot loosen anything. An expired record is ignored with a warning. A manual `asleep` is
+honoured only while `scope.allowCliApproval` is exactly `true` at read time
+too (turning it off ends the sleep; until then it reads `unknown`). A manual
+`awake` while the window is open keeps any night value stricter than the day
+value, so `wake` never loosens a tightening. A policy reason a manual sleep
+set ends with `(asleep by hand until <HH:MM>; day value <day>)`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
@@ -2964,8 +3009,9 @@ hand with `review_ledger.py --reject --by` gives the owner's stop, as before.
 A BLOCK is never accepted by autopilot at any setting. The recommended value
 when you turn it on is `2`.
 
-**The two writers.** `crew_autopilot.py` is read-only except `approve` and
-`auto-reject`. `approve` writes only when `autopilot.approval` allows it (a ticket `assign` mints is written by
+**The writers.** `crew_autopilot.py` is read-only except `approve` and
+`auto-reject`, and L-0652's `sleep` and `wake`, which write or remove only
+`<git-common-dir>/crew/autopilot-sleep.json`. `approve` writes only when `autopilot.approval` allows it (a ticket `assign` mints is written by
 `crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's

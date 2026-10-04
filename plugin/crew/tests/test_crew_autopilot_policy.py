@@ -679,8 +679,9 @@ def _main(root, action, *rest):
     return crew_autopilot.main(argv)
 
 
-# T-0074: `auto-reject` is the module's second writer; nothing else writes.
-WRITERS = ("approve", "auto-reject")
+# T-0074: `auto-reject` is the module's second writer; L-0652's `sleep` and
+# `wake` the others (they write only the manual sleep state); nothing else writes.
+WRITERS = ("approve", "auto-reject", "sleep", "wake")
 
 
 def _usage_subcommands():
@@ -705,10 +706,16 @@ def _out_of_rounds_block(root):
 
 # The name is older than T-0074: two sabotage_autopilot.py entries (a harness
 # file) target this node id, so it keeps the name until L-0671 renames it
-# with them. What it pins is WRITERS, `approve` and `auto-reject`.
+# with them. What it pins is WRITERS: `approve` writes its receipt;
+# `auto-reject` only the ledger; L-0652's `sleep` and `wake` exactly
+# `<git-common-dir>/crew/autopilot-sleep.json` and nothing in the worktree;
+# every other subcommand leaves every file byte-identical.
 def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
     root = _repo(tmp_path, approval="self", risk="low")
+    config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    config["autopilot"]["sleep"] = {"approval": "human"}
+    _write(root / ".crew" / "config.json", json.dumps(config))
     _questions(root, GOOD_QUESTIONS)
     before = _files(root)
 
@@ -717,6 +724,10 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     after_reads = _files(root)
     code = _main(root, "approve", "--ticket", T)
     after = _files(root)
+    slept = _main(root, "sleep")
+    after_sleep = _files(root)
+    woke = _main(root, "wake")
+    after_wake = _files(root)
     _out_of_rounds_block(root)
     ledger = review_ledger.ledger_path(str(root), T)
     staged = _files(root)
@@ -729,11 +740,14 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     # approval and, on a ticket's first approval, the scope ramp's list.
     receipt = sorted([crew_ticket.approval_path(str(root), T),
                       os.path.join(crew_ticket.state_dir(str(root)), "scope-tickets.json")])
+    manual = os.path.join(crew_ticket.state_dir(str(root)), "autopilot-sleep.json")
     changed = sorted(p for p in set(staged) | set(last) if staged.get(p) != last.get(p))
     assert (_usage_subcommands() - {run[0] for run in READ_ONLY_RUNS}, after_reads == before,
             code, added, {p: v for p, v in after.items() if p in before} == before,
-            rejected, changed) == (
-        set(WRITERS), True, 0, receipt, True, 0, [ledger])
+            slept, sorted(set(after_sleep) - set(after)),
+            {p: v for p, v in after_sleep.items() if p in after} == after,
+            woke, after_wake == after, rejected, changed) == (
+        set(WRITERS), True, 0, receipt, True, 0, [manual], True, 0, True, 0, [ledger])
 
 
 def test_approve_refused_writes_nothing(tmp_path, monkeypatch, capsys):

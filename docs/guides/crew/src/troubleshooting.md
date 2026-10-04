@@ -258,6 +258,10 @@ contract itself. This section is what goes wrong with the approval and the audit
   `crew_autopilot.py approve`) only while that is true and `autopilot.approval` still allows it.
   That includes a receipt written inside an `autopilot.sleep.schedule` window under
   `autopilot.sleep.approval`: once the window ends, the day value decides, and it may not allow it.
+  The same holds for a manual `/crew:autopilot sleep` once its `until` passes. If `settings`
+  prints `sleep=unknown source=manual`, `<git-common-dir>/crew/autopilot-sleep.json` could not be
+  trusted (the warning names why): the stricter value applies per key until
+  `/crew:autopilot wake` removes or replaces it.
   **Fix:** re-approve. The user types `/crew:approve <id>` again — the only other route is
   `/crew:autopilot` under an opted-in `autopilot.approval`; `scope_guard.py` refuses a Write/Edit
   under `<git-common-dir>/crew/` in every mode but `off`, so a session cannot forge or refresh its

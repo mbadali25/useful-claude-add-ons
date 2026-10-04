@@ -13,6 +13,8 @@
                                      (at most 12 lines; --json is one line)
     python3 crew_autopilot.py approve --root . --ticket <id>
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
+    python3 crew_autopilot.py sleep --root . [--by <text>]
+    python3 crew_autopilot.py wake --root .
     python3 crew_autopilot.py auto-reject --root . --ticket <id>
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
@@ -20,8 +22,13 @@ done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only except
 `approve` and `auto-reject`, each only when its policy allows under the
-configured setting; it never accepts a review. Those are the two exceptions
-(T-0010 and T-0074, below): `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
+configured setting; it never accepts a review. Those are the two policy
+exceptions (T-0010 and T-0074, below), and L-0652's `sleep` and `wake` the
+only other writers: each writes or removes only
+`<git-common-dir>/crew/autopilot-sleep.json`, the manual sleep state
+(`crew_sleep`'s docstring; `sleep` only where `scope.allowCliApproval` is
+exactly true).
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
 T-0072's `deploy-allowed` write no file. `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
 all under `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
@@ -151,10 +158,12 @@ verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
 not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
 import argparse
+import datetime
 import importlib
 import json
 import os
 import re
+import stat
 import sys
 import threading
 
@@ -239,7 +248,10 @@ HUMAN_STOPS = (
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
-AVAILABLE = frozenset({"status", "run"})
+SUBCOMMANDS += ("sleep", "wake")  # L-0652: manual sleep mode
+AVAILABLE = frozenset({"status", "run", "sleep", "wake"})
+# L-0652: the subcommands that take no ticket, not even a second word.
+NO_TICKET = frozenset({"sleep", "wake"})
 ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
 GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
@@ -1073,14 +1085,19 @@ def _overlay(day, sleep):
     """`(policies, applied)`: asleep, every non-null override replaces the
     day value; unknown, one replaces it only when stricter (human > risk >
     self), so could-not-tell never loosens a policy and never drops a
-    tightening the owner set; off or awake, the day values."""
+    tightening the owner set; off or awake, the day values. `tightenOnly`
+    (L-0652: a manual sleep outside the window, or a manual wake inside it)
+    is stricter-only whatever the state."""
     policies, applied = dict(day), []
     for key, value in sleep["overrides"].items():
         if value is None:
             continue
-        if sleep["state"] == crew_sleep.ASLEEP or (
-                sleep["state"] == crew_sleep.UNKNOWN
-                and STRICTNESS.index(value) < STRICTNESS.index(policies[key])):
+        stricter = STRICTNESS.index(value) < STRICTNESS.index(policies[key])
+        if sleep.get("tightenOnly") or sleep["state"] == crew_sleep.UNKNOWN:
+            take = stricter
+        else:
+            take = sleep["state"] == crew_sleep.ASLEEP
+        if take:
             policies[key] = value
             applied.append(key)
     return policies, applied
@@ -1104,7 +1121,8 @@ def _sleep_at(top, block):
     sleep, found = None, {key: crew_sleep.STRICTEST for key in crew_sleep.OVERRIDES}
     try:
         sleep = _sleep_block(top, block)
-        return crew_sleep.resolve(sleep, crew_sleep.now(), POLICIES)
+        return crew_sleep.resolve(sleep, crew_sleep.now(), POLICIES, _manual_found(top),
+                                  crew_ticket.cli_approval_allowed(top))
     except Exception as exc:  # pylint: disable=broad-except
         try:
             found = crew_sleep.read_overrides(sleep, POLICIES)[0]
@@ -1114,6 +1132,170 @@ def _sleep_at(top, block):
                 "warnings": [f"autopilot.sleep could not be resolved ({type(exc).__name__}: "
                              f"{_safe_text(exc, str)[:120]}); per key the stricter of the day "
                              "value and the night value applies"]}
+
+
+def _hhmm(iso):
+    """`HH:MM`, in local time, of an ISO time `crew_sleep` produced (a
+    UTC-aware one is shown in the machine's time zone)."""
+    found = datetime.datetime.fromisoformat(iso)
+    return (found.astimezone() if found.tzinfo else found).strftime("%H:%M")
+
+
+def _sleep_span(sleep):
+    """What an asleep note names: the window, or a manual sleep's end."""
+    if sleep.get("source") == "manual":
+        return f"by hand until {_hhmm(sleep['until'])}"
+    return sleep["schedule"]
+
+
+def _manual_path(top):
+    """`<git-common-dir>/crew/autopilot-sleep.json` (L-0652): shared by every
+    worktree of the repository, never read from a worktree or `.work/`."""
+    state = crew_ticket.state_dir(top)
+    if state is None:
+        raise crew_ticket.TicketError("not a git repository, so there is no "
+                                      "<git-common-dir>/crew/ for the sleep state")
+    return os.path.join(state, crew_sleep.MANUAL_FILE)
+
+
+def _manual_found(top):
+    """`crew_sleep.read_manual`'s `found`: `("absent", None)`, `("ok", data)`
+    or `("unreadable", why)`. A directory with no `.git` entry at all has no
+    `<git-common-dir>` where `sleep` could have written, so it is absent; a
+    checkout whose state directory git cannot name raises, which `_sleep_at`
+    takes as could-not-tell."""
+    if not os.path.lexists(os.path.join(top, ".git")) and crew_ticket.state_dir(top) is None:
+        return "absent", None
+    path = _manual_path(top)
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return "absent", None
+    except OSError as exc:
+        return "unreadable", f"{type(exc).__name__} on lstat"
+    if not stat.S_ISREG(mode):
+        return "unreadable", "it is not a regular file"
+    text = _read_regular(path)
+    if text is None:
+        return "unreadable", "it is not a regular file, or could not be read"
+    try:
+        return "ok", json.loads(text)
+    except ValueError:
+        return "unreadable", "not JSON"
+
+
+MANUAL_MAX_BYTES = 65536
+
+
+def _read_regular(path):
+    """The text of `path` when it is still a regular file once opened (review
+    N3): opened without following a final symlink and without blocking on a
+    FIFO, re-checked with `fstat`, read up to MANUAL_MAX_BYTES. None
+    otherwise."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        handle = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(handle).st_mode):
+            return None
+        data = os.read(handle, MANUAL_MAX_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(handle)
+    if len(data) > MANUAL_MAX_BYTES:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def sleep_now(root, by="cli"):
+    """(exit code, text) for `crew_autopilot.py sleep` (L-0652): write an
+    `asleep` record until the end of the current or next window, or for
+    MANUAL_SLEEP_HOURS with no schedule. Exit 2, writing nothing, unless
+    `scope.allowCliApproval` is exactly true, autopilot is armed, the config
+    can be told and at least one `autopilot.sleep` override is set: the
+    manual state grants only what the night values already configure."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    cause = _unreadable_autopilot(top)
+    if cause:
+        return 2, f"refused: {cause}, so sleep mode cannot be told"
+    if not crew_ticket.cli_approval_allowed(top):
+        return 2, (f"refused: {ALLOW_CLI} is not exactly true in .crew/config.json, so only "
+                   "the schedule puts autopilot to sleep")
+    conf = _settings_at(top)
+    if not conf["armed"]:
+        return 2, "refused: autopilot.mode is not plan, so there is nothing to put to sleep"
+    block = _sleep_block(top, crew_config.resolve_config(top).get("autopilot") or {})
+    when = crew_sleep.now()
+    found = crew_sleep.resolve(block, when, POLICIES)
+    if found["state"] == crew_sleep.UNKNOWN:
+        return 2, (f"refused: autopilot.sleep.schedule or the block cannot be read "
+                   f"({'; '.join(found['warnings'])[:200]})")
+    tightens = [key for key in crew_sleep.OVERRIDES if _stricter(
+        found["overrides"].get(key), conf["day"].get(key))]
+    if found["state"] != crew_sleep.ASLEEP and not tightens:
+        return 2, ("refused: no autopilot.sleep override is stricter than its day value, and "
+                   "until L-1504 a manual sleep only tightens, so it would change nothing")
+    if found["schedule"]:
+        until = crew_sleep.next_edge(crew_sleep.parse_schedule(found["schedule"])[1], when)
+    else:
+        until = when + datetime.timedelta(hours=crew_sleep.MANUAL_SLEEP_HOURS)
+    record = {"state": crew_sleep.ASLEEP, "by": by,
+              "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
+              "until": crew_sleep.to_utc(until).replace(microsecond=0).isoformat()}
+    check = crew_sleep.read_manual(("ok", record), when)
+    if check["kind"] != "valid":
+        # Review round 2 FIX-2: never report a sleep the reader would distrust.
+        return 2, _one_line(f"refused: the record sleep would write is not trusted by its own "
+                            f"reader ({check['warning'][:200]}); nothing written")
+    crew_ticket._write_json(_manual_path(top), record)  # pylint: disable=protected-access
+    what = ("the scheduled night" if found["state"] == crew_sleep.ASLEEP
+            else f"tightens {','.join(tightens)}")
+    return 0, (f"asleep until {_hhmm(record['until'])} (set by {_cli_value(by)[:60]}; {what}); "
+               f"{AUTOPILOT} wake undoes it")
+
+
+def _stricter(night, day):
+    """Whether the night override `night` is stricter than the day value."""
+    return night in STRICTNESS and day in STRICTNESS and (
+        STRICTNESS.index(night) < STRICTNESS.index(day))
+
+
+def wake_now(root):
+    """(exit code, text) for `crew_autopilot.py wake` (L-0652). Never refuses
+    for policy. Inside the scheduled window it writes an `awake` record until
+    the window's end; otherwise it removes any record, since the schedule
+    already says awake. Nothing to undo: `already awake`, nothing written."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    path, when = _manual_path(top), crew_sleep.now()
+    state, schedule, why = crew_sleep.UNKNOWN, None, _unreadable_autopilot(top)
+    if not why:
+        block = _sleep_block(top, crew_config.resolve_config(top).get("autopilot") or {})
+        found = crew_sleep.resolve(block, when, POLICIES)
+        state, schedule = found["state"], found["schedule"]
+        why = "; ".join(found["warnings"])
+    if state == crew_sleep.ASLEEP:
+        until = crew_sleep.next_edge(crew_sleep.parse_schedule(schedule)[1], when)
+        record = {"state": crew_sleep.AWAKE, "by": "cli",
+                  "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
+                  "until": crew_sleep.to_utc(until).replace(microsecond=0).isoformat()}
+        crew_ticket._write_json(path, record)  # pylint: disable=protected-access
+        return 0, f"awake; the schedule resumes at {_hhmm(record['until'])}"
+    if not os.path.lexists(path):
+        return 0, "already awake"
+    os.unlink(path)
+    if state == crew_sleep.UNKNOWN:
+        # Review N2: never "resumes at <now>" for a schedule that cannot be told.
+        return 0, _one_line(f"awake; whether the schedule is asleep cannot be told "
+                            f"({_safe_text(why or 'unreadable', str)[:160]})")
+    if state == crew_sleep.OFF:
+        return 0, "awake; no schedule is set"
+    return 0, f"awake; the schedule resumes at {when.strftime('%H:%M')}"
 
 
 def _exact(value, allowed):
@@ -1318,7 +1500,9 @@ def _decision(top, ticket, key):
     sleep, day = conf.get("sleep") or {}, (conf.get("day") or {}).get(key)
     note = ""
     if key in sleep.get("applied", ()) and sleep.get("state") == crew_sleep.ASLEEP:
-        note = f" (asleep {sleep['schedule']}; day value {day})"
+        note = f" (asleep {_sleep_span(sleep)}; day value {day})"
+    elif key in sleep.get("applied", ()) and sleep.get("tightenOnly"):
+        note = f" (awake by hand; the stricter autopilot.sleep.{key} over day value {day})"
     elif key in sleep.get("applied", ()):
         note = (f" (sleep could not be told; the stricter autopilot.sleep.{key} over "
                 f"day value {day})")
@@ -1677,6 +1861,8 @@ def route_args(root, text):
     if got["stop"]:
         return got
     rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    if words[:1] and words[0] in NO_TICKET and rest:
+        return dict(got, stop=True, reason=f"{AUTOPILOT} {words[0]} takes no other word")
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
         return dict(route(top, GOAL_FLAG), ticket="")
     if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
@@ -1943,7 +2129,10 @@ def _sleep_line(sleep):
     """`settings`' third line (T-0053): the window's state and overrides."""
     line = _line(sleep=sleep["state"], schedule=sleep["schedule"] or "none",
                  **{key: sleep["overrides"][key] or "-" for key in crew_sleep.OVERRIDES})
-    if sleep["state"] == crew_sleep.UNKNOWN:
+    line += " " + _line(source=sleep.get("source", "schedule"))
+    if sleep.get("until"):
+        line += " " + _line(until=_hhmm(sleep["until"]))
+    if sleep["state"] == crew_sleep.UNKNOWN or sleep.get("tightenOnly"):
         # Which night values the stricter rule applied (`--json`'s `applied`).
         line += " " + _line(applied=",".join(sleep.get("applied") or []) or "-")
     return line
@@ -1964,6 +2153,17 @@ def _policy_main(args):
         code, text = 1, _one_line(f"refused: {_failure(exc)}")
         result = {"code": code, "text": text}
     sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    return code
+
+
+def _manual_main(args):
+    """`sleep` and `wake` (L-0652): one line; a crash is a refusal (exit 1)."""
+    try:
+        code, text = sleep_now(args.root, args.by) if args.action == "sleep" \
+            else wake_now(args.root)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        code, text = 1, _one_line(f"refused: {_failure(exc)}")
+    sys.stdout.write(text + "\n")
     return code
 
 
@@ -2022,6 +2222,9 @@ def main(argv):
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
+    for name in ("sleep", "wake"):
+        sub.add_parser(name).add_argument("--root", default=".")
+    sub.choices["sleep"].add_argument("--by", default="cli")
     for name in ("next", "approve", "questions-check", "auto-reject"):
         sub.choices[name].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
@@ -2048,11 +2251,13 @@ def main(argv):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    # Read-only but for approve's receipt: git must not even refresh the index's
+    # Read-only but for approve's receipt and sleep/wake's state: git must not refresh the index's
     # stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check", "auto-reject"):
         return _policy_main(args)
+    if args.action in ("sleep", "wake"):
+        return _manual_main(args)
     if args.action == "status":
         try:
             result = status(args.root, args.ticket or None)
