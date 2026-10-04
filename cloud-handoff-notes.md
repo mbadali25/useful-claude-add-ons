@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:20 UTC
+Last updated: 2026-10-04 10:22 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:22: Owner asked for next-PR order (all open, draft or not). Land-prep started: #377 (1.0.335), #352 (1.0.336). Untriaged open PRs found: #274 T-0104, #275 T-0500 (WIP cloud handoffs, outside 323-379).
 - 10:20: #368 delta review 9fda5538: 0/1/0 (codemap :59 still says 1.0.323). Folded into land-prep onto edb2b8ff (1.0.334, all arrival text -> 1.0.334).
 - 10:19: #351 fixer done: head 846e9b2e (1.0.330; Measured para 73/131/58, ~50 diagram cites re-pointed). Skipping separate delta review: land-prep onto edb2b8ff started now (1.0.333; recount ~133 with #355 keys, re-point cites + since text); one review will cover fix delta + merge.
 - 10:19: #368 fixer done: head 9fda5538 (1.0.329). LANDING RE-POINT LIST for #368 (since-version = landing version): .crew/codemap/crew.md:59(version sentence),706,712,1212; plugin/crew/README.md:822,824,917; docs/guides/crew/src/troubleshooting.md:305 + build.py --guide troubleshooting. Main follow-up: docs/diagrams README/index show stale im1 label vs process-crew-lifecycle-implement.mmd:36. Delta review started.
