@@ -931,6 +931,29 @@ its landing bump, then split out to follow-up ticket W-0115 per rule 36
 (`scripts/check-tooling-pr.py`; owner 2026-09-30) - then W-0115 (`59c86b7c`) restored it, registered at
 `plugin/crew/tests/sabotage.py:86` and appended at `:3068`. The `.crew/verify.json` rule is rule 44 (`:501-508`); L-0555's rule 45, L-0572's rule 46, L-0575's rule 47 and the `pytest_rule.py` rule 48 follow it.
 
+## Inert settings and `/crew:status --approvals` (T-0070)
+
+Added on `T-0070-build` without moving this note's `anchor:`; the citations below are to that
+branch's tree, not to the anchor.
+
+- DERIVED: `crew_config.inert_settings` (`plugin/crew/hooks/scripts/crew_config.py:1945`) is the
+  one rule: a resolved leaf outside `leaf_paths(default_config())` (prefix match, so open tables
+  such as `dev.roles` are known), skipping `platform.*` and `schema`, plus value-level
+  `INERT_PENDING` rows (`:1896`), plus every path `filter_global` drops, as `global-ignored`.
+  `format_inert` (`:2018`) renders one capped line; `--inert` prints it (`:3596`).
+- DERIVED: SessionStart appends `crew_context.inert_line` (`plugin/crew/hooks/scripts/crew_context.py:530`)
+  after the incident banner (`:928`), and the `memory.inject`-off path emits it too. It never raises:
+  a failure is an `inert-check-failed` log record.
+- DERIVED: `/crew:status` prints an `inert` line (`plugin/crew/hooks/scripts/crew_status.py:215`);
+  `--approvals` (`:309`) prints `pending_approvals` (`:226`): open INDEX tickets with a validating
+  spec and plan whose `crew_ticket.accepted` status is not `approved`. It lives in `crew_status.py`,
+  not `crew_ticket.py`, because `crew_ticket.py` is a harness path (`scripts/check-tooling-pr.py`).
+- DERIVED: `crew_autopilot.settings` appends `_inert_warnings`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:790`) for `autopilot.*` keys, leaving a repo
+  `deploy` value to its own T-0045 warning.
+- JUDGEMENT: the global autopilot split (which `autopilot` keys a machine file may set) is left to
+  T-0050; until then a global `autopilot` block is named `(global, repo-only)`.
+
 ## verify-gate's temp-file rule capture
 
 `plugin/crew/hooks/scripts/verify-gate.sh` (1863 lines) captures each rule's
