@@ -57,7 +57,7 @@ Next free untracked ID: **L-1503**.
 | T-0096 | #398 | dfe113ab | ready to land | Slice 0. Follow-ups in TODO.md: could-not-tell treated as absent for stand-down/veto across all flavours. |
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
 | T-0045 | #407 | 3e2afb49 | in review | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
-| T-0053 | #403 | 610deaea | in review | Slice 1. Decisions taken for you: unknown sleep state = strictest of day and night per key; non-object sleep block = human. |
+| T-0053 | #403 | 610deaea | ready to land | Slice 1. Decisions taken for you: unknown = strictest per key; non-object block = human; carry: a typo night value (not a policy) reads strictest. |
 | T-0047 | #347 | 877ef4b8 | in review | PowerShell fail-closed backstop added. |
 | T-0074 | #481 | b573d4c9 | fixing | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. F1 (typed reject name skips policy checks) being fixed. Q7 open. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
