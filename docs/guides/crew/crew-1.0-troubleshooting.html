@@ -444,8 +444,9 @@ contract itself. This section is what goes wrong with the approval and the audit
   <strong>Fix:</strong> update crew. These are crew's own bookkeeping (<code>crew_ticket.CREW_BOOKKEEPING_PATHS</code>),
   never a changed path for the audit, the gate or the review bundle; do not add them to Touch.
   A <code>.crew/</code> path the audit still lists (<code>.crew/verify.json</code>, <code>.crew/config.json</code>, a committed
-  <code>.crew/incident.json</code> or <code>.crew/tfplan/</code> file, <code>.crew/guard.log</code>) is a real change: only the
-  ticket-flow bookkeeping is left out, never a file crew reads as a trust input.</p>
+  <code>.crew/incident.json</code> or <code>.crew/tfplan/</code> file, a session marker) is a real change: only the
+  ticket-flow bookkeeping and the hook logs (<code>.crew/guard.log</code>, <code>.crew/.autoclear.log</code>) are left
+  out, never a file crew reads as a trust input.</p>
 </li>
 <li>
 <p><strong><code>scope.mode</code> values, and what "auto" means:</strong> <code>off</code> (hooks do nothing, the default), <code>report</code>

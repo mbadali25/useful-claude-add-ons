@@ -684,6 +684,22 @@ def test_unapproved_touch_still_fails_but_lists_no_bookkeeping(tmp_path):
     assert not [p for p in paths if p in text.split()]
 
 
+def test_a_guard_log_row_never_deadlocks_the_audit(tmp_path):
+    """Must-allow (round-2 review of 1292b863): `scope_guard._log` appends
+    `.crew/guard.log` on every decision, so after any refusal it is an
+    untracked, non-ignored path in a TSS-shaped repository -- the TSS-510
+    deadlock again, unless the audit leaves it out as bookkeeping."""
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    scope_guard._log(str(root), "block", "block", "T-1", "lib/b.py",  # pylint: disable=protected-access
+                     "outside T-1's spec ## Touch")
+
+    assert (root / ".crew" / "guard.log").read_text(encoding="utf-8").count("\n") == 1
+    assert completion_audit.audit(str(root), "T-1") == (True, [])
+
+
 # --- T-0068: --classify, the verify gate's .ps1 flavour's one classifier -----------
 
 def _classify(root, text):
@@ -695,7 +711,8 @@ def test_classify_names_each_kind(repo):
     """One `<kind>\\t<path>` line per input line, in input order; a path
     holding a tab is `other`, never dropped."""
     lines = ["src/a.py", ".crew/.scope-base", ".crew/codemap/crew.md", "docs/diagrams/x.mmd",
-             ".crew/verify.json", "sub/.crew/.scope-base", "a\tb.py", ".crew/metrics.md"]
+             ".crew/verify.json", "sub/.crew/.scope-base", "a\tb.py", ".crew/metrics.md",
+             ".crew/guard.log", ".crew/incident.json"]
 
     done = _classify(repo, "\n".join(lines) + "\n")
 
@@ -703,7 +720,8 @@ def test_classify_names_each_kind(repo):
     assert done.stdout.split("\n")[:-1] == [
         "other\tsrc/a.py", "bookkeeping\t.crew/.scope-base", "artifact\t.crew/codemap/crew.md",
         "artifact\tdocs/diagrams/x.mmd", "other\t.crew/verify.json",
-        "other\tsub/.crew/.scope-base", "other\ta\tb.py", "bookkeeping\t.crew/metrics.md"]
+        "other\tsub/.crew/.scope-base", "other\ta\tb.py", "bookkeeping\t.crew/metrics.md",
+        "bookkeeping\t.crew/guard.log", "other\t.crew/incident.json"]
 
 
 def test_classify_reads_crlf_input(repo):

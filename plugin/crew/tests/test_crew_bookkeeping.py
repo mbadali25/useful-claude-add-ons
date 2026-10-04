@@ -188,7 +188,9 @@ def test_write_allowed_is_only_the_metrics_row_and_is_bookkeeping():
 
 @pytest.mark.parametrize("rel", [".crew/tfplan/x.json", ".crew/incident.json",
                                  ".crew/.deploy-in-flight", ".crew/handoffs/x",
-                                 ".crew/backups/x", ".crew/transcripts/x"])
+                                 ".crew/backups/x", ".crew/transcripts/x",
+                                 ".crew/.autoclear-sent-k", ".crew/.handoff-requested-k",
+                                 ".crew/.hook-session-start-k", ".crew/.qa-audit-at"])
 def test_a_trust_input_is_never_bookkeeping(rel):
     """Must-block (review of 514ca132, FIX 1 and 3): crew writes these AND
     reads them as trust inputs, so they stay reviewable and judged."""
@@ -198,7 +200,8 @@ def test_a_trust_input_is_never_bookkeeping(rel):
 
 @pytest.mark.parametrize("rel", [".crew/.verify-gate.record.json", ".crew/.verify-gate.fingerprint",
                                  ".crew/.verify-verified-at", ".crew/.scope-base",
-                                 ".crew/metrics.jsonl"])
+                                 ".crew/metrics.jsonl", ".crew/guard.log", ".crew/.autoclear.log",
+                                 ".crew/.cloud-guard-unpinned-noted"])
 def test_out_of_review_and_not_write_allowed_is_write_refused(rel):
     """FIX 2: what the bundle and the audit cannot see, Write/Edit cannot
     write (scope_guard rule 2) -- except the metrics row."""
@@ -212,6 +215,14 @@ def test_out_of_review_and_not_write_allowed_is_write_refused(rel):
     (".crew/.verify-gate.record.json", True),
     (".crew/.verify-gate.lock/owner", True),
     (".crew/.autoclear-sent-abc", False),
+    (".crew/guard.log", True),
+    (".crew/.autoclear.log", True),
+    (".crew/.cloud-guard-unpinned-noted", True),
+    (".crew/.handoff-requested-abc", False),
+    (".crew/.hook-session-start-abc", False),
+    (".crew/.qa-audit-at", False),
+    (".crew/guard.log.1", False),
+    ("docs/.crew/guard.log", False),
     (".crew/event-claims/x", False),
     (".crew/tfplan/x.json", False),
     (".crew/incident.json", False),

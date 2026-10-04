@@ -501,6 +501,31 @@ def test_bookkeeping_never_enters_the_bundle(repo, tmp_path):
     assert set(crew_ticket.CREW_BOOKKEEPING_PATHS) <= set(m["excluded"])
 
 
+def test_a_guard_log_row_never_enters_the_bundle(repo, tmp_path):
+    """Must-allow (round-2 review of 1292b863): a scope refusal appends
+    `.crew/guard.log` (`scope_guard._log`) after the bundle was built; in a
+    repository that does not ignore `.crew/` that row must not stale the
+    receipt, as the gate's record does not."""
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "src.txt").write_text("real change\n", encoding="utf-8")
+    _git(repo, "add", "src.txt")
+    _git(repo, "commit", "-qm", "real")
+    (repo / ".crew").mkdir(exist_ok=True)
+
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    before = _manifest(tmp_path)["bundle_sha256"]
+    scope_guard._log(str(repo), "block", "block", "T-1", "lib/b.py",  # pylint: disable=protected-access
+                     "outside T-1's spec ## Touch")
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / ".crew" / "guard.log").is_file()
+    m = _manifest(tmp_path)
+    assert before is not None and m["bundle_sha256"] == before
+    assert m["untracked_files"] == []
+
+
 @pytest.mark.parametrize("rel,tracked", [
     (".crew/verify.json", True),
     (".crew/codemap/x.md", False),

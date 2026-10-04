@@ -686,6 +686,31 @@ def test_scope_base_stays_refused_though_it_is_bookkeeping(tmp_path, mode, tool)
     assert (code, "approval/ledger state" in err) == (2, True)
 
 
+@pytest.mark.parametrize("approved", [True, False], ids=["approved", "no-approval"])
+@pytest.mark.parametrize("mode", ["report", "block", "auto"])
+@pytest.mark.parametrize("tool", ["Write", "Edit"])
+@pytest.mark.parametrize("rel", [".crew/guard.log", ".crew/.autoclear.log",
+                                 ".crew/.cloud-guard-unpinned-noted"])
+def test_a_log_left_out_of_the_audit_is_refused_to_write(tmp_path, rel, mode, tool, approved):
+    """Must-block (round-2 review of 1292b863): `.crew/guard.log` -- and the
+    other pure log and notice marker -- are bookkeeping now, invisible to the
+    audit and the bundle, so Write/Edit may never forge or erase a row: rule
+    2 refuses them whatever Touch says, as it does the scope base."""
+    repo = make_repo(tmp_path, mode=mode)
+    if approved:
+        ready(repo)
+        spec = repo / ".work" / "tickets" / "T-1" / "spec.md"
+        assert "`src/**`" in spec.read_text(encoding="utf-8")
+    else:
+        make_ticket(repo)
+    target = repo.joinpath(*rel.split("/"))
+    target.write_text("1\tscope\tblock\tblock\tT-1\tlib/b.py\twhy\n", encoding="utf-8")
+
+    code, _, err = _guard("module", repo, edit(repo, target, tool))
+
+    assert (code, "approval/ledger state" in err) == (2, True)
+
+
 @pytest.mark.parametrize("rel", [".crew/metrics.md.bak", ".crew/metricsX.md",
                                  "docs/.crew/guard.log", ".crew/verify.json"])
 def test_a_bookkeeping_lookalike_is_still_judged(repo, rel):

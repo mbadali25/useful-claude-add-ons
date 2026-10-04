@@ -13,11 +13,12 @@ review bundle and staled the accepted receipt with no round left.
 
 - **Two lists, not one.** `crew_ticket.CREW_BOOKKEEPING_PATHS` is only what crew's scripts write
   during a ticket's normal flow -- the scope base, the verify gate's record, timings, fingerprint,
-  lock, marker and rule-output scratch, `metrics.md` and `metrics.jsonl` -- each entry naming its
-  writer, as root-anchored `:(exclude,top,glob)` pathspecs. `CREW_WRITE_ALLOWED_PATHS` is the one
+  lock, marker and rule-output scratch, `metrics.md` and `metrics.jsonl`, and the hook logs and
+  notice marker nothing reads to decide (`guard.log`, `.autoclear.log`,
+  `.cloud-guard-unpinned-noted`) -- each entry naming its writer, as root-anchored `:(exclude,top,glob)` pathspecs. `CREW_WRITE_ALLOWED_PATHS` is the one
   path of it a crew command Edits by hand, `.crew/metrics.md`. `CREW_STATE_PATHS` holds everything
-  else crew writes (`.crew/tfplan/`, `incident.json`, `.deploy-in-flight`, `guard.log`, the
-  auto-clear and handoff markers, the transcript, handoff, incident, backup and event-claim dirs),
+  else crew writes (`.crew/tfplan/`, `incident.json`, `.deploy-in-flight`, the session markers a
+  hook reads to decide, the transcript, handoff, incident, backup and event-claim dirs),
   and is left out of nothing: crew reads several of them as trust inputs (a tfplan sidecar is the
   plan summary `cloud_guard` trusts before `terraform apply`, `incident.json` stands the Stop gate
   down), so a PR that commits one is reviewed and audited like any file. `CREW_CONTENT_PATHS`
@@ -31,14 +32,32 @@ review bundle and staled the accepted receipt with no round left.
   list out whatever `.gitignore` says. The scope guard's rule 5a allows a Write/Edit to
   `CREW_WRITE_ALLOWED_PATHS` with or without an approval when both the real and the named path are
   on it; rule 2 refuses every other bookkeeping path (the scope base, the gate's records and marker,
-  `metrics.jsonl`) in every mode but `off`, whatever Touch says, because the bundle and the audit
+  `metrics.jsonl`, the hook logs) in every mode but `off`, whatever Touch says, because the bundle and the audit
   cannot see a write to it. A nested `sub/.crew/.scope-base`, `.crew/verify.json` and
   `.crew/config.json` are still judged everywhere.
 - **Residual risk, not closed here.** A Bash command can still write the gate's marker
   (`.verify-verified-at`) and fingerprint, and the fingerprint is not keyed, so a shell write could
   forge a green gate that the bundle and the audit do not show; the same was true before T-0068.
-  `.crew/guard.log` and the other state files are judged again as before T-0068, so a repository that
-  does not ignore `.crew/*` still sees them listed if a guard writes one during a ticket.
+  The session markers kept as state (below) are still judged, so a repository that does not ignore
+  `.crew/*` still sees one listed if a hook writes it during a ticket; the shipped `.crew/*`
+  template ignores them all.
+- **Hook logs are bookkeeping too (round-2 review of 1292b863).** `scope_guard._log` appends
+  `.crew/guard.log` on every decision, so after any refusal the audit failed on it -- the TSS-510
+  deadlock again. Each `.crew/` path a hook writes mid-session was decided by its readers:
+  - `guard.log` -> bookkeeping, refused to Write/Edit. Writers `scope_guard`, `role_write_guard`,
+    `cloud_guard`, `crew_config`; only reader `crew_metrics._scope_blocks`, which counts rows for
+    the `scopeBlocks` metric. Refusing Write/Edit keeps a row from being forged or erased by an edit.
+  - `.autoclear.log` -> bookkeeping. Written by `auto-clear.sh`/`.ps1`, `context-watch.sh`/`.ps1`
+    and `crew_autocycle`; no reader (`crew_state` only names it in a comment).
+  - `.cloud-guard-unpinned-noted` -> bookkeeping. `cloud_guard._note_unpinned` reads it only to
+    say the unpinned notice once; the read-only call passes either way.
+  - `.autoclear-sent`, `.autoclear-sent-*` -> state. `auto-clear.sh:163` / `auto-clear.ps1` claim
+    it with noclobber and stand the `/clear` send down when it exists.
+  - `.handoff-requested`, `.handoff-requested-*` -> state. `crew_autocycle.read_marker` reads it to
+    allow the send (no marker: "no wrap-up was requested").
+  - `.hook-*` -> state. `hook_once.claim` stands a SessionStart hook down when it exists.
+  - `.qa-audit-at` -> state. `crew_state.read_qa_audit` reads the stamped sha, and a current stamp
+    stands the `qaAuditStale` trigger down.
 - **Refresh artifacts are mapped.** The gate never reports a refresh artifact (`.crew/codemap/`, the
   diagrams dir, the graph dir, `.claude/rules/`) as unmapped; a rule that names one still runs.
   `completion_audit.classify_paths` is the one judgement: `verify-gate.sh` imports it, and
@@ -48,7 +67,8 @@ review bundle and staled the accepted receipt with no round left.
   held a non-ignored bookkeeping file reads stale once the rebuilt bundle drops that file. Accepted
   as risk (spec, Unknowns).
 - Must-block and must-allow tests for each consumer (including Write/Edit to `.crew/tfplan/x.json`,
-  `.crew/incident.json`, `.crew/.deploy-in-flight` and the gate's records refused, and a committed
+  `.crew/incident.json`, `.crew/.deploy-in-flight`, the gate's records and `.crew/guard.log`
+  refused, a `guard.log` row leaving the audit and the bundle untouched, and a committed
   `.crew/incident.json`, tfplan or handoff file in the bundle and the audit); new sabotage
   mutations in `sabotage_refresh.py`, `sabotage_review.py` and `sabotage_scope.py` (4 of them
   `.ps1` ones, joined where pwsh exists), each red on its named test, and three earlier ones

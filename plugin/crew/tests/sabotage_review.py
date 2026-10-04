@@ -124,6 +124,16 @@ REVIEW_FIX_MUTATIONS = (
          "test_a_committed_crew_trust_input_is_in_the_bundle[.crew/handoffs/x.md]"),
     ),
     (
+        # Round-2 review of 1292b863: guard.log goes back to judged state, so
+        # a scope refusal written after the bundle stales the receipt.
+        "a guard.log row stales the bundle",
+        CREW_TICKET,
+        '    ".crew/guard.log",                    # scope_guard.py:126, crew_guards.py:346\n',
+        "",
+        ("tests/test_review_patch.py::"
+         "test_a_guard_log_row_never_enters_the_bundle"),
+    ),
+    (
         "the manifest stops naming the bookkeeping exclusions",
         REVIEW_PATCH,
         'EXCLUDED = (".work/", "graphify-out/") + crew_ticket.CREW_BOOKKEEPING_PATHS\n',

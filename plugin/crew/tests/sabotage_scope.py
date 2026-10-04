@@ -434,6 +434,23 @@ SCOPE_MUTATIONS = (
      'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
      'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/.verify-verified-at",\n)\n',
      _SG + "test_the_gates_records_are_refused_even_inside_touch[.crew/.verify-verified-at-Write]"),
+    # Round-2 review of 1292b863: guard.log, appended on every scope decision,
+    # goes back to judged state (the TSS-510 deadlock after any refusal) or
+    # becomes Write/Edit-able while out of the audit (a forged or erased row).
+    ("guard.log deadlocks the audit again", TICKET,
+     '    ".crew/guard.log",                    # scope_guard.py:126, crew_guards.py:346\n',
+     "",
+     _CA + "test_a_guard_log_row_never_deadlocks_the_audit"),
+    ("guard.log is judged state, editable in report mode", TICKET,
+     '    ".crew/guard.log",                    # scope_guard.py:126, crew_guards.py:346\n',
+     "",
+     _SG + "test_a_log_left_out_of_the_audit_is_refused_to_write"
+     "[.crew/guard.log-Write-report-approved]"),
+    ("guard.log is write-allowed", TICKET,
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/guard.log",\n)\n',
+     _SG + "test_a_log_left_out_of_the_audit_is_refused_to_write"
+     "[.crew/guard.log-Edit-block-approved]"),
     # FIX 3: a trust input crew writes is left out of the audit again.
     ("the audit drops a committed incident file", TICKET,
      '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
