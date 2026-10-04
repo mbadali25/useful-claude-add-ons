@@ -916,6 +916,17 @@ def activate(root, ticket):
     mapping = data if state == "ok" and isinstance(data, dict) else {}
     mapping[top] = ticket
     _write_json(path, mapping)
+    # T-0061: the scope base is recorded at branch cut, not on the first
+    # `--record` after commits exist. Imported here so the PreToolUse import
+    # path stays `crew_common` alone. The pointer is already written, so a
+    # failure below is reported and never stops the ticket being active.
+    try:
+        import scope_base  # pylint: disable=import-outside-toplevel
+        sha, status = scope_base.record(top, ticket)
+        return sha, status, scope_base.record_message(top, ticket, sha, status)
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, None, (f"scope-base: could not record a start for {ticket} "
+                            f"({type(exc).__name__}: {exc}); the active ticket is set\n")
 
 
 def deactivate(root):
@@ -1052,7 +1063,7 @@ def main(argv):
             print("\n".join(touch_for(top, args.ticket)))
             return 0
         if args.action == "activate":
-            activate(root, args.ticket)
+            sys.stderr.write(activate(root, args.ticket)[2])
             print(f"crew-ticket: {args.ticket} is the active ticket for this worktree")
             return 0
         if args.action == "status":
