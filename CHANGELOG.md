@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.408: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
+### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with
   `$cmd -like "*$dep*" -or $dep -like "*$cmd*"`, and `-like` reads `*`, `?` and `[set]` in a
