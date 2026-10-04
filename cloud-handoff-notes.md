@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 23:44: Owner: batch 5 = 5 items in one batch PR. Added #407 T-0045 (62ca0756) as 5th to the batch-5 builder (pending its focused re-check).
 - 23:44: #407 T-0045 FIX-1 + NITs at 62ca0756 (refuse when either gate refuses: empty key, .NET-only twins table, DateTime deploy; RecursionError -> exit 2). Focused re-check sent to a5bddc9. Goes into batch 6 (batch PR) once clean + green.
 - 23:43: #407 T-0045 re-review fixes pushed 62ca0756: either-gate-refuses rule (empty key, 27 .NET-only folds, ConvertFrom-Json DateTime deploy), union-fold match, RecursionError -> gate-refuses-map, docstring/SKILL NITs; merged main 189c3b80; crew 1.0.345 version-only last; 294 tests, 83 mutations RED; CI running at handback
 - 23:38: #497 L-1512 review: 0 BLOCK, 2 FIX (bash 3.2 read -t timeout status = EOF status -> hung probe never killed on macOS; group kill still runs on clean path), 3 NIT. Sent back to builder (positive clean-exit signal on fd 3; kill only on timeout path).
