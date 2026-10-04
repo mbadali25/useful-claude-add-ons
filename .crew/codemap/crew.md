@@ -619,7 +619,7 @@ hook. `crew_context.py`'s SessionStart branch calls it through
 `resume_decision` (`plugin/crew/hooks/scripts/crew_context.py:662`) for
 `clear`/`compact` only, after `_handoff_verdict` (`:639`), which passes the
 staleness VERDICT on rather than whether the archive move succeeded, and a
-rule that raises as stale; `resume_line` (`:688`) renders the one injected
+rule that raises as stale; `resume_line` (`:813`) renders the one injected
 line. Nothing starts on its own - the command is named, never sent as
 `initialUserMessage`. On `PreCompact` both `handoff-write` flavours call its
 `precompact` CLI (`write_precompact_record`,
@@ -633,8 +633,8 @@ marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out 
 
 A handoff resumes only in the session that wrote it (T-0042). On an armed machine every
 `PostToolUse` Write/Edit/MultiEdit of the configured handoff is recorded by
-`crew_context.record_handoff_author` (`plugin/crew/hooks/scripts/crew_context.py:616`, called
-through the never-raising `_record_author_logged` `:1022` from `run` `:997`, before the
+`crew_context.record_handoff_author` (`plugin/crew/hooks/scripts/crew_context.py:641`, called
+through the never-raising `_record_author_logged` `:1166` from `run` `:1130`, before the
 `memory.inject` gate) into `<git-common-dir>/crew/handoff-author.json` (`record_author`,
 `plugin/crew/hooks/scripts/crew_resume.py:280`: the note's sha256, `session_id`, and
 `session_process()` `:230` - the nearest `claude` ancestor as `{pid, start}`, `None` on any host
