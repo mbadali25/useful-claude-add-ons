@@ -1034,3 +1034,16 @@ def test_read_manual_caps_at_24_hours():
 
     assert (crew_sleep.read_manual(("ok", exact), _at(8, 0))["kind"],
             crew_sleep.read_manual(("ok", over), _at(8, 0))["kind"]) == ("valid", "untrusted")
+
+
+def test_a_state_directory_git_cannot_name_is_unknown(tmp_path, clock, monkeypatch):
+    """Inside a checkout, a `<git-common-dir>` git cannot name is
+    could-not-tell (the stricter value per key), never "no manual state"."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    monkeypatch.setattr(crew_ticket, "state_dir", lambda _root: None)
+
+    conf = _sleep_conf(root)
+
+    assert (conf["sleep"]["state"], conf["approval"], _allowed(root)) == (
+        "unknown", "risk", False)

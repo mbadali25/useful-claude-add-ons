@@ -922,8 +922,12 @@ def _manual_path(top):
 
 def _manual_found(top):
     """`crew_sleep.read_manual`'s `found`: `("absent", None)`, `("ok", data)`
-    or `("unreadable", why)`. Raises only when there is no git directory,
-    which `_sleep_at` takes as could-not-tell."""
+    or `("unreadable", why)`. A directory with no `.git` entry at all has no
+    `<git-common-dir>` where `sleep` could have written, so it is absent; a
+    checkout whose state directory git cannot name raises, which `_sleep_at`
+    takes as could-not-tell."""
+    if not os.path.lexists(os.path.join(top, ".git")) and crew_ticket.state_dir(top) is None:
+        return "absent", None
     data, state = crew_ticket._read_json(_manual_path(top))  # pylint: disable=protected-access
     if state == "absent":
         return "absent", None

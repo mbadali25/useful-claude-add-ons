@@ -816,7 +816,7 @@ unset (`plugin/crew/hooks/scripts/crew_config_menu.py:82-83`). JUDGEMENT: `deplo
 `_settings_at` too but only `deploy`, so sleep cannot reach it. Tests
 `plugin/crew/tests/test_crew_autopilot_sleep.py`; no committed mutations yet (L-0651).
 
-**L-0652 (manual sleep and wake; DERIVED at `26ac28d1` on L-0652-build, stacked on T-0053-build
+**L-0652 (manual sleep and wake; DERIVED at `26ac28d1`, line numbers re-read after the no-git fix on L-0652-build, stacked on T-0053-build
 `610deaea` over main `86d96fa1`; the T-0053 citations above are at f3b3367e and moved with it).**
 `crew_sleep` stays free of file input and output: `read_manual`
 (`plugin/crew/hooks/scripts/crew_sleep.py:160`) judges the record through `_manual_problem` (`:180`)
@@ -826,14 +826,14 @@ now, which is the current window's end inside it and the next window's end outsi
 `sleep_allowed`: untrusted is `unknown` (source manual), expired is the schedule with a warning, a
 manual asleep without the gate is `unknown`, a manual awake over an asleep or unknown schedule
 carries `tightenOnly`. `crew_autopilot._sleep_at` (`plugin/crew/hooks/scripts/crew_autopilot.py:880`)
-passes `_manual_found` (`:923`, through `crew_ticket._read_json`) and
+passes `_manual_found` (`:923`, through `crew_ticket._read_json`; absent only with no `.git` entry at all, else a nameless state directory raises to unknown) and
 `crew_ticket.cli_approval_allowed`; `_overlay` (`:853`, the condition at `:863`) applies only
-stricter overrides under `tightenOnly`; `_decision` (`:1188`) names a manual sleep's end.
-`sleep_now` (`:933`) and `wake_now` (`:971`) are the two new writers, through `_manual_path`
+stricter overrides under `tightenOnly`; `_decision` (`:1192`) names a manual sleep's end.
+`sleep_now` (`:937`) and `wake_now` (`:975`) are the two new writers, through `_manual_path`
 (`:913`, `<git-common-dir>/crew/`) and `crew_ticket._write_json` (temp file, `os.replace`);
-`_manual_main` (`:1852`) makes a crash exit 1; the subparsers are at `:1918`. `SUBCOMMANDS` gains
-both on a second line (`:234`) because the first line is a sabotage anchor; `route_args` (`:1546`)
-stops a second word at `:1558`; `_sleep_line` (`:1822`) adds `source=` and `until=`. Tests:
+`_manual_main` (`:1856`) makes a crash exit 1; the subparsers are at `:1922`. `SUBCOMMANDS` gains
+both on a second line (`:234`) because the first line is a sabotage anchor; `route_args` (`:1550`)
+stops a second word at `:1562`; `_sleep_line` (`:1826`) adds `source=` and `until=`. Tests:
 `plugin/crew/tests/test_crew_autopilot_sleep.py` (L-0652 section),
 `test_crew_autopilot_policy.py::test_approve_sleep_and_wake_are_the_only_writing_subcommands`,
 `test_crew_autopilot_status.py::test_route_args_sleep_and_wake_take_no_ticket`; mutations go to
