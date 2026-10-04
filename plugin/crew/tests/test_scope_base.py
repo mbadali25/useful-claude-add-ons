@@ -320,6 +320,9 @@ def test_every_bad_record_falls_back_to_the_merge_base_and_says_why(repo, spoil)
     assert base == fork
     assert base != _head(repo), "fell back to the narrower answer"
     assert "(fallback)" in reason and "with main" in reason
+    if spoil in ("gone", "not-an-ancestor"):
+        # T-0061: a record that cannot be used is an unknown start, named so.
+        assert reason.startswith("could not tell where T-1 started:"), reason
 
 
 def test_the_fallback_uses_the_remote_default_when_there_is_no_local_main(

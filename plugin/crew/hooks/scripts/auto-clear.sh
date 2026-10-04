@@ -43,18 +43,25 @@
 #   bash auto-clear.sh --session ID            # apply the conditions, then send
 #   bash auto-clear.sh --session ID --dry-run  # print the plan, send nothing
 #   bash auto-clear.sh --force                 # skip the handoff conditions (testing)
+#   bash auto-clear.sh --resume --session ID --source clear|compact [--dry-run]
 #
-# Called from context-watch.sh with this session's id and root.
+# Called from context-watch.sh with this session's id and root. `--resume`
+# (T-0013) is called from the context hook on SessionStart: see the resume
+# block below, which exits before the /clear path is reached.
 set -uo pipefail
 
 DRY_RUN=0
 FORCE=0
+RESUME=0
+SOURCE=""
 SESSION=""
 ROOT="${CLAUDE_PROJECT_DIR:-.}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
     --force)   FORCE=1 ;;
+    --resume)  RESUME=1 ;;
+    --source)  shift; SOURCE="${1:-}" ;;
     --session) shift; SESSION="${1:-}" ;;
     --root)    shift; ROOT="${1:-.}" ;;
     *) echo "auto-clear: unknown argument '$1'" >&2; exit 2 ;;
@@ -94,6 +101,120 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # No python means nothing was checked, and nothing checked never clears.
 PY=$(crew_py_strict)
 [ -n "$PY" ] || exit 0
+
+# --- Resume mode (T-0013) ----------------------------------------------------
+#
+# Types T-0006's rendered resume prompt into this session's own tmux pane
+# after SessionStart(clear|compact). Started by the context hook, which reads
+# the one `autoresume:` line this block prints on stdout and names it in the
+# session's context. Self-contained: it exits before the /clear path below.
+# Consent is `resume.auto` (crew_resume.settings), not autoClear.enabled;
+# every decision is crew_autocycle.resume_plan's, and every refusal is
+# logged. Order: plan -> claim the per-handoff marker LAST (after every
+# refusal) -> record the run (a run the loop guard cannot see is never
+# typed) -> detached sender: delay -> ready probe -> inhibit -> send-keys.
+if [ "$RESUME" -eq 1 ]; then
+  say() { printf 'autoresume: %s\n' "$1"; }
+  refuse() { note "refusing - auto-resume: $1"; say "refused - $1"; exit 0; }
+  PLAN=$("$PY" "$DIR/crew_autocycle.py" resume-plan --root "$PWD" --session "$SESSION" --source "$SOURCE" 2>/dev/null | tr -d '\r')
+  mapfile -t P <<< "$PLAN"
+  [ "${#P[@]}" -ge 12 ] || refuse "could not read the resume plan from crew_autocycle.py"
+  STATUS="${P[0]}"; REASON="${P[1]}"; RESOLVED="${P[2]}"; TARGET="${P[3]}"
+  LABEL="${P[4]}"; COMMAND="${P[5]}"; DELAY="${P[6]}"; TIMEOUT="${P[8]}"
+  MARKER="${P[9]}"; DECISION="${P[10]}"
+  # Off is silent, as for /clear: resume.auto is not on, or this session is
+  # outside the machine's onlyRepos/onlySessions narrowing.
+  [ "$STATUS" = "off" ] && exit 0
+  [ "$STATUS" = "send" ] || refuse "$REASON"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    if [ "$RESOLVED" = "notify" ]; then
+      printf 'autoresume: would send\n  method: notify\n  command: %s\n  delay: n/a (notify types nothing)\n' "$COMMAND"
+    else
+      printf 'autoresume: would send\n  method: %s\n  target: %s\n  command: %s\n  delay: %ss\n  ready timeout: %ss\n' \
+        "$RESOLVED" "$LABEL" "$COMMAND" "$DELAY" "$TIMEOUT"
+    fi
+    exit 0
+  fi
+  # notify types nothing, so it neither claims the handoff nor records a run:
+  # the human starts the command, and decide still sees the note as unused.
+  if [ "$RESOLVED" = "notify" ]; then
+    note "auto-resume: method notify - run $COMMAND yourself (nothing typed)"
+    say "notify - run $COMMAND yourself"
+    exit 0
+  fi
+  [ "$RESOLVED" = "tmux" ] || refuse "method $RESOLVED cannot type a resume"
+  mkdir -p "$(dirname "$MARKER")" 2>/dev/null
+  ( set -o noclobber; : > "$MARKER" ) 2>/dev/null || refuse "this handoff was already typed once (marker $(basename "$MARKER") exists)"
+  RECORD=$(printf '%s' "$DECISION" | "$PY" "$DIR/crew_resume.py" record --root "$PWD" --decision-json - 2>/dev/null | tr -d '\r')
+  RECORDED=$("$PY" -c 'import json,sys
+try:
+    d = json.loads(sys.argv[1])
+except ValueError:
+    d = {}
+print("ok" if isinstance(d, dict) and d.get("ok") is True else (isinstance(d, dict) and d.get("reason") or "no answer"))' "$RECORD" 2>/dev/null)
+  [ "$RECORDED" = "ok" ] || refuse "could not record the run (${RECORDED:-no answer from crew_resume.py}) - nothing typed"
+  send_script=$(mktemp) || refuse "could not create the sender script"
+  {
+    echo '#!/usr/bin/env bash'
+    printf 'trap %q EXIT\n' "rm -f -- $(printf '%q' "$send_script")"
+    printf 'LOG=%q; PY=%q; AC=%q; PANE=%q; TEXT=%q; TIMEOUT=%q\n' \
+      "$PWD/$LOG" "$PY" "$DIR/crew_autocycle.py" "$TARGET" "$COMMAND" "$TIMEOUT"
+    cat <<'SENDER'
+note() { printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "auto-resume: $1" >> "$LOG" 2>/dev/null; }
+probe() { tmux capture-pane -p -e -t "$PANE" 2>/dev/null | "$PY" "$AC" probe 2>/dev/null | tr -d '\r'; }
+SENDER
+    printf 'sleep %q\n' "$DELAY"
+    cat <<'SENDER'
+# The ready gate. The spike (Claude Code 2.1.282) measured the input ready by
+# 0.134 s, but on /compact it looks empty while SessionStart hooks still run,
+# so ready also means no `esc to interrupt`. A non-empty line is a human
+# typing: refuse at once. Anything else waits, up to TIMEOUT, then refuses.
+deadline=$(( $(date +%s) + TIMEOUT ))
+state=$(probe)
+while [ "$state" != "ready" ]; do
+  if [ "$state" = "nonempty" ]; then
+    note "refusing - the input line of $PANE is not empty, so nothing was typed - run $TEXT yourself"
+    exit 0
+  fi
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    note "refusing - the input line of $PANE did not become ready within ${TIMEOUT}s (last probe: ${state:-no answer}), so nothing was typed - run $TEXT yourself"
+    exit 0
+  fi
+  sleep 0.25
+  state=$(probe)
+done
+# A test suite must never drive the real keyboard: checked after the probe,
+# immediately before the keystroke, so the suite exercises every gate above.
+if [ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ]; then
+  note "would have typed '$TEXT' into $PANE, but CREW_AUTOCLEAR_INHIBIT is set"
+  exit 0
+fi
+# Text and Enter half a second apart: arriving in one read, a text over ~60
+# characters plus its Enter is taken as a paste and the Enter becomes a
+# newline (T-0013 spike; 0.3 s measured enough).
+tmux send-keys -t "$PANE" -l "$TEXT"
+sleep 0.5
+tmux send-keys -t "$PANE" Enter
+sleep 1
+case "$(probe)" in
+  ready|busy) note "typed '$TEXT' into $PANE" ;;
+  *) note "typed '$TEXT' into $PANE but could not confirm it was submitted - check the input line and press Enter if it was not" ;;
+esac
+SENDER
+  } > "$send_script"
+  chmod +x "$send_script" 2>/dev/null
+  # Detached, fd 3 closed and stdout/stderr dropped: the context hook waits
+  # for THIS process only, and must not wait for the delay or the probe.
+  if command -v setsid >/dev/null 2>&1; then
+    setsid bash "$send_script" 3>&- >/dev/null 2>&1 < /dev/null &
+  else
+    nohup bash "$send_script" 3>&- >/dev/null 2>&1 < /dev/null &
+  fi
+  disown 2>/dev/null || true
+  note "auto-resume: sent - method tmux, target $LABEL, command '$COMMAND' after ${DELAY}s and the ready probe (up to ${TIMEOUT}s)"
+  say "typing $COMMAND in ${DELAY}s (method tmux)"
+  exit 0
+fi
 
 FORCE_ARG=()
 [ "$FORCE" -eq 1 ] && FORCE_ARG=(--force)

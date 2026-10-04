@@ -203,6 +203,43 @@ def test_default_config_returns_a_fresh_docs_and_bitbucket_block():
     assert crew_config.default_config()["docs"]["theme"] is None
 
 
+def test_shape_readers_share_one_template_and_writers_still_get_fresh_copies():
+    """`_shape` reads a cached `_default_template()` instead of deep-copying
+    the whole default per lookup (that copy was 93% of a `/crew:config` menu
+    build). The cache must agree with a fresh `default_config()` on every
+    path, and a caller mutating `default_config()`'s result must not reach
+    it."""
+    assert crew_config._default_template() is crew_config._default_template()
+    assert crew_config._default_template() == crew_config.default_config()
+
+    fresh = crew_config.default_config()
+    fresh["qa"]["order"] = "mutated"
+    fresh["route"] = {}
+    assert crew_config._default_template()["qa"]["order"] != "mutated"
+    assert crew_config._shape("route") == "block"
+    assert crew_config._shape("route.enabled") == "leaf"
+    assert crew_config._shape("qa.roles") == "open"
+    assert crew_config._shape("route.enabled.x") == "under"
+    assert crew_config._shape("no.such.key") == "unknown"
+
+
+def test_shape_lookups_build_no_default_config(monkeypatch):
+    """The cost guard: once the template exists, a shape lookup builds no new
+    default. Reverting any `_shape` / `_is_open_table` / `value_allowed`
+    read to `default_config()` makes this raise. `pm.authority` at the
+    machine layer reaches `value_allowed`'s lookup; `qa.order` there returns
+    early through `null_means` and never does."""
+    crew_config._default_template()
+
+    def _built(*_a, **_k):
+        raise AssertionError("a shape lookup deep-copied default_config()")
+    monkeypatch.setattr(crew_config, "default_config", _built)
+    crew_config._shape("route.enabled")
+    crew_config._is_open_table("qa.roles")
+    crew_config._content_problem("qa.order", "repo", None)
+    crew_config.value_allowed("pm.authority", "machine", None)
+
+
 def test_docs_and_bitbucket_are_settable_globally():
     """The criterion this feature dies silently on. A block absent from
     `default_global_config()` is pruned out of the global layer by
@@ -307,7 +344,25 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # by running this test on T-0040-land after merging main 844bfc36.
     assert "qa.kimi.model" in declared
     assert "dev.kimi.model" in declared
-    assert len(declared) == 129
+    # 131 with T-0013: `resume.typeDelaySeconds` and
+    # `resume.readyTimeoutSeconds`, measured by running this test after
+    # merging main 4f6ef540 for crew 1.0.186.
+    assert {"resume.typeDelaySeconds", "resume.readyTimeoutSeconds"} <= declared
+    # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
+    # merging main 34d9f267.
+    assert "tickets.baseBranch" in declared
+    # 132 with both, measured after merging main into T-0013.
+    assert len(declared) == 132
+
+
+def test_tickets_base_branch_is_repo_only_and_null_by_default():
+    """T-0061. Which branch ticket branches are cut from is a fact about one
+    repository, so a machine-global file may not set it, and `null` keeps
+    today's origin/HEAD default for every repo that never names it."""
+    assert crew_config.default_config()["tickets"] == {"baseBranch": None}
+    assert "tickets.baseBranch" not in set(
+        crew_config.leaf_paths(crew_config.default_global_config()))
+    assert not crew_config.is_global_path("tickets.baseBranch")
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -365,13 +420,19 @@ def test_resume_auto_is_global_settable_and_defaults_to_null():
     otherwise `filter_global` prunes it and `/crew:config` refuses to write
     the one place it can be switched on. Null, not false, in both defaults so
     the /crew:init template (which writes every key) never vetoes a machine
-    opt-in."""
-    kept, ignored = crew_config.filter_global({"resume": {"auto": True}})
+    opt-in. T-0013's two typing keys sit beside it, settable globally too
+    (the machine file is the only one their reader opens)."""
+    kept, ignored = crew_config.filter_global({"resume": {"auto": True, "typeDelaySeconds": 4,
+                                                          "readyTimeoutSeconds": 30}})
+    block = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
 
     assert (kept, ignored, crew_config.is_global_path("resume.auto"),
+            crew_config.is_global_path("resume.typeDelaySeconds"),
+            crew_config.is_global_path("resume.readyTimeoutSeconds"),
             crew_config.default_config()["resume"], crew_config.default_global_config()["resume"],
             crew_state.RESUME_DEFAULTS) == \
-        ({"resume": {"auto": True}}, [], True, {"auto": None}, {"auto": None}, {"auto": None})
+        ({"resume": {"auto": True, "typeDelaySeconds": 4, "readyTimeoutSeconds": 30}}, [], True, True, True,
+         block, block, block)
 
 
 def test_a_globally_set_autoclear_reaches_a_repo(tmp_path, monkeypatch):

@@ -117,8 +117,14 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   or `INCOMPLETE` — leaves the ticket state `REVIEWED`, so its `FINDINGS` can still be accepted. A
   **third** reservation attempt is refused outright and the state becomes `NEEDS_REPLAN`; that
   refusal, and an explicit `--reject`, are the only two ways into `NEEDS_REPLAN`.
-  **Fix:** own the FINDINGS with `--accept --by <who>` (only the most recent completed round, only
-  once, never once `NEEDS_REPLAN`), or write a new plan and get it approved — `crew_ticket.py
+  **Fix:** a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: `review: auto-accept: eligible`, then
+  `--auto-accept --follow-up <id>` writes an `auto-accepted` receipt and its FIX/NIT lines go
+  verbatim into one follow-up ticket. A `review: auto-accept: refused - <reason>` line names what
+  stopped it (any BLOCK, INCOMPLETE, not the final round, an open healer skip, a count it could not
+  read, a same-family Claude-fallback round, a provider or family it could not tell, or a verdict
+  recovered from stray lines - `ignored_lines` above 0, or missing or unreadable, which is
+  could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
+  only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.
 
@@ -127,7 +133,12 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   INCOMPLETE round has one of three classes. `tool` means the answer never arrived intact: a
   timeout, a bad or unknown exit, empty output, or a failed Codex stream. `tree` means a bundle part
   or web-test report changed under the reviewer. `reviewer` means the output arrived and broke the
-  contract.
+  contract. Harmless prose, a heading or a code fence beside well-formed findings, with every part
+  acknowledged and exit 0, no longer does that: the round is FINDINGS, and the ignored lines are
+  printed on a `review: FINDINGS kept; ...` line and kept in `review.json`'s `ignored_text` (`ignored_lines` is their count). A
+  stray line beside `CLEAN`, a misformatted contract line (`- FIX|...`, `fix|...`, a `|` table row)
+  or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
+  INCOMPLETE `reviewer`.
   **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
   `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
@@ -143,7 +154,11 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --check-receipt
   ```
   A `CLEAN` verdict writes a receipt automatically; a `FINDINGS` verdict only becomes one through
-  `--accept`. `--check-receipt` rebuilds the review bundle from the receipt's recorded base and
+  `--accept`, or `--auto-accept` on a final 0-BLOCK round. An `auto-accepted` receipt stands only
+  while its round still reads 0 BLOCK with the same lines from the same Codex or Kimi reviewer the receipt names. `--check-follow-up` fails until the
+  follow-up's `direction.md` quotes every line verbatim (a line the receipt carries twice, twice),
+  and on a non-UTF-8 file or an unknown receipt kind. `/crew:done` does not run it yet (L-0568 adds
+  it to check 1), so run it yourself before closing. `--check-receipt` rebuilds the review bundle from the receipt's recorded base and
   fails unless the hash still matches, the receipt is for the **latest** recorded round, and the
   state is not `NEEDS_REPLAN` — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
@@ -246,7 +261,16 @@ contract itself. This section is what goes wrong with the approval and the audit
   formatter or a `git mv` never reaches it. The audit instead diffs the **whole working tree**
   against the ticket's scope base (`scope_base.resolve` — the commit the ticket started from) across
   committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
-  though nothing blocked it at the time.
+  though nothing blocked it at the time. A file byte-identical to main as last merged is not
+  counted; a `merged main: could not tell` line (a detached HEAD, none of `origin/HEAD`,
+  `origin/main` and `main` naming a commit, or a git error) means every merged-in file was
+  counted, so check out the ticket branch and rerun. A missing `origin/main` alone is not that:
+  a local `main` is used instead. An untracked merged-in file (after `git rm --cached`) is main's
+  only when `git add` would record it identically: with `core.fileMode=false` its execute bit is
+  ignored, as git ignores it. On the review side, `diffed-from-merged=could-not-tell` (or
+  `fork: could not tell` from `--check-receipt`) means `git merge-base <start> <merged>` gave no
+  answer, so a file main also changed shows main's lines as the ticket's: fetch, check the start
+  commit still exists, and rebuild.
   **Check it directly, without waiting for a Stop:**
   ```bash
   python3 "<crew>/hooks/scripts/completion_audit.py" --check --ticket <id>
@@ -254,6 +278,19 @@ contract itself. This section is what goes wrong with the approval and the audit
   **Fix:** either the path genuinely needs to be in scope (widen Touch and re-approve), or revert
   the out-of-scope change. Files git ignores (including everything under `.crew/`) and `.work/`
   itself are outside what the audit can see at all — that is by design, not a gap to work around.
+
+- **Symptom: the scope base is the merge-base with `main` on a repo whose branches come from
+  `development`.** `scope_base.py --record` says "(fallback) recorded ... the merge-base with
+  origin/main", and the review bundle or the completion audit lists hundreds of files the ticket
+  never touched. With no `tickets.baseBranch`, the base branch is `origin/HEAD`'s target, then
+  `origin/main`, then `main`, so a branch cut from `development` is measured against `main` and
+  the whole integration branch looks like this ticket's change.
+  **Fix:** set `"tickets": {"baseBranch": "development"}` in the repo's `.crew/config.json`, then
+  `scope_base.py --root . --record <id>`. A fallback recorded against the old branch is re-derived
+  ("re-derived ... was a merge-base guess against origin/main"); an exact record is never moved.
+  A value that names no commit here, or a config that does not parse, reads as **could not tell**:
+  `--record` exits 1, `--base` exits 3 with nothing on stdout, and the audit fails. It never falls
+  back to `origin/HEAD` silently. Fix the value; do not unset it to make the error go away.
 
 - **`scope.mode` values, and what "auto" means:** `off` (hooks do nothing, the default), `report`
   (allows everything, logs the row to `.crew/guard.log`), `block` (refuses out-of-scope writes and

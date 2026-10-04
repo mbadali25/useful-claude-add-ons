@@ -35,10 +35,12 @@ Five properties are load-bearing and each has a case here, in BOTH flavours:
 to run the whole map.
 """
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -740,3 +742,113 @@ def test_the_neighbouring_shapes_do_not_reorder_a_rule(flavour, case,
             "rule=" + repr(rule["run"]) + " ran=" + repr(ran) + chr(10)
             + result.stderr
         )
+
+
+# --- a cheaper measurement on this machine re-prices a declared rule -------
+#
+# Declared `seconds` are timed once on one host and go stale. A rule stated
+# over the budget ALONE is chronic and never runs at Stop, however fast it
+# really is here. The gate prices a declared rule at min(declared, cached):
+# a cheaper measurement can turn a chronic deferral into a run; a dearer one
+# can never turn a run into a deferral.
+
+_BIG_ALONE = {
+    "version": 1,
+    "rules": [{"paths": ["a.py"], "seconds": 90, "run": ["echo RAN-big-90"],
+               "why": "over the 60s budget on its own"}],
+    "default": [], "unmapped": "ignore",
+}
+_CHEAP_ALONE = {
+    "version": 1,
+    "rules": [{"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-cheap-5"],
+               "why": "fits the budget"}],
+    "default": [], "unmapped": "ignore",
+}
+
+
+def _seed_timing(root, verify_map, value):
+    import verify_record  # pylint: disable=import-outside-toplevel
+    key = verify_record.rule_key(verify_map["rules"][0])
+    (root / ".crew" / ".verify-gate.timings.json").write_text(
+        json.dumps({"rules": {key: value}}), encoding="utf-8")
+    return key
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_cheaper_measurement_runs_a_rule_its_declared_price_defers(flavour, tmp_path):
+    """MUST-ALLOW. Declared 90s against a 60s budget is chronic; measured 3s
+    here, it fits, so it runs and says where the price came from."""
+    root = _repo(tmp_path, _BIG_ALONE)
+    _seed_timing(root, _BIG_ALONE, 3)
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 0, result.stderr
+    assert "echo RAN-big-90" in _ran(result), (
+        "a 90s-declared rule measured at 3s on this machine was still "
+        "deferred. " + result.stderr)
+    assert "priced at 3s, measured on this machine, below its declared 90" in result.stderr, (
+        result.stderr)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_dearer_measurement_never_defers_a_declared_rule(flavour, tmp_path):
+    """MUST-BLOCK the wrong direction. Declared 5s, a stale cache says 999s:
+    replacing instead of taking the minimum would make it chronic and stop
+    it running at Stop at all."""
+    root = _repo(tmp_path, _CHEAP_ALONE)
+    _seed_timing(root, _CHEAP_ALONE, 999)
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 0, result.stderr
+    assert "echo RAN-cheap-5" in _ran(result), (
+        "a cached measurement ABOVE the declared price deferred the rule. "
+        + result.stderr)
+    assert "below its declared" not in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("value", [True, 2.5, "3", 0, -1, None])
+def test_an_unusable_measurement_leaves_the_declared_price(flavour, value, tmp_path):
+    """MUST-BLOCK. Only a positive integer prices a rule: a JSON true, a
+    fraction, a string, zero, a negative or null leaves the declared 90s, so
+    the rule stays deferred."""
+    root = _repo(tmp_path, _BIG_ALONE)
+    _seed_timing(root, _BIG_ALONE, value)
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 0, result.stderr
+    assert "echo RAN-big-90" not in _ran(result), (
+        "a cached " + repr(value) + " re-priced a declared rule. " + result.stderr)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_declared_rule_that_passes_is_measured(flavour, tmp_path):
+    """The other half: without a cache entry for declared rules there is
+    nothing to take the minimum of. A clean pass of a declared rule records
+    its wall time under its rule key.
+
+    What is recorded is a MEASUREMENT, whole seconds from the gate's clock,
+    so it is held between its floor (1, `max(1, ceil(...))`) and the wall
+    time this test saw around the whole gate run, never to an exact value.
+    It asserted `== 1` until a slow Windows runner took over a second to
+    spawn `echo` through Git Bash and the gate rightly recorded 2 (PR #360,
+    run 37196163874)."""
+    root = _repo(tmp_path, _CHEAP_ALONE)
+    import verify_record  # pylint: disable=import-outside-toplevel
+    key = verify_record.rule_key(_CHEAP_ALONE["rules"][0])
+
+    started = time.monotonic()
+    result = _run(flavour, root)
+    outer = math.ceil(time.monotonic() - started)
+
+    assert result.returncode == 0, result.stderr
+    timings = json.loads((root / ".crew" / ".verify-gate.timings.json")
+                         .read_text(encoding="utf-8"))
+    got = timings["rules"].get(key)
+    # +1: the gate subtracts two whole-second clock readings, which can span
+    # one more second boundary than the interval it measures.
+    assert (isinstance(got, int) and not isinstance(got, bool)
+            and 1 <= got <= outer + 1), (got, outer, timings)
