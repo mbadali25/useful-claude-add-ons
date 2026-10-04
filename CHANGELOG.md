@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.347: Complete archive and ticket ids beyond T- (L-0509)
+### Changed — `crew` 1.0.363: Complete archive and ticket ids beyond T- (L-0509)
 
 - **What changed.** One resolver, `crew_common.locate_ticket(top, ticket)`,
   finds a ticket folder live (`.work/tickets/<ID>/`) or archived
