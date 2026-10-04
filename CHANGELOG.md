@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — crew 1.0.246: sabotage entries for L-0516's deadline polls (L-0563)
+### Added — crew 1.0.248: sabotage entries for L-0516's deadline polls (L-0563)
 
 - `plugin/crew/tests/sabotage_qa.py`: six mutations against the deadline polls L-0516 added -
   `poll_until` probing once and never waiting, reporting success at the deadline, probing once more
