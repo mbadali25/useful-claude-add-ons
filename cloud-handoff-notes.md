@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:36 UTC
+Last updated: 2026-10-04 12:39 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:39: #361 review 8be41b13: 0/1/5. FIX corrupt global config silently widens global approval human->risk (no warning) -> sent to lander (UNKNOWN + warning; 1.0.377). Points (1)-(8) otherwise OK; #342 vs #361 textual conflicts expected (CONFIG counts para, crew_config.py ~1882, commands/config.md, README, tests); semantic overlap benign.
 - 12:36: #361 T-0050 land-prep onto ce235468 done: 8be41b13 (1.0.369; counts 79/132/53; new layer 'both, stricter wins' for PERSONAL_KEYS; COMING keeps scope.allowCliApproval as harness follow-up; enum order test changed; guides rebuilt). Full review started (judgement calls). Conflict watch: #342 vs #361 both touch CONFIG counts/autopilot.
 - 12:35: #396 T-0016 review 52a36cf6: 1 BLOCK (tmux branch can type into PARENT's pane when parent record is in another config dir and comm != claude; xdotool's tty rule would catch it) + FIX1 PROC_STUB/WINDOW_STUB ungated in prod (gate on CREW_AUTOCLEAR_INHIBIT) + FIX2 ps1 Get-CrewChain unreadable parent -> Complete + FIX3 other_sessions skips live pid with unreadable record. Sent to builder (test-first; merge main; 1.0.376). T-0017 (#356) build is stacked on it.
 - 12:34: #395 re-review cba14d38: 0/1/3 (round-1 all closed). FIX: Windows trusts CLAUDE_PID unchecked (repo env can forge; dead holder live forever) -> sent to builder (Toolhelp32 parent walk + creation time; else no pid). NITs: doc ~2xTTL bound; log-broken refusal names recovery; OverflowError in _PROBE_ERRORS. Re-version 1.0.375.
