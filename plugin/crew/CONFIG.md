@@ -166,7 +166,7 @@ descending at a template **leaf**.
 leaves. `leaf_paths(default_config())` yields **135**, so **61** are repo-only.
 For all 135, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on T-0011's merge of main 155fe6d8; T-0011 added the three repo-only
+on T-0011's merge of main e9364a70; T-0011 added the three repo-only
 `autopilot.ship`, `autopilot.knownFailures` and `autopilot.ciTimeoutMinutes`.
 This paragraph said 72 / 130 / 58 until then, stale on main since T-0013 added
 `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers,
@@ -682,15 +682,7 @@ them:
 
 ---
 
-## 10. Global-settable keys — 74
-
-74 measured (`leaf_paths(default_global_config())`, on T-0011's merge of main
-155fe6d8; 72 at crew 1.0.207, before T-0013's two `resume.*` keys); the table
-below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
-`guards.sqlDestructive` and `environments.prodUnattended` (§16) are
-global-settable and not tabled here; `shellRoute.mode` and `shellRoute.distro`
-are tabled in §11 with both layers' defaults; `resume.typeDelaySeconds` and
-`resume.readyTimeoutSeconds` (T-0013) are tabled in §14b.
+## 10. Global-settable keys
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -701,76 +693,94 @@ narrower meaning something slightly different again — see §18; for
 turn that one **on** and never off — §17.
 `production.databases` and `production.hosts` are deliberately **not** here:
 they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
-`default_global_config()` — verified by comparison.
+`default_global_config()` except where the generated table prints two.
 
-| Key | Type | Default |
-|---|---|---|
-| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | `"auto"` |
-| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "kimi", "copilot", "claude"]` |
-| `qa.fallback` | string | `"claude-sonnet-5"` |
-| `qa.codex.model` | string or `null` | `null` |
-| `qa.codex.reasoningEffort` | string or `null` | `null` |
-| `qa.copilot.model` | string or `null` | `null` |
-| `qa.kimi.model` | a Kimi Code model id (`k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`) or `null` for the CLI's own `default_model`; no `reasoningEffort` key | `null` |
-| `qa.roles` | open table (empty dict = leaf) | `{}` |
-| `dev.provider` | `claude` \| `codex` \| `copilot` \| `kimi` | `"claude"` |
-| `dev.fallback` | string | `"claude-sonnet-5"` |
-| `dev.codex.model` | string or `null` | `null` |
-| `dev.codex.reasoningEffort` | string or `null` | `null` |
-| `dev.copilot.model` | string or `null` | `null` |
-| `dev.kimi.model` | a Kimi Code model id or `null`, as `qa.kimi.model` | `null` |
-| `dev.roles` | open table | `{}` |
-| `worktree.root` | path or `null` | `null` |
-| `secondOpinion.provider` | string | `"none"` |
-| `secondOpinion.mode` | string | `"cli"` |
-| `secondOpinion.model` | string or `null` | `null` |
-| `secondOpinion.keyEnv` | string | `"GEMINI_API_KEY"` |
-| `secondOpinion.sendsCode` | boolean | `false` |
-| `memory.mode` | string | `"repo"` |
-| `memory.vaultPath` | path or `null` | `null` |
-| `notify.provider` | string | `"none"` |
-| `notify.urlEnv` | string or `null` | `null` |
-| `notify.tokenEnv` | string or `null` | `null` |
-| `notify.chatId` | string or `null` | `null` |
-| `notify.events` | list (a leaf) | `["phase", "gate", "waiting"]` |
-| `install.policy` | `manual` \| `ask` \| `auto` (narrower layer wins, §15) | `"manual"` |
-| `pm.enabled` | boolean | `true` |
-| `pm.mode` | string | `"adaptive"` |
-| `pm.quietLines` | integer | `8` |
-| `pm.maxLines` | integer | `40` |
-| `pm.authority` | see §5 | `"report-only"` |
-| `pm.ticketGranularity` | see §6 | `"system"` |
-| `pm.maxDispatches` | integer | `3` |
-| `context.autoClear.enabled` | boolean or `null`; **only this global layer can turn it on** — a repo `false` switches it off, a repo `true` does nothing (`docs/guides/crew/src/auto-cycle.md`) | `null` (off) |
-| `context.autoClear.method` | string, see §14 | `"auto"` |
-| `context.autoClear.windowTitle` | string or `null`, see §14 | `null` |
-| `context.autoClear.command` | string | `"/clear"` |
-| `context.autoClear.delaySeconds` | integer | `3` |
-| `context.autoClear.minHandoffLines` | integer | `5` |
-| `context.autoClear.onlyRepos` | list of absolute repo paths, or `null`. **Narrowing only, read from this global layer only** (`crew_autocycle.in_scope`, `auto-clear.ps1`): `null` narrows nothing, a list arms only those repos (compared realpath-resolved, separator- and trailing-slash-insensitive, case-insensitive on Windows; a relative entry never matches), `[]` or a non-list arms nothing. A repo's own value is never read (`docs/guides/crew/src/auto-cycle.md`) | `null` |
-| `context.autoClear.onlySessions` | list of session ids, or `null`. Same rules as `onlyRepos`, matched exactly and case-sensitively; with both set, both must match | `null` |
-| `docs.theme` | string or `null`, see §7 | `null` |
-| `docs.reportTheme` | string or `null`, see §7 | `null` |
-| `bitbucket.mergeGate.enabled` | boolean, see §8 | `false` |
-| `bitbucket.mergeGate.branch` | string or `null`, see §8 | `null` |
-| `bitbucket.mergeGate.preset` | string, see §8 | `"standard"` |
-| `github.mergeGate.enabled` | boolean, see §8 | `false` |
-| `github.mergeGate.branch` | string or `null`, see §8 | `null` |
-| `guards.terraformApply` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
-| `guards.forcePush` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
-| `guards.adminMerge` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
-| `guards.mergeGate` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
-| `guards.prodDatabase` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
-| `guards.prodServer` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
-| `guards.roleWrites` | `block` \| `report` \| `off` (narrower layer wins, §18) | `"off"` |
-| `change.requester` | string or `null`, see §17 | `null` |
-| `change.implementor` | string or `null`, see §17 | `null` |
-| `change.requireForProduction` | boolean (narrower layer wins, and `true` is the narrower one, §17) | `false` |
-| `change.sdpTemplate` | string, see §17 | `"Change Management Request"` |
-| `change.jiraIssueType` | string, see §17 | `"Change"` |
-| `change.category` | string or `null`, see §17 | `null` |
-| `resume.auto` | `true` or `null`; **only the machine layer can arm it**, a repo `false` vetoes it (§14a) | `null` |
-| `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
+The table below is generated from the code (T-0048); the counts it states
+replace the hand-counted ones this heading used to carry.
+
+<!-- generated:config-keys-global begin -->
+74 of 135 keys are settable in the machine-global file (generated; 61 are repo-only, section 11).
+Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
+`docs/guides/crew/src/configuration-reference.md` is the full reference
+(summaries and arrival versions). Do not edit the table by hand.
+
+| Key | Layer | Values | Default |
+|---|---|---|---|
+| `qa.provider` | both | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | `"auto"` |
+| `qa.order` | both | list of: `claude` \| `codex` \| `copilot` \| `kimi` | `["codex", "kimi", "copilot", "claude"]` |
+| `qa.fallback` | both | not validated - read by `commands/review.md` (expects model id) | `"claude-sonnet-5"` |
+| `qa.codex.model` | both | not validated - read by `commands/review.md` (expects string or null) | `null` |
+| `qa.codex.reasoningEffort` | both | `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` (listed in `commands/review.md`; not validated) | `null` |
+| `qa.copilot.model` | both | not validated - read by `commands/review.md` (expects string or null) | `null` |
+| `qa.kimi.model` | both | not validated - read by `commands/review.md` (expects string or null) | `null` |
+| `qa.roles` | both | object of role pins; each pin's provider is checked (checked in `hooks/scripts/crew_config.py`) | `{}` |
+| `dev.provider` | both | `claude` \| `codex` \| `copilot` \| `kimi` | `"claude"` |
+| `dev.fallback` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects model id) | `"claude-sonnet-5"` |
+| `dev.codex.model` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | `null` |
+| `dev.codex.reasoningEffort` | both | `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` (listed in `commands/review.md`; not validated) | `null` |
+| `dev.copilot.model` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | `null` |
+| `dev.kimi.model` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | `null` |
+| `dev.roles` | both | object of role pins; each pin's provider is checked (checked in `hooks/scripts/crew_config.py`) | `{}` |
+| `worktree.root` | both | not validated - read by `hooks/scripts/crew_state.py` (expects path or null) | `null` |
+| `secondOpinion.provider` | both | not validated - read by `commands/plan.md` (expects string) | `"none"` |
+| `secondOpinion.mode` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects string) | `"cli"` |
+| `secondOpinion.model` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | `null` |
+| `secondOpinion.keyEnv` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects string) | `"GEMINI_API_KEY"` |
+| `secondOpinion.sendsCode` | both | not validated - read by `skills/crew-providers/SKILL.md` (expects boolean) | `false` |
+| `memory.mode` | both | not validated - read by `skills/crew-memory/SKILL.md` (expects string) | `"repo"` |
+| `memory.vaultPath` | both | not validated - read by `hooks/scripts/crew_recall.py` (expects path or null) | `null` |
+| `context.autoClear.enabled` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_autocycle.py`) | `null` |
+| `context.autoClear.method` | both | `auto` \| `none` \| `notify` \| `tmux` \| `xdotool` \| `wtype` \| `sendkeys`; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify, sendkeys; windows-bash: auto, none, notify, tmux, sendkeys | `"auto"` |
+| `context.autoClear.windowTitle` | both | not validated - read by `hooks/scripts/auto-clear.ps1` (expects string or null) | `null` |
+| `context.autoClear.command` | both | not validated - read by `hooks/scripts/crew_autocycle.py` (expects string) | `"/clear"` |
+| `context.autoClear.delaySeconds` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `3` |
+| `context.autoClear.minHandoffLines` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `5` |
+| `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
+| `context.autoClear.onlySessions` | machine-only | list of session ids, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
+| `resume.auto` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_resume.py`) | `null` |
+| `resume.typeDelaySeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `2` |
+| `resume.readyTimeoutSeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `15` |
+| `notify.provider` | both | not validated - read by `hooks/scripts/notify.sh` (expects string) | `"none"` |
+| `notify.urlEnv` | both | not validated - read by `hooks/scripts/notify.sh` (expects string or null) | `null` |
+| `notify.tokenEnv` | both | not validated - read by `hooks/scripts/notify.sh` (expects string or null) | `null` |
+| `notify.chatId` | both | not validated - read by `hooks/scripts/notify.sh` (expects string or null) | `null` |
+| `notify.events` | both | not validated - read by `hooks/scripts/notify.sh` (expects list of event names) | `["phase", "gate", "waiting"]` |
+| `shellRoute.mode` | both | `auto` \| `wsl` \| `powershell` \| `gitbash` | `null` (repo), `"auto"` (machine) |
+| `shellRoute.distro` | both | not validated - read by `hooks/scripts/crew_shell.py` (expects string or null) | `null` |
+| `pm.enabled` | both | not validated - read by `hooks/scripts/crew_state.py` (expects boolean) | `true` |
+| `pm.mode` | both | not validated - read by `hooks/scripts/crew_state.py` (expects string) | `"adaptive"` |
+| `pm.quietLines` | both | integer (coerced in `hooks/scripts/crew_state.py`) | `8` |
+| `pm.maxLines` | both | integer (coerced in `hooks/scripts/crew_state.py`) | `40` |
+| `pm.authority` | both, widening warned | `report-only` \| `act` \| `autonomous` | `"report-only"` |
+| `pm.ticketGranularity` | both | `session` \| `system` \| `change` | `"system"` |
+| `pm.maxDispatches` | both | integer (coerced in `hooks/scripts/crew_state.py`) | `3` |
+| `docs.theme` | both | not validated - read by `skills/crew-house-style/SKILL.md` (expects string or null) | `null` |
+| `docs.reportTheme` | both | not validated - read by `skills/crew-house-style/SKILL.md` (expects string or null) | `null` |
+| `bitbucket.mergeGate.enabled` | both | not validated - read by `commands/promote.md` (expects boolean) | `false` |
+| `bitbucket.mergeGate.branch` | both | not validated - read by `commands/promote.md` (expects string or null) | `null` |
+| `bitbucket.mergeGate.preset` | both | not validated - read by `commands/promote.md` (expects string) | `"standard"` |
+| `github.mergeGate.enabled` | both | not validated - read by `commands/promote.md` (expects boolean) | `false` |
+| `github.mergeGate.branch` | both | not validated - read by `commands/promote.md` (expects string or null) | `null` |
+| `install.policy` | both, ratchet | `manual` \| `ask` \| `auto` (ratchet: narrower layer wins; listed narrowest first) | `"manual"` |
+| `guards.terraformApply` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
+| `guards.forcePush` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
+| `guards.adminMerge` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
+| `guards.mergeGate` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
+| `guards.cloudDestructive` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
+| `guards.sqlDestructive` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
+| `guards.prodDatabase` | both, ratchet | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | `"none"` |
+| `guards.prodServer` | both, ratchet | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | `"none"` |
+| `guards.roleWrites` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
+| `guards.cloudGuard` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
+| `environments.prodUnattended` | both, ratchet | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | `false` |
+| `change.requester` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
+| `change.implementor` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
+| `change.requireForProduction` | both, ratchet | `true` \| `false` (ratchet: narrower layer wins; listed narrowest first) | `false` |
+| `change.sdpTemplate` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change Management Request"` |
+| `change.jiraIssueType` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change"` |
+| `change.category` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
+| `route.enabled` | both | `false` \| `true` (checked in `hooks/scripts/crew_route.py`) | `false` |
+<!-- generated:config-keys-global end -->
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
@@ -793,70 +803,86 @@ that role — `/crew:review` resolves `review`'s model that way
 
 ---
 
-## 11. Repo-only keys — 61 leaves
+## 11. Repo-only keys
 
 Refused in the global file by `plan_global_write`, and pruned out of it by
 `filter_global` if some other tool wrote one. Each is a fact about one
 repository or one checkout.
 
-| Key | Type | Default | Consumer |
+`verify.stopBudgetSeconds` (§19) is read by the verify gate and declared by
+neither default, so the generated table, which lists declared keys, cannot
+show it: its default is `60`.
+
+<!-- generated:config-keys-repo begin -->
+61 of 135 keys are repo-only (generated; 74 are global-settable, section 10).
+Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
+`docs/guides/crew/src/configuration-reference.md` is the full reference
+(summaries and arrival versions). Do not edit the table by hand.
+
+| Key | Layer | Values | Default |
 |---|---|---|---|
-| `schema` | integer | `7` | see §4 |
-| `tier` | integer | `0` | `crew_state.collect` |
-| `roles` | list (a leaf) | `["explorer", "reviewer"]` | `crew_state.collect` |
-| `tracker` | string (0.20 `config.json`); `tracker.kind` in 1.0 `crew.json` | `"files"` | `crew_tracker.resolve` (`hooks/scripts/crew_tracker.py`) reads both shapes and answers `could not tell` when they disagree; the lifecycle commands, the sync commands and `crew_status.py` all go through it |
-| `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
-| `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
-| `sdp.portal` | string or `null` | `null` | prose, §9 |
-| `sdp.noteVisibility` | string | `"private"` | prose, §9 |
-| `sdp.closeOnDone` | boolean | `false` | prose, §9 |
-| `obsidian.vaultPath` | path or `null` | `null` | `crew_tracker.py` (falls back to `memory.vaultPath`; must hold `.obsidian/`) |
-| `obsidian.boardDir` | path or `null` | `null` | `crew_tracker.py` (relative, no `..`) |
-| `obsidian.board` | filename | `"Board.md"` | `crew_tracker.py` (a bare file name) |
-| `obsidian.columns.backlog` | string | `"Backlog"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
-| `obsidian.columns.ready` | string | `"Ready"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
-| `obsidian.columns.inProgress` | string | `"In Progress"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
-| `obsidian.columns.review` | string | `"Review"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
-| `obsidian.columns.done` | string | `"Done"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
-| `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
-| `verify.stopBudgetSeconds` | integer | `60` | `hooks/scripts/verify-gate.sh`, `verify-gate.ps1` |
-| `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
-| `context.warnAt` | float | `0.5` | `context-watch.ps1` |
-| `context.budgetTokens` | integer or `null` | `null` | `context-watch.ps1` |
-| `context.reserveTokens` | integer or `null` | `0` | `context-watch.ps1` |
-| `context.handoffPath` | path | `".work/HANDOFF.md"` | `auto-clear.ps1` |
-| `context.keepTranscripts` | integer | `5` | `handoff-write.ps1` |
-| `context.autoClear.unsafeFocus` | boolean | `false` | no longer read: `wtype` cannot identify a window, so `auto-clear.sh` refuses it whatever this says — **consent, not capability**, see §14 |
-| `context.autoWrapUp` | boolean | `true` | `context-watch.ps1`, `context-watch.sh` |
-| `context.autoResume` | boolean | `true` | nothing since 1.0.0 — the context hook injects the handoff on resume whenever `memory.inject` is on; kept so `/crew:migrate` carries it |
-| `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |
-| `context.staleHandoff.maxCommitsBehind` | integer | `3` | `crew_state.STALE_HANDOFF_DEFAULTS` |
-| `memory.inject` | boolean | `true` | `crew_context.run` — **on by default since 1.0.0**: only an explicit `false` stops the context hook, which then emits and logs nothing. `handoff-read` stops printing the handoff while it is on, so a session never gets it from both |
-| `memory.recall.vaults` | list (a leaf) | `[]` | `crew_recall.vault_order` — the repo's vault priority for recall; empty falls back to `~/.claude/obsidian/config.json` roles (`primary`, then `recall`; `ignore` never asked) |
-| `memory.recall.maxChars` | integer | `800` | `crew_recall.max_chars` — the recall CLI's `--max-chars`; a non-positive or non-integer value falls back to 800 |
-| `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh` |
-| `emergency.ttlMinutes` | integer | `120` | `crew_incident.py` |
-| `emergency.maxTtlMinutes` | integer | `480` | `crew_incident.py` |
-| `platform.os` | string or `null` | `null` | `crew_platform.py` |
-| `platform.wsl` | boolean or `null` | `null` | `crew_platform.py` |
-| `platform.shell` | string or `null` | `null` | `crew_platform.py` |
-| `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py` |
-| `shellRoute.mode` | `"auto"`, `"wsl"`, `"powershell"`, `"gitbash"` or `null` | `null` (repo), `"auto"` (machine) | `crew_shell.mode` — the shell crew's long-running jobs run in on native Windows; both layers; a repo `null` inherits the machine value and unset everywhere reads as `auto`; an unrecognised value reads as `auto` and is named on the route line and the `/crew:status` `shell` line |
-| `shellRoute.distro` | string or `null` | `null` | `crew_shell.configured_distro` — the WSL distro to probe and route to; `null` takes the default (`*`) distro, never one picked by list order |
-| `graph.enabled` | boolean | `true` | **no consumer found**, §9 |
-| `graph.tool` | string | `"graphify"` | **no consumer found**, §9 |
-| `graph.out` | path | `"graphify-out"` | `crew_state.py` |
-| `graph.mode` | string | `"code-only"` | **no consumer found**, §9 |
-| `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
-| `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
-| `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
-| `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
-| `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
-| `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
-| `autopilot.ship` | `"pr"` or `"merge"` | `"merge"` | `crew_autopilot.settings`, read by `next_phase`'s ship rows and `crew_autopilot.ship`, §20 |
-| `autopilot.knownFailures` | list of check names | `[]` | `crew_autopilot.settings`, read by `crew_autopilot.ship_decision`, §20 |
-| `autopilot.ciTimeoutMinutes` | positive integer | `60` | `crew_autopilot.settings`, read by `crew_autopilot.ship`, §20 |
-| `tickets.baseBranch` | string or `null` | `null` | `scope_base.base_branch` — the branch ticket branches are cut from; read by `crew_ticket.py activate`, `/crew:implement`, `/crew:review`, the completion audit, the refresh check, `scope_report` and `webtest_guard`, all through `scope_base` |
+| `schema` | repo | not validated - read by `hooks/scripts/crew_state.py` (expects integer) | `7` |
+| `tier` | repo | not validated - read by `hooks/scripts/crew_state.py` (expects integer) | `0` |
+| `roles` | repo | not validated - read by `hooks/scripts/crew_state.py` (expects list of role names) | `["explorer", "reviewer"]` |
+| `tracker` | repo | `files` \| `obsidian` \| `jira` \| `sdp` | `"files"` |
+| `jira.project` | repo | not validated - read by `commands/jira-sync.md` (expects string or null) | `null` |
+| `jira.cloudId` | repo | not validated - read by `commands/jira-sync.md` (expects string or null) | `null` |
+| `sdp.portal` | repo | not validated - read by `commands/sdp-sync.md` (expects string or null) | `null` |
+| `sdp.noteVisibility` | repo | not validated - read by `commands/sdp-sync.md` (expects string) | `"private"` |
+| `sdp.closeOnDone` | repo | not validated - read by `commands/sdp-sync.md` (expects boolean) | `false` |
+| `obsidian.vaultPath` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects path or null) | `null` |
+| `obsidian.boardDir` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects path or null) | `null` |
+| `obsidian.board` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects file name) | `"Board.md"` |
+| `obsidian.columns.backlog` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects string) | `"Backlog"` |
+| `obsidian.columns.ready` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects string) | `"Ready"` |
+| `obsidian.columns.inProgress` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects string) | `"In Progress"` |
+| `obsidian.columns.review` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects string) | `"Review"` |
+| `obsidian.columns.done` | repo | not validated - read by `hooks/scripts/crew_tracker.py` (expects string) | `"Done"` |
+| `memory.inject` | repo | not validated - read by `hooks/scripts/crew_context.py` (expects boolean) | `true` |
+| `memory.recall.vaults` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of vault names) | `[]` |
+| `memory.recall.maxChars` | repo | positive integer (coerced in `hooks/scripts/crew_recall.py`) | `800` |
+| `verifyGate` | repo | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | `true` |
+| `context.enabled` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects boolean) | `true` |
+| `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.5` |
+| `context.budgetTokens` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects integer or null) | `null` |
+| `context.reserveTokens` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects integer or null) | `0` |
+| `context.handoffPath` | repo | not validated - read by `hooks/scripts/crew_autocycle.py` (expects path) | `".work/HANDOFF.md"` |
+| `context.keepTranscripts` | repo | not validated - read by `hooks/scripts/handoff-write.sh` (expects integer) | `5` |
+| `context.autoClear.unsafeFocus` | repo | not validated - read by `hooks/scripts/auto-clear.sh` (expects boolean) | `false` |
+| `context.autoWrapUp` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects boolean) | `true` |
+| `context.autoResume` | repo | not validated - read by `commands/migrate.md` (expects boolean) | `true` |
+| `context.staleHandoff.maxAgeHours` | repo | not validated - read by `hooks/scripts/crew_state.py` (expects integer) | `72` |
+| `context.staleHandoff.maxCommitsBehind` | repo | not validated - read by `hooks/scripts/crew_state.py` (expects integer) | `3` |
+| `emergency.standDown` | repo | not validated - read by `hooks/scripts/_common.sh` (expects boolean) | `true` |
+| `emergency.ttlMinutes` | repo | integer (coerced in `hooks/scripts/crew_incident.py`) | `120` |
+| `emergency.maxTtlMinutes` | repo | integer (coerced in `hooks/scripts/crew_incident.py`) | `480` |
+| `platform.os` | repo | not validated - read by `hooks/scripts/crew_platform.py` (expects string or null) | `null` |
+| `platform.wsl` | repo | not validated - read by `hooks/scripts/crew_platform.py` (expects boolean or null) | `null` |
+| `platform.shell` | repo | not validated - read by `hooks/scripts/crew_platform.py` (expects string or null) | `null` |
+| `platform.windowsHostIp` | repo | not validated - read by `hooks/scripts/crew_platform.py` (expects string or null) | `null` |
+| `graph.enabled` | repo | not validated - read by `skills/crew-graph/SKILL.md` (expects boolean) | `true` |
+| `graph.tool` | repo | not validated - read by `skills/crew-graph/SKILL.md` (expects string) | `"graphify"` |
+| `graph.out` | repo | not validated - read by `hooks/scripts/crew_state.py` (expects path) | `"graphify-out"` |
+| `graph.mode` | repo | not validated - read by `skills/crew-graph/SKILL.md` (expects string) | `"code-only"` |
+| `graph.commitHook` | repo | not validated - read by `skills/crew-graph/SKILL.md` (expects boolean) | `false` |
+| `production.databases` | repo | not validated - read by `hooks/scripts/crew_config.py` (expects list of globs) | `[]` |
+| `production.hosts` | repo | not validated - read by `hooks/scripts/crew_config.py` (expects list of globs) | `[]` |
+| `cloud.awsProfiles` | repo | not validated - read by `hooks/scripts/cloud_guard.py` (expects list of names) | `[]` |
+| `cloud.awsRegions` | repo | not validated - read by `hooks/scripts/cloud_guard.py` (expects list of names) | `[]` |
+| `cloud.azureSubscriptions` | repo | not validated - read by `hooks/scripts/cloud_guard.py` (expects list of names) | `[]` |
+| `environments.nonProd` | repo | not validated - read by `hooks/scripts/crew_config.py` (expects list of globs) | `[]` |
+| `scope.mode` | repo | `off` \| `report` \| `block` \| `auto` | `"off"` |
+| `scope.allowCliApproval` | repo | `false` \| `true` (checked in `hooks/scripts/crew_ticket.py`) | `false` |
+| `autopilot.mode` | repo | `off` \| `plan` (checked in `hooks/scripts/crew_autopilot.py`) | `"off"` |
+| `autopilot.maxPhases` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `12` |
+| `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
+| `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
+| `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
+| `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
+| `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
+| `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
+| `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
+<!-- generated:config-keys-repo end -->
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -876,9 +902,7 @@ tell**: `scope_base.py --record` writes nothing and exits 1, `--base` and
 `--changed` print nothing and exit 3, and the completion audit fails. It never
 falls back to `origin/HEAD`. The key is read from the resolved repo config
 (`crew_common.repo_config_file`), like `scope.mode`: a worktree with no
-`.crew/` of its own reads the main checkout's. The rows above omit
-`scope.*`, `cloud.*`, `environments.nonProd` and `production.*`, which have
-their own sections; the 58 is `leaf_paths`, not a row count.
+`.crew/` of its own reads the main checkout's.
 
 `shellRoute.*` (T-0040) is a preference, not a detected fact, so it is not in
 `platform.*`: platform-sync rewrites `platform.shell` every SessionStart. It is

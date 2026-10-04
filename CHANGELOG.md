@@ -14,6 +14,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   reads as `pr` with a warning), `knownFailures` (`[]`; check names matched exactly) and
   `ciTimeoutMinutes` (`60`). The repo config leaf count goes from 132 to 135; `crew-setup`'s
   inline copy, the config template and `test_crew_autopilot.py`'s pinned block carry them.
+- The three keys move from `crew_keys.COMING` into `KEY_META` (T-0048's one row per config
+  leaf): `autopilot.ship` references `crew_autopilot.SHIP_POLICIES`, the other two are code-branch
+  rows run through `crew_autopilot.settings` in `test_crew_keys.py`. The configuration reference
+  and `CONFIG.md`'s generated section 10/11 tables are regenerated (74 global-settable, 61
+  repo-only, 135 leaves), and the full guide describes shipping as landed.
 - `next` on a done ticket reads the branch's PR with `gh pr view <branch> --json
   number,state,url,headRefOid,id`. MERGED reads `closed`, and so does an open PR under `ship: pr`
   ("PR #n open, merge by hand"). A detached HEAD, a gh failure, an answer that is not a PR state,
@@ -49,6 +54,45 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Carries review round 2's six findings on the branch (4 BLOCK, 2 FIX): the field count, HEAD taken
   after the push, one ledger for the families and the receipt, the pre-merge HEAD re-read, the dirty
   tree, and the dequeue.
+
+### Added — `crew` 1.0.323: the full crew 1.0 guide and a generated configuration reference (T-0048)
+
+- `plugin/crew/hooks/scripts/crew_keys.py`: one row per config leaf (132 today), each with a
+  summary, its allowed values, the file that reads it, and the version it arrived in. A value tuple
+  a validator reads is referenced, never copied: the ratchet tiers in `crew_guards.RATCHETED_KEYS`,
+  `QA_PROVIDERS`/`DEV_PROVIDERS`, `AUTHORITIES`, `TICKET_GRANULARITIES`, `crew_ticket.MODES`,
+  `crew_tracker.KINDS`, `crew_shell.MODES`, `crew_autopilot.DEPLOY_VALUES`/`POLICIES` and the
+  per-OS auto-clear methods; `test_crew_keys.py` holds each to `is`, and checks every value list
+  against `crew_config.enum_values`. Code-branch values (`autopilot.mode`, `autopilot.maxPhases`,
+  `resume.auto`, `context.autoClear.enabled`, `route.enabled`, `scope.allowCliApproval`) run
+  through the real readers. A key crew does not validate reads "not validated" and names its
+  reader. The layer is derived from the code (`is_global_path`, the ratchet tables,
+  `crew_config.REPO_VETO_ONLY`), never stated.
+- `COMING`: keys of approved tickets that have not landed, each naming its ticket - T-0009,
+  T-0011, T-0012, T-0017, T-0029, T-0030 and T-0050. `test_no_coming_key_is_in_code`
+  fails, naming the key and ticket, once one of them is in the code. T-0013's two
+  (`resume.typeDelaySeconds`, `resume.readyTimeoutSeconds`) landed on main first (crew 1.0.321)
+  and moved into `KEY_META` in this branch's merge, kind `type` (their reader coerces).
+- Arrival versions were backfilled once from git history: the first crew version whose committed
+  template declared each key, over 37 commits to the two templates (first e9bf1438), no unreadable
+  version; 133 leaves ever declared. Per version: 0.11.0 or earlier 57; 0.11.0 1; 0.14.6 8;
+  0.16.6 4; 0.16.27 1; 0.16.33 7; 0.16.34 1; 0.19.10 9; 0.19.11 1; 0.19.18 1; 0.19.30 10;
+  0.19.31 6; 0.19.92 1; 1.0.25 13; 1.0.37 2; 1.0.39 2; 1.0.40 1; 1.0.41 2; 1.0.42 4; 1.0.54 2
+  (the four `graph.obsidian.*` keys counted there are gone).
+- `docs/guides/crew/src/config_reference.py` generates `configuration-reference.md` and the key
+  tables of `plugin/crew/CONFIG.md` sections 10 and 11 (between `generated:config-keys-*`
+  markers). It reads no config file. `scripts/check-marketplace.py`'s new
+  `check_config_reference` runs its `--check` and fails on a stale file or on any error, never
+  passing a check that did not run. CONFIG.md's hand-counted totals (68, 64, "all 41", "44
+  global-settable keys", 123/55) are gone; its prose sections are unchanged.
+- `docs/guides/crew/src/guide.md`, "crew 1.0 - the full guide", and both new documents built as
+  HTML, DOCX and PDF. `build.py --check` rebuilds every guide's HTML in memory (exit 1 stale, 2
+  did not run); CI runs it only in verify-gate.yml, whose venv installs `markdown`. The troubleshooting guide's HTML was
+  already current against its source, so its built files are unchanged.
+- Suites: `scripts/_test/config-reference.py` and `scripts/_test/crew-guide.py` (must-block and
+  must-allow cases on temp copies), and a `.crew/verify.json` rule running both, the pytest file
+  and the two `--check`s. The ten `crew_keys.py` sabotage mutations each went red on their named
+  test; they are registered separately, under the harness rule.
 
 ### Changed — `crew` 1.0.322: the review bundle and the completion audit account for merged main (T-0100)
 
