@@ -1651,6 +1651,36 @@ writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, 
 - JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
   because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
 
+## Running an external tool: the path `shutil.which` resolves (L-1508)
+
+Read on `L-1508-build` (stacked on `T-0017-build` 01fa9021) before its version commit; line
+citations taken with `grep -n` there.
+
+- DERIVED: `resolve_tool` (`plugin/crew/hooks/scripts/crew_common.py:38`) is `shutil.which`, no
+  cache; `require_tool` (`:58`) raises `ToolNotFound` (`:53`), a `FileNotFoundError`, so a site's
+  existing `except (OSError, ...)` takes the path a missing bare name took. `git_out` (`:87`) runs
+  it.
+- DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:129`
+  and `:144`, `plugin/crew/hooks/scripts/crew_instructions.py:293`,
+  `plugin/crew/hooks/scripts/crew_refresh_check.py:503`, `:517`, `:548`,
+  `plugin/crew/hooks/scripts/crew_state.py:2198`, `plugin/crew/hooks/scripts/crew_status.py:52`,
+  `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,
+  `plugin/crew/hooks/scripts/crew_trailers.py:337` (imported lazily, as that module does),
+  `plugin/crew/hooks/scripts/event_claim.py:100`, `plugin/crew/hooks/scripts/crew_autocycle.py:849`
+  (`ps`, reached on native Windows: no `/proc`) and `:997` (`xdotool`, found at `:1017`),
+  `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:928`. The crew-qa-standards scripts take
+  `crew_common`'s when crew's hooks sit beside them and an equivalent `shutil.which` fallback when
+  they do not (`plugin/crew/skills/crew-qa-standards/scripts/qa_audit_env.py:31`).
+  `crew_autocycle._git_out` (`crew_autocycle.py:421`) resolves git itself (T-0017).
+- DERIVED: `plugin/crew/tests/test_tool_resolution.py:252` fails on any
+  `subprocess.run/Popen/check_output/check_call/call` in a plugin or skill script whose argv starts
+  with a string literal (`bare_sites`, `:193`), unless `ALLOWLIST` (`:59`) names the file, function,
+  tool and reason; a stale entry, an empty reason, or a gate citation whose line moved also fails
+  (`problems`, `:224`). Guard tests stub a failing tool reachable only through `shutil.which`
+  (`plugin/crew/tests/tool_fixtures.py:31`).
+- JUDGEMENT: the lint sees only a literal at the call. An argv built elsewhere and passed through a
+  wrapper (`crew_shell.py`'s `runner(["git", "--exec-path"], ...)`) is not checked.
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:1034` — `TRIGGERS`, a 15-entry

@@ -4,6 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew`: every tool runs the way it was found, no bare-name subprocess (L-1508, PR A)
+
+- **What changed.** crew ran `git`, `ps` and `xdotool` by bare name. On native
+  Windows that reaches CreateProcess, which ignores PATHEXT and tries only
+  `<name>.exe`, while bash, pwsh and `shutil.which` find a `<name>.cmd` first.
+  With a `.cmd` shim ahead of the `.exe` on PATH, crew judged a different tool
+  from the one the user's shell runs, and a guard that read its answer could
+  pass (T-0017's wrap-up veto did). New `crew_common.resolve_tool(name)` is
+  `shutil.which(name)` (no cache: ~30us a lookup against ~1.8ms to spawn git,
+  and a cache would hide a PATH change); `require_tool` raises a
+  `FileNotFoundError` naming the tool, so each site keeps its existing failure
+  path. Fixed: `ci_receipt`, `crew_common.git_out`, `crew_instructions`,
+  `crew_refresh_check`, `crew_state.in_git_repo`, `crew_status` (tree line),
+  `crew_tracker`, `crew_trailers`, `event_claim`, `crew_autocycle`'s process
+  table (`ps`; native Windows has no `/proc`) and `xdotool`, `crew_upgrade`,
+  and the three `crew-qa-standards` scripts.
+- **At a guard, a tool that does not resolve is "could not tell".** The CI
+  receipt reads UNKNOWN, crew status shows `tree unknown`, the tracker refuses
+  a board inside the worktree, the wrap-up veto refuses the clear.
+- **New lint.** `plugin/crew/tests/test_tool_resolution.py` AST-scans every
+  plugin and skill script and fails on a `subprocess` call whose argv starts
+  with a string literal unless its allowlist names the file, function, tool and
+  reason. Allowlisted: the review/gate harness files (fixed in L-1508 PR B,
+  which lands alone under T-0087), `ps` in `crew_autocycle._proc` and `ip` in
+  `crew_platform._wsl_facts` (gated off Windows; the gate's line is checked),
+  obsidian-vault's macOS-only `ps`, notify's Windows-only `tasklist.exe`, and
+  repo-docs' two git calls (L-1509).
+- **Not covered.** An argv built elsewhere and passed through a wrapper (for
+  example `crew_shell`'s `git --exec-path` probe) is not seen by the lint.
+
 ### Added — `crew` 1.0.334: auto wrap-up before auto-clear (T-0017)
 
 - **What changed.** A new machine opt-in, `context.autoClear.wrapUp` (default

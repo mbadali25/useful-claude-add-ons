@@ -22,6 +22,7 @@ guard refuses on every OS) live beside each guard's own suite:
 test_wrapup.py (#356), test_ci_receipt.py, test_status.py, test_crew_tracker.py.
 """
 import ast
+import functools
 import os
 import pathlib
 import shutil
@@ -249,13 +250,19 @@ def problems(sites, allowlist, root=REPO):
     return out
 
 
+@functools.lru_cache(maxsize=None)
+def _repo_sites():
+    """This checkout's sites, scanned once per run (a scan parses every script)."""
+    return tuple(scan(REPO))
+
+
 def test_no_bare_name_subprocess_outside_the_allowlist():
-    assert problems(scan(REPO), ALLOWLIST) == []
+    assert problems(list(_repo_sites()), ALLOWLIST) == []
 
 
 def test_the_scan_reaches_every_plugin_and_skill_script():
     # A scan that silently found nothing would pass the test above.
-    files = {rel for rel, _, _, _ in scan(REPO)}
+    files = {rel for rel, _, _, _ in _repo_sites()}
     assert {"plugin/crew/hooks/scripts/verify_record.py",
             "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
             "skills/notify/scripts/notifyd.py"} <= files
@@ -336,7 +343,7 @@ def test_sabotage_an_allowlist_entry_without_its_reason_goes_red():
     dropped = [dict(e) for e in ALLOWLIST]
     dropped[0]["reason"] = ""
 
-    got = problems(scan(REPO), dropped)
+    got = problems(list(_repo_sites()), dropped)
 
     assert any("without a file, function, tool or reason" in p for p in got)
     assert any(dropped[0]["file"] in p and "runs a bare 'git'" in p for p in got)
@@ -346,7 +353,7 @@ def test_a_stale_allowlist_entry_goes_red():
     extra = ALLOWLIST + ({"file": "plugin/crew/hooks/scripts/crew_common.py", "function": "git_out",
                           "tool": "git", "reason": "fixed in PR A"},)
 
-    assert problems(scan(REPO), extra) == [
+    assert problems(list(_repo_sites()), extra) == [
         "stale allowlist entry (no such bare call any more): "
         "('plugin/crew/hooks/scripts/crew_common.py', 'git_out', 'git')"]
 
@@ -355,7 +362,7 @@ def test_every_gate_citation_still_points_at_its_gate():
     moved = [dict(e, gate=e["gate"].rpartition(":")[0] + ":1") if "gate" in e else e
              for e in ALLOWLIST]
 
-    got = [p for p in problems(scan(REPO), moved) if "no longer reads" in p]
+    got = [p for p in problems(list(_repo_sites()), moved) if "no longer reads" in p]
 
     assert len(got) == sum("gate" in e for e in ALLOWLIST) == 4
 
