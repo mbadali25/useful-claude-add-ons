@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:45 UTC
+Last updated: 2026-10-04 10:51 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:51: #357 land-prep on 155fe6d8 done: head 1176d0ab (1.0.339; README writer sentence reworded - review checks it). Merge review started. Owner shown spec decisions 1-11 with recommendations (changed #2 macOS: ps -o lstart keeps start-time check; #11 autopilot.md: net-0 else raise budget <=3); awaiting approval.
 - 10:45: Land-prep started: #353 T-0011 (1.0.338), #357 T-0020 (1.0.339).
 - 10:44: #377 delta review e82da750: 0/0/0 CLEAN (index.html 4 pairs = 1 one-line summary table + 3 sections, consistent). Waits turn.
 - 10:42: #360 merge review 2b2da3e8: 0/0/0 CLEAN. Waits CI then merge.
