@@ -2367,8 +2367,10 @@ S10_DIRECT_BLOCK = _normalise([
     # behind a wrapper and inside `bash -c`.
     ("s10-tg-unknown-option-value", "Bash",
      "terragrunt --some-option x destroy", _o(**_STAGING)),
+    # An option crew does not list (T-0047 lists `--non-interactive` as
+    # boolean; that spelling is `r8-tg-noninteractive-destroy`).
     ("s10-tg-unknown-option-verb", "Bash",
-     "terragrunt --non-interactive destroy", _o(**_STAGING)),
+     "terragrunt --terragrunt-fetch-dependency-output-from-state destroy", _o(**_STAGING)),
     ("s10-tg-run-all-option-value", "Bash",
      "terragrunt run-all --queue-exclude-dir x destroy", _o(**_STAGING)),
     ("s10-tf-chdir-space", "Bash", "terraform -chdir infra destroy",
@@ -2646,8 +2648,10 @@ def test_step10_tables_are_distinct():
 # denied and pin the other side), and every R7_MUST_ALLOW row was denied.
 R7_MUST_BLOCK = _normalise([
     # BLOCK 1: a boolean option before a valued one.
+    # A boolean crew does not list (round 7's own spelling, with the listed
+    # `--non-interactive`, is `r8-tg-known-bool-then-working-dir`).
     ("r7-tg-bool-then-working-dir", "Bash",
-     f"terragrunt --non-interactive --working-dir infra {_ADESTROY}",
+     f"terragrunt --terragrunt-fetch-dependency-output-from-state --working-dir infra {_ADESTROY}",
      _o(**_STAGING)),
     ("r7-tg-bool-then-tg-working-dir-apply", "Bash",
      "terragrunt --terragrunt-non-interactive --terragrunt-working-dir infra "
@@ -2665,8 +2669,9 @@ R7_MUST_BLOCK = _normalise([
      _o(**_STAGING)),
     ("r7-xargs-slot-var", "Bash",
      f"xargs --process-slot-var SLOT terraform {_ADESTROY}", _o(**_STAGING)),
+    # Judged as the destroy, not could-not-tell: `-rn 1` is read whole.
     ("r7-xargs-cluster", "Bash", f"xargs -rn 1 terraform {_ADESTROY}",
-     _o(**_STAGING)),
+     _o(**_STAGING, why="[terraformApply] terraform destroy")),
     ("r7-xargs-attached", "Bash", f"xargs -n1 terraform {_ADESTROY}",
      _o(**_STAGING)),
     ("r7-timeout-cluster", "Bash", f"timeout -vk 5 60 terraform {_ADESTROY}",
@@ -2844,23 +2849,30 @@ R8_MUST_BLOCK = _normalise([
     ("r8-vault-unknown-opt", "Bash",
      "aws-vault exec --frob prod -- terraform destroy", _unseen()),
     ("r8-unbuffer", "Bash", "unbuffer terraform destroy", _o(**_STAGING)),
-    ("r8-unbuffer-p", "Bash", "unbuffer -p terraform destroy", _o(**_STAGING)),
+    # Judged as the destroy it is, not could-not-tell: `-p` is unbuffer's.
+    ("r8-unbuffer-p", "Bash", "unbuffer -p terraform destroy",
+     _o(**_STAGING, why="[terraformApply] terraform destroy")),
     # The over-blocks' neighbours: each fix still refuses the spelling beside
     # the one it allows.
     ("r8-tg-noninteractive-destroy", "Bash", "terragrunt --non-interactive destroy",
      _o(**_STAGING)),
+    ("r8-tg-known-bool-then-working-dir", "Bash",
+     f"terragrunt --non-interactive --working-dir infra {_ADESTROY}",
+     _o(**_STAGING)),
     ("r8-tg-valued-plan-destroy", "Bash",
      "terragrunt --terragrunt-log-level plan destroy", _o(**_STAGING)),
+    # Not read-only, so the quoted name is gated (the lexer alone would
+    # refuse these too, so `why` pins the gate's reading).
     ("r8-ws-select-or-create-quoted", "Bash",
-     'terraform workspace select -or-create "prod"', _o(**_STAGING)),
+     'terraform workspace select -or-create "prod"', _gate()),
     ("r8-ws-select-or-create-true", "Bash",
-     'terraform workspace select -or-create=true "prod"', _o(**_STAGING)),
+     'terraform workspace select -or-create=true "prod"', _gate()),
     ("r8-ws-select-quoted-then-apply", "Bash",
      'terraform workspace select "staging" && terraform apply p.tfplan',
      _o(**_STAGING)),
     ("r8-ps-amp-paren", "PowerShell", '& ("terraform") destroy', _o(**_STAGING)),
     ("r8-ps-amp-quoted", "PowerShell", '& "terraform" destroy -auto-approve',
-     _o(**_STAGING)),
+     _gate()),
     ("r8-ps-assign-bare", "PowerShell", "$out = terraform destroy",
      _o(**_STAGING)),
 ])
@@ -2891,6 +2903,10 @@ R8_MUST_ALLOW = _normalise([
     ("r8a-ps-iex-colon-plan", "PowerShell",
      "Invoke-Expression -Command:'terraform plan'", _o(**_STAGING)),
     ("r8a-xargs-cluster-fmt", "Bash", "ls *.tf | xargs -rn 1 terraform fmt",
+     _o(**_STAGING)),
+    # xargs's `-i` takes only an attached value: `X` is the replace string,
+    # not an option crew does not know.
+    ("r8a-xargs-i-attached-fmt", "Bash", "ls *.tf | xargs -iX terraform fmt",
      _o(**_STAGING)),
     ("r8a-vault-plan", "Bash", "aws-vault exec prod -- terraform plan",
      _o(**_STAGING)),

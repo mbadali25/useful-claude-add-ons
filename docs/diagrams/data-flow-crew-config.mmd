@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@0620587f on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@174b6613 on 2026-10-04. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Purpose: How one crew config value reaches a run, and what may set it where, as a map of the part diagrams (each box is one data-flow-crew-config-<part>.mmd); only the main flows between parts are drawn. no-python is a standalone fallback with no link to any other part, see data-flow-crew-config-no-python.mmd.
 %% Other links (not drawn; exact edges and wording in the block below): write -> menu (both writers go through the file layer's update_json), read -> menu (machine rows), read -> ratchet (both files feed layer_state; the resolved config -> the thirteen exceptions), autoclear -> write (the same atomic writer). The drawn menu -> write arrow also stands for the menu's probes, and write -> ratchet also for resolve_ratcheted / resolve_guard.
@@ -553,6 +553,10 @@
 %% (merge 58fc8da8, rerere off), re-anchored to 5254bbfe (crew 1.0.103): header and provenance conflicted,
 %% both provenance blocks kept, main's first; the Anchors list keeps T-0040's crew_shell.py; CONFIG.md is cited by section only and
 %% L-0510's two lines sit inside section 20. No node or edge changed.
+%% Re-anchored 0620587f -> 174b6613 (T-0047, the round-8 terraform guard spellings, 2026-10-04):
+%% T-0047 changed crew_guards.py (first hunk at :1539, below every line this diagram cites, all
+%% above :564) and CONFIG.md's terraform paragraphs (cited by section only). The other Anchors
+%% paths that differ from 0620587f changed on origin/main, merged in. No node or edge changed.
 flowchart LR
     menu["<b>menu</b><br/>/crew:config menu + file layer"]
     read["<b>read</b><br/>sources, filter, merge"]

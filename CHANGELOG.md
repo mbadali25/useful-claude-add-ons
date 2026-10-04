@@ -4,6 +4,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.368: round-8 terraform guard spellings, and three ordinary lines no longer refused (T-0047)
+
+- **What changed.** The cloud guard's terraform rule closes the four
+  spellings T-0005's review round 8 found it allowed: `xargs -rn 1 -Iplan
+  terraform plan` (the `-I` replace string is now found wherever getopt finds
+  it), `parallel --timeout 60 terraform destroy ::: -auto-approve` and
+  `parallel --delay 1 tofu workspace delete ::: production` (`xargs` and
+  `parallel` are read with complete option tables, and an option neither
+  table knows makes a terraform line could-not-tell, naming the wrapper and
+  the option), PowerShell `Invoke-Expression -Command:"terraform destroy"`
+  (the colon-bound value is read), and PowerShell `env`/`sudo`/`timeout`
+  in front of terraform (PowerShell now strips the same listed wrappers as
+  bash, through the same `_unwrap`). `aws-vault exec` and `unbuffer` are
+  listed wrappers now; `strace`, `systemd-run`, `git bisect run`, `rg --pre`
+  and `docker run` stay in "What the guard does not catch".
+- **No longer refused.** `terragrunt --non-interactive plan -out="p.tfplan"`
+  (terragrunt's boolean options take no value), `terraform workspace select
+  "staging"` (read-only unless an `-or-create` on it is anything but false),
+  and PowerShell string expressions such as `Write-Output ("terraform" + "
+  destroy")` (a quoted first word with no `&`/`.` is printed, not run).
+  Not BREAKING: these become allows only on read-only lines, and every other
+  change refuses more.
+- **Docs.** CONFIG.md's literal-word paragraph no longer says a quoted
+  commit message or `terraform plan 2>$null` is refused; CONFIG.md, the crew
+  README and the crew-cloud skill list `aws-vault exec` and `unbuffer` as
+  caught.
+- **Tests.** `R8_MUST_BLOCK` and `R8_MUST_ALLOW` in
+  `test_cloud_guard_environments.py`, each with bash and pwsh samples, and
+  `test_round8_unknown_option_is_could_not_tell`; 79 of them failed before
+  the fix. Each fix was sabotaged (21 mutations, every one RED) through
+  `sabotage.py`'s own `run_test`; the entries are not committed, because
+  `plugin/crew/tests/sabotage*.py` is review harness (T-0087) and lands in
+  its own PR.
+- **Not verified.** Native Windows (the pwsh cases ran on Linux pwsh 7.4.6).
+  GNU `parallel`, `aws-vault`, `unbuffer` and `terragrunt` are not installed
+  where this was built: their option sets come from upstream source and
+  documentation, cited above each table.
+
 ### Fixed — `crew` 1.0.324: a concurrent mint no longer dies on a delete-pending lock name (Windows)
 
 - **What changed.** `crew_config_files.Lock` waits on a `PermissionError`
