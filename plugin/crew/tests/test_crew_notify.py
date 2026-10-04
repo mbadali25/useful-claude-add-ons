@@ -168,6 +168,14 @@ def _repo(tmp_path, notify=None, ticket=("T-0042", "implement")):
     return root
 
 
+def _repo_events(root, events):
+    """Rewrite the fixture repo's notify.events in place."""
+    path = root / ".crew" / "config.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["notify"]["events"] = events
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
 def _global(tmp_path, monkeypatch, notify):
     path = tmp_path / "global-config.json"
     path.write_text(json.dumps({"notify": notify}), encoding="utf-8")
@@ -469,14 +477,63 @@ def test_event_not_in_events_sends_nothing(tmp_path, telegram, capsys):
         "filtered", 0, True)
 
 
-def test_reserved_blocker_sends_nothing_and_names_t0060(tmp_path, telegram, capsys):
+def test_blocker_sends_loud(tmp_path, telegram):
+    """T-0060: `blocker` is an event, no longer reserved, and it goes loud."""
     root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": TOKEN_ENV,
                                    "chatId": CHAT, "events": ["blocker", "deploy", "question"]})
 
-    result = crew_notify.send(str(root), "blocker", "out of review rounds")
+    result = crew_notify.send(str(root), "blocker", "plan waiting on approval", kind="approval")
 
-    assert (result, len(telegram.requests), "T-0060" in capsys.readouterr().err) == (
-        "filtered", 0, True)
+    assert (result, crew_notify.RESERVED, "blocker" in crew_notify.EVENTS,
+            telegram.requests[0]["form"]["disable_notification"]) == ("sent", (), True, "false")
+
+
+@pytest.mark.parametrize("kind,subject", [
+    ("approval", "Approval waiting"), ("rounds", "Review out of rounds"),
+    ("lane", "Lane stalled"), ("lane-unknown", "Lane state unknown"),
+    ("gate", "Stop gate refused")])
+def test_blocker_subject_per_kind(tmp_path, telegram, kind, subject):
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": TOKEN_ENV,
+                                   "chatId": CHAT, "events": ["blocker"]})
+
+    crew_notify.send(str(root), "blocker", "a reason", kind=kind)
+
+    assert (kind in crew_notify.KINDS, _text(telegram).split(" [")[0]) == (True, subject)
+
+
+@pytest.mark.parametrize("kind", [None, "no-such-kind"])
+def test_blocker_without_kind_is_blocked(tmp_path, telegram, kind):
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": TOKEN_ENV,
+                                   "chatId": CHAT, "events": ["blocker"]})
+
+    result = crew_notify.send(str(root), "blocker", "something stopped", kind=kind)
+
+    assert (result, _text(telegram).split(" [")[0]) == ("sent", "Blocked")
+
+
+def test_legacy_review_enables_blocker(tmp_path, telegram):
+    """`review` in notify.events enables blocker: an out-of-rounds ping sends."""
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": TOKEN_ENV,
+                                   "chatId": CHAT, "events": ["review"]})
+
+    result = crew_notify.send(str(root), "blocker", "out of review rounds, 1 BLOCK open",
+                              kind="rounds")
+
+    assert (result, _text(telegram).split(" [")[0]) == ("sent", "Review out of rounds")
+
+
+@pytest.mark.parametrize("legacy", ["phase", "review", "done"])
+def test_legacy_blocker_send_stays_retired(tmp_path, telegram, capsys, legacy):
+    """A send under a pre-1.0 blocker NAME is a retired caller (T-0051 retired the
+    per-round and per-phase pings; review.md's line goes in a harness-only PR):
+    it sends nothing and says so, so a CLEAN round is never paged as `Blocked`."""
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": TOKEN_ENV,
+                                   "chatId": CHAT, "events": ["blocker"]})
+
+    result = crew_notify.send(str(root), legacy, "0 BLOCK, 1 FIX (codex)")
+
+    assert (result, telegram.requests, "retired" in capsys.readouterr().err) == (
+        "filtered", [], True)
 
 
 def test_missing_token_sends_nothing_and_says_why(tmp_path, telegram, monkeypatch, capsys):
@@ -679,12 +736,15 @@ def test_question_is_loud(tmp_path, telegram):
 
 # --- step 3: the line ------------------------------------------------------------------------
 
-@pytest.mark.parametrize("key", sorted(crew_notify.SUBJECTS))
+@pytest.mark.parametrize("key", sorted(crew_notify.SUBJECTS, key=str))
 def test_subject_leads_every_line(tmp_path, telegram, key):
     root = _repo(tmp_path)
     event, kind = key
     if event == "deploy":
         crew_notify.send(str(root), "deploy", "prod abc - result", outcome=kind)
+    elif event == "blocker":
+        _repo_events(root, ["blocker"])
+        crew_notify.send(str(root), "blocker", "a blocker", kind=kind)
     else:
         crew_notify.send(str(root), "question", "Claude needs your permission", kind=kind)
 

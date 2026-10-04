@@ -4,6 +4,39 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.383: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
+
+- **`blocker` sends.** It moves from `RESERVED` to `EVENTS` in `plugin/crew/hooks/scripts/crew_notify.py`,
+  loud, with one subject per kind from the one `SUBJECTS` table: `Approval waiting`, `Review out of
+  rounds`, `Lane stalled`, `Lane state unknown`, `Stop gate refused`, and `Blocked` for no or an unknown
+  kind. `send` gains `kind=` and the CLI `--kind`. The legacy `phase`/`review`/`done` names still enable
+  it in `notify.events`, but a SEND under one of them is a retired caller and sends nothing (review.md's
+  `notify.sh review` line goes in a harness-only change, so no CLEAN round is paged as `Blocked`).
+- **`run-stop` decides which autopilot stop pings** (`crew_notify.py run-stop --root . --ticket <id>
+  --phase <p> --reason "<r>"`, exit 0, prints its word). `autopilot.md`'s report runs it once at every
+  stop (110 of its 110 lines). `approve` (a stale receipt included) is `Approval waiting -> /crew:approve
+  <id>`. `in-flight` reads T-0049's `crew_inflight.holds()`: `stale` (a dead pid, or no heartbeat inside
+  its 30-minute TTL) is `Lane stalled` naming the runner, `since` and the owner's `clear` command;
+  `unknown`, an import error or a raise is `Lane state unknown -> /crew:status`, never quiet; `live`,
+  `mine`, `free` and `elsewhere` send nothing. `accept-review` and `replan` go to `rounds_check`: the
+  review budget spent and the latest round under the current plan carrying a BLOCK is `Review out of
+  rounds, <n> BLOCK open -> /crew:plan <id>`. Every other phase sends nothing. No timer: a lane that
+  dies while no autopilot run checks it is pinged at the next check.
+- **`stop` counts Stop gate refusals** (`crew_notify.py stop --root . --gate verify|audit
+  --refused|--passed`, payload on stdin, exit 0): `<git-common-dir>/crew/notify/stops.json` keys
+  `gate|session|ticket`, a pass clears it, the identity is `prompt_id` or the digest of the normalised
+  payload (both Windows flavours count one Stop once), and the second distinct refusal in a row sends
+  `Stop gate refused`.
+- **Not wired yet (harness-only follow-ups, T-0087 rule).** `verify-gate.sh`/`.ps1` and
+  `completion_audit.py` calling `stop`, and `review_ledger.record` calling `rounds_check` after a
+  manual `/crew:review`, are in `scripts/check-tooling-pr.py`'s `HARNESS`; until they land the Stop
+  gate reason never fires and the out-of-rounds reason fires only at an autopilot stop. The sabotage
+  rows for `sabotage_notify.py` are the same follow-up; the 13 mutations were run by hand, each red.
+- **Tests.** `plugin/crew/tests/test_crew_notify_blocker.py` (new), the blocker cases in
+  `test_crew_notify.py`, the retired legacy send in `test_crew_notify_hooks.py`,
+  `test_autopilot_report_calls_run_stop`, and `EXPECTED_CLI["autopilot.md"]`. `.crew/verify.json`'s
+  notify rule runs the new file and also maps `review_ledger.py` and `crew_inflight.py`.
+
 ### Changed — `crew` 1.0.378: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
 
 - **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always

@@ -105,5 +105,6 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 When context-watch asks for a handoff: finish the step in hand, run `/crew:handoff` with
 `resume: /crew:autopilot <ticket>` (T-0006's grammar) and `branch:`/`head:` on their own lines, then stop.
 At every stop after the claim, first run section 2's `crew_inflight.py release --root . --ticket <ticket>`.
+Then, at every stop, `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py run-stop --root . --ticket <ticket> --phase <p> --reason "<r>"` (it decides what pings).
 Report the ticket and its source, each phase run with its command, every `self-approved` and `taken:`
 line, where `next` stopped, why, and the command the human types next.

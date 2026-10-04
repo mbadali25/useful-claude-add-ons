@@ -1836,7 +1836,7 @@ Set it once in the machine-global `~/.claude/crew/config.json`; a repo's
 }
 ```
 
-Two events send, each led by a subject that says what happened (T-0051):
+Three events send, each led by a subject that says what happened (T-0051, T-0060):
 
 - `deploy` — every `/crew:promote` result: `Promotion passed` (silent) or
   `Deploy FAILED` (loud); a result naming neither is `Promotion outcome
@@ -1851,10 +1851,20 @@ Two events send, each led by a subject that says what happened (T-0051):
   permission prompt does not reset it, so a second prompt in the same turn is
   silent.
 
-`blocker` is reserved until T-0060 and sends nothing yet. The per-phase,
-per-review and per-ticket pings are retired; an old config's `gate` reads as
-`deploy`, `waiting` as `question`, and `phase`/`review`/`done` as `blocker`, each
-with a notice. The same message is sent once per `realertHours`, and both that
+- `blocker` — work stopped and only you can move it (T-0060), loud:
+  `Approval waiting` (autopilot stopped at `approve`), `Review out of rounds`
+  (autopilot stopped at `accept-review`/`replan` with the budget spent and a
+  BLOCK open), `Lane stalled` / `Lane state unknown` (autopilot's in-flight
+  check read another runner's marker as `stale`, or could not tell; needs
+  T-0049's markers and takes its staleness from their TTL; `live` and
+  `elsewhere` send nothing), and `Stop gate refused` (the same ticket refused
+  at Stop twice in a row, recorded by `crew_notify.py stop`; the gates' calls
+  land in a harness-only change). Autopilot's report runs `crew_notify.py
+  run-stop` at every stop, and that code decides which stop pings.
+
+The per-phase, per-review and per-ticket pings are retired; an old config's
+`gate` reads as `deploy`, `waiting` as `question`, and `phase`/`review`/`done` as
+`blocker`, each with a notice; a send under those three old names sends nothing. The same message is sent once per `realertHours`, and both that
 record and the episode record advance only on a confirmed send.
 `python3 hooks/scripts/crew_notify.py config --root .` prints what this repo
 runs with, and why.

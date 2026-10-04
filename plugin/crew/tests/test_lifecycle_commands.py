@@ -93,7 +93,8 @@ EXPECTED_CLI = {
                      "crew_autopilot.py route --root .",
                      "crew_autopilot.py status --root .",
                      "crew_inflight.py claim --root .",
-                     "crew_inflight.py release --root ."),
+                     "crew_inflight.py release --root .",
+                     "crew_notify.py run-stop --root ."),
     "promote.md": ("bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh deploy",
                    "--outcome <pass|fail>`"),
 }

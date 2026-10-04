@@ -80,6 +80,12 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.5` |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
 
+- **Blocker pings (`notify.events` has `blocker`).** `Stop gate refused` means the verify gate or the
+  completion audit refused the same ticket at Stop twice in a row (`crew_notify.py stop` records it;
+  the gates call it once their harness-only change lands). `Lane stalled` means `/crew:autopilot`
+  found another runner's in-flight marker `stale` (a dead pid, or no heartbeat inside T-0049's
+  30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
+  not tell. `Approval waiting` is autopilot stopped at `approve`.
 - **Silence one hook without touching the rest:** set its own key. `guards.roleWrites: off`,
   `guards.cloudGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
@@ -126,7 +132,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
   only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased.
+  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  budget whose last round carries a BLOCK sends the `Review out of rounds` ping when
+  `/crew:autopilot` stops on it.
 
 - **Symptom: a round came back `INCOMPLETE`.**
   **Check:** the `review:` lines, or `failure_class` in `.work/tickets/<id>/review.json`. An

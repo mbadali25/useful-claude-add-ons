@@ -1324,6 +1324,18 @@ def test_command_never_types_approve():
             text.count("approval.json")) == (False, False, [], 1)
 
 
+def test_autopilot_report_calls_run_stop():
+    """T-0060: which stop pings is decided by `crew_notify.py run-stop`, tested
+    code, not by prose. The report section names it once, for every stop,
+    with `next`'s phase and reason."""
+    text = _command_text()
+    report = text[text.index("## 5."):]
+    lines = [line for line in text.splitlines() if "crew_notify.py run-stop" in line]
+
+    assert (len(lines), "crew_notify.py run-stop --root . --ticket <ticket> --phase <p> "
+            '--reason "<r>"' in report, "at every stop" in report) == (1, True, True)
+
+
 def test_command_drives_through_the_cli_and_writes_the_resume_line():
     text = _command_text()
     for needle in ("crew_autopilot.py settings", "crew_autopilot.py resume",

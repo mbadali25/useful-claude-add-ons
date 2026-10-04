@@ -130,6 +130,8 @@ until you approve again.
 
 If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
 not count), it moves to `NEEDS_REPLAN`.
+With notify on, the last round carrying a BLOCK sends the `Review out of rounds` ping
+(`-> /crew:plan <id>`) when `/crew:autopilot` stops on it.
 Write a different plan and approve it. `approve` reports `review may continue`, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.
