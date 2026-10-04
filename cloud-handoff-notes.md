@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 17:17 UTC
+Last updated: 2026-10-04 17:23 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 17:23: #456 L-0677 fixes pushed at 60be2dbb: kernel locks in ~/.cache/crew/memory-locks, OSError -> kept-full-text, MEMORY.md kept-full-text exit 1, samefile index check; 207 tests, 5 sabotages. Round-3 re-review sent to aded203.
 - 17:17: #421 T-0083 round-3 at 5c1d20ba: 0 BLOCK, 2 FIX (plural variants make not/new/stat/can; joined query word replaced by scattered parts - t-0083 finds L-0083, github.com finds any .com), 3 NIT. Sent back to builder: es only after s/x/z/ch/sh + stopword guard; joined word = whole token or contiguous parts; must-not-match tests.
 - 17:11: #456 L-0677 re-review at febb3d3b: 0 BLOCK, 2 FIX (lock OSError crash leaves note lock; stale-lock takeover race + release-by-path), 5 NIT. No data loss in 58-kill crash sweep. Builder sent: kernel locks (flock/msvcrt) in per-user cache dir, OSError -> kept-full-text, NIT1/2/5.
 - 17:10: #420 L-0662 re-review clean at aa3e06d5: 0 BLOCK, 0 FIX, 2 NIT. Greetings ask (owner decision). Carries at landing: drop doubled '?;' in greeting ask line; re-bump placeholder 'since 1.0.406' prose. Stacked on #416; land after it. Gap: no committed test drives live sleep/wake rows through the sh/ps1 wrappers (verified by hand on 69 prompts).
