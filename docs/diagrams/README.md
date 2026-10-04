@@ -34,7 +34,7 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
 | [Process crew lifecycle implement](#process-crew-lifecycle-implement) | PASS |
-| [Process crew lifecycle review](#process-crew-lifecycle-review) | PASS |
+| [Process crew lifecycle review](#process-crew-lifecycle-review) | FAIL |
 | [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | PASS |
 | [Process crew lifecycle](#process-crew-lifecycle) | PASS |
 | [Process qa audit](#process-qa-audit) | PASS |
@@ -1116,7 +1116,7 @@ flowchart TB
 
 ## Process crew lifecycle review
 
-/crew:review: the preflight, pre-review and self-check gates that run before a round is spent, then the review rounds and their verdicts, ending in a receipt or NEEDS_REPLAN.
+/crew:review: the preflight, merge-train, pre-review and self-check gates that run before a round is spent, then the review rounds and their verdicts, ending in a receipt or NEEDS_REPLAN.
 
 ```mermaid
 flowchart TB
@@ -1125,11 +1125,13 @@ flowchart TB
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> to_im5
-        pf0 -- "go on" --> pr0{"pre-review checks<br/>pass? (L-0574)"}
+        pf0 -- "go on" --> tr0{"merge train held?<br/>(armed only, L-0526)"}
+        tr0 -- "not held: exit 6,<br/>no round spent<br/>review.md:449" --> to_im5
+        tr0 -- "holding, or not armed" --> pr0{"pre-review checks<br/>pass? (L-0574)"}
         pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 5, no round spent<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> to_im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check<br/>stamped?"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:850-861" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:904-915" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> to_sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Copilot /<br/>crew:reviewer fallback<br/>review.md:25-28, :451"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
@@ -1150,8 +1152,10 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `pf0` | preflight first (#264): a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:672, :846 |
-| `pr0` | no linter finding the bundle adds against its base? could every configured linter check? review_run.py prereview_gate :731 |
+| `pf0` | preflight first (#264): a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:691 (_receipt_and_gate :701), called at :900 |
+| `tr0` | once the clone's train is armed (crew_train.py arm), does this ticket hold it? review_run.py train_gate :727, crew_train.acquire; unarmed is not asked (L-0526) |
+| `tr0->to_im5` | waiting behind an overlapping ticket, merge &lt;base&gt; first, or the train could not be read: exit 6, no round spent; stderr names the blocker and colliding paths; wait, or crew_train.py catch-up, then review again |
+| `pr0` | no linter finding the bundle adds against its base? could every configured linter check? review_run.py prereview_gate :785 |
 | `rv0` | self-check stamped for this bundle and standards set? review_run.py standards_gate |
 | `rv1` | on one bundle; prompt carries the standards checklist, then the recurring-findings checklist, then any web tests |
 | `rv3` | report findings and every ignored line verbatim (:498-500); final round, 0 BLOCK? else fix, or the owner accepts :503, :505-508 |
@@ -1161,8 +1165,8 @@ flowchart TB
 | `rv3->rcpt` | auto-accept (L-0510): eligible, no specialist/control BLOCK; one follow-up ticket :505-506 - or the owner accepts :508 |
 
 - **Source:** `process-crew-lifecycle-review.mmd`
-- **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
+- **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`, `plugin/crew/hooks/scripts/crew_train.py`
+- **Readability:** FAIL: 1 label overlap(s)
 
 ## Process crew lifecycle spec plan
 

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@5479ac05
-verified: 2026-10-01
+anchor: useful-claude-add-ons@6d913543
+verified: 2026-10-04
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -693,7 +693,7 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
 - `.crew/verify.json:425-438` (rule 36) — the T-0085 standards suite;
   `plugin/crew/tests/sabotage.py:85`, `:3063` — `sabotage_standards.py`'s registration.
 - `.crew/verify.json:439` (rule 37) — L-0520's merge train suite (`crew_train.py`,
-  `test_crew_train.py`); its sabotage entries are L-0526.
+  `test_crew_train.py`; L-0526 adds its callers' tests); its sabotage is `sabotage_train.py`.
 - `.crew/verify.json:440-465` (rule 38) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3062` —
   `sabotage_tooling.py`'s registration.
@@ -2361,3 +2361,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `5479ac05` on 2026-10-03 (T-0048 merges origin/main `4f6ef540` (L-0601 #327, crew 1.0.162) at `5479ac05`; crew 1.0.183 kept).** Main's maps were taken and T-0048's body edits re-applied at merged-tree lines: `scripts/check-marketplace.py` `main()` `:1679-1715` with seventeen checks (`check_config_reference` at `:1701`, defined `:1375`), the plugins derivation `:1705-1706`, `plugin/crew/CONFIG.md:2478-2485` (main's `:2451-2458`, moved by the generated key tables of sections 10 and 11), `scripts/_test/self-claims.py:1228`. Citations inside earlier re-anchor notes are history and were not moved. Re-anchor only; no claim was re-derived and no suite was executed for this note.
+
+**Re-anchored `5479ac05` -> `6d913543` on 2026-10-04 (L-0526: the gate round takes the merge train, exit 6; the reviewer's rerere block; sabotage_train.py).** L-0526 changed, among the paths this map cites, `review_run.py`, `review_prompt.py`, `sabotage.py`, `commands/review.md`, `.crew/verify.json` rule 38 (in place), `CHANGELOG.md` and `TODO.md`; path-qualified citations were checked by difflib from `66655deb` and none here moved; the rule-37 bullet's sabotage sentence was rewritten in place (its rule numbering, already behind main's, was not re-taken). No suite was executed for this note.

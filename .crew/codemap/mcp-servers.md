@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@5479ac05
-verified: 2026-10-01
+anchor: useful-claude-add-ons@6d913543
+verified: 2026-10-04
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -56,7 +56,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:218` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
+  `1f97e51c`; still open as `TODO.md:224` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
@@ -64,7 +64,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:229` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:235` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
   `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
@@ -78,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:310-317` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:316-323` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -121,10 +121,10 @@ Re-read in full or in the cited region: `mcp-servers/package.json`,
 `mcp-servers/scripts/_test/check-dist-fresh.test.mjs` (test names only),
 `mcp-servers/packages/core/src/adminAuth.ts:20-176`, `mcp-servers/packages/core/src/auth.ts:55-70`,
 `mcp-servers/packages/core/src/writeGate.ts:1-32`, all four `src/cli.ts` heads, and
-`TODO.md:105-158` plus its heading list.
+`TODO.md:111-164` plus its heading list.
 
 Corrected here: the `dist/` staleness gap was described as open and is closed in the test path
-(`TODO.md:113`, item 5, CLOSED 2026-09-06); `graph/src/cli.ts` was called representative of all four
+(`TODO.md:119`, item 5, CLOSED 2026-09-06); `graph/src/cli.ts` was called representative of all four
 when `o365-user` takes a different credential path; the `device` link was cited at `:159` (the
 `build:` line) rather than at the function and comment that carry the claim.
 
@@ -152,7 +152,7 @@ cites `TODO.md` (at `:51`, `:62`, `:113`, `:143-150`) and `.claude-plugin/market
 from 2346 lines to 3558. A path diff scoped to `mcp-servers/` alone would have missed that
 entirely, which is the trap: a note's cited-path set is not the same thing as its subsystem
 directory. Every one of the six citations was re-resolved against HEAD and is byte-identical to the
-same line at `34a333f0` - `TODO.md:51` and `:62` are still the item 2 and item 3 headings, `:113` is
+same line at `34a333f0` - `TODO.md:57` and `:62` are still the item 2 and item 3 headings, `:113` is
 still item 5's `CLOSED 2026-09-06` heading, `:143-150` is still the unreadable-directory and
 equal-timestamps reasoning, and `grep -c mcp-servers .claude-plugin/marketplace.json` still returns
 0. TODO.md's 1212 new lines are all appended below `:150`.
@@ -185,7 +185,7 @@ re-resolved and both citations still hold:
   the `## Does` claim that nothing in the marketplace registers this tree is
   re-measured, not carried. The file's only change is version fields on
   unrelated entries.
-- `TODO.md:1-150` is **byte-identical** to the same range at `089a04b9`
+- `TODO.md:1-156` is **byte-identical** to the same range at `089a04b9`
   (`diff` over both renderings of that range, empty). So `:51` is still item 2's
   heading, `:62` item 3's, `:113` item 5's `CLOSED 2026-09-06` heading, and
   `:143-150` still the unreadable-directory and equal-timestamps reasoning. The
@@ -361,7 +361,7 @@ merge of the reviewed `T-0090-build` (`631d3317`) onto main `ff59160f`.
 git diff --name-only eb4c4fa8 b2553d26 -- mcp-servers/ TODO.md .claude-plugin/marketplace.json
 ```
 returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.md` (one hunk at
-`:4470`, below every citation here); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and
+`:4470`, below every citation here); nothing under `mcp-servers/`. `TODO.md:195`, `:200` and
 `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**.
 No citation moved.
 
@@ -711,3 +711,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `5479ac05` on 2026-10-03 (T-0048 merges origin/main `4f6ef540` (L-0601 #327, crew 1.0.162) at `5479ac05`; crew 1.0.183 kept).** Main's maps were taken and T-0048's body edits re-applied at merged-tree lines: `scripts/check-marketplace.py` `main()` `:1679-1715` with seventeen checks (`check_config_reference` at `:1701`, defined `:1375`), the plugins derivation `:1705-1706`, `plugin/crew/CONFIG.md:2478-2485` (main's `:2451-2458`, moved by the generated key tables of sections 10 and 11), `scripts/_test/self-claims.py:1228`. Citations inside earlier re-anchor notes are history and were not moved. Re-anchor only; no claim was re-derived and no suite was executed for this note.
+
+**Re-anchored `5479ac05` -> `6d913543` on 2026-10-04 (L-0526: the gate round takes the merge train, exit 6; the reviewer's rerere block; sabotage_train.py).** L-0526 inserted lines near the top of `TODO.md`; this map's eight `TODO.md:N` citations were moved by difflib from `66655deb` to the new tree (same headings and bodies). No other path it cites changed. No suite was executed for this note.

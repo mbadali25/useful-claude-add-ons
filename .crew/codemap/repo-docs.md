@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@5479ac05
-verified: 2026-10-01
+anchor: useful-claude-add-ons@6d913543
+verified: 2026-10-04
 
 ## Re-derive provenance
 
@@ -362,7 +362,7 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1230` (`:1190` at
+  rather than assumed at its old line.** Now at `TODO.md:1236` (`:1190` at
   `1e0706ac`, `:1122` at
   `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
@@ -783,7 +783,7 @@ outputs, and the version files (stepped to 1.0.42 and re-set to 1.0.43 twice, ne
 crew's `version` at `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14` still read
 1.0.43). Corrected here: the `docs/runbooks/INDEX.md` sentence in `plugin/crew/README.md` is
 `:2015` (section 13c grew by 9 lines above it, re-grepped), and the three crew diagrams now carry
-`d276b268`. `TODO.md:1190` sits above the appended line and holds. `docs/guides/crew/src/`
+`d276b268`. `TODO.md:1196` sits above the appended line and holds. `docs/guides/crew/src/`
 gained a ticket-board section in `memory-and-obsidian.md` and an `id taken` entry in
 `troubleshooting.md`; only those two guides were rebuilt. The root `README.md`, `plugin/README.md`
 and `skills/README.md` did not change. No command or suite was executed for this note.
@@ -799,7 +799,7 @@ the refresh artifacts. The conflicting provenance sections keep both sides, T-00
 its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
 merge); each one that moved was re-read with `sed -n` on the merge and corrected: the runbooks
 mention in `plugin/crew/README.md` is `:2029` (`:2015` on T-0021's side, `:1944` on T-0042's).
-`TODO.md:1201` holds (T-0021's lines are appended at the end of the file). `CHANGELOG.md` and
+`TODO.md:1207` holds (T-0021's lines are appended at the end of the file). `CHANGELOG.md` and
 `.crew/verify.json` are cited without a line here. `handoff.md`, `crew-context/SKILL.md` and the
 guide sources changed on one side only. The diagrams this note cites are re-anchored in the same
 commit as this note. Nothing was executed for this note.
@@ -1732,3 +1732,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `5479ac05` on 2026-10-03 (T-0048 merges origin/main `4f6ef540` (L-0601 #327, crew 1.0.162) at `5479ac05`; crew 1.0.183 kept).** Main's maps were taken and T-0048's body edits re-applied at merged-tree lines: `scripts/check-marketplace.py` `main()` `:1679-1715` with seventeen checks (`check_config_reference` at `:1701`, defined `:1375`), the plugins derivation `:1705-1706`, `plugin/crew/CONFIG.md:2478-2485` (main's `:2451-2458`, moved by the generated key tables of sections 10 and 11), `scripts/_test/self-claims.py:1228`. Citations inside earlier re-anchor notes are history and were not moved. Re-anchor only; no claim was re-derived and no suite was executed for this note.
+
+**Re-anchored `5479ac05` -> `6d913543` on 2026-10-04 (L-0526: the gate round takes the merge train, exit 6; the reviewer's rerere block; sabotage_train.py).** L-0526 inserted lines at the top of `CHANGELOG.md` and `TODO.md`; this map's three path-qualified citations into them were moved by difflib from `66655deb`. No other path it cites changed. No suite was executed for this note.
