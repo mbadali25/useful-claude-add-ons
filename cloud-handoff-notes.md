@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:06 UTC
 
 ## Log (newest first)
 
+- 03:06: #331 FIX pushed 4a368125 (pwsh-simulated label test + typo must-block, sabotage red; 1.0.303 placeholder). Sonnet re-review r2 started.
 - 03:06: #336 r1 (Sonnet) on f08ae7fb: 0 BLOCK, 0 FIX, 2 NIT (numeric workflow ID / gh alias read as unlisted; docstring limit list). CI verify-gate red ONLY on check-tooling-pr.py (owner waiver in PR body). Plan at landing: split the harness part (sabotage_cloud.py) into its own tooling PR, as L-0516/L-0563 did, so both go green.
 - 03:04: #333 r1 (Sonnet) on 73af42d7: 0 BLOCK, 1 FIX (review_checks.py:755 bare job.terminate() on clean exit raises OSError, not CouldNotCheck), 1 NIT. Fixer started, placeholder 1.0.304.
 - 03:03: #331 r1 (Sonnet) on 5bd46939: 0 BLOCK, 1 FIX (test_every_platform_only_label_names_exactly_one_shipped_mutation fails without pwsh), 2 NIT. Fixer started, placeholder crew 1.0.303.
