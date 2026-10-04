@@ -2622,6 +2622,41 @@ literal sha in the command must be its HEAD):
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
 - that tree is clean - you cannot deploy a sha plus uncommitted changes
 
+Both flavours (`.sh` and `.ps1`) choose the environment by one rule, on the
+working map and, when that is dirty, the committed map alike (L-1503):
+
+- the command loses every CR and its trailing newlines; a command that is then
+  empty or only whitespace deploys nothing and passes
+- a declared command matches when either one contains the other - a plain
+  substring test, ignoring case (on Windows `./Deploy.ps1` and `./deploy.ps1`
+  are one file). `*`, `?` and `[...]` are literal text, never wildcards
+- every key the gates read - `environments`, `deploy`, `requires`,
+  `rollback`, `rollbackReason`, `requireHuman` - is read ignoring case
+  (`"RequireHuman": true` requires a human); a map with a key repeated in one
+  object - exactly, or differing only by case (`deploy` and `Deploy`) - is
+  refused and the command blocks
+- a `deploy` that is not a command or a list of commands - `null` included -
+  or a `requireHuman` that is a list or an object refuses the map and the
+  command blocks; `"deploy": []` and `[""]` declare nothing
+- an environment name that is empty, holds a control character (a newline, a
+  tab) or holds a comma refuses the map; `-`, `_` and `.` are fine
+- the map must be strict JSON in both: a comment or a single-quoted or
+  unquoted key refuses it. One difference is left: PowerShell reads a
+  trailing comma that the bash flavour refuses
+- if more than one environment matches, the strictest union of their
+  requirements applies: every matched environment's `requires`, `rollback`
+  and `requireHuman` must hold. They are named together - `staging,prod` - in
+  the block message and in `.crew/.deploy-in-flight`, so the promotions row
+  that clears the Stop check names `staging,prod` too. So `git push`, inside
+  both `git push staging main` and `git push prod main`, needs prod's approval.
+  That combined row is not a row for `staging` or for `prod`: after such a
+  deploy, an environment that `requires` one of them still needs an
+  unambiguous deploy record for it first - deploy with a command that matches
+  only that environment, and record that (L-1505 is to write one row per
+  matched environment instead)
+- if the comparison itself fails, the command blocks rather than skipping
+  that environment
+
 So a clean worktree deploys while the main checkout is dirty, and a clean main
 checkout cannot wave a dirty or wrong-sha worktree through. `.crew/verify.json`,
 `.work/PROMOTIONS.md`, the approval markers and `.crew/.deploy-in-flight` are
