@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.368: round-8 terraform guard spellings, and three ordinary lines no longer refused (T-0047)
+### Fixed — `crew` 1.0.393: round-8 terraform guard spellings, and three ordinary lines no longer refused (T-0047)
 
 - **What changed.** The cloud guard's terraform rule closes the four
   spellings T-0005's review round 8 found it allowed: `xargs -rn 1 -Iplan
