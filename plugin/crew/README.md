@@ -933,9 +933,9 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 | `continue`, `keep going`, `carry on` | whatever `crew_autopilot.next_phase` names from disk for the ticket |
 | `status`, `crew status` | `/crew:status` |
 
-`it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
+`it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break (any line boundary Python's `str.splitlines` knows, U+2028 and U+0085 included) or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
 
-**Three outcomes.** `route` — an unambiguous phrase and a ticket that resolves to exactly one. `ask` — the phrase matched but the ticket did not resolve: an id with no `.work/tickets/<id>/` folder, a broken active-ticket pointer, several open tickets and no pointer (listed), none at all, or a `continue` whose next phase is a stop (with its reason). The line then tells Claude to ask you which before running anything. `none` — no line at all, so the context is exactly what it was. The ticket comes from the id you typed, else this worktree's active ticket, else `.work/INDEX.md` **only when exactly one** open ticket has a folder; the INDEX fallback that takes the first open line is never used.
+**Three outcomes.** `route` — an unambiguous phrase and a ticket that resolves to exactly one. `ask` — the phrase matched but no single command can be passed on as named: an id with no `.work/tickets/<id>/` folder, a broken active-ticket pointer, several open tickets and no pointer (listed), none at all, a `continue` whose next phase is a stop (with its reason), or a command that would have to be cut (over 200 characters) or reflowed to fit the line — a route never passes a command other than the one named. The line then tells Claude to ask you which before running anything. `none` — no line at all, so the context is exactly what it was. The ticket comes from the id you typed, else this worktree's active ticket, else `.work/INDEX.md` **only when exactly one** open ticket has a folder; the INDEX fallback that takes the first open line is never used.
 
 **Routing never approves.** No phrase routes to `/crew:approve`, a `continue` whose next step is approval asks instead, and `/crew:approve` is not model-invocable anyway. Type `/crew:approve <id>` yourself.
 
@@ -2111,7 +2111,7 @@ unknown or excluded command such as `/crew:approve`); the `branch:` or
 `head:` line does not match the checkout; the ticket's `.work/tickets/<id>/`
 (or the goal file) does not exist; the command is not installed;
 `handoff-author.json` could not be read; no record of which session wrote
-this handoff; the handoff changed since its author session wrote it; the
+this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
 identified (always on a host without `/proc` — native Windows, macOS); the
 record of past auto-resumes (`resume-state.json`) could not be read, or its
