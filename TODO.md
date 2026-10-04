@@ -4,6 +4,18 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0016 follow-ups (auto-clear binds to the session's own terminal).** (a) Measure the session
+  record on native Windows and macOS (`entrypoint`, `kind`, `procStart`'s format, the record path):
+  until then Windows' allowlist is the Linux `{"cli"}` and `procStart` is unchecked there and on macOS
+  (`plugin/crew/docs/session-record-spike.md`, "Not measured"). (b) A live end-to-end run: a `claude -p`
+  child in a parent's tmux pane with auto-clear armed, and an interactive `script -qc claude` child
+  (its record was not captured by the spike). (c) Harness follow-up, its own tooling PR (T-0087): the
+  49 hand sabotages of T-0016's PR as `plugin/crew/tests/sabotage_autoclear_binding.py`, registered in
+  `sabotage.py`, with an anchor-present-once test. (d) The sh flavour still runs the hook-anchored
+  checks (`crew_autocycle.py`'s `pane_pid not in ancestors()`, `resolve_target(ancestors(), ...)`)
+  before the owner proof because their lines are sabotage anchors; once (c) lands they can be folded
+  into `prove_target`.
+
 - **T-0096 follow-ups (review of #398, NITs deferred on purpose).** (1) The stand-down and the
   auto-clear veto treat a could-not-tell resolver (`unknown`) as an absent file in every flavour:
   `crew_incident_active` (`plugin/crew/hooks/scripts/_common.sh`), promote-gate.ps1's
