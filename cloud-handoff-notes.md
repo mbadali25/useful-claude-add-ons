@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:52 UTC
+Last updated: 2026-10-04 16:55 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:55: MERGED #405 (L-0688) at 66be99cd (crew 1.0.329) and #398 (T-0096) at 3c4ccd2f (crew 1.0.330). Batch merge review: no BLOCKs. #450 fixing Windows tests + doc example; then #403 re-merges. L-0540 follow-up NIT: add/add (000000->000000 U) path admitted - check U letter first.
 - 16:52: WITHDREW the [skip ci] builder rule: the permission system refused it as a CI bypass for one builder (L-0680). Not working around it. Builders push normally. Surfaced to owner.
 - 16:52: Batch 1 CI: #405 + #398 GREEN (holding merge for batch merge review); #450 RED on Windows - 2 real test-portability bugs (case-insensitive FS MEMORY.md/memory.md; chmod 000 not enforced on Windows) -> fix on T-0084-build then re-merge into #403. #489 L-1503 review: 0/3/4 -> unify both gates (case-insensitive + ambiguous multi-match blocks + case-insensitive deploy key in BOTH sh and ps1); land L-1503 BEFORE #407.
 - 16:50: WAVE2 #427 L-0652 built -> b844b794 (manual sleep/wake; untrusted state=unknown(strict), allowCliApproval checked at read, wake keeps stricter night; ~37 tests; 8 sabotages). Review started.
