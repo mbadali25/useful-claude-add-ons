@@ -2599,6 +2599,18 @@ read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
 than removing the budget. See `commands/verify.md` for the full mechanism and
 `hooks/scripts/verify_record.py` / `verify_price.py` for the code.
 
+**A rule passes only on a completion record (T-0082), not a config key.** Each
+rule's wrapper writes the rule's exit status to a temp record file after the
+rule ends. The rule passes only when the wrapper ended 0 and the record exists
+and says 0. A rule killed or signalled (record above 128), a wrapper that
+ended before writing (killed, or never started on `.ps1`), or a record that is
+missing or unreadable is FAILED as "could not tell": `VERIFY FAILED` plus
+`verify-gate: COULD NOT TELL (<reason>)`, status `unknown` in the command log,
+counted in a summary line, and neither marker advances. Exit 77 is still SKIP
+and a plain non-zero still a plain failure. The gate still has no per-rule
+deadline: a hung rule is waited for. See `docs/guides/crew/src/troubleshooting.md`
+("Verify gate says COULD NOT TELL") for each reason.
+
 **Limitation (1.0): the gate does not reap background processes a rule
 leaves behind; a rule must not background work — a rule that does can keep
 running (and writing) after the gate returns.** Per-rule process-group

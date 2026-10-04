@@ -2856,7 +2856,7 @@ with three hooks registered and unlisted.
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers. Prints the handoff after clear, compact, or resume only when `memory.inject` is false (the context hook injects it otherwise) — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
 | `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
-| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. A rule passes only on a completion record its wrapper writes; a killed, never-started or unrecorded rule is FAILED as COULD NOT TELL (T-0082). Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
@@ -2948,6 +2948,19 @@ And every restore, on all three paths, is checked against a sha256 taken before
 the first mutation, so a restore that silently did nothing fails the suite
 instead of passing quietly. SIGKILL is still uncatchable by anything, which is
 why the startup refusal exists.
+
+Each entry also runs **bounded** (T-0080, `tests/sabotage_bound.py`), because a
+mutation can turn a bounded read into an unbounded one: an uncapped run once
+grew one python3 past 19 GB and the OOM killer took the session with it. The
+entry's pytest starts in its own process group under an address-space cap
+(`RLIMIT_AS`, default 4096 MiB per process, `CREW_SABOTAGE_MEM_MB`; `0` means no
+cap) that every process the test spawns inherits, and a wall-clock limit
+(default 600 s per entry, `CREW_SABOTAGE_TIMEOUT_S`). Over the cap the test
+fails on its own assertion, so the entry is `RED (good)` for real; a timeout
+stops the whole group and reads `RED BUT UNPROVEN -- timed out`, failing the
+suite. An unreadable value refuses the run rather than meaning the default.
+The cap is enforced on Linux only: elsewhere the `bound:` line the run prints
+first says `memory cap absent`, and only the timeout applies.
 
 `run-tests.sh` printed `RESULT: 177 passed, 0 failed` at `61af85cb`. It covers
 what the guard must block and must allow, the promotion gate, the emergency lane
