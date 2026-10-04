@@ -18,7 +18,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   (paths only, never content), 2 unknown; `--write` appends the missing patterns, then each path
   they still miss as an anchored literal (the denylist match ignores case, `.graphifyignore`'s
   does not, so `.ENV` gets `/.ENV`), under one marked block, atomically, through a symlinked
-  `.graphifyignore`, keeping its mode and line ending. A symlink is judged by its target too, and
+  `.graphifyignore`, keeping its mode and line ending (CRLF only when most lines use it). A literal
+  is written only for a path that is one line of plain text, so a file named `ID_RSA<LF>!.env`
+  cannot append `!.env`; such a path stays uncovered, named escaped. A `!` line already in
+  `.graphifyignore` is never overridden: `--write` writes the other patterns, prints ``line N
+  (`!pattern`) re-includes denylisted <path>; remove that line or accept the exposure`` and exits 1.
+  A symlink is judged by its target too, and
   `Read(.\secrets\**)` is read as `Read(./secrets/**)`.
 - `crew_refresh_check.py` reports the graph `unknown` and not refreshable, naming the paths and
   `crew_graph_ignore.py --write`, while any denylisted path is uncovered or coverage cannot be told,

@@ -643,15 +643,23 @@ every file the secrets denylist matches.</p>
   <strong>Fix:</strong> add the missing patterns, then check again.</p>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_graph_ignore.py&quot; --root . --write
 </code></pre>
-<p>It appends only the missing patterns, under one marked block, and leaves every existing line as
-  it was. Commit <code>.graphifyignore</code>, then re-run the refresh check.</p>
+<p>It appends the missing patterns, then any flagged path they still miss (the denylist ignores
+  case, <code>.graphifyignore</code> does not, so <code>.ENV</code> gets <code>/.ENV</code>), under one marked block, and leaves
+  every existing line as it was. Commit <code>.graphifyignore</code>, then re-run the refresh check.
+  If it prints <code>line N (`!pattern`) re-includes denylisted &lt;path&gt;; remove that line or accept the
+  exposure</code> and exits 1, your own <code>!</code> line is the reason: <code>--write</code> never overrides it. Delete the
+  line, or keep it and accept that graphify reads that file. A path that is not one line of plain
+  text (a name holding a line break or other control character) is never written either; it stays
+  named, escaped, by <code>--check</code>: rename the file or exclude it by hand.</p>
 <ul>
 <li>
 <p><strong>Symptom: <code>denylist coverage unknown: &lt;reason&gt;</code></strong> (the refresh check) or <code>graph-ignore  unknown</code>
   (<code>/crew:status</code>).
   <strong>Check:</strong> the reason names it: git missing, a settings file that does not parse, an unreadable
   <code>.claude/secrets-denylist</code> or <code>.graphifyignore</code>, a nested <code>.graphifyignore</code> (only the root one is
-  evaluated, and a nested one could re-include a file with <code>!</code>), or a deny-all <code>Read</code> rule.
+  evaluated, and a nested one could re-include a file with <code>!</code>), a nested repository or submodule
+  <code>.graphifyignore</code> does not exclude, a symlink that resolves outside the repository or not at
+  all, or a deny-all <code>Read</code> rule.
   <strong>Fix:</strong> repair what it names. An unknown is never read as covered, so no refresh is named until
   it is fixed.</p>
 </li>

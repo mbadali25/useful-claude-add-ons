@@ -440,3 +440,116 @@ def test_write_keeps_crlf_line_endings(tmp_path, capsys):
         after = handle.read()
 
     assert (after.count(b"\n"), b"\r\n.env\r\n" in after) == (after.count(b"\r\n"), True), after
+
+
+def test_a_dangling_symlink_is_unknown(tmp_path, capsys):
+    """A link to nothing could later name a secret; until it resolves, what
+    graphify would read through it is not known."""
+    root = _repo(tmp_path, {"app.py": "x = 1\n"})
+    _symlink(root, "no-such-target.txt", "notes.txt")
+
+    code, out = _check(root, capsys)
+
+    assert (code, "unknown" in out, "notes.txt" in out) == (2, True, True), out
+
+
+_LINE_BREAKS = {"lf": "\n", "cr": "\r", "vt": "\x0b", "ff": "\x0c", "fs": "\x1c",
+                "nel": "\x85", "ls": "\u2028", "ps": "\u2029", "tab-inside": "\t",
+                "zero-width": "\u200b"}
+
+
+@pytest.mark.parametrize("case", sorted(_LINE_BREAKS))
+def test_write_never_splits_a_line_on_a_hostile_name(tmp_path, capsys, case):
+    """`ID_RSA<break>!.env` written as a literal would append an attacker's
+    `!.env`. Such a name is never written, stays UNCOVERED and named, and a
+    second `--write` changes nothing."""
+    name = f"ID_RSA{_LINE_BREAKS[case]}!.env"
+    root = _repo(tmp_path, {".env": "PW=x\n", ".graphifyignore": ".env\n"})
+    try:
+        _write(root, name, "k\n")
+    except (OSError, ValueError, UnicodeError):
+        pytest.skip(f"this filesystem cannot hold a name with {case}")
+    target = os.path.join(str(root), ".graphifyignore")
+
+    first = _main(root, "--write")
+    with open(target, "rb") as handle:
+        once = handle.read()
+    second = _main(root, "--write")
+    with open(target, "rb") as handle:
+        twice = handle.read()
+    out = capsys.readouterr().out
+
+    assert (first, second, b"ID_RSA" in once, b"!" in once, twice == once,
+            ascii(name) in out) == (1, 1, False, False, True, True), (once, out)
+
+
+def _negated_config(tmp_path, ignore):
+    root = _denylisted_config(tmp_path)
+    _write(root, ".graphifyignore", ignore)
+    return root, os.path.join(str(root), ".graphifyignore")
+
+
+def test_write_reports_a_users_negation_and_does_not_override_it(tmp_path, capsys):
+    """Owner decision: a `!` line is the user's choice. `--write` appends the
+    patterns that do not cover the path it re-includes (not `config/`, not
+    `/config/env.php`), names the line, exits 1, and converges."""
+    root, target = _negated_config(tmp_path, "config/*\n\n!config/env.php\n")
+
+    first = _main(root, "--write")
+    out = capsys.readouterr().out
+    with open(target, encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+    second = _main(root, "--write")
+    capsys.readouterr()
+    with open(target, encoding="utf-8") as handle:
+        again = handle.read().splitlines()
+
+    assert (first, second, "line 3 (`!config/env.php`) re-includes denylisted "
+            "config/env.php; remove that line or accept the exposure" in out,
+            "config/" in lines, "/config/env.php" in lines, "*.pem" in lines,
+            again == lines) == (1, 1, True, False, False, True, True), (out, lines)
+
+
+def test_write_never_appends_a_literal_over_a_users_negation(tmp_path, capsys):
+    """`.ENV` is denylisted (case folds) and `!.ENV` re-includes it: the
+    `/.ENV` literal `--write` adds for a case gap would override that."""
+    root = _repo(tmp_path, {".ENV": "PW=x\n", ".graphifyignore": "!.ENV\n"})
+
+    code = _main(root, "--write")
+    out = capsys.readouterr().out
+    with open(os.path.join(str(root), ".graphifyignore"), encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+
+    assert (code, "/.ENV" in lines, "line 1 (`!.ENV`) re-includes denylisted .ENV" in out) == (
+        1, False, True), (out, lines)
+
+
+def test_write_names_an_unknown_line_and_still_withholds_the_literal(
+        tmp_path, capsys, monkeypatch):
+    root = _repo(tmp_path, {".ENV": "PW=x\n", ".graphifyignore": "!.ENV\n"})
+    monkeypatch.setattr(crew_graph_ignore, "_reincluded",
+                        lambda paths, _lines, _git: {p: (None, "!") for p in paths})
+
+    code = _main(root, "--write")
+    out = capsys.readouterr().out
+    with open(os.path.join(str(root), ".graphifyignore"), encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+
+    assert (code, "/.ENV" in lines, "an unknown line re-includes denylisted .ENV" in out) == (
+        1, False, True), (out, lines)
+
+
+@pytest.mark.parametrize("before,eol", [(b"a\r\nb\nc\n", b"\n"),
+                                        (b"a\r\nb\r\nc\n", b"\r\n")])
+def test_write_uses_crlf_only_when_most_lines_do(tmp_path, capsys, before, eol):
+    root = _repo(tmp_path, {".env": "PW=x\n"})
+    target = os.path.join(str(root), ".graphifyignore")
+    with open(target, "wb") as handle:
+        handle.write(before)
+
+    _main(root, "--write")
+    capsys.readouterr()
+    with open(target, "rb") as handle:
+        block = handle.read()[len(before):]
+
+    assert (b"\r" in block, block.count(eol)) == (eol == b"\r\n", block.count(b"\n")), block

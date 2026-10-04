@@ -488,6 +488,11 @@ every file the secrets denylist matches.
   It appends the missing patterns, then any flagged path they still miss (the denylist ignores
   case, `.graphifyignore` does not, so `.ENV` gets `/.ENV`), under one marked block, and leaves
   every existing line as it was. Commit `.graphifyignore`, then re-run the refresh check.
+  If it prints ``line N (`!pattern`) re-includes denylisted <path>; remove that line or accept the
+  exposure`` and exits 1, your own `!` line is the reason: `--write` never overrides it. Delete the
+  line, or keep it and accept that graphify reads that file. A path that is not one line of plain
+  text (a name holding a line break or other control character) is never written either; it stays
+  named, escaped, by `--check`: rename the file or exclude it by hand.
 
 - **Symptom: `denylist coverage unknown: <reason>`** (the refresh check) or `graph-ignore  unknown`
   (`/crew:status`).

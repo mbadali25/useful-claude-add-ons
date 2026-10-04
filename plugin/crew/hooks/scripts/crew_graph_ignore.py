@@ -94,13 +94,29 @@ Appends every denylisted pattern not already a line of `.graphifyignore`
 (negations are never written: they could only re-include), then each path
 still uncovered as an anchored literal (`/.ENV`), under one marked block,
 then checks again. The full text is built before anything is opened, written
-to a temporary file beside the target in the file's own line ending, given
-the target's permission bits (a new file: 0666 less the umask), then moved
-over it with `os.replace`, so a failed build leaves the file as it was. A
-symlinked `.graphifyignore` is written through to the file it names.
+to a temporary file beside the target in the file's own line ending (CRLF
+only when most of its lines end so), given the target's permission bits (a
+new file: 0666 less the umask), then moved over it with `os.replace`, so a
+failed build leaves the file as it was. A symlinked `.graphifyignore` is
+written through to the file it names.
+
+A literal is written only for a path that is one line of plain text
+(`_plain`, an allow-list): a control or format character, any line
+separator (`\\r`, `\\x0b`, `\\x85`, U+2028 ...), edge whitespace or `*?[\\`
+leaves the path out, still uncovered and named (escaped) by the check, so a
+file named `ID_RSA<LF>!.env` can never append `!.env`.
+
+A user's own `!` line is never overridden. A denylisted path whose deciding
+`.graphifyignore` line (git's `check-ignore -v`) is a negation gets no
+literal, and no appended pattern that would exclude it; every other pattern
+is still written, and `--write` prints `line N (`!p`) re-includes denylisted
+<path>; remove that line or accept the exposure` ("an unknown line" when git
+does not name one) and exits 1. If a `!` line exists and the paths cannot be
+judged, nothing is written (exit 2). A second `--write` then changes nothing.
 
 Exit codes: `--check` 0 covered, 1 uncovered, 2 unknown. `--write` 0 covered
-after the write, 1 still uncovered, 2 unknown or the write failed.
+after the write, 1 still uncovered or a `!` line kept open, 2 unknown or the
+write failed.
 """
 
 import sys
@@ -114,6 +130,7 @@ import os  # noqa: E402  pylint: disable=wrong-import-position
 import re  # noqa: E402  pylint: disable=wrong-import-position
 import subprocess  # noqa: E402  pylint: disable=wrong-import-position
 import tempfile  # noqa: E402  pylint: disable=wrong-import-position
+import unicodedata  # noqa: E402  pylint: disable=wrong-import-position
 
 COVERED = "covered"
 UNCOVERED = "uncovered"
@@ -341,8 +358,15 @@ def _judge(top, paths, patterns, lines, git):
 
 def _ignored(paths, patterns, git, fold_case=False):
     """The subset of `paths` git's matcher excludes under `patterns`."""
+    return {path for path, (_line, pattern) in _matches(paths, patterns, git, fold_case).items()
+            if not pattern.startswith("!")}
+
+
+def _matches(paths, patterns, git, fold_case=False):
+    """`{path: (line, pattern)}`: the deciding line of `patterns` (1-based,
+    None if git gave none) for each path any line matches, `!` included."""
     if not paths or not patterns:
-        return set()
+        return {}
     with tempfile.TemporaryDirectory(prefix="crew-graph-ignore-") as scratch:
         if _run_git(git, scratch, ["init", "-q", "."]).returncode != 0:
             raise _Unknown("git could not create its scratch repository")
@@ -361,19 +385,24 @@ def _ignored(paths, patterns, git, fold_case=False):
         raise _Unknown("git check-ignore failed: "
                        + done.stderr.decode("utf-8", "replace").strip()[:200])
     fields = done.stdout.decode("utf-8", "surrogateescape").split("\0")
-    out = set()
+    out = {}
     for i in range(0, len(fields) - 3, 4):
-        pattern, path = fields[i + 2], fields[i + 3]
-        if pattern and not pattern.startswith("!"):
-            out.add(path)
+        line, pattern, path = fields[i + 1], fields[i + 2], fields[i + 3]
+        if pattern:
+            out[path] = (int(line) if line.isdigit() else None, pattern)
     return out
 
 
 def _ignore_lines(root):
+    """Every line as git splits it (on LF, a trailing CR dropped), blank ones
+    kept, so a line's index is its line number less one."""
     text = _read(root, IGNORE_FILE)
-    if text is None:
+    if not text:
         return []
-    return [line for line in text.splitlines() if line.strip()]
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return [line[:-1] if line.endswith("\r") else line for line in lines]
 
 
 def coverage(root, git="git"):
@@ -407,17 +436,47 @@ def _block(patterns, eol="\n"):
     return BLOCK_HEADER + eol + "".join(p + eol for p in patterns)
 
 
-def _literals(top, git, patterns, lines):
-    """Each path still uncovered once `lines` are in place, as an anchored
-    literal: the denylist folds case and coverage does not, so `.ENV` needs
-    `/.ENV`. A path git would read as a pattern (`*?[\\`, a trailing space)
-    is left out, so the check after the write still names it."""
-    try:
-        _denied, uncovered = _judge(top, candidates(top, git)[0], patterns, lines, git)
-    except _Unknown:
-        return []
+def _plain(path):
+    """True only for a path that is one line of nothing but literal text: no
+    control or format character (a surrogate-escaped byte is one), no line
+    separator of any kind, no edge whitespace, no `*?[\\`. An allow-list:
+    `\\x85` or U+2028 would otherwise split the line `--write` appends."""
+    return (bool(path) and path == path.strip() and len(path.splitlines()) == 1
+            and "\n".join(path.splitlines()) == path
+            and not any(unicodedata.category(c)[0] == "C" or c in "\u2028\u2029*?[\\"
+                        for c in path))
+
+
+def _literals(uncovered, lines, keep_open):
+    """Each path in `uncovered` as an anchored literal: the denylist folds
+    case and coverage does not, so `.ENV` needs `/.ENV`. A path that is not
+    `_plain`, or that a user's `!` line re-includes (`keep_open`), is left
+    out, so the check after the write still names it."""
     return ["/" + p for p in uncovered
-            if not re.search(r"[*?\[\\]|\s$", p) and "/" + p not in lines]
+            if _plain(p) and p not in keep_open and "/" + p not in lines]
+
+
+def _reincluded(paths, lines, git):
+    """`{path: (line, pattern)}` for each of `paths` whose deciding
+    `.graphifyignore` line is a `!` negation: the user's own choice, which
+    `--write` reports rather than overrides. `line` is 1-based, or None when
+    git did not say."""
+    return {path: hit for path, hit in _matches(sorted(paths), lines, git).items()
+            if hit[1].startswith("!")}
+
+
+def _spare(keep_open, lines, missing, git):
+    """`missing` less each pattern that would exclude a path in `keep_open`:
+    appended after the user's `!` line, it would silently override it."""
+    missing = list(missing)
+    while keep_open and missing:
+        hits = _matches(sorted(keep_open), lines + missing, git)
+        drop = {line - 1 - len(lines) for line, pattern in hits.values()
+                if line and line > len(lines) and not pattern.startswith("!")}
+        if not drop:
+            break
+        missing = [p for i, p in enumerate(missing) if i not in drop]
+    return missing
 
 
 def _mode(path):
@@ -429,8 +488,11 @@ def _mode(path):
 
 
 def write(root, git="git"):
-    """Append the missing positive patterns. Returns the patterns added.
-    Raises _Unknown when the denylist cannot be built."""
+    """Append the missing positive patterns. Returns `(added, kept_open)`,
+    `kept_open` being `{path: (line, pattern)}` for each denylisted path a `!` line of
+    `.graphifyignore` re-includes, which nothing appended may cover. Raises
+    _Unknown when the denylist cannot be built, or when a `!` line exists
+    and which paths it re-includes cannot be judged."""
     root = os.path.abspath(root)
     patterns, _sources, _skipped, why = denylist(root)
     if why:
@@ -446,14 +508,25 @@ def write(root, git="git"):
         if pattern.startswith("!") or pattern.strip() in present or pattern in missing:
             continue
         missing.append(pattern)
-    missing += _literals(top, git, patterns, lines + missing)
+    try:
+        paths = candidates(top, git)[0]
+        keep_open = _reincluded(_judge(top, paths, patterns, lines, git)[1], lines, git)
+        missing = _spare(keep_open, lines, missing, git)
+        missing += _literals(_judge(top, paths, patterns, lines + missing, git)[1],
+                             lines, keep_open)
+    except _Unknown as exc:
+        if any(line.lstrip().startswith("!") for line in lines):
+            raise _Unknown(f"{IGNORE_FILE} has a `!` line and whether an appended pattern "
+                           f"would override it is not known: {exc}") from exc
+        keep_open = {}
     if not missing:
-        return []
+        return [], keep_open
     before = b""
     if os.path.lexists(target):
         with open(target, "rb") as handle:
             before = handle.read()
-    eol = b"\r\n" if b"\r\n" in before else b"\n"
+    crlf = before.count(b"\r\n")
+    eol = b"\r\n" if crlf > before.count(b"\n") - crlf else b"\n"
     text = _block(missing, eol.decode())
     sep = b"" if not before or before.endswith(b"\n") else eol
     payload = before + sep + text.encode("utf-8")
@@ -468,7 +541,11 @@ def write(root, git="git"):
         if os.path.lexists(temp):
             os.unlink(temp)
         raise
-    return missing
+    return missing, keep_open
+
+
+def _shown(path):
+    return path if _plain(path) else ascii(path)
 
 
 def render(result):
@@ -478,7 +555,7 @@ def render(result):
                 f"all excluded by {IGNORE_FILE}")
     if result["status"] == UNCOVERED:
         paths = result["uncovered"]
-        shown = ", ".join(paths[:SHOWN])
+        shown = ", ".join(_shown(p) for p in paths[:SHOWN])
         if len(paths) > SHOWN:
             shown += f" (+{len(paths) - SHOWN} more)"
         return (f"graph-ignore: UNCOVERED - graphify would read {len(paths)} "
@@ -498,15 +575,22 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.write:
         try:
-            added = write(args.root, args.git)
+            added, kept_open = write(args.root, args.git)
         except (_Unknown, OSError, ValueError) as exc:
             print(f"graph-ignore: unknown - write failed, {IGNORE_FILE} unchanged: {exc}")
             return 2
         print(f"graph-ignore: added {len(added)} pattern(s) to {IGNORE_FILE}"
               + (f": {', '.join(added)}" if added else ""))
+        for path, (line, pattern) in sorted(kept_open.items()):
+            where = f"line {line} (`{pattern}`)" if line else "an unknown line"
+            print(f"graph-ignore: {where} re-includes denylisted {_shown(path)}; "
+                  f"remove that line or accept the exposure")
+    else:
+        kept_open = {}
     result = coverage(args.root, args.git)
     print(json.dumps(result, indent=2) if args.json else render(result))
-    return {COVERED: 0, UNCOVERED: 1}.get(result["status"], 2)
+    code = {COVERED: 0, UNCOVERED: 1}.get(result["status"], 2)
+    return max(code, 1) if kept_open else code
 
 
 if __name__ == "__main__":
