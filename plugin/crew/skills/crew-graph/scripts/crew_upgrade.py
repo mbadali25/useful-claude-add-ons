@@ -1133,7 +1133,7 @@ def _config_lines(notes):
             "written): " + ", ".join(notes["unmigrated"])
             + ". `schema` was deliberately NOT stamped current, so this repo "
             "still reports an upgrade as needed. Fix the block by hand and "
-            "run `/crew:upgrade` again."
+            "run `/crew:migrate` again."
         )
     if notes["pinnedAtDefault"]:
         lines.append(
@@ -1210,12 +1210,13 @@ def _absent_global_headline(notes):
     why the dependency only runs the other way.
 
     Every OTHER `--check-global` finding (`unreadable`, `missing-keys`,
-    `repo-keys`, `inert-schema`) still lives only in `/crew:upgrade` step 4b,
-    which runs `crew_config.py --check-global` directly. This is the one
+    `repo-keys`, `inert-schema`) lives in `/crew:config`, which runs
+    `crew_config.py --check-global` directly (upgrade.md step 4b went when
+    T-0038 folded `/crew:upgrade` into `/crew:migrate`). This is the one
     finding an upgrade run has a stake of its own in, because it is the run
     that just decided whether `pm.authority` survives in the repo file at all
     (see `_prune_unsupplied_global_leaves`) -- worth leading the report with,
-    not left in a bullet list a reader has to reach step 4b to see. Returns
+    not left in a list a reader has to go to `/crew:config` to see. Returns
     None when a global file exists.
     """
     if crew_state.read_text(crew_state.GLOBAL_CONFIG_PATH) is not None:
@@ -1487,7 +1488,7 @@ def main(argv=None):
         if notes["unmigrated"]:
             print("NOT migrated (wrong type, left as written): "
                   + ", ".join(notes["unmigrated"]))
-            print("schema was not stamped; fix these and re-run /crew:upgrade")
+            print("schema was not stamped; fix these and re-run /crew:migrate")
     if out["conflicts"]:
         print(f"{len(out['conflicts'])} conflict(s) - see .crew/codemap/UPGRADE.md")
     return 0

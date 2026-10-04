@@ -83,6 +83,83 @@ MIGRATE_FIX_MUTATIONS = (
         "        if src.endswith(crew_migrate.TMP_SUFFIX) and not dst.endswith(\"manifest.json\"):\n",
         "tests/test_migrate.py::test_crash_mid_apply_leaves_the_old_tree",
     ),
+    # T-0038: the pre-0.20 upgrade stage. config.json is the one file
+    # migrate overwrites, so each of these is a way to lose the user's
+    # original config or ship a half-upgraded one.
+    (
+        # An absent schema is refused again, as before T-0038.
+        "migrate refuses an absent schema again",
+        MIGRATE,
+        "    if \"schema\" not in cfg:\n        return cfg, data, {\"from\": None}\n",
+        "",
+        ("tests/test_migrate.py::"
+         "test_pre_0_20_config_upgrades_then_migrates_in_one_apply"),
+    ),
+    (
+        # crew.json built from the un-upgraded config.
+        "migrate skips the upgrade stage",
+        MIGRATE,
+        "    upgraded, notes = crew_upgrade.upgrade_config(copy.deepcopy(cfg))\n",
+        "    _, notes = crew_upgrade.upgrade_config(copy.deepcopy(cfg))\n    upgraded = cfg\n",
+        ("tests/test_migrate.py::"
+         "test_pre_0_20_config_upgrades_then_migrates_in_one_apply"),
+    ),
+    (
+        # A half-upgraded config reaches crew.json.
+        "migrate ignores unmigrated blocks",
+        MIGRATE,
+        "    if notes[\"unmigrated\"]:\n",
+        "    if False:\n",
+        ("tests/test_migrate.py::"
+         "test_unmigrated_block_is_a_conflict_and_nothing_is_written"),
+    ),
+    (
+        # A crash mid-apply deletes the user's only config.
+        "in-process undo removes config.json",
+        MIGRATE,
+        "                atomic_write(path, item[\"original\"])\n",
+        "                _remove(path)\n",
+        ("tests/test_migrate.py::"
+         "test_crash_mid_apply_on_a_pre_0_20_repo_restores_config_json"),
+    ),
+    (
+        # --rollback deletes the user's only config.
+        "rollback removes config.json",
+        MIGRATE,
+        "                atomic_write(path, originals[target[\"path\"]])\n",
+        "                os.remove(path)\n",
+        ("tests/test_migrate.py::"
+         "test_pre_0_20_rollback_restores_config_json_byte_identical"),
+    ),
+    (
+        # A forged backup is written over the config.
+        "rollback skips the backup hash check",
+        MIGRATE,
+        "        if data is None or _sha(data) != target[\"originalSha256\"]:\n",
+        "        if data is None:\n",
+        ("tests/test_migrate.py::"
+         "test_rollback_refuses_when_the_backed_up_original_does_not_match_the_manifest"),
+    ),
+    (
+        # A manifest calling config.json "created" makes rollback remove it.
+        "manifest config target needs no existed flag",
+        MIGRATE,
+        "        return target.get(\"existed\") is True and "
+        "isinstance(target.get(\"originalSha256\"), str)\n",
+        "        return isinstance(target.get(\"originalSha256\"), str)\n",
+        ("tests/test_migrate.py::"
+         "test_rollback_refuses_a_config_target_not_marked_existed"),
+    ),
+    (
+        # A config target with no original hash is let through.
+        "manifest config target needs no original hash",
+        MIGRATE,
+        "        return target.get(\"existed\") is True and "
+        "isinstance(target.get(\"originalSha256\"), str)\n",
+        "        return target.get(\"existed\") is True\n",
+        ("tests/test_migrate.py::"
+         "test_rollback_refuses_a_config_target_without_an_original_hash"),
+    ),
     (
         # The context script is left to find the session's project.
         "status --memory does not pass the requested root",

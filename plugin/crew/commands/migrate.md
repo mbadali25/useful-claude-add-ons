@@ -17,7 +17,9 @@ so and stop.
 
 Preview writes nothing. Show me its output verbatim and point out:
 
-- every `CONFLICT` line - apply refuses while any exist;
+- every `CONFLICT` line - apply refuses while any exist; an unmigrated-block one is fixed by hand;
+- every `upgrade` line - a pre-0.20 config (no `schema`, or 1-6) is brought to the current schema in
+  the same apply; read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/upgrade-report.md` and relay each line as it says;
 - every `unmapped` key - carried into `crew.json` under `unmapped`, never dropped;
 - every `skip` line - a file that was not imported, and why;
 - every `retireable` line - an original left in place that 1.0 no longer reads;
@@ -52,12 +54,14 @@ What apply does, in order:
    place with `os.replace`. If anything raises, whatever landed is removed and
    the tree is the old one. A hard kill leaves the manifest unfinished; every
    later run reports it until you roll back.
-3. Never overwrites and never deletes. An existing target with different bytes
-   is a conflict, found in preview.
+3. Never deletes, and overwrites exactly one file: a pre-0.20 `.crew/config.json`, whose original
+   is in the backup and which rollback restores byte-identical. Any other existing target with
+   different bytes is a conflict, found in preview.
 
 | From | To |
 |---|---|
 | `.crew/config.json` (schema up to 7) | `.crew/crew.json` (schema 1) |
+| `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above |
 | `.work/tickets/<ID>.md` | `.work/tickets/<ID>/ticket.md` + `provenance.json` |
 | `.work/cache/<ID>.md` (Jira, SDP, Obsidian) | the same, with `source` naming the tracker |
 | `.crew/metrics.md` | `.crew/metrics.jsonl`, one object per row, missing values `UNKNOWN` |
@@ -92,16 +96,19 @@ A `hand-written, left alone` line is a collision to report, never to overwrite. 
 derived from `.crew/codemap/`, which migrate does not change, so they are outside the backup
 manifest and rollback leaves them; `/crew:onboard` regenerates them.
 
+If apply printed `upgrade` lines, finish with `upgrade-report.md`'s QA audit re-run (report only).
+
 ## Rollback
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --root . --rollback <backup-dir>
 ```
 
-Removes exactly the files apply created, after checking each still holds the
-bytes apply wrote. If you edited one since, rollback refuses and changes
-nothing - resolve that file by hand. The backup directory itself is kept as
-the record.
+Removes exactly the files apply created, and restores an upgraded `config.json` from the backup,
+after checking each still holds the bytes apply wrote. If you edited one since, rollback refuses
+and changes nothing - resolve that file by hand. An autoClear conversion edits `config.json` after
+apply, so rollback then refuses that file by name, as it does `crew.json`. The backup directory
+itself is kept as the record.
 
 ## After
 
