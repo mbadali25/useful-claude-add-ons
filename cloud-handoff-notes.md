@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:53: #364 T-0052 review e3a572c6: 3 BLOCK (proposal hash excludes after any '## Minted' -> edit after yes; forged Minted skips a child, criteria lost; task-notification moves turn id -> confirm with no human yes) + 4 FIX (zero-count measures read small; unmatched Touch; sabotage follow-up tracking; mint crash window + late UTF-8 decode). Sent to builder (test-first; 1.0.382). #365/#366 stacked on it will need a re-merge.
 - 12:53: #345 T-0036 review 5b1a64ca: 0/3/5 (FIX1 secret patterns miss AWS secret/Stripe sk_live/Slack webhook/URL creds/Bearer/unquoted YAML etc; FIX2 anchor line can echo a secret; FIX3 Generated header matched anywhere, not doc head). Sent to builder (1.0.381).
 - 12:51: #361 re-review 5473c6c8: 0/0/2 CLEAN (NITs: Tooling-seam trailer arguably unneeded - say what it covers in PR body; doubled 'so' in warning).
 - 12:51: #393 CI: Linux checks green; Windows jobs QUEUED since 12:43 (GitHub runner queue). Re-check 13:11.
