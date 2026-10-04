@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:51: #361 re-review 5473c6c8: 0/0/2 CLEAN (NITs: Tooling-seam trailer arguably unneeded - say what it covers in PR body; doubled 'so' in warning).
 - 12:51: #393 CI: Linux checks green; Windows jobs QUEUED since 12:43 (GitHub runner queue). Re-check 13:11.
 - 12:50: T-0036 BUILT on #345: T-0036-build 5b1a64ca (1.0.372; stacked on T-0035-build; crew_reference.py lint + refresh 'reference' kind; 25+9 tests; 24 mutations red; flows left to L-0549; 8 codemaps + 3 diagrams stale pre-existing -> land-prep). Harness follow-ups: sabotage_reference.py + 4 sabotage_refresh entries; artifact_verdicts reference kind. First review started.
 - 12:49: #361 FIX+NITs pushed 5473c6c8 (corrupt machine file -> unknown + warning; 5 tests, 4 red first; docs; Tooling-seam trailer for crew_autopilot.py; 1.0.377). Re-review started.
