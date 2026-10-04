@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:40 UTC
+Last updated: 2026-10-04 16:43 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:43: BATCH 1 land-prepped: #405 ea2a1884 (1.0.329), #398 670d5cbb (1.0.330), #450 4e9ee867 (1.0.331), #403 791af057 (1.0.332); carries done. Real content conflicts in #398 (codemaps/mmd/diagram index) and #403 (leaf count 136, keys, CONFIG) -> merge+carry review started. CI running on all 4 heads.
 - 16:40: #421 T-0083 review 61198189: 0/6/8 (RecursionError kills recall; broken app.json -> silent no-filters; case-sensitive archive; symlink into archive served; version must be 0.5.0; userIgnoreFilters unverified vs spec rule). Sent: drop/opt-in userIgnoreFilters per spec, case-insensitive, realpath, 0.5.0, whole-word match.
 - 16:40: L-1503 built -> draft PR #489 head f346f763 (Test-DeployMatch literal case-insensitive both ways, throw blocks; 39 tests, 20 red-before; 2 sabotages red). Review started. Landing-order interaction with #407 _gate_pick to settle.
 - 16:38: WAVE2 #420 L-0662 built -> 76aba34a (wave/split/sleep/wake rows; merge did T-0057's _route carry; 66 new cases, route rule 516; 10 mutations). Review started (rule time 61s > 60 Stop - check).
