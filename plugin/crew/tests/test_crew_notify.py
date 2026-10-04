@@ -147,11 +147,10 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setenv(TOKEN_ENV, TOKEN)
     # Never the real network and never this machine's own global config: a
     # test that does not ask for the fake Telegram gets a closed local port,
-    # and one that does not call _global gets no global layer at all.
+    # and one that does not call _global gets a scratch global layer naming
+    # only the token's variable (tokenEnv is honoured from that layer alone).
     monkeypatch.setenv("CREW_NOTIFY_TELEGRAM_BASE", "http://127.0.0.1:9")
-    missing = str(tmp_path / "no-global-config.json")
-    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", missing)
-    monkeypatch.setattr(crew_config.crew_state, "GLOBAL_CONFIG_PATH", missing)
+    _global(tmp_path, monkeypatch, {"tokenEnv": TOKEN_ENV})
 
 
 def _repo(tmp_path, notify=None, ticket=("T-0042", "implement")):
@@ -306,11 +305,47 @@ def test_skill_fallback_fills_null_chat_and_token_env(tmp_path, monkeypatch):
     skill.write_text(json.dumps({"telegram": {"bot_token_env": "SKILL_TOKEN",
                                               "chat_id": 777}}), encoding="utf-8")
     monkeypatch.setattr(crew_notify, "SKILL_CONFIG_PATH", str(skill))
+    _global(tmp_path, monkeypatch, {})
     root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": None, "chatId": None})
 
     cfg, _ = crew_notify.effective_config(str(root))
 
     assert (cfg["tokenEnv"], cfg["chatId"]) == ("SKILL_TOKEN", "777")
+
+
+def test_repo_token_env_is_ignored(tmp_path, monkeypatch, telegram, capsys):
+    """A cloned repo must not pick which environment variable's value goes into
+    the request URL: its tokenEnv is ignored, the global one is used, and a
+    repo tokenEnv with no global one sends nothing."""
+    monkeypatch.setenv("CREW_TEST_OTHER_SECRET", "s3cr3t-value-from-the-environment")
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": "CREW_TEST_OTHER_SECRET",
+                                   "chatId": CHAT, "events": ["deploy"]})
+
+    first = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+    _global(tmp_path, monkeypatch, {})
+    second = crew_notify.send(str(root), "deploy", "prod def - pass", outcome="pass")
+
+    paths = [request["path"] for request in telegram.requests]
+    assert (first, second, paths, "repo's notify.tokenEnv is ignored" in capsys.readouterr().err
+            ) == ("sent", "missing-credentials", [f"/bot{TOKEN}/sendMessage"], True)
+
+
+def test_show_config_masks_chat_id_and_names_ignored_token_env(tmp_path, capsys):
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": "REPO_PICKED",
+                                   "chatId": "-1009876543210"})
+
+    crew_notify.show_config(str(root))
+
+    out = capsys.readouterr().out
+    shown = json.loads(out.splitlines()[-1])
+    assert ("9876543210" in out, shown["chatId"], shown["tokenEnv"],
+            "repo's notify.tokenEnv is ignored" in out) == (False, "***3210", TOKEN_ENV, True)
+
+
+@pytest.mark.parametrize("value,shown", [(None, None), ("4242", "***42"),
+                                         (-1009876543210, "***3210")])
+def test_mask(value, shown):
+    assert crew_notify.mask(value) == shown
 
 
 # --- step 2: must stay quiet ------------------------------------------------------------------
@@ -524,6 +559,73 @@ def test_pace_one_second(tmp_path, telegram, monkeypatch):
     crew_notify.send(str(root), "deploy", "prod two - pass", outcome="pass")
 
     assert telegram.requests[1]["at"] - telegram.requests[0]["at"] >= 0.95
+
+
+@pytest.mark.parametrize("override,base", [
+    ("http://127.0.0.1:8080", "http://127.0.0.1:8080"),
+    ("https://localhost:9/x/", "https://localhost:9/x/"),
+    ("http://[::1]:7", "http://[::1]:7"),
+    ("https://evil.example", crew_notify.TELEGRAM_BASE),
+    ("http://localhost.evil.example", crew_notify.TELEGRAM_BASE),
+    ("http://127.0.0.1@evil.example", crew_notify.TELEGRAM_BASE),
+    ("http://127.0.0.1.evil.example:80", crew_notify.TELEGRAM_BASE),
+    ("ftp://127.0.0.1", crew_notify.TELEGRAM_BASE),
+    ("http://127.0.0.1:notaport", crew_notify.TELEGRAM_BASE),
+])
+def test_telegram_base_override_is_loopback_only(monkeypatch, override, base):
+    monkeypatch.setenv("CREW_NOTIFY_TELEGRAM_BASE", override)
+
+    assert crew_notify.telegram_base() == base
+
+
+def test_non_loopback_override_never_receives_the_token(tmp_path, monkeypatch, capsys):
+    """CREW_NOTIFY_TELEGRAM_BASE from a cloned repo's settings `env` names an
+    attacker's host: the send goes to api.telegram.org, not there."""
+    dialled = []
+
+    class _Reply:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def _urlopen(request, timeout=None):  # pylint: disable=unused-argument
+        dialled.append(request.full_url)
+        return _Reply()
+
+    monkeypatch.setattr(crew_notify.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setenv("CREW_NOTIFY_TELEGRAM_BASE", "https://evil.example")
+    root = _repo(tmp_path)
+
+    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+
+    assert (result, dialled, "not a loopback" in capsys.readouterr().err) == (
+        "sent", [f"https://api.telegram.org/bot{TOKEN}/sendMessage"], True)
+
+
+@pytest.mark.parametrize("reason,kind", [
+    ("prod abc - gate 3 broke", "unknown"), ("", "unknown"),
+    ("prod abc - FAILED at gate 3", "fail"), ("prod abc - pass", "pass"),
+    ("qa abc - passed", "pass"), ("prod abc - passed gate 1, FAILED at gate 2", "unknown"),
+    ("prod bypass-abc - done", "unknown"),
+])
+def test_outcome_unknown_never_collapses_to_pass(reason, kind):
+    assert crew_notify._outcome(None, reason) == kind  # pylint: disable=protected-access
+
+
+def test_unknown_outcome_sends_loud_and_not_as_a_pass(tmp_path, telegram):
+    root = _repo(tmp_path)
+
+    crew_notify.send(str(root), "deploy", "prod abc - gate 3 broke")
+
+    assert (_text(telegram).startswith("Promotion outcome unknown ["),
+            telegram.requests[0]["form"]["disable_notification"]) == (True, "false")
 
 
 def test_deploy_pass_is_silent_fail_is_loud(tmp_path, telegram):

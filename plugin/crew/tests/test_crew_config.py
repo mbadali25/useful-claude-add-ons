@@ -3160,3 +3160,21 @@ def test_config_md_and_setup_template_state_the_kimi_defaults():
     assert "`kimi`" in _config_md_row(text, "qa.provider")
     assert "`kimi`" in _config_md_row(text, "dev.provider")
     assert json.dumps(list(crew_config.QA_PROVIDERS)).replace('","', '", "') in text
+
+
+def test_config_md_global_key_count_is_measured():
+    """CONFIG.md §10 states the global-settable key count twice (heading and
+    "N measured") and how many its table lists. All three are re-measured
+    here: the heading is `len(leaf_paths(default_global_config()))`, and the
+    table count is the backticked keys in the table's first column."""
+    with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    section = text[text.index("## 10. Global-settable keys"):text.index("## 11. ")]
+    heading = int(re.search(r"## 10\. Global-settable keys \S+ (\d+)", section).group(1))
+    measured = int(re.search(r"(\d+) measured \(`leaf_paths", section).group(1))
+    listed = int(re.search(r"the table\s+below lists (\d+) of them", section).group(1))
+    tabled = [key for line in section.splitlines() if line.startswith("| `")
+              for key in re.findall(r"`([^`]+)`", line.split("|")[1])]
+
+    assert (heading, measured, listed) == (
+        len(crew_config.leaf_paths(crew_config.default_global_config())),) * 2 + (len(tabled),)

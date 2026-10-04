@@ -301,7 +301,7 @@ including failures. Then:
   production. Do not resume mid-sequence afterwards; the whole sequence runs
   again from gate 1.
 
-Then, for every result (a pass silent, a failure loud), send `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py send --root . --event deploy --outcome <pass|fail> --reason "<env> <sha> - <pass|FAILED at gate N>"`.
+Then, for every result (a pass silent, a failure loud), send `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh deploy "<env> <sha> - <pass|FAILED at gate N>" --outcome <pass|fail>`.
 
 ## What is enforced, and what is not
 

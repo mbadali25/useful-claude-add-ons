@@ -1826,14 +1826,17 @@ Set it once in the machine-global `~/.claude/crew/config.json`; a repo's
 Two events send, each led by a subject that says what happened (T-0051):
 
 - `deploy` — every `/crew:promote` result: `Promotion passed` (silent) or
-  `Deploy FAILED` (loud).
+  `Deploy FAILED` (loud); a result naming neither is `Promotion outcome
+  unknown` (loud), never a pass.
 - `question` — Claude Code stopped and is waiting on you: `Question` (an
   AskUserQuestion or an elicitation) or `Needs permission` (any other tool),
   from the `Notification` hook's `notification_type` (`notify.questionTypes`
   overrides the built-in five). An idle "finished" prompt never pings. The line
   says what it is waiting on — the pending question, or the tool — read from
   the session transcript, capped and redacted. One ping per waiting episode:
-  no repeat until you have replied in that session.
+  no repeat until your next typed message in that session. Approving a
+  permission prompt does not reset it, so a second prompt in the same turn is
+  silent.
 
 `blocker` is reserved until T-0060 and sends nothing yet. The per-phase,
 per-review and per-ticket pings are retired; an old config's `gate` reads as
@@ -1865,7 +1868,9 @@ Yes, it's a bot — created through another bot. Message **@BotFather**, run
 conversation with you. Read the chat id from `getUpdates`; group ids are negative,
 which is normal rather than a bug.
 
-Export `CREW_TELEGRAM_TOKEN` and put the chat id in `notify.chatId`. If the
+Export `CREW_TELEGRAM_TOKEN` and put the chat id in `notify.chatId`. `tokenEnv`
+counts only in the global file: a repo's is ignored, so a cloned repo cannot
+choose which secret goes into the request URL. If the
 notify skill is already set up on this machine, its `telegram.bot_token_env` and
 `chat_id` fill a null `tokenEnv` / `chatId` (read-only; its example chat id
 `-1001234567890` counts as unset).
@@ -2847,7 +2852,7 @@ with three hooks registered and unlisted.
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
-| `notify.sh` / `.ps1` | `Notification` (`hook`) | Thin wrappers around `crew_notify.py`: a `question` ping for the permission and elicitation types only, never `idle_prompt`, one per waiting episode. `/crew:promote` calls `crew_notify.py send --event deploy` itself. Outbound only; never reads. |
+| `notify.sh` / `.ps1` | `Notification` (`hook`) | Thin wrappers around `crew_notify.py`: a `question` ping for the permission and elicitation types only, never `idle_prompt`, one per waiting episode. `/crew:promote` calls `notify.sh deploy ... --outcome` itself. Outbound only; never reads. |
 
 Both flavours are registered **on every event, on purpose** — not because
 each fires everywhere, but because `hooks.json` cannot know which shell a

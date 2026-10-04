@@ -674,12 +674,12 @@ them:
 
 ---
 
-## 10. Global-settable keys — 70
+## 10. Global-settable keys — 74
 
-70 measured (`leaf_paths(default_global_config())`, T-0051); the table
-below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
-`guards.sqlDestructive` and `environments.prodUnattended` (§16) are
-global-settable and not tabled here.
+74 measured (`leaf_paths(default_global_config())`, T-0051); the table
+below lists 68 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+`guards.sqlDestructive` and `environments.prodUnattended` (§16) and
+`shellRoute.mode` / `.distro` (§11) are global-settable and not tabled here.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -719,7 +719,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `memory.vaultPath` | path or `null` | `null` |
 | `notify.provider` | `telegram` \| `teams` \| `none` \| `null` (a repo `null` inherits the global one; a repo `"none"` opts out) | `null` |
 | `notify.urlEnv` | string or `null` | `null` |
-| `notify.tokenEnv` | string or `null` (a null one may come from the notify skill's `bot_token_env`) | `null` |
+| `notify.tokenEnv` | string or `null`, **global layer only** (a repo's is ignored with a notice; a null one may come from the notify skill's `bot_token_env`) | `null` |
 | `notify.chatId` | string or `null` (likewise from its `chat_id`; `-1001234567890` counts as unset) | `null` |
 | `notify.events` | list (a leaf): `deploy`, `question`, and `blocker` (reserved until T-0060); `gate`, `waiting`, `phase`, `review`, `done` are mapped with a notice | `["blocker", "deploy", "question"]` |
 | `notify.realertHours` | number: the same event + ticket + reason is sent once per window | `6` |

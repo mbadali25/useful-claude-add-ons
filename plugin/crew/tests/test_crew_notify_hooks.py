@@ -82,20 +82,33 @@ def test_retired_callers_gone():
     calls = {path.name: [line for line in _read(path).splitlines()
                          if re.search(r"notify\.(sh|ps1)", line)] for path in _RETIRED}
 
-    assert (calls, "--event deploy" in _read(COMMANDS / "promote.md")) == (
+    assert (calls, "notify.sh deploy" in _read(COMMANDS / "promote.md")) == (
         {path.name: [] for path in _RETIRED}, True)
 
 
 def test_promote_sends_deploy_for_every_result():
     """The deploy line carries --outcome and sits after both result branches,
-    not inside the all-green one."""
+    not inside the all-green one. It goes through notify.sh, whose `crew_py`
+    resolver finds python3/python/py: Git Bash on Windows has no `python3`, so
+    a bare `python3` here fails there (CLAUDE.md, Landmines)."""
     text = _read(COMMANDS / "promote.md")
-    line = next(line for line in text.splitlines() if "crew_notify.py send" in line)
+    line = next(line for line in text.splitlines() if "notify.sh deploy" in line)
     after_pass = text.index("**All gates green:**")
     after_fail = text.index("**Any gate failed:**")
 
     assert ("--outcome <pass|fail>" in line, text.index(line) > max(after_pass, after_fail),
-            "for every result" in text) == (True, True, True)
+            "for every result" in text, re.search(r"\bpython3?\b", line)) == (
+                True, True, True, None)
+
+
+def test_notify_ps1_direct_call_forwards_the_rest():
+    """notify.ps1's direct call forwards what follows <event> <reason> (the
+    `--outcome`), as notify.sh's "$@" does. Static: pwsh runs it below when present."""
+    text = _read(SCRIPTS / "notify.ps1")
+    line = next(line for line in text.splitlines()
+                if "Invoke-CrewNotify" in line and "'send'" in line)
+
+    assert ("+ $rest" in line, "$rest = @($args" in text) == (True, True)
 
 
 # --- the wrappers against a fake Telegram ----------------------------------------------------
@@ -128,13 +141,23 @@ def _fake_telegram():
 
 
 def _repo(tmp_path, name):
+    """A repo, and beside it a scratch HOME whose machine-global crew config names
+    the token's variable: notify.tokenEnv is honoured from that layer only."""
     root = init_repo(tmp_path / name)
     (root / ".crew").mkdir()
     (root / ".crew" / "config.json").write_text(json.dumps({"notify": {
-        "provider": "telegram", "tokenEnv": "CREW_TEST_TG_TOKEN", "chatId": "4242",
+        "provider": "telegram", "chatId": "4242",
         "events": ["deploy", "question"], "realertHours": 6, "questionTypes": None}}),
         encoding="utf-8")
+    home = _home(root)
+    (home / ".claude" / "crew").mkdir(parents=True)
+    (home / ".claude" / "crew" / "config.json").write_text(json.dumps({"notify": {
+        "tokenEnv": "CREW_TEST_TG_TOKEN"}}), encoding="utf-8")
     return root
+
+
+def _home(root):
+    return root.parent / f"home-{root.name}"
 
 
 _PARITY = [("permission_prompt", "p-1"), ("elicitation_dialog", "p-2"),
@@ -153,7 +176,7 @@ def _payload(root, ntype, prompt):
 
 def _env(root, base, windows):
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CREW_NOTIFY_TELEGRAM_BASE=base,
-               CREW_TEST_TG_TOKEN=TOKEN)
+               CREW_TEST_TG_TOKEN=TOKEN, HOME=str(_home(root)), USERPROFILE=str(_home(root)))
     env.pop("OS", None)
     if windows:
         env["OS"] = "Windows_NT"
@@ -199,6 +222,33 @@ def test_legacy_cli_call_is_mapped_not_dropped(tmp_path, fake, legacy, subject):
                           stdin=subprocess.DEVNULL, check=False, timeout=60)
 
     assert (done.returncode, [text.split(" [")[0] for text in _Fake.texts]) == (0, [subject])
+
+
+def _direct(flavour, root, base, *args):
+    if flavour == "sh":
+        cmd = [BASH, str(SCRIPTS / "notify.sh"), *args]
+    else:
+        cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"), *args]
+    return subprocess.run(cmd, cwd=str(root), env=_env(root, base, flavour == "ps1"),
+                          capture_output=True, stdin=subprocess.DEVNULL, check=False,
+                          timeout=120)
+
+
+@pytest.mark.parametrize("flavour", [
+    pytest.param("sh", marks=pytest.mark.skipif(BASH is None, reason="needs bash")),
+    pytest.param("ps1", marks=pytest.mark.skipif(PWSH is None,
+                                                  reason="needs pwsh - NOT run")),
+])
+def test_direct_call_forwards_outcome(tmp_path, fake, flavour):
+    """promote.md's line: `notify.sh deploy "<reason>" --outcome fail`. A reason
+    that names neither result reads as unknown, so only a forwarded --outcome
+    makes this `Deploy FAILED`."""
+    root = _repo(tmp_path, f"direct-{flavour}")
+
+    done = _direct(flavour, root, fake, "deploy", "qa abc - gate 3 broke", "--outcome", "fail")
+
+    assert (done.returncode, [text.split(" [")[0] for text in _Fake.texts]) == (
+        0, ["Deploy FAILED"])
 
 
 @pytest.mark.skipif(BASH is None, reason="needs bash")

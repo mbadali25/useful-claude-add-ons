@@ -7,7 +7,8 @@ a session, and approvals stay a typed `/crew:approve`.
 Two events send (T-0051):
 
 * `deploy` -- every `/crew:promote` result. A pass goes silent
-  (`disable_notification`), a failure goes loud.
+  (`disable_notification`), a failure goes loud, and a result that says
+  neither (no `--outcome`, a reason naming neither) goes loud as unknown.
 * `question` -- Claude Code stopped and is waiting on the owner: the
   `Notification` hook, filtered on the payload's `notification_type`. An
   `idle_prompt` never pings.
@@ -34,13 +35,17 @@ that does name AskUserQuestion is still honoured.
 
 Anti-spam: a fingerprint of event + ticket + reason is sent once per
 `notify.realertHours` (default 6), and a question pings once per waiting
-episode (`session_id` + `prompt_id`). Both advance ONLY on a confirmed send,
-under `<git-common-dir>/crew/notify/`.
+episode (`session_id` + `prompt_id`; approving a permission prompt does not
+change `prompt_id`, only the owner's next typed message does). Both advance
+ONLY on a confirmed send, under `<git-common-dir>/crew/notify/`.
 
 Config: `crew_config.resolve_config` -- the machine-global `notify` block with
 the repo layer over it; an explicit repo `"none"` opts out. The notify skill's
 `~/.config/notify/config.json` `telegram` block fills a null `tokenEnv` /
-`chatId`, read-only. The token is read from an environment variable only.
+`chatId`, read-only. The token is read from an environment variable only, and
+`tokenEnv` (the variable's NAME) is honoured from the machine-global layer only:
+a repo's `.crew/config.json` could otherwise point it at any secret in the
+environment and have it put into the request URL.
 
 Every entry point exits 0. A reason goes to stderr when nothing was sent.
 
@@ -88,6 +93,7 @@ SUBJECTS = {
     ("question", "permission"): "Needs permission",
     ("deploy", "pass"): "Promotion passed",
     ("deploy", "fail"): "Deploy FAILED",
+    ("deploy", "unknown"): "Promotion outcome unknown",
 }
 EXAMPLE_CHAT_ID = "-1001234567890"
 MAX_REASON = 280
@@ -105,6 +111,8 @@ TAIL_BYTES = 256 * 1024
 # None means `~/.config/notify/config.json`, resolved at call time; a test sets a path.
 SKILL_CONFIG_PATH = None
 TELEGRAM_BASE = "https://api.telegram.org"
+# The only hosts CREW_NOTIFY_TELEGRAM_BASE may name: the bot token is in the URL path.
+LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 
 _SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASS|KEY")
 _SECRET_PATTERNS = (
@@ -297,6 +305,14 @@ def effective_config(root):
         global_cfg = {}
     global_notify = global_cfg.get("notify") if isinstance(global_cfg.get("notify"), dict) else {}
     global_provider = global_notify.get("provider")
+    # tokenEnv names the variable whose value goes into the request URL: only the
+    # owner's own machine-global file may name it, never a cloned repo's config.
+    global_token_env = global_notify.get("tokenEnv")
+    cfg["tokenEnv"] = global_token_env if isinstance(global_token_env, str) and global_token_env \
+        else None
+    if repo.get("tokenEnv") is not None and repo.get("tokenEnv") != cfg["tokenEnv"]:
+        notices.append("the repo's notify.tokenEnv is ignored: only the machine-global "
+                       "~/.claude/crew/config.json (or the notify skill's config) names the token")
     if repo.get("provider") == "none" and global_provider not in (None, "none"):
         notices.append(f"the repo's notify.provider \"none\" overrides the global provider "
                        f"'{global_provider}' (a repo opt-out)")
@@ -458,12 +474,33 @@ def format_line(subject, repo, place, ticket, phase, reason, unblock):
 
 # --- transports -----------------------------------------------------------------------------
 
+def telegram_base():
+    """`TELEGRAM_BASE`, or CREW_NOTIFY_TELEGRAM_BASE (for tests) when its scheme is
+    http(s) and its host is exactly a loopback name. Rebuilt from the parsed parts,
+    so what was checked is what is dialled. Anything else is ignored, with a note:
+    the bot token rides in the URL path, so a cloned repo's settings `env` must
+    not be able to send it to another host."""
+    override = os.environ.get("CREW_NOTIFY_TELEGRAM_BASE")
+    if not override:
+        return TELEGRAM_BASE
+    try:
+        parts = urllib.parse.urlsplit(override)
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        host, port, parts = None, None, None
+    if parts is None or parts.scheme not in ("http", "https") or host not in LOOPBACK_HOSTS:
+        _say("CREW_NOTIFY_TELEGRAM_BASE is not a loopback http(s) URL; ignored")
+        return TELEGRAM_BASE
+    netloc = f"[{host}]" if ":" in host else host
+    return f"{parts.scheme}://{netloc}" + (f":{port}" if port else "") + parts.path
+
+
 def _telegram(token, chat, text, loud):
     """POST sendMessage. `(ok, why)`; ok only on HTTP 200 with `ok: true`. A 429's
     `retry_after` is honoured once (0 means at once) unless the wait would push
     the send past SEND_BUDGET. `why` never carries the URL: the token is in it.
-    CREW_NOTIFY_TELEGRAM_BASE replaces api.telegram.org -- for tests only."""
-    base = os.environ.get("CREW_NOTIFY_TELEGRAM_BASE") or TELEGRAM_BASE
+    `telegram_base` decides the host: api.telegram.org, or a loopback test server."""
+    base = telegram_base()
     url = f"{base.rstrip('/')}/bot{token}/sendMessage"
     data = urllib.parse.urlencode({"chat_id": chat, "text": esc(text), "parse_mode": "HTML",
                                    "disable_notification": "false" if loud else "true"}).encode()
@@ -534,9 +571,16 @@ def _pruned(mapping, now):
 # --- send and hook --------------------------------------------------------------------------
 
 def _outcome(outcome, reason):
+    """`pass`, `fail`, or `unknown`. With no explicit outcome the reason decides,
+    and only when it says exactly one of pass / fail: a reason that says neither
+    (or both) is `unknown`, never collapsed into a pass."""
     if outcome in ("pass", "fail"):
         return outcome
-    return "fail" if re.search(r"fail", reason or "", re.IGNORECASE) else "pass"
+    failed = re.search(r"fail", reason or "", re.IGNORECASE)
+    passed = re.search(r"(?<![A-Za-z])pass(?:ed)?(?![A-Za-z])", reason or "", re.IGNORECASE)
+    if bool(failed) == bool(passed):
+        return "unknown"
+    return "fail" if failed else "pass"
 
 
 def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
@@ -566,7 +610,7 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
     subject = SUBJECTS[(event, kind)]
     line = redact(format_line(subject, place["repo"], place["place"], ticket, phase,
                               redact(reason), unblock))
-    loud = event == "question" or kind == "fail"
+    loud = event == "question" or kind in ("fail", "unknown")
 
     state = state_dir(root)
     now = time.time()
@@ -700,11 +744,20 @@ def hook(root, payload_bytes):
         return "failed:error"
 
 
+def mask(value):
+    """A chat id for display: its last 2 characters (4 when it is longer than 8)."""
+    if value is None:
+        return None
+    text = str(value)
+    return "***" + text[-(4 if len(text) > 8 else 2):]
+
+
 def show_config(root):
     cfg, notices = effective_config(root)
     for notice in notices:
         print("notice: " + redact(notice))
     printable = dict(cfg)
+    printable["chatId"] = mask(printable.get("chatId"))
     if isinstance(printable.get("questionTypes"), tuple):
         printable["questionTypes"] = list(printable["questionTypes"])
     print(redact(json.dumps(printable, sort_keys=True)))

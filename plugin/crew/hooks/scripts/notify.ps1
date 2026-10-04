@@ -3,7 +3,8 @@
 # layering, the event filter, dedupe, Telegram/Teams, the message line) lives
 # in crew_notify.py; kept here is the one-sender election with notify.sh.
 # Usage: notify.ps1 hook                (the Notification hook; payload on stdin)
-#        notify.ps1 <event> <reason>    (a direct call; deploy | question, or a
+#        notify.ps1 <event> <reason> [--outcome pass|fail]
+#                                       (a direct call; deploy | question, or a
 #                                        pre-1.0 name crew_notify.py maps)
 param(
   [string]$Event = "info",
@@ -318,7 +319,10 @@ function Invoke-CrewNotify([string[]]$NotifyArgs, [byte[]]$Payload) {
 if ($Event -ne 'hook') {
   # A direct call: no payload, not a hook event, no twin to race -- no claim.
   if (-not $Event) { exit 0 }
-  Invoke-CrewNotify @('send', '--root', '.', '--event', $Event, '--reason', $Msg) $null
+  # The rest is forwarded like notify.sh's "$@" (`--outcome pass|fail`); a
+  # single-dash `-outcome` is normalised, since PowerShell may hand either over.
+  $rest = @($args | ForEach-Object { if ("$_" -match '^--?outcome$') { '--outcome' } else { "$_" } })
+  Invoke-CrewNotify (@('send', '--root', '.', '--event', $Event, '--reason', $Msg) + $rest) $null
   exit 0
 }
 

@@ -97,7 +97,9 @@ global key ("the person's own chat, not the project's"). A repo's
 `.crew/config.json` overrides any key it sets; a repo that leaves `provider`
 null inherits the global one, and a repo that says `"provider": "none"` opts
 out on purpose (`crew_notify.py config` prints that it overrides the global
-provider).
+provider). `tokenEnv` is read from the global file only: a repo's
+`tokenEnv` is ignored, with a notice, so a cloned repo cannot pick which
+secret goes into the request URL. `config` prints `chatId` masked.
 
 ```json
 "notify": {
@@ -119,7 +121,7 @@ null `tokenEnv` / `chatId` - read-only, never the provider. Its example chat id
 
 | Event | Fires when | Subject | Loud? |
 |---|---|---|---|
-| `deploy` | Every `/crew:promote` result | `Promotion passed` / `Deploy FAILED` | a failure only |
+| `deploy` | Every `/crew:promote` result | `Promotion passed` / `Deploy FAILED` / `Promotion outcome unknown` | all but a pass |
 | `question` | Claude Code stopped and is waiting on you (the `Notification` hook) | `Question` / `Needs permission` | yes |
 | `blocker` | Reserved until T-0060: accepted here, sends nothing | - | - |
 
@@ -140,8 +142,9 @@ tool's name and description, or else Claude's last text - capped at 200
 characters and passed through a redaction filter first.
 
 **Once per waiting episode.** A question pings once per `session_id` +
-`prompt_id`: no repeat until you have replied in that session and Claude asked
-again. On top of that, the same event + ticket + reason is sent once per
+`prompt_id`: no repeat until you have typed your next message in that session
+and Claude asked again. Approving a permission prompt does not reset it (the
+`prompt_id` is unchanged), so a second prompt in the same turn is silent. On top of that, the same event + ticket + reason is sent once per
 `realertHours` (default 6). Both records advance only after a confirmed send,
 so a failed send is retried next time rather than lost.
 
