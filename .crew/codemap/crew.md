@@ -1270,11 +1270,11 @@ Obsidian vault). A CLI the commands call, not a hook.
 ## PR slices (T-0059)
 
 - DERIVED (T-0059; measured on this tree, anchors not moved). `crew_split.parse_slices`
-  (`plugin/crew/hooks/scripts/crew_split.py:1136`) reads a plan's `## PR slices` section into
+  (`plugin/crew/hooks/scripts/crew_split.py:1140`) reads a plan's `## PR slices` section into
   `{n, name, steps, base, files}` per slice; `SLICES_MIN, SLICES_MAX` (`:123`) are the children's
-  bounds. `_slice_problems` (`:1077`) holds the count, numbering, partition, contiguity and order
-  rules; `_base_problems` (`:1107`) the `Base:` rule, through `_overlaps` (`:1063`, equality or
-  `crew_ticket.path_matches` either way; two wildcard globs not provably disjoint are "cannot tell") over each step's `Files:` from `_step_blocks` (`:980`)
+  bounds. `_slice_problems` (`:1081`) holds the count, numbering, partition, contiguity and order
+  rules; `_base_problems` (`:1111`) the `Base:` rule, through `_overlaps` (`:1066`, equality or
+  `crew_ticket.path_matches` either way; any other pair is "cannot tell" unless `_disjoint` (`:1058`) proves it: the `_literal_prefix` (`:1045`) of each, after `crew_ticket._segments`, differs case-folded at an index both have) over each step's `Files:` from `_step_blocks` (`:980`)
   and `crew_ticket.parse_plan`; a step with no `Files:` is "cannot tell", never independent.
 - `plugin/crew/hooks/scripts/crew_autopilot.py` consumes it (all lines at this tree):
   `_slice_context` (`:1158`) and `slices_path` (`:1116`, `<git-common-dir>/crew/tickets/<id>/slices.json`,

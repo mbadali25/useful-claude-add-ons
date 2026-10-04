@@ -1584,3 +1584,52 @@ def test_level_two_step_heading_refused():
     _, problems = crew_split.parse_slices(plan)
 
     assert any("## Step 3" in p and "### Step" in p for p in problems), problems
+
+
+# --- re-review of #366: one conservative overlap rule for every Files pair ---------
+
+def _two_slice_problems(first, second):
+    return crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"),
+        files={1: first, 2: "zz/one.md", 3: second, 4: "yy/a.md", 5: "yy/b.md"}))[1]
+
+
+@pytest.mark.parametrize("first, second", [
+    ("./src/*.py", "src/**/x.py"),        # FIX A: `./` not normalised
+    ("src/a", "src/*/x.py"),              # FIX B: a literal is a directory
+    ("src/a/", "src/*/x.py"),
+    ("src", "**/x.py"),
+    ("Src/*.py", "src/**/x.py"),          # NIT C: fnmatch case-folds on Windows
+])
+def test_base_main_pair_not_provably_disjoint_refused(first, second):
+    problems = _two_slice_problems(first, second)
+
+    assert any("slice 2" in p and "Base: main" in p for p in problems), problems
+
+
+@pytest.mark.parametrize("first, second", [
+    ("src/a/*.py", "docs/*.md"),
+    ("src/a", "docs"),
+])
+def test_base_main_pair_provably_disjoint_allowed(first, second):
+    assert _two_slice_problems(first, second) == []
+
+
+def test_step_heading_case_follows_measure():
+    """`measure` counts `### Step` case-sensitively; a `### step 5` is not a
+    step to either reader, so it does not join the partition."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan += "\n### step 6: lower-case\nFiles: src/s6.py\n"
+
+    slices, problems = crew_split.parse_slices(plan)
+
+    assert (problems, slices[1]["steps"]) == ([], [3, 4, 5])
+
+
+def test_level_two_step_check_does_not_cross_a_line():
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("## PR slices\n", "## Step\n6 notes\n\n## PR slices\n")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert not any("## Step 6" in p for p in problems), problems

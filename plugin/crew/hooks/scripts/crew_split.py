@@ -152,8 +152,8 @@ _STATUS_RE = re.compile(r"(?<![\w-])status:[ \t]*\S+")
 _MINTED_RE = re.compile(r"^-[ \t]+Child[ \t]+(\d+):[ \t]*(\S+)[ \t]*$")
 _MINTED_HEAD_RE = re.compile(r"(?m)^##[ \t]+Minted\b.*$")
 _ANY_HEADING_RE = re.compile(r"^(#{1,3})\s+(.*?)\s*#*\s*$")
-_PLAN_STEP_RE = re.compile(r"^#{2,3}\s+Step\s+(\d+)\b", re.IGNORECASE)
-_WILD = re.compile(r"[*?\[]")
+# The same heading `measure` counts (`_STEP_RE`): level 3, case-sensitive.
+_PLAN_STEP_RE = re.compile(r"^###\s+Step\s+(\d+)\b")
 _SLICE_RE = re.compile(r"^###\s+Slice\s+(\d+)\s*:?\s*(.*?)\s*$", re.IGNORECASE)
 _SLICE_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?(steps|base):[ \t]*(.*?)\s*$", re.IGNORECASE)
 MINTED_RULE = ("a ## Minted section is written by apply only: the last section, holding "
@@ -1000,7 +1000,7 @@ def _step_blocks(text):
 
 def _level_two_steps(text):
     """Step numbers written as `## Step N` rather than `### Step N`."""
-    return {int(m.group(1)) for m in re.finditer(r"(?im)^##\s+Step\s+(\d+)\b", text)}
+    return {int(m.group(1)) for m in re.finditer(r"(?m)^##[ \t]+Step[ \t]+(\d+)\b", text)}
 
 
 def _slice_section(text):
@@ -1042,34 +1042,38 @@ def _step_list(value):
     return steps or None
 
 
-def _literal_dir(glob):
-    """The path segments before the first one holding a wildcard."""
-    parts = []
-    for part in glob.split("/"):
-        if any(c in part for c in "*?["):
+def _literal_prefix(entry):
+    """The case-folded segments before the first wildcard segment, after
+    crew_ticket's own normalisation (`./` and empty segments drop). A literal
+    entry's prefix is the whole entry: `path_matches` reads a literal as a
+    directory covering everything under it."""
+    prefix = []
+    for part in crew_ticket._segments(entry):  # pylint: disable=protected-access
+        if crew_ticket._is_glob(part):  # pylint: disable=protected-access
             break
-        parts.append(part)
-    return parts
+        prefix.append(part.casefold())
+    return prefix
 
 
-def _disjoint_globs(a, b):
-    """True only when two wildcard globs provably match nothing in common:
-    their literal leading directories diverge. Anything else is unknown."""
-    left, right = _literal_dir(a), _literal_dir(b)
-    common = min(len(left), len(right))
-    return left[:common] != right[:common]
+def _disjoint(a, b):
+    """True only when Files entries `a` and `b` provably name nothing in
+    common: their literal prefixes differ at an index both have (compared
+    case-folded, as fnmatch does on Windows). Every other pair is unknown."""
+    left, right = _literal_prefix(a), _literal_prefix(b)
+    return any(x != y for x, y in zip(left, right))
 
 
 def _overlaps(mine, theirs):
-    """(shared, unknown): the paths in `mine` that equal or glob-match a path
-    in `theirs`, and the glob pairs whose overlap cannot be told (both sides
-    wildcards, not provably disjoint) - an unknown is never "disjoint"."""
+    """(shared, unknown) for every pair of Files entries: `shared` the
+    entries in `mine` that equal or match one in `theirs`, `unknown` the
+    pairs that are neither that nor provably disjoint - an unknown is never
+    "disjoint"."""
     shared, unknown = set(), set()
     for a in mine:
         for b in theirs:
             if a == b or crew_ticket.path_matches(a, b) or crew_ticket.path_matches(b, a):
                 shared.add(a)
-            elif _WILD.search(a) and _WILD.search(b) and not _disjoint_globs(a, b):
+            elif not _disjoint(a, b):
                 unknown.add(f"{a} vs {b}")
     return sorted(shared), sorted(unknown)
 
@@ -1125,7 +1129,7 @@ def _base_problems(slices, step_files):
         shared, unknown = _overlaps(piece["files"], [f for e in slices[:i] for f in e["files"]])
         if unknown and not shared:
             problems.append(f"slice {piece['n']}: Base: main, but cannot tell whether it "
-                            f"shares Files with an earlier slice (two globs: "
+                            f"shares Files with an earlier slice (not provably disjoint: "
                             f"{'; '.join(unknown)}) - use Base: slice <k> or exact paths")
         if shared:
             problems.append(f"slice {piece['n']}: Base: main, but it shares Files with an "
