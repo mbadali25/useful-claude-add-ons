@@ -92,9 +92,9 @@ The name maps to a path through `vaults.<name>.path` in `~/.claude/obsidian/conf
 crew config's `memory.vaultPath`, then, only when that file has no `vaults` block, to
 its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured. The pointer
 line is exact and must be the whole body: a first line that starts `vault` and `:` in
-any case, indent or spacing, is a pointer attempt when `note:` or `|` appears anywhere
-in the body (a pointer wrapped before its `|` included) or the line is a bare vault name
-alone (`vault: work`); anything less than the full grammar is then `malformed`. With
+any case, indent or spacing, is a pointer attempt when `note:` or `|` is on that line,
+or the next line starts with `|` or `note:` (a pointer wrapped before its `|`), or the
+line is a bare vault name alone (`vault: work`); anything less than the full grammar is then `malformed`. With
 neither it is prose (`Vault: keep client notes in the work vault` is a memory, not a
 pointer). A config file counts as missing
 only when it is not there at all; one that is there and does not read, parse or match

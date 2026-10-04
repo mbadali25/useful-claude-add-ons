@@ -22,8 +22,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   files are opened, non-blocking and fstat-checked, not only statted. A bad crew config stops
   `memory`, and any name when there is no Obsidian config. A pointer attempt is the first
   non-blank line that, with Cf removed and stripped, starts `vault` and `:` in any case or
-  spacing, when `note:` or `|` appears anywhere in the body (a pointer wrapped before its `|`
-  included) or the line is a bare vault name alone; it must be the whole body and match exactly,
+  spacing, when `note:` (`note` starting a word) or `|` is on that line, or the next non-blank
+  line starts with `|` or `note:` (a pointer wrapped before its `|`), or the line is a bare vault
+  name alone - a later table or `Note:` line does not count; it must be the whole body and match exactly,
   and a malformed reason ends "if this is prose, reword the first line". With neither, a `Vault:`
   line is prose and the memory stays `full-text`.
 - Every failure is a named state with exit 1: `malformed` (absolute, backslash, `:` in any
@@ -40,7 +41,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - The `crew-memory` skill gains "Native memories as vault pointers"; README section 14 and the
   memory guide describe it. Writing pointers (L-0677) and migration (L-0678) are later versions;
   `OBSIDIAN_VAULT_PATH` is not honoured.
-- **Tests.** `plugin/crew/tests/test_crew_memory.py`, 117 cases on real fixture files (permission
+- **Tests.** `plugin/crew/tests/test_crew_memory.py`, 121 cases on real fixture files (permission
   denial is simulated, since a root test run cannot be denied: the round-1 EACCES cases and the
   mode-000 note when euid is 0; the FIFO cases use real FIFOs in a subprocess with a timeout); bash and pwsh are separate
   cases that each skip on their own. A new `.crew/verify.json` rule runs it. Sabotaged by hand
@@ -54,7 +55,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   the probe; no whitespace before the colon; a pointer followed by prose; Zl/Zp allowed; the
   `note:`/`|` mark dropped or halved; duplicate keys allowed; no size cap; RecursionError
   uncaught; a non-regular note read as missing; the mark looked for on the first line only; no
-  bare-name rule; every `vault:` line an attempt; no prose hint): each turned a named test red.
+  bare-name rule; every `vault:` line an attempt; no prose hint; the mark searched over the whole
+  body; no word boundary before `note`; a mark anywhere on line 2): each turned a named test red.
 
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 
