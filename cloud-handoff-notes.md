@@ -58,6 +58,7 @@ Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #37
 
 ## Log (newest first)
 
+- 09:48: #342 r1 on eb57cc07: 0 BLOCK, 3 FIX (global deploy called repo-only vs owner decision; --approvals reads missing/corrupt INDEX as nothing pending; inert key/value printed raw incl. into SessionStart context) + 1 NIT -> fixer (1.0.324).
 - 09:48: #354 r2 on ab1bb915: CLEAN (0/0/1 NIT: symlinked parent dir unchecked - residual behind scope_guard). Joins train.
 - 09:47: Land-prep (content merge of current main, then version-last) started in parallel for #351 (1.0.320), #355 (1.0.321), #360 (1.0.322), #368 (1.0.323) per scratchpad LANDPREP.md - they are 342 commits behind with real content conflicts. Notes PR #391 open.
 - 09:46: CONTAINER RESTARTED ~05:30 (worktrees + scratchpad survived; 3 agents lost mid-work: T-0035 builder had pushed eb7fd11f, #354 r2 and #342 reviews re-run). OWNER: autopilot.deploy MAY be global (T-0050 #361 wins over T-0070 #342's repo-only). MERGED #350 at c9263465 (crew 1.0.256). #371 CI: Windows-only 11 tests fail - git merge exit 2 in new merged_main_fixtures.py (likely autocrlf dirty tree) -> fixer (1.0.319). #344 review started (reconstructs plan-step status). Next free 1.0.320.
