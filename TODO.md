@@ -4,6 +4,23 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **L-0509 harness follow-up (the Complete archive), lands alone under T-0087.** L-0509 routed
+  every non-harness ticket reader through `crew_common.locate_ticket`; these harness paths still
+  read only the live `.work/tickets/<id>/`: (a) `plugin/crew/hooks/scripts/crew_ticket.py`
+  `ticket_dir`/`resolve_active`/`read_contract`/`validate` onto the resolver (a pointer to an
+  archived ticket reads as broken today; `crew_autopilot._broken_pointer` names it); (b)
+  `check_ticket` (`crew_ticket.py:175`, `_TICKET_RE`, `$` not `\Z`) and so `activate`
+  (`:926`) accept `Complete` and an id with a trailing newline - alias `crew_common.PLAIN_ID`
+  and refuse `crew_common.reserved_id`; (c) `_mint_taken` (`:1061`) scans live folders and INDEX
+  but not `.work/tickets/Complete/`, and `mint` mints `T-` only; (d) `scope_guard.py`'s
+  own-files prefix follows the resolver (must-allow a write in the archived active ticket;
+  must-block another archived ticket and the live path of an archived one; could-not-tell
+  refuses), module/sh/ps1 x block/report; (e) `approval_hook._is_folder`, `review_prompt`'s
+  spec/plan/webtest blocks, `review_run`'s default work_dir, `review_ledger`'s paths and id
+  regex, `review_checks`' id regex; (f) the L-0509 sabotage rows in `sabotage_scope.py` and
+  `sabotage_tracker.py` (the 20 run by hand in PR #341); (g) empty the harness allowlists in
+  `plugin/crew/tests/test_crew_ticket.py` (`_HARNESS_FOLLOW_UP`, `_REGEX_ANCHORED`).
+
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and

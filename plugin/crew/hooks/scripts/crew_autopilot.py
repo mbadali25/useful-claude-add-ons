@@ -281,6 +281,27 @@ def _found(where):
     return where in (crew_common.LIVE, crew_common.COMPLETE)
 
 
+def _archived_reason(ticket):
+    return (f"{ticket} is archived in {crew_common.ARCHIVE_DIR}/: never re-driven; to reopen "
+            "it, move its folder (and its Obsidian note) back by hand")
+
+
+def _broken_pointer(top, where):
+    """The stop reason for a broken active-ticket pointer. `resolve_active`
+    (crew_ticket, harness) reads only the live folder, so a pointer to an
+    archived ticket reads as broken there; it is named as archived here."""
+    path = os.path.join(crew_ticket.state_dir(top) or "", "active-ticket")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            held = json.load(handle).get(top)
+    except (OSError, ValueError, AttributeError):
+        held = None
+    if isinstance(held, str) and _where(top, held)[1] == crew_common.COMPLETE:
+        return (f"the active-ticket pointer names {held}, but {_archived_reason(held)}; "
+                "deactivate it (crew_ticket.py deactivate) or point at another ticket")
+    return f"{where}; a broken pointer is not guessed past - fix it with crew_ticket.py activate"
+
+
 def open_index_tickets(top):
     """Every open INDEX.md ticket whose folder exists (live or `Complete/`), in
     order, once each. Unlike `crew_state.read_work`, this does not stop at the
@@ -430,6 +451,11 @@ def _phase(root, ticket, policy=True):
 
     if where == crew_common.COULD_NOT_TELL:
         return answer("invalid", True, f"could not tell where {ticket} lives: {why}")
+    if where == crew_common.COMPLETE:
+        # The contract reads below (crew_ticket.read_contract/validate) are the
+        # live folder's; an archived ticket is never re-driven (L-0509).
+        evidence.append(_rel(top, folder))
+        return answer("closed", True, _archived_reason(ticket))
 
     direction = os.path.join(folder, "direction.md")
     evidence.append(_rel(top, direction))
@@ -716,8 +742,7 @@ def resume_target(root, ticket=None, policy=True):
         fallthrough.append(why)
         active, where, broken = crew_ticket.resolve_active(top)
         if broken:
-            return stopped("active-ticket", f"{where}; a broken pointer is not guessed "
-                           "past - fix it with crew_ticket.py activate")
+            return stopped("active-ticket", _broken_pointer(top, where))
         if where == "active-ticket":
             ticket, source = active, "active-ticket"
         else:
@@ -733,8 +758,7 @@ def resume_target(root, ticket=None, policy=True):
             ticket, source = candidates[0], ".work/INDEX.md"
     active, where, broken = crew_ticket.resolve_active(top)
     if broken:
-        return stopped("active-ticket", f"{where}; a broken pointer is not guessed past - "
-                       "fix it with crew_ticket.py activate")
+        return stopped("active-ticket", _broken_pointer(top, where))
     if where == "active-ticket" and active != ticket:
         return stopped(source, f"{source} names {ticket}, but this worktree's active ticket "
                        f"is {active}, and the scope guard and completion audit judge edits "

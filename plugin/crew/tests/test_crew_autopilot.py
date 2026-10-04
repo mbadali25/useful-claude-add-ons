@@ -1484,3 +1484,32 @@ def test_autopilot_bare_resume_keeps_a_could_not_tell_open_ticket(tmp_path):
     both_places(root, "T-1")
 
     assert crew_autopilot.open_index_tickets(str(root)) == ["T-1", "T-2"]
+
+
+def test_phase_of_an_archived_ticket_is_closed_never_a_live_path_read(tmp_path):
+    """Review FIX 1: an archived ticket whose INDEX row is not done must not
+    fall through to the live-path spec read and ask for /crew:spec."""
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, ticket="L-0001", status="ready")
+    archive_ticket(root, "L-0001")
+
+    got = crew_autopilot.next_phase(str(root), "L-0001", policy=False)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("closed", True, "")
+    assert "archived in Complete/" in got["reason"]
+
+
+def test_resume_on_an_archived_active_ticket_names_the_archive(tmp_path):
+    """Review FIX 2: a pointer to an archived ticket is not reported as a
+    ticket with no folder."""
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = _two_tickets(tmp_path)
+    crew_ticket.activate(str(root), "T-1")
+    archive_ticket(root, "T-1")
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["stop"]) == (None, True)
+    assert "T-1 is archived in Complete/" in got["reason"]
+    assert "no .work/tickets/" not in got["reason"]
