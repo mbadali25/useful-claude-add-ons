@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 22:32 UTC
+Last updated: 2026-10-04 22:40 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 22:40: Owner: usage not a concern, continue standard plan. Coordinator land-prepped #400 L-0680 -> 49b188d0 (crew 1.0.343; merge conflicts verify.json/CHANGELOG/rules/guide only, resolved both-sides; 199 tests pass) and #421 T-0083 -> 442f9415 (obsidian-vault 0.5.0, merges #400; INDEX/CHANGELOG/guides only; memory_ops 0 failed). Spawned L-1512 builder and #394 Windows-fix + catch-up builder.
 - 22:32: read Cloudhead (same session). Verified: main 3ccd527e (crew 1.0.342). Windows on own heads: #400 green, #421 green, #364 green, #394 RED (blocks #364), #416 pre-flight running, #407 none. Owner shows usage 'approaching limit, resets Sunday 1:00 AM' - asked how to spend remaining budget before starting agents.
 - 22:29: SESSION CLOSED by owner. MERGED #495 L-1514 (read-cloudhead skill). Owner: one version bump per batch in cloud sessions; batches of 5-6; fix L-1512 first next session. Batch 4 and L-1512 agents were stopped, nothing pushed. Batch-4 check-in disabled. Resume: say 'read Cloudhead'.
 - 22:17: Owner answered 8 blocking questions (all recommended options): L-0674 not built (#404 closed); T-0029/T-0030 + 8 dependents deferred; T-0073 superseded; L-0635 adds missing tests in-PR; L-0639 owns depends-on parser in crew_ticket_state; L-0640 superseded-by in spec line 2; L-0550 no header words; L-0551 one status line. Batch 4 reordered: #394 T-0037 before #364.
