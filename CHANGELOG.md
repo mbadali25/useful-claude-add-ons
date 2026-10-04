@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — crew 1.0.231: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
+### Added — crew 1.0.232: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
 
 - **Scope is the whole map, over tracked files:** every file `git ls-files` lists (staged deletions
   and renames included), no Stop budget, no fingerprint skip. Untracked files are left out, so a crew
