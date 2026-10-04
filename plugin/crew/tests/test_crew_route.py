@@ -1209,11 +1209,11 @@ def test_reserved_wave_split_sleep_wake_ask_softly(tmp_path, monkeypatch, prompt
     ("T-1 is too big", "/crew:autopilot split T-1", "T-1"),
     ("this ticket is too big", "/crew:autopilot split T-1", "T-1"),
     ("I'm heading to bed.", "/crew:autopilot sleep", None),
-    ("Good night!", "/crew:autopilot sleep", None),
     ("please going to sleep", "/crew:autopilot sleep", None),
-    ("Morning!", "/crew:autopilot wake", None),
     ("I'm back", "/crew:autopilot wake", None),
-    ("good morning", "/crew:autopilot wake", None)])
+    ("I\u2019m heading to bed", "/crew:autopilot sleep", None),
+    ("i\u2019m back", "/crew:autopilot wake", None),
+    ("please I\u2019m going to sleep.", "/crew:autopilot sleep", None)])
 def test_available_wave_split_sleep_wake_route(tmp_path, monkeypatch, prompt, command, ticket):
     root = _four_repo(tmp_path, "T-2", "T-3")
     _live_four(monkeypatch)
@@ -1280,13 +1280,16 @@ def test_wave_split_sleep_wake_phrases_that_must_not_route(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize("prompt", [
-    "going to \u017fleep", "I'm bac\u212a", "I\u2019m heading to bed", "I\u2019m back",
+    "going to \u017fleep", "I'm bac\u212a", "I\u2018m heading to bed", "I\u02bcm back",
+    "I\u2019m bac\u212a", "\u2019I'm back", "I\u2019\u2019m back",
     "split T-1\u200b", "good\u00a0night", "run T-1 and T-2 in\u00a0parallel",
     "\uff47ood morning"])
 def test_a_lookalike_or_non_ascii_four_row_prompt_never_routes(tmp_path, monkeypatch, prompt):
     """T-0057's allowlist on the four rows: a character IGNORECASE folds onto a
     pattern letter (long s, Kelvin sign), a curly apostrophe, a zero-width or
-    no-break space asks or matches nothing; it never routes."""
+    no-break space asks or matches nothing; it never routes. Only the curly
+    apostrophe of `I\u2019m` is let through (NIT2): a left quote, a modifier
+    letter apostrophe or a doubled one is not."""
     root = _four_repo(tmp_path, "T-2")
     _live_four(monkeypatch)
 
@@ -1296,7 +1299,7 @@ def test_a_lookalike_or_non_ascii_four_row_prompt_never_routes(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("prompt", ["going to \u017fleep", "I'm bac\u212a",
-                                    "I\u2019m heading to bed"])
+                                    "I\u2019m going to \u017fleep", "I\u2019m bac\u212a"])
 def test_a_four_row_match_outside_the_allowlist_asks(tmp_path, monkeypatch, prompt):
     """Must-ask: these match a row's pattern, so an unknown is an ask, never none."""
     root = _four_repo(tmp_path)
@@ -1313,13 +1316,13 @@ def test_sleep_route_line_names_the_undo(tmp_path, monkeypatch):
     _live_four(monkeypatch)
 
     lines = {p: crew_route.render(crew_route.decide(str(root), p)) for p in (
-        "going to sleep", "good morning", "run T-1 and T-2 in parallel", "split it")}
+        "going to sleep", "I'm back", "run T-1 and T-2 in parallel", "split it")}
 
     assert [line.endswith(_UNDO) for line in lines.values()] == [True, False, False, False]
     assert [line.startswith(crew_route.PREFIX) for line in lines.values()] == [True] * 4
 
 
-@pytest.mark.parametrize("prompt", ["run T-1 and T-2 in parallel", "split T-2", "good night"])
+@pytest.mark.parametrize("prompt", ["run T-1 and T-2 in parallel", "split T-2", "heading to bed"])
 def test_a_four_row_command_render_would_cut_asks(tmp_path, monkeypatch, prompt):
     """Every L-0662 route goes through T-0069's `_route`. An 80-character prompt
     cannot make a 200-character command, so the cap is lowered to reach it."""
@@ -1331,3 +1334,46 @@ def test_a_four_row_command_render_would_cut_asks(tmp_path, monkeypatch, prompt)
 
     assert (got["outcome"], got["command"], "not passed on" in got["reason"]) == \
         ("ask", None, True)
+
+
+# Owner decision 2026-10-04 (review of #420): a bare greeting is not a command.
+_GREETINGS = [("good night", "sleep"), ("Good night!", "sleep"), ("please good night", "sleep"),
+              ("morning", "wake"), ("Morning!", "wake"), ("good morning", "wake"),
+              ("ok good morning", "wake")]
+
+
+@pytest.mark.parametrize("prompt, sub", _GREETINGS)
+def test_a_bare_greeting_asks_and_never_routes(tmp_path, monkeypatch, prompt, sub):
+    root = _four_repo(tmp_path)
+    _live_four(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+    line = crew_route.render(got)
+
+    assert (got["outcome"], got["command"], got["unavailable"],
+            f"did you mean /crew:autopilot {sub}?" in line, "\n" in line,
+            line.endswith("before running anything.")) == \
+        ("ask", None, False, True, False, True)
+
+
+@pytest.mark.parametrize("prompt, sub", _GREETINGS)
+def test_a_bare_greeting_follows_the_gate(tmp_path, monkeypatch, prompt, sub):
+    """Inert on main (no line) and the soft ask while reserved, like every row."""
+    root = _four_repo(tmp_path)
+    inert = crew_route.decide(str(root), prompt)
+    _live_four(monkeypatch, available=False)
+    reserved = crew_route.decide(str(root), prompt)
+
+    assert (inert["outcome"], reserved["outcome"], reserved["unavailable"],
+            sub in reserved["reason"]) == ("none", "ask", True, True)
+
+
+@pytest.mark.parametrize("prompt, curly, verdict", [
+    ("I’m back", True, "ok"), ("i’m back", True, "ok"), ("  I’m back", True, "ok"),
+    ("I’m back", False, "ask"), ("I'm back’", True, "ask"),
+    ("I’m back’", True, "ask"), ("’I'm back", True, "ask"),
+    ("Im’ back", True, "ask")])
+def test_the_curly_apostrophe_passes_only_inside_a_leading_i_m(prompt, curly, verdict):
+    """NIT2 at the unit: `_screen` lets U+2019 through as the second character
+    of a leading `I’m` and nowhere else, so no wider row can inherit it."""
+    assert crew_route._screen(prompt, None, "'", curly)[0] == verdict  # pylint: disable=protected-access

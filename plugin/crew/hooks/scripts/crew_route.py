@@ -72,14 +72,17 @@ and a router answer naming another subcommand asks.
 
 Four more rows behind the same gate, inert (no line) until each command's
 ticket adds its name to `crew_autopilot.SUBCOMMANDS`. Each passes `_screen`'s
-allowlist; sleep and wake add only the ASCII apostrophe of `I'm`.
+allowlist; sleep and wake add only the apostrophe of `I'm` (ASCII, or the
+curly one in that one position).
 
   run <id>, <id> and <id> in parallel             route  `wave <ID> <ID> ...` (distinct, in
                                                          order); fewer than two: none; an id
                                                          without a folder: ask, naming it
   split this ticket / it / <id>, <id> is too big  route  `split <ID>`, resolved as `ticket`
-  heading to bed, going to sleep, good night      route  `sleep`, with the undo sentence
-  I'm back, (good) morning                        route  `wake`
+  heading to bed, going to sleep                  route  `sleep`, with the undo sentence
+  I'm back                                        route  `wake`
+  good night, (good) morning                      ask    "did you mean ...?" (owner,
+                                                         2026-10-04: a greeting never routes)
 
 `crew_ticket.resolve_active`'s own INDEX fallback takes the FIRST open line,
 so it is never the answer here: `crew_autopilot.open_index_tickets` (T-0004)
@@ -126,6 +129,9 @@ _ONE_ID = r"(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+"
 _WAVE_ID = re.compile(_ONE_ID)
 _IDS = rf"(?P<ids>{_ONE_ID}(?:(?:,? and |, ){_ONE_ID})+)"
 _IM = r"I(?:'|\u2019)m"
+# Owner decision 2026-10-04: a bare greeting is not a command. These patterns
+# match (so the gate still speaks) but always ask "did you mean ...?".
+_GREETINGS = (r"good night", r"(?:good )?morning")
 
 # (intent, command, ticket_rule, patterns). `command` None: the disk names it
 # (`continue`). Rules: `topic` -- the rest of the prompt is the argument;
@@ -163,8 +169,8 @@ PHRASES = (
     ("split", "/crew:autopilot split", "autopilot-ref",
      (rf"split (?:this ticket|it|{_ID})", rf"(?:this ticket|{_ID}) is too big")),
     ("sleep", "/crew:autopilot sleep", "autopilot",
-     (rf"(?:{_IM} )?heading to bed", rf"(?:{_IM} )?going to sleep", r"good night")),
-    ("wake", "/crew:autopilot wake", "autopilot", (rf"{_IM} back", r"(?:good )?morning")),
+     (rf"(?:{_IM} )?heading to bed", rf"(?:{_IM} )?going to sleep", _GREETINGS[0])),
+    ("wake", "/crew:autopilot wake", "autopilot", (rf"{_IM} back", _GREETINGS[1])),
 )
 
 AMBIGUOUS = ("do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it")
@@ -199,8 +205,10 @@ GOAL_UNDO = "After it runs, tell the user in one line what changed and how to un
 # Intents whose route line ends with GOAL_UNDO: each raises what autopilot does unasked.
 _UNDO_INTENTS = ("goal", "sleep")
 # L-0662: the rows that pass `_screen` without free text, and the characters
-# each adds to _PLAIN -- only what its own patterns spell (`I'm`).
+# each adds to _PLAIN -- only what its own patterns spell (`I'm`). Sleep and
+# wake also take the curly apostrophe iOS and macOS type, in `I\u2019m` only.
 _SCREENED = {"wave": "", "split": "", "sleep": "'", "wake": "'"}
+_CURLY_IM = ("sleep", "wake")
 
 
 def compile_table(phrases):
@@ -259,19 +267,21 @@ def match(prompt):
                 ticket = tickets[0]
             if rule in ("autopilot-text", "autopilot-ticket") or intent in _SCREENED:
                 verdict, refuse = _screen(prompt, topic if rule == "autopilot-text" else None,
-                                          _SCREENED.get(intent, ""))
+                                          _SCREENED.get(intent, ""), intent in _CURLY_IM)
                 if verdict == "none":
                     continue
             return {"intent": intent, "command": command, "rule": rule,
                     "ticket_arg": ticket.upper() if ticket else None, "topic": topic,
-                    "tickets": tickets, "refuse": refuse}
+                    "tickets": tickets, "refuse": refuse,
+                    "greeting": pattern.pattern in _GREETINGS}
     return None
 
 
-def _screen(prompt, topic, extra=""):
+def _screen(prompt, topic, extra="", curly_im=False):
     """("none" | "ask" | "ok", reason) for an assign, goal, focus or L-0662
     match. `topic` is the free text, None for a row without any; `extra` is
-    what the row's own patterns add to _PLAIN."""
+    what the row's own patterns add to _PLAIN; `curly_im` lets U+2019 through
+    as the second character of a leading `I\u2019m`, nowhere else."""
     if topic is not None:
         text = topic.casefold()
         letters = "".join(ch for ch in text if ch.isalpha())
@@ -285,6 +295,9 @@ def _screen(prompt, topic, extra=""):
         if raw.casefold().startswith(prefix):
             raw = raw[len(prefix):]
             break
+    raw = raw.lstrip()
+    if curly_im and raw[:3].casefold() == "i\u2019m":
+        raw = raw[0] + "'" + raw[2:]
     if any(ch not in _PLAIN and ch not in extra for ch in raw):
         return "ask", ("the prompt holds a non-ASCII or special character; only letters, "
                        "digits, space and .,:;_#()- route. Ask the user to retype it")
@@ -426,6 +439,9 @@ def _autopilot(found, top):
                                             "/crew:autopilot run --goal <slug>")
     if found.get("refuse"):
         return _answer("ask", found, reason=found["refuse"])
+    if found.get("greeting"):
+        return _answer("ask", found, reason="a bare greeting is not a command; did you mean "
+                                            f"{found['command']}?")
     if found["rule"] == "autopilot-text":
         return _route(found, command_for(found, None))
     if found["rule"] == "autopilot-tickets":
