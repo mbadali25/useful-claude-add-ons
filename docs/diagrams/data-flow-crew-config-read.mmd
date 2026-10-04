@@ -2,6 +2,7 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py
 %% Purpose: The read side: the three config sources (built-in defaults, the machine file, the repo file), how the machine layer is pruned to its template before merging, and how resolve_config() merges them.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%% Re-drawn for T-0096 on 2026-10-04: the repo file's directory (REPO, RES), read at T-0096-build.
 %% Note DEF: default_config() plugin/crew/hooks/scripts/crew_config.py:245 <b>129 leaves</b> (executed, this
 %%    pass) composed from crew_state's PM_DEFAULTS :1108, QA_DEFAULTS :1160, DEV_DEFAULTS :1170,
 %%    WORKTREE_DEFAULTS :1198, CONTEXT_DEFAULTS :735, RESUME_DEFAULTS :698, AUTOPILOT_DEFAULTS :1097 -
@@ -15,6 +16,12 @@
 %% Note REPO: .crew/config.json - schema 7 crew_state.load_config()
 %%    plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the
 %%    TwoFiles section below
+%% Note RES: which .crew/ the repo file is read from. Python: crew_common.repo_config_dir
+%%    plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir
+%%    plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into
+%%    cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:126 (T-0096). Own config.json or crew.json
+%%    wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits
+%%    nothing. Still own-file only: the session hooks, the verify gate, the scope and completion wrappers.
 %% Note TMPL: default_global_config() plugin/crew/hooks/scripts/crew_config.py:422 <b>72 leaves</b> (executed,
 %%    this pass) across <b>18 blocks</b>: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves),
 %%    notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs,
@@ -34,6 +41,7 @@ flowchart TB
         direction TB
         DEF["<b>default_config()</b><br/>crew_config.py:244<br/>129 leaves, repo template"]
         GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
+        RES{"which .crew/?<br/>own, else the main<br/>checkout's (a lane)"}
         REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
     end
 
@@ -59,6 +67,7 @@ flowchart TB
     PRUNE --> FILT
     FILT -->|kept| M1
     FILT -.->|"ignored - named, never silent"| IGN>"keys a global file may not set"]
+    RES --> REPO
     REPO --> NULLS
     NULLS --> M2
     M1 --> M2

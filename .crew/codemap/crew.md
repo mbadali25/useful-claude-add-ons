@@ -3701,3 +3701,32 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
+
+## Shell and PowerShell repo-config readers in a linked worktree (T-0096, slice 0)
+
+Added 2026-10-04 on `T-0096-build`; the citations are to that branch's content
+commit. This section does not move the file's `anchor:`.
+
+- **DERIVED.** `crew_repo_config_dir` (`plugin/crew/hooks/scripts/_common.sh:328`)
+  sets `CREW_CFG_DIR` / `CREW_CFG_SOURCE` (`own`, `main`, `unknown`) by the rules of
+  `crew_common.repo_config_dir` (`plugin/crew/hooks/scripts/crew_common.py:96`), with no
+  python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:354`) prints a
+  resolved path. The PowerShell twin `Get-CrewRepoConfigDir` is one body copied into
+  `plugin/crew/hooks/scripts/cloud-guard.ps1:192`, `plugin/crew/hooks/scripts/promote-gate.ps1:142`
+  and `plugin/crew/hooks/scripts/auto-clear.ps1:126`.
+- **DERIVED.** Routed readers: `crew_incident_active`'s `standDown` read
+  (`plugin/crew/hooks/scripts/_common.sh:386`), `_cloud_guard_armed`
+  (`plugin/crew/hooks/scripts/cloud-guard.sh:38-51`, `unknown` armed at `:41`),
+  `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:242-243`),
+  promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:195`)
+  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:191`).
+  `.crew/incident.json`, markers and logs stay in the worktree's own `.crew/`.
+- **DERIVED.** Held by `plugin/crew/tests/test_worktree_config_shell.py`: parity with the
+  Python resolver on ten cases per flavour, the copies byte-identical, the cloud-guard
+  fallback's must-block / must-allow cases, the stand-down and the auto-clear veto.
+- **JUDGEMENT.** Still own-file only, and the next two slices: the session hooks
+  (L-0680) and the harness readers `verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR). Until L-0681,
+  `verify-gate.ps1`'s inline `Test-CrewIncidentActive` reads the lane's own
+  `standDown` while the bash gate (through `_common.sh`) and `crew_incident.py` read
+  the inherited one.

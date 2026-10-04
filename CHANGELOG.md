@@ -4,6 +4,38 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew`: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
+
+- **What changed.** `_common.sh` gains `crew_repo_config_dir` (and
+  `crew_repo_config_file`), and the `.ps1` hooks that need it carry one copied
+  body, `Get-CrewRepoConfigDir`: the shell twins of
+  `crew_common.repo_config_dir` (T-0088), with no python. Own `config.json` or
+  `crew.json` wins whole; a linked worktree with neither reads the main
+  checkout's; `unknown` (git cannot name it) inherits nothing. Routed through
+  them: the `emergency.standDown` read (`crew_incident_active` for every bash
+  gate, `promote-gate.ps1`), both cloud-guard no-python fallbacks, where
+  `unknown` now counts as armed, and `auto-clear.ps1`'s repo veto.
+- **Why.** `.crew/*` is gitignored, so a lane has no config of its own. The
+  cloud guard's fallback took an absent file as proof of off: in a lane whose
+  main checkout says `cloudGuard: block`, a session with no usable python ran
+  commands unjudged while the Python guard would have blocked them. The
+  stand-down read and `auto-clear.ps1` disagreed with their Python halves the
+  same way.
+- **Behaviour change.** Inheritance can loosen as well as tighten: an
+  inherited `cloudGuard: off` applies in a lane. A lane whose git cannot name
+  its main checkout, with no usable python, refuses Bash until one of them
+  works, even when no config layer arms the guard (`unknown` is armed).
+- **Not yet covered.** The session hooks (`notify`, `handoff-read`,
+  `handoff-write`, `context-watch`), the verify gate, the scope and completion
+  wrappers and `review_gate.py` still read the lane's own file (L-0680, L-0681).
+  Until then `verify-gate.ps1` reads the lane's own `emergency.standDown` while
+  the bash gate and `crew_incident.py` read the inherited one.
+- **Tests.** `plugin/crew/tests/test_worktree_config_shell.py`: both resolvers
+  against the Python one on ten cases, the copies byte-identical, must-block
+  and must-allow cases for the cloud-guard fallback in both flavours, the
+  stand-down and the auto-clear veto. Sabotaged by hand (the mutations go to
+  the sabotage suite with L-0681).
+
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 
 - `plugin/crew/tests/sabotage_config.py` gains three mutations against the

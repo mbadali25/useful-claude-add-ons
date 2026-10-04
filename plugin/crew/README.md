@@ -1024,9 +1024,23 @@ settings where it read the built-in defaults before - `guards.forcePush: allow`
 instead of `block`, `scope.mode`, `scope.allowCliApproval`, `roleWrites` and
 `cloudGuard` the same way. Ratcheted guard keys still take the narrower of repo
 and machine-global. A lane that wants its own guards writes its own
-`.crew/config.json`, and that file then wins whole. **Not yet covered:** the shell
-and PowerShell readers of `.crew/config.json` (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) still read only the
-worktree's own file.
+`.crew/config.json`, and that file then wins whole.
+
+**The shell and PowerShell readers (T-0096, partly).** `_common.sh`'s
+`crew_repo_config_dir` and the PowerShell `Get-CrewRepoConfigDir` (one body,
+copied into each script that uses it) resolve the same directory by the same
+rules, without python. Routed through them: the incident stand-down read
+(`emergency.standDown`, in `_common.sh` for every bash gate and in
+`promote-gate.ps1`), both cloud-guard no-python fallbacks, and `auto-clear.ps1`'s
+repo veto. In the cloud guard's fallback an `unknown` source counts as armed: a
+lane whose git cannot name its main checkout, with no usable python, refuses Bash
+until one works. Inheritance can loosen as well as tighten: an inherited
+`cloudGuard: off` applies in a lane. **Not yet covered** (they read only the
+worktree's own file): the session hooks (`notify`, `handoff-read`,
+`handoff-write`, `context-watch`, both flavours), the verify gate, the scope and
+completion wrappers, and `review_gate.py`. Until those land, **the PowerShell
+verify gate reads the lane's own `emergency.standDown`** while the bash verify
+gate (through `_common.sh`) and `crew_incident.py` read the inherited one.
 
 ### `/crew:config` — see where a value comes from, and set the global file
 
