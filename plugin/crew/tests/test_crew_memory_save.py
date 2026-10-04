@@ -695,10 +695,10 @@ def _locks(base):
 def _held(path):
     """Whether some save holds the lock for `path` right now: a fresh take,
     through a new open file, is refused."""
-    handle = crew_memory._take_lock(path)  # pylint: disable=protected-access
-    if handle is None:
+    handles = crew_memory._take_lock(path)  # pylint: disable=protected-access
+    if handles is None:
         return True
-    crew_memory._release([handle])  # pylint: disable=protected-access
+    crew_memory._release(handles)  # pylint: disable=protected-access
     return False
 
 
@@ -792,8 +792,8 @@ def test_a_held_lock_refuses_and_writes_nothing(host, capsys, which):
     try:
         out = kept(host, mem, capsys, 1, "another save is running now")
     finally:
-        crew_memory._release([held])  # pylint: disable=protected-access
-    assert crew_memory._lock_path(target) in out  # pylint: disable=protected-access
+        crew_memory._release(held)  # pylint: disable=protected-access
+    assert f"(it holds a lock on {target})" in out
     assert save(host, mem, capsys)[0] == 0
 
 
@@ -1020,10 +1020,12 @@ def _lock_dir(host):
 def test_lock_files_live_in_the_user_cache_never_beside_the_files(host, capsys):
     vault = host.work()
     mem = host.memory()
+    want = {os.path.basename(lock) for p in (str(vault / NOTE), str(mem))
+            for lock in crew_memory._lock_paths(p)}  # pylint: disable=protected-access
+    assert len(want) == 3  # the note's path; the memory's path and inode
     assert save(host, mem, capsys)[0] == 0
-    want = {hashlib.sha256(os.fsencode(os.path.normcase(os.path.realpath(p)))).hexdigest()
-            + ".lock" for p in (str(vault / NOTE), str(mem))}
     assert set(os.listdir(_lock_dir(host))) == want
+    assert all(len(name) == 64 + len(".lock") for name in want)
     assert sorted(os.listdir(host.mem)) == ["fact.md"]
     assert sorted(os.listdir(vault / "memories" / "repo")) == ["Example fact.md"]
     assert not _locks(host.base)
@@ -1062,7 +1064,8 @@ def test_the_forced_takeover_race_leaves_one_holder(host, monkeypatch):
     try:
         assert len(holders) == 1, got
     finally:
-        crew_memory._release(holders)  # pylint: disable=protected-access
+        for handles in holders:
+            crew_memory._release(handles)  # pylint: disable=protected-access
 
 
 _CHILD = r"""
@@ -1093,7 +1096,7 @@ def test_a_save_killed_while_holding_the_lock_does_not_block_the_next(host, caps
     try:
         assert child.stdout.readline().strip() == b"inside"
         out = kept(host, mem, capsys, 1, "another save is running now")
-        assert crew_memory._lock_path(str(vault / NOTE)) in out  # pylint: disable=protected-access
+        assert f"(it holds a lock on {vault / NOTE})" in out
     finally:
         child.kill()
         child.wait(30)
@@ -1112,11 +1115,11 @@ def test_a_lock_that_cannot_be_opened_keeps_full_text(host, capsys, monkeypatch,
     vault = host.work()
     mem = host.memory()
     target = str(vault / NOTE) if which == "note" else str(mem)
-    lock = crew_memory._lock_path(target)  # pylint: disable=protected-access
+    locks = crew_memory._lock_paths(target)  # pylint: disable=protected-access
     real = os.open
 
     def refuse(path, *rest, **kwargs):
-        if os.fspath(path) == lock:
+        if os.fspath(path) in locks:
             raise PermissionError(13, "Permission denied", path)
         return real(path, *rest, **kwargs)
 
@@ -1161,3 +1164,80 @@ def test_an_unwritable_folder_keeps_full_text_and_blocks_nothing(host, capsys, f
     assert mem.read_bytes() == original
     code, out = save(host, mem, capsys)
     assert code == 0, out
+
+
+# --- review round 3: no cache folder, one lock per file whatever its spelling --------
+
+def test_no_absolute_cache_folder_keeps_full_text(host, capsys, monkeypatch, tmp_path):
+    """FIX (round 3): HOME unset on a uid with no passwd entry makes `~` stay
+    `~`. A relative cache folder would lock per working directory - no lock at
+    all - and litter a `~` folder there. It is `lock failed: no cache folder`."""
+    host.work()
+    mem = host.memory()
+    work = tmp_path / "cwd"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    for name in ("XDG_CACHE_HOME", "LOCALAPPDATA"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", "~")
+    monkeypatch.setenv("USERPROFILE", "~")
+    kept(host, mem, capsys, 1, "kept-full-text: lock failed: no cache folder")
+    assert os.listdir(work) == []
+
+
+def _spellings(host, vault):
+    """Other names for the native memory and the note: through a symlinked
+    folder, through `..`, a hard link, and a case variant."""
+    mem = host.memory()
+    note = vault / NOTE
+    note.parent.mkdir(parents=True)
+    note.write_bytes(b"note\n")
+    names = {"dotdot": (str(mem), str(host.mem / ".." / host.mem.name / "fact.md")),
+             "case": (str(note), str(note.parent / "example FACT.md"))}
+    try:
+        os.symlink(str(host.mem), str(host.base / "mem-link"))
+        names["symlink"] = (str(mem), str(host.base / "mem-link" / "fact.md"))
+    except (OSError, NotImplementedError):
+        pass
+    try:
+        os.link(str(mem), str(host.base / "hard.md"))
+        names["hardlink"] = (str(mem), str(host.base / "hard.md"))
+    except (OSError, NotImplementedError):
+        pass
+    return names
+
+
+@pytest.mark.parametrize("spelling", ["dotdot", "case", "symlink", "hardlink"])
+def test_every_spelling_of_one_file_takes_the_same_lock(host, spelling):
+    """NIT (round 3): normcase(realpath) is a no-op on POSIX and macOS, so a
+    case variant on a case-folding volume and a hard link got a lock of their
+    own. The lock is keyed on the case-folded real path and on the file's
+    (st_dev, st_ino)."""
+    names = _spellings(host, host.work())
+    if spelling not in names:
+        pytest.skip(f"{spelling} cannot be made here")
+    first, other = names[spelling]
+    held = crew_memory._take_lock(first)  # pylint: disable=protected-access
+    assert held is not None
+    try:
+        assert _held(other)
+    finally:
+        crew_memory._release(held)  # pylint: disable=protected-access
+    assert not _held(other)
+
+
+def test_the_lock_survives_the_rename_that_replaces_the_file(host):
+    """A save replaces the note and the memory with `os.replace`, a new inode.
+    A save starting after that rename must still find the lock held."""
+    vault = host.work()
+    note = vault / NOTE
+    note.parent.mkdir(parents=True)
+    note.write_bytes(b"old\n")
+    held = crew_memory._take_lock(str(note))  # pylint: disable=protected-access
+    try:
+        fresh = note.parent / "fresh.tmp"
+        fresh.write_bytes(b"new\n")
+        os.replace(fresh, note)
+        assert _held(str(note))
+    finally:
+        crew_memory._release(held)  # pylint: disable=protected-access

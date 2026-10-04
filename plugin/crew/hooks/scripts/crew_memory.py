@@ -772,8 +772,8 @@ def _fsync_dir(directory):
 
 # The save's locks (review round 2). Each is an OS advisory lock - `flock` on
 # POSIX, `msvcrt.locking` on byte 0 on Windows - on a file in a per-user cache
-# (`_lock_dir`), named by the sha256 of the guarded file's real path. The
-# kernel drops it when its holder closes the file, exits or is killed, so there
+# (`_lock_dir`), named by the sha256 of a key for the guarded file
+# (`_lock_keys`). The kernel drops it when its holder closes the file, exits or is killed, so there
 # is no TTL, no stale lock to judge and no takeover for two saves to race; no
 # lock file is ever placed in a (synced) vault or the memory folder, and a
 # user's own file can never be mistaken for one. crew never deletes, renames
@@ -828,28 +828,51 @@ _os_try_lock = _windows_try_lock if os.name == "nt" else _posix_try_lock
 def _lock_dir():
     """`%LOCALAPPDATA%\\crew\\memory-locks` on Windows; on POSIX
     `$XDG_CACHE_HOME/crew/memory-locks`, `~/.cache/...` when that is unset or
-    not absolute (the XDG rule)."""
+    not absolute (the XDG rule). Raises OSError when the base is still not an
+    absolute path - HOME unset on a uid with no passwd entry leaves `~` as `~` -
+    because a folder relative to the working directory would lock nothing."""
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or os.path.join(
-            os.path.expanduser("~"), "AppData", "Local")
+        base = os.environ.get("LOCALAPPDATA", "")
+        if not os.path.isabs(base):
+            base = os.path.join(os.path.expanduser("~"), "AppData", "Local")
     else:
         base = os.environ.get("XDG_CACHE_HOME", "")
         if not os.path.isabs(base):
             base = os.path.join(os.path.expanduser("~"), ".cache")
+    if not os.path.isabs(base):
+        raise OSError("no cache folder: neither $XDG_CACHE_HOME (%LOCALAPPDATA% on Windows) "
+                      "nor the home folder is an absolute path")
     return os.path.join(base, "crew", "memory-locks")
 
 
-def _lock_path(path):
-    key = os.fsencode(os.path.normcase(os.path.realpath(path)))
-    return os.path.join(_lock_dir(), hashlib.sha256(key).hexdigest() + ".lock")
+def _lock_keys(path):
+    """The keys one file is locked under, so every spelling of it meets:
+    - its real path, case-folded - the same through a symlinked folder, `..`
+      or a case variant, and stable across the `os.replace` that gives the
+      file a new inode and across the save making its folder;
+    - the file's own `dev:ino` when it exists (and the file system numbers
+      inodes), so a hard link meets it too.
+    A case variant on a case-sensitive file system meets as well: a refusal
+    it did not need, never a missed one."""
+    keys = {"path:" + os.path.normcase(os.path.realpath(path)).casefold()}
+    try:
+        found = os.stat(path)
+    except FileNotFoundError:
+        found = None
+    if found is not None and found.st_ino:
+        keys.add(f"file:{found.st_dev}:{found.st_ino}")
+    return sorted(keys)
 
 
-def _take_lock(path):
-    """An open descriptor holding the kernel lock for `path`, or None when
-    another save holds it now. One try, never a wait. Raises OSError when the
-    lock cannot be taken at all (cache unwritable, disk full, read-only file
-    system, a file system that cannot lock)."""
-    lock = _lock_path(path)
+def _lock_paths(path):
+    directory = _lock_dir()
+    return [os.path.join(directory, hashlib.sha256(os.fsencode(key)).hexdigest() + ".lock")
+            for key in _lock_keys(path)]
+
+
+def _take_lock_file(lock):
+    """An open descriptor holding the kernel lock on `lock`, or None when
+    another open file holds it now. One try, never a wait."""
     os.makedirs(os.path.dirname(lock), mode=0o700, exist_ok=True)
     handle = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o600)
     try:
@@ -861,6 +884,29 @@ def _take_lock(path):
         os.close(handle)
         return None
     return handle
+
+
+def _take_lock(path):
+    """The descriptors holding every lock for `path` (`_lock_keys`), or None
+    when another save holds any of them now; nothing is left held on None.
+    Raises OSError when a lock cannot be taken at all (no cache folder, cache
+    unwritable, disk full, read-only file system, a file system that cannot
+    lock), also with nothing left held."""
+    held = []
+    try:
+        for lock in _lock_paths(path):
+            try:
+                handle = _take_lock_file(lock)
+            except OSError as exc:
+                raise OSError(f"cannot take the save lock {lock}: {exc}") from exc
+            if handle is None:
+                _release(held)
+                return None
+            held.append(handle)
+    except BaseException:
+        _release(held)
+        raise
+    return held
 
 
 def _release(locks):
@@ -878,20 +924,20 @@ def _release(locks):
 
 
 def _locked(plan):
-    """`(locks, problem)`: the note's lock, then the native file's - always
-    in that order, so two saves cannot deadlock. On a refusal or a lock
+    """`(locks, problem)`: the note's locks, then the native file's. Every
+    try is non-blocking, so no order can deadlock. On a refusal or a lock
     error no lock is left held."""
     held = []
     for path in (plan["note_path"], plan["file"]):
         try:
-            handle = _take_lock(path)
+            handles = _take_lock(path)
         except OSError as exc:
             _release(held)
-            return None, f"lock failed: cannot take the save lock {_lock_path(path)}: {exc}"
-        if handle is None:
+            return None, f"lock failed: {exc}"
+        if handles is None:
             _release(held)
-            return None, f"{BUSY} (it holds {_lock_path(path)})"
-        held.append(handle)
+            return None, f"{BUSY} (it holds a lock on {path})"
+        held.extend(handles)
     return held, None
 
 
