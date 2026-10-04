@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:38 UTC
+Last updated: 2026-10-04 11:42 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:42: #392 FIX+NITs pushed f5a7e23d (_lock_state absent/present/unknown/not-a-lock; PermissionError at deadline unless lock seen present; tests discriminate: 5 fail vs main). #393 refreshed by merge c4ffe869 (3 mutations, each red). Re-review of #392 started. TODO at landing: edit #392 PR body (still describes the first fix).
 - 11:38: #392 review 9ef474a9: 0/1/3. FIX: Lock treats a stat PermissionError/NotADirectoryError as 'held' -> real permission problem waits full wait then Busy with misleading remedy; fix = re-raise PermissionError at deadline if lock file never confirmed present. NITs: Busy message for delete-pending; 2 new tests don't discriminate on old code. Sent back to author agent (also merges into #393 branch).
 - 11:36: Windows-flaky fix OPENED: #392 (fix-windows-flaky-crew-tests, crew 1.0.350): crew_config_files.Lock treats Windows delete-pending PermissionError as held (real bug; main run 37194523702 traceback PermissionError on .work/INDEX.md.lock), stop_budget test asserts 1..measured+1 (gate rounds up whole seconds), mint tests print full stderr, 5 new tests. #393 (windows-lock-sabotage, stacked on #392, harness-only, crew 1.0.351 placeholder - collides with T-0016 placeholder; re-bump at landing). Review of #392 started. PLAN: land #392 right after #360 (fixes Windows flakiness for every PR), then #393 alone, then train.
 - 11:34: #360 run 37197995041 complete: only crew-windows-default 1/3 (test_concurrent_mints_distinct) + its fan-in red; everything else incl verify-gate green. Standing-down comment posted on #360; the ONE allowed re-run of failed jobs queued (11:34). If it fails again -> wait for the Windows-flaky fix PR, port it into #360. If green -> merge #360, then re-merge main into #377 (next).
