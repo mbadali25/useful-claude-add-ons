@@ -4,6 +4,18 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
+  chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
+  being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run
+  (`plugin/crew/tests/test_wrapup.py` drives the hooks with fixtures only). (b) Harness follow-up, its
+  own harness-only tooling PR (T-0087, no feature work beside it): the 23 hand sabotages of
+  T-0017's PR (the 22 of its first round plus "a rename source onto the handoff is not counted",
+  red on `test_check_counts_the_source_of_a_rename_onto_the_handoff`) as `plugin/crew/tests/sabotage_wrapup.py` (drafted outside the repo as the build
+  session's `sabotage_t0017.py`: label, target, find, replace, named test), registered in
+  `plugin/crew/tests/sabotage.py`, with `test_every_wrapup_sabotage_anchor_is_present_exactly_once`. (c) Real Windows: the python
+  resolution `context-watch.ps1` and `auto-clear.ps1` now carry (`Resolve-CrewPython`) ran only under
+  Linux pwsh with `OS=Windows_NT`.
+
 - **T-0016 follow-ups (auto-clear binds to the session's own terminal).** (a) Measure the session
   record on native Windows and macOS (`entrypoint`, `kind`, `procStart`'s format, the record path):
   until then Windows' allowlist is the Linux `{"cli"}` and `procStart` is unchecked there and on macOS

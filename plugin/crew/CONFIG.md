@@ -722,7 +722,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-75 of 136 keys are settable in the machine-global file (generated; 61 are repo-only, section 11).
+76 of 137 keys are settable in the machine-global file (generated; 61 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -760,6 +760,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `context.autoClear.minHandoffLines` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `5` |
 | `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `context.autoClear.onlySessions` | machine-only | list of session ids, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
+| `context.autoClear.wrapUp` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `resume.auto` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_resume.py`) | `null` |
 | `resume.typeDelaySeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `2` |
 | `resume.readyTimeoutSeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `15` |
@@ -838,7 +839,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-61 of 136 keys are repo-only (generated; 75 are global-settable, section 10).
+61 of 137 keys are repo-only (generated; 76 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -1204,6 +1205,49 @@ parent session on the same tty is caught only by its live record or its
 process name (`claude`, or a version number); one in another config dir
 under an unrecognised name (`node`) is not seen. Two sessions on one tty
 share one terminal, so a keystroke reaches whichever of them is reading it.
+
+### `wrapUp` — auto wrap-up before the clear (T-0017)
+
+Off by default. Armed only when the machine file says exactly
+`"context.autoClear": {"wrapUp": true}`, `enabled` is armed and the session is
+inside `onlyRepos`/`onlySessions`; a repo `false` vetoes it, a repo `true`
+alone arms nothing (`crew_autocycle.wrapup_armed`). Unarmed, every output is
+byte-identical to before.
+
+Armed, context-watch's warning **is** the wrap-up procedure and supersedes both
+of `autoWrapUp`'s messages (that key keeps its meaning: the wording of the
+unarmed warning, default `true`). The procedure: start no new step; the step is
+the active ticket's plan step in flight, or the tracked diff with no ticket;
+run its `Test:` command and commit only if it passes; if it cannot pass, do not
+commit and write `resume: none` with the reason under **Verify first**; run
+`/crew:handoff --wrap-up`; end the turn. `/crew:handoff --wrap-up` is the one
+wrap-up path — `/crew:autopilot`'s context-watch step runs it too.
+
+Auto-clear then clears only when, beside the existing handoff checks, all four
+hold (`crew_autocycle.wrapup_check`, run before the method, the T-0016 binding
+and the sent-marker claim):
+
+1. the handoff's `head:` is HEAD (a handoff written before the commit fails);
+2. its `branch:` is the checked-out branch;
+3. no tracked file is modified (`git status --porcelain --untracked-files=no`;
+   untracked files and the handoff file itself do not count);
+4. its `resume:` line parses under T-0006's grammar, or is `resume: none`.
+
+Anything that cannot be told — git failing, T-0006's `crew_resume` missing, an
+unreadable handoff — refuses. `auto-clear.sh --force` / `auto-clear.ps1 -Force`
+skip this check along with the handoff checks; they are for testing by hand
+only — `hooks.json` and context-watch never pass them, and no config key can. A refusal is logged, shown to you as a
+`systemMessage` (`crew wrap-up: not clearing - <reason>`), and fed back to the
+model **once**, at the session's next ordinary Stop (claimed with
+`.crew/.wrapup-escalated-<session>`, reset at SessionStart and on re-arm);
+a `stop_hook_active` Stop never blocks.
+
+**Stated limits.** No hook commits, stages or reverts anything: the model
+commits and crew checks the result. Crew checks that a commit happened, not
+that the step's test passed — verify-gate stands down on the forced
+continuation the commit is made on. On native Windows the check needs a
+python (`Resolve-CrewPython`): without one, context-watch.ps1 sends today's
+message and auto-clear.ps1 refuses the clear.
 
 ### What the widening costs
 

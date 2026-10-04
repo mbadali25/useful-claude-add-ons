@@ -99,7 +99,8 @@
       "minHandoffLines": 5,
       "unsafeFocus": false,
       "onlyRepos": null,
-      "onlySessions": null
+      "onlySessions": null,
+      "wrapUp": null
     },
     "autoWrapUp": true,
     "autoResume": true,

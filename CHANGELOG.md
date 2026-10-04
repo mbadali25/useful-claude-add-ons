@@ -4,6 +4,55 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.334: auto wrap-up before auto-clear (T-0017)
+
+- **What changed.** A new machine opt-in, `context.autoClear.wrapUp` (default
+  `null`, off): only the machine file's exact `true` arms it, a repo `false`
+  vetoes it, a repo `true` alone does nothing, and it acts only where
+  `context.autoClear.enabled` is armed and in scope. Armed, context-watch's
+  high-context warning becomes one wrap-up procedure (both flavours, the same
+  text, from `crew_autocycle.py wrapup-message`): start no new step; run the
+  step's `Test:` command (the active ticket's plan step, or the checks for the
+  tracked diff); commit only if it passes, otherwise leave the tree and write
+  `resume: none` with the reason under **Verify first**; run
+  `/crew:handoff --wrap-up`; end the turn. Auto-clear then also requires, after
+  the handoff checks and before the method, T-0016's binding and the sent-marker
+  claim: the handoff's `head:` is HEAD, its `branch:` is the checkout, no
+  tracked file is modified (untracked files and the handoff itself do not
+  count; paths are compared from the repository top via `git status -z` and
+  `--show-toplevel`, so a crew root in a subdirectory, or an absolute
+  handoffPath, exempts only its own handoff, and the source of a rename onto
+  the handoff always counts), and its `resume:` line parses under T-0006's grammar or is
+  `resume: none`. `--force` / `-Force` (testing by hand only, never passed by
+  a hook) skips this check with the handoff checks. git failing, `crew_resume` missing, or (native Windows) no
+  python refuses. A refusal is logged, shown as a `systemMessage`
+  (`crew wrap-up: not clearing - <reason>`), and fed back to the model once at
+  the next ordinary Stop (`.crew/.wrapup-escalated-<session>`, cleared at
+  SessionStart and on re-arm); a `stop_hook_active` Stop never blocks.
+- **One path.** `/crew:handoff --wrap-up` is the only wrap-up procedure, and
+  `/crew:autopilot`'s context-watch step now runs it.
+- **Unchanged.** With `wrapUp` unarmed every output is byte-identical;
+  `context.autoWrapUp` keeps its meaning (the warning's wording, default
+  `true`) - the crew-context skill's "off by default" is corrected. No hook
+  commits; crew checks the commit, not that the test passed.
+- **Windows.** `context-watch.ps1` and `auto-clear.ps1` now carry the shared
+  `Resolve-CrewPython` (added to `test_ps1_python_probe.py`'s carriers); it is
+  probed only when the machine file arms the wrap-up.
+- **Tests.** `plugin/crew/tests/test_wrapup.py` (103 cases with pwsh, both
+  flavours: arming, the check's must-allow and must-block cases, unarmed
+  byte-identity, the procedure and its parity, escalation once and never on
+  `stop_hook_active`, the refusal before the claim, `handoff.md` and
+  `autopilot.md`); `test_crew_config.py` (137 leaves after the merge of main, a repo writer refuses
+  `wrapUp: true`) and `test_crew_keys.py` (the key moves from `COMING` to
+  `KEY_META`). 22 hand sabotages (python, bash, PowerShell) each turned their
+  named test red; the `sabotage*.py` entries are a separate tooling PR.
+- **Built on T-0016** (stacked on its branch): its session-record fixtures,
+  and its order (the wrap-up check runs before the binding).
+- **Non-ASCII reasons.** `crew_autocycle.py`'s CLI writes stdout with
+  `errors="backslashreplace"`, so a refusal reason naming a non-ASCII branch
+  or path prints escaped on a cp1252 console instead of crashing the print
+  (`test_check_cli_prints_a_non_ascii_reason_on_a_cp1252_console`).
+
 ### Fixed — `crew` 1.0.333: auto-clear and resume typing bind to the session's own terminal (T-0016)
 
 - **What changed.** Both senders (`crew_autocycle.py` for `auto-clear.sh`, and
