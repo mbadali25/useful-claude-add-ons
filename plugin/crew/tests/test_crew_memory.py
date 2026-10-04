@@ -1065,3 +1065,23 @@ def test_broken_or_bare_pointer_is_malformed(host, capsys, body, newline):
     code, out = resolve(host, mem, capsys)
     _assert_degraded(code, out, "malformed")
     assert "if this is prose, reword the first line" in reason_of(out), out
+
+
+# --- review round 5 (9350f997) ---------------------------------------------
+
+@pytest.mark.parametrize("body", [
+    "Vault: the team one, synced via Obsidian Sync.\nIt holds the shared notes.\n\n"
+    "| folder | use |\n|---|---|\n| inbox | triage |\n",
+    "Vault: the team one, synced via Obsidian Sync.\nIt holds the shared notes.\n"
+    "Note: never put secrets there.\n",
+    "Vault: the team one, synced via Obsidian Sync. See the footnote: below.\n",
+    "Vault: the team one, synced via Obsidian Sync.\nIts index has a note: and a | inside.\n",
+], ids=["later-table", "later-note-line", "footnote-word", "line-two-mark-not-leading"])
+def test_long_prose_starting_vault_is_full_text(host, capsys, body):
+    """Round 5 FIX, must-allow: the mark counts only on line 1, or on line 2
+    when that line starts with `|` or `note:` - a later table or `Note:` line,
+    or `footnote:` (no word boundary), does not make prose a pointer."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(body)
+    code, out = resolve(host, mem, capsys)
+    assert (code, state_of(out)) == (0, "full-text"), out
