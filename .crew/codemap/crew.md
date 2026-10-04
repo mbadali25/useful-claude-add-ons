@@ -703,13 +703,13 @@ open questions; plan approval and open questions wait for a person unless T-0010
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
 
-**Worktree-aware reads and `commit-refresh` (T-0063, crew 1.0.213).** DERIVED at the anchor
+**Worktree-aware reads and `commit-refresh` (T-0063, crew 1.0.329).** DERIVED at the anchor
 above. `_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:530`) first asks `_main_folder`
 (`:353`, called at `:544`): a ticket folder only in the main checkout stops as phase
 `folder-elsewhere`, its reason the `cp -r` to make, both paths `shlex.quote`d (`_folder_elsewhere` `:365`);
 with no folder here and a main checkout `_main_checkout` could not name, the same phase stops
 saying it could not tell whether the folder is in the main checkout, with `why` (review FIX 1,
-crew 1.0.213); `resume_target` asks the same at `:852`. The folder is named, never read: `crew_ticket.ticket_dir` and the
+crew 1.0.329); `resume_target` asks the same at `:852`. The folder is named, never read: `crew_ticket.ticket_dir` and the
 scope guard keep reading this checkout's. The INDEX row is `_index_row` (`:329`, called at
 `:552`): this checkout's row (`_index_status` `:291`, now taking an `index_path`), else the main
 checkout's, whose path comes from `_main_checkout` (`:303`: `(None, "")` with no subprocess when
@@ -1209,7 +1209,7 @@ whole answer `unknown`, and every artifact measured against that base with it
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
-- **`fresh` means current and committed (T-0063, crew 1.0.213).** DERIVED at the anchor above.
+- **`fresh` means current and committed (T-0063, crew 1.0.329).** DERIVED at the anchor above.
   `ticket_freshness` lists the uncommitted paths under `refresh_artifact_paths` with
   `_uncommitted` (`plugin/crew/hooks/scripts/crew_refresh_check.py:451`, called at `:1470`):
   HEAD against the working tree through `_moved_in_tree` (modified or staged), plus untracked
