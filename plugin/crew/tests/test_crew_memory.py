@@ -743,3 +743,230 @@ def test_memory_md_is_skipped_exactly_and_md_suffix_any_case(host, capsys):
     data = json.loads(out)
     assert code == 0
     assert sorted(r["file"] for r in data["rows"]) == ["memory.md", "upper.MD"]
+
+
+# --- review round 2 (da00137e): three structural rules ---------------------
+# Real files throughout. Mocked, because the suite runs as root and root opens
+# a mode-000 file: only `test_note_with_mode_000_is_unreadable`, and only when
+# euid is 0 (it chmods the real file too, so a non-root run is real).
+
+def _dangling(link):
+    try:
+        os.symlink(str(link.parent / "no-such-target.json"), str(link))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"this platform cannot create a symlink here: {exc}")
+
+
+def test_dangling_obsidian_config_link_is_unreadable(host, capsys):
+    """Rule 1: absent means lstat says FileNotFoundError. A dangling link is
+    there, and does not parse, so `memory` must not fall back past it."""
+    host.crew_vault_path(str(host.vault("other")))
+    _dangling(host.config)
+    for name in ("memory", "work"):
+        mem = host.memory(f"vault: {name} | note: notes/fact.md\n", name=f"{name}.md")
+        code, out = resolve(host, mem, capsys)
+        _assert_degraded(code, out, "no-vault-config")
+        assert reason_of(out).startswith("config unreadable: "), out
+
+
+def test_dangling_crew_config_link_is_unreadable(host, capsys):
+    host.obsidian({"vaultPath": str(host.vault("legacy"))})
+    (host.root / ".crew").mkdir()
+    _dangling(host.root / ".crew" / "config.json")
+    mem = host.memory("vault: memory | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: "), out
+
+
+@pytest.mark.parametrize("config,field", [
+    ({"vaults": {"work": "PATH", "junk": 5}}, "vaults.junk"),
+    ({"vaults": {"work": {"path": 5}}}, "vaults.work.path"),
+    ({"vaults": {"work": {"role": "primary"}}}, "vaults.work.path"),
+    ({"vaults": {"work": "PATH"}, "vaultPath": 5}, "vaultPath"),
+    ({"vaults": {"work": "PATH"}, "vaultPath": None}, "vaultPath"),
+], ids=["other-entry-not-object", "path-not-string", "path-missing", "legacy-not-string",
+        "legacy-null"])
+def test_obsidian_config_schema_names_the_field(host, capsys, config, field):
+    """Rule 2: the whole Obsidian config is checked before any resolution, so
+    a wrong field anywhere is `config unreadable`, naming the field - even one
+    that does not belong to the vault asked for."""
+    vault = str(host.vault("work"))
+    text = json.dumps(config).replace('"PATH"', json.dumps({"path": vault}))
+    host.obsidian(text)
+    mem = host.memory("vault: work | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: ") and field in reason_of(out), out
+
+
+@pytest.mark.parametrize("crew,field", [
+    ({"memory": "x"}, "memory"),
+    ({"memory": {"vaultPath": 5}}, "memory.vaultPath"),
+    ({"memory": {"vaultPath": ["a"]}}, "memory.vaultPath"),
+], ids=["memory-not-object", "vaultpath-number", "vaultpath-list"])
+@pytest.mark.parametrize("layer", ["repo", "global"])
+def test_crew_config_schema_names_the_field(host, capsys, monkeypatch, crew, field, layer):
+    """Rule 2 for the crew config, both layers: a wrong-typed memory.vaultPath
+    is not "unset", so the legacy vaultPath must not answer for `memory`."""
+    host.obsidian({"vaultPath": str(host.vault("legacy"))})
+    if layer == "repo":
+        (host.root / ".crew").mkdir()
+        (host.root / ".crew" / "config.json").write_text(json.dumps(crew), encoding="utf-8")
+    else:
+        path = host.home / "global-crew.json"
+        path.write_text(json.dumps(crew), encoding="utf-8")
+        monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    mem = host.memory("vault: memory | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: ") and field in reason_of(out), out
+
+
+@pytest.mark.parametrize("value", [None, ""], ids=["null", "empty"])
+def test_crew_vault_path_null_or_empty_is_unset(host, capsys, value):
+    """Must-allow: null and "" are the schema's two spellings of unset."""
+    legacy = host.vault("legacy")
+    host.obsidian({"vaultPath": str(legacy)})
+    host.crew_vault_path(value)
+    mem = host.memory("vault: memory | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    assert (code, state_of(out)) == (0, "resolved"), out
+
+
+def test_reason_text_is_right_per_name(host, capsys):
+    """N5: memory.vaultPath can only ever name `memory`, so a reason for any
+    other name does not offer it as the missing piece."""
+    mem = host.memory("vault: work | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert "memory.vaultPath" not in reason_of(out) and "no Obsidian config" in reason_of(out)
+    host.crew_vault_path(str(host.vault("legacy")))
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "vault-unknown")
+    assert "no Obsidian config" in reason_of(out), out
+    mem = host.memory("vault: memory | note: notes/fact.md\n", name="m.md")
+    host.crew_vault_path(None)
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert "memory.vaultPath" in reason_of(out), out
+
+
+def test_note_with_mode_000_is_unreadable(host, capsys, monkeypatch):
+    """Rule 3: a resolved note must open. MOCKED when euid is 0 (root opens a
+    mode-000 file); the file is chmod-ed 000 for real either way."""
+    vault = host.vault("work")
+    host.obsidian({"vaults": {"work": {"path": str(vault)}}})
+    note = vault / "notes" / "fact.md"
+    os.chmod(str(note), 0)
+    try:
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            real_open = os.open
+            target = os.path.realpath(str(note))
+
+            def fake_open(path, flags, *args, **kwargs):
+                if os.path.realpath(os.fspath(path)) == target:
+                    raise PermissionError(13, "Permission denied", os.fspath(path))
+                return real_open(path, flags, *args, **kwargs)
+            monkeypatch.setattr(os, "open", fake_open)
+            real_builtin = open
+
+            def fake_builtin(path, *args, **kwargs):
+                if not isinstance(path, int) and os.path.realpath(os.fspath(path)) == target:
+                    raise PermissionError(13, "Permission denied", os.fspath(path))
+                return real_builtin(path, *args, **kwargs)
+            monkeypatch.setattr("builtins.open", fake_builtin)
+        mem = host.memory("vault: work | note: notes/fact.md\n")
+        _assert_degraded(*resolve(host, mem, capsys), "unreadable")
+    finally:
+        os.chmod(str(note), 0o644)
+
+
+def test_check_never_opens_a_fifo_device_or_directory(host):
+    """Rule 3 / N4: `check` stats through links and opens only regular files.
+    A link to a FIFO, a FIFO and a directory named *.md are listed
+    `unreadable`. Run in a subprocess with a timeout, so a regression that
+    opens the FIFO fails this test instead of hanging the suite."""
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("no os.mkfifo on this platform")
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    host.memory("prose\n", name="a.md")
+    fifo = host.base / "pipe"
+    os.mkfifo(str(fifo))
+    os.mkfifo(str(host.mem / "c-fifo.md"))
+    os.symlink(str(fifo), str(host.mem / "b-link.md"))
+    (host.mem / "d-dir.md").mkdir()
+    try:
+        proc = subprocess.run(
+            [sys.executable, SCRIPT, "check", "--memory-dir", str(host.mem),
+             "--root", str(host.root), "--json"],
+            capture_output=True, check=False, env=host.env(), timeout=20)
+    except subprocess.TimeoutExpired:
+        pytest.fail("check hung on a FIFO: it opened a file that is not regular")
+    data = json.loads(proc.stdout.decode("utf-8"))
+    assert proc.returncode == 1
+    assert [(r["file"], r["state"]) for r in data["rows"]] == [
+        ("a.md", "full-text"), ("b-link.md", "unreadable"), ("c-fifo.md", "unreadable"),
+        ("d-dir.md", "unreadable")]
+
+
+@pytest.mark.parametrize("body", [
+    "vault : work | note: notes/fact.md",
+    "vault\t: work | note: notes/fact.md",
+    "\u200bvault: work | note: notes/fact.md",
+    "\ufeff  Vault: work | note: notes/fact.md",
+    "vault: work | note: notes/fa\rct.md",
+    "vault: work | note: notes/fact.md\nand a line of prose",
+    "vault: work | note: notes/fa\u2028ct.md",
+    "vault: work | note: notes/fa\u2029ct.md",
+], ids=["space-before-colon", "tab-before-colon", "leading-zwsp", "bom-indent-capital",
+        "cr-inside", "pointer-then-prose", "line-separator", "paragraph-separator"])
+def test_pointer_like_first_line_must_match_in_full(host, capsys, body):
+    """N1-N3: the first non-blank line, Cf removed and stripped, that starts
+    `vault` then optional whitespace then `:` is a pointer attempt: anything
+    short of the full grammar, alone in the body, is `malformed`."""
+    host.vault("work", notes=("notes/fact.md", "notes/fa\u2028ct.md", "notes/fa\u2029ct.md"))
+    host.obsidian({"vaults": {"work": {"path": str(host.base / "vaults" / "work")}}})
+    mem = host.memory(body + "\n")
+    _assert_degraded(*resolve(host, mem, capsys), "malformed")
+
+
+def test_check_stats_before_it_opens(host, capsys, monkeypatch):
+    """Rule 3, the stat layer alone: `check` never hands a FIFO or directory
+    to the opener. A spy stands in for the opener, so a regression records
+    the path instead of blocking."""
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("no os.mkfifo on this platform")
+    os.mkfifo(str(host.mem / "fifo.md"))
+    (host.mem / "dir.md").mkdir()
+    host.memory("prose\n", name="a.md")
+    opened = []
+    real = crew_memory._open_regular  # pylint: disable=protected-access
+
+    def spy(path):
+        opened.append(os.path.basename(path))
+        if os.path.basename(path) != "a.md":
+            raise OSError("the spy refused a non-regular file")
+        return real(path)
+    monkeypatch.setattr(crew_memory, "_open_regular", spy)
+    run(["check", "--memory-dir", str(host.mem), "--root", str(host.root)], capsys)
+    assert opened == ["a.md"]
+
+
+def test_open_regular_refuses_a_fifo_without_blocking(tmp_path):
+    """Rule 3, the open layer alone: a FIFO that replaced a regular file after
+    the stat is refused, never blocked on. Subprocess plus timeout, so a
+    blocking open fails the test instead of hanging the suite."""
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("no os.mkfifo on this platform")
+    fifo = tmp_path / "pipe.md"
+    os.mkfifo(str(fifo))
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); import crew_memory\n"
+            "try:\n    crew_memory._open_regular(sys.argv[2])\nexcept OSError:\n"
+            "    sys.exit(3)\nsys.exit(0)\n")
+    try:
+        proc = subprocess.run([sys.executable, "-c", code, os.path.dirname(SCRIPT), str(fifo)],
+                              capture_output=True, check=False, timeout=20)
+    except subprocess.TimeoutExpired:
+        pytest.fail("_open_regular blocked on a FIFO")
+    assert proc.returncode == 3, proc.stderr.decode("utf-8")

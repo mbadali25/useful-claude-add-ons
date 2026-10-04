@@ -58,13 +58,27 @@ STATES = ("resolved", "full-text", "malformed", "no-vault-config", "vault-unknow
 CLEAN = ("resolved", "full-text")
 _POINTER = re.compile(r"vault: ([A-Za-z0-9][A-Za-z0-9 ._-]{0,63}) \| note: (.*)")
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
+_ATTEMPT = re.compile(r"vault\s*:", re.IGNORECASE)
 LEGACY_NAME = "memory"
 
 
 def _invisible(text):
-    """True when `text` holds a control (Cc) or format (Cf) character: a
-    pointer must read as what it says."""
-    return any(unicodedata.category(ch) in ("Cc", "Cf") for ch in text)
+    """True when `text` holds a control (Cc), format (Cf) or line/paragraph
+    separator (Zl/Zp) character: a pointer must read as what it says."""
+    return any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in text)
+
+
+def _open_regular(path):
+    """An open binary file for `path`, following links, or OSError. Opened
+    non-blocking and checked with fstat, so a FIFO or device is refused
+    without ever blocking on it, even if it replaced a regular file after a
+    stat."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    handle = os.fdopen(os.open(path, flags), "rb")
+    if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+        handle.close()
+        raise OSError(f"{path} is not a regular file - not read")
+    return handle
 
 
 def split_body(text):
@@ -100,17 +114,22 @@ def _path_problem(path):
 
 def classify(body):
     """`(kind, vault, note, reason)` for a body; kind is pointer / malformed /
-    full-text. A single line that starts `vault:` once stripped and compared
-    without case is a pointer attempt, so an indented or `Vault:` line is
-    `malformed`, never full text."""
+    full-text. The first non-blank line, with Cf characters removed and then
+    stripped, that starts `vault` and optional whitespace and `:` (any case)
+    is a pointer attempt: it must be the whole body and match the grammar
+    exactly, or it is `malformed`. A lone CR ends a line, so a CR inside a
+    pointer line leaves a second line and is `malformed` too."""
     lines = [line for line in _LINE_BREAK.split(body) if line.strip()]
-    if len(lines) != 1 or not lines[0].strip().lower().startswith("vault:"):
+    probe = "".join(ch for ch in lines[0] if unicodedata.category(ch) != "Cf") if lines else ""
+    if not _ATTEMPT.match(probe.strip()):
         return "full-text", None, None, "not a pointer; nothing to resolve"
     line = lines[0]
+    if len(lines) != 1:
+        return "malformed", None, None, "a pointer line must be the whole body"
     match = _POINTER.fullmatch(line)
     if not match:
         if _invisible(line):
-            return "malformed", None, None, "the pointer holds a control or format character"
+            return "malformed", None, None, "the pointer holds an invisible or control character"
         return "malformed", None, None, ("not exactly 'vault: <name> | note: <path>' (lower "
                                          "case, not indented) with a name of 1-64 letters, "
                                          "digits, space, '.', '_' or '-'")
@@ -123,28 +142,68 @@ def classify(body):
     return "pointer", name, path, None
 
 
-def _json_file(path):
-    """`(data, problem, present)`. Only FileNotFoundError is absent; a file
-    that cannot be reached (EACCES on a folder), read or parsed as a JSON
-    object is a problem, never "no config"."""
+def _obsidian_problem(data):
+    """The first field of the Obsidian config outside the schema, or None:
+    `vaults` absent or an object of objects each with a string `path`;
+    `vaultPath` absent or a string."""
+    if "vaults" in data:
+        vaults = data["vaults"]
+        if not isinstance(vaults, dict):
+            return "vaults is not an object"
+        for name, entry in vaults.items():
+            if not isinstance(entry, dict):
+                return f"vaults.{name} is not an object"
+            if not isinstance(entry.get("path"), str):
+                return f"vaults.{name}.path is not a string"
+    if "vaultPath" in data and not isinstance(data["vaultPath"], str):
+        return "vaultPath is not a string"
+    return None
+
+
+def _crew_problem(data):
+    """The first crew-config field this module reads that is outside the
+    schema, or None: `memory` absent or an object; `memory.vaultPath` absent,
+    a string, null or ""."""
+    if "memory" not in data:
+        return None
+    memory = data["memory"]
+    if not isinstance(memory, dict):
+        return "memory is not an object"
+    if "vaultPath" in memory and not isinstance(memory["vaultPath"], (str, type(None))):
+        return "memory.vaultPath is not a string or null"
+    return None
+
+
+def _config(path, schema):
+    """`(data, problem, present)`. Absent ONLY when lstat says
+    FileNotFoundError; anything else there - a dangling link, any other
+    OSError, bad JSON, a wrong shape - must read, parse and pass `schema`, or
+    it is a problem naming the file (and the field)."""
     try:
-        os.stat(path)
+        os.lstat(path)
     except FileNotFoundError:
         return {}, None, False
     except OSError as exc:
         return None, f"config unreadable: {path}: {exc.strerror or exc}", True
-    data = crew_recall._read_json(path)  # pylint: disable=protected-access
+    try:
+        with _open_regular(path) as handle:
+            data = json.loads(handle.read().decode("utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        return None, f"config unreadable: {path}: {getattr(exc, 'strerror', None) or exc}", True
     if not isinstance(data, dict):
-        return None, f"config unreadable: {path}", True
+        return None, f"config unreadable: {path}: not a JSON object", True
+    problem = schema(data)
+    if problem:
+        return None, f"config unreadable: {path}: {problem}", True
     return data, None, True
 
 
 def _crew_vault_path(root):
-    """`(memory.vaultPath or None, problem)`. A crew config file that exists
-    and cannot be read or parsed is a problem, not "unset"."""
+    """`(memory.vaultPath or None, problem)`. Both crew config layers are
+    checked against the schema first; a problem is never "unset"."""
     for path in (crew_common.repo_config_file(root, "config.json"),
                  crew_config.GLOBAL_CONFIG_PATH):
-        problem = _json_file(path)[1]
+        problem = _config(path, _crew_problem)[1]
         if problem:
             return None, problem
     memory = crew_config.resolve_config(root).get("memory")
@@ -172,43 +231,44 @@ def _vault_dir(raw, source):
 
 
 def vault_path(name, root):
-    """`(path, None, None)` or `(None, state, reason)` for vault `name`."""
+    """`(path, None, None)` or `(None, state, reason)` for vault `name`. Both
+    configs are read and schema-checked up front, before any resolution. A
+    bad Obsidian config stops every name; a bad crew config stops `memory`,
+    the one name it can answer for, and any name when there is no Obsidian
+    config to say which failure applies."""
     config = crew_recall.obsidian_config_path()
-    data, problem, present = _json_file(config)
+    data, problem, present = _config(config, _obsidian_problem)
     if problem:
         return None, "no-vault-config", problem
-    vaults = data.get("vaults")
-    if vaults is not None and not isinstance(vaults, dict):
-        return None, "no-vault-config", f"config unreadable: {config}: vaults is not an object"
-    vaults = vaults or {}
+    crew_raw, crew_problem = _crew_vault_path(root)
+    vaults = data.get("vaults") or {}
     entry = vaults.get(name)
-    if name in vaults and not isinstance(entry, dict):
-        return None, "no-vault-config", (f"config unreadable: {config}: vaults.{name} is not "
-                                         "an object")
     if entry is not None:
         if entry.get("role") == "ignore":
             return None, "vault-unknown", f"vault {name!r} has role ignore in {config}"
-        return _vault_dir(entry.get("path"), f"vaults.{name}.path in {config}")
+        return _vault_dir(entry["path"], f"vaults.{name}.path in {config}")
     if name != LEGACY_NAME:
-        # memory.vaultPath names only `memory`; it matters here just for which
-        # of two failure names applies, so a broken crew config reads as unset.
-        if not present and _crew_vault_path(root)[0] is None:
-            return None, "no-vault-config", (f"no Obsidian config at {config} and no "
-                                             "memory.vaultPath in the crew config")
-        return None, "vault-unknown", f"this host's config names no vault {name!r}"
-    crew_raw, problem = _crew_vault_path(root)
-    if problem:
-        return None, "no-vault-config", problem
+        if present:
+            return None, "vault-unknown", f"{config} names no vault {name!r}"
+        if crew_problem:
+            return None, "no-vault-config", crew_problem
+        if crew_raw is None:
+            return None, "no-vault-config", f"no Obsidian config at {config}"
+        return None, "vault-unknown", (f"no Obsidian config at {config}; memory.vaultPath "
+                                       f"names only the vault {LEGACY_NAME!r}")
+    if crew_problem:
+        return None, "no-vault-config", crew_problem
     if crew_raw is not None:
         return _vault_dir(crew_raw, "memory.vaultPath in the crew config")
     # The legacy single vault, read as obsidian-vault's list_vaults and
     # writer_vault read it: only when the config has no `vaults` block.
     if not vaults and data.get("vaultPath"):
-        return _vault_dir(data.get("vaultPath"), f"vaultPath in {config}")
+        return _vault_dir(data["vaultPath"], f"vaultPath in {config}")
     if not present:
         return None, "no-vault-config", (f"no Obsidian config at {config} and no "
                                          "memory.vaultPath in the crew config")
-    return None, "vault-unknown", f"this host's config names no vault {name!r}"
+    return None, "vault-unknown", (f"{config} names no vault {LEGACY_NAME!r} and "
+                                   "memory.vaultPath is not set")
 
 
 def _inside(path, root):
@@ -244,6 +304,10 @@ def note_path(vault, note):
         return None, "unreadable", f"{note}: cannot read it: {exc.strerror or exc}"
     if not stat.S_ISREG(mode):
         return None, "note-missing", f"{note} is not a file in the vault"
+    try:
+        _open_regular(real).close()
+    except OSError as exc:
+        return None, "unreadable", f"{note}: cannot open it: {exc.strerror or exc}"
     return real, None, None
 
 
@@ -251,7 +315,7 @@ def resolve_file(path, root):
     """One row: `{file, state, reason | path, vault, note}`."""
     row = {"file": path, "vault": None, "note": None}
     try:
-        with open(path, "rb") as handle:
+        with _open_regular(path) as handle:
             text = handle.read().decode("utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return dict(row, state="unreadable", reason=f"cannot read as UTF-8: {exc}")
@@ -268,21 +332,31 @@ def resolve_file(path, root):
     return dict(row, state="resolved", path=real)
 
 
-def _listed(directory, name):
+def _listed(name):
     """A memory file `check` lists: `*.md` (suffix in any case) other than
-    the index `MEMORY.md`, that is a regular file or a symlink - a dangling
-    link is listed and reads `unreadable`. Directories and FIFOs are not."""
-    if name == "MEMORY.md" or not name.lower().endswith(".md"):
-        return False
+    the index `MEMORY.md`, whatever it is."""
+    return name != "MEMORY.md" and name.lower().endswith(".md")
+
+
+def _check_one(directory, name, root):
+    """One `check` row. `os.stat` follows links; only a regular file is
+    opened. A dangling link, a FIFO, a device or a directory is `unreadable`
+    without being opened, so `check` cannot block on one."""
     full = os.path.join(directory, name)
-    return os.path.islink(full) or os.path.isfile(full)
+    row = {"file": name, "vault": None, "note": None, "state": "unreadable"}
+    try:
+        mode = os.stat(full).st_mode
+    except OSError as exc:
+        return dict(row, reason=f"cannot stat it (a dangling link?): {exc.strerror or exc}")
+    if not stat.S_ISREG(mode):
+        return dict(row, reason="not a regular file (a directory, FIFO or device) - not opened")
+    return dict(resolve_file(full, root), file=name)
 
 
 def check_dir(directory, root):
     """`(rows, counts)` for every memory file in `directory`. Raises OSError
     when the directory cannot be listed."""
-    names = sorted(n for n in os.listdir(directory) if _listed(directory, n))
-    rows = [dict(resolve_file(os.path.join(directory, n), root), file=n) for n in names]
+    rows = [_check_one(directory, n, root) for n in sorted(os.listdir(directory)) if _listed(n)]
     counts = {s: sum(r["state"] == s for r in rows) for s in STATES}
     return rows, {s: c for s, c in counts.items() if c}
 
