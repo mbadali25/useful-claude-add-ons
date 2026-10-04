@@ -355,8 +355,13 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `resume.readyTimeoutSeconds`), measured after merging main into T-0013.
     # 133 with T-0066: `git.forbiddenTrailers` on top of those 132, measured
     # by running this test after merging main edb2b8ff.
+    # 136 with T-0053's repo-only `autopilot.sleep.schedule`,
+    # `autopilot.sleep.approval` and `autopilot.sleep.questions` on top of
+    # those 133, measured by running this test after merging main 86d96fa1.
     assert "git.forbiddenTrailers" in declared
-    assert len(declared) == 133
+    assert {"autopilot.sleep.schedule", "autopilot.sleep.approval",
+            "autopilot.sleep.questions"} <= declared
+    assert len(declared) == 136
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
