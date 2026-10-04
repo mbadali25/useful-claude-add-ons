@@ -18,6 +18,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_status
 import crew_tracker
+import tool_fixtures
 from crew_fixtures import make_repo
 
 SCRIPT = os.path.join(os.path.dirname(crew_tracker.__file__), "crew_tracker.py")
@@ -869,6 +870,42 @@ def test_vault_in_worktree_git_cannot_say_is_refused(tmp_path, monkeypatch):
 
     assert (got["results"][0]["reason"], _snapshot(tmp_path) == before) == (
         "could not tell whether git ignores Boards/repo/Board.md in this worktree", True)
+
+
+def test_vault_in_worktree_runs_the_git_which_resolves(tmp_path, monkeypatch):
+    # L-1508: the ignore probe judges the git PATH resolves the way bash, pwsh
+    # and shutil.which do (PATHEXT: git.cmd), not whatever a bare "git"
+    # reaches. The failing git is NOT on PATH: a bare "git" runs the real one,
+    # reads the vault as ignored, and the write goes ahead.
+    root = make_repo(tmp_path)
+    vault = _make_vault(root / "vault")
+    (root / ".gitignore").write_text("vault/\n", encoding="utf-8")
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo"}})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+    _own(root, vault / "Boards" / "repo")
+    tool_fixtures.which_only(monkeypatch, tmp_path / "resolved", "git",
+                             *tool_fixtures.failing_subcommand("check-ignore"))
+    before = _snapshot(tmp_path)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+
+    assert (got["results"][0]["reason"], _snapshot(tmp_path) == before) == (
+        "could not tell whether git ignores Boards/repo/Board.md in this worktree", True)
+
+
+def test_vault_in_worktree_git_that_does_not_resolve_is_refused(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    vault = _make_vault(root / "vault")
+    (root / ".gitignore").write_text("vault/\n", encoding="utf-8")
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo"}})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+    _own(root, vault / "Boards" / "repo")
+    tool_fixtures.which_none(monkeypatch, "git")
+    before = _snapshot(tmp_path)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+
+    assert (crew_tracker.exit_code(got), _snapshot(tmp_path) == before) == (1, True), got
 
 
 def test_files_move_refuses_two_rows_for_one_ticket(tmp_path):

@@ -77,6 +77,29 @@ def test_multiline_prompt_is_not_a_route(prompt):
     assert crew_route.match(prompt) is None
 
 
+def test_every_unicode_line_boundary_is_not_a_route():
+    """T-0069 (T-0023 r2 FIX 2): U+2028, U+0085 and the other boundaries used
+    to slip past a check for only \\n and \\r, so a multi-line prompt routed on
+    its first line. The boundaries are derived from `str.splitlines`, not
+    written out, so this checks `crew_route._OTHER_LINE_BREAKS` independently;
+    pinning the derived set keeps the test from going vacuous."""
+    boundaries = sorted(chr(c) for c in range(0x110000) if len(f"a{chr(c)}b".splitlines()) == 2)
+    assert boundaries == ["\n", "\x0b", "\x0c", "\r", "\x1c", "\x1d", "\x1e", "\x85",
+                           "\u2028", "\u2029"]
+    routed = [(repr(ch), prompt) for ch in boundaries
+              for prompt in (f"plan{ch}it", f"review{ch}it", f"plan it{ch}")
+              if crew_route.match(prompt) is not None]
+
+    assert routed == []
+
+
+@pytest.mark.parametrize("space", ["\u00a0", "\t", "\u2003"])
+def test_a_unicode_space_that_is_not_a_line_break_still_routes(space):
+    got = crew_route.match(f"plan{space}it")
+
+    assert (got is not None, got) == (True, crew_route.match("plan it"))
+
+
 def test_long_prompt_is_not_a_route():
     prompt = "brainstorm " + "x" * 70
 
@@ -577,11 +600,15 @@ _ROUTE_TAIL = "if the user plainly meant something else, ask."
     ({"outcome": "ask", "intent": _HUGE, "ticket": _HUGE, "reason": _HUGE,
       "candidates": [_HUGE] * 20}, _ASK_TAIL),
     ({"outcome": "route", "intent": "continue", "ticket": _HUGE, "source": _HUGE,
-      "phase": _HUGE, "command": "/crew:implement " + _HUGE}, _ROUTE_TAIL),
+      "phase": _HUGE, "command": "/crew:implement " + _HUGE}, _ASK_TAIL),
     ({"outcome": "route", "intent": "review", "ticket": _HUGE, "source": _HUGE,
-      "command": "/crew:" + _HUGE}, _ROUTE_TAIL),
+      "command": "/crew:" + _HUGE}, _ASK_TAIL),
     ({"outcome": "route", "intent": "brainstorm", "ticket": None,
-      "command": "not a crew command " + _HUGE}, _ROUTE_TAIL),
+      "command": "not a crew command " + _HUGE}, _ASK_TAIL),
+    ({"outcome": "route", "intent": "continue", "ticket": _HUGE, "source": _HUGE,
+      "phase": _HUGE, "command": "/crew:implement T-1"}, _ROUTE_TAIL),
+    ({"outcome": "route", "intent": "review", "ticket": _HUGE, "source": _HUGE,
+      "command": "/crew:review T-1"}, _ROUTE_TAIL),
 ])
 def test_render_is_one_bounded_line_whatever_the_fields(decision, tail):
     line = crew_route.render(decision)
@@ -594,6 +621,59 @@ def test_the_line_bound_fits_the_turn_budget():
     assert crew_route.MAX_LINE_CHARS < crew_context.TURN_CHARS
 
 
+# --- T-0069 (T-0023 r2 FIX 1): a route never passes a cut or reflowed command --
+
+def _continue_with(tmp_path, monkeypatch, command):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    monkeypatch.setattr(crew_autopilot, "next_phase", lambda top, ticket, **_: {
+        "ticket": ticket, "phase": "refresh", "stop": False, "reason": "stale",
+        "command": command, "evidence": []})
+    got = crew_route.decide(str(root), "continue")
+    return got, crew_route.render(got)
+
+
+def test_an_over_long_command_asks_instead_of_clipping(tmp_path, monkeypatch):
+    """The reviewer's repro: clipping cut `--refresh aaaa...` to a different
+    argument and routed it."""
+    got, line = _continue_with(tmp_path, monkeypatch, "/crew:onboard --refresh " + "a" * 210)
+
+    assert (got["outcome"], got["command"], line.endswith(_ASK_TAIL),
+            "invoke the Skill tool" in line, "a..." in line, "limit 200" in line) == \
+        ("ask", None, True, False, False, True)
+
+
+def test_a_command_at_the_limit_routes_verbatim(tmp_path, monkeypatch):
+    head = "/crew:onboard --refresh "
+    command = head + "a" * (crew_route.FIELD_CHARS["command"] - len(head))
+    got, line = _continue_with(tmp_path, monkeypatch, command)
+
+    assert (len(command), got["outcome"], got["command"], line.endswith(_ROUTE_TAIL),
+            f"args --refresh {'a' * (len(command) - len(head))}." in line) == \
+        (crew_route.FIELD_CHARS["command"], "route", command, True, True)
+
+
+@pytest.mark.parametrize("command", ["/crew:onboard --refresh a  b", "/crew:onboard --refresh a\tb",
+                                     " /crew:onboard --refresh a", "/crew:onboard a\nb"])
+def test_a_command_clip_would_reflow_asks(tmp_path, monkeypatch, command):
+    """`_clip` would change these without shortening them: still a different
+    argument, so still an ask."""
+    got, line = _continue_with(tmp_path, monkeypatch, command)
+
+    assert (got["outcome"], line.endswith(_ASK_TAIL), "Skill tool" in line) == \
+        ("ask", True, False)
+
+
+def test_render_refuses_a_changed_command_from_any_producer():
+    """The defence in `render`: a hand-built route decision with a command
+    `_clip` would change renders as an ask, never as the cut command."""
+    line = crew_route.render({"outcome": "route", "intent": "implement", "ticket": "T-1",
+                              "source": "s", "command": "/crew:implement T-1  --x"})
+
+    assert (line.endswith(_ASK_TAIL), "Skill tool" in line, "not passed on" in line) == \
+        (True, False, True)
+
+
 # --- T-0010: the policy subcommands are crew_autopilot.py's, not the command's --
 
 def test_policy_subcommands_are_not_command_subcommands(tmp_path):
@@ -603,5 +683,7 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
     got = [crew_autopilot.route_args(str(root), text)["stop"]
            for text in ("approve T-1", "questions-check T-1")]
 
+    # L-0652 adds `sleep` and `wake`; `approve` and `questions-check` stay
+    # script subcommands only.
     assert (crew_autopilot.SUBCOMMANDS, got) == (
-        ("status", "run", "assign", "goal", "focus"), [True, True])
+        ("status", "run", "assign", "goal", "focus", "sleep", "wake"), [True, True])

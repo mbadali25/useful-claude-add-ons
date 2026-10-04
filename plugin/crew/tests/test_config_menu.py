@@ -1760,3 +1760,15 @@ def test_cli_refuses_an_explicitly_empty_value(tmp_path, capsys, argv, needle):
     assert code == 2
     assert needle in capsys.readouterr().err
     assert open(_config(root), "rb").read() == before
+
+
+def test_sleep_overrides_offer_the_three_policies_and_unset(tmp_path):
+    """T-0053: `autopilot.sleep.approval` / `.questions` are repo-only and
+    offer human, self, risk and unset (null, "not overridden")."""
+    root, gpath = _repo(tmp_path)
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    for path in ("autopilot.sleep.approval", "autopilot.sleep.questions"):
+        assert (rows[path]["writable"],
+                sorted(map(repr, (c["value"] for c in rows[path]["choices"])))) == (
+            True, sorted(map(repr, ("human", "self", "risk", None)))), path

@@ -15,9 +15,10 @@ import argparse
 import filecmp
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
+
+import sabotage_bound
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -372,10 +373,11 @@ RESUME_MUTATIONS = (
 
 def run_test(target):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    done = subprocess.run([sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
-                           "-p", "no:cacheprovider", "--run-slow"],
-                          cwd=CREW, capture_output=True, text=True, check=False, env=env)
-    return done.returncode
+    # Bounded per entry like sabotage.py's (T-0080): memory cap, wall clock.
+    code, _ = sabotage_bound.run([sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
+                                  "-p", "no:cacheprovider", "--run-slow"],
+                                 CREW, env, *sabotage_bound.limits(os.environ))
+    return code
 
 
 def main(argv=None):
@@ -383,6 +385,12 @@ def main(argv=None):
     parser.add_argument("--scratch", default=None)
     args = parser.parse_args(argv)
     scratch = args.scratch or tempfile.mkdtemp(prefix="sabotage-resume-")
+    try:
+        limits = sabotage_bound.limits(os.environ)
+    except ValueError as err:
+        print(f"REFUSING TO RUN -- {err}")
+        return 2
+    print(sabotage_bound.describe(*limits))
     os.makedirs(scratch, exist_ok=True)
     ok = True
     for index, (label, target, find, replace, test) in enumerate(RESUME_MUTATIONS):
