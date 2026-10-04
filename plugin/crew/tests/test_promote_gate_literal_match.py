@@ -30,7 +30,17 @@ rule both now share, on the working map and the committed map alike:
   true` demanded a human on PowerShell and nobody on bash;
 - `"deploy": null` in the working map is a malformed entry and refuses the
   map in both (the .ps1 skipped it, the .sh refused it);
-- more than one matching environment is ambiguous and blocks, naming them all;
+- when more than one environment matches, the union of their requirements
+  applies - every `requires`, every `rollback`, every `requireHuman` - and the
+  environments are named together (`staging,prod`) in the block message and
+  the in-flight marker. Strictly stricter than the old first-match pick, which
+  gated prod's command as staging, without locking out a short command that
+  sits inside two deploys (`git push` in `git push staging main` and
+  `git push prod main`);
+- a duplicate key - exactly the same, or differing only by case - refuses the
+  map; so does a `requireHuman` that is a list or an object;
+- `"deploy": []` and `[""]` declare nothing and pass (the .ps1 read `[]` as
+  null and refused every command in the repo);
 - a comparison that throws blocks rather than skipping the environment.
 
 This is a guard that can BLOCK, so both directions are here (repo CLAUDE.md,
@@ -39,9 +49,12 @@ repository is built under `tmp_path`; `CLAUDE_PROJECT_DIR` points at it, never
 at this repo. The .ps1 runs wherever PowerShell 7 resolves, with
 `OS=Windows_NT` in the child only, as in test_promote_gate_effective_tree.py.
 
-Rule time: one case per behaviour runs by default; the rest of the pwsh-heavy
-matrix is marked `slow` (conftest deselects it unless `-m slow` or
-`--run-slow`).
+Rule time: every .ps1 case is marked `slow` except the first agreement map,
+which runs both real gates by default; every .sh case runs by default, so the
+default run keeps each must-block and must-allow case on bash. conftest
+deselects `slow` unless `-m slow` or `--run-slow`; CI runs it in
+`crew-shell-matrix (ubuntu-latest)` and `crew-windows-slow`
+(`pytest plugin/crew/tests -m slow`, .github/workflows/pytest-crew.yml).
 """
 import json
 import os
@@ -65,7 +78,8 @@ _PWSH = crew_fixtures.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 needs_pwsh = pytest.mark.skipif(_PWSH is None,
                                 reason="no PowerShell 7 on this machine")
-_MARKS = {"sh": [needs_bash], "ps1": [needs_pwsh]}
+# Every .ps1 case is `slow` (see the module docstring); the .sh runs by default.
+_MARKS = {"sh": [needs_bash], "ps1": [needs_pwsh, pytest.mark.slow]}
 
 # The repro from the ticket, verbatim.
 _JQ = "./deploy.sh && curl -s https://x/status | jq .items[0]"
@@ -73,21 +87,11 @@ _JQ = "./deploy.sh && curl -s https://x/status | jq .items[0]"
 # Patterns `-like` cannot parse: each threw WildcardPatternException.
 _UNPARSEABLE = ["ship [", "ship []", "ship [z-a]", "ship [!-[]"]
 
-_AMBIGUOUS = "matches more than one environment"
-
-
-def _cases(values, *, smoke_ps1=1):
-    """(flavour, value) params. Every sh case runs by default; only the first
-    `smoke_ps1` ps1 cases do, the rest are `slow`."""
-    out = []
-    for flavour in ("sh", "ps1"):
-        for i, value in enumerate(values):
-            marks = list(_MARKS[flavour])
-            if flavour == "ps1" and i >= smoke_ps1:
-                marks.append(pytest.mark.slow)
-            out.append(pytest.param(flavour, value, marks=marks,
-                                    id=f"{flavour}-{value!r}"))
-    return out
+def _cases(values):
+    """(flavour, value) params, marked per flavour by `_MARKS`."""
+    return [pytest.param(flavour, value, marks=_MARKS[flavour],
+                         id=f"{flavour}-{value!r}")
+            for flavour in ("sh", "ps1") for value in values]
 
 
 FLAVOURS = [pytest.param(f, marks=_MARKS[f]) for f in ("sh", "ps1")]
@@ -206,17 +210,101 @@ def test_a_wildcard_deploy_does_not_claim_another_environments_command(
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
-def test_two_environments_matching_one_command_is_ambiguous(flavour, tmp_path):
-    """#489 FIX1. qa `target=Prod` and production `target=prod` both match
-    case-insensitively; first-match picked a different one per flavour. Now
-    neither guesses, and both names are reported."""
+def test_two_matching_environments_apply_the_union_of_their_requirements(
+        flavour, tmp_path):
+    """#489 FIX1/F1. qa `target=Prod` and production `target=prod` both match
+    case-insensitively. First-match picked a different one per flavour; now
+    both apply, so production's requireHuman holds until approved."""
     repo = Repo(tmp_path / "r", {
         "qa": _env("deploy target=Prod"),
         "production": _env("deploy target=prod", human=True)})
     code, err = run_gate(flavour, repo, "deploy target=prod")
+    _blocked_as(code, err, "qa,production")
+    assert "requires explicit human approval" in err, err
+    assert repo.in_flight() is None
+    repo.approve("production")
+    code, err = run_gate(flavour, repo, "deploy target=prod")
+    assert code == 0, err
+    assert repo.in_flight() == f"qa,production {repo.sha}"
+
+
+@pytest.mark.parametrize("flavour,command", _cases(["git push", "git push prod"]))
+def test_a_short_command_inside_two_deploys_is_gated_not_locked_out(
+        flavour, command, tmp_path):
+    """F1. `git push` sits inside both deploys. Blocking it as ambiguous
+    blocked it forever; the union gates it on prod's approval instead.
+    `git push prod` sits only inside prod's."""
+    repo = Repo(tmp_path / "r", {
+        "staging": _env("git push staging main"),
+        "prod": _env("git push prod main", human=True)})
+    code, err = run_gate(flavour, repo, command)
     assert code == 2, err
-    assert _AMBIGUOUS in err, err
-    assert "qa" in err and "production" in err, err
+    assert "requires explicit human approval" in err, err
+    repo.approve("prod")
+    code, err = run_gate(flavour, repo, command)
+    assert code == 0, err
+    expect = "staging,prod" if command == "git push" else "prod"
+    assert repo.in_flight() == f"{expect} {repo.sha}"
+
+
+@pytest.mark.parametrize("flavour,command", _cases(["./deploy.sh", "./deploy.sh --prod"]))
+def test_a_deploy_that_prefixes_another_carries_its_requirements(
+        flavour, command, tmp_path):
+    """F1. `./deploy.sh` is inside `./deploy.sh --prod`, so each command
+    matches both environments, and prod's `requires` applies to both."""
+    repo = Repo(tmp_path / "r", {
+        "qa": _env("./deploy.sh"),
+        "prod": dict(_env("./deploy.sh --prod"), requires=["qa"])})
+    code, err = run_gate(flavour, repo, command)
+    _blocked_as(code, err, "qa,prod")
+    assert "'qa' has no all-pass row" in err, err
+    (repo.root / ".work" / "PROMOTIONS.md").write_text(
+        "| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n"
+        f"| 2026-10-04 | qa | {repo.sha} | pass | pass | pass | t |\n", encoding="utf-8")
+    code, err = run_gate(flavour, repo, command)
+    assert code == 0, err
+    assert repo.in_flight() == f"qa,prod {repo.sha}"
+
+
+@pytest.mark.parametrize("flavour,deploys", _cases([[], [""]]))
+def test_an_empty_deploy_list_declares_nothing(flavour, deploys, tmp_path):
+    """#489 B1. The .ps1 unrolled `[]` to null in an if-expression and refused
+    the map, blocking every PowerShell command in the repo."""
+    repo = Repo(tmp_path / "r", {"empty": _env(deploys),
+                                 "prod": _env("./deploy.sh prod", human=True)})
+    code, err = run_gate(flavour, repo, "echo hi")
+    assert code == 0, err
+    assert repo.in_flight() is None
+    code, err = run_gate(flavour, repo, "./deploy.sh prod")
+    _blocked_as(code, err, "prod")
+
+
+@pytest.mark.parametrize("flavour,text", _cases([
+    '{"environments": {"prod": {"deploy": "deploy-prod", "rollback": "none", '
+    '"rollbackReason": "f", "requireHuman": true, "requireHuman": false}}}\n',
+    '{"environments": {"prod": {"deploy": "deploy-prod", "rollback": "none", '
+    '"rollbackReason": "f", "requireHuman": true}, "prod": {"deploy": "x", '
+    '"rollback": "none", "rollbackReason": "f"}}}\n']))
+def test_an_exact_duplicate_key_refuses_the_map(flavour, text, tmp_path):
+    """N3. `"requireHuman": true, "requireHuman": false` reads as gated and
+    applied as not gated (both parsers keep the last)."""
+    repo = Repo(tmp_path / "r", text)
+    code, err = run_gate(flavour, repo, "deploy-prod")
+    assert code == 2, err
+    assert "PROMOTION BLOCKED" in err and "duplicate" in err, err
+    assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour,human", _cases([[0], {}, [], ["yes"]]))
+def test_a_non_scalar_require_human_refuses_the_map(flavour, human, tmp_path):
+    """N2. `[0]` is truthy to python and falsy to PowerShell; `{}` the
+    reverse. Neither is a yes or a no."""
+    cfg = _env("deploy-prod")
+    cfg["requireHuman"] = human
+    repo = Repo(tmp_path / "r", {"prod": cfg})
+    code, err = run_gate(flavour, repo, "deploy-prod")
+    assert code == 2, err
+    assert "requireHuman" in err, err
     assert repo.in_flight() is None
 
 
@@ -268,13 +356,13 @@ def test_the_committed_map_uses_the_same_rule(flavour, deploy, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
-def test_the_committed_map_is_ambiguous_too(flavour, tmp_path):
+def test_the_committed_map_applies_the_union_too(flavour, tmp_path):
     repo = Repo(tmp_path / "r", {"qa": _env("deploy target=Prod"),
                                  "production": _env("deploy target=prod")})
     repo.write_map({"qa": _env("x-renamed")})
     code, err = run_gate(flavour, repo, "deploy target=prod")
-    assert code == 2, err
-    assert _AMBIGUOUS in err, err
+    _blocked_as(code, err, "qa,production")
+    assert "uncommitted changes" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -407,6 +495,23 @@ _AGREEMENT = [
      '"rollback": "none", "rollbackReason": "f", '
      '"requireHuman": false, "RequireHuman": true}}}\n',
      ["deploy-prod"]),
+    # union (F1), empty deploys (B1), duplicates (N3), requireHuman shape (N2)
+    ({"staging": "git push staging main", "prod": _env("git push prod main", human=True),
+      "dev": "./deploy.sh", "live": dict(_env("./deploy.sh --prod"), requires=["dev"])},
+     ["git push", "git push staging", "git push prod main", "./deploy.sh",
+      "./deploy.sh --prod", "make"]),
+    ({"empty": _env([]), "blank": _env([""]), "prod": "./deploy.sh prod"},
+     ["echo hi", "./deploy.sh prod", "Get-ChildItem"]),
+    ('{"environments": {"prod": {"deploy": "deploy-prod", "rollback": "none", '
+     '"rollbackReason": "f", "requireHuman": true, "requireHuman": false}}}\n',
+     ["deploy-prod", "echo hi"]),
+    ('{"environments": {"a": {"deploy": "x-a", "rollback": "none", '
+     '"rollbackReason": "f"}, "a": {"deploy": "x-b", "rollback": "none", '
+     '"rollbackReason": "f"}}}\n',
+     ["x-a", "x-b"]),
+    ({"prod": dict(_env("deploy-prod"), requireHuman=[0]),
+      "qa": dict(_env("deploy-qa"), requireHuman={})},
+     ["deploy-prod", "deploy-qa"]),
     # trailing newline / CR / whitespace (NIT1, NIT2)
     ({"prod": "deploy prod --force"},
      ["deploy prod\n", "deploy prod\r\n", "deploy prod\n\r", " ", "\n\t",
@@ -417,11 +522,9 @@ _AGREEMENT = [
 def _chosen(flavour, repo, command):
     repo.clear_in_flight()
     code, err = run_gate(flavour, repo, command)
-    if code == 2 and _AMBIGUOUS in err:
-        return "AMBIGUOUS"
     if code == 2:
-        # Which environment, or that the map was refused, is the comparison.
-        named = re.search(r"PROMOTION BLOCKED \(([^,)]+)", err)
+        # Which environments, or that the map was refused, is the comparison.
+        named = re.search(r"PROMOTION BLOCKED \((.+?)(?:, sha |\):)", err)
         return f"BLOCKED {named.group(1)}" if named else "BLOCKED: map"
     assert code == 0, f"{flavour} exited {code} on {command!r}: {err}"
     marker = repo.in_flight()
