@@ -18,7 +18,8 @@ Rules, each with a test in plugin/crew/tests/test_crew_memory.py:
   all end a line.
 - A body is `pointer`, else `malformed`, else `full-text`. The first
   non-blank line, with Cf characters removed and then stripped, that starts
-  `vault`, optional whitespace and `:` in any case is a pointer attempt: it
+  `vault`, optional whitespace and `:` in any case, and also holds `note:` or
+  `|`, is a pointer attempt: it
   must be the whole body and match the grammar exactly, or it is `malformed`
   (never read as full text, never resolved). The note path refuses `:` in
   any segment and any Cc, Cf, Zl or Zp character.
@@ -64,6 +65,10 @@ CLEAN = ("resolved", "full-text")
 _POINTER = re.compile(r"vault: ([A-Za-z0-9][A-Za-z0-9 ._-]{0,63}) \| note: (.*)")
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
 _ATTEMPT = re.compile(r"vault\s*:", re.IGNORECASE)
+# Without one of these a `vault:` line is prose ("Vault: keep client notes in
+# the work vault"), not a pointer attempt.
+_ATTEMPT_MARK = re.compile(r"note\s*:|\|", re.IGNORECASE)
+CONFIG_CAP = 1024 * 1024  # bytes; a larger config file is "config unreadable"
 LEGACY_NAME = "memory"
 
 
@@ -121,12 +126,14 @@ def classify(body):
     """`(kind, vault, note, reason)` for a body; kind is pointer / malformed /
     full-text. The first non-blank line, with Cf characters removed and then
     stripped, that starts `vault` and optional whitespace and `:` (any case)
-    is a pointer attempt: it must be the whole body and match the grammar
-    exactly, or it is `malformed`. A lone CR ends a line, so a CR inside a
+    and also holds `note:` (optional whitespace) or `|` is a pointer
+    attempt: it must be the whole body and match the grammar exactly, or it
+    is `malformed`. Without that mark a `vault:` line is prose. A lone CR ends a line, so a CR inside a
     pointer line leaves a second line and is `malformed` too."""
     lines = [line for line in _LINE_BREAK.split(body) if line.strip()]
     probe = "".join(ch for ch in lines[0] if unicodedata.category(ch) != "Cf") if lines else ""
-    if not _ATTEMPT.match(probe.strip()):
+    probe = probe.strip()
+    if not (_ATTEMPT.match(probe) and _ATTEMPT_MARK.search(probe)):
         return "full-text", None, None, "not a pointer; nothing to resolve"
     line = lines[0]
     if len(lines) != 1:
@@ -179,6 +186,16 @@ def _crew_problem(data):
     return None
 
 
+def _no_duplicates(pairs):
+    """json's object hook: a key given twice is ambiguous, not "the last"."""
+    data = {}
+    for key, value in pairs:
+        if key in data:
+            raise ValueError(f"duplicate key {key!r}")
+        data[key] = value
+    return data
+
+
 def _config(path, schema):
     """`(data, problem, present)`. Absent ONLY when lstat says
     FileNotFoundError; anything else there - a dangling link, any other
@@ -192,7 +209,12 @@ def _config(path, schema):
         return None, f"config unreadable: {path}: {exc.strerror or exc}", True
     try:
         with _open_regular(path) as handle:
-            data = json.loads(handle.read().decode("utf-8-sig"))
+            raw = handle.read(CONFIG_CAP + 1)
+        if len(raw) > CONFIG_CAP:
+            return None, f"config unreadable: {path}: larger than {CONFIG_CAP} bytes", True
+        data = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=_no_duplicates)
+    except RecursionError:
+        return None, f"config unreadable: {path}: nested too deeply", True
     except (OSError, ValueError) as exc:
         return None, f"config unreadable: {path}: {getattr(exc, 'strerror', None) or exc}", True
     if not isinstance(data, dict):
@@ -308,7 +330,7 @@ def note_path(vault, note):
     except OSError as exc:
         return None, "unreadable", f"{note}: cannot read it: {exc.strerror or exc}"
     if not stat.S_ISREG(mode):
-        return None, "note-missing", f"{note} is not a file in the vault"
+        return None, "unreadable", f"{note} is there but not a regular file - not read"
     try:
         _open_regular(real).close()
     except OSError as exc:

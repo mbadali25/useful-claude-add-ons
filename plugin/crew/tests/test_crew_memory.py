@@ -163,7 +163,7 @@ def test_pointer_grammar_accepts(host, capsys, body, newline, note):
     "vault: work | note: notes/fa\x01ct.md",
     "vault: work | note: notes/fact.md | extra: x.md",
     "vault: work | note: notes/ fact.md",
-    "vault: work",
+    "vault: work | notes/fact.md",
 ], ids=["abs-posix", "drive", "backslash", "dotdot", "dot", "empty-segment", "not-md",
         "empty-name", "long-name", "ctrl-name", "ctrl-path", "second-field",
         "segment-space", "no-note"])
@@ -285,10 +285,6 @@ def test_state_vault_unavailable(host, capsys):
 def test_state_note_missing(host, capsys):
     host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
     mem = host.memory("vault: work | note: notes/other.md\n")
-    _assert_degraded(*resolve(host, mem, capsys), "note-missing")
-    # A directory where the note should be is not a note.
-    (host.base / "vaults" / "work" / "dir.md").mkdir()
-    mem = host.memory("vault: work | note: dir.md\n")
     _assert_degraded(*resolve(host, mem, capsys), "note-missing")
 
 
@@ -970,3 +966,82 @@ def test_open_regular_refuses_a_fifo_without_blocking(tmp_path):
     except subprocess.TimeoutExpired:
         pytest.fail("_open_regular blocked on a FIFO")
     assert proc.returncode == 3, proc.stderr.decode("utf-8")
+
+
+# --- review round 3 (22271e7d) ---------------------------------------------
+
+@pytest.mark.parametrize("body", [
+    "Vault: keep client notes in the work vault, not personal.\n",
+    "Vault: keep client notes in the work vault, not personal.\nA second line of prose.\n",
+    "vault: the big one\n",
+], ids=["vault-prose", "vault-prose-two-lines", "lowercase-prose"])
+def test_prose_starting_vault_is_full_text(host, capsys, body):
+    """FIX1, must-allow: a real memory that happens to start `Vault:` is not a
+    pointer attempt unless the line also carries `note:` or `|`."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(body)
+    code, out = resolve(host, mem, capsys)
+    assert (code, state_of(out)) == (0, "full-text"), out
+
+
+@pytest.mark.parametrize("body", [
+    "Vault : work | note: notes/x.md",
+    "VAULT: work note : notes/x.md",
+    "vault: work | notes/x.md",
+    "vault: work | note: notes/fact.md\nand prose after it",
+], ids=["space-colon-capital", "note-colon-no-bar", "bar-no-note", "pointer-then-prose"])
+def test_near_pointer_with_note_or_bar_is_malformed(host, capsys, body):
+    """FIX1, must-block: a `vault:` line that also has `note:` or `|` is a
+    pointer attempt, and anything short of the grammar is malformed."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(body + "\n")
+    _assert_degraded(*resolve(host, mem, capsys), "malformed")
+
+
+def test_duplicate_config_keys_are_unreadable(host, capsys):
+    """N1: a key given twice is ambiguous (json keeps the last silently)."""
+    good, other = str(host.vault("work")), str(host.vault("other"))
+    host.obsidian('{"vaults": {"work": {"path": %s}, "work": {"path": %s}}}'
+                  % (json.dumps(other), json.dumps(good)))
+    mem = host.memory("vault: work | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: ") and "duplicate" in reason_of(out)
+
+
+@pytest.mark.parametrize("kind", ["deep", "oversized"])
+def test_hostile_config_is_unreadable_and_check_survives(host, capsys, kind):
+    """N2: a config nested past the recursion limit, or larger than the read
+    cap, is `config unreadable` - for resolve, and for check in a subprocess."""
+    if kind == "deep":
+        host.obsidian("[" * 100000)
+    else:
+        pad = " " * (crew_memory.CONFIG_CAP + 10)
+        host.obsidian('{"vaults": {"work": {"path": %s}}}%s'
+                      % (json.dumps(str(host.vault("work"))), pad))
+    mem = host.memory("vault: work | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: "), out
+    proc = subprocess.run(
+        [sys.executable, SCRIPT, "check", "--memory-dir", str(host.mem), "--root",
+         str(host.root), "--json"],
+        capture_output=True, check=False, env=host.env(), timeout=60)
+    assert proc.returncode == 1, proc.stderr.decode("utf-8")
+    rows = json.loads(proc.stdout.decode("utf-8"))["rows"]
+    assert [r["state"] for r in rows] == ["no-vault-config"]
+
+
+def test_non_regular_note_is_unreadable(host, capsys):
+    """N4: a directory or FIFO where the note should be is there but cannot be
+    read as a note: `unreadable`, never `note-missing` (which a writer may
+    take as leave to create it)."""
+    vault = host.vault("work")
+    host.obsidian({"vaults": {"work": {"path": str(vault)}}})
+    (vault / "dir.md").mkdir()
+    mem = host.memory("vault: work | note: dir.md\n")
+    _assert_degraded(*resolve(host, mem, capsys), "unreadable")
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(str(vault / "pipe.md"))
+        mem = host.memory("vault: work | note: pipe.md\n", name="b.md")
+        _assert_degraded(*resolve(host, mem, capsys), "unreadable")
