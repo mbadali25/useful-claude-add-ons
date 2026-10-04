@@ -1027,7 +1027,7 @@ T-0010's policy rule 29 (`:355-362`) sits after T-0072's autopilot rule 28 (`:34
 2026-09-29, T-0094: this sentence numbered them 31, 32, 29 and 28 at `bbd9a66d`, one too high;
 `json.load` puts T-0023's routing rule at index 30, and at 31 since L-0516's rule 10.)
 
-**Autopilot rows (T-0057, crew 1.0.399).** DERIVED at `9c013fb1` (review round 3); lines
+**Autopilot rows (T-0057, crew 1.0.345).** DERIVED at `9c013fb1` (review round 3); lines
 re-read at `bb89215d` after the merge onto T-0069's main, +1 from line 70 on after the batch-5 merge. Five rows
 follow `status` in `PHRASES` (`plugin/crew/hooks/scripts/crew_route.py:153`): `autopilot-status`,
 `assign`, `goal`, `goal-resume`, `focus`, with rules `autopilot`, `autopilot-text`,
@@ -1055,7 +1055,7 @@ line (`:545`, "answer the prompt as written", never "which ticket"; `_TICKETED` 
 goal and sleep) with `GOAL_UNDO` (`:205`, `:535`). JUDGEMENT: the sabotage mutations for
 these branches are L-0661 (harness, its own PR).
 
-**Wave, split, sleep and wake (L-0662, crew 1.0.406).** DERIVED at `bb89215d`. Four rows follow
+**Wave, split, sleep and wake (L-0662, crew 1.0.345).** DERIVED at `bb89215d`. Four rows follow
 `focus` (`crew_route.py:166-174`). `wave` (`autopilot-tickets`) matches `_IDS` (`:131`, two or
 more `_ONE_ID` joined by `,`, `and` or `, and`); `match` reads them back with `_WAVE_ID` (`:130`),
 upper-cases and de-duplicates them in order into `tickets`, and a list of fewer than two is no
