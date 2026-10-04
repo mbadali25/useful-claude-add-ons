@@ -27,6 +27,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   record reads `unknown`. N2: `wake` says when whether the schedule is asleep cannot be told
   rather than "resumes at <now>". N3: the record is read only as a regular file (`lstat`,
   `O_NOFOLLOW|O_NONBLOCK`, `fstat`, 64 KiB cap); a FIFO, device, directory or symlink is `unknown`.
+- **Review round 2.** Each read-safety layer has its own test (a removal goes red). The cap is 24
+  wall-clock hours with a 25-real-hour backstop, so a sleep on a fall-back day (03:30, window
+  23:00-03:00) writes a record its reader trusts; `sleep` validates the record it is about to
+  write and refuses rather than report a sleep it would distrust. A spring-forward `until` at a
+  skipped time resolves forward; `wake` writes whole seconds.
 - **Refusals.** `sleep` exits 2 with `refused: ...` and writes nothing unless
   `scope.allowCliApproval` is exactly `true`, autopilot is armed, `.crew/config.json` and its
   `autopilot.sleep` can be read, and the window is open or an override is stricter than its day

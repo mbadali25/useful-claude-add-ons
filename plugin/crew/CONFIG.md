@@ -2733,7 +2733,11 @@ runs `crew_autopilot.py wake --root .`. Both keep one file,
 moved into place with `os.replace`), shared by every worktree of the
 repository and never read from a worktree or `.work/`. It is read only when
 `lstat` says it is a regular file, opened without following a symlink or
-blocking on a FIFO, and re-checked with `fstat`; anything else is `unknown`.
+blocking on a FIFO, re-checked with `fstat`, and read up to 64 KiB; anything
+else is `unknown` (each layer has its own test). `sleep` checks the record it
+is about to write with the same reader and refuses rather than report a sleep
+the reader would distrust; an `until` at a wall-clock time a spring-forward
+skips resolves forward to the next valid instant.
 **Until L-1504, a manual sleep only tightens** (owner decision 2026-10-04,
 review B1 of #427): the session can run `crew_autopilot.py sleep` itself
 (`scope_guard.py` lets it through and `--by` is free text), so outside the
@@ -2755,7 +2759,8 @@ resumes, or that whether it is asleep cannot be told; with nothing to undo it
 prints `already awake`. Fail closed: a record that is unreadable, not an
 object, missing a field, with a `state` other than `asleep`/`awake`, an `at`
 or `until` that is not a UTC-aware ISO time (an old naive record included), an `at` in the future, or an `until`
-more than 24 hours after `at` is `unknown` with a warning naming the file —
+more than 24 wall-clock hours (or, as a backstop, 25 real hours, one cycle
+across a fall-back) after `at` is `unknown` with a warning naming the file —
 per key the stricter of the day value and the night override, never "not
 set", so a planted file cannot loosen anything. An expired record is ignored with a warning. A manual `asleep` is
 honoured only while `scope.allowCliApproval` is exactly `true` at read time

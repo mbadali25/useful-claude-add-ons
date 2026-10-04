@@ -63,7 +63,8 @@ not have approved it: in the morning that ticket waits for `/crew:approve <id>`.
 and `/crew:autopilot wake` ends it now (L-0652); they are autopilot's only other writers, and
 write only `<git-common-dir>/crew/autopilot-sleep.json`. Until L-1504 a manual sleep only
 tightens: outside the window it applies a night value only where it is stricter than the day
-value. `sleep` needs `scope.allowCliApproval: true` and an override stricter than its day value. The
+value. `sleep` needs `scope.allowCliApproval: true` and an override stricter than its day value, or the
+window open. The
 approval is a step you take, not a lock.
 
 `crew_ticket.py status --ticket T-0042` prints one of three states:

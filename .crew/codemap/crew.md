@@ -817,14 +817,14 @@ unset (`plugin/crew/hooks/scripts/crew_config_menu.py:82-83`). JUDGEMENT: `deplo
 `_settings_at` too but only `deploy`, so sleep cannot reach it. Tests
 `plugin/crew/tests/test_crew_autopilot_sleep.py`; no committed mutations yet (L-0651).
 
-**L-0652 (manual sleep and wake; DERIVED after the #427 review fixes on L-0652-build, stacked on
+**L-0652 (manual sleep and wake; DERIVED after #427 review rounds 1 and 2 on L-0652-build, stacked on
 T-0053-build `4cdf076f`; the T-0053 citations above are T-0053's own).**
 `crew_sleep` stays free of file input and output: `read_manual`
-(`plugin/crew/hooks/scripts/crew_sleep.py:176`) judges the record through `_manual_problem` (`:196`)
+(`plugin/crew/hooks/scripts/crew_sleep.py:191`) judges the record through `_manual_problem` (`:211`)
 into `none|valid|expired|untrusted`; `at`/`until` must be UTC-aware ISO and are compared in UTC
-(`to_utc`, `:159`; a naive record is untrusted, review N1); `next_edge` (`:150`) is the next time of
+(`to_utc`, `:163`, resolves a skipped spring-forward time forward; a naive record is untrusted, review N1); `next_edge` (`:154`) is the next time of
 day strictly after now, the current window's end inside it and the next window's end outside;
-`MANUAL_SLEEP_HOURS` (`:57`) and `MANUAL_FILE` (`:54`). `resolve` (`:225`) takes the record and
+`MANUAL_SLEEP_HOURS` (`:57`), `MANUAL_FILE` (`:54`), and the caps `MANUAL_MAX` (24 wall-clock hours, measured by `_wall`, `:174`) and `MANUAL_MAX_REAL` (25 real, `:61-62`). `resolve` (`:242`) takes the record and
 `sleep_allowed`: untrusted is `unknown` (source manual), expired is the schedule with a warning, a
 manual asleep without the gate is `unknown`, a manual asleep outside the window and a manual awake
 over an asleep or unknown schedule carry `tightenOnly` (owner decision 2026-10-04, review B1: a
@@ -833,13 +833,13 @@ manual sleep only tightens until L-1504). `crew_autopilot._sleep_at`
 no `.git` entry at all; otherwise `lstat` must say regular file and `_read_regular` (`:960`) opens
 with `O_NOFOLLOW|O_NONBLOCK` and re-checks `fstat`, review N3) and `crew_ticket.cli_approval_allowed`;
 `_overlay` (`:854`) is stricter-only under `tightenOnly` or `unknown` (`:866`); `_decision`
-(`:1259`) names a manual sleep's end. `sleep_now` (`:986`, refusing when no override is stricter by
-`_stricter` (`:1028`) outside the window) and `wake_now` (`:1034`, saying when the schedule cannot be
+(`:1264`) names a manual sleep's end. `sleep_now` (`:986`, validating its record with `read_manual` before writing, refusing when no override is stricter by
+`_stricter` (`:1033`) outside the window) and `wake_now` (`:1039`, saying when the schedule cannot be
 told, review N2) are the two new writers, through `_manual_path` (`:921`, `<git-common-dir>/crew/`)
-and `crew_ticket._write_json` (temp file, `os.replace`); `_manual_main` (`:1923`) makes a crash exit
-1; the subparsers are at `:1989`. `SUBCOMMANDS` gains both on a second line (`:235`) because the
-first line is a sabotage anchor; `route_args` (`:1617`) stops a second word at `:1629`;
-`_sleep_line` (`:1893`) adds `source=` and `until=`. Tests:
+and `crew_ticket._write_json` (temp file, `os.replace`); `_manual_main` (`:1928`) makes a crash exit
+1; the subparsers are at `:1994`. `SUBCOMMANDS` gains both on a second line (`:235`) because the
+first line is a sabotage anchor; `route_args` (`:1622`) stops a second word at `:1634`;
+`_sleep_line` (`:1898`) adds `source=` and `until=`. Tests:
 `plugin/crew/tests/test_crew_autopilot_sleep.py` (L-0652 section),
 `test_crew_autopilot_policy.py::test_approve_sleep_and_wake_are_the_only_writing_subcommands`,
 `test_crew_autopilot_status.py::test_route_args_sleep_and_wake_take_no_ticket`; mutations go to
