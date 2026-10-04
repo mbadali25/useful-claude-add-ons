@@ -2985,6 +2985,8 @@ R8_MUST_BLOCK = _normalise([
     ("r8-ps-dot-group-glued", "PowerShell", ".('terraform')destroy",
      _o(**_STAGING)),
     ("r8-ps-amp-gcm", "PowerShell", "& (gcm terraform) destroy", _o(**_STAGING)),
+    ("r8-ps-assign-dot-glued", "PowerShell", "$x = .'terraform'destroy",
+     _o(**_STAGING)),
     # B5: `workspace select` given a group.
     ("r8-ps-ws-select-group-concat", "PowerShell",
      "terraform workspace select ('-or-'+'create') production", _o(**_STAGING)),
@@ -3013,6 +3015,8 @@ R8_MUST_BLOCK = _normalise([
      "terragrunt stack --non-interactive run apply", _o(**_STAGING)),
     ("r8-tg-stack-opt-run-destroy", "Bash",
      "terragrunt stack --no-color run destroy", _o(**_STAGING)),
+    ("r8-tg-stack-run-opt-destroy", "Bash",
+     "terragrunt stack run --no-color destroy", _o(**_STAGING)),
     # F2: an alias for Invoke-Expression.
     ("r8-ps-set-alias-iex", "PowerShell",
      'Set-Alias x iex; x "terraform destroy"', _o(**_STAGING)),
@@ -3187,3 +3191,18 @@ def test_round8_terragrunt_exec_runs_what_it_is_given(command, rule):
     """`terragrunt exec -- <cmd>` is unwrapped like any listed wrapper, so
     every rule judges the command it runs (review of #347, round 2)."""
     assert rule in [f.rule for f in cloud_guard.scan("bash", command)], command
+
+
+@pytest.mark.parametrize("text, words, called", [
+    ('$x = iex("terraform destroy")', ["$x", "=", "iex", "terraform destroy"],
+     False),
+    ('$x = & "terraform" destroy', ["$x", "=", "terraform", "destroy"], True),
+    ("$x = .'terraform' destroy", ["$x", "=", ".", "terraform", "destroy"],
+     False),
+])
+def test_round8_ps_lexer_reads_a_call_after_an_assignment(text, words, called):
+    """`$x = iex(...)`, `$x = & ...` and `$x = .'...'` are one command whose
+    command word follows the assignment (review of #347, round 2)."""
+    cmds, _subs = cloud_guard._lex_ps(text)  # pylint: disable=protected-access
+    assert [[str(w) for w in c.words] for c in cmds] == [words]
+    assert cmds[0].called is called

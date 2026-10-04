@@ -2091,8 +2091,7 @@ def _ps_unplain(cmd, head_name):
     """Why one PowerShell command, on a line whose raw text names a guarded
     tool, is not a plain command the guard reads whole -- or None. The
     structural backstop (review of #347, round 2): a splat; a call by `&`/
-    `.` whose command word is not a plain name; a command word a group
-    makes; an alias definition; Invoke-Expression given a group or a
+    `.` whose command word is not a plain name; an alias definition; Invoke-Expression given a group or a
     variable; a group among terraform's own arguments. Each is could not
     tell, whatever the rest of the reading found."""
     words = [str(w) for w in cmd.words]
@@ -2111,8 +2110,6 @@ def _ps_unplain(cmd, head_name):
     if called and (type(cmd.words[start]).__name__ != "_Bare"
                    or not _PS_NAME_RE.match(words[start])):
         found = "a call whose command word is not a plain name"
-    elif start in groups:
-        found = "a command word a group makes"
     elif head in _PS_ALIASERS:
         found = "an alias definition"
     elif head in _PS_EVAL and (later or any("$" in w for w in words)):
