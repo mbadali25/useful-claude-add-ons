@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.324: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
+### Added — `crew` 1.0.328: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
 
 - **What changed.** `crew_config.inert_settings(root)` names every setting the
   installed crew does not act on: a resolved key outside `default_config()`
