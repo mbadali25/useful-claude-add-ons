@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.198: a graph build never reads a secrets-denylisted file (T-0064)
+### Added — `crew` 1.0.234: a graph build never reads a secrets-denylisted file (T-0064)
 
 - graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore`
   does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked
@@ -15,15 +15,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   deny rule in `.claude/settings.json` and `.claude/settings.local.json` - and lists every file on
   disk (tracked, untracked or ignored) it matches that the root `.graphifyignore` does not exclude,
   judged by git's own matcher in a scratch repository. `--check` exits 0 covered, 1 uncovered
-  (paths only, never content), 2 unknown; `--write` appends only the missing patterns under one
-  marked block, atomically.
+  (paths only, never content), 2 unknown; `--write` appends the missing patterns, then each path
+  they still miss as an anchored literal (the denylist match ignores case, `.graphifyignore`'s
+  does not, so `.ENV` gets `/.ENV`), under one marked block, atomically, through a symlinked
+  `.graphifyignore`, keeping its mode and line ending. A symlink is judged by its target too, and
+  `Read(.\secrets\**)` is read as `Read(./secrets/**)`.
 - `crew_refresh_check.py` reports the graph `unknown` and not refreshable, naming the paths and
   `crew_graph_ignore.py --write`, while any denylisted path is uncovered or coverage cannot be told,
   so neither it nor autopilot names a graphify command then. `/crew:status` gains a `graph-ignore`
   line: `ok`, `UNCOVERED` with the paths, or `unknown` with the reason; graphify's post-commit hook
   bypasses crew, so this line is its warning. Every unknown stays unknown, never covered: git
   missing, a settings file that does not parse, an unreadable denylist or `.graphifyignore`, a
-  nested `.graphifyignore`, a deny-all `Read`.
+  nested `.graphifyignore`, a nested repository or submodule `.graphifyignore` does not exclude
+  (git lists it as `sub/`, never its files), a symlink resolving outside the repo or not at all,
+  a deny-all `Read`.
 - crew-graph's **Build** runs `--check` first and stops on 1 or 2; new **Secrets denylist** and
   **Tainted graph** (delete the output, `--write`, rebuild) sections. crew-setup gains step 3e
   (`--write`). The onboard, upgrade and status commands, the README, `PLUGINS.md` and the
