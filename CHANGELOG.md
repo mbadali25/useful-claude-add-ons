@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.390: auto wrap-up before auto-clear (T-0017)
+### Added — `crew` 1.0.334: auto wrap-up before auto-clear (T-0017)
 
 - **What changed.** A new machine opt-in, `context.autoClear.wrapUp` (default
   `null`, off): only the machine file's exact `true` arms it, a repo `false`
