@@ -70,7 +70,9 @@ _ATTEMPT = re.compile(r"vault\s*:", re.IGNORECASE)
 # the work vault"), not a pointer attempt.
 _ATTEMPT_MARK = re.compile(r"\bnote\s*:|\|", re.IGNORECASE)
 _WRAPPED = re.compile(r"\||note\s*:", re.IGNORECASE)
-_BARE = re.compile(r"vault\s*:\s*[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", re.IGNORECASE)
+# A bare vault name, or nothing at all after the colon (a pointer broken
+# right after `vault:`), is a pointer attempt too.
+_BARE = re.compile(r"vault\s*:(?:\s*[A-Za-z0-9][A-Za-z0-9 ._-]{0,63})?", re.IGNORECASE)
 CONFIG_CAP = 1024 * 1024  # bytes; a larger config file is "config unreadable"
 LEGACY_NAME = "memory"
 
@@ -134,7 +136,8 @@ def _attempt(lines):
     removed and stripped, starts `vault` + optional whitespace + `:` (any
     case), and either the `note:`/`|` mark is on that line, or the second
     non-blank line starts with `|` or `note:` (a pointer wrapped before its
-    `|`), or the first line is a bare vault name with nothing after it. A
+    `|`), or the first line is a bare vault name with nothing after it, or
+    is only `vault` + optional whitespace + `:` with nothing after the colon. A
     mark further down - a table, a `Note:` line - is prose, as is
     `footnote:` (`note` must start a word). `Vault: keep client notes in the
     work vault, not personal.` has none of these, so it is prose."""

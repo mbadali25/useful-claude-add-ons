@@ -57,6 +57,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   uncaught; a non-regular note read as missing; the mark looked for on the first line only; no
   bare-name rule; every `vault:` line an attempt; no prose hint; the mark searched over the whole
   body; no word boundary before `note`; a mark anywhere on line 2): each turned a named test red.
+- **Landing NIT.** A first line that is only `vault` + optional whitespace + `:`, nothing
+  after the colon, is a pointer attempt: `vault:\nwork | note: notes/fact.md` reads as
+  `malformed`, not `full-text` (`_BARE`'s name is optional).
+  `test_a_first_line_of_only_vault_colon_is_malformed` (three bodies) was red before; the
+  `crew-memory` skill, the memory guide (rebuilt HTML, DOCX, PDF) and the code map say so.
 
 ### Fixed — `crew` 1.0.330: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
 
