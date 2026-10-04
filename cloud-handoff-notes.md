@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 13:48 UTC
+Last updated: 2026-10-04 13:49 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:49: #364 T-0052 r4 1b0de3cb: 0/0/1 CLEAN (all rounds closed/owner-accepted). Asked #365 (1.0.391) and #366 (1.0.392) builders to re-merge T-0052-build 1b0de3cb before review. OWNER-equivalent call on T-0058 decision 1 (absent sources unmeasured): proceeding with recommended acceptance - flagged to owner, reversible.
 - 13:48: #338 L-0582 re-review 0d1766b1: 0/0/2 CLEAN (NITs: stranded note for non-.git layouts; file follow-up tickets at land). Still a DRAFT PR - mark ready at landing.
 - 13:48: #364 r3 fixes pushed 1b0de3cb (cancelled/superseded children ignored; refusal names exits; limit documented + TODO follow-up; 100 tests; 27 mutations; 1.0.387). Re-review started.
 - 13:48: #338 fix pushed 0d1766b1 (could-not-tell for non-.git common dir layouts; tests red-first; TODO follow-ups; 1.0.388). Re-review started.
