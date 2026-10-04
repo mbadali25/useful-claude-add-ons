@@ -751,8 +751,12 @@ def _run_in(job, argv, cwd, timeout, env):
     # (macOS), communicate() has reaped the leader, so its group id may
     # already belong to an unrelated process: nothing is signalled, and a
     # clean exit's leftovers survive (ADR 0005; review round 9 FIX :727).
+    # A job that cannot be ended is could-not-check, as on POSIX (L-0605).
     if job is not None:
-        job.terminate()
+        try:
+            job.terminate()
+        except OSError as exc:
+            raise CouldNotCheck(f"could not end what {argv[0]} left running: {exc}") from exc
     return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
 
 

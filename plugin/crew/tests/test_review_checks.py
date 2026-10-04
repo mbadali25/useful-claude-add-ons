@@ -2001,6 +2001,43 @@ def test_a_linter_that_exits_cleanly_still_has_its_job_ended(tmp_path, fake, mon
     assert [c[0] for c in job.calls] == ["adopt", "terminate", "close"], job.calls
 
 
+class _RefusingJob(_FakeJob):
+    """A job whose TerminateJobObject fails: WindowsJob.terminate raises."""
+    def terminate(self):
+        self.calls.append(("terminate",))
+        raise OSError(5, "TerminateJobObject failed")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_a_job_that_cannot_end_after_a_clean_exit_is_could_not_check(tmp_path, fake, monkeypatch):
+    """L-0605 (Sonnet review of 73af42d7): a clean exit whose leftovers could
+    not be ended is could-not-check (ADR 0005), never a raw OSError."""
+    job = _RefusingJob(str(tmp_path / "pid"))
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(rc, "_group_flags", lambda: {"start_new_session": True})
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    with pytest.raises(rc.CouldNotCheck, match="could not end what .* left running"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 5)  # pylint: disable=protected-access
+
+    assert [c[0] for c in job.calls] == ["adopt", "terminate", "close"], job.calls
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_a_job_that_ends_after_a_clean_exit_returns_the_run(tmp_path, fake, monkeypatch):
+    """The must-allow side: a terminate that succeeds hands back the run."""
+    job = _FakeJob(str(tmp_path / "pid"))
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(rc, "_group_flags", lambda: {"start_new_session": True})
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    result = rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 5)  # pylint: disable=protected-access
+
+    assert isinstance(result, subprocess.CompletedProcess), result
+
+
 # ---- review round 9 (owner grant 2026-10-02: final round 10) ----
 
 def test_a_later_linter_that_raises_never_discards_an_earlier_new_finding(tmp_path, fake):
