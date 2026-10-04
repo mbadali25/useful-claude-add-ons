@@ -779,7 +779,8 @@ def test_context_watch_never_names_a_handoff_outside_the_lane(tmp_path, flavour,
     proc = _context_watch(tmp_path, flavour, wt)
     err = proc.stderr.decode("utf-8", "replace")
     assert proc.returncode == 2, err
-    assert _escaping(kind, main) not in err
+    for named in (_escaping(kind, main), str(main), os.path.realpath(main), "../"):
+        assert named not in err.replace("\\", "/"), err
     assert ".work/HANDOFF.md" in err.replace("\\", "/")
 
 
