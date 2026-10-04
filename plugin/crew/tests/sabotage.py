@@ -2948,9 +2948,9 @@ MUTATIONS = (
         # green; only the provenance case sees "kept" without its caveat.
         "a re-record upgrades a fallback entry to a known start",
         SCOPE_BASE,
-        '        if _is_fallback_entry(entry):\n'
+        '        elif _is_fallback_entry(entry):\n'
         '            return entry["base"], "kept-fallback"\n',
-        '        if _is_fallback_entry(entry):\n'
+        '        elif _is_fallback_entry(entry):\n'
         '            return entry["base"], "kept"\n',
         ("tests/test_scope_base.py::"
          "test_re_recording_a_fallback_entry_keeps_saying_fallback"),
@@ -2961,8 +2961,8 @@ MUTATIONS = (
         # The fixture deletes origin/HEAD so only this candidate can answer.
         "the fallback never tries origin/main",
         SCOPE_BASE,
-        '    candidates = [sym, "origin/main", "main"]\n',
-        '    candidates = [sym, "main"]\n',
+        '    for ref in (sym, "origin/main", "main"):\n',
+        '    for ref in (sym, "main"):\n',
         ("tests/test_scope_base.py::"
          "test_the_fallback_uses_the_remote_default_when_there_is_no_local_main"),
     ),
