@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.226: autopilot's docs phase and tracker step (T-0022)
+### Added — `crew` 1.0.232: autopilot's docs phase and tracker step (T-0022)
 
 - `crew_docs_check.py --root . --ticket <id> [--json] [--explain]`, read-only: one line per document --
   CHANGELOG (per changed marketplace entry), each triggered README, SECURITY.md, TODO.md -- as
