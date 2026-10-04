@@ -2366,7 +2366,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 ## T-0096's verify rule (added 2026-10-04 on `T-0096-build`)
 
-- **DERIVED.** `.crew/verify.json:614` (the last rule): `_common.sh`, both
+- **DERIVED.** `.crew/verify.json:622` (the last rule): `_common.sh`, both
   `cloud-guard` flavours, `promote-gate.ps1`, `auto-clear.ps1` and
   `plugin/crew/tests/test_worktree_config_shell.py` map to that test file through
   `pytest_rule.py`, priced 13s (41 passed in 12.5s with pwsh on PATH on an idle 4-CPU container; 43 after review round 1). It is
