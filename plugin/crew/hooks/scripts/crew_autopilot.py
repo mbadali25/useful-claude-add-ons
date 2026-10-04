@@ -13,20 +13,23 @@
                                      (at most 12 lines; --json is one line)
     python3 crew_autopilot.py approve --root . --ticket <id>
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
+    python3 crew_autopilot.py auto-reject --root . --ticket <id>
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only except
-`approve`, and only when `approval_policy` allows under the configured policy;
-it never accepts a review. That is the single exception (T-0010, below):
-`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
+`approve` and `auto-reject`, each only when its policy allows under the
+configured setting; it never accepts a review. Those are the two exceptions
+(T-0010 and T-0074, below): `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
 T-0072's `deploy-allowed` write no file. `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
 all under `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
 ramp's list, on a ticket's first approval; and, when the review ledger is
 NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
-NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation). `auto-reject` writes only
+the review ledger, through `review_ledger.reject`: REVIEWED -> NEEDS_REPLAN, with
+`rejected.by` the constant AUTO_REJECT_BY. Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
 keeps its own bytecode setting.
 
@@ -71,16 +74,24 @@ force says `take`. Exit 0 valid, 1 not.
   plan fails crew_ticket.validate        plan                stop
   approval not accepted                  approve             stop, unless the policy allows
   review ledger UNKNOWN                  review              stop
-  review ledger NEEDS_REPLAN             replan              stop
+  review ledger NEEDS_REPLAN             replan              stop, unless auto-rejected
   no review round under this plan        implement           /crew:implement <id>
   latest round still reserved            review              stop
-  latest round FINDINGS, not accepted    accept-review       stop
+  latest round FINDINGS, not accepted    accept-review       stop, unless auto-replan
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off):
+an out-of-rounds FINDINGS round with a BLOCK that `auto_replan_policy` allows
+is `auto-replan`, whose command is `auto-reject`; refused only by the cap it
+is the `auto-replan-cap` stop and names every successor plan. A NEEDS_REPLAN
+that autopilot's own reject of the current plan's latest round wrote, whose
+round still passes the policy's round checks and is still allowed, is `replan`
+without a stop. `status` reads neither route (`policy=False`).
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -199,6 +210,8 @@ FIXED_STOPS = (
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
+    ("auto-replan-cap", "autopilot.maxAutoReplans successor plans are already on the "
+                        "ticket's review ledger: the owner decides, with the history"),
 )
 # Enforced by the command's procedure, not by `next` (which sees them only as
 # `no-progress` when the same command comes round again).
@@ -214,8 +227,10 @@ HUMAN_STOPS = (
                        "autopilot.approval allows `crew_autopilot.py approve` "
                        "(needs scope.allowCliApproval: true)")),
     ("review-acceptance", ("accepting review FINDINGS with any BLOCK, or any round "
-                           "review_ledger.py --auto-accept refuses, is the owner's, at "
-                           "every setting")),
+                           "review_ledger.py --auto-accept refuses, is the owner's; a BLOCK "
+                           "is never accepted by autopilot, and with "
+                           "autopilot.maxAutoReplans an out-of-rounds BLOCK round is "
+                           "rejected and replanned instead (T-0074)")),
     ("open-questions", "an open question in direction.md, spec.md or plan.md is answered "
                        "by a person, unless autopilot.questions takes the researched "
                        "recommendation"),
@@ -479,7 +494,8 @@ def _phase(root, ticket, policy=True):
         hint = (_approval_hint(top, ticket) if policy
                 else POLICY_FREE_APPROVE.format(ticket=ticket))
         return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
-    return _review_phase(top, ticket, evidence, answer)
+    found = _review_phase(top, ticket, evidence, answer)
+    return _auto_replan_route(top, ticket, found, answer) if policy else found
 
 
 def _current_rounds(ledger):
@@ -488,6 +504,207 @@ def _current_rounds(ledger):
     successors = ledger.get("successors") or []
     after = successors[-1].get("after_round", 0) if successors else 0
     return rounds[after:] if isinstance(after, int) else rounds
+
+
+# T-0074: the one name `auto-reject` writes as `rejected.by`. No flag sets it.
+AUTO_REJECT_BY = "autopilot (policy: autopilot.maxAutoReplans)"
+# Review round 1 N1: the highest cap a setting can ask for; more reads as this.
+MAX_AUTO_REPLANS = 5
+AUTO_REJECT = ("python3 -B ${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew_autopilot.py "
+               "auto-reject --root . --ticket {ticket}")
+
+
+def _count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def auto_replan_policy(root, ticket):
+    """`{"allow", "reason", "used", "cap", "round", "blocks", "fixes", "capped",
+    "successors"}` -- whether autopilot may reject `ticket`'s final review round
+    itself and replan (T-0074). Pure read. Allows only when autopilot is armed,
+    `autopilot.maxAutoReplans` is 1 or more, `approval_policy` would approve the
+    successor plan, the ledger is REVIEWED, its latest round under this plan is
+    a completed FINDINGS round whose counts and finding lines agree on at least
+    one BLOCK, no round is left, the reviewer is another family than the author
+    (`review_ledger`'s own rule), and fewer than the cap successor plans -- by
+    whoever approved them -- are on the ledger. Anything that raises, or any
+    value of the wrong type, refuses with "could not tell"."""
+    result = {"allow": False, "reason": "", "used": None, "cap": 0, "round": None,
+              "blocks": [], "fixes": [], "capped": False, "successors": []}
+    try:
+        return dict(result, **_auto_replan_decision(root, ticket))
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return dict(result, reason=(f"could not tell whether autopilot may reject the review "
+                                    f"({type(exc).__name__}: {exc})"))
+
+
+def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-statements
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    conf = settings(top)
+    cap = conf.get("maxAutoReplans")
+    if not conf["armed"]:
+        return {"reason": "autopilot.mode is not plan, so autopilot rejects nothing"}
+    if not _count(cap):
+        return {"reason": f"autopilot.maxAutoReplans is {cap!r}: could not tell"}
+    if cap < 1:
+        return {"reason": "autopilot.maxAutoReplans is 0 (off): a BLOCK round stops for "
+                          "the owner"}
+    approval = approval_policy(top, ticket)
+    if approval.get("allow") is not True:
+        return {"cap": cap, "reason": (
+            f"the successor plan could not be self-approved ({approval.get('reason')}), so "
+            "a reject would only take the owner's accept option away")}
+    path = review_ledger.ledger_path(top, ticket)
+    data, state = review_ledger.load(path)
+    if state != "ok":
+        return {"cap": cap, "reason": f"the review ledger is {state}: could not tell"}
+    if data.get("state") != review_ledger.REVIEWED:
+        return {"cap": cap, "reason": (f"the review ledger is {data.get('state') or 'EMPTY'}, "
+                                       f"not {review_ledger.REVIEWED}")}
+    found = _block_round(data, state, ticket, path)
+    if "reason" in found:
+        return dict(found, cap=cap)
+    number, blocks, fixes = found["round"], found["blocks"], found["fixes"]
+    successors = data.get("successors") or []
+    used = len(successors)
+    if used >= cap:
+        return {"cap": cap, "round": number, "used": used, "capped": True,
+                "successors": successors, "reason": (
+                    f"autopilot.maxAutoReplans ({cap}) reached: {used} successor plan(s) "
+                    "on the ledger")}
+    return {"allow": True, "cap": cap, "round": number, "used": used, "blocks": blocks,
+            "fixes": fixes, "successors": successors, "reason": (
+                f"round {number} is FINDINGS with {len(blocks)} BLOCK and no round "
+                f"left; autopilot.maxAutoReplans is {cap} ({used} used) and "
+                f"{approval.get('reason')}")}
+
+
+def _block_round(data, state, ticket, path):  # pylint: disable=too-many-return-statements
+    """Conditions 5-8 of `auto_replan_policy` on a loaded ledger: the latest
+    round under the current plan is a completed FINDINGS round whose counts
+    and single-line finding lines agree on at least one BLOCK, no round is
+    left, and the reviewer is another family (`review_ledger`'s own rule).
+    `{"round", "blocks", "fixes"}`, or a dict with the `reason` it fails. The
+    non-stop `replan` asks it again of the round it rejected (review round 1
+    F1: the reject name alone is a string anyone can type)."""
+    rounds = _current_rounds(data)
+    row = rounds[-1] if rounds else None
+    if not isinstance(row, dict) or row.get("status") != "completed":
+        return {"reason": "no completed review round under the current plan"}
+    number = row.get("round")
+    if row.get("verdict") != "FINDINGS":
+        return {"round": number, "reason": (
+            f"round {number} is {row.get('verdict')!r}, not FINDINGS")}
+    counts, findings = row.get("counts"), row.get("findings")
+    if not isinstance(counts, dict) or not all(_count(counts.get(s))
+                                               for s in ("BLOCK", "FIX", "NIT")):
+        return {"round": number, "reason": (
+            f"round {number}'s counts are {counts!r}, not three non-negative integers: "
+            "could not tell")}
+    if counts["BLOCK"] < 1:
+        return {"round": number, "reason": (
+            f"round {number} has no BLOCK; the 0-BLOCK case is review_ledger.py "
+            "--auto-accept's")}
+    if not isinstance(findings, list) or not all(
+            isinstance(f, str) and "\n" not in f and "\r" not in f for f in findings):
+        return {"round": number, "reason": (
+            f"round {number} carries no single-line finding lines: could not tell")}
+    blocks = [f for f in findings if f.strip().startswith("BLOCK|")]
+    fixes = [f for f in findings if f.strip().startswith("FIX|")]
+    if len(blocks) != counts["BLOCK"]:
+        return {"round": number, "reason": (
+            f"round {number} lists {len(blocks)} BLOCK line(s) for a BLOCK count of "
+            f"{counts['BLOCK']}: could not tell")}
+    left = review_ledger.summary(data, state, ticket, path).get("rounds_left")
+    if not _count(left):
+        return {"round": number, "reason": (
+            f"rounds left is {left!r}: could not tell")}
+    if left:
+        return {"round": number, "reason": (
+            f"{left} review round(s) left: fix, then /crew:review")}
+    family = review_ledger._family_problem(row)  # pylint: disable=protected-access
+    if family:
+        return {"round": number, "reason": family}
+    return {"round": number, "blocks": blocks, "fixes": fixes}
+
+
+def _successor_rows(successors):
+    return "; ".join(f"{str(s.get('plan_sha256'))[:12]} after round {s.get('after_round')} "
+                     f"approved by {s.get('approved_by')}" for s in successors)
+
+
+def _auto_replan_route(top, ticket, found, answer):
+    """`next`'s T-0074 routes, on top of `_review_phase`'s answer: an
+    out-of-rounds BLOCK round the policy allows is `auto-replan`; one refused
+    only by the cap stops naming the cap and every successor; a NEEDS_REPLAN
+    from autopilot's own reject of the latest round, still allowed, names
+    `/crew:plan` without stopping. Anything else is `found`, byte for byte."""
+    if found["phase"] == "accept-review":
+        got = auto_replan_policy(top, ticket)
+        if got["allow"] is True:
+            return answer("auto-replan", False, f"{got['reason']}: autopilot rejects it "
+                          f"itself (replan {got['used'] + 1} of {got['cap']})",
+                          AUTO_REJECT.format(ticket=ticket))
+        if got["capped"]:
+            return dict(found, phase="auto-replan-cap", reason=(
+                f"{got['reason']} ({_successor_rows(got['successors'])}) - the owner "
+                f"decides. {found['reason']}"))
+    if found["phase"] == "replan" and found["stop"]:
+        why = _auto_rejected(top, ticket)
+        if why:
+            return dict(found, stop=False, reason=why)
+    return found
+
+
+def _auto_rejected(top, ticket):
+    """The non-stop `replan` reason, or "" for today's stop: the ledger's
+    `rejected.by` is AUTO_REJECT_BY for its latest round, that round is the
+    current plan's (after the last successor's `after_round`) and still passes
+    conditions 5-8 (`_block_round`), and autopilot is still armed, under the
+    cap, and allowed to approve the successor plan. The name alone proves
+    nothing: `review_ledger.py --reject --by` can type it (review round 1)."""
+    try:
+        path = review_ledger.ledger_path(top, ticket)
+        data, state = review_ledger.load(path)
+        rejected = data.get("rejected") if state == "ok" else None
+        rounds = data.get("rounds") or []
+        latest = rounds[-1].get("round") if rounds and isinstance(rounds[-1], dict) else None
+        current = _current_rounds(data) if state == "ok" else []
+        conf = settings(top)
+        cap, used = conf.get("maxAutoReplans"), len(data.get("successors") or [])
+        if not (isinstance(rejected, dict) and rejected.get("by") == AUTO_REJECT_BY
+                and _count(latest) and rejected.get("round") == latest
+                and type(rejected.get("round")) is int  # pylint: disable=unidiomatic-typecheck
+                and current and current[-1].get("round") == latest
+                and "reason" not in _block_round(data, state, ticket, path)
+                and conf["armed"] and _count(cap) and used < cap
+                and approval_policy(top, ticket).get("allow") is True):
+            return ""
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return ""
+    return (f"{ticket} is NEEDS_REPLAN after autopilot's own reject of round {latest} "
+            f"(replan {used + 1} of {cap}): /crew:plan writes a successor plan whose steps "
+            f"quote every BLOCK and FIX line of round {latest}; the approve phase then "
+            "decides under autopilot.approval")
+
+
+def auto_reject(root, ticket):
+    """(exit code, text). This module's second writing path (T-0074): when
+    `auto_replan_policy` allows, `review_ledger.reject` under AUTO_REJECT_BY,
+    which moves the ledger REVIEWED -> NEEDS_REPLAN and writes nothing else.
+    Exit 2 `refused: <why>` writes nothing, a LedgerError included."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    got = auto_replan_policy(top, ticket)
+    if got["allow"] is not True:
+        return 2, f"refused: {got['reason']}"
+    try:
+        review_ledger.reject(top, ticket, AUTO_REJECT_BY)
+    except review_ledger.LedgerError as exc:
+        return 2, f"refused: {exc}"
+    return 0, "\n".join([f"auto-rejected {ticket}: round {got['round']}, {len(got['blocks'])} "
+                         f"BLOCK / {len(got['fixes'])} FIX, replan {got['used'] + 1} of "
+                         f"{got['cap']}"] + got["blocks"] + got["fixes"])
 
 
 def _review_phase(top, ticket, evidence, answer):
@@ -760,12 +977,14 @@ def _unreadable_autopilot(top):
 
 def settings(root):
     """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
-    "questions", "warnings"}`. Read through `crew_config.resolve_config` --
+    "questions", "maxAutoReplans", "warnings"}`. Read through `crew_config.resolve_config` --
     `.crew/config.json` over the defaults, the file
     `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
     exactly the string `plan`; `maxPhases` must be a positive int, else 12;
     `deploy` is exactly one of DEPLOY_VALUES, else `none`; `approval` and
-    `questions` must be one of POLICIES, else `human`.
+    `questions` must be one of POLICIES, else `human`; `maxAutoReplans` (T-0074)
+    must be a non-negative int, else 0 (off), and reads at most
+    MAX_AUTO_REPLANS.
 
     A `.crew/config.json` that is present but unreadable, or an `autopilot`
     value that is not an object, is could-not-tell: both policies read
@@ -780,7 +999,7 @@ def settings(root):
         return {"mode": "off", "armed": False,
                 "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
                 "saw": None, "deploy": "none", "deploySaw": None,
-                "approval": UNKNOWN, "questions": UNKNOWN,
+                "approval": UNKNOWN, "questions": UNKNOWN, "maxAutoReplans": 0,
                 "day": {"approval": UNKNOWN, "questions": UNKNOWN},
                 "sleep": {"state": crew_sleep.UNKNOWN, "schedule": None,
                           "overrides": {key: None for key in crew_sleep.OVERRIDES},
@@ -808,6 +1027,15 @@ def _settings_at(top):
         warnings.append(f"autopilot.maxPhases is {limit!r}, not a positive integer; "
                         f"using {default}")
         limit = default
+    replans = block.get("maxAutoReplans", 0)
+    if isinstance(replans, bool) or not isinstance(replans, int) or replans < 0:
+        warnings.append(f"autopilot.maxAutoReplans is {replans!r}, not a non-negative "
+                        "integer; using 0 (off: a BLOCK round stops for the owner)")
+        replans = 0
+    if replans > MAX_AUTO_REPLANS:
+        warnings.append(f"autopilot.maxAutoReplans is {replans}, above the limit of "
+                        f"{MAX_AUTO_REPLANS}; using {MAX_AUTO_REPLANS}")
+        replans = MAX_AUTO_REPLANS
     deploy_saw = block.get("deploy", "none")
     deploy = deploy_saw if _exact(deploy_saw, DEPLOY_VALUES) else "none"
     if deploy != deploy_saw:
@@ -832,6 +1060,7 @@ def _settings_at(top):
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
             "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
+            "maxAutoReplans": replans,
             "day": day, "sleep": sleep, "warnings": warnings}
 
 
@@ -1461,7 +1690,7 @@ def route_args(root, text):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done")}
+    "done", "auto-replan", "auto-replan-cap")}
 WAITING["closed"] = "nobody"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
@@ -1724,8 +1953,9 @@ def _policy_main(args):
     """`approve` and `questions-check`: exit 0 only on a yes. A crash is a
     refusal (exit 1), never an approval or a valid file."""
     try:
-        if args.action == "approve":
-            code, text = approve(args.root, args.ticket)
+        if args.action in ("approve", "auto-reject"):
+            code, text = (approve if args.action == "approve" else auto_reject)(
+                args.root, args.ticket)
             result = {"code": code, "text": text}
         else:
             result = questions_check(args.root, args.ticket)
@@ -1787,12 +2017,12 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
     for name in ("next", "resume", "settings", "stops", "route", "status", "approve",
-                 "questions-check"):
+                 "questions-check", "auto-reject"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
-    for name in ("next", "approve", "questions-check"):
+    for name in ("next", "approve", "questions-check", "auto-reject"):
         sub.choices[name].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
@@ -1821,7 +2051,7 @@ def main(argv):
     # Read-only but for approve's receipt: git must not even refresh the index's
     # stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
-    if args.action in ("approve", "questions-check"):
+    if args.action in ("approve", "questions-check", "auto-reject"):
         return _policy_main(args)
     if args.action == "status":
         try:
@@ -1845,7 +2075,8 @@ def main(argv):
     elif args.action == "settings":
         result = settings(args.root)
         text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"],
-                                deploy=result["deploy"])]
+                                deploy=result["deploy"],
+                                maxAutoReplans=result["maxAutoReplans"])]
                          + [_line(approval=result["approval"], questions=result["questions"])]
                          + [_sleep_line(result["sleep"])]
                          + [f"warning: {w}" for w in result["warnings"]])

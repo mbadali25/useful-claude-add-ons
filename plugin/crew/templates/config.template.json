@@ -222,6 +222,7 @@
     "deploy": "none",
     "approval": "risk",
     "questions": "risk",
+    "maxAutoReplans": 0,
     "sleep": {
       "schedule": null,
       "approval": null,
