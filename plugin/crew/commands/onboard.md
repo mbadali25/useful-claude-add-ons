@@ -173,10 +173,12 @@ After any codemap note is written or refreshed, `--refresh` included, run:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root .
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" agents --root .
 ```
 
 It writes `.claude/rules/<subsystem>.md` (≤30 lines, `paths:`-scoped, source hash) from each
-note. Report every `wrote` and `removed` line. A `hand-written, left alone` line is a collision:
+note, and `AGENTS.md` (≤80 lines: how any agent verifies a change here, and where things are).
+Report every `wrote`, `removed` and `note:` line, and an `AGENTS.md would be N lines` refusal. A `hand-written, left alone` line is a collision:
 report it, never overwrite or rename it yourself. Commit the rules with the notes; CI checks them
 for drift.
 
