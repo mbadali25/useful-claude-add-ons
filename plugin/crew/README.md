@@ -1869,8 +1869,8 @@ conversation with you. Read the chat id from `getUpdates`; group ids are negativ
 which is normal rather than a bug.
 
 Export `CREW_TELEGRAM_TOKEN` and put the chat id in `notify.chatId`. `tokenEnv`
-counts only in the global file: a repo's is ignored, so a cloned repo cannot
-choose which secret goes into the request URL. If the
+and `urlEnv` count only in the global file (a repo's is ignored), so a cloned repo
+cannot pick the request URL; a redirect is a failed send, never followed. If the
 notify skill is already set up on this machine, its `telegram.bot_token_env` and
 `chat_id` fill a null `tokenEnv` / `chatId` (read-only; its example chat id
 `-1001234567890` counts as unset).

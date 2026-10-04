@@ -41,8 +41,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Review hardening.** `CREW_NOTIFY_TELEGRAM_BASE` (the test server's address) is honoured only for an
   http(s) URL whose host is exactly `127.0.0.1`, `::1` or `localhost`; anything else is ignored and the send goes
   to `api.telegram.org`, since the bot token rides in the URL path and a cloned repo's settings `env` could
-  otherwise send it elsewhere. `notify.tokenEnv` counts only from the machine-global layer (a repo's is ignored
-  with a notice), and `crew_notify.py config` prints `chatId` masked. A deploy with no `--outcome` whose reason
+  otherwise send it elsewhere. `notify.tokenEnv` and `notify.urlEnv` count only from the machine-global layer (a
+  repo's is ignored with a notice), redirects are refused (a 3xx is a failed send, not a second request carrying
+  the token), and `crew_notify.py config` prints `chatId` masked (wholly when 2 characters or fewer). A deploy with no `--outcome` whose reason
   names neither pass nor fail is `Promotion outcome unknown` (loud), never `Promotion passed`.
   `/crew:promote` sends through `notify.sh deploy ... --outcome` (its python resolver: Git Bash has no
   `python3`), and `notify.ps1`'s direct call forwards `--outcome` too. Approving a permission prompt does not

@@ -718,7 +718,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `memory.mode` | string | `"repo"` |
 | `memory.vaultPath` | path or `null` | `null` |
 | `notify.provider` | `telegram` \| `teams` \| `none` \| `null` (a repo `null` inherits the global one; a repo `"none"` opts out) | `null` |
-| `notify.urlEnv` | string or `null` | `null` |
+| `notify.urlEnv` | string or `null`, **global layer only** (a repo's is ignored with a notice) | `null` |
 | `notify.tokenEnv` | string or `null`, **global layer only** (a repo's is ignored with a notice; a null one may come from the notify skill's `bot_token_env`) | `null` |
 | `notify.chatId` | string or `null` (likewise from its `chat_id`; `-1001234567890` counts as unset) | `null` |
 | `notify.events` | list (a leaf): `deploy`, `question`, and `blocker` (reserved until T-0060); `gate`, `waiting`, `phase`, `review`, `done` are mapped with a notice | `["blocker", "deploy", "question"]` |

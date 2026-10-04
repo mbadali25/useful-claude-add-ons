@@ -97,9 +97,9 @@ global key ("the person's own chat, not the project's"). A repo's
 `.crew/config.json` overrides any key it sets; a repo that leaves `provider`
 null inherits the global one, and a repo that says `"provider": "none"` opts
 out on purpose (`crew_notify.py config` prints that it overrides the global
-provider). `tokenEnv` is read from the global file only: a repo's
-`tokenEnv` is ignored, with a notice, so a cloned repo cannot pick which
-secret goes into the request URL. `config` prints `chatId` masked.
+provider). `tokenEnv` and `urlEnv` are read from the global file only: a
+repo's is ignored, with a notice, so a cloned repo cannot pick which variable
+becomes the request URL. Redirects are refused. `config` masks `chatId`.
 
 ```json
 "notify": {

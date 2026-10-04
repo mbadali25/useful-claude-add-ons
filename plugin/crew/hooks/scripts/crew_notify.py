@@ -43,9 +43,10 @@ Config: `crew_config.resolve_config` -- the machine-global `notify` block with
 the repo layer over it; an explicit repo `"none"` opts out. The notify skill's
 `~/.config/notify/config.json` `telegram` block fills a null `tokenEnv` /
 `chatId`, read-only. The token is read from an environment variable only, and
-`tokenEnv` (the variable's NAME) is honoured from the machine-global layer only:
-a repo's `.crew/config.json` could otherwise point it at any secret in the
-environment and have it put into the request URL.
+`tokenEnv` and `urlEnv` (each a variable's NAME) are honoured from the
+machine-global layer only: a repo's `.crew/config.json` could otherwise point
+either at any variable (its settings `env` can set one) and pick the request URL.
+Redirects are refused: a 3xx is a failed send, never a second request.
 
 Every entry point exits 0. A reason goes to stderr when nothing was sent.
 
@@ -305,14 +306,16 @@ def effective_config(root):
         global_cfg = {}
     global_notify = global_cfg.get("notify") if isinstance(global_cfg.get("notify"), dict) else {}
     global_provider = global_notify.get("provider")
-    # tokenEnv names the variable whose value goes into the request URL: only the
-    # owner's own machine-global file may name it, never a cloned repo's config.
-    global_token_env = global_notify.get("tokenEnv")
-    cfg["tokenEnv"] = global_token_env if isinstance(global_token_env, str) and global_token_env \
-        else None
-    if repo.get("tokenEnv") is not None and repo.get("tokenEnv") != cfg["tokenEnv"]:
-        notices.append("the repo's notify.tokenEnv is ignored: only the machine-global "
-                       "~/.claude/crew/config.json (or the notify skill's config) names the token")
+    # tokenEnv / urlEnv name the variable whose value becomes the request URL (the
+    # bot token in its path, the Teams webhook itself): only the owner's own
+    # machine-global file may name either, never a cloned repo's config.
+    for key, names in (("tokenEnv", "(or the notify skill's config) names the token"),
+                       ("urlEnv", "names the webhook URL")):
+        global_env = global_notify.get(key)
+        cfg[key] = global_env if isinstance(global_env, str) and global_env else None
+        if repo.get(key) is not None and repo.get(key) != cfg[key]:
+            notices.append(f"the repo's notify.{key} is ignored: only the machine-global "
+                           f"~/.claude/crew/config.json {names}")
     if repo.get("provider") == "none" and global_provider not in (None, "none"):
         notices.append(f"the repo's notify.provider \"none\" overrides the global provider "
                        f"'{global_provider}' (a repo opt-out)")
@@ -495,6 +498,19 @@ def telegram_base():
     return f"{parts.scheme}://{netloc}" + (f":{port}" if port else "") + parts.path
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow no redirect: a 3xx surfaces as an HTTPError (a failed send). urllib
+    would otherwise re-send to the Location -- a GET carrying the token in its path."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        return None
+
+
+def _open(request):
+    """`urlopen` with redirects refused; the one way this module sends."""
+    return urllib.request.build_opener(_NoRedirect).open(request, timeout=HTTP_TIMEOUT)
+
+
 def _telegram(token, chat, text, loud):
     """POST sendMessage. `(ok, why)`; ok only on HTTP 200 with `ok: true`. A 429's
     `retry_after` is honoured once (0 means at once) unless the wait would push
@@ -507,8 +523,7 @@ def _telegram(token, chat, text, loud):
     started = time.monotonic()
     for attempt in (0, 1):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, data=data),
-                                        timeout=HTTP_TIMEOUT) as response:
+            with _open(urllib.request.Request(url, data=data)) as response:
                 status, body = response.status, response.read()
         except urllib.error.HTTPError as exc:
             try:
@@ -545,7 +560,7 @@ def _teams(url, text):
     request = urllib.request.Request(url, data=body,
                                      headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+        with _open(request) as response:
             status = response.status
     except urllib.error.HTTPError as exc:
         return False, f"HTTP {exc.code}"
@@ -745,10 +760,13 @@ def hook(root, payload_bytes):
 
 
 def mask(value):
-    """A chat id for display: its last 2 characters (4 when it is longer than 8)."""
+    """A chat id for display: its last 2 characters (4 when it is longer than 8);
+    one of 2 characters or fewer is masked whole."""
     if value is None:
         return None
     text = str(value)
+    if len(text) <= 2:
+        return "***"
     return "***" + text[-(4 if len(text) > 8 else 2):]
 
 
