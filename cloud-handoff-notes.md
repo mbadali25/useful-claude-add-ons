@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 18:28 UTC
+Last updated: 2026-10-04 18:35 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 18:35: #489 L-1503 round-4 review CLEAN at 9dba8652 (0/0/2 NIT). No false refusals across 158 repo JSON files + 1800-doc fuzz; no regressions vs 7670dbc3. NIT N1 (verify-gate marker parsing / regex grep on env names) added to L-1505 harness scope.
 - 18:28: #491 L-1506 review CLEAN at 004c5cdc (0/0/1 NIT: measure end-to-end wall time incl. queueing at the 20-job limit). Fan-in uses pattern download + range check: 6-way partition passes, missing/extra shard fails (scratch run). Waiting on its CI.
 - 18:27: Batch 2 Windows root cause: crew_autocycle._tmux_pane_pid ran bare 'tmux' while the PATH check used shutil.which (PATHEXT finds tmux.cmd) -> OSError -> pid 0 -> refuse; plus a USERPROFILE fixture gap. Fix cdb7b508 on #396 (coordinator reviewed the diff: runs which()'s path, still 0/refuse when absent; sabotage-checked test). Re-chained: #396 d666a056, #356 afe4b455, #347 2bfd6402, #456 23834228. CI re-running. #489 at 9dba8652 (env-name refusal both gates, ps1 strict JSON) -> round-4 review sent.
 - 18:25: Opened #491 L-1506 (owner request): Windows default set 3 -> 6 shards; required check name unchanged; cancel-in-progress already existed. Branch ccr-af1c4a1b-hgnzp8 @ 004c5cdc. Workflow-only, no version bump. H2a #399 builder reports green CI at 3716a78a; N1/N2/N7 not sent to it.
