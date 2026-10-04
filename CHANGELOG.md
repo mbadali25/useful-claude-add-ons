@@ -4,6 +4,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.406: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
+
+- **What changed.** `crew_route.PHRASES` gains four rows after `focus`:
+  `run <id>, <id> and <id> in parallel` -> `/crew:autopilot wave <ID> <ID> ...` (ids upper-cased,
+  de-duplicated in order; fewer than two distinct is no match; any id without a
+  `.work/tickets/<id>/` folder asks, naming it); `split this ticket` / `split it` / `split <id>` /
+  `this ticket is too big` / `<id> is too big` -> `/crew:autopilot split <ID>` (resolved like
+  every ticket row; never `/crew:split`); `I'm heading to bed`, `heading to bed`,
+  `going to sleep`, `I'm going to sleep`, `good night` -> `/crew:autopilot sleep`, whose line
+  also asks Claude to say what changed and how to undo it; `I'm back`, `morning`,
+  `good morning` -> `/crew:autopilot wake`.
+- **Inert until each command lands.** None of the four is in `crew_autopilot.SUBCOMMANDS`, so
+  T-0057's gate gives no line; reserved, the soft ask; available, a route through T-0069's
+  `_route`. No edit to `crew_autopilot.py`.
+- **Same screen.** Every new row passes T-0057's `_screen` allowlist (sleep and wake add only the
+  ASCII apostrophe of `I'm`), so a long s or Kelvin sign that IGNORECASE folds onto a pattern
+  letter, or a curly apostrophe, asks rather than routes.
+- **Merge of T-0057 onto main.** T-0057's autopilot routes go through `_route`; its `_screen`
+  line-break check is gone (`normalise` already refuses every `str.splitlines` boundary), so the
+  `\x1c`-`\x1e` separators in free text now decide `none` rather than `ask`.
+- **Tests.** `test_crew_route.py`: inert, reserved and available (every subcommand available)
+  cases for each example, wave's two-real-tickets rule, split's ask, the must-not-route list,
+  lookalike must-ask cases and the sleep undo line. Local sabotage mutations each went red; they
+  are L-0663's to commit (`sabotage*.py` is harness).
+
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
