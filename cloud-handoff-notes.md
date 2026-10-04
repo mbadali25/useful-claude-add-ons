@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 14:22 UTC
+Last updated: 2026-10-04 14:36 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:36: Cancelled 50 CI runs on spec-only drafts (owner OK). #366 e14b5a45: 0/0/1 CLEAN (fuzzed 62k pairs). #365 -> 16228584, round-3 review started. #347 round-2: 6 BLOCK/2 FIX/1 NIT (PS iex/group/assignment/glued-call bypasses, terragrunt exec wrappers) -> builder told to add fail-closed PS backstop. WAVE 1 started (v1.0.394-399): #403 T-0053, #407 T-0045, #398 T-0096, #405 L-0688, #450 T-0084, #416 T-0057. Plan: WAVES.md (64 feature/27 harness; H1-H4 bundles; 23 blocked incl. by #336 T-0009, #354, #394, missing T-0029/T-0030/L-0541).
 - 14:22: #347 T-0047 round-1 fixes pushed -> d4ec3aa6 (merged main baf193aa, crew 1.0.393; 35 must-block + 8 must-allow rows; 17 mutations red). Round-2 review started. Harness follow-up: 38 mutations into sabotage_cloud.py, r7 entry retarget.
 - 14:21: #365 re-review 9805fcb1: 0/1/1 (_unanswered drops unknown -> split --apply mints while next stops). Sent to builder. CI STARVED: 93 queued runs, mostly from the 91 docs-only handoff drafts (pytest + self-hosted verify-gate receipt); #377 queued 80+ min.
 - 14:21: OWNER DECISIONS: 91 new drafts -> build now in waves of 6 (parents first), land after current queue one-by-one; bundle 21 sabotage/harness tickets into 3-4 harness-only PRs. #356 round-3 5e37f872: 0/0/1 CLEAN (carry NIT at landing: stdout backslashreplace for non-ASCII refusal reasons). Wave planner started -> scratchpad/WAVES.md.
