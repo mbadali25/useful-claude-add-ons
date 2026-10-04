@@ -1653,10 +1653,12 @@ mentions terraform (a commit message quoting it) are not gated for their
 quoting (below). Plain lines are read exactly as before.
 
 **Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
-`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
-delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
+`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy` (and
+terragrunt's `destroy-all`, `stack run destroy`, `graph destroy`, and `exec --
+terraform destroy`), `workspace delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
 whose sidecar lists none, `workspace new`, `select -or-create`. Everything
-else is `unknown` — an apply with no saved plan, any terragrunt apply, a plan
+else is `unknown` — an apply with no saved plan, any terragrunt apply
+(`apply-all`, `stack run apply` and `graph apply` included), a plan
 with no sidecar, a stale one (the plan's sha256 changed), a malformed or
 unreadable one, a plan path that is not a literal, a plan over 64 MiB, and a
 saved-plan apply that is **not the only command** in the invocation. The plan
@@ -1718,11 +1720,14 @@ subcommand are skipped as terraform and terragrunt read them (`terragrunt
 
 **What the guard does not catch.** It catches terraform, terragrunt and tofu
 written directly: bare or path-qualified, behind the listed wrappers
-(`aws-vault exec` and `unbuffer` among them; an option a listed `xargs`,
-`parallel`, `aws-vault` or `unbuffer` does not know makes the line
-`could-not-tell`), inside
+(`aws-vault exec`, `unbuffer` and `sem` among them; an option a listed
+`xargs`, `parallel`, `sem`, `aws-vault` or `unbuffer` does not know makes the
+line `could-not-tell`, and so does a `workspace select` that `xargs` or
+`parallel` may append `-or-create` to), inside
 `bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
-PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
+PowerShell's `&`, `.`, `terraform.exe`, `Start-Process` and `Invoke-Expression`
+(a script that is not a literal string, or a parameter crew does not know,
+is `could-not-tell`). It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
 -e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),

@@ -1418,13 +1418,16 @@ command, not a sandbox against deliberate evasion (owner decision,
 2026-09-26). It catches `terraform`, `terragrunt` and `tofu` written directly:
 bare or path-qualified, behind the listed wrappers (`env`, `sudo`, `doas`,
 `nice`, `ionice`, `timeout`, `stdbuf`, `nohup`, `command`, `exec`, `time`,
-`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`,
-`aws-vault exec`, `unbuffer`), inside `bash|sh|zsh -c` and `eval` strings, with global options before the
+`xargs`, `parallel`, `sem`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`,
+`pwsh -c`, `aws-vault exec`, `unbuffer`), inside `bash|sh|zsh -c` and `eval` strings, with global options before the
 subcommand (`-chdir=`, terragrunt's `--working-dir`), and PowerShell's `&`,
 `.`, `terraform.exe` and `Start-Process`. PowerShell strips the same listed
-wrappers. An option a listed `xargs`, `parallel`, `aws-vault` or `unbuffer`
-does not know makes a line that names terraform could-not-tell: crew cannot
-tell where the command starts. It does not try to catch a program renamed or
+wrappers. An option a listed `xargs`, `parallel`, `sem`, `aws-vault` or
+`unbuffer` does not know makes a line that names terraform could-not-tell:
+crew cannot tell where the command starts. So does an `Invoke-Expression`
+whose script is not a literal string. terragrunt's `apply-all`,
+`destroy-all`, `stack run`, `graph` and `exec -- terraform ...` are read as
+the apply or destroy they run. It does not try to catch a program renamed or
 started some other way. Each of these runs unjudged:
 
 - a rename by alias, function, symlink or copy, unless the same line makes a

@@ -1576,6 +1576,28 @@ def tf_skip_options(args, index):
     return index
 
 
+def tg_other_op(head, args, index, judge):
+    """terragrunt's other commands that run terraform's apply or destroy
+    (review of #347), as `_terraform_destructive` names an operation:
+    `apply-all`/`destroy-all` (the pre-`run-all` spellings), `stack run
+    apply|destroy`, `graph apply|destroy` (the module and its dependents),
+    and `exec -- terraform destroy` (the command it runs, judged by
+    `judge`). None for anything else."""
+    sub = args[index] if head == "terragrunt" and index < len(args) else None
+    if sub in ("apply-all", "destroy-all"):
+        return f"terragrunt run-all {sub[:-4]}"
+    if sub in ("stack", "graph"):
+        start = index + 1 + (args[index + 1:index + 2] == ["run"])
+        nxt = tf_skip_options(args, start)
+        if nxt < len(args) and args[nxt] in ("apply", "destroy"):
+            return f"terragrunt {sub} run {args[nxt]}"
+    if sub == "exec":
+        rest = args[tf_skip_options(args, index + 1):]
+        if rest and _head_name(rest[0]) in ("terraform", "tofu", "terragrunt"):
+            return judge(_head_name(rest[0]), rest[1:])
+    return None
+
+
 def skip_wrapper_options(args, takes, optional=frozenset(), flags=None,
                          out=None, unknown=None):
     """`args` past a wrapper's own options, read as GNU getopt reads them:
@@ -1679,11 +1701,13 @@ LONG_ALIASES = {}
 # 8): an option in none of a wrapper's sets makes a line naming terraform could
 # not tell (`note_unknown`), never a guess at where the command starts.
 #
-# xargs: GNU findutils 4.10.0 `xargs --help` (measured 2026-10-04), plus BSD's
-# `-J`, `-R` and `-S` (FreeBSD xargs(1)). `-e`, `-i` and `-l` take a value only
-# attached, `--eof`/`--replace` only after `=`.
+# xargs: GNU findutils `xargs --help` (4.10.0) and its getopt table, measured
+# on 4.9.0 (2026-10-04: `echo a | xargs --max-lines echo x` runs `echo x a`),
+# plus BSD's `-J`, `-R` and `-S` (FreeBSD xargs(1)). `-e`, `-i` and `-l` take
+# a value only attached, `--eof`, `--replace` and `--max-lines` (which is
+# `-l`, whatever `--help` prints beside `-L`) only after `=`.
 _XARGS = ("null|0 arg-file|a=s delimiter|d=s E=s eof|e:s I=s replace|i:s "
-          "max-lines|L=s l:s max-args|n=s open-tty|o max-procs|P=s "
+          "L=s max-lines|l:s max-args|n=s open-tty|o max-procs|P=s "
           "interactive|p process-slot-var=s no-run-if-empty|r max-chars|s=s "
           "show-limits verbose|t exit|x help version J=s R=s S=s")
 # GNU parallel: `options_hash` in src/parallel, version 20170423, as published
@@ -1728,6 +1752,7 @@ _PARALLEL = (
     "hgrp|hostgrp|hostgroup|hostgroups")
 WRAPPER_TABLES = {"xargs": getopt_tables(_XARGS),
                   "parallel": getopt_tables(_PARALLEL, strict=True)}
+WRAPPER_TABLES["sem"] = WRAPPER_TABLES["parallel"]  # `parallel --semaphore`
 
 
 class GateFed(list):
@@ -1839,7 +1864,7 @@ def _tf_read_only(argv, fed):
     if rest[0] in _TF_READ_ONLY:
         return True
     if rest[:2] == ["workspace", "select"]:
-        return _selects_only(rest[2:])
+        return _selects_only(rest[2:])  # fed: `_argv_trigger`, unseen
     pair = _TF_READ_ONLY_PAIRS.get(rest[0])
     return pair is not None and len(rest) > 1 and rest[1] in pair
 
@@ -1851,13 +1876,17 @@ _GO_FALSE = frozenset(("0", "f", "F", "false", "FALSE", "False"))
 def _selects_only(args):
     """`workspace select` creates nothing (review round 8: a quoted name is
     still a select) unless an `-or-create` on it is anything but false --
-    bare, `=true`, or made at run time."""
+    bare, `=true`, or made at run time: a bash word with `_HOLE`, a
+    PowerShell variable or splat (`$flag`, `@args`), or a word that only
+    mentions it (`@("-or-create","production")`)."""
     for arg in args:
-        if _HOLE in arg:
+        if _HOLE in arg or "$" in arg or arg.startswith("@"):
             return False
         name, sep, value = arg.lstrip("-").partition("=")
         if arg.startswith("-") and name == "or-create" and (
                 not sep or value not in _GO_FALSE):
+            return False
+        if "or-create" in arg and name != "or-create":
             return False
     return True
 
@@ -1917,6 +1946,10 @@ def _argv_trigger(argv, top, helpers, depth, line):
         named = _verb_on_line(top)
         return None if named is None else (named, True)
     if _zsh_names_tool(first):
+        return first, True
+    if _names_tool(first) and fed and [w for w in argv[1:] if not w.startswith(
+            "-")][:2] == ["workspace", "select"]:
+        # `xargs`/`parallel` may append `-or-create`: could not tell.
         return first, True
     if _names_tool(first):
         return None if _tf_read_only(argv, fed) else (first, False)
@@ -2033,6 +2066,50 @@ _PS_COPIERS = frozenset(("copy-item", "copy", "cpi", "cp", "move-item", "move",
 _PS_NAME_RE = re.compile(r"^[A-Za-z0-9_./\\:~-]+$")
 
 
+# Invoke-Expression's parameters: `-Command` (position 0) and the common
+# parameters (about_CommonParameters), each with its documented alias.
+# PowerShell takes a unique prefix of a name; an alias only whole.
+_PS_EVAL_PARAMS = {
+    "command": "script", "verbose": "switch", "debug": "switch",
+    "erroraction": "value", "warningaction": "value",
+    "informationaction": "value", "errorvariable": "value",
+    "warningvariable": "value", "informationvariable": "value",
+    "outvariable": "value", "outbuffer": "value", "pipelinevariable": "value",
+    "progressaction": "value"}
+_PS_EVAL_ALIASES = {
+    "vb": "switch", "db": "switch", "ea": "value", "wa": "value",
+    "infa": "value", "ev": "value", "wv": "value", "iv": "value",
+    "ov": "value", "ob": "value", "pv": "value", "proga": "value"}
+
+
+def ps_eval_script(args):
+    """`(script, sure)` for Invoke-Expression's arguments: the script its
+    `-Command` binds (by name, `-Command:<v>`, or by position), with every
+    common parameter and its value set aside (review of #347). `sure` is
+    False for a parameter crew does not know, or one PowerShell would call
+    ambiguous, and for a script that is not a literal string."""
+    script, sure, index = [], True, 0
+    while index < len(args):
+        arg, index = args[index], index + 1
+        if not arg.startswith("-") or arg == "-":
+            script.append(arg)
+            continue
+        name, colon, value = arg[1:].partition(":")
+        name = name.lower()
+        hits = [k for n, k in _PS_EVAL_PARAMS.items() if n.startswith(name)]
+        kind = _PS_EVAL_ALIASES.get(name) or (
+            hits[0] if len(hits) == 1 and name else None)
+        if kind is None:
+            sure = False
+        elif kind == "script":
+            script.extend([value] if colon else args[index:index + 1])
+            index += not colon
+        elif kind == "value":
+            index += not colon
+    return " ".join(script), sure and not any(
+        "$" in w or "`" in w for w in script)
+
+
 def _ps_verb_on_line(normal):
     """`_verb_on_line` for normalised PowerShell."""
     named = names_terraform(normal, "powershell")
@@ -2099,9 +2176,12 @@ def _ps_argv_trigger(words, normal, helpers, depth, copies, cmd=None):
         named = names_terraform(" ".join(args), "powershell")
         return None if named is None else (named, True)
     if head in _PS_EVAL:
-        # `-Command:"..."` binds its value with a colon (review round 8).
-        script = " ".join(a.split(":", 1)[1] if a.startswith("-") else a
-                          for a in args if not a.startswith("-") or ":" in a)
+        script, sure = ps_eval_script(args)
+        if not sure:
+            # A parameter crew does not know, or a script that is not a
+            # literal string (`-Command:$c`, `"$a $b"`): could not tell.
+            named = _ps_verb_on_line(normal)
+            return None if named is None else (named, True)
         if not script:
             # `"terraform destroy" | iex`: the text arrives on the pipeline,
             # which this reads no further than the line's own words.

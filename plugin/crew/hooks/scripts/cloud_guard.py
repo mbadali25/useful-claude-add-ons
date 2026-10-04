@@ -129,7 +129,7 @@ import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
     tf_skip_options as _tf_skip_options, WRAPPER_TABLES, option_words, \
-    wrapper_rest
+    wrapper_rest, tg_other_op
 
 
 def _head_name(token):
@@ -867,6 +867,9 @@ def _lex_ps(text):
             j = text.find("\n", i)
             i = n if j < 0 else j
             continue
+        call = state["bare"] if c == "(" else c in "'\"" and state["word"] == ["."]
+        if call and state["word"] is not None and not state["cur"].words:
+            end_word()  # `iex("...")`, `terraform('x')`, `.'terraform'`: a call
         if c == "@" and text[i + 1:i + 2] in ("'", '"'):
             here = _read_ps_herestring(text, i, subs)
             if here is not None:
@@ -1123,6 +1126,7 @@ _WRAPPER_VALUE_OPTS = {
     "stdbuf": frozenset(("-i", "-o", "-e", "--input", "--output", "--error")),
     "xargs": WRAPPER_TABLES["xargs"][0],  # complete, with their flags
     "parallel": WRAPPER_TABLES["parallel"][0],
+    "sem": WRAPPER_TABLES["sem"][0],  # `parallel --semaphore`
     "exec": frozenset(("-a",)),
     "time": frozenset(("-f", "-o", "--format", "--output")),
     "nohup": frozenset(),
@@ -1393,7 +1397,7 @@ def _unwrap(words, env, fed=None, ctx=None):
         if head in _WRAPPER_VALUE_OPTS:
             rest = wrapper_rest(head, words[1:], _WRAPPER_VALUE_OPTS[head], fed, env)
             opts = option_words(head, words[1:], _WRAPPER_VALUE_OPTS[head])
-            if head == "parallel" and any(
+            if head in ("parallel", "sem") and any(
                     o.split("=", 1)[0] in ("--wd", "--workdir") for o in opts):
                 _moved(ctx)
             if head == "command" and any(  # `command -v|-V`: a lookup only
@@ -1549,7 +1553,7 @@ def _terraform_destructive(head, args):
         index = _tf_skip_options(args, index + 1)
         if index < len(args) and args[index] in ("apply", "destroy"):
             return f"{head} {sub} {args[index]}"
-    return None
+    return tg_other_op(head, args, index, _terraform_destructive)
 
 
 # --- terraform: which operation, which environment, does it destroy ----------
@@ -2372,10 +2376,7 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
         op = "fed"
         if words and seen(words[:1]) and words[0] == "workspace":
             wsub = words[1] if len(words) > 1 and seen(words[1:2]) else None
-            creates = _tf_workspace(
-                [w for w in args if not carries(w)])[0] == "ws-create"
-            if wsub in _TF_WORKSPACE_READS or (wsub == "select"
-                                               and not creates):
+            if wsub in _TF_WORKSPACE_READS:  # a select may get -or-create
                 return None
             if wsub in ("new", "select") and not (ctx or {}).get("engaged"):
                 # Creation, with the environment layer not configured: as

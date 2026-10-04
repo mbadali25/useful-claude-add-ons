@@ -19,6 +19,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   bash, through the same `_unwrap`). `aws-vault exec` and `unbuffer` are
   listed wrappers now; `strace`, `systemd-run`, `git bisect run`, `rg --pre`
   and `docker run` stay in "What the guard does not catch".
+- **First review of #347.** Also caught now, each measured allowed first:
+  `xargs --max-lines terraform destroy` (GNU xargs's `--max-lines` takes a
+  value only attached, as `-l`); an `Invoke-Expression` whose script is not a
+  literal string (`-Command:$c`, `"$a $b"`, `($c)`) or that carries a
+  parameter crew does not know, with the common parameters (`-ErrorAction`,
+  `-OutVariable`, `-Verbose`, ...) read as PowerShell binds them; a call with
+  no space before `(` (`iex("...")`, `terraform('destroy')`) and `.'terraform'`;
+  a `workspace select` that `xargs`/`parallel` may append `-or-create` to, or
+  whose PowerShell arguments are a variable or splat; `sem` (`parallel
+  --semaphore`) as a listed wrapper; and terragrunt's `apply-all`,
+  `destroy-all`, `stack run apply|destroy`, `graph apply|destroy` and `exec --
+  terraform destroy`.
 - **No longer refused.** `terragrunt --non-interactive plan -out="p.tfplan"`
   (terragrunt's boolean options take no value), `terraform workspace select
   "staging"` (read-only unless an `-or-create` on it is anything but false),
@@ -29,11 +41,12 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Docs.** CONFIG.md's literal-word paragraph no longer says a quoted
   commit message or `terraform plan 2>$null` is refused; CONFIG.md, the crew
   README and the crew-cloud skill list `aws-vault exec` and `unbuffer` as
-  caught.
+  caught, with `sem`.
 - **Tests.** `R8_MUST_BLOCK` and `R8_MUST_ALLOW` in
   `test_cloud_guard_environments.py`, each with bash and pwsh samples, and
   `test_round8_unknown_option_is_could_not_tell`; 79 of them failed before
-  the fix. Each fix was sabotaged (21 mutations, every one RED) through
+  the fix, and the 35 rows the first review added were all allowed before
+theirs. Each fix was sabotaged (21 + 17 mutations, every one RED) through
   `sabotage.py`'s own `run_test`; the entries are not committed, because
   `plugin/crew/tests/sabotage*.py` is review harness (T-0087) and lands in
   its own PR.

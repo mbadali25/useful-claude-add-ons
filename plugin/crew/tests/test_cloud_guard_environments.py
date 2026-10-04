@@ -2875,6 +2875,82 @@ R8_MUST_BLOCK = _normalise([
      _gate()),
     ("r8-ps-assign-bare", "PowerShell", "$out = terraform destroy",
      _o(**_STAGING)),
+    # Review of #347 (first round), each measured ALLOWED at ffa8a9ab.
+    # BLOCK 1: GNU xargs's `--max-lines` takes a value only attached (as -l).
+    ("r8-xargs-max-lines", "Bash", "xargs --max-lines terraform destroy",
+     _o(**_STAGING)),
+    ("r8-xargs-max-l", "Bash", "xargs --max-l terraform destroy", _o(**_STAGING)),
+    # BLOCK 2: an Invoke-Expression script that is not a literal string.
+    ("r8-ps-iex-colon-var", "PowerShell",
+     '$c = "terraform destroy"; Invoke-Expression -Command:$c', _o(**_STAGING)),
+    ("r8-ps-iex-colon-quoted-var", "PowerShell",
+     '$c = "terraform destroy"; iex -Command:"$c"', _o(**_STAGING)),
+    ("r8-ps-iex-colon-group", "PowerShell",
+     '$c = "terraform destroy"; iex -Command:($c)', _o(**_STAGING)),
+    ("r8-ps-iex-colon-two-vars", "PowerShell",
+     '$a="terraform"; $b="destroy"; iex -Command:"$a $b"', _o(**_STAGING)),
+    # BLOCK 3: `workspace select` whose arguments arrive at run time.
+    ("r8-ws-select-xargs-n2", "Bash",
+     "echo -or-create production | xargs -n2 terraform workspace select",
+     _o(**_STAGING)),
+    ("r8-ws-select-xargs-a", "Bash", "xargs -a f terraform workspace select",
+     _o(**_STAGING)),
+    ("r8-ws-select-parallel-X", "Bash",
+     "echo -or-create production | parallel -X terraform workspace select",
+     _o(**_STAGING)),
+    ("r8-ws-select-xargs-echo-quoted", "Bash",
+     'echo "-or-create production" | xargs terraform workspace select',
+     _o(**_STAGING)),
+    ("r8-ws-select-xargs-printf", "Bash",
+     "printf '%s\\n' -or-create production | xargs -n2 terraform workspace "
+     "select", _o(**_STAGING)),
+    ("r8-ps-ws-select-splat", "PowerShell", "terraform workspace select @args",
+     _o(**_STAGING)),
+    ("r8-ps-ws-select-args", "PowerShell", "terraform workspace select $args",
+     _o(**_STAGING)),
+    ("r8-ps-ws-select-flag-var", "PowerShell",
+     "terraform workspace select $flag production", _o(**_STAGING)),
+    ("r8-ps-ws-select-array", "PowerShell",
+     'terraform workspace select @("-or-create","production")', _o(**_STAGING)),
+    # FIX 1: Invoke-Expression's common parameters.
+    ("r8-ps-iex-erroraction", "PowerShell",
+     'iex -ErrorAction Stop "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-outvariable", "PowerShell",
+     'iex -OutVariable x "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-warningaction-command", "PowerShell",
+     'iex -WarningAction Ignore -Command "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-ea-colon", "PowerShell",
+     'iex -EA Stop -Command:"terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-informationaction", "PowerShell",
+     'iex -InformationAction SilentlyContinue "terraform destroy"',
+     _o(**_STAGING)),
+    ("r8-ps-iex-unknown-param", "PowerShell",
+     'iex -Frobnicate x "terraform destroy"', _o(**_STAGING)),
+    # FIX 2: a call with no space before `(`, and `.` before a quote.
+    ("r8-ps-iex-paren-call", "PowerShell", 'iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-invoke-expression-paren-call", "PowerShell",
+     "Invoke-Expression('terraform destroy')", _o(**_STAGING)),
+    ("r8-ps-terraform-paren-double", "PowerShell", 'terraform("destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-terraform-paren-single", "PowerShell", "terraform('destroy')",
+     _o(**_STAGING)),
+    ("r8-ps-dot-quoted-nospace", "PowerShell", ".'terraform' destroy",
+     _o(**_STAGING)),
+    # FIX 3: `sem` is `parallel --semaphore`.
+    ("r8-sem", "Bash", "sem terraform destroy", _o(**_STAGING)),
+    ("r8-sem-j1", "Bash", "sem -j1 terraform destroy", _o(**_STAGING)),
+    # NIT: terragrunt's other mutating commands.
+    ("r8-tg-apply-all", "Bash", "terragrunt apply-all", _o(**_STAGING)),
+    ("r8-tg-destroy-all", "Bash", "terragrunt destroy-all", _o(**_STAGING)),
+    ("r8-tg-stack-run-apply", "Bash", "terragrunt stack run apply",
+     _o(**_STAGING)),
+    ("r8-tg-stack-run-destroy", "Bash", "terragrunt stack run destroy",
+     _o(**_STAGING)),
+    ("r8-tg-graph-apply", "Bash", "terragrunt graph apply", _o(**_STAGING)),
+    ("r8-tg-graph-destroy", "Bash", "terragrunt graph destroy", _o(**_STAGING)),
+    ("r8-tg-exec-destroy", "Bash", "terragrunt exec -- terraform destroy",
+     _o(**_STAGING)),
 ])
 
 R8_MUST_ALLOW = _normalise([
@@ -2916,6 +2992,22 @@ R8_MUST_ALLOW = _normalise([
      _o(**_STAGING)),
     ("r8a-plan-redirect", "Bash", "terraform plan 2>/dev/null", _o(**_STAGING)),
     ("r8a-ps-plan-redirect", "PowerShell", "terraform plan 2>$null",
+     _o(**_STAGING)),
+    # The first review's neighbours: each fix still allows the read-only form.
+    ("r8a-xargs-max-lines-fmt", "Bash", "ls *.tf | xargs --max-lines terraform fmt",
+     _o(**_STAGING)),
+    ("r8a-ps-iex-erroraction-plan", "PowerShell",
+     'iex -ErrorAction Stop "terraform plan"', _o(**_STAGING)),
+    ("r8a-ps-iex-verbose-plan", "PowerShell",
+     'Invoke-Expression -Verbose "terraform plan"', _o(**_STAGING)),
+    ("r8a-ps-iex-paren-plan", "PowerShell", 'iex("terraform plan")',
+     _o(**_STAGING)),
+    ("r8a-ws-select-literal-after-xargs-plan", "Bash",
+     "ls *.tf | xargs terraform fmt && terraform workspace select staging",
+     _o(**_STAGING)),
+    ("r8a-sem-plan", "Bash", "sem -j1 terraform plan", _o(**_STAGING)),
+    ("r8a-tg-graph-plan", "Bash", "terragrunt graph plan", _o(**_STAGING)),
+    ("r8a-tg-exec-plan", "Bash", "terragrunt exec -- terraform plan",
      _o(**_STAGING)),
 ])
 
@@ -2991,3 +3083,13 @@ def test_round8_unknown_option_is_could_not_tell(command, wrapper, option):
     assert found.scope["op"] == cloud_guard.OP_UNREADABLE_LINE
     assert wrapper in found.what and option in found.what, found.what
     assert "does not know" in found.what, found.what
+
+
+def test_round8_fed_workspace_select_is_judged_by_the_lexer():
+    """`xargs terraform workspace select` may get `-or-create` appended, so
+    the lexer judges it as a creation once the environment layer is engaged
+    (review of #347), as it does a visible `-or-create`."""
+    found = cloud_guard._fed_finding(  # pylint: disable=protected-access
+        ["terraform", "workspace", "select"], {}, "xargs", ("{}",),
+        {"engaged": True})
+    assert found is not None and found.scope["op"] == "ws-create", found
