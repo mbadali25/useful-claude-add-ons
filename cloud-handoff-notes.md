@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 02:21: Triage C: #376 L-0604 REVIEW, #377 L-0522(1/3) REVIEW (both complete, conflicts only generated/version); #379 T-0019 BUILD-finish (draft harness PR, r2 1 BLOCK+5 FIX unresolved; unblocks #354/#364/#365); #344 T-0035 BLOCKED on #375; #345 T-0036 BLOCKED on #344; #361 T-0050, #369 T-0044, #370 T-0038 BUILD (docs-only). #354/#356/#363/#364/#365/#366 still blocked (T-0016/T-0037/T-0049 have no PR). Starting reviews #376, #377 and #379 finish.
 - 02:21: #375 merge-only review on 8bf5c021: CLEAN. Waiting on CI. #339 first review started.
 - 02:21: Triage A: #338 L-0582 PORT (WIP real code, 600 behind, conflicts verify.json/README, no CI); #339 L-0563 REVIEW (harness-only sabotage_qa.py, merges clean, re-run sabotage on main); #340 L-0526, #341 L-0509, #342 T-0070, #343 T-0068, #346 T-0039, #347 T-0047 = BUILD (docs-only handoffs; #340/#343 builds are harness PRs, #347 sabotage separate). None superseded.
 - 02:19: #375 re-merged main cce7e486 -> 8bf5c021 (crew 1.0.242, BUDGETS 22,520/139; gates + 90 tests green); pushed; merge-only review + CI running. Triage of unreviewed PRs started in 3 groups: A #338-#347, B #348/#349/#336/#333/#331/#324/#274/#275, C #376/#377/#379/#344/#345/#361/#369/#370 + blocked-chain check. Next free: 1.0.243.
