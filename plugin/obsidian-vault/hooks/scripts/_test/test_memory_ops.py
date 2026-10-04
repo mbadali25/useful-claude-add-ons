@@ -415,6 +415,14 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
                 "wiki/Concepts/c.md": "a quokka\n"}),
             "links": sb.vault("links", {archived: "a narwhal\n", "wiki/real.md": "a narwhal\n"}),
             "words": sb.vault("words", {"a.md": "support and report\n", "b.md": "the port.\n"}),
+            "joined": sb.vault("joined", {
+                "a.md": "the obsidian-vault plugin\n", "b.md": "runs crew-context.sh\n",
+                "c.md": "see vault_recall.py\n", "port-collisions-break-the-bridge.md": "none\n",
+                "t.md": "ticket t-0083 done\n", "pl.md": "two bridges here\n",
+                "pl2.md": "a lone sprocket\n"}),
+            "links2": sb.vault("links2", {"wiki/real.md": "a walrus\n", ".trash/n.md": "a walrus\n",
+                                          "node_modules/m.md": "a walrus\n"}),
+            "snip": sb.vault("snip", {"s.md": "support " + "filler " * 60 + "the port here\n"}),
             "floor": sb.vault("floor", {
                 "note-a.md": "the port only\n", "note-b.md": "the port and the collision\n"}),
             "kinds": sb.vault("kinds", {
@@ -444,6 +452,10 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
             os.symlink(os.path.join(vaults["links"], archived),
                        os.path.join(vaults["links"], "wiki", "into-archive.md"))
             os.symlink(outside, os.path.join(vaults["links"], "wiki", "out-of-vault.md"))
+            os.symlink(os.path.join(vaults["links2"], ".trash", "n.md"),
+                       os.path.join(vaults["links2"], "wiki", "to-trash.md"))
+            os.symlink(os.path.join(vaults["links2"], "node_modules", "m.md"),
+                       os.path.join(vaults["links2"], "wiki", "to-node-modules.md"))
         except (OSError, NotImplementedError) as exc:
             linked = False
             print(f"SKIP: symlinks not creatable here ({exc}) - the symlink cases did not run")
@@ -490,6 +502,25 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
 
         code, res = _recall_json(["--query", "port", "--vaults", "words"])
         check("terms match whole words, not substrings (N4)", _paths(res), ["b.md"])
+
+        # Review round 2 FIX1: a joined word's parts are words too, in notes and in queries.
+        for query, want in (("obsidian vault", "a.md"), ("context", "b.md"), ("recall", "c.md"),
+                            ("port collision", "port-collisions-break-the-bridge.md"),
+                            ("t-0083", "t.md"), ("vault_recall", "c.md"),
+                            ("bridge", "pl.md"), ("sprockets", "pl2.md")):
+            code, res = _recall_json(["--query", query, "--vaults", "joined"])
+            check_true(f"joined words and plurals match ({query!r} finds {want}): got "
+                       f"{_paths(res)}", want in _paths(res))
+
+        if linked:
+            for extra in ([], ["--include-excluded"]):
+                code, res = _recall_json(["--query", "walrus", "--vaults", "links2"] + extra)
+                check(f"a symlink into .trash or node_modules is not served {extra} (N2)",
+                      _paths(res), ["wiki/real.md"])
+
+        code, res = _recall_json(["--query", "port", "--vaults", "snip"])
+        check_in("the snippet is centred on the whole-word match (N5)", "port here",
+                 res["results"][0]["snippet"] if res["results"] else "")
 
         code, res = _recall_json(["--query", "what is the port for this", "--vaults", "floor"])
         check("stop words are not terms", res.get("terms"), ["port"])

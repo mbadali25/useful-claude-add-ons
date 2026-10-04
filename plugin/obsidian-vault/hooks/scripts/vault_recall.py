@@ -10,13 +10,21 @@ its body, per query term:
     title hit  6      heading hit  3 per heading (max 3)      body hit  1 per line (max 5)
 
 Relevance (T-0083). Query terms are the words of three or more characters that
-are not in STOP_WORDS, first MAX_TERMS kept, and they match whole words only
-(`port` is not found in `support`). A note is a hit only when it holds at least
+are not in STOP_WORDS, first MAX_TERMS kept; a joined query word
+(`vault_recall`, `obsidian-vault`) becomes its parts. Terms match whole words
+only (`port` is not found in `support`), where a note's words are each word
+and its parts split on `-`, `.` and `_` (`crew-context.sh` holds `crew`,
+`context`, `sh` and the whole word, so `t-0083` still matches `t-0083`), and a
+term also matches its plural or singular by a trailing `s` or `es`. A note is a hit only when it holds at least
 `need` distinct terms: 1 for a query of one or two terms, 2 for three to five,
 3 for six or more; `--min-terms N` sets it (capped at the term count).
 `wiki/sessions/archive/` (any letter case) is never read, and a symlinked note
 whose real path lies inside it is skipped too; `--include-excluded` turns that
-off. A symlinked note whose real path lies outside the vault is always skipped.
+off. A symlinked note whose real path lies outside the vault, or inside a
+skipped or dot folder (`.trash`, `.git`, `node_modules`), is always skipped.
+Hard links cannot be told from ordinary files, so a hard link into the archive
+is read like any other note; Windows junctions are unverified (directory links
+are not followed by the walk, but no junction case was run on Windows).
 The vault's `.obsidian/app.json` `userIgnoreFilters` are NOT read: their shape
 was never checked against a real app.json (spec Unknowns #3, review FIX6).
 
@@ -78,13 +86,28 @@ KIND_RANK = {"concept": 0, "decision": 0, "other": 1, "session": 2}
 PROJECT_RANK = {"match": 0, "none": 1, "other": 2}
 
 
+PART_RE = re.compile(r"[-._]+")
+
+
 def terms_of(query):
+    """Query terms: the parts of each word (split on - . _) of MIN_TERM_CHARS or
+    more that are not stop words, in order, first MAX_TERMS kept."""
     seen = []
-    for term in TERM_RE.findall(query.lower()):
-        term = term.strip(".-")
-        if len(term) >= MIN_TERM_CHARS and term not in STOP_WORDS and term not in seen:
-            seen.append(term)
+    for word in TERM_RE.findall(query.lower()):
+        for term in PART_RE.split(word.strip(".-")):
+            if len(term) >= MIN_TERM_CHARS and term not in STOP_WORDS and term not in seen:
+                seen.append(term)
     return seen[:MAX_TERMS]
+
+
+def variants(term):
+    """The words a term matches: itself, +s, +es, and the singular of an s/es plural."""
+    forms = {term, term + "s", term + "es"}
+    if term.endswith("es") and len(term) > 4:
+        forms.add(term[:-2])
+    if term.endswith("s") and len(term) > 3:
+        forms.add(term[:-1])
+    return frozenset(forms)
 
 
 def need_for(terms, min_terms=None):
@@ -122,8 +145,13 @@ def split_note(text):
 
 
 def words_of(text):
-    """The whole words of a text, tokenised the way terms_of tokenises a query."""
-    return {w.strip(".-") for w in TERM_RE.findall(text.lower())}
+    """The whole words of a text and each word's parts split on - . _."""
+    words = set()
+    for word in TERM_RE.findall(text.lower()):
+        word = word.strip(".-")
+        words.add(word)
+        words.update(part for part in PART_RE.split(word) if part)
+    return words
 
 
 def score_note(terms, title, headings, body):
@@ -132,15 +160,16 @@ def score_note(terms, title, headings, body):
     title_w = words_of(title)
     heads_w = [words_of(h) for h in headings]
     body_w = [words_of(b) for b in body]
-    for term in terms:
-        gained = 6 if term in title_w else 0
-        gained += 3 * min(3, sum(1 for h in heads_w if term in h))
-        gained += min(5, sum(1 for b in body_w if term in b))
+    forms = [variants(t) for t in terms]
+    for form in forms:
+        gained = 6 if not form.isdisjoint(title_w) else 0
+        gained += 3 * min(3, sum(1 for h in heads_w if not form.isdisjoint(h)))
+        gained += min(5, sum(1 for b in body_w if not form.isdisjoint(b)))
         score += gained
         matched += 1 if gained else 0
     best, best_hits = None, 0
     for raw, words in zip(body, body_w):
-        hits = sum(1 for t in terms if t in words)
+        hits = sum(1 for f in forms if not f.isdisjoint(words))
         if hits > best_hits:
             best, best_hits = raw, hits
     return score, best, matched
@@ -151,7 +180,13 @@ def snippet_for(terms, best, headings, title):
     if len(text) <= SNIPPET_CHARS:
         return text
     low = text.lower()
-    first = min((low.find(t) for t in terms if t in low), default=0)
+    found = []
+    for term in terms:
+        for form in variants(term):  # the first whole-word hit, not a substring
+            hit = re.search(r"(?<![^\W_])" + re.escape(form) + r"(?![^\W_])", low)
+            if hit:
+                found.append(hit.start())
+    first = min(found, default=0)
     start = max(0, first - SNIPPET_CHARS // 3)
     return ("..." if start else "") + text[start:start + SNIPPET_CHARS - 3] + "..."
 
@@ -207,7 +242,8 @@ def project_of(rel, fm_project, projects):
 
 def link_target(full, vault_real):
     """For a symlinked note: its real path relative to the vault, or None when it
-    resolves outside the vault (or cannot be resolved). "" for a plain file."""
+    resolves outside the vault, into a SKIP_DIRS or dot folder, or cannot be
+    resolved. "" for a plain file."""
     if not os.path.islink(full):
         return ""
     try:
@@ -215,6 +251,8 @@ def link_target(full, vault_real):
     except (OSError, ValueError):  # ValueError: another drive on Windows
         return None
     if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        return None
+    if any(d in SKIP_DIRS or (d.startswith(".") and d != "..") for d in rel.split("/")[:-1]):
         return None
     return rel
 
