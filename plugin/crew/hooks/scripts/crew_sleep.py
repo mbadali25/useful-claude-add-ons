@@ -33,13 +33,18 @@ L-0652: the manual state. `crew_autopilot.py sleep` and `wake` keep one
 object in `<git-common-dir>/crew/autopilot-sleep.json` (MANUAL_FILE), `{"state":
 "asleep"|"awake", "by", "at", "until"}`; that module does the file input and
 output, this one only judges the record (`read_manual`) and computes `until`
-(`next_edge`, MANUAL_SLEEP_HOURS). A valid, unexpired record beats the
-schedule (`resolve`'s `manual`), and the result names its `source`. A record
-that cannot be trusted is `unknown`, never "not set": what crew cannot read
-never loosens a policy. An `asleep` record counts only while `sleep_allowed`
-(`scope.allowCliApproval` exactly true); an `awake` one while the schedule is
-asleep or cannot tell is `tightenOnly`: only a night value stricter than the
-day value still applies, so neither `wake` nor a planted file can loosen one.
+(`next_edge`, MANUAL_SLEEP_HOURS). `at` and `until` are UTC-aware ISO times
+and are compared in UTC (`to_utc`); a naive one is not trusted. A valid,
+unexpired record beats the schedule (`resolve`'s `manual`), and the result
+names its `source`. A record that cannot be trusted is `unknown`, never "not
+set": what crew cannot read never loosens a policy. An `asleep` record counts
+only while `sleep_allowed` (`scope.allowCliApproval` exactly true), and then
+only as `tightenOnly` outside the scheduled window: owner decision 2026-10-04
+(review B1), until L-1504 lets the approval hook accept only the owner's typed
+`/crew:autopilot sleep`, a manual sleep applies a night value only where it is
+stricter than the day value, because the session can run the CLI itself. An
+`awake` record while the schedule is asleep or cannot tell is `tightenOnly`
+too, so neither `wake` nor a planted file can loosen a value.
 """
 import datetime
 import re
@@ -151,15 +156,21 @@ def next_edge(minute, when):
     return edge if edge > when else edge + datetime.timedelta(days=1)
 
 
+def to_utc(when):
+    """The naive local datetime `when` as an aware UTC one."""
+    return when.astimezone(datetime.timezone.utc)
+
+
 def _when(value):
-    """A naive datetime from an ISO string, or None."""
+    """An aware UTC datetime from a UTC-aware ISO string; None for anything
+    else, a naive time included (review N1)."""
     if not isinstance(value, str):
         return None
     try:
         found = datetime.datetime.fromisoformat(value)
     except ValueError:
         return None
-    return found if found.tzinfo is None else None
+    return None if found.tzinfo is None else found.astimezone(datetime.timezone.utc)
 
 
 def read_manual(found, when):
@@ -198,9 +209,10 @@ def _manual_problem(status, data, when):
     at, until = _when(data["at"]), _when(data["until"])
     if at is None or until is None:
         bad = "at" if at is None else "until"
-        return f"{bad} is {render(data[bad])}, not a local ISO time"
+        return f"{bad} is {render(data[bad])}, not a UTC-aware ISO time"
     if not isinstance(when, datetime.datetime):
         return f"cannot be judged: the clock read {render(when)}"
+    when = to_utc(when)
     if at > when:
         return f"at {data['at']} is in the future (the clock moved back?)"
     if until - at > MANUAL_MAX or until <= at:
@@ -232,9 +244,11 @@ def resolve(block, when, policies, manual=None, sleep_allowed=True):
                                "scope.allowCliApproval is not exactly true, so it is not "
                                f"honoured; it counts as unknown: {_STRICTER}")
         return dict(got, state=UNKNOWN)
-    if record["state"] == AWAKE and got["state"] in (ASLEEP, UNKNOWN):
+    if record["state"] == ASLEEP:
+        return dict(got, state=ASLEEP, tightenOnly=got["state"] != ASLEEP)
+    if got["state"] in (ASLEEP, UNKNOWN):
         return dict(got, state=AWAKE, tightenOnly=True)
-    return dict(got, state=record["state"])
+    return dict(got, state=AWAKE)
 
 
 def _scheduled(block, when, policies):

@@ -687,7 +687,7 @@ def test_approve_sleep_and_wake_are_the_only_writing_subcommands(tmp_path, monke
     monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
     root = _repo(tmp_path, approval="self", risk="low")
     config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
-    config["autopilot"]["sleep"] = {"approval": "self"}
+    config["autopilot"]["sleep"] = {"approval": "human"}
     _write(root / ".crew" / "config.json", json.dumps(config))
     _questions(root, GOOD_QUESTIONS)
     before = _files(root)

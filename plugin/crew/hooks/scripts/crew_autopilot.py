@@ -151,6 +151,7 @@ import importlib
 import json
 import os
 import re
+import stat
 import sys
 import threading
 
@@ -854,14 +855,19 @@ def _overlay(day, sleep):
     """`(policies, applied)`: asleep, every non-null override replaces the
     day value; unknown, one replaces it only when stricter (human > risk >
     self), so could-not-tell never loosens a policy and never drops a
-    tightening the owner set; off or awake, the day values."""
+    tightening the owner set; off or awake, the day values. `tightenOnly`
+    (L-0652: a manual sleep outside the window, or a manual wake inside it)
+    is stricter-only whatever the state."""
     policies, applied = dict(day), []
     for key, value in sleep["overrides"].items():
         if value is None:
             continue
-        if sleep["state"] == crew_sleep.ASLEEP or (
-                (sleep["state"] == crew_sleep.UNKNOWN or sleep.get("tightenOnly"))
-                and STRICTNESS.index(value) < STRICTNESS.index(policies[key])):
+        stricter = STRICTNESS.index(value) < STRICTNESS.index(policies[key])
+        if sleep.get("tightenOnly") or sleep["state"] == crew_sleep.UNKNOWN:
+            take = stricter
+        else:
+            take = sleep["state"] == crew_sleep.ASLEEP
+        if take:
             policies[key] = value
             applied.append(key)
     return policies, applied
@@ -899,8 +905,10 @@ def _sleep_at(top, block):
 
 
 def _hhmm(iso):
-    """`HH:MM` of an ISO local time `crew_sleep` produced."""
-    return iso[11:16]
+    """`HH:MM`, in local time, of an ISO time `crew_sleep` produced (a
+    UTC-aware one is shown in the machine's time zone)."""
+    found = datetime.datetime.fromisoformat(iso)
+    return (found.astimezone() if found.tzinfo else found).strftime("%H:%M")
 
 
 def _sleep_span(sleep):
@@ -928,10 +936,51 @@ def _manual_found(top):
     takes as could-not-tell."""
     if not os.path.lexists(os.path.join(top, ".git")) and crew_ticket.state_dir(top) is None:
         return "absent", None
-    data, state = crew_ticket._read_json(_manual_path(top))  # pylint: disable=protected-access
-    if state == "absent":
+    path = _manual_path(top)
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
         return "absent", None
-    return ("ok", data) if state == "ok" else ("unreadable", "not JSON, or unreadable")
+    except OSError as exc:
+        return "unreadable", f"{type(exc).__name__} on lstat"
+    if not stat.S_ISREG(mode):
+        return "unreadable", "it is not a regular file"
+    text = _read_regular(path)
+    if text is None:
+        return "unreadable", "it is not a regular file, or could not be read"
+    try:
+        return "ok", json.loads(text)
+    except ValueError:
+        return "unreadable", "not JSON"
+
+
+MANUAL_MAX_BYTES = 65536
+
+
+def _read_regular(path):
+    """The text of `path` when it is still a regular file once opened (review
+    N3): opened without following a final symlink and without blocking on a
+    FIFO, re-checked with `fstat`, read up to MANUAL_MAX_BYTES. None
+    otherwise."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        handle = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(handle).st_mode):
+            return None
+        data = os.read(handle, MANUAL_MAX_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(handle)
+    if len(data) > MANUAL_MAX_BYTES:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def sleep_now(root, by="cli"):
@@ -957,19 +1006,29 @@ def sleep_now(root, by="cli"):
     if found["state"] == crew_sleep.UNKNOWN:
         return 2, (f"refused: autopilot.sleep.schedule or the block cannot be read "
                    f"({'; '.join(found['warnings'])[:200]})")
-    if not any(found["overrides"].get(key) for key in crew_sleep.OVERRIDES):
-        return 2, ("refused: no autopilot.sleep override (approval or questions) is set, so "
-                   "sleep would change nothing")
+    tightens = [key for key in crew_sleep.OVERRIDES if _stricter(
+        found["overrides"].get(key), conf["day"].get(key))]
+    if found["state"] != crew_sleep.ASLEEP and not tightens:
+        return 2, ("refused: no autopilot.sleep override is stricter than its day value, and "
+                   "until L-1504 a manual sleep only tightens, so it would change nothing")
     if found["schedule"]:
         until = crew_sleep.next_edge(crew_sleep.parse_schedule(found["schedule"])[1], when)
     else:
         until = when + datetime.timedelta(hours=crew_sleep.MANUAL_SLEEP_HOURS)
-    at = when.replace(microsecond=0)
-    record = {"state": crew_sleep.ASLEEP, "by": by, "at": at.isoformat(),
-              "until": until.replace(microsecond=0).isoformat()}
+    record = {"state": crew_sleep.ASLEEP, "by": by,
+              "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
+              "until": crew_sleep.to_utc(until).replace(microsecond=0).isoformat()}
     crew_ticket._write_json(_manual_path(top), record)  # pylint: disable=protected-access
-    return 0, (f"asleep until {_hhmm(record['until'])} (set by {_cli_value(by)[:60]}); "
+    what = ("the scheduled night" if found["state"] == crew_sleep.ASLEEP
+            else f"tightens {','.join(tightens)}")
+    return 0, (f"asleep until {_hhmm(record['until'])} (set by {_cli_value(by)[:60]}; {what}); "
                f"{AUTOPILOT} wake undoes it")
+
+
+def _stricter(night, day):
+    """Whether the night override `night` is stricter than the day value."""
+    return night in STRICTNESS and day in STRICTNESS and (
+        STRICTNESS.index(night) < STRICTNESS.index(day))
 
 
 def wake_now(root):
@@ -979,20 +1038,28 @@ def wake_now(root):
     already says awake. Nothing to undo: `already awake`, nothing written."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     path, when = _manual_path(top), crew_sleep.now()
-    state, schedule = crew_sleep.UNKNOWN, None
-    if not _unreadable_autopilot(top):
+    state, schedule, why = crew_sleep.UNKNOWN, None, _unreadable_autopilot(top)
+    if not why:
         block = _sleep_block(top, crew_config.resolve_config(top).get("autopilot") or {})
         found = crew_sleep.resolve(block, when, POLICIES)
         state, schedule = found["state"], found["schedule"]
+        why = "; ".join(found["warnings"])
     if state == crew_sleep.ASLEEP:
         until = crew_sleep.next_edge(crew_sleep.parse_schedule(schedule)[1], when)
         record = {"state": crew_sleep.AWAKE, "by": "cli",
-                  "at": when.replace(microsecond=0).isoformat(), "until": until.isoformat()}
+                  "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
+                  "until": crew_sleep.to_utc(until).isoformat()}
         crew_ticket._write_json(path, record)  # pylint: disable=protected-access
         return 0, f"awake; the schedule resumes at {_hhmm(record['until'])}"
     if not os.path.lexists(path):
         return 0, "already awake"
     os.unlink(path)
+    if state == crew_sleep.UNKNOWN:
+        # Review N2: never "resumes at <now>" for a schedule that cannot be told.
+        return 0, _one_line(f"awake; whether the schedule is asleep cannot be told "
+                            f"({_safe_text(why or 'unreadable', str)[:160]})")
+    if state == crew_sleep.OFF:
+        return 0, "awake; no schedule is set"
     return 0, f"awake; the schedule resumes at {when.strftime('%H:%M')}"
 
 
