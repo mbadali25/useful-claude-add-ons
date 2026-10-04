@@ -42,16 +42,27 @@ All notable changes to this repository are documented here. Format follows [Keep
   leaves its record behind. Windows' entrypoint and macOS are unmeasured: on
   Windows an entrypoint outside `cli` is unknown and `procStart` is unchecked;
   macOS reads `ps` and leaves `procStart` unchecked.
-- **Tests.** `test_autoclear_binding.py` (91 cases, both flavours on the same
+- **Tests.** `test_autoclear_binding.py` (110 cases, both flavours on the same
   fixtures), and `crew_fixtures.write_session_record` / `proc_stub` /
   `bind_session`, which T-0017 builds on. `CREW_AUTOCLEAR_PROC_STUB` replaces
   the whole process table in tests, so no case reads the real tree;
   conftest clears an ambient `CLAUDE_CONFIG_DIR`. The existing must-fire
   helpers in `test_auto_cycle.py`, `test_auto_clear.py`,
   `test_auto_clear_review_fixes.py` and `test_resume_typing.py` bind their
-  session; no assertion changed. 35 hand sabotages (python, bash and
-  PowerShell) each turned their named test red; the `sabotage*.py` entries
+  session (and the three spawn tests use `CREW_AUTOCLEAR_INHIBIT=spawn`); no
+  assertion changed. 49 hand sabotages (python, bash and PowerShell) each
+  turned their named test red; the `sabotage*.py` entries
   are a separate tooling PR.
+- **Review round 1.** tmux now also requires every process from the session
+  up to the pane to be on the session's tty (or none), so an interactive
+  child on its own pty under its parent's pane is refused even when the
+  parent's record is in another config dir and its name is not `claude`; a
+  version-named process (`2.1.289`, a native install) ends the walk like
+  `claude`; a live process whose record cannot be read means no other session
+  can be ruled out; the PowerShell walk tells an exited parent (the top) from
+  an unreadable one (refuse). The process and window stubs are read only
+  while `CREW_AUTOCLEAR_INHIBIT` is set, and `CREW_AUTOCLEAR_INHIBIT=spawn`
+  spawns the bash sender but stops it before any keystroke.
 - **Owner decisions.** Approved 2026-10-04 as the spec recommended: macOS via
   `ps` with `procStart` unchecked; `windowTitle`'s global fallback kept but
   refused while another live session record exists or the window's pid is

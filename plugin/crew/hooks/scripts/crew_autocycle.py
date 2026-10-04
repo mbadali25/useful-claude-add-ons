@@ -108,6 +108,11 @@ PROC_STUB_ENV = "CREW_AUTOCLEAR_PROC_STUB"
 TERMINAL_ENTRYPOINTS = frozenset({"cli"})
 HEADLESS_ENTRYPOINT_PREFIX = "sdk"
 CLAUDE_COMM = "claude"
+# A native install runs as `~/.local/share/claude/versions/<x.y.z>`, so its comm
+# is the version. Unmeasured beyond that path's shape: the records and the
+# tty rule carry the proof, and this only makes the walk fail closed sooner.
+_VERSIONED_COMM = re.compile(r"\d+\.\d+\.\d+")
+INHIBIT_ENV = "CREW_AUTOCLEAR_INHIBIT"
 _SCAN_LIMIT = 4096
 
 
@@ -391,14 +396,26 @@ def verify_handoff(root, session_id, cfg):
 # the real process tree, and on native Windows the bash flavour has no other
 # way to read one. No environment variable is evidence of WHICH process is
 # this session (CLAUDE_PID and CLAUDE_CODE_ENTRYPOINT are copied into every
-# child); the stub only replaces where facts are read from.
+# child); the stub only replaces where facts are read from. `{"gone": true}`
+# is a pid that no longer exists (the top of a chain); null is one that
+# exists but cannot be read.
+#
+# Both stubs are honoured ONLY while CREW_AUTOCLEAR_INHIBIT is set (review
+# round 1): a repo's `.claude/settings.json` env reaches every hook, so a stub
+# honoured on its own could make a parent's window look like this session's.
+# With the inhibit set no keystroke is ever sent, so a stub can steer nothing
+# that types; every suite case sets it.
+
+def _stubs_allowed():
+    return bool(os.environ.get(INHIBIT_ENV))
+
 
 def _proc_stub():
     """(table, scan_fails, start_pid) from CREW_AUTOCLEAR_PROC_STUB, or
     (None, False, None) when it is unset. A stub that is set but unreadable is
     an empty table whose scans fail: nothing in it, so nothing is proven."""
     path = os.environ.get(PROC_STUB_ENV)
-    if not path:
+    if not path or not _stubs_allowed():
         return None, False, None
     try:
         with open(path, encoding="utf-8") as handle:
@@ -415,7 +432,7 @@ def _proc_stub():
 
 
 def _stub_entry(entry):
-    if entry is None:
+    if entry is None or entry.get("gone") is True:
         return None
     tty = entry.get("tty")
     return {"ppid": _num(entry.get("ppid"), 0),
@@ -476,6 +493,16 @@ def _proc(pid):
     return _parse_ps(out.strip().splitlines()[0] if out.strip() else "")
 
 
+def _gone(pid):
+    """True only when `pid` provably no longer exists -- not when it merely
+    cannot be read."""
+    table, _fails, _self = _proc_stub()
+    if table is not None:
+        entry = table.get(pid)
+        return isinstance(entry, dict) and entry.get("gone") is True
+    return os.path.isdir("/proc") and not os.path.exists(f"/proc/{pid}")
+
+
 def _ppid(pid):
     found = _proc(pid)
     return found["ppid"] if found else 0
@@ -501,6 +528,10 @@ def ancestry(pid=None):
         out.append(pid)
         found = _proc(pid)
         if found is None:
+            if len(out) > 1 and _gone(pid):
+                # A recorded parent that has exited: the top of the chain.
+                out.pop()
+                return out, True, ""
             return out, False, f"the parent of pid {pid} could not be read"
         pid = found["ppid"]
         if pid <= 1:
@@ -617,8 +648,12 @@ def other_sessions(owner_pid, env=None):
         pid = int(match.group(1))
         record = _read_record(os.path.join(sessions, name))
         info = _proc(pid)
-        if record is None or info is None:
+        if info is None:
             continue
+        if record is None:
+            # A live process whose record cannot be read may be a session:
+            # it cannot be ruled out, so nothing is ruled out (review round 1).
+            return None
         if info.get("start") is not None and str(record.get("procStart")) != str(info["start"]):
             continue
         out.add(pid)
@@ -708,12 +743,12 @@ def prove_target(owner, got, cfg, env=None):
     chain, complete, why = ancestry(me)
     others = other_sessions(me, env)
     if others is None:
-        return {"ok": False, "reason": ("the session records could not be listed, so another session cannot "
-                                        "be ruled out")}
+        return {"ok": False, "reason": ("the session records could not be listed or read, so another session "
+                                        "cannot be ruled out")}
 
     def crossing(pid):
-        comm = (_proc(pid) or {}).get("comm")
-        return pid in others or comm == CLAUDE_COMM
+        comm = (_proc(pid) or {}).get("comm") or ""
+        return pid in others or comm == CLAUDE_COMM or bool(_VERSIONED_COMM.fullmatch(comm))
 
     if got["method"] == "tmux":
         pane_pid = got.get("pane_pid") or 0
@@ -727,6 +762,21 @@ def prove_target(owner, got, cfg, env=None):
                 return {"ok": False, "reason": (
                     f"the way from this session (pid {me}) up to tmux pane {got['target']} passes through "
                     f"another Claude Code session (pid {pid})")}
+        # Review round 1 BLOCK: a parent session in another config dir, under
+        # a comm that is not `claude`, is invisible to both checks above. The
+        # pane types into ITS tty, so every process from this session up to
+        # the pane must be on this session's tty or on none.
+        own_tty = (owner.get("info") or {}).get("tty")
+        for pid in chain[1:chain.index(pane_pid) + 1]:
+            tty = (_proc(pid) or {}).get("tty")
+            if tty is None:
+                return {"ok": False, "reason": (
+                    f"the controlling terminal of pid {pid}, between this session and tmux pane "
+                    f"{got['target']}, could not be read")}
+            if tty and tty != own_tty:
+                return {"ok": False, "reason": (
+                    f"tmux pane {got['target']} is not this session's terminal: pid {pid} is on tty_nr {tty}, "
+                    f"this session (pid {me}) is on {own_tty}")}
         return {"ok": True, "target": got["target"], "label": got["label"], "owner": me}
     windows, reason = list_windows()
     if windows is None:
@@ -787,7 +837,7 @@ def list_windows():
     CREW_AUTOCLEAR_WINDOW_STUB names a JSON list that replaces the real window
     system. The suite uses it so no test ever enumerates, let alone types
     into, a real window."""
-    stub = os.environ.get(WINDOW_STUB_ENV)
+    stub = os.environ.get(WINDOW_STUB_ENV) if _stubs_allowed() else None
     if stub:
         try:
             with open(stub, encoding="utf-8") as handle:

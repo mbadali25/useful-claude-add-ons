@@ -1075,8 +1075,8 @@ and the method, before the sent-marker claim:
    record, an unreadable one, a start-time mismatch, an entrypoint nobody
    measured (e.g. `remote_mobile`) — is `unknown`, and unknown is never called
    headless.
-3. **What each class gets.** `headless`, whatever the method: method
-   `notify-headless` — nothing typed, one `systemMessage` naming the handoff
+3. **What each class gets.** `headless`, whatever the method (`notify`
+   included): method `notify-headless` — nothing typed, one `systemMessage` naming the handoff
    and its `resume:` line and saying the process that started this session
    must start a new one, claimed like `notify` (once per session) and logged
    in full (a `-p` parent may never show the message). `unknown`: `notify`
@@ -1084,7 +1084,12 @@ and the method, before the sent-marker claim:
    typing method refuses with the reason. `terminal`: `notify` unchanged;
    tmux, xdotool and sendkeys are proven from the owner.
 4. **Target, from the owner.** tmux: the pane's pid is the owner or an
-   ancestor of it. xdotool/sendkeys: the window is owned by a strict ancestor
+   ancestor of it, and every process from the owner up to the pane is on the
+   owner's tty or on none — a pane reached through a process on another tty
+   is someone else's terminal (an interactive child on its own pty under its
+   parent's pane, whose parent's record is in another config dir and whose
+   name is not `claude`, is caught only by this), and a tty that cannot be
+   read refuses. xdotool/sendkeys: the window is owned by a strict ancestor
    (never the claude process itself). The walk refuses when it passes
    through another Claude Code process or another live session record (a
    child under its parent's pane or window), or when the chain could not be
@@ -1099,15 +1104,36 @@ and the method, before the sent-marker claim:
    applies. A window found by `windowTitle` alone, or one with no owning
    process (pid ≤ 1), refuses whenever another live session record exists. A
    record whose process is gone or whose start time names a reused pid is
-   not live (Claude Code leaves records behind when a session is killed).
+   not live (Claude Code leaves records behind when a session is killed); a
+   LIVE process whose record cannot be read means no other session can be
+   ruled out, and every check that needs that refuses. "Another Claude Code
+   process" is a live record, a process named `claude`, or one named like a
+   version (`2.1.289`: a native install runs from
+   `~/.local/share/claude/versions/<x.y.z>`); the names are a heuristic that
+   only makes the walk fail closed sooner — `node` and other names are not
+   recognised, which is why the records and the tty rule carry the proof.
 
 The chain end to end: T-0017 wrap-up → T-0016 target proof → clear → T-0006
 `decide` → T-0013 typing (which takes the same binding, below).
 
+**Test stubs are inert in production.** `CREW_AUTOCLEAR_PROC_STUB` (the
+whole process table) and `CREW_AUTOCLEAR_WINDOW_STUB` (the window list) are
+read only while `CREW_AUTOCLEAR_INHIBIT` is set, in both flavours: a repo's
+`.claude/settings.json` env reaches every hook, and with the inhibit set no
+keystroke is ever sent. `CREW_AUTOCLEAR_INHIBIT=spawn` (`auto-clear.sh`
+only, for the suite's spawn tests) still builds and spawns the detached
+sender, which stops after its sleep, before any keystroke.
+
 **Stated limits.** Measured on Linux only (Claude Code 2.1.289,
 `plugin/crew/docs/session-record-spike.md`). On native Windows `entrypoint`
 is unmeasured and there is no tty: a value outside the allowlist is unknown,
-and a record is bound by pid and session id with `procStart` unchecked. On
+and a record is bound by pid and session id with `procStart` unchecked; with
+no tty, a parent session above a console window is told apart only by its
+record and its process name, so one in another config dir under an
+unrecognised name is not seen there (Windows Terminal's one-tab rule and the
+title-fallback refusals still apply). A parent that has exited ends the walk
+on Windows; one that exists but cannot be read (`Get-Process` denied, or no
+parent id) refuses. On
 macOS (no `/proc`), parent and tty come from `ps -o ppid=,tty=,comm=` and
 `procStart` is unchecked, so a pid reused within a record's life is not
 caught there.

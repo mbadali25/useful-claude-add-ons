@@ -365,7 +365,11 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
     send_env.update(_bound(root))
     home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
-               CLAUDE_PROJECT_DIR=str(root), **send_env)
+               CLAUDE_PROJECT_DIR=str(root), **send_env,
+               # T-0016 review round 1: the stubs are read only under the
+               # inhibit; "spawn" still spawns the sender, which stops before
+               # any keystroke (auto-clear.sh).
+               CREW_AUTOCLEAR_INHIBIT="spawn")
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
     deadline = 20 if os.name == "nt" else 5
 
@@ -412,7 +416,8 @@ def test_the_detached_sender_does_not_outlive_kill_process_group(tmp_path):
     _write_handoff(root)
     env = _xdotool_env(tmp_path, [{"id": 1, "pid": 999999, "title": "LaneC2Marker"}])
     home = tmp_path / "home"
-    env = dict(os.environ, **env, HOME=str(home), USERPROFILE=str(home),
+    env = dict(os.environ, **env, **_bound(root), CREW_AUTOCLEAR_INHIBIT="spawn",
+               HOME=str(home), USERPROFILE=str(home),
                CLAUDE_PROJECT_DIR=str(root))
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
 
@@ -1088,7 +1093,7 @@ def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tm
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
                CLAUDE_PROJECT_DIR=str(root),
                PATH=crew_fixtures.shell_path("sh", [bindir]),
-               CREW_TEST_REAL_BASH=_BASH,
+               CREW_TEST_REAL_BASH=_BASH, CREW_AUTOCLEAR_INHIBIT="spawn",
                TMUX="/tmp/fake,1,0", TMUX_PANE="%7", **_bound(root))
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
 
