@@ -88,7 +88,11 @@ def _in_scope_change(tmp_path):
 def _failing_c_subcommand(sub="diff-index"):
     """(sh, cmd) for a git that fails `git -C <dir> <sub>` and hands every
     other call to the real git: tool_fixtures.failing_subcommand reads `$1`,
-    and every completion_audit call starts `-C <top>`."""
+    and every completion_audit call starts `-C <top>`. On Windows the cmd
+    pass-through re-parses `%*`, which eats the `^` in the listing's own
+    `rev-parse --verify <sha>^{commit}`, so that earlier call of the same
+    listing fails instead (CI, windows-latest): either way only a resolved git
+    can make the listing fail, and a bare one passes."""
     real = shutil.which("git")
     sh = (f"#!/bin/sh\nif [ \"$1\" = -C ] && [ \"$3\" = {sub} ]; then echo 'fatal: broken' >&2; "
           f"exit 128; fi\nexec '{real}' \"$@\"\n")
@@ -105,8 +109,7 @@ def test_completion_audit_runs_the_git_which_resolves(tmp_path, monkeypatch):
 
     ok, lines = completion_audit.audit(str(root), "T-1")
 
-    assert (ok, "could not diff the tree" in " ".join(lines),
-            "fatal: broken" in " ".join(lines)) == (False, True, True), lines
+    assert (ok, "could not diff the tree" in " ".join(lines)) == (False, True), lines
 
 
 def test_completion_audit_refuses_when_git_does_not_resolve(tmp_path, monkeypatch):
