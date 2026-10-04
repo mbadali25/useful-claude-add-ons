@@ -17,6 +17,7 @@ inbox/reflected.<host>.md        gardener acknowledgements (written only by vaul
 wiki/index.md                    the human entry point
 wiki/concepts/                   one distilled idea per file
 wiki/sessions/                   provenance: "Session - <topic> <YYYY-MM-DD>.md"
+wiki/sessions/archive/           old session notes; never recalled (vault_ops.py recall skips it)
 wiki/daily/                      "YYYY-MM-DD.md"
 wiki/sources/                    source records with provenance fields
 wiki/decisions/                  "D-00N - <decision>.md"
@@ -45,7 +46,8 @@ the note unsupported, and recall should say so.
 Name a concept after the claim it makes, as a readable sentence -
 `AWS OpenSearch balances shards by count not size.md`, not `Notes on shards.md`.
 `vault_ops.py recall` scores the title highest, so a vague filename is close to
-unfindable. Project index pages are `Project - <name>.md`, `type: project-index`.
+unfindable. It ranks `wiki/concepts/` and `wiki/decisions/` above `wiki/sessions/`,
+and a concept's `project:` key is what `--project` matches. Project index pages are `Project - <name>.md`, `type: project-index`.
 
 ## Wikilinks resolve by filename
 

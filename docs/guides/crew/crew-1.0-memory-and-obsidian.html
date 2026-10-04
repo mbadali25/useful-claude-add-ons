@@ -605,6 +605,10 @@ paste in a slice:</p>
   <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json</code>. If the plugin is missing, or
   the CLI fails, times out or prints something other than JSON, the session goes on without recall
   and the log records a miss with the reason.</li>
+<li>An empty recall can be the CLI working as meant: it skips stop words, needs more than one
+  matching word for a query of three or more words, matches whole words only, and never reads
+  <code>wiki/sessions/archive/</code>. To check whether a note is there but held back, run the
+  CLI with <code>--min-terms 1</code> (no floor) and <code>--include-excluded</code> (the archive too).</li>
 <li>Every recall line starts with the vault's name: <code>- [vault:&lt;name&gt;] &lt;note path&gt;: &lt;text&gt;</code>. Any snippet
   the CLI returns without a vault name is dropped.</li>
 </ul>

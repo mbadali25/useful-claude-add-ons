@@ -66,6 +66,72 @@ All notable changes to this repository are documented here. Format follows [Keep
   named test, and are registered in `sabotage_*.py` by PR B
   (`T-0037-sabotage`), a tooling PR that lands alone after this one.
 
+### Changed — `obsidian-vault` 0.5.0: vault recall relevance (T-0083)
+
+- **Behaviour change: default recall results.** `vault_ops.py recall` (the CLI crew's context hook
+  calls on every prompt) returns fewer, more relevant notes for every caller, with no crew change:
+  - it never reads `wiki/sessions/archive/` (any letter case), nor a symlinked note whose real
+    path is inside it; a symlinked note that resolves outside the vault or into `.trash`,
+    `.git`, `node_modules` or another dot folder is always skipped (hard links cannot be
+    detected; Windows junctions are untested);
+  - stop words and words under three characters are not query terms; a stop-word-only query
+    returns nothing, exit 0; terms match whole words only (`port` no longer matches `support`),
+    where a note's joined word (`crew-context.sh`, `vault_recall.py`) also counts as its parts,
+    a joined query word (`t-0083`, `github.com`) is one term matched whole or as its parts side
+    by side in order; plurals pair `y`/`ies`, `es` only after s/x/z/ch/sh, else a plain `s`
+    (also stripped from an `es` word: `releases` finds `release`), no form is shorter than three
+    letters (`uses` is not `us`), `news` is an exception (never `new`), no plural form is a stop
+    word, and CamelCase is not split;
+  - a note must hold 1 distinct term for a query of one or two terms, 2 for three to five, 3 for
+    six or more;
+  - inside a vault the order is project, note kind (`wiki/concepts/` and `wiki/decisions/`, then
+    other notes, then `wiki/sessions/`, any letter case), score, path. Vault priority still
+    comes first.
+- Not in this release: the vault's `.obsidian/app.json` `userIgnoreFilters`. Their format has
+  not been checked against a real vault, so recall does not read them; that is a follow-up.
+- New options: `--project NAME[,NAME]` (a note whose `project:` or a path folder matches ranks
+  first; another project's notes rank last and are never dropped), `--min-terms N` (`1` restores
+  the old floor) and `--include-excluded`.
+- New JSON keys, existing ones unchanged: `kind`, `project` and `matched` per result; `project`,
+  `need`, `below_floor`, `excluded_dirs` and `skipped_links` at the top.
+- crew passing its project to `--project` is L-0675, a separate change.
+### Changed — `crew` 1.0.343: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
+
+- **What changed.** `notify`, `handoff-read`, `handoff-write` and `context-watch`, in both
+  flavours, read the repo config through T-0096's resolver (`crew_repo_config_dir` in
+  `_common.sh`; a verbatim `Get-CrewRepoConfigDir` in each `.ps1`, now seven copies held
+  byte-identical). A linked worktree with no crew config of its own gets the main checkout's
+  notifications, handoff path, transcript retention and context thresholds, where it got
+  nothing before. Own files win whole; `unknown` (git cannot name the main checkout) reads only
+  the own `.crew/`.
+- **Taken defaults (the spec's recommended options).** A lane notifies with the main checkout's
+  `notify` settings, so several lanes ping one channel unless a lane writes its own config. An
+  inherited relative `context.handoffPath` names a file in the lane. The `.crew/` directory gates
+  stay, so `context-watch` still needs a `.crew/` directory in the lane. Nothing these hooks
+  write moves.
+- context-watch's messages that say where to set a value name the main checkout's file by its
+  path when it is inherited; unchanged text for an own file.
+- `handoff-write.ps1` honours `context.keepTranscripts` on PowerShell 7, whose `ConvertFrom-Json`
+  reads a JSON integer as Int64 (BigInteger past Int64); it was dropped there and five copies
+  kept. Both flavours clamp a larger value to Int32.MaxValue (2,147,483,647 kept, in effect
+  all). Both now take an integer only, as documented: a digit string such as `"2"`, which bash
+  used to accept, a float or a bool keeps the default 5.
+- `context.handoffPath` stays inside the checkout in every flavour, by the Python readers' rule
+  (`crew_state.handoff_path`): an absolute, `..` or symlinked value that leaves it (in a lane,
+  one naming the main checkout's file), or one naming a directory, is the default
+  `.work/HANDOFF.md`, with a warning, so a lane never writes or prints the main checkout's
+  note; context-watch's message says so too. The path is printed with forward slashes on
+  every OS. The `.ps1` hooks read a backslash as a separator on every OS, as PowerShell's file
+  cmdlets do, so `..\main\...` cannot slip past the check on Linux; bash reads it as python
+  does (a filename character off Windows). PowerShell, which cannot resolve a
+  link as `realpath` does, treats any link on the way as leaving.
+- `auto-clear.ps1` lists `wrapUp` among `context.autoClear`'s known keys, so it no longer logs
+  that recognised key as unrecognised.
+- **Not in this release:** the harness readers (`verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py`), L-0681, a tooling PR.
+- Tests: `plugin/crew/tests/test_worktree_config_shell.py` (both flavours and the no-python
+  path; a static check that no executable line in the eight scripts names the own path outside
+  a counted allowlist). Every routed gate was sabotaged by hand and went red.
 ### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with
