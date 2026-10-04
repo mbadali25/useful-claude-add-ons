@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:49: #361 FIX+NITs pushed 5473c6c8 (corrupt machine file -> unknown + warning; 5 tests, 4 red first; docs; Tooling-seam trailer for crew_autopilot.py; 1.0.377). Re-review started.
 - 12:49: T-0052 BUILT on #364: T-0052-build e3a572c6 (1.0.374; stacked on T-0037-build; crew_split.py; 74 tests; 10 hand mutations red; harness follow-up sabotage_split.py draft in scratchpad). First review started. Builds STARTED: #365 T-0058 (1.0.379; stacked on T-0052-build [+T-0012-build if needed]), #366 T-0059 (1.0.380; stacked on T-0052-build + T-0011-build).
 - 12:43: #395 re-review 1b6a6046: 0/0/3 CLEAN (NITs carry at landing: ctypes argtypes for Process32*/CloseHandle; break Windows walk at reused parent link; Claude.exe desktop app name match). Land-prep #362 T-0051 started (1.0.378; notify.* KEY_META rows; keep security fixes) -> then build #363 T-0060 stacked on T-0049-build + T-0051-build.
 - 12:42: #395 round-2 fixes pushed 1b6a6046 (Windows Toolhelp32 ancestor walk + creation time; NITs; merged ce235468; 1.0.375; 24 mutations red). Re-review started.
