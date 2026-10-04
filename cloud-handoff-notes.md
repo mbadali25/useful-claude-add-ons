@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 00:39 UTC
+Last updated: 2026-10-03 00:40 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:40: #353 first review on 8e63b3aa: PASS, 0 BLOCK, 1 code FIX (MERGED PR reads closed without comparing headRefOid to HEAD) + base 3 behind main (handled at queue front) + 3 NIT. Fix agent started; target 1.0.233. Next free: 1.0.234.
 - 00:39: #358 re-review on 68611aed: PASS, 0 BLOCK, 2 FIX (corrupt base marketplace.json collapses to 'added'; cat-file-only + README GitFailed paths untested, sabotage green) + 1 NIT (CHANGELOG blank line). Fix agent started; target 1.0.232. Next free: 1.0.233.
 - 00:39: #352 re-review on 26c18d41: PASS, 0 BLOCK, 1 FIX (author-record residual not in CONFIG.md Accepted risks) + 2 NIT. Fix agent started; target crew 1.0.231 (1.0.230 reserved for #337 re-merge). Next free: 1.0.232.
 - 00:38: #372 merge-only Sonnet review on 860db77f: PASS (0 BLOCK/0 FIX/0 NIT). Waiting on CI.
