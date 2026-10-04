@@ -59,9 +59,13 @@ function Deny-UnreadableMap([string]$Why) {
 #   - a declared command matches when either one contains the other,
 #     literally, ignoring case (OrdinalIgnoreCase; the .sh folds each
 #     character's simple upper case, which is what that compares);
-#   - the `deploy` key is read ignoring case (PowerShell property access
-#     does), and a map holding two keys that differ only by case is refused
-#     (ConvertFrom-Json throws, and the .sh refuses it the same way);
+#   - every key the gate reads (`environments`, `deploy`, `requires`,
+#     `rollback`, `rollbackReason`, `requireHuman`) is read ignoring case
+#     (PowerShell property access does), and a map holding two keys that
+#     differ only by case is refused (ConvertFrom-Json throws; the .sh refuses
+#     it the same way, and now reads those keys ignoring case too);
+#   - `"deploy": null` in the working map is malformed and refuses the map,
+#     in both flavours (this one used to skip the environment);
 #   - more than one matching environment is ambiguous and blocks, naming them
 #     all (Deny-AmbiguousDeploy). The first-match pick made qa `target=Prod`
 #     and production `target=prod` resolve differently per flavour.
@@ -171,7 +175,11 @@ foreach ($p in $vm.environments.PSObject.Properties) {
   if ($p.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json is not an object."
   }
-  $declared = $p.Value.deploy
+  $deployProp = $p.Value.PSObject.Properties['deploy']
+  $declared = if ($deployProp) { $deployProp.Value } else { $null }
+  if ($deployProp -and $null -eq $declared) {
+    Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``deploy`` that is not a command or a list of commands (it is null)."
+  }
   if ($null -ne $declared) {
     # A bare string is ONE command. Stated rather than left to the `foreach`,
     # which already treats it that way, because promote-gate.sh has to

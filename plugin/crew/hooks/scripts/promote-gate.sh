@@ -127,9 +127,14 @@ import json, os, shutil, subprocess, sys
 #     that is then empty or whitespace deploys nothing;
 #   - a declared command matches when either one contains the other,
 #     literally, ignoring case (`*`, `?`, `[` are text, never wildcards);
-#   - the `deploy` key is read ignoring case, and a map holding two keys that
-#     differ only by case is refused - PowerShell's ConvertFrom-Json refuses
-#     it, and which one is policy cannot be told;
+#   - every key the gate reads (`environments`, `deploy`, and below
+#     `requires`, `rollback`, `rollbackReason`, `requireHuman`) is read
+#     ignoring case, as PowerShell property access does, and a map holding two
+#     keys that differ only by case is refused - ConvertFrom-Json refuses it,
+#     and which one is policy cannot be told. Read case-sensitively here,
+#     `"RequireHuman": true` demanded a human on PowerShell and nobody on bash;
+#   - `"deploy": null` in the working map is malformed and refuses the map,
+#     in both flavours;
 #   - more than one matching environment is ambiguous: status 5, every name
 #     on stderr. The first-match pick made qa `target=Prod` and production
 #     `target=prod` resolve differently per flavour (#489 FIX1).
@@ -175,9 +180,15 @@ def no_case_twins(pairs):
     return dict(pairs)
 
 
+def get_ci(obj, name, default):
+    """`obj[name]`, the key matched ignoring case (case twins never get this
+    far: no_case_twins refused the map)."""
+    keys = [k for k in obj if fold(k) == fold(name)]
+    return obj[keys[0]] if keys else default
+
+
 def deploy_of(cfg):
-    keys = [k for k in cfg if fold(k) == "DEPLOY"]
-    return cfg[keys[0]] if keys else []
+    return get_ci(cfg, "deploy", [])
 
 
 def matching(envs, strict):
@@ -247,7 +258,7 @@ if os.environ.get("CREW_MAP_DIRTY") and os.environ.get("CREW_HEAD_MAP"):
                                object_pairs_hook=no_case_twins)
     except ValueError as exc:
         unreadable(f"the committed .crew/verify.json does not parse as JSON: {exc}", 3)
-    committed_envs = committed.get("environments", {}) if isinstance(committed, dict) else None
+    committed_envs = get_ci(committed, "environments", {}) if isinstance(committed, dict) else None
     if not isinstance(committed_envs, dict):
         unreadable("the committed .crew/verify.json holds no object of environments", 3)
     pick(matching(committed_envs, strict=False), "the committed .crew/verify.json")
@@ -267,7 +278,7 @@ except ValueError as exc:
 if not isinstance(doc, dict):
     unreadable(f".crew/verify.json holds a JSON {type(doc).__name__}, "
                "not an object", 4)
-envs = doc.get("environments", {})
+envs = get_ci(doc, "environments", {})
 if not isinstance(envs, dict):
     unreadable(f"`environments` in .crew/verify.json is a "
                f"{type(envs).__name__}, not an object, so no environment can "
@@ -454,7 +465,26 @@ done
 VERDICT=$("$PY" - "$ENVNAME" "$SHA" <<'PY' 2>/dev/null
 import json, sys, os, re, datetime
 env, sha = sys.argv[1], sys.argv[2]
-cfg = json.load(open(".crew/verify.json")).get("environments", {}).get(env, {})
+
+
+# Keys read ignoring case, case twins refused: the matcher's rule above (and
+# PowerShell's), repeated because this is a separate interpreter. A refusal
+# raises, which exits non-zero and blocks below as "could not be evaluated".
+def fold(text):
+    return "".join(c.upper() if len(c.upper()) == 1 else c for c in text)
+
+
+def no_case_twins(pairs):
+    seen = {}
+    for key, _ in pairs:
+        if seen.setdefault(fold(key), key) != key:
+            raise ValueError(f"keys `{seen[fold(key)]}` and `{key}` differ only by case")
+    return {fold(k): v for k, v in pairs}
+
+
+with open(".crew/verify.json", encoding="utf-8-sig") as fh:
+    doc = json.load(fh, object_pairs_hook=no_case_twins)
+cfg = doc.get("ENVIRONMENTS", {}).get(fold(env), {})
 out = []
 
 rows = ""
@@ -473,7 +503,7 @@ def passed(name, sha):
             return all(c.lower() == "pass" for c in cells[3:6])
     return False
 
-for upstream in cfg.get("requires", []):
+for upstream in cfg.get("REQUIRES", []):
     if not passed(upstream, sha):
         out.append(f"'{upstream}' has no all-pass row for sha {sha} in .work/PROMOTIONS.md. "
                    f"Run /crew:promote {upstream} first, and let it record the result.")
@@ -481,15 +511,15 @@ for upstream in cfg.get("requires", []):
 # Fail CLOSED: an absent "rollback" key used to mean "no rollback needed".
 # It now means "nobody said". The only way to deploy with no rollback plan is
 # an explicit rollback: "none" plus a rollbackReason explaining why.
-if "rollback" not in cfg:
+if "ROLLBACK" not in cfg:
     out.append(f"'{env}' has no 'rollback' key in .crew/verify.json. Add rollback: "
                f"\"<path to a runbook>\", or rollback: \"none\" plus a rollbackReason "
                f"string explaining why {env} does not need one. Fix: edit the "
                f"'{env}' block in .crew/verify.json.")
 else:
-    rb = cfg.get("rollback")
+    rb = cfg.get("ROLLBACK")
     if rb == "none":
-        reason = str(cfg.get("rollbackReason") or "").strip()
+        reason = str(cfg.get("ROLLBACKREASON") or "").strip()
         if not reason:
             out.append(f"'{env}' sets rollback: \"none\" but has no rollbackReason. "
                        f"State why {env} does not need a rollback plan. Fix: add a "
@@ -521,7 +551,7 @@ else:
                 if age > 90:
                     out.append(f"'{rb}' was last verified {age} days ago (ceiling is 90). Re-run it against a real environment first.")
 
-if cfg.get("requireHuman"):
+if cfg.get("REQUIREHUMAN"):
     marker = f".crew/.approved-{env}-{sha}"
     if not os.path.exists(marker):
         out.append(f"this environment requires explicit human approval. Show the sha, the diff summary and the "
