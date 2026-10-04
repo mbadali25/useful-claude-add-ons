@@ -753,20 +753,47 @@ def _unreadable_autopilot(top):
     block = data.get("autopilot") if state == "ok" else None
     if block is not None and not isinstance(block, dict):
         return f"autopilot in .crew/config.json is {block!r}, not an object"
+    return _unreadable_machine_autopilot()
+
+
+def _unreadable_machine_autopilot():
+    """Why the machine-global file's `autopilot` block cannot be told, or "".
+    Since T-0050 every autopilot key is personal and the machine file can hold
+    one -- a global `approval: human` the stricter-wins rule keeps. But
+    `crew_config.read_global_config` collapses a corrupt machine file to `{}`,
+    so without this check that `human` would silently read as the default
+    `risk`: the unknown collapsing into the wider value. The path is read at
+    call time (`crew_config.GLOBAL_CONFIG_PATH`), the one `resolve_config`
+    reads. Absent is known: no machine default."""
+    path = crew_config.GLOBAL_CONFIG_PATH
+    data, state = crew_ticket._read_json(path)  # pylint: disable=protected-access
+    if state == "corrupt":
+        return f"the machine-global config {path} exists but could not be read as JSON"
+    if state == "ok" and not isinstance(data, dict):
+        return (f"the machine-global config {path} is {type(data).__name__}, not a JSON "
+                "object, so it could not be read")
+    block = data.get("autopilot") if state == "ok" else None
+    if not isinstance(block, (dict, type(None))):
+        return f"autopilot in the machine-global config {path} is {block!r}, not an object"
     return ""
 
 
 def settings(root):
     """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
-    "questions", "warnings"}`. Read through `crew_config.resolve_config` --
-    `.crew/config.json` over the defaults, the file
-    `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
+    "questions", "warnings"}`. Read through `crew_config.resolve_config`, which
+    reads both layers: every autopilot key is personal (T-0050), so where
+    `.crew/config.json` and the machine-global file both set one the stricter
+    value wins, and a silent layer imposes nothing (`crew_guards.
+    effective_personal`). `scope.allowCliApproval`, which
+    `crew_ticket.cli_approval_allowed` reads, is still the repo file's alone.
+    `mode` arms only when it is
     exactly the string `plan`; `maxPhases` must be a positive int, else 12;
     `deploy` is exactly one of DEPLOY_VALUES, else `none`; `approval` and
     `questions` must be one of POLICIES, else `human`.
 
-    A `.crew/config.json` that is present but unreadable, or an `autopilot`
-    value that is not an object, is could-not-tell: both policies read
+    A `.crew/config.json` or machine-global file that is present but
+    unreadable, or an `autopilot` value in either that is not an object, is
+    could-not-tell: both policies read
     UNKNOWN, `mode` reads `off`, `deploy` reads `none`, and a warning names
     the cause. That is never the default `risk`, which `resolve_config` would
     otherwise hand back for both. An absent file or an absent (or null) block

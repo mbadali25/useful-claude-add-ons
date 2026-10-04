@@ -50,10 +50,11 @@ you remove it (`--explain --all` names it as a `shadow:`).
 
 ## Backups and rebuilding a lost config
 
-Every crew write to either file first copies the old bytes to
+Every write a crew script makes to either file first copies the old bytes to
 `~/.claude/crew/backups/` (the newest 20 per file kept) and is refused when
-that copy fails. `crew_config.py --backups` lists the machine file's (add
-`--repo` for the repo file's) and `--restore <stamp> --apply` puts one back. Your non-default values are kept in
+that copy fails; a hand edit is not backed up. `crew_config.py --backups`
+lists the machine file's (add `--repo` for the repo file's) and
+`--restore <stamp> --apply` puts one back. Your non-default values are kept in
 `~/.claude/crew/profile.json` (and in your vault when `memory.vaultPath` is
 set), so `--rebuild --repo` or `--rebuild --global` regenerates a lost or
 corrupt file from the template plus that profile, as a dry run until
@@ -364,11 +365,11 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `autopilot.mode` | both, stricter wins | `"off"` | `off` \| `plan` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.41 | Only the exact string `plan` arms `/crew:autopilot`; anything else reads as off, with a warning. |
-| `autopilot.maxPhases` | both, stricter wins | `12` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.41 | Phases one run may take; anything but a positive integer reads as 12, with a warning. |
-| `autopilot.deploy` | both, stricter wins | `"none"` | `none` \| `nonprod` \| `all` | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
-| `autopilot.approval` | both, stricter wins | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
-| `autopilot.questions` | both, stricter wins | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
+| `autopilot.mode` | both, stricter wins | `"off"` | `off` \| `plan` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | 1.0.41 | Only the exact string `plan` arms `/crew:autopilot`; anything else reads as off, with a warning. |
+| `autopilot.maxPhases` | both, stricter wins | `12` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: the smaller wins | 1.0.41 | Phases one run may take; anything but a positive integer reads as 12, with a warning. |
+| `autopilot.deploy` | both, stricter wins | `"none"` | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
+| `autopilot.approval` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
+| `autopilot.questions` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
 
 ### `tickets`
 

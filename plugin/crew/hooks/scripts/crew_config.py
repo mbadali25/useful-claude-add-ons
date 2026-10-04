@@ -848,9 +848,12 @@ def read_global_config(path=None):
     Never raises. `resolve_config` is reached from a SessionStart hook by way
     of `crew_state.collect`, and a broken global file must look exactly like
     no global file at all -- the same reasoning `crew_upgrade.
-    _read_config_strict` documents for "absent" on the repo side. Unlike the
-    repo file, a broken global file is never backed up or rewritten here;
-    nothing in this module ever writes it.
+    _read_config_strict` documents for "absent" on the repo side. This read
+    never backs up or rewrites a broken global file; the writers that do
+    write it (`write_global_config`, `--rebuild --global`, `--restore`) each
+    back it up first (`crew_backup`, T-0050). A reader for whom "broken" must
+    not look like "absent" asks `layer_state`, or reads the file itself as
+    `crew_autopilot._unreadable_machine_autopilot` does for the personal keys.
     """
     text = crew_state.read_text(GLOBAL_CONFIG_PATH if path is None else path)
     if text is None:

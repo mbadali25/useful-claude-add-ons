@@ -496,8 +496,9 @@ may arm it.</p>
 <li><code>plugin/crew/CONFIG.md</code> holds the reasoning behind each setting, and ships
   with the plugin.</li>
 </ul>
-<p>Every crew write to either file first copies the old file to
-<code>~/.claude/crew/backups/</code> and is refused if that copy fails;
+<p>Every write a crew script makes to either file first copies the old file to
+<code>~/.claude/crew/backups/</code> and is refused if that copy fails (a hand edit is
+not backed up);
 <code>crew_config.py --backups</code> lists the copies and <code>--restore &lt;stamp&gt;</code> puts one
 back. crew also keeps your non-default values in <code>~/.claude/crew/profile.json</code>,
 so <code>crew_config.py --rebuild --repo</code> (or <code>--global</code>) regenerates a lost or

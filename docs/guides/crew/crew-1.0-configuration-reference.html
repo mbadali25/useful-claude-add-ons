@@ -129,10 +129,11 @@ you remove it (<code>--explain --all</code> names it as a <code>shadow:</code>).
   repo value, and <code>--models</code> is the per-role provider table.</li>
 </ul>
 <h2 id="backups-and-rebuilding-a-lost-config">Backups and Rebuilding a Lost Config</h2>
-<p>Every crew write to either file first copies the old bytes to
+<p>Every write a crew script makes to either file first copies the old bytes to
 <code>~/.claude/crew/backups/</code> (the newest 20 per file kept) and is refused when
-that copy fails. <code>crew_config.py --backups</code> lists the machine file's (add
-<code>--repo</code> for the repo file's) and <code>--restore &lt;stamp&gt; --apply</code> puts one back. Your non-default values are kept in
+that copy fails; a hand edit is not backed up. <code>crew_config.py --backups</code>
+lists the machine file's (add <code>--repo</code> for the repo file's) and
+<code>--restore &lt;stamp&gt; --apply</code> puts one back. Your non-default values are kept in
 <code>~/.claude/crew/profile.json</code> (and in your vault when <code>memory.vaultPath</code> is
 set), so <code>--rebuild --repo</code> or <code>--rebuild --global</code> regenerates a lost or
 corrupt file from the template plus that profile, as a dry run until
@@ -1596,7 +1597,7 @@ the plugin.</p>
 <td><code>autopilot.mode</code></td>
 <td>both, stricter wins</td>
 <td><code>"off"</code></td>
-<td><code>off</code> | <code>plan</code> (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td><code>off</code> | <code>plan</code> (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>); personal: listed strictest first, the stricter wins</td>
 <td>1.0.41</td>
 <td>Only the exact string <code>plan</code> arms <code>/crew:autopilot</code>; anything else reads as off, with a warning.</td>
 </tr>
@@ -1604,7 +1605,7 @@ the plugin.</p>
 <td><code>autopilot.maxPhases</code></td>
 <td>both, stricter wins</td>
 <td><code>12</code></td>
-<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>); personal: the smaller wins</td>
 <td>1.0.41</td>
 <td>Phases one run may take; anything but a positive integer reads as 12, with a warning.</td>
 </tr>
@@ -1612,7 +1613,7 @@ the plugin.</p>
 <td><code>autopilot.deploy</code></td>
 <td>both, stricter wins</td>
 <td><code>"none"</code></td>
-<td><code>none</code> | <code>nonprod</code> | <code>all</code></td>
+<td><code>none</code> | <code>nonprod</code> | <code>all</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
 <td>Where a deploy may run without asking; anything else reads as <code>none</code>.</td>
 </tr>
@@ -1620,7 +1621,7 @@ the plugin.</p>
 <td><code>autopilot.approval</code></td>
 <td>both, stricter wins</td>
 <td><code>"risk"</code></td>
-<td><code>human</code> | <code>self</code> | <code>risk</code></td>
+<td><code>human</code> | <code>risk</code> | <code>self</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
 <td>Who approves a ticket under autopilot; anything else reads as <code>human</code>.</td>
 </tr>
@@ -1628,7 +1629,7 @@ the plugin.</p>
 <td><code>autopilot.questions</code></td>
 <td>both, stricter wins</td>
 <td><code>"risk"</code></td>
-<td><code>human</code> | <code>self</code> | <code>risk</code></td>
+<td><code>human</code> | <code>risk</code> | <code>self</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
 <td>Who answers a ticket's open questions under autopilot; anything else reads as <code>human</code>.</td>
 </tr>

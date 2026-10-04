@@ -192,6 +192,52 @@ def test_global_deploy_all_repo_nonprod_resolves_nonprod(tmp_path, monkeypatch):
     assert crew_autopilot.settings(root)["deploy"] == "nonprod"
 
 
+# Review r1 FIX (T-0050): `read_global_config` collapses a corrupt machine file
+# to `{}`, so a global `approval: human` that got corrupted would read as the
+# default `risk` -- a silent widening. An unreadable machine file is
+# could-not-tell for every personal key, exactly as the repo side is.
+
+@pytest.mark.parametrize("raw", [
+    '{"autopilot": {"approval": "human", "mode": "plan"',   # truncated JSON
+    "[]",                                                   # not an object
+    '{"autopilot": ["human"]}',                             # block not an object
+])
+def test_unreadable_global_reads_personal_keys_unknown(tmp_path, monkeypatch, raw):
+    root = _repo(tmp_path, crew_config.template_config())
+    _global(tmp_path, monkeypatch, raw=raw)
+
+    got = crew_autopilot.settings(root)
+
+    assert (got["approval"], got["questions"], got["mode"], got["armed"],
+            got["deploy"]) == ("unknown", "unknown", "off", False, "none")
+    assert any("machine-global" in w and "could not" in w for w in got["warnings"]), \
+        got["warnings"]
+
+
+def test_unreadable_global_directory_reads_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path, crew_config.template_config())
+    path = _global(tmp_path, monkeypatch)
+    path.mkdir()
+
+    got = crew_autopilot.settings(root)
+
+    assert (got["approval"], got["questions"]) == ("unknown", "unknown")
+
+
+def test_absent_or_readable_global_is_unaffected(tmp_path, monkeypatch):
+    root = _layers(tmp_path, monkeypatch, None, {"approval": "human", "mode": "plan"})
+    got = crew_autopilot.settings(root)
+    assert (got["approval"], got["questions"], got["armed"]) == ("human", "risk", True)
+    assert not any("machine-global" in w for w in got["warnings"])
+
+    other = tmp_path / "other"
+    other.mkdir()
+    root = _repo(other, crew_config.template_config())
+    _global(other, monkeypatch)                       # path set, no file
+    got = crew_autopilot.settings(root)
+    assert (got["approval"], got["questions"]) == ("risk", "risk")
+
+
 def test_global_self_repo_silent_resolves_self(tmp_path, monkeypatch):
     root = _layers(tmp_path, monkeypatch, None, {"approval": "self", "mode": "plan"})
     assert _resolved(root)["approval"] == "self"

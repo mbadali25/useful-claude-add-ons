@@ -113,11 +113,27 @@ class Model:  # pylint: disable=too-few-public-methods
 
     def values(self, key, prefix=""):
         """The allowed-values cell. `prefix` turns a plugin-relative source
-        into a repo-relative one for the docs copy."""
+        into a repo-relative one for the docs copy. A personal key
+        (`crew_guards.PERSONAL_KEYS`, T-0050) lists its values strictest
+        first, the order its stricter-wins rule ranks them in, and says so."""
+        text = self._values(key, prefix)
+        personal = self.guards.PERSONAL_KEYS.get(key)
+        if personal is None:
+            return text
+        if personal[0] == "int-min":
+            return f"{text}; personal: the smaller wins"
+        return f"{text}; personal: listed strictest first, the stricter wins"
+
+    def _values(self, key, prefix):
         row = self.keys.KEY_META[key]
         kind = row["kind"]
         src = f"`{prefix}{row['source']}`" if row["source"] else ""
         vals = self.keys.values_of(key)
+        personal = self.guards.PERSONAL_KEYS.get(key)
+        if vals is not None and personal is not None and personal[0] == "tiers":
+            # The reader's tuple, in rank order (`test_crew_keys` holds the
+            # two to the same values).
+            vals = sorted(vals, key=personal[1].index)
         listed = " | ".join(_code(v) for v in vals) if vals is not None else ""
         if kind == "ratchet":
             return f"{listed} (ratchet: narrower layer wins; listed narrowest first)"
@@ -217,10 +233,11 @@ you remove it (`--explain --all` names it as a `shadow:`).
 
 ## Backups and rebuilding a lost config
 
-Every crew write to either file first copies the old bytes to
+Every write a crew script makes to either file first copies the old bytes to
 `~/.claude/crew/backups/` (the newest 20 per file kept) and is refused when
-that copy fails. `crew_config.py --backups` lists the machine file's (add
-`--repo` for the repo file's) and `--restore <stamp> --apply` puts one back. Your non-default values are kept in
+that copy fails; a hand edit is not backed up. `crew_config.py --backups`
+lists the machine file's (add `--repo` for the repo file's) and
+`--restore <stamp> --apply` puts one back. Your non-default values are kept in
 `~/.claude/crew/profile.json` (and in your vault when `memory.vaultPath` is
 set), so `--rebuild --repo` or `--rebuild --global` regenerates a lost or
 corrupt file from the template plus that profile, as a dry run until

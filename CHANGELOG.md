@@ -43,7 +43,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   reference's hand-written part and the crew guide describe personal defaults, backups and the
   rebuild as shipped. `crew_keys.COMING` keeps T-0050's `scope.allowCliApproval` row (the harness
   follow-up below).
-- Tests: `test_crew_config_personal.py` (55), `test_crew_config_rebuild.py` (42),
+- **A corrupt machine file is could-not-tell for the personal keys** (review r1 of the land
+  merge): `read_global_config` collapses it to `{}`, which would have turned a global
+  `approval: human` into the default `risk` with no warning. `crew_autopilot.settings` now reads
+  the machine file raw first (`_unreadable_machine_autopilot`), and unreadable JSON, a
+  non-object file or a non-object `autopilot` block reads every policy as `unknown`, autopilot
+  as off, with a warning naming the file, the same as the repo side. The generated reference
+  lists a personal key's values strictest first and says so.
+- Tests: `test_crew_config_personal.py` (60), `test_crew_config_rebuild.py` (42),
   `test_crew_backup.py` (28), must-block and must-allow; 25 hand sabotages, each red.
 - **Harness follow-ups (left out under the T-0087 rule):** `scope.allowCliApproval` as a personal
   key needs `crew_ticket.cli_approval_allowed` to read the global layer (review harness), with

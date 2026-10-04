@@ -1099,8 +1099,8 @@ python3 hooks/scripts/crew_config.py --root . --restore <stamp> --repo --apply
   keys; a repo set up before this spells `autopilot.mode: "off"`, which holds a
   global `plan` down — `--explain --all` names each such `shadow:`, and
   `--unset <key> --repo --apply` removes it on your yes.
-- **Every crew write is backed up first** to `~/.claude/crew/backups/` (newest
-  20 per file), and a failed backup refuses the write. `--backups` lists them
+- **Every crew script write is backed up first** to `~/.claude/crew/backups/`
+  (newest 20 per file; a hand edit is not), and a failed backup refuses the write. `--backups` lists them
   and `--restore <stamp>` puts one back, backing up the current file first.
 - **The profile.** `--set`/`--unset --apply`, the menu's Save and
   `--save-profile --apply` keep your non-default values in
