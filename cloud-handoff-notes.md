@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 02:22 UTC
+Last updated: 2026-10-03 02:23 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 02:23: #339 r1: PASS code (5/6 sabotage RED; ps1 entry STILL GREEN w/o pwsh = pre-existing trait), FIX version + ticket docs. Done by hand: merged main (clean), CHANGELOG entry, removed docs/tickets/L-0563, crew 1.0.244 -> 8855e68f pushed; gates green; r2 review started. Next free: 1.0.245.
 - 02:22: Triage B: #336 T-0009 REVIEW (complete, owner-waived tooling rule for sabotage_cloud.py; verify-gate red = that waiver); #333 L-0605 REVIEW (harness-only, ADR 0005); #331 L-0608 REVIEW (harness, real sabotage.py conflict; coordinate with #336); #348 T-0041, #349 T-0065 BUILD; #324 L-0590 WIP (draft, owner collecting timings); #274 T-0104, #275 T-0500 WIP (owner-marked, 1381 behind) - leave. Running now: reviews #339 #376 #377, fixer #379.
 - 02:21: Triage C: #376 L-0604 REVIEW, #377 L-0522(1/3) REVIEW (both complete, conflicts only generated/version); #379 T-0019 BUILD-finish (draft harness PR, r2 1 BLOCK+5 FIX unresolved; unblocks #354/#364/#365); #344 T-0035 BLOCKED on #375; #345 T-0036 BLOCKED on #344; #361 T-0050, #369 T-0044, #370 T-0038 BUILD (docs-only). #354/#356/#363/#364/#365/#366 still blocked (T-0016/T-0037/T-0049 have no PR). Starting reviews #376, #377 and #379 finish.
 - 02:21: #375 merge-only review on 8bf5c021: CLEAN. Waiting on CI. #339 first review started.
