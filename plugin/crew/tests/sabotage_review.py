@@ -14,6 +14,7 @@ REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
 REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
 REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
+CREW_TICKET = os.path.join(CREW, "hooks", "scripts", "crew_ticket.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -1007,11 +1008,12 @@ REVIEW_FIX_MUTATIONS = (
     (
         # L-0578: the row the round writes changes the bundle, so a CLEAN
         # receipt in a repo that does not gitignore .crew/ stops checking.
+        # Since T-0068 the exclusion is crew_ticket.CREW_BOOKKEEPING_PATHS's
+        # entry, so the mutation drops that entry.
         "the metrics row is reviewed as part of the bundle",
-        REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
-        '":(exclude).crew/metrics.md"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        CREW_TICKET,
+        '    ".crew/metrics.md",                   # review_run.py, commands/review.md step 6\n',
+        "",
         "tests/test_review_patch.py::"
         "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",
     ),
