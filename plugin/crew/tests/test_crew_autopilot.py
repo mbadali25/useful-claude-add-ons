@@ -1674,12 +1674,14 @@ def test_committing_refreshed_artifacts_keeps_the_review_bundle(tmp_path):
     _write(root / "src" / "app.py", "x = 2\n")
     git(root, "commit", "-qam", "the ticket's change")
     _write(root / ".crew" / "codemap" / "app.md", "# app\nanchor: HEAD\n- `src/app.py:1`\n")
-    before = review_ledger._current_hash(str(root), base)  # pylint: disable=protected-access
+    # [0]: the bundle hash, which the receipt check compares; [1] is T-0100's merged-main
+    # record, whose commit on main itself is HEAD and so moves with any commit.
+    before = review_ledger._current_hash(str(root), base)[0]  # pylint: disable=protected-access
 
     git(root, "add", "--", ".crew/codemap/app.md")
     git(root, "commit", "-qm", f"{T}: commit refreshed artifacts")
 
-    assert review_ledger._current_hash(str(root), base) == before  # pylint: disable=protected-access
+    assert review_ledger._current_hash(str(root), base)[0] == before  # pylint: disable=protected-access
 
 
 # --- T-0063 QA: the refresh commit takes only its paths; nothing unread passes -----
