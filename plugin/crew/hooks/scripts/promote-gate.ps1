@@ -51,10 +51,24 @@ function Deny-UnreadableMap([string]$Why) {
   exit 2
 }
 
-# Does this command deploy what `$Dep` declares? L-1503: the SAME test as
-# promote-gate.sh's `d in cmd or cmd in d` - a literal substring, both ways -
-# kept case-insensitive as this flavour always was, on the command with every
-# CR removed (the .sh runs `crew_strip_cr` before it matches). It used to be
+# THE RULE (L-1503), shared word for word with promote-gate.sh so both
+# flavours choose the same environment for the same command:
+#   - normalise the command: drop every CR, then trailing newlines; a command
+#     that is then empty or whitespace deploys nothing (the
+#     IsNullOrWhiteSpace exit above);
+#   - a declared command matches when either one contains the other,
+#     literally, ignoring case (OrdinalIgnoreCase; the .sh folds each
+#     character's simple upper case, which is what that compares);
+#   - the `deploy` key is read ignoring case (PowerShell property access
+#     does), and a map holding two keys that differ only by case is refused
+#     (ConvertFrom-Json throws, and the .sh refuses it the same way);
+#   - more than one matching environment is ambiguous and blocks, naming them
+#     all (Deny-AmbiguousDeploy). The first-match pick made qa `target=Prod`
+#     and production `target=prod` resolve differently per flavour.
+# Case is ignored because on Windows `./Deploy.ps1` and `./deploy.ps1` are
+# one file: a case-sensitive gate fails open there.
+#
+# Test-DeployMatch is the per-pair test. It used to be
 # `$cmd -like "*$dep*"`, and `-like` reads `*`, `?` and `[set]` in a deploy as
 # wildcards: `jq .items[0]` never matched itself, `deploy-*` claimed another
 # environment's command, and `[`, `[]`, `[z-a]` or `[!-[]` threw
@@ -64,9 +78,16 @@ function Deny-UnreadableMap([string]$Why) {
 # string has no IndexOf, for one): that environment cannot be ruled out, and
 # skipping it is the bug. Like the .sh's traceback path this is above the
 # emergency lane - which environment is the very thing not known.
+function Deny-AmbiguousDeploy([string[]]$Names, [string]$Where) {
+  [Console]::Error.WriteLine("PROMOTION BLOCKED: the command matches more than one environment in ${Where}: $($Names -join ', ').")
+  [Console]::Error.WriteLine("  This is NOT a pass. Each environment has its own pre-deploy gate, and")
+  [Console]::Error.WriteLine("  crew will not guess which one applies. Make the deploy commands distinct.")
+  exit 2
+}
+
 function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
   try {
-    $c = $Cmd.Replace("`r", "")
+    $c = $Cmd.Replace("`r", "").TrimEnd("`n")
     return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
             $Dep.IndexOf($c, [StringComparison]::OrdinalIgnoreCase) -ge 0)
   } catch {
@@ -110,13 +131,15 @@ if ($mapDirty -and $headMap) {
   if (-not $committedEnvs -or $committedEnvs.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "the committed .crew/verify.json holds no object of environments."
   }
+  $hits = @()
   foreach ($p in $committedEnvs.Value.PSObject.Properties) {
     $declared = @($p.Value.deploy) | Where-Object { $_ -is [string] -and $_ }
     foreach ($dep in $declared) {
-      if (Test-DeployMatch $cmd $dep $p.Name) { $envName = $p.Name; break }
+      if (Test-DeployMatch $cmd $dep $p.Name) { $hits += $p.Name; break }
     }
-    if ($envName) { break }
   }
+  if ($hits.Count -gt 1) { Deny-AmbiguousDeploy $hits "the committed .crew/verify.json" }
+  if ($hits.Count -eq 1) { $envName = $hits[0] }
   if (-not $envName -and -not $mapPresent) { exit 0 }
 }
 
@@ -140,9 +163,11 @@ if ($envProperty -and $envProperty.Value -isnot [System.Management.Automation.PS
   Deny-UnreadableMap "``environments`` in .crew/verify.json is not an object, so no environment can be read out of it."
 }
 
-# Which environment does this command deploy to?
+# Which environment does this command deploy to? Every one is checked, so a
+# second match is found and refused as ambiguous rather than shadowed.
+$hits = @()
+if (-not $envName) {
 foreach ($p in $vm.environments.PSObject.Properties) {
-  if ($envName) { break }
   if ($p.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json is not an object."
   }
@@ -157,10 +182,12 @@ foreach ($p in $vm.environments.PSObject.Properties) {
       Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``deploy`` that is not a command or a list of commands."
     }
     foreach ($dep in $declared) {
-      if ($dep -and (Test-DeployMatch $cmd $dep $p.Name)) { $envName = $p.Name; break }
+      if ($dep -and (Test-DeployMatch $cmd $dep $p.Name)) { $hits += $p.Name; break }
     }
   }
-  if ($envName) { break }
+}
+if ($hits.Count -gt 1) { Deny-AmbiguousDeploy $hits ".crew/verify.json" }
+if ($hits.Count -eq 1) { $envName = $hits[0] }
 }
 }
 if (-not $envName) { exit 0 }

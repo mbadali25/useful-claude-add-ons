@@ -102,7 +102,8 @@ RUN_CWD=$(crew_strip_cr "$RUN_CWD")
 # same reasoning at its own `ConvertFrom-Json`; this is the port.
 #
 # The EXIT STATUS carries the distinction, and the ONLY thing this step writes
-# to stdout is an environment name: 3 unreadable, 4 malformed, 0 for a name or
+# to stdout is an environment name: 3 unreadable, 4 malformed, 5 ambiguous
+# (more than one environment matches, L-1503), 0 for a name or
 # for nothing matching. Every reason goes to STDERR, unredirected, which is both
 # how the reader sees it and what keeps the status check load-bearing - a reason
 # printed to stdout would land in ENVNAME, be read as the name of an environment
@@ -119,7 +120,40 @@ RUN_CWD=$(crew_strip_cr "$RUN_CWD")
 # nothing to record and nothing to stand down.
 ENVNAME=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" "$PY" - "$CMD" <<'PY'
 import json, os, shutil, subprocess, sys
-cmd = sys.argv[1]
+
+# THE RULE (L-1503), shared word for word with promote-gate.ps1 so both
+# flavours choose the same environment for the same command:
+#   - normalise the command: drop every CR, then trailing newlines; a command
+#     that is then empty or whitespace deploys nothing;
+#   - a declared command matches when either one contains the other,
+#     literally, ignoring case (`*`, `?`, `[` are text, never wildcards);
+#   - the `deploy` key is read ignoring case, and a map holding two keys that
+#     differ only by case is refused - PowerShell's ConvertFrom-Json refuses
+#     it, and which one is policy cannot be told;
+#   - more than one matching environment is ambiguous: status 5, every name
+#     on stderr. The first-match pick made qa `target=Prod` and production
+#     `target=prod` resolve differently per flavour (#489 FIX1).
+# Case is ignored because on Windows `./Deploy.ps1` and `./deploy.ps1` are
+# one file: a case-sensitive gate fails open there.
+
+
+def fold(text):
+    """Per-character simple upper case: what .NET's OrdinalIgnoreCase
+    compares. `str.upper()` alone maps `ss`-style expansions (`\u00df` -> `SS`)
+    that .NET does not, so a character whose upper case is longer is kept."""
+    return "".join(c.upper() if len(c.upper()) == 1 else c for c in text)
+
+
+def blank(text):
+    """.NET's String.IsNullOrWhiteSpace: Python's isspace() less U+001C-1F,
+    which .NET does not count as white space."""
+    return all(c.isspace() and c not in "\x1c\x1d\x1e\x1f" for c in text)
+
+
+cmd = sys.argv[1].replace("\r", "").rstrip("\n")
+if blank(cmd):
+    sys.exit(0)
+fcmd = fold(cmd)
 
 
 def unreadable(why, status):
@@ -127,19 +161,68 @@ def unreadable(why, status):
     sys.exit(status)
 
 
-def matches(envs):
-    """The first environment whose declared deploy matches `cmd`, or None.
-    Only for the COMMITTED map below; the working map keeps its own strict
-    reading."""
+class CaseTwins(ValueError):
+    """Two keys in one JSON object that differ only by case."""
+
+
+def no_case_twins(pairs):
+    seen = {}
+    for key, _ in pairs:
+        first = seen.setdefault(fold(key), key)
+        if first != key:
+            raise CaseTwins(f"it contains keys with different casing (`{first}` "
+                            f"and `{key}`), so which one is policy cannot be told")
+    return dict(pairs)
+
+
+def deploy_of(cfg):
+    keys = [k for k in cfg if fold(k) == "DEPLOY"]
+    return cfg[keys[0]] if keys else []
+
+
+def matching(envs, strict):
+    """Every environment whose declared deploy matches `cmd`. `strict` is the
+    working map's reading, which refuses a malformed entry; the COMMITTED map
+    below is read leniently, as it always was."""
+    hits = []
     for name, cfg in envs.items():
-        declared = cfg.get("deploy", []) if isinstance(cfg, dict) else []
-        declared = [declared] if isinstance(declared, str) else declared
-        if not isinstance(declared, list):
+        if not isinstance(cfg, dict):
+            if strict:
+                unreadable(f"environment `{name}` in .crew/verify.json is a "
+                           f"{type(cfg).__name__}, not an object", 4)
             continue
-        for d in declared:
-            if isinstance(d, str) and d and (d in cmd or cmd in d):
-                return name
-    return None
+        declared = deploy_of(cfg)
+        if isinstance(declared, str):
+            # ONE command, not a list of them: iterating a bare string walked
+            # its CHARACTERS, so `deploy: "deploy-prod"` matched any command
+            # holding a `d`.
+            declared = [declared]
+        if not isinstance(declared, list) or not all(
+                isinstance(d, str) for d in declared):
+            if strict:
+                unreadable(f"environment `{name}` in .crew/verify.json has a "
+                           "`deploy` that is not a command or a list of "
+                           "commands", 4)
+            continue
+        # Substring both ways: the declared command may be run with extra
+        # flags, or wrapped. Deliberately generous - a missed match means no gate.
+        if any(isinstance(d, str) and d and (fold(d) in fcmd or fcmd in fold(d))
+               for d in declared):
+            hits.append(name)
+    return hits
+
+
+def pick(hits, where):
+    if len(hits) > 1:
+        unreadable(f"the command {_AMBIG} in {where}: {', '.join(hits)}. "
+                   "Crew will not guess which one's pre-deploy gate applies; "
+                   "make each environment's `deploy` distinct.", 5)
+    if hits:
+        print(hits[0])
+        sys.exit(0)
+
+
+_AMBIG = "matches more than one environment"
 
 
 # A dirty map is matched against the committed one too (T-0505). A committed
@@ -160,15 +243,14 @@ if os.environ.get("CREW_MAP_DIRTY") and os.environ.get("CREW_HEAD_MAP"):
         unreadable("the committed .crew/verify.json could not be read "
                    f"(git cat-file exited {proc.returncode})", 3)
     try:
-        committed = json.loads(proc.stdout.decode("utf-8-sig", errors="replace"))
+        committed = json.loads(proc.stdout.decode("utf-8-sig", errors="replace"),
+                               object_pairs_hook=no_case_twins)
     except ValueError as exc:
         unreadable(f"the committed .crew/verify.json does not parse as JSON: {exc}", 3)
     committed_envs = committed.get("environments", {}) if isinstance(committed, dict) else None
     if not isinstance(committed_envs, dict):
         unreadable("the committed .crew/verify.json holds no object of environments", 3)
-    hit = matches(committed_envs)
-    if hit:
-        print(hit); sys.exit(0)
+    pick(matching(committed_envs, strict=False), "the committed .crew/verify.json")
     if not os.path.exists(".crew/verify.json"):
         sys.exit(0)
 
@@ -179,7 +261,7 @@ try:
 except OSError as exc:
     unreadable(f".crew/verify.json exists and could not be read: {exc}", 3)
 try:
-    doc = json.loads(raw)
+    doc = json.loads(raw, object_pairs_hook=no_case_twins)
 except ValueError as exc:
     unreadable(f".crew/verify.json does not parse as JSON: {exc}", 4)
 if not isinstance(doc, dict):
@@ -190,34 +272,19 @@ if not isinstance(envs, dict):
     unreadable(f"`environments` in .crew/verify.json is a "
                f"{type(envs).__name__}, not an object, so no environment can "
                "be read out of it", 4)
-for name, cfg in envs.items():
-    if not isinstance(cfg, dict):
-        unreadable(f"environment `{name}` in .crew/verify.json is a "
-                   f"{type(cfg).__name__}, not an object", 4)
-    declared = cfg.get("deploy", [])
-    if isinstance(declared, str):
-        # ONE command, not a list of them. The .ps1's `foreach` already reads a
-        # bare string as a single entry; this loop iterated its CHARACTERS, so
-        # `deploy: "deploy-prod"` matched any command containing a `d` and
-        # `echo done` wrote a .crew/.deploy-in-flight marker for a deploy that
-        # never happened - which the Stop gate then demands a PROMOTIONS row
-        # for. Normalised here so both flavours read the same shape.
-        declared = [declared]
-    if not isinstance(declared, list) or not all(
-            isinstance(d, str) for d in declared):
-        unreadable(f"environment `{name}` in .crew/verify.json has a `deploy` "
-                   "that is not a command or a list of commands", 4)
-    for d in declared:
-        # Substring both ways: the declared command may be run with extra flags,
-        # or wrapped. Deliberately generous - a missed match means no gate.
-        if d and (d in cmd or cmd in d):
-            print(name); sys.exit(0)
+pick(matching(envs, strict=True), ".crew/verify.json")
 PY
 )
 ENV_STATUS=$?
 
 # Immediately after the substitution, like VERDICT_STATUS below: `set -uo
 # pipefail` is on and `-e` is not, so anything between the two lines eats $?.
+if [ "$ENV_STATUS" -eq 5 ]; then
+  echo "PROMOTION BLOCKED: this command matches more than one environment's deploy (named above)." >&2
+  echo "  This is NOT a pass. Each environment has its own pre-deploy gate, and" >&2
+  echo "  crew will not guess which one applies. Make the deploy commands distinct." >&2
+  exit 2
+fi
 if [ "$ENV_STATUS" -ne 0 ]; then
   echo "PROMOTION BLOCKED: .crew/verify.json could not be read as a deployment map (exit $ENV_STATUS)." >&2
   echo "  The reason is printed above this line, on stderr, by the check itself" >&2
