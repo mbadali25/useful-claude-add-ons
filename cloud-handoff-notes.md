@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:24 UTC
+Last updated: 2026-10-04 04:03 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,21 @@ Last updated: 2026-10-04 03:24 UTC
 
 ## Log (newest first)
 
+- 04:03: MERGED #339 at af2bf9d2 (crew 1.0.248; CI 25/25 green after runner disk fix; 3 merge-only reviews clean). #379 re-merged -> a5b44398 crew 1.0.250, merge-only review r2 + CI next. Next free 1.0.251.
+- 04:01: #343 T-0068 (harness, lands alone) built -> 514ca132 (1.0.300 placeholder; list in crew_ticket.py not crew_common.py to stay harness-only; 69 tests, 26 sabotages red incl ps1 via scratch pwsh 7.4.6). Sonnet adversarial review started. Builder started: T-0065 #349 (1.0.309).
+- 04:01: #369 T-0044 built -> ce400de3 (1.0.305 placeholder; 87+9 tests, 22/23 hand sabotages red (1 equivalent mutation); follow-up sabotage_unattended.py). Sonnet security review started. Builder started: T-0041 #348 (1.0.308).
+- 03:56: #379 merge-only review on a88e9b07: CLEAN (0/0/0; ASSIGN 34/34 + SCOPE sabotage red, 7 pwsh-only green w/o pwsh). Waits on CI.
+- 03:56: #361 r1 on e6c5fa6a: 0 BLOCK, 2 FIX (approval=null widening warning blank; --restore of corrupt stamp writes it saying nothing to change), 4 NIT. Fixer started (1.0.307 placeholder) incl. 2 safety NITs.
+- 03:52: OWNER: runner disk resolved. CI running on #339 c2a3ccb5 and #379 a88e9b07.
+- 03:52: #361 T-0050 built -> e6c5fa6a (1.0.301 placeholder; 120 new tests, 21 hand sabotages red, full suite 9316 passed; harness follow-ups: allowCliApproval global, sabotage_config_layers.py). Sonnet review started. Builder started: T-0038 #370 (1.0.306).
+- 03:50: MERGED #378 at f7ab26b9 (crew 1.0.247; CI 25/25 green incl verify-gate, merge-only review clean; marked ready then merged). #339 re-merged -> c2a3ccb5 crew 1.0.248, merge-only review CLEAN; CI pending runner disk fix (owner fixing runners 4/5/6 on the self-hosted host). #379 re-merged -> a88e9b07 crew 1.0.249 (543 tests pass on merged tree), merge-only review next. Next free: 1.0.250.
+- 03:37: BLOCKER (owner): self-hosted runner host DISK FULL - #339 verify-gate rerun: 'verify-gate.sh: line 911: printf: No space left on device' (runner-6). Earlier pwsh SIGBUS -7 on runners 4/5 same cause. All PR CI red until freed. Notes pushes paused (they trigger CI on the same runners). #339 and #378 are review-clean, merge on green after cleanup.
+- 03:36: #339 CI 6da2a486: verify-gate red at ~03:29 on self-hosted runner-5: pwsh killed by SIGBUS (-7) and the full suite errored en masse, then every later step (even 0s scripts) failed - host fault (same minute as runner-4's -7s on #387). Re-ran the failed job ONCE (run 37173806451). If it fails again the same way: host needs attention (tmpfs/memory) - owner.
+- 03:34: #379 r3 on d93f3e5a: CLEAN (0/0/3 NIT: mint --status '' -> ready; untested drop-note branch; >4300-digit id ValueError). All 6 r2 findings verified red-on-revert. Train reordered: #379 lands right after #378 (unblocks #354 T-0012).
+- 03:30: #387 (notes, docs-only) crew-shell-matrix ubuntu red on 0a53c7cd: 698 ps1-flavour tests exit -7 (pwsh killed by signal 7) on self-hosted runner-4 - runner fault, not content. Docs PR merges regardless (owner). Watching #339/#378 for the same.
+- 03:29: #379 T-0019: round-2 BLOCK + 5 FIX fixed test-first, merged main, pushed d93f3e5a (1.0.302 placeholder; full crew suite 9280 passed; ASSIGN sabotage 34/34 red). Sonnet round-3 review started. Builder started: T-0044 #369 (1.0.305).
+- 03:25: #378 merge-only review on 9b701365: CLEAN (0/0/2 NIT: diagram comment sha, version gap 243-246 reserved).
+- 03:24: OWNER: docs-only PRs need no gates, just merge. MERGED #386 (notes, 1ffbe7a5). Notes now pushed to branch ccr-b039f2bb-6jks7g after every action (read the BRANCH to resume); merged to main periodically via a docs PR.
 - 03:24: #378 local suites on merged tree: 582 passed, tooling-pr 17/17; merge-only Sonnet review of 9b701365 started. Owner 03:2x: 'merge when ready' (standing).
 - 03:22: #331 r2 on 4a368125: CLEAN (0/0/0; full crew suite 8834 passed). Harness clean set: #331, #333, #336 (needs split at landing).
 - 03:22: #378 merged main + re-bumped -> 9b701365 crew 1.0.247 pushed (CI early signal; will re-merge after #339). #333 r2 on 5b8be69d: CLEAN (0/0/0). Next free: 1.0.248.
