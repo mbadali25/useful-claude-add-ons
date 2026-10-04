@@ -356,6 +356,57 @@ def test_check_ignores_a_tracked_handoff_itself(repo):
     assert _check(repo) == (True, "")
 
 
+def _subdir_repo(tmp_path, handoff_rel=".work/HANDOFF.md"):
+    """A git repo at `top` whose crew root is `top/sub`: git status names
+    paths from the top, handoffPath is relative to `sub`."""
+    top = tmp_path / "top"
+    sub = top / "sub"
+    (sub / ".crew").mkdir(parents=True)
+    (top / ".work").mkdir()
+    (sub / ".crew" / "config.json").write_text(json.dumps({"context": {"handoffPath": handoff_rel}}),
+                                              encoding="utf-8")
+    _git(top, "init", "-q")
+    _git(top, "config", "user.email", "t@example.invalid")
+    _git(top, "config", "user.name", "T")
+    (top / "README.md").write_text("x\n", encoding="utf-8")
+    for path in (top / ".work" / "HANDOFF.md", sub / handoff_rel):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("placeholder\n", encoding="utf-8")
+    _git(top, "add", "-A")
+    _git(top, "commit", "-q", "-m", "fixture")
+    gpath = tmp_path / "machine.json"
+    gpath.write_text(json.dumps({"context": {"autoClear": {"enabled": True, "wrapUp": True}}}),
+                     encoding="utf-8")
+    cfg = crew_autocycle.settings(str(sub), str(gpath))
+
+    def write_handoff():
+        branch = _git(top, "rev-parse", "--abbrev-ref", "HEAD")
+        head = _git(top, "rev-parse", "HEAD")[:7]
+        (sub / handoff_rel).write_text(
+            f"# H\nbranch: {branch}\nhead: {head}\nresume: {RESUME}\n", encoding="utf-8")
+    return top, sub, cfg, write_handoff
+
+
+def test_check_exempts_the_handoff_when_root_is_a_subdirectory(tmp_path):
+    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    write_handoff()             # sub/.work/HANDOFF.md, tracked, now modified
+    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
+
+
+def test_check_does_not_exempt_a_top_level_namesake_from_a_subdirectory(tmp_path):
+    top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    write_handoff()
+    (top / ".work" / "HANDOFF.md").write_text("uncommitted work\n", encoding="utf-8")
+    ok, why = crew_autocycle.wrapup_check(str(sub), cfg)
+    assert not ok and "1 tracked file is modified (.work/HANDOFF.md)" in why
+
+
+def test_check_exempts_a_handoff_path_git_would_quote(tmp_path):
+    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path, ".work/HANDÖFF notes.md")
+    write_handoff()
+    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
+
+
 def test_check_refuses_missing_resume(repo):
     repo.arm()
     repo.wrapped(resume=None)

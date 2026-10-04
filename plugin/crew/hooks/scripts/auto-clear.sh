@@ -58,6 +58,10 @@
 #   bash auto-clear.sh --session ID            # apply the conditions, then send
 #   bash auto-clear.sh --session ID --dry-run  # print the plan, send nothing
 #   bash auto-clear.sh --force                 # skip the handoff conditions (testing)
+#
+# --force skips the handoff conditions AND the T-0017 wrap-up check. It is for
+# testing by hand only: hooks.json and context-watch never pass it, and no
+# repo or machine config key can turn it on.
 #   bash auto-clear.sh --resume --session ID --source clear|compact [--dry-run]
 #
 # Called from context-watch.sh with this session's id and root. `--resume`

@@ -1193,7 +1193,9 @@ and the sent-marker claim):
 4. its `resume:` line parses under T-0006's grammar, or is `resume: none`.
 
 Anything that cannot be told — git failing, T-0006's `crew_resume` missing, an
-unreadable handoff — refuses. A refusal is logged, shown to you as a
+unreadable handoff — refuses. `auto-clear.sh --force` / `auto-clear.ps1 -Force`
+skip this check along with the handoff checks; they are for testing by hand
+only — `hooks.json` and context-watch never pass them, and no config key can. A refusal is logged, shown to you as a
 `systemMessage` (`crew wrap-up: not clearing - <reason>`), and fed back to the
 model **once**, at the session's next ordinary Stop (claimed with
 `.crew/.wrapup-escalated-<session>`, reset at SessionStart and on re-arm);

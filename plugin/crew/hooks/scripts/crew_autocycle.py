@@ -427,6 +427,28 @@ def _handoff_field(regex, text):
     return found.group(1) if found else None
 
 
+def _top_relative(prefix, rel):
+    """`rel` (relative to the crew root) as git names it from the repo top."""
+    joined = (prefix or "") + str(rel).replace("\\", "/")
+    return os.path.normcase(os.path.normpath(joined).replace("\\", "/"))
+
+
+def _porcelain_z_paths(text):
+    """The changed paths in `git status --porcelain=v1 -z` output. A rename or
+    copy entry is followed by its source as a field of its own, skipped."""
+    fields = text.split("\0")
+    out, index = [], 0
+    while index < len(fields):
+        entry = fields[index]
+        index += 1
+        if len(entry) < 4:
+            continue
+        out.append(entry[3:])
+        if set(entry[:2]) & {"R", "C"}:
+            index += 1
+    return out
+
+
 def wrapup_check(root, cfg):
     """(ok, reason): are the wrap-up's results on disk? First failure wins.
     Every "could not tell" -- an unreadable handoff, crew_resume missing, git
@@ -455,7 +477,10 @@ def wrapup_check(root, cfg):
     try:
         branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
         head = _git_out(root, "rev-parse", "HEAD").strip().lower()
-        status = _git_out(root, "status", "--porcelain", "--untracked-files=no")
+        prefix = _git_out(root, "rev-parse", "--show-prefix").strip()
+        # -z: paths verbatim (never octal-quoted) and, like --show-prefix,
+        # relative to the repository top, whatever directory root is.
+        status = _git_out(root, "status", "--porcelain=v1", "-z", "--untracked-files=no")
     except RuntimeError as exc:
         return False, str(exc)
     if noted_branch is None:
@@ -468,12 +493,12 @@ def wrapup_check(root, cfg):
         return False, "the handoff's head: is not HEAD - commit first, then rewrite the handoff"
     # The handoff itself is exempt: its head: is HEAD, so it is written after
     # the commit, and in a repo that tracks it, it is always modified.
-    own = os.path.normcase(os.path.normpath(rel))
-    dirty = [line for line in status.splitlines()
-             if line.strip() and os.path.normcase(os.path.normpath(line[3:].strip('"'))) != own]
+    own = _top_relative(prefix, rel)
+    dirty = [path for path in _porcelain_z_paths(status) if os.path.normcase(path) != own]
     if dirty:
         noun = "file is" if len(dirty) == 1 else "files are"
-        return False, f"{len(dirty)} tracked {noun} modified - the step was not committed"
+        return False, (f"{len(dirty)} tracked {noun} modified ({dirty[0]}"
+                       f"{', ...' if len(dirty) > 1 else ''}) - the step was not committed")
     return True, ""
 
 

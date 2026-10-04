@@ -630,7 +630,7 @@ Read in full on `T-0016-build` after review round 1 and the merge of main ce2354
 - JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
   sabotage anchors); `prove_target` is the stricter proof and the one that decides.
 
-### Auto wrap-up before the clear (T-0017, crew 1.0.373)
+### Auto wrap-up before the clear (T-0017, crew 1.0.390)
 
 Read in full on `T-0017-build` (stacked on `T-0016-build` d7eb9fbd) before its version commit; line
 citations taken with `grep -n` there.
@@ -640,16 +640,16 @@ citations taken with `grep -n` there.
   (`:407`: `enabled`, `wrapUp` and `in_scope`). Its default is `None`
   (`plugin/crew/hooks/scripts/crew_state.py:717`) and a repo may only veto it
   (`plugin/crew/hooks/scripts/crew_config.py:3015`).
-- DERIVED: `plan` runs `wrapup_check` (`crew_autocycle.py:430`) after `verify_handoff` and before
-  `resolve_method` (`:1123`), so a refusal (reason prefixed `wrap-up: `, `:402`) never reaches the
-  binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:256` also prints it as a
-  `systemMessage`. `plugin/crew/hooks/scripts/auto-clear.ps1:723` reads `wrapUp` natively and runs
-  the same check through `crew_autocycle.py wrapup-check` (`:730`); no python refuses.
-- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:480`) instead of either
+- DERIVED: `plan` runs `wrapup_check` (`crew_autocycle.py:452`) after `verify_handoff` and before
+  `resolve_method` (`:1148`), so a refusal (reason prefixed `wrap-up: `, `:402`) never reaches the
+  binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:260` also prints it as a
+  `systemMessage`. `plugin/crew/hooks/scripts/auto-clear.ps1:727` reads `wrapUp` natively and runs
+  the same check through `crew_autocycle.py wrapup-check` (`:734`); no python refuses.
+- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:505`) instead of either
   `autoWrapUp` text when armed (`plugin/crew/hooks/scripts/context-watch.sh:597`,
   `plugin/crew/hooks/scripts/context-watch.ps1:630`), and in the marker branch escalates a failed
   check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:528`,
-  `context-watch.ps1:515`); the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1347`).
+  `context-watch.ps1:515`); the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1372`).
   SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`,
   `plugin/crew/hooks/scripts/handoff-read.ps1:200`).
 - DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:36`) is the one wrap-up
