@@ -826,32 +826,63 @@ def _settings_at(top):
         warnings += [warning] if warning else []
     sleep = _sleep_at(top, block)
     warnings += sleep.pop("warnings")
-    policies = dict(day)
-    if sleep["state"] == crew_sleep.ASLEEP:
-        policies.update({k: v for k, v in sleep["overrides"].items() if v is not None})
+    policies, sleep["applied"] = _overlay(day, sleep)
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
             "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
             "day": day, "sleep": sleep, "warnings": warnings}
 
 
+# Strictest first: under a sleep state that cannot be told, a valid night
+# override applies only when it comes earlier here than the day value.
+STRICTNESS = ("human", "risk", "self")
+
+
+def _overlay(day, sleep):
+    """`(policies, applied)`: asleep, every non-null override replaces the
+    day value; unknown, one replaces it only when stricter (human > risk >
+    self), so could-not-tell never loosens a policy and never drops a
+    tightening the owner set; off or awake, the day values."""
+    policies, applied = dict(day), []
+    for key, value in sleep["overrides"].items():
+        if value is None:
+            continue
+        if sleep["state"] == crew_sleep.ASLEEP or (
+                sleep["state"] == crew_sleep.UNKNOWN
+                and STRICTNESS.index(value) < STRICTNESS.index(policies[key])):
+            policies[key] = value
+            applied.append(key)
+    return policies, applied
+
+
+def _sleep_block(top, block):
+    """`autopilot.sleep` as the reader sees it. The resolved block cannot say
+    whether the file held a non-object there (`merge_defaults` drops it for
+    the default), so the raw repo file is asked first."""
+    raw = crew_state.load_config(top).get("autopilot")
+    saw = raw.get("sleep") if isinstance(raw, dict) else None
+    sleep = saw if saw is not None and not isinstance(saw, dict) else block.get("sleep")
+    return {} if sleep is None else sleep
+
+
 def _sleep_at(top, block):
     """T-0053: `crew_sleep.resolve` of `autopilot.sleep`, read from the clock
-    on every call and never cached. The resolved block cannot say whether the
-    file held a non-object there (`merge_defaults` drops it for the default),
-    so the raw repo file is asked first. A raising read or resolve is
-    could-not-tell: state unknown, no override, a warning."""
+    on every call and never cached. A raising read, clock or resolve is
+    could-not-tell: state unknown, with the overrides still read where the
+    block can be, so `_overlay` keeps a stricter one; and a warning."""
+    sleep, found = None, {key: None for key in crew_sleep.OVERRIDES}
     try:
-        raw = crew_state.load_config(top).get("autopilot")
-        saw = raw.get("sleep") if isinstance(raw, dict) else None
-        sleep = saw if saw is not None and not isinstance(saw, dict) else block.get("sleep")
-        sleep = {} if sleep is None else sleep
+        sleep = _sleep_block(top, block)
         return crew_sleep.resolve(sleep, crew_sleep.now(), POLICIES)
     except Exception as exc:  # pylint: disable=broad-except
-        return {"state": crew_sleep.UNKNOWN, "schedule": None,
-                "overrides": {key: None for key in crew_sleep.OVERRIDES},
+        try:
+            found = crew_sleep.read_overrides(sleep, POLICIES)[0]
+        except Exception:  # pylint: disable=broad-except
+            pass
+        return {"state": crew_sleep.UNKNOWN, "schedule": None, "overrides": found,
                 "warnings": [f"autopilot.sleep could not be resolved ({type(exc).__name__}: "
-                             f"{_safe_text(exc, str)}); the day values apply"]}
+                             f"{_safe_text(exc, str)}); the day values apply, or a stricter "
+                             "autopilot.sleep override"]}
 
 
 def _exact(value, allowed):
@@ -1049,14 +1080,17 @@ def _ticket_risk(top, ticket):
 
 def _decision(top, ticket, key):
     """(policy, risk, warnings), or raises when the settings cannot be read.
-    `risk` carries `sleep` (T-0053): `""`, or while asleep
-    ` (asleep <schedule>; day value <day>)`, which `_noted` puts after the
-    reason."""
+    `risk` carries `sleep` (T-0053): `""`, or, only when a sleep override set
+    `key`, ` (asleep <schedule>; day value <day>)` or the could-not-tell
+    form, which `_noted` puts after the reason."""
     conf = settings(top)
     sleep, day = conf.get("sleep") or {}, (conf.get("day") or {}).get(key)
     note = ""
-    if sleep.get("state") == crew_sleep.ASLEEP:
+    if key in sleep.get("applied", ()) and sleep.get("state") == crew_sleep.ASLEEP:
         note = f" (asleep {sleep['schedule']}; day value {day})"
+    elif key in sleep.get("applied", ()):
+        note = (f" (sleep could not be told; the stricter autopilot.sleep.{key} over "
+                f"day value {day})")
     return conf[key], dict(_ticket_risk(top, ticket), sleep=note), [
         w for w in conf["warnings"] if f"autopilot.{key} " in w]
 
@@ -1084,7 +1118,19 @@ def approval_policy(root, ticket):
     before. An unreadable ledger refuses, like anything that cannot be told.
     While asleep (T-0053) the policy is the night value, and `reason` and
     `sleep` say so."""
-    return _noted(_approval_policy(root, ticket))
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    pinned = _PINNED.get((top, ticket))
+    if pinned is not None:
+        return dict(pinned)
+    return _noted(_approval_policy(top, ticket))
+
+
+# `approve`'s one decision, replayed to `crew_ticket.approve`'s re-check while
+# that call runs (T-0053 review round 1): the receipt's `by=`, the printed line
+# and the check that lets the write happen are the same read of the clock, so
+# a window edge between two reads cannot make them disagree. Process-local,
+# set and cleared inside `approve` only.
+_PINNED = {}
 
 
 def _approval_policy(root, ticket):
@@ -1196,8 +1242,12 @@ def approve(root, ticket):
     got = approval_policy(top, ticket)
     if not got["allow"]:
         return 2, f"refused: {got['reason']}; {human}"
-    _receipt, successor = crew_ticket.approve(
-        top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
+    _PINNED[(top, ticket)] = got
+    try:
+        _receipt, successor = crew_ticket.approve(
+            top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
+    finally:
+        _PINNED.pop((top, ticket), None)
     text = (f"self-approved {ticket} under approval={got['policy']}, "
             f"risk={got['risk'] if got['known'] else 'unknown (high)'}{got.get('sleep', '')}")
     if successor is not None and not successor[0]:

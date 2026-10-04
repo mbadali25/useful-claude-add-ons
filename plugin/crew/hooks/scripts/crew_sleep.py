@@ -1,5 +1,6 @@
 """T-0053: autopilot sleep mode, slice 1 -- the nightly window and its
-resolver. Pure and read-only: it opens no file and reads no environment.
+resolver. Pure and read-only: it opens no file and reads no variable of its
+own (the clock follows the process time zone; see the last paragraph).
 
 `autopilot.sleep` in `.crew/config.json` (repo only, like the rest of the
 `autopilot` block) holds three keys, each default `null`:
@@ -15,14 +16,18 @@ resolver. Pure and read-only: it opens no file and reads no environment.
 "warnings"}`; `state` is `off` (no schedule), `awake`, `asleep` or
 `unknown`. Anything that cannot be told -- a block that is not an object, a
 schedule outside the grammar, a clock that is not a datetime -- is
-`unknown`, which applies no override, and a warning names the key.
+`unknown`, and a warning names the key. `crew_autopilot` then applies only
+an override STRICTER than the day value (human > risk > self), never a
+looser one.
 `crew_autopilot._settings_at` is the one caller; it calls `resolve` on every
 settings read, so a run that crosses the window's end is back on the day
 values at its next decision.
 
-The clock is `now()`, nothing else. There is deliberately no environment
-variable or flag that moves it: one the session could set would let it grant
-itself the night values. Tests monkeypatch `now` in-process.
+The clock is `now()`, nothing else: the machine's local wall-clock time as
+the PROCESS sees it, so it follows that process's time zone (`TZ`). crew adds
+no environment variable or flag of its own that moves it, and reads none;
+tests monkeypatch `now` in-process. A process started with a different `TZ`
+does see a different hour, which is the documented risk of local time.
 """
 import datetime
 import re
@@ -63,6 +68,16 @@ def in_window(start, end, minute):
     if start < end:
         return start <= minute < end
     return minute >= start or minute < end
+
+
+def read_overrides(block, policies):
+    """`(overrides, warnings)`: each valid override of `block` or None. A
+    block that is not an object has none. `crew_autopilot` also calls this
+    on its own when `resolve` raised, so a stricter night value still counts."""
+    warnings = []
+    if not isinstance(block, dict):
+        return {key: None for key in OVERRIDES}, warnings
+    return _overrides(block, policies, warnings), warnings
 
 
 def _overrides(block, policies, warnings):

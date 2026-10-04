@@ -433,3 +433,124 @@ def test_a_schedule_set_keeps_approve_the_only_writer(tmp_path, clock, monkeypat
     capsys.readouterr()
 
     assert policy._files(root) == before  # pylint: disable=protected-access
+
+
+# --- review round 1 -------------------------------------------------------------
+# F1: when sleep cannot be told, a valid night override that is STRICTER than
+# the day value still applies (human > risk > self); a looser one never does.
+
+TIGHT = {"schedule": "22:00-7:00", "approval": "human", "questions": "human"}
+
+
+def _bad_schedule(monkeypatch, root):  # pylint: disable=unused-argument
+    return root
+
+
+def _raising_resolve(monkeypatch, root):
+    def boom(*_args):
+        raise RuntimeError("resolver")
+    monkeypatch.setattr(crew_sleep, "resolve", boom)
+    return root
+
+
+def _raising_clock(monkeypatch, root):
+    def boom():
+        raise OSError("no clock")
+    monkeypatch.setattr(crew_sleep, "now", boom)
+    return root
+
+
+def _text_clock(monkeypatch, root):
+    monkeypatch.setattr(crew_sleep, "now", lambda: "23:00")
+    return root
+
+
+@pytest.mark.parametrize("source", [_bad_schedule, _raising_resolve, _raising_clock,
+                                    _text_clock])
+def test_unknown_sleep_keeps_a_stricter_override(tmp_path, clock, monkeypatch, source):
+    clock(NIGHT)
+    sleep = dict(TIGHT, schedule="22:00-07:00") if source is not _bad_schedule else TIGHT
+    root = source(monkeypatch, _repo(tmp_path, approval="self", questions="self",
+                                     sleep=sleep, risk="low"))
+
+    conf = crew_autopilot.settings(str(root))
+    got = crew_autopilot.approval_policy(str(root), T)
+    code, _text = crew_autopilot.approve(str(root), T)
+
+    assert (conf["sleep"]["state"], conf["approval"], conf["questions"], got["allow"],
+            crew_autopilot.question_policy(str(root), T)["action"], code,
+            _receipt(root)) == ("unknown", "human", "human", False, "stop", 2, None)
+
+
+@pytest.mark.parametrize("day,night,want", [
+    ("self", "risk", "risk"), ("self", "human", "human"), ("risk", "human", "human"),
+    ("risk", "self", "risk"), ("human", "self", "human"), ("human", "risk", "human"),
+    ("risk", None, "risk"), ("self", "Human", "self"),
+])
+def test_unknown_sleep_takes_the_strictest_per_key(tmp_path, clock, day, night, want):
+    clock(NIGHT)
+    root = _repo(tmp_path, approval=day, questions="self",
+                 sleep={"schedule": "22", "approval": night, "questions": None})
+
+    conf = crew_autopilot.settings(str(root))
+
+    assert (conf["approval"], conf["questions"], conf["day"]["approval"]) == (want, "self", day)
+
+
+def test_unknown_sleep_from_a_non_object_block_has_no_override_to_read(tmp_path, clock):
+    """The fourth unknown source: nothing under it can be read, so the day
+    values stand (never a looser value)."""
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="human", questions="risk", sleep=["human"])
+
+    conf = crew_autopilot.settings(str(root))
+
+    assert (conf["sleep"]["state"], conf["approval"], conf["questions"]) == (
+        "unknown", "human", "risk")
+
+
+# N1: the asleep note goes only on a key whose override applied.
+
+def test_the_asleep_note_names_only_an_applied_override(tmp_path, clock):
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=_night(questions=None), risk="high")
+
+    approval = crew_autopilot.approval_policy(str(root), T)
+    questions = crew_autopilot.question_policy(str(root), T)
+
+    assert ("(asleep 22:00-07:00; day value risk)" in approval["reason"],
+            "asleep" in questions["reason"], questions["sleep"]) == (True, False, "")
+
+
+# N2: approve's receipt, its line and crew_ticket.approve's re-check are one
+# decision, even when the window ends between the reads.
+
+def test_approve_uses_one_decision_across_the_window_edge(tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    when = {"now": NIGHT}
+    monkeypatch.setattr(crew_sleep, "now", lambda: when["now"])
+    original = crew_ticket.approve
+
+    def approve_at_dawn(*args, **kwargs):
+        when["now"] = _at(7, 0)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(crew_ticket, "approve", approve_at_dawn)
+
+    code = crew_autopilot.main(["approve", "--root", str(root), "--ticket", T])
+    out = capsys.readouterr().out.strip()
+
+    assert (code, out, _receipt(root)["approved_by"]) == (
+        0, f"self-approved {T} under approval=self, risk=high"
+           " (asleep 22:00-07:00; day value risk)", "autopilot:self")
+
+
+def test_the_pinned_decision_does_not_outlive_approve(tmp_path, monkeypatch):
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    when = {"now": NIGHT}
+    monkeypatch.setattr(crew_sleep, "now", lambda: when["now"])
+
+    code, _text = crew_autopilot.approve(str(root), T)
+    when["now"] = DAY
+
+    assert (code, crew_autopilot.approval_policy(str(root), T)["allow"],
+            crew_ticket.accepted(str(root), T)["status"]) == (0, False, "unaccepted")
