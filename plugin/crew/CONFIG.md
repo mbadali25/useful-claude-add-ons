@@ -1727,9 +1727,19 @@ line `could-not-tell`, and so does a `workspace select` that `xargs` or
 `bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
 PowerShell's `&`, `.`, `terraform.exe`, `Start-Process` and `Invoke-Expression`
 (a script that is not a literal string, or a parameter crew does not know,
-is `could-not-tell`, and on a line naming terraform so is any PowerShell form
-it does not read whole: a splat, a call whose command word is not a plain name,
-an alias definition, or a group given to Invoke-Expression or to terraform).
+is `could-not-tell`). On a PowerShell line, **every mention of terraform,
+tofu or terragrunt must be accounted for** (any case, a word or a path's last
+part, `.exe` and backtick spellings included), or the line is
+`could-not-tell`: the command word of a command the guard judged (after an
+optional `$x =` and a `&`/`.` with a plain name), a literal script given to
+`Invoke-Expression`, or, when nothing on the line can run a value made at run
+time (a launcher, an eval, an alias definition, `return`/`throw`/`exit`, or a
+command word that is not a plain name), a literal argument of a plainly named
+command or a string that is only printed or assigned. So `git commit -m
+"terraform destroy"` and `Write-Output ("terraform" + " destroy")` are data,
+while `return terraform destroy`, `$t="terraform"; Start-Process $t destroy`
+and `[Diagnostics.Process]::Start("terraform","destroy")` are not. A group or
+an array among terraform's own arguments is `could-not-tell` too.
 `terragrunt exec -- cmd` is unwrapped like any listed wrapper. It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node

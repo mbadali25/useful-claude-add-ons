@@ -45,6 +45,22 @@ All notable changes to this repository are documented here. Format follows [Keep
   rm`, `az group delete`), and an option before the command with no `--` is
   could-not-tell. `terragrunt stack [opts] run apply|destroy` and `terragrunt
   backend delete` are judged.
+- **Third review of #347: every mention accounted for.** The PowerShell shape
+  list is replaced by one rule: each mention of terraform, tofu or
+  terragrunt in a PowerShell line (any case, a word or a path's last part,
+  `.exe` and backtick spellings included, comments dropped) must be the
+  command word of a command the guard judged, a literal script given to
+  `Invoke-Expression`, or -- when nothing on the line can run a value made at
+  run time -- a literal argument of a plainly named command or a string that
+  is only printed or assigned. Anything else is could-not-tell: `return` or
+  `throw` before the tool, a launcher given a run-time scriptblock or
+  variable (`icm ([scriptblock]::Create($c))`, `Start-Process $t destroy`),
+  `[Diagnostics.Process]::Start("terraform","destroy")`, a function named
+  after the tool. Decision: a literal argument of ANY plainly named
+  non-launcher command is data, not only `Write-Output`/`Write-Host`/`echo`,
+  because T-0005's documented direct-use scope already allows `git commit -m
+  "terraform destroy"`, `Select-String terraform` and `rg terraform`.
+  `terragrunt graph run apply|destroy` is judged.
 - **No longer refused.** `terragrunt --non-interactive plan -out="p.tfplan"`
   (terragrunt's boolean options take no value), `terraform workspace select
   "staging"` (read-only unless an `-or-create` on it is anything but false),

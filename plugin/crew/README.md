@@ -1428,10 +1428,16 @@ crew cannot tell where the command starts. So does an `Invoke-Expression`
 whose script is not a literal string. terragrunt's `apply-all`,
 `destroy-all`, `stack run`, `graph` and `backend delete` are read as the
 apply or destroy they run, and `terragrunt exec -- cmd` is unwrapped like any
-listed wrapper. On a PowerShell line naming terraform, a form crew does not
-read whole (a splat, a call whose command word is not a plain name, an alias
-definition, a group given to Invoke-Expression or to terraform) is
-could-not-tell. It does not try to catch a program renamed or
+listed wrapper. On a PowerShell line, every mention of terraform, tofu or
+terragrunt must be one crew accounts for -- the command word of a command it
+judged, a literal script given to `Invoke-Expression`, or, when nothing on the
+line can run a value made at run time, a literal argument of a plainly named
+command (`git commit -m "terraform destroy"`) or a string it only prints or
+assigns -- or the line is could-not-tell (`return terraform destroy`,
+`$t="terraform"; Start-Process $t destroy`,
+`[Diagnostics.Process]::Start("terraform","destroy")`). A mention inside a
+comment is dropped before counting; a name built at run time from parts is
+still not read (above). It does not try to catch a program renamed or
 started some other way. Each of these runs unjudged:
 
 - a rename by alias, function, symlink or copy, unless the same line makes a

@@ -1589,7 +1589,7 @@ def tg_other_op(head, args, index, judge):
     if sub in ("apply-all", "destroy-all"):
         return f"terragrunt run-all {sub[:-4]}"
     nxt = tf_skip_options(args, index + 1)
-    if sub == "stack" and args[nxt:nxt + 1] == ["run"]:
+    if sub in ("stack", "graph") and args[nxt:nxt + 1] == ["run"]:
         nxt = tf_skip_options(args, nxt + 1)
     if sub in ("stack", "graph") and args[nxt:nxt + 1] in (["apply"],
                                                          ["destroy"]):
@@ -2074,9 +2074,6 @@ _PS_EVAL = frozenset(("invoke-expression", "iex"))
 _PS_ALIASERS = frozenset(("set-alias", "sal", "new-alias", "nal",
                           "import-alias", "ipal"))
 _PS_ASSIGN_OPS = ("=", "+=", "-=", "*=", "/=", "??=")
-# The guard's own tool names, as they appear anywhere in a line's raw text.
-_PS_TOOL_RE = re.compile("|".join(sorted({n.split(".")[0] for n in _TF_NAMES})),
-                         re.IGNORECASE)
 
 
 def ps_head_slot(words):
@@ -2086,49 +2083,154 @@ def ps_head_slot(words):
         and words[1] in _PS_ASSIGN_OPS
 
 
-def _ps_unplain(cmd, head_name):
-    """Why one PowerShell command, on a line whose raw text names a guarded
-    tool, is not a plain command the guard reads whole -- or None. The
-    structural backstop (review of #347, round 2): a splat; a call by `&`/
-    `.` whose command word is not a plain name; an alias definition;
-    Invoke-Expression given a group or a variable; a group or a bare array
-    (`a,b`) among terraform's own arguments. Each is could not tell,
-    whatever the rest of the reading found."""
+# A guarded tool named in raw PowerShell text: the guard's own names, any
+# case, as a word or a path's last part (`C:\\tools\\terraform.exe`), never a
+# directory (`terraform/main.tf`), a dotted file (`terraform.log`) or a
+# hidden one (`.terraform`).
+_PS_MENTION_RE = re.compile(
+    r"(?<![\w.-])(?:" + "|".join(sorted({n.split(".")[0] for n in _TF_NAMES}))
+    + r")(?:\.(?:exe|cmd|bat|ps1))?(?![\w.\\/-])", re.IGNORECASE)
+# Statement keywords: what follows one is not a command the guard judged
+# (`return terraform destroy` runs it as `return`'s pipeline).
+_PS_STATEMENTS = frozenset((
+    "return", "throw", "exit", "if", "elseif", "else", "while", "do",
+    "until", "for", "foreach", "switch", "try", "catch", "finally", "trap",
+    "param", "begin", "process", "end", "function", "filter", "workflow",
+    "break", "continue", "data", "dynamicparam", "class", "enum", "using",
+    "!"))
+
+
+def _ps_uncommented(text):
+    """`text` without PowerShell comments (`# ...` starting a word, `<# #>`),
+    outside quotes, as `_lex_ps` drops them."""
+    out, i, quote = [], 0, None
+    while i < len(text):
+        char = text[i]
+        if char == "`":
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if quote:
+            quote = None if char == quote else quote
+        elif char in "'\"":
+            quote = char
+        elif text.startswith("<#", i):
+            end = text.find("#>", i + 2)
+            i = len(text) if end < 0 else end + 2
+            continue
+        elif char == "#" and (not out or out[-1][-1:] in " \t\n;{(|"):
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+            continue
+        out.append(char)
+        i += 1
+    return "".join(out)
+
+
+def _ps_mentions(text):
+    return len(_PS_MENTION_RE.findall(_ps_uncommented(text).replace("`", "")))
+
+
+def _ps_layout(cmd):
+    """`(words, start, called)`: the command word's index past `$x =` and
+    `&`/`.`, and whether a call operator runs it."""
     words = [str(w) for w in cmd.words]
-    groups, called = getattr(cmd, "groups", set()), getattr(cmd, "called",
-                                                            False)
-    if any(w.startswith("@") and len(w) > 1 for w in words):
-        return "a splat"
     start = 2 if len(words) > 2 and ps_head_slot(words[:2]) else 0
+    called = getattr(cmd, "called", False)
     if words[start:start + 1] in (["&"], ["."]):
         called, start = True, start + 1
+    return words, start, called
+
+
+# Statement keywords that run what follows them as their own pipeline.
+_PS_RUNS_REST = frozenset(("return", "throw", "exit"))
+
+
+def _ps_runner(cmd, head_name):
+    """True when `cmd` may run something made at run time: a launcher, an
+    eval, an alias definition, `return`/`throw`/`exit` (which run what
+    follows), or a command word that is not a plain name (`$t`,
+    `[Diagnostics.Process]::Start(...)`, `& (gcm x)`)."""
+    words, start, called = _ps_layout(cmd)
+    if start >= len(words) or start in getattr(cmd, "opens", ()) and \
+            not called:
+        return False
+    plain = type(cmd.words[start]).__name__ == "_Bare" and \
+        _PS_NAME_RE.match(words[start])
+    return not plain or head_name(words[start]).lower() in (
+        _PS_LAUNCHERS | _PS_EVAL | _PS_ALIASERS | _PS_RUNS_REST)
+
+
+def _ps_cmd_accounted(cmd, runner, helpers, depth):
+    """How many guarded-tool mentions in `cmd` the guard accounts for: its
+    command word when that is the tool, run plainly; an Invoke-Expression
+    whose script is a literal it reads (`_ps_accounted` of that script);
+    and, only when no runner is on the line, the literal arguments of a
+    plainly named command that is no runner or statement keyword (data:
+    `git commit -m "terraform destroy"`, `Write-Output (...)`) and a string
+    a command only prints or assigns (`$m = "terraform destroy"`). A word a
+    group makes is its sub-expression's to account for."""
+    words, start, called = _ps_layout(cmd)
     if start >= len(words):
-        return None
+        return 0
+    groups, head_name = getattr(cmd, "groups", set()), helpers[4]
+    data = sum(_ps_mentions(w) for i, w in enumerate(words)
+               if i > start and i not in groups)
+    if start in getattr(cmd, "opens", ()) and not called:
+        return 0 if runner else data + _ps_mentions(words[start])
     head = head_name(words[start]).lower()
-    later = {i for i in groups if i > start}
-    found = None
-    if called and (type(cmd.words[start]).__name__ != "_Bare"
-                   or not _PS_NAME_RE.match(words[start])):
-        found = "a call whose command word is not a plain name"
-    elif head in _PS_ALIASERS:
-        found = "an alias definition"
-    elif head in _PS_EVAL and (later or any("$" in w for w in words)):
-        found = "Invoke-Expression given a group or a variable"
-    elif _names_tool(words[start]) and (later or any(
+    if head in _PS_EVAL and not groups and _ps_runner(cmd, head_name) and \
+            not any("$" in w or w.startswith("@") for w in words[start:]):
+        script, sure = ps_eval_script(words[start + 1:])
+        return _ps_accounted(script, helpers, depth + 1) if sure else 0
+    if _ps_runner(cmd, head_name) or head in _PS_STATEMENTS:
+        return 0
+    own = 1 if _names_tool(words[start]) else 0
+    return own + (0 if runner and not own else data)
+
+
+def _ps_accounted(normal, helpers, depth=0):
+    """Every guarded-tool mention `_ps_cmd_accounted` accounts for in
+    `normal` and its sub-expressions (not trusted on a line with a
+    runner)."""
+    if depth > _GATE_DEPTH:
+        return 0
+    cmds, subs = helpers[5](normal)
+    runner = any(_ps_runner(c, helpers[4]) for c in cmds)
+    total = sum(_ps_cmd_accounted(c, runner, helpers, depth) for c in cmds)
+    if not runner:
+        total += sum(_ps_accounted(s, helpers, depth + 1) for s in subs)
+    return total
+
+
+def _ps_tool_args(cmd, head_name):
+    """A group or a bare array (`a,b`) among the tool's own arguments: values
+    made at run time (`workspace select (gc f)`)."""
+    words, start, _called = _ps_layout(cmd)
+    groups = getattr(cmd, "groups", set())
+    return start < len(words) and _names_tool(head_name(words[start])) and (
+        any(i > start for i in groups) or any(
             "," in w and type(cmd.words[i]).__name__ == "_Bare"
-            for i, w in enumerate(words) if i > start)):
-        found = "a group or an array among its arguments"
-    return found
+            for i, w in enumerate(words) if i > start))
 
 
-def _ps_backstop(cmds, normal, head_name):
-    """`_ps_unplain`'s hits for a line naming a guarded tool anywhere."""
-    tool = _PS_TOOL_RE.search(normal)
-    if tool is None:
+def _ps_backstop(cmds, normal, helpers):
+    """The structural backstop (review of #347, rounds 2-3): on PowerShell
+    text naming a guarded tool, every mention must be one the guard
+    accounted for (`_ps_accounted`), and the tool's own arguments may hold
+    no group or array. Anything else is could not tell."""
+    mentions = _ps_mentions(normal)
+    if not mentions:
         return []
-    named = names_terraform(normal, "powershell") or tool.group(0).lower()
-    return [(named, f"a PowerShell form it does not read plainly: {why}")
-            for why in (_ps_unplain(c, head_name) for c in cmds) if why]
+    named = names_terraform(normal, "powershell") or \
+        _PS_MENTION_RE.search(normal.replace("`", "")).group(0).lower()
+    if _ps_accounted(normal, helpers) < mentions:
+        return [(named, "a mention of it the guard does not account for")]
+    if any(_ps_tool_args(c, helpers[4]) for c in cmds):
+        return [(named, "a group or an array among its arguments")]
+    return []
+
+
 # Words that start a PowerShell statement, never a wrapper `_unwrap` strips.
 _PS_KEYWORDS = frozenset(("if", "elseif", "else", "while", "do", "until",
                           "for", "foreach", "switch", "try", "trap", "{",
@@ -2298,7 +2400,7 @@ def ps_trigger(normal, helpers, depth=0):
     hits = [ps_trigger(sub, helpers, depth + 1) for sub in subs]
     hits += [_ps_argv_trigger(c.words, normal, helpers, depth, copies, c)
              for c in cmds]
-    hits += _ps_backstop(cmds, normal, helpers[4])
+    hits += _ps_backstop(cmds, normal, helpers)
     hits = [h for h in hits if h is not None]
     if not hits:
         return None

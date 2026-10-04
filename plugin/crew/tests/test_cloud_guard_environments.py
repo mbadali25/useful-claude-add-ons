@@ -3037,6 +3037,54 @@ R8_MUST_BLOCK = _normalise([
      _o(**_STAGING)),
     ("r8-tg-backend-delete-all", "Bash", "terragrunt backend delete --all",
      _o(**_STAGING)),
+    # Review of #347, round 3: each measured ALLOWED at 877ef4b8.
+    # BL1: a keyword in front of the tool.
+    ("r8-ps-return-terraform", "PowerShell", "return terraform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-throw-terraform", "PowerShell", "throw terraform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-if-return-ws-new", "PowerShell",
+     "if (1) { return terraform workspace new production }", _o(**_STAGING)),
+    ("r8-ps-return-iex-paren", "PowerShell", 'return iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-return-amp-glued", "PowerShell", "return &'terraform'destroy",
+     _o(**_STAGING)),
+    ("r8-ps-return-tofu", "PowerShell", "return tofu destroy", _o(**_STAGING)),
+    ("r8-ps-throw-terragrunt", "PowerShell", "throw terragrunt destroy",
+     _o(**_STAGING)),
+    # The mention rule's own neighbours: any case, a backtick inside the
+    # name, and a function definition that takes the tool's name.
+    ("r8-ps-return-mixed-case", "PowerShell", "return Terraform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-return-backtick", "PowerShell", "return terr`aform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-function-named-terraform", "PowerShell",
+     "function terraform { Remove-Item -Recurse x }; terraform plan",
+     _o(**_STAGING)),
+    # BL2: a launcher given a run-time scriptblock or variable.
+    ("r8-ps-icm-scriptblock-create", "PowerShell",
+     '$c="terraform destroy"; icm ([scriptblock]::Create($c))', _o(**_STAGING)),
+    ("r8-ps-start-job-scriptblock-create", "PowerShell",
+     '$c="terraform destroy"; Start-Job ([scriptblock]::Create($c))',
+     _o(**_STAGING)),
+    ("r8-ps-start-threadjob-scriptblock-create", "PowerShell",
+     '$c="terraform destroy"; Start-ThreadJob ([scriptblock]::Create($c))',
+     _o(**_STAGING)),
+    ("r8-ps-start-process-var", "PowerShell",
+     '$t="terraform"; Start-Process $t destroy', _o(**_STAGING)),
+    ("r8-ps-saps-filepath-var", "PowerShell",
+     '$t="terraform"; saps -FilePath $t -ArgumentList destroy', _o(**_STAGING)),
+    # F1: a .NET method call.
+    ("r8-ps-process-start", "PowerShell",
+     '[Diagnostics.Process]::Start("terraform","destroy")', _o(**_STAGING)),
+    ("r8-ps-process-start-exe", "PowerShell",
+     '[Diagnostics.Process]::Start("terraform.exe","destroy")', _o(**_STAGING)),
+    ("r8-ps-system-process-start", "PowerShell",
+     '[System.Diagnostics.Process]::Start("terraform","destroy")',
+     _o(**_STAGING)),
+    # N1: `graph run apply`.
+    ("r8-tg-graph-run-apply", "Bash", "terragrunt graph run apply",
+     _o(**_STAGING)),
 ])
 
 R8_MUST_ALLOW = _normalise([
@@ -3103,6 +3151,18 @@ R8_MUST_ALLOW = _normalise([
      _o(**_STAGING)),
     ("r8a-tg-stack-opt-run-plan", "Bash",
      "terragrunt stack --non-interactive run plan", _o(**_STAGING)),
+    # Round 3's neighbours: every mention accounted for.
+    ("r8a-ps-write-host-mention", "PowerShell",
+     'Write-Host "run terraform plan first"', _o(**_STAGING)),
+    ("r8a-ps-echo-mention", "PowerShell", "echo terraform", _o(**_STAGING)),
+    ("r8a-ps-if-plan", "PowerShell", "if (terraform plan) { Write-Output ok }",
+     _o(**_STAGING)),
+    ("r8a-ps-path-mention", "PowerShell", "Get-Content terraform/main.tf",
+     _o(**_STAGING)),
+    ("r8a-ps-plan-log-file", "PowerShell",
+     "terraform plan *> terraform.log", _o(**_STAGING)),
+    ("r8a-tg-graph-run-plan", "Bash", "terragrunt graph run plan",
+     _o(**_STAGING)),
 ])
 
 
