@@ -466,10 +466,10 @@ _NAME_LINE = re.compile(r"name:[ \t]*(.+?)[ \t]*")
 _MEMORY_ID = re.compile(r"memory_id:[ \t]*(.+?)[ \t]*")
 _UPDATED = re.compile(r"^updated:[^\r\n]*", re.MULTILINE)
 _UPDATE_HEAD = re.compile(r"^## Update \d{4}-\d{2}-\d{2}[ \t]*$", re.MULTILINE)
-# A save holds two kernel locks for its whole write sequence, one for the
-# note and one for the native memory (`_take_lock`). The kernel grants each to
-# one open file at a time and drops it when the holder exits or is killed, so
-# a refusal means another save is running at this moment.
+# A save holds up to four kernel locks for its whole write sequence: the note
+# and the native memory are each locked by real path, case-folded, and by
+# inode (`_lock_keys`, `_take_lock`). The kernel drops a lock when its holder
+# exits or is killed, so a refusal means another save is running now.
 BUSY = "another save is running now"
 
 
