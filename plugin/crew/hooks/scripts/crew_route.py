@@ -59,15 +59,31 @@ row goes live the day its ticket adds the name to `crew_autopilot.AVAILABLE`.
                                                          (see `_screen` below)
   pick the goal back up                           ask    never picks a slug (T-0056)
 
-Assign, goal and focus pass `_screen` first (a line break never reaches it:
-`normalise` refuses every one). A first token like "it" or "everything", or
-the stem "approv" (also with every non-letter removed) is no match. Then an allowlist: any character in the
-prompt other than ASCII letters, digits, space and .,:;_#()- asks, so what
-routes is exactly what was typed; a word starting with `-` or a trailing
-negation asks too.
+Assign, goal and focus pass `_screen` first. A first token like "it" or
+"everything", or the stem "approv" (also with every non-letter removed) is
+no match (`normalise` already refused every line break). Then an allowlist:
+any character in the prompt other than ASCII letters, digits, space and
+.,:;_#()- asks, so what routes is exactly what was typed; a word starting
+with `-` or a trailing negation asks too.
 `?` is accepted only where a pattern spells it (the two status questions),
 and a router answer naming another subcommand asks. Every autopilot route
 goes through `_route`, so a command `_clip` would change asks (T-0069).
+
+## L-0662 -- wave, split, sleep and wake
+
+Four more rows behind the same gate, inert (no line) until each command's
+ticket adds its name to `crew_autopilot.SUBCOMMANDS`. Each passes `_screen`'s
+allowlist; sleep and wake add only the apostrophe of `I'm` (ASCII, or the
+curly one in that one position).
+
+  run <id>, <id> and <id> in parallel             route  `wave <ID> <ID> ...` (distinct, in
+                                                         order); fewer than two: none; an id
+                                                         without a folder: ask, naming it
+  split this ticket / it / <id>, <id> is too big  route  `split <ID>`, resolved as `ticket`
+  heading to bed, going to sleep                  route  `sleep`, with the undo sentence
+  I'm back                                        route  `wake`
+  good night, (good) morning                      ask    "did you mean ...?" (owner,
+                                                         2026-10-04: a greeting never routes)
 
 `crew_ticket.resolve_active`'s own INDEX fallback takes the FIRST open line,
 so it is never the answer here: `crew_autopilot.open_index_tickets` (T-0004)
@@ -108,6 +124,15 @@ _ID = r"(?P<id>(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+)"
 _REF = rf"(?:it|this|{_ID})"
 # T-0057: an autopilot row's free text. No `?`: a question is never a command.
 _TEXT = r"(?P<topic>[^?]+)"
+# L-0662: a wave's two or more ids, joined by `,`, `and` or `, and`; read back
+# with _WAVE_ID. The `?:` keeps `match`'s single `id` group the only one.
+_ONE_ID = r"(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+"
+_WAVE_ID = re.compile(_ONE_ID)
+_IDS = rf"(?P<ids>{_ONE_ID}(?:(?:,? and |, ){_ONE_ID})+)"
+_IM = r"I(?:'|\u2019)m"
+# Owner decision 2026-10-04: a bare greeting is not a command. These patterns
+# match (so the gate still speaks) but always ask "did you mean ...?".
+_GREETINGS = (r"good night", r"(?:good )?morning")
 
 # (intent, command, ticket_rule, patterns). `command` None: the disk names it
 # (`continue`). Rules: `topic` -- the rest of the prompt is the argument;
@@ -138,6 +163,15 @@ PHRASES = (
     ("goal-resume", "/crew:autopilot run --goal", "autopilot-resume",
      (r"pick the goal back up", r"resume the goal")),
     ("focus", "/crew:autopilot focus", "autopilot-ticket", (rf"focus on {_ID}",)),
+    # L-0662. Rules: `autopilot-tickets` -- two or more distinct explicit ids,
+    # each with a folder; `autopilot-ref` -- an id or it/this, as `ticket`.
+    # Every row here passes `_screen`. `split` is autopilot's, never /crew:split.
+    ("wave", "/crew:autopilot wave", "autopilot-tickets", (rf"run {_IDS} in parallel",)),
+    ("split", "/crew:autopilot split", "autopilot-ref",
+     (rf"split (?:this ticket|it|{_ID})", rf"(?:this ticket|{_ID}) is too big")),
+    ("sleep", "/crew:autopilot sleep", "autopilot",
+     (rf"(?:{_IM} )?heading to bed", rf"(?:{_IM} )?going to sleep", _GREETINGS[0])),
+    ("wake", "/crew:autopilot wake", "autopilot", (rf"{_IM} back", _GREETINGS[1])),
 )
 
 AMBIGUOUS = ("do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it")
@@ -150,9 +184,9 @@ _WS = re.compile(r"\s+")
 _OTHER_LINE_BREAKS = "\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
 _CREW_COMMAND = re.compile(r"^/crew:([a-z][a-z0-9-]*)(?:\s+(.*))?$")
 _APPROVE = re.compile(r"approve", re.IGNORECASE)
-# T-0057: assign, goal and focus prompts pass `_screen` (line breaks are
-# `normalise`'s, above). No line for free text naming the stem `approv` (also
-# letters-only) or whose first token is in _NOTHING. Then an allowlist: any character outside _PLAIN
+# T-0057: assign, goal and focus prompts pass `_screen` (`normalise` has
+# already refused every line break, T-0069). No line for free text naming the
+# stem `approv` (also letters-only) or whose first token is in _NOTHING. Then an allowlist: any character outside _PLAIN
 # in the raw prompt asks (lookalikes, combining marks, format characters,
 # fullwidth or lookalike slashes, quotes, shell metacharacters), so
 # the text that routes is the text the user typed. On that ASCII, a word
@@ -167,8 +201,15 @@ _NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|no|nah|nope|wait|cance
                        r"|never ?mind|not now|cancel that|scratch that|forget it)$")
 _ROUTE_SHAPE = ("sub", "stop", "reason")
 # Intents whose ask is about which ticket; any other ask never says "which ticket".
-_TICKETED = ("spec", "plan", "implement", "review", "done", "continue", "focus")
+_TICKETED = ("spec", "plan", "implement", "review", "done", "continue", "focus", "split")
 GOAL_UNDO = "After it runs, tell the user in one line what changed and how to undo it."
+# Intents whose route line ends with GOAL_UNDO: each raises what autopilot does unasked.
+_UNDO_INTENTS = ("goal", "sleep")
+# L-0662: the rows that pass `_screen` without free text, and the characters
+# each adds to _PLAIN -- only what its own patterns spell (`I'm`). Sleep and
+# wake also take the curly apostrophe iOS and macOS type, in `I\u2019m` only.
+_SCREENED = {"wave": "", "split": "", "sleep": "'", "wake": "'"}
+_CURLY_IM = ("sleep", "wake")
 
 
 def compile_table(phrases):
@@ -204,8 +245,9 @@ def normalise(prompt):
 
 
 def match(prompt):
-    """`{"intent", "command", "rule", "ticket_arg", "topic"}` for the row the
-    whole prompt matches, else None."""
+    """`{"intent", "command", "rule", "ticket_arg", "topic", "tickets",
+    "refuse"}` for the row the whole prompt matches, else None. `tickets` is
+    a wave's distinct ids in order (`ticket_arg` is the first), else []."""
     text = normalise(prompt)
     if text is None or text.casefold() in AMBIGUOUS:
         return None
@@ -218,19 +260,29 @@ def match(prompt):
             ticket = groups.get("id")
             topic = (groups.get("topic") or "").strip() or None
             refuse = ""
-            if rule in ("autopilot-text", "autopilot-ticket"):
-                verdict, refuse = _screen(prompt, topic if rule == "autopilot-text" else None)
+            tickets = []
+            if groups.get("ids"):
+                tickets = list(dict.fromkeys(i.upper() for i in _WAVE_ID.findall(groups["ids"])))
+                if len(tickets) < 2:
+                    continue
+                ticket = tickets[0]
+            if rule in ("autopilot-text", "autopilot-ticket") or intent in _SCREENED:
+                verdict, refuse = _screen(prompt, topic if rule == "autopilot-text" else None,
+                                          _SCREENED.get(intent, ""), intent in _CURLY_IM)
                 if verdict == "none":
                     continue
             return {"intent": intent, "command": command, "rule": rule,
                     "ticket_arg": ticket.upper() if ticket else None, "topic": topic,
-                    "refuse": refuse}
+                    "tickets": tickets, "refuse": refuse,
+                    "greeting": pattern.pattern in _GREETINGS}
     return None
 
 
-def _screen(prompt, topic):
-    """("none" | "ask" | "ok", reason) for an assign, goal or focus match.
-    `topic` is the free text, None for focus."""
+def _screen(prompt, topic, extra="", curly_im=False):
+    """("none" | "ask" | "ok", reason) for an assign, goal, focus or L-0662
+    match. `topic` is the free text, None for a row without any; `extra` is
+    what the row's own patterns add to _PLAIN; `curly_im` lets U+2019 through
+    as the second character of a leading `I\u2019m`, nowhere else."""
     if topic is not None:
         text = topic.casefold()
         letters = "".join(ch for ch in text if ch.isalpha())
@@ -244,7 +296,10 @@ def _screen(prompt, topic):
         if raw.casefold().startswith(prefix):
             raw = raw[len(prefix):]
             break
-    if any(ch not in _PLAIN for ch in raw):
+    raw = raw.lstrip()
+    if curly_im and raw[:3].casefold() == "i\u2019m":
+        raw = raw[0] + "'" + raw[2:]
+    if any(ch not in _PLAIN and ch not in extra for ch in raw):
         return "ask", ("the prompt holds a non-ASCII or special character; only letters, "
                        "digits, space and .,:;_#()- route. Ask the user to retype it")
     if topic is None:
@@ -260,6 +315,8 @@ def command_for(found, ticket):
     """The `/crew:` command line a match renders to for `ticket`."""
     if found["rule"] in ("topic", "autopilot-text"):
         return f"{found['command']} {found['topic']}"
+    if found["rule"] == "autopilot-tickets":
+        return " ".join([found["command"]] + list(found.get("tickets") or [ticket]))
     if found["rule"] in ("none", "autopilot-resume") or not found["command"] \
             or (found["rule"] == "autopilot" and not ticket):
         return found["command"]
@@ -362,6 +419,17 @@ def _gate(top, found):
     return None
 
 
+def _wave(found, top):
+    """L-0662: route a wave only when every id has a .work/tickets/ folder."""
+    missing = [t for t in found["tickets"]
+               if not os.path.isdir(crew_ticket.ticket_dir(top, t))]
+    if missing:
+        return _answer("ask", found, reason="no such ticket: " + ", ".join(missing)
+                       + (" has" if len(missing) == 1 else " have") + " no .work/tickets/ folder")
+    return _route(found, command_for(found, None), ticket=found["tickets"][0],
+                  source="named in the prompt")
+
+
 def _autopilot(found, top):
     """decide for the T-0057 rows, after the gate."""
     gate = _gate(top, found)
@@ -372,8 +440,18 @@ def _autopilot(found, top):
                                             "/crew:autopilot run --goal <slug>")
     if found.get("refuse"):
         return _answer("ask", found, reason=found["refuse"])
+    if found.get("greeting"):
+        return _answer("ask", found, reason="a bare greeting is not a command; did you mean "
+                                            f"{found['command']}")
     if found["rule"] == "autopilot-text":
         return _route(found, command_for(found, None))
+    if found["rule"] == "autopilot-tickets":
+        return _wave(found, top)
+    if found["rule"] == "autopilot-ref":
+        ticket, source, reason, candidates = _resolve(top, found["ticket_arg"])
+        if ticket is None:
+            return _answer("ask", found, reason=reason, candidates=candidates)
+        return _route(found, command_for(found, ticket), ticket=ticket, source=source)
     if not found["ticket_arg"]:
         return _route(found, command_for(found, None))
     ticket, source, reason, candidates = _resolve(top, found["ticket_arg"])
@@ -454,7 +532,7 @@ def render(decision):
             head = f"the user's prompt asks for {intent} on {ticket} ({source}). "
         else:
             head = f"the user's prompt asks for {intent}. "
-        undo = f" {GOAL_UNDO}" if intent == "goal" else ""
+        undo = f" {GOAL_UNDO}" if intent in _UNDO_INTENTS else ""
         return (PREFIX + head + run
                 + " Its own checks still decide; if the user plainly meant something else, ask."
                 + undo)

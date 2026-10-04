@@ -4,6 +4,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.406: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
+
+- **What changed.** `crew_route.PHRASES` gains four rows after `focus`:
+  `run <id>, <id> and <id> in parallel` -> `/crew:autopilot wave <ID> <ID> ...` (ids upper-cased,
+  de-duplicated in order; fewer than two distinct is no match; any id without a
+  `.work/tickets/<id>/` folder asks, naming it); `split this ticket` / `split it` / `split <id>` /
+  `this ticket is too big` / `<id> is too big` -> `/crew:autopilot split <ID>` (resolved like
+  every ticket row; never `/crew:split`); `I'm heading to bed`, `heading to bed`,
+  `going to sleep`, `I'm going to sleep` -> `/crew:autopilot sleep`, whose line also asks
+  Claude to say what changed and how to undo it; `I'm back` -> `/crew:autopilot wake`.
+- **Bare greetings never route (owner decision, 2026-10-04).** `good night`, `morning` and
+  `good morning` match the sleep and wake rows but, past the gate, always ask
+  "did you mean /crew:autopilot sleep?" (or `wake`).
+- **Live as each command lands.** `sleep` and `wake` route now: L-0652's manual sleep mode put
+  both in `crew_autopilot.SUBCOMMANDS` and `AVAILABLE` (the batch-5 merge turned the inert-on-main
+  tests for them into live ones). `wave` and `split` are not subcommands yet, so T-0057's gate
+  gives no line; reserved, the soft ask; available, a route through T-0069's `_route`. No edit
+  to `crew_autopilot.py`. The greeting ask no longer doubles `?;` in its line.
+- **Same screen.** Every new row passes T-0057's `_screen` allowlist (sleep and wake add only the
+  apostrophe of `I'm`: ASCII, or U+2019 as the second character of a leading `I'm`, which iOS
+  and macOS type), so a long s or Kelvin sign that IGNORECASE folds onto a pattern letter, or a
+  curly quote anywhere else, asks rather than routes.
+- **Merge of T-0057 onto main.** T-0057's autopilot routes go through `_route`; its `_screen`
+  line-break check is gone (`normalise` already refuses every `str.splitlines` boundary), so the
+  `\x1c`-`\x1e` separators in free text now decide `none` rather than `ask`.
+- **Tests.** `test_crew_route.py`: inert, reserved and available (every subcommand available)
+  cases for each example, wave's two-real-tickets rule, split's ask, the must-not-route list,
+  lookalike must-ask cases, the greeting must-ask cases, the curly-apostrophe position and the
+  sleep undo line. The verify rule now runs through `pytest_rule.py`. Local sabotage mutations each went red; they
+  are L-0663's to commit (`sabotage*.py` is harness).
+
 ### Added — `crew` 1.0.399: plain-text routing for the autopilot commands the router knows (T-0057)
 
 - **What changed.** `crew_route.PHRASES` gains five rows after `status`:
