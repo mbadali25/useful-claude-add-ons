@@ -2729,20 +2729,32 @@ machine-global `autopilot.sleep`.
 `crew_autopilot.py sleep --root . [--by <text>]` and `/crew:autopilot wake`
 runs `crew_autopilot.py wake --root .`. Both keep one file,
 `<git-common-dir>/crew/autopilot-sleep.json` (`{"state", "by", "at",
-"until"}`, local ISO times, written to a temp file and moved into place with
-`os.replace`), shared by every worktree of the repository and never read from
-a worktree or `.work/`. A valid record beats the schedule until its `until`,
+"until"}`, UTC-aware ISO times compared in UTC, written to a temp file and
+moved into place with `os.replace`), shared by every worktree of the
+repository and never read from a worktree or `.work/`. It is read only when
+`lstat` says it is a regular file, opened without following a symlink or
+blocking on a FIFO, and re-checked with `fstat`; anything else is `unknown`.
+**Until L-1504, a manual sleep only tightens** (owner decision 2026-10-04,
+review B1 of #427): the session can run `crew_autopilot.py sleep` itself
+(`scope_guard.py` lets it through and `--by` is free text), so outside the
+scheduled window a manual `asleep` applies a night value only where it is
+stricter than the day value, per key, like could-not-tell; inside the window
+the schedule's own night values stand. L-1504 (harness-only) makes the
+approval hook accept only the owner's typed `/crew:autopilot sleep`, and
+loosening is unlocked after it lands. A valid record beats the schedule until its `until`,
 then the schedule decides again. `sleep` sets `asleep` until the end of the
 current window if inside one, else the end of the next window, or for 12 hours
 with no schedule; it exits 2 with `refused: ...` and writes nothing unless
 `scope.allowCliApproval` is exactly `true`, autopilot is armed, the config and
-its `autopilot.sleep` can be read, and at least one `autopilot.sleep` override
-is set: it grants only what the night values already configure. `wake` never
+its `autopilot.sleep` can be read, and the window is open or at least one
+`autopilot.sleep` override is stricter than its day value (else it would
+change nothing). `wake` never
 refuses: inside the window it sets `awake` until the window's end (it never
-extends past it); outside, it removes the record; with nothing to undo it
+extends past it); outside, it removes the record and says when the schedule
+resumes, or that whether it is asleep cannot be told; with nothing to undo it
 prints `already awake`. Fail closed: a record that is unreadable, not an
 object, missing a field, with a `state` other than `asleep`/`awake`, an `at`
-or `until` that is not a local ISO time, an `at` in the future, or an `until`
+or `until` that is not a UTC-aware ISO time (an old naive record included), an `at` in the future, or an `until`
 more than 24 hours after `at` is `unknown` with a warning naming the file —
 per key the stricter of the day value and the night override, never "not
 set", so a planted file cannot loosen anything. An expired record is ignored with a warning. A manual `asleep` is

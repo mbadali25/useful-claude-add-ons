@@ -16,13 +16,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   never extends past it); `wake` outside the window removes the record. `settings`' sleep line
   gains `source=<schedule|manual>` and, for manual, `until=<HH:MM>`; a policy reason a manual
   sleep set ends `(asleep by hand until <HH:MM>; day value <day>)`.
+- **Until L-1504, a manual sleep only tightens (owner decision 2026-10-04, #427 review B1).** The
+  session can run `crew_autopilot.py sleep` itself (`scope_guard.py` allows it, `--by` is free
+  text): day `human` / night `self` at noon was 19 hours of self-approval. Outside the window a
+  manual `asleep` now applies a night value only where it is stricter than the day value, per key;
+  inside it the schedule's night values stand; `sleep` refuses when nothing would tighten. L-1504
+  (harness-only) makes the approval hook accept only the owner's typed `/crew:autopilot sleep` and
+  then unlocks loosening.
+- **Review NITs.** N1: `at` and `until` are stored as UTC-aware ISO and compared in UTC; a naive
+  record reads `unknown`. N2: `wake` says when whether the schedule is asleep cannot be told
+  rather than "resumes at <now>". N3: the record is read only as a regular file (`lstat`,
+  `O_NOFOLLOW|O_NONBLOCK`, `fstat`, 64 KiB cap); a FIFO, device, directory or symlink is `unknown`.
 - **Refusals.** `sleep` exits 2 with `refused: ...` and writes nothing unless
   `scope.allowCliApproval` is exactly `true`, autopilot is armed, `.crew/config.json` and its
-  `autopilot.sleep` can be read, and an `autopilot.sleep` override is set. `wake` never refuses
+  `autopilot.sleep` can be read, and the window is open or an override is stricter than its day
+  value. `wake` never refuses
   for policy; with nothing to undo it prints `already awake`. A crash in either exits 1.
 - **Fail closed, stricter than the spec's "ignored" in three places (owner may review).** A record
   that is unreadable, not an object, missing a field, with another `state`, an `at`/`until` that
-  is not a local ISO time, an `at` in the future or an `until` more than 24 hours after `at`
+  is not a UTC-aware ISO time, an `at` in the future or an `until` more than 24 hours after `at`
   reads `unknown` with a warning naming the file (per key the stricter of the day value and the
   night override), not "no manual state"; an expired record is ignored with a warning. A manual
   `asleep` counts only while `scope.allowCliApproval` is exactly `true` at read time too. A

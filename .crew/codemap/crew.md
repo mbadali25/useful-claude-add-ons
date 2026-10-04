@@ -817,24 +817,29 @@ unset (`plugin/crew/hooks/scripts/crew_config_menu.py:82-83`). JUDGEMENT: `deplo
 `_settings_at` too but only `deploy`, so sleep cannot reach it. Tests
 `plugin/crew/tests/test_crew_autopilot_sleep.py`; no committed mutations yet (L-0651).
 
-**L-0652 (manual sleep and wake; DERIVED at `26ac28d1`, line numbers re-read after the no-git fix on L-0652-build, stacked on T-0053-build
-`610deaea` over main `86d96fa1`; the T-0053 citations above are at f3b3367e and moved with it).**
+**L-0652 (manual sleep and wake; DERIVED after the #427 review fixes on L-0652-build, stacked on
+T-0053-build `4cdf076f`; the T-0053 citations above are T-0053's own).**
 `crew_sleep` stays free of file input and output: `read_manual`
-(`plugin/crew/hooks/scripts/crew_sleep.py:160`) judges the record through `_manual_problem` (`:180`)
-into `none|valid|expired|untrusted`; `next_edge` (`:140`) is the next time of day strictly after
-now, which is the current window's end inside it and the next window's end outside;
-`MANUAL_SLEEP_HOURS` (`:52`) and `MANUAL_FILE` (`:49`). `resolve` (`:208`) takes the record and
+(`plugin/crew/hooks/scripts/crew_sleep.py:176`) judges the record through `_manual_problem` (`:196`)
+into `none|valid|expired|untrusted`; `at`/`until` must be UTC-aware ISO and are compared in UTC
+(`to_utc`, `:159`; a naive record is untrusted, review N1); `next_edge` (`:150`) is the next time of
+day strictly after now, the current window's end inside it and the next window's end outside;
+`MANUAL_SLEEP_HOURS` (`:57`) and `MANUAL_FILE` (`:54`). `resolve` (`:225`) takes the record and
 `sleep_allowed`: untrusted is `unknown` (source manual), expired is the schedule with a warning, a
-manual asleep without the gate is `unknown`, a manual awake over an asleep or unknown schedule
-carries `tightenOnly`. `crew_autopilot._sleep_at` (`plugin/crew/hooks/scripts/crew_autopilot.py:880`)
-passes `_manual_found` (`:923`, through `crew_ticket._read_json`; absent only with no `.git` entry at all, else a nameless state directory raises to unknown) and
-`crew_ticket.cli_approval_allowed`; `_overlay` (`:853`, the condition at `:863`) applies only
-stricter overrides under `tightenOnly`; `_decision` (`:1192`) names a manual sleep's end.
-`sleep_now` (`:937`) and `wake_now` (`:975`) are the two new writers, through `_manual_path`
-(`:913`, `<git-common-dir>/crew/`) and `crew_ticket._write_json` (temp file, `os.replace`);
-`_manual_main` (`:1856`) makes a crash exit 1; the subparsers are at `:1922`. `SUBCOMMANDS` gains
-both on a second line (`:234`) because the first line is a sabotage anchor; `route_args` (`:1550`)
-stops a second word at `:1562`; `_sleep_line` (`:1826`) adds `source=` and `until=`. Tests:
+manual asleep without the gate is `unknown`, a manual asleep outside the window and a manual awake
+over an asleep or unknown schedule carry `tightenOnly` (owner decision 2026-10-04, review B1: a
+manual sleep only tightens until L-1504). `crew_autopilot._sleep_at`
+(`plugin/crew/hooks/scripts/crew_autopilot.py:886`) passes `_manual_found` (`:931`: absent only with
+no `.git` entry at all; otherwise `lstat` must say regular file and `_read_regular` (`:960`) opens
+with `O_NOFOLLOW|O_NONBLOCK` and re-checks `fstat`, review N3) and `crew_ticket.cli_approval_allowed`;
+`_overlay` (`:854`) is stricter-only under `tightenOnly` or `unknown` (`:866`); `_decision`
+(`:1259`) names a manual sleep's end. `sleep_now` (`:986`, refusing when no override is stricter by
+`_stricter` (`:1028`) outside the window) and `wake_now` (`:1034`, saying when the schedule cannot be
+told, review N2) are the two new writers, through `_manual_path` (`:921`, `<git-common-dir>/crew/`)
+and `crew_ticket._write_json` (temp file, `os.replace`); `_manual_main` (`:1923`) makes a crash exit
+1; the subparsers are at `:1989`. `SUBCOMMANDS` gains both on a second line (`:235`) because the
+first line is a sabotage anchor; `route_args` (`:1617`) stops a second word at `:1629`;
+`_sleep_line` (`:1893`) adds `source=` and `until=`. Tests:
 `plugin/crew/tests/test_crew_autopilot_sleep.py` (L-0652 section),
 `test_crew_autopilot_policy.py::test_approve_sleep_and_wake_are_the_only_writing_subcommands`,
 `test_crew_autopilot_status.py::test_route_args_sleep_and_wake_take_no_ticket`; mutations go to

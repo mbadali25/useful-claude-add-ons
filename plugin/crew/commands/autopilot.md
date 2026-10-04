@@ -9,7 +9,7 @@ each phase by its command's procedure, in the order `crew_autopilot.py next` nam
 when a person is needed. Nothing here accepts a review or skips a phase, and nothing approves except
 section 3's `approve`, under the approval policy; it writes `approval.json`, `scope-tickets.json`
 on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move.
-`sleep` and `wake` (section 0) write only `<git-common-dir>/crew/autopilot-sleep.json`.
+`sleep` (only tightens until L-1504) and `wake` write only `<git-common-dir>/crew/autopilot-sleep.json`.
 
 ## 0. Route
 

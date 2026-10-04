@@ -330,10 +330,11 @@ NEEDS_REPLAN -&gt; IN_REVIEW. Both default off, so out of the box nothing self-a
 <code>autopilot.sleep.schedule</code> window, <code>autopilot.sleep.approval</code> stands in for <code>autopilot.approval</code>
 (T-0053), and a receipt written asleep stops standing when the window ends if the day value would
 not have approved it: in the morning that ticket waits for <code>/crew:approve &lt;id&gt;</code>.
-<code>/crew:autopilot sleep</code> starts that night mode now, until the window's end (12 hours with no
-window), and <code>/crew:autopilot wake</code> ends it now (L-0652); they are autopilot's only other writers,
-and write only <code>&lt;git-common-dir&gt;/crew/autopilot-sleep.json</code>. <code>sleep</code> needs
-<code>scope.allowCliApproval: true</code> and a configured <code>autopilot.sleep</code> override. The
+<code>/crew:autopilot sleep</code> starts sleep mode now, until the window's end (12 hours with no window),
+and <code>/crew:autopilot wake</code> ends it now (L-0652); they are autopilot's only other writers, and
+write only <code>&lt;git-common-dir&gt;/crew/autopilot-sleep.json</code>. Until L-1504 a manual sleep only
+tightens: outside the window it applies a night value only where it is stricter than the day
+value. <code>sleep</code> needs <code>scope.allowCliApproval: true</code> and an override stricter than its day value. The
 approval is a step you take, not a lock.</p>
 <p><code>crew_ticket.py status --ticket T-0042</code> prints one of three states:</p>
 <ul>
