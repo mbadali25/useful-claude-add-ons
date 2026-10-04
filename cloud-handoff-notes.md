@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 09:53 UTC
+Last updated: 2026-10-04 09:54 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -58,6 +58,7 @@ Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #37
 
 ## Log (newest first)
 
+- 09:54: #344 fixer done: head 6af8d6fd; FIX1 unknown for unreadable README (+2 tests, sabotage red); FIX2 embed run in crew/localgpu/skills READMEs, gate live; localgpu 0.1.21, crew 1.0.325. r2 review started.
 - 09:53: #371 delta review 3bca38dd: 0 BLOCK 0 FIX 1 NIT (git wrapper drops check= kw; no caller uses it). Waiting CI.
 - 09:53: #355 land-prep done: merged main, leaf count 132, crew_state.py comment trimmed to 3400 (pylint cap), BUDGETS re-measured, 1.0.321, head 97c8e6fd. Merge-only review started. NOTE #355 and #360 both touch config leaf counts/CONFIG -> 2nd to land re-merges.
 - 09:53: #360 land-prep done: merged main c9263465, added KEY_META row tickets.baseBranch (main's T-0061), regen config ref (130 keys), BUDGETS re-measured, version 1.0.322, head aedd225b. Merge-only review started.
