@@ -4,6 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.407: manual `/crew:autopilot sleep` and `wake` (L-0652, T-0053 slice 2)
+
+- **What changed.** `/crew:autopilot sleep` (`crew_autopilot.py sleep --root . [--by <text>]`)
+  enters sleep mode now and `/crew:autopilot wake` (`crew_autopilot.py wake --root .`) leaves it
+  now. Both keep one record, `<git-common-dir>/crew/autopilot-sleep.json`
+  (`{"state", "by", "at", "until"}`), written to a temp file and moved into place with
+  `os.replace`, shared by every worktree and never read from a worktree or `.work/`. A valid
+  record beats the schedule until `until`: for `sleep`, the end of the current window, else of
+  the next one, or 12 hours with no schedule; for `wake` inside the window, the window's end (it
+  never extends past it); `wake` outside the window removes the record. `settings`' sleep line
+  gains `source=<schedule|manual>` and, for manual, `until=<HH:MM>`; a policy reason a manual
+  sleep set ends `(asleep by hand until <HH:MM>; day value <day>)`.
+- **Refusals.** `sleep` exits 2 with `refused: ...` and writes nothing unless
+  `scope.allowCliApproval` is exactly `true`, autopilot is armed, `.crew/config.json` and its
+  `autopilot.sleep` can be read, and an `autopilot.sleep` override is set. `wake` never refuses
+  for policy; with nothing to undo it prints `already awake`. A crash in either exits 1.
+- **Fail closed, stricter than the spec's "ignored" in three places (owner may review).** A record
+  that is unreadable, not an object, missing a field, with another `state`, an `at`/`until` that
+  is not a local ISO time, an `at` in the future or an `until` more than 24 hours after `at`
+  reads `unknown` with a warning naming the file (per key the stricter of the day value and the
+  night override), not "no manual state"; an expired record is ignored with a warning. A manual
+  `asleep` counts only while `scope.allowCliApproval` is exactly `true` at read time too. A
+  manual `awake` over an open window keeps any night value stricter than the day value.
+- **Writers.** `crew_autopilot.py`'s writers are now `approve`, `sleep` and `wake`; the
+  only-writer test, the module docstring, `autopilot.md`, README, CONFIG.md §20 and PLUGINS.md say
+  so. `autopilot.md` stays inside its 110-line budget (110).
+- **Not in this release.** Plain-text sleep phrases (T-0057), a sleep log and morning summary
+  (L-0653), a `deploy` override (L-0654), sabotage entries (L-0655, harness path), and no change
+  to `scope_guard.py`.
+
 ### Added — `crew` 1.0.394: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
 
 - **What changed.** `autopilot.sleep` in `.crew/config.json` (repo only, all
