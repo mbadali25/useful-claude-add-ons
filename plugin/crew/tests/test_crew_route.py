@@ -54,6 +54,17 @@ EXAMPLES = {
              ("make it so the docs build in CI", None, "the docs build in CI")],
     "goal-resume": [("pick the goal back up", None, None), ("Resume the goal.", None, None)],
     "focus": [("focus on t-0012", "T-0012", None), ("Focus on T-3.", "T-3", None)],
+    # L-0662: four more autopilot rows, inert until each command's ticket lands.
+    "wave": [("run T-20 and T-22 in parallel", "T-20", None),
+             ("run t-1, T-2 and T-3 in parallel", "T-1", None),
+             ("run T-1, T-2, and T-3 in parallel", "T-1", None)],
+    "split": [("split this ticket", None, None), ("split it", None, None),
+              ("split T-12", "T-12", None), ("this ticket is too big", None, None),
+              ("T-0012 is too big", "T-0012", None)],
+    "sleep": [("I'm heading to bed", None, None), ("heading to bed", None, None),
+              ("going to sleep", None, None), ("I'm going to sleep.", None, None),
+              ("Good night.", None, None)],
+    "wake": [("I'm back", None, None), ("Morning!", None, None), ("good morning", None, None)],
 }
 
 AMBIGUOUS_PROMPTS = ["do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it",
@@ -1138,3 +1149,185 @@ def test_approval_and_nothing_words_are_none_before_the_allowlist(tmp_path, monk
     got = _decide_live(tmp_path, monkeypatch, prompt)
 
     assert (got["outcome"], crew_route.render(got)) == ("none", "")
+
+
+# --- L-0662: wave, split, sleep and wake ----------------------------------------
+# The four rows sit behind T-0057's gate. On main as it is none of the four
+# names is a subcommand, so every example decides none; `_live_four` adds them
+# to SUBCOMMANDS, and `available` also to AVAILABLE (every subcommand).
+
+_FOUR = ("wave", "split", "sleep", "wake")
+_FOUR_EXAMPLES = [p for intent in _FOUR for p, _t, _top in EXAMPLES[intent]]
+
+
+def _live_four(monkeypatch, available=True):
+    subs = tuple(crew_autopilot.SUBCOMMANDS) + _FOUR
+    monkeypatch.setattr(crew_autopilot, "SUBCOMMANDS", subs)
+    monkeypatch.setattr(crew_autopilot, "AVAILABLE",
+                        frozenset(subs) if available else frozenset({"status", "run"}))
+
+
+def _four_repo(tmp_path, *tickets):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    for ticket in tickets:
+        make_ticket(root, ticket, activate=False)
+    return root
+
+
+@pytest.mark.parametrize("prompt", _FOUR_EXAMPLES)
+def test_rows_for_unknown_subcommands_emit_nothing(tmp_path, prompt):
+    root = _four_repo(tmp_path, "T-2", "T-3", "T-12", "T-20", "T-22", "T-0012")
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (crew_route.match(prompt) is not None, got["outcome"], crew_route.render(got)) == \
+        (True, "none", "")
+
+
+@pytest.mark.parametrize("prompt", _FOUR_EXAMPLES)
+def test_reserved_wave_split_sleep_wake_ask_softly(tmp_path, monkeypatch, prompt):
+    root = _four_repo(tmp_path, "T-2", "T-3", "T-12", "T-20", "T-22", "T-0012")
+    _live_four(monkeypatch, available=False)
+
+    got = crew_route.decide(str(root), prompt)
+    line = crew_route.render(got)
+
+    assert (got["outcome"], got["unavailable"], got["command"], "arrives with" in got["reason"],
+            "answer the prompt as written" in line, "do not run it" in line) == \
+        ("ask", True, None, True, True, True)
+
+
+@pytest.mark.parametrize("prompt, command, ticket", [
+    ("run T-1 and T-2 in parallel", "/crew:autopilot wave T-1 T-2", "T-1"),
+    ("run t-1, T-2 and T-3 in parallel", "/crew:autopilot wave T-1 T-2 T-3", "T-1"),
+    ("run T-3, t-2, and T-1 in parallel.", "/crew:autopilot wave T-3 T-2 T-1", "T-3"),
+    ("run T-1, T-2, t-1 and T-3 in parallel", "/crew:autopilot wave T-1 T-2 T-3", "T-1"),
+    ("split it", "/crew:autopilot split T-1", "T-1"),
+    ("split this ticket", "/crew:autopilot split T-1", "T-1"),
+    ("split t-2", "/crew:autopilot split T-2", "T-2"),
+    ("T-1 is too big", "/crew:autopilot split T-1", "T-1"),
+    ("this ticket is too big", "/crew:autopilot split T-1", "T-1"),
+    ("I'm heading to bed.", "/crew:autopilot sleep", None),
+    ("Good night!", "/crew:autopilot sleep", None),
+    ("please going to sleep", "/crew:autopilot sleep", None),
+    ("Morning!", "/crew:autopilot wake", None),
+    ("I'm back", "/crew:autopilot wake", None),
+    ("good morning", "/crew:autopilot wake", None)])
+def test_available_wave_split_sleep_wake_route(tmp_path, monkeypatch, prompt, command, ticket):
+    root = _four_repo(tmp_path, "T-2", "T-3")
+    _live_four(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+    line = crew_route.render(got)
+
+    assert (got["outcome"], got["command"], got["ticket"], got["unavailable"],
+            "approve" in line.lower(), "\n" in line) == \
+        ("route", command, ticket, False, False, False)
+
+
+def test_wave_needs_two_real_tickets(tmp_path, monkeypatch):
+    root = _four_repo(tmp_path, "T-2")
+    _live_four(monkeypatch)
+
+    got = {p: crew_route.decide(str(root), p) for p in (
+        "run T-1 and T-9 in parallel", "run T-8, T-1 and T-9 in parallel",
+        "run T-1 and T-1 in parallel", "run T-1 and t-1 in parallel", "run T-1 in parallel")}
+
+    assert [(g["outcome"], g["command"]) for g in got.values()] == [
+        ("ask", None), ("ask", None), ("none", None), ("none", None), ("none", None)]
+    assert ("T-9" in got["run T-1 and T-9 in parallel"]["reason"],
+            "T-1" in got["run T-1 and T-9 in parallel"]["reason"],
+            "T-8" in got["run T-8, T-1 and T-9 in parallel"]["reason"],
+            "T-9" in got["run T-8, T-1 and T-9 in parallel"]["reason"]) == (True, False, True, True)
+
+
+def test_split_without_a_resolvable_ticket_asks(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1", activate=False)
+    make_ticket(root, "T-2", activate=False)
+    _index(root, "T-1 | ready | low | r | one", "T-2 | ready | low | r | two")
+    _live_four(monkeypatch)
+
+    got = [crew_route.decide(str(root), p) for p in
+           ("split it", "this ticket is too big", "split T-9")]
+    lines = [crew_route.render(g) for g in got]
+
+    assert [(g["outcome"], g["command"], g["candidates"]) for g in got] == [
+        ("ask", None, ["T-1", "T-2"]), ("ask", None, ["T-1", "T-2"]), ("ask", None, [])]
+    assert ["which ticket (T-1, T-2)" in lines[0], "which ticket" in lines[2],
+            "T-9" in got[2]["reason"]] == [True, True, True]
+
+
+@pytest.mark.parametrize("prompt", [
+    "go to sleep mode later", "is sleep mode on?", "what does going to sleep do",
+    '"going to sleep"', "`going to sleep`", "I'm going to sleep on it", "this is too big",
+    "the diff is too big", "split the file", "split this function", "I'm back to square one",
+    "morning standup notes", "back", "run the tests in parallel",
+    "run T-1 and the tests in parallel",
+    # Neighbours: a question, a longer sentence, a negation, a quote, `/crew:split`'s ground.
+    "going to sleep?", "good night and good luck", "going to sleep, not", "'good night'",
+    "split this", "split the jira ticket", "split", "run T-1 and T-2", "run T-1 and T-2 later",
+    "split T-1 into two", "T-1 is too big?", "heading to bed soon", "morning?",
+    "run T-1 and T-2 in parallel?", "I am back", "good morning everyone"])
+def test_wave_split_sleep_wake_phrases_that_must_not_route(tmp_path, monkeypatch, prompt):
+    root = _four_repo(tmp_path, "T-2")
+    _live_four(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (got["outcome"], got["command"]) == ("none", None)
+
+
+@pytest.mark.parametrize("prompt", [
+    "going to \u017fleep", "I'm bac\u212a", "I\u2019m heading to bed", "I\u2019m back",
+    "split T-1\u200b", "good\u00a0night", "run T-1 and T-2 in\u00a0parallel",
+    "\uff47ood morning"])
+def test_a_lookalike_or_non_ascii_four_row_prompt_never_routes(tmp_path, monkeypatch, prompt):
+    """T-0057's allowlist on the four rows: a character IGNORECASE folds onto a
+    pattern letter (long s, Kelvin sign), a curly apostrophe, a zero-width or
+    no-break space asks or matches nothing; it never routes."""
+    root = _four_repo(tmp_path, "T-2")
+    _live_four(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (got["outcome"] in ("ask", "none"), got["command"]) == (True, None)
+
+
+@pytest.mark.parametrize("prompt", ["going to \u017fleep", "I'm bac\u212a",
+                                    "I\u2019m heading to bed"])
+def test_a_four_row_match_outside_the_allowlist_asks(tmp_path, monkeypatch, prompt):
+    """Must-ask: these match a row's pattern, so an unknown is an ask, never none."""
+    root = _four_repo(tmp_path)
+    _live_four(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (crew_route.match(prompt) is not None, got["outcome"], got["command"]) == \
+        (True, "ask", None)
+
+
+def test_sleep_route_line_names_the_undo(tmp_path, monkeypatch):
+    root = _four_repo(tmp_path, "T-2")
+    _live_four(monkeypatch)
+
+    lines = {p: crew_route.render(crew_route.decide(str(root), p)) for p in (
+        "going to sleep", "good morning", "run T-1 and T-2 in parallel", "split it")}
+
+    assert [line.endswith(_UNDO) for line in lines.values()] == [True, False, False, False]
+    assert [line.startswith(crew_route.PREFIX) for line in lines.values()] == [True] * 4
+
+
+@pytest.mark.parametrize("prompt", ["run T-1 and T-2 in parallel", "split T-2", "good night"])
+def test_a_four_row_command_render_would_cut_asks(tmp_path, monkeypatch, prompt):
+    """Every L-0662 route goes through T-0069's `_route`. An 80-character prompt
+    cannot make a 200-character command, so the cap is lowered to reach it."""
+    root = _four_repo(tmp_path, "T-2")
+    _live_four(monkeypatch)
+    monkeypatch.setitem(crew_route.FIELD_CHARS, "command", 16)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (got["outcome"], got["command"], "not passed on" in got["reason"]) == \
+        ("ask", None, True)

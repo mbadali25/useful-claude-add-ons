@@ -68,6 +68,19 @@ with `-` or a trailing negation asks too.
 `?` is accepted only where a pattern spells it (the two status questions),
 and a router answer naming another subcommand asks.
 
+## L-0662 -- wave, split, sleep and wake
+
+Four more rows behind the same gate, inert (no line) until each command's
+ticket adds its name to `crew_autopilot.SUBCOMMANDS`. Each passes `_screen`'s
+allowlist; sleep and wake add only the ASCII apostrophe of `I'm`.
+
+  run <id>, <id> and <id> in parallel             route  `wave <ID> <ID> ...` (distinct, in
+                                                         order); fewer than two: none; an id
+                                                         without a folder: ask, naming it
+  split this ticket / it / <id>, <id> is too big  route  `split <ID>`, resolved as `ticket`
+  heading to bed, going to sleep, good night      route  `sleep`, with the undo sentence
+  I'm back, (good) morning                        route  `wake`
+
 `crew_ticket.resolve_active`'s own INDEX fallback takes the FIRST open line,
 so it is never the answer here: `crew_autopilot.open_index_tickets` (T-0004)
 is, and only when it holds exactly one ticket. Every branch that cannot tell
@@ -107,6 +120,12 @@ _ID = r"(?P<id>(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+)"
 _REF = rf"(?:it|this|{_ID})"
 # T-0057: an autopilot row's free text. No `?`: a question is never a command.
 _TEXT = r"(?P<topic>[^?]+)"
+# L-0662: a wave's two or more ids, joined by `,`, `and` or `, and`; read back
+# with _WAVE_ID. The `?:` keeps `match`'s single `id` group the only one.
+_ONE_ID = r"(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+"
+_WAVE_ID = re.compile(_ONE_ID)
+_IDS = rf"(?P<ids>{_ONE_ID}(?:(?:,? and |, ){_ONE_ID})+)"
+_IM = r"I(?:'|\u2019)m"
 
 # (intent, command, ticket_rule, patterns). `command` None: the disk names it
 # (`continue`). Rules: `topic` -- the rest of the prompt is the argument;
@@ -137,6 +156,15 @@ PHRASES = (
     ("goal-resume", "/crew:autopilot run --goal", "autopilot-resume",
      (r"pick the goal back up", r"resume the goal")),
     ("focus", "/crew:autopilot focus", "autopilot-ticket", (rf"focus on {_ID}",)),
+    # L-0662. Rules: `autopilot-tickets` -- two or more distinct explicit ids,
+    # each with a folder; `autopilot-ref` -- an id or it/this, as `ticket`.
+    # Every row here passes `_screen`. `split` is autopilot's, never /crew:split.
+    ("wave", "/crew:autopilot wave", "autopilot-tickets", (rf"run {_IDS} in parallel",)),
+    ("split", "/crew:autopilot split", "autopilot-ref",
+     (rf"split (?:this ticket|it|{_ID})", rf"(?:this ticket|{_ID}) is too big")),
+    ("sleep", "/crew:autopilot sleep", "autopilot",
+     (rf"(?:{_IM} )?heading to bed", rf"(?:{_IM} )?going to sleep", r"good night")),
+    ("wake", "/crew:autopilot wake", "autopilot", (rf"{_IM} back", r"(?:good )?morning")),
 )
 
 AMBIGUOUS = ("do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it")
@@ -166,8 +194,13 @@ _NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|no|nah|nope|wait|cance
                        r"|never ?mind|not now|cancel that|scratch that|forget it)$")
 _ROUTE_SHAPE = ("sub", "stop", "reason")
 # Intents whose ask is about which ticket; any other ask never says "which ticket".
-_TICKETED = ("spec", "plan", "implement", "review", "done", "continue", "focus")
+_TICKETED = ("spec", "plan", "implement", "review", "done", "continue", "focus", "split")
 GOAL_UNDO = "After it runs, tell the user in one line what changed and how to undo it."
+# Intents whose route line ends with GOAL_UNDO: each raises what autopilot does unasked.
+_UNDO_INTENTS = ("goal", "sleep")
+# L-0662: the rows that pass `_screen` without free text, and the characters
+# each adds to _PLAIN -- only what its own patterns spell (`I'm`).
+_SCREENED = {"wave": "", "split": "", "sleep": "'", "wake": "'"}
 
 
 def compile_table(phrases):
@@ -203,8 +236,9 @@ def normalise(prompt):
 
 
 def match(prompt):
-    """`{"intent", "command", "rule", "ticket_arg", "topic"}` for the row the
-    whole prompt matches, else None."""
+    """`{"intent", "command", "rule", "ticket_arg", "topic", "tickets",
+    "refuse"}` for the row the whole prompt matches, else None. `tickets` is
+    a wave's distinct ids in order (`ticket_arg` is the first), else []."""
     text = normalise(prompt)
     if text is None or text.casefold() in AMBIGUOUS:
         return None
@@ -217,19 +251,27 @@ def match(prompt):
             ticket = groups.get("id")
             topic = (groups.get("topic") or "").strip() or None
             refuse = ""
-            if rule in ("autopilot-text", "autopilot-ticket"):
-                verdict, refuse = _screen(prompt, topic if rule == "autopilot-text" else None)
+            tickets = []
+            if groups.get("ids"):
+                tickets = list(dict.fromkeys(i.upper() for i in _WAVE_ID.findall(groups["ids"])))
+                if len(tickets) < 2:
+                    continue
+                ticket = tickets[0]
+            if rule in ("autopilot-text", "autopilot-ticket") or intent in _SCREENED:
+                verdict, refuse = _screen(prompt, topic if rule == "autopilot-text" else None,
+                                          _SCREENED.get(intent, ""))
                 if verdict == "none":
                     continue
             return {"intent": intent, "command": command, "rule": rule,
                     "ticket_arg": ticket.upper() if ticket else None, "topic": topic,
-                    "refuse": refuse}
+                    "tickets": tickets, "refuse": refuse}
     return None
 
 
-def _screen(prompt, topic):
-    """("none" | "ask" | "ok", reason) for an assign, goal or focus match.
-    `topic` is the free text, None for focus."""
+def _screen(prompt, topic, extra=""):
+    """("none" | "ask" | "ok", reason) for an assign, goal, focus or L-0662
+    match. `topic` is the free text, None for a row without any; `extra` is
+    what the row's own patterns add to _PLAIN."""
     if topic is not None:
         text = topic.casefold()
         letters = "".join(ch for ch in text if ch.isalpha())
@@ -243,7 +285,7 @@ def _screen(prompt, topic):
         if raw.casefold().startswith(prefix):
             raw = raw[len(prefix):]
             break
-    if any(ch not in _PLAIN for ch in raw):
+    if any(ch not in _PLAIN and ch not in extra for ch in raw):
         return "ask", ("the prompt holds a non-ASCII or special character; only letters, "
                        "digits, space and .,:;_#()- route. Ask the user to retype it")
     if topic is None:
@@ -259,6 +301,8 @@ def command_for(found, ticket):
     """The `/crew:` command line a match renders to for `ticket`."""
     if found["rule"] in ("topic", "autopilot-text"):
         return f"{found['command']} {found['topic']}"
+    if found["rule"] == "autopilot-tickets":
+        return " ".join([found["command"]] + list(found.get("tickets") or [ticket]))
     if found["rule"] in ("none", "autopilot-resume") or not found["command"] \
             or (found["rule"] == "autopilot" and not ticket):
         return found["command"]
@@ -361,6 +405,17 @@ def _gate(top, found):
     return None
 
 
+def _wave(found, top):
+    """L-0662: route a wave only when every id has a .work/tickets/ folder."""
+    missing = [t for t in found["tickets"]
+               if not os.path.isdir(crew_ticket.ticket_dir(top, t))]
+    if missing:
+        return _answer("ask", found, reason="no such ticket: " + ", ".join(missing)
+                       + (" has" if len(missing) == 1 else " have") + " no .work/tickets/ folder")
+    return _route(found, command_for(found, None), ticket=found["tickets"][0],
+                  source="named in the prompt")
+
+
 def _autopilot(found, top):
     """decide for the T-0057 rows, after the gate."""
     gate = _gate(top, found)
@@ -373,6 +428,13 @@ def _autopilot(found, top):
         return _answer("ask", found, reason=found["refuse"])
     if found["rule"] == "autopilot-text":
         return _route(found, command_for(found, None))
+    if found["rule"] == "autopilot-tickets":
+        return _wave(found, top)
+    if found["rule"] == "autopilot-ref":
+        ticket, source, reason, candidates = _resolve(top, found["ticket_arg"])
+        if ticket is None:
+            return _answer("ask", found, reason=reason, candidates=candidates)
+        return _route(found, command_for(found, ticket), ticket=ticket, source=source)
     if not found["ticket_arg"]:
         return _route(found, command_for(found, None))
     ticket, source, reason, candidates = _resolve(top, found["ticket_arg"])
@@ -453,7 +515,7 @@ def render(decision):
             head = f"the user's prompt asks for {intent} on {ticket} ({source}). "
         else:
             head = f"the user's prompt asks for {intent}. "
-        undo = f" {GOAL_UNDO}" if intent == "goal" else ""
+        undo = f" {GOAL_UNDO}" if intent in _UNDO_INTENTS else ""
         return (PREFIX + head + run
                 + " Its own checks still decide; if the user plainly meant something else, ask."
                 + undo)
