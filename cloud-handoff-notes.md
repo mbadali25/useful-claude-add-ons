@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 09:58 UTC
+Last updated: 2026-10-04 09:59 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 09:59: #351 land-prep done: head f542d4f4 (1.0.320); leaf count 131 (git.forbiddenTrailers), diagrams moved into split parts, 3 renders FAIL in container (kept main's PASS - unverified). Merge-only review started. NOTE #351/#355/#360 ALL change config leaf counts -> each later one re-merges carefully.
 - 09:58: Snapshot table refreshed; notes now pushed after every action (owner request).
 - 09:57: #360 fixer: head 7d442123 (kind branch + test, docs regen), version 1.0.323 (placeholder). Delta review started.
 - 09:57: #371 and #344 are CONFLICTED with main (mergeable_state dirty) so pull_request CI never ran (only verify-gate receipt). Land-prep started: #371 -> 1.0.326, #344 -> 1.0.327. #355 CI 15/24 green, merges first.
