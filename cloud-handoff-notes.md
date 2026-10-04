@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 09:56 UTC
+Last updated: 2026-10-04 09:57 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -58,6 +58,7 @@ Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #37
 
 ## Log (newest first)
 
+- 09:57: #371 and #344 are CONFLICTED with main (mergeable_state dirty) so pull_request CI never ran (only verify-gate receipt). Land-prep started: #371 -> 1.0.326, #344 -> 1.0.327. #355 CI 15/24 green, merges first.
 - 09:56: #344 r2 6af8d6fd: 0 BLOCK 0 FIX 1 NIT (embedded Source: links relative, dangle in plugin cache). Review-clean; waits its turn.
 - 09:55: #342 fixer done: head c6b33f3f, 3 FIX + NIT fixed (global-not-read wording, approvals unknown, escaping incl --inert lines), 1.0.324. r2 review started (incl post-#361 merge check).
 - 09:55: #355 merge review 97c8e6fd: 0/0/0 clean. Lands after #371 (re-merge+rebump then).
