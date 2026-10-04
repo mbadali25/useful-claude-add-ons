@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:03 UTC
+Last updated: 2026-10-04 12:05 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:05: #346 re-review 7983d85a: 0/0/1 CLEAN (NIT: confirm T-0039 CHANGELOG heading carries the version). PR title+body rewritten (sabotage AC deferred per T-0087; known limits). Still draft - mark ready at landing.
 - 12:03: #346 T-0039 fixes pushed 7983d85a (FIX1 exit-4 on any error; FIX2 codemaps reverted to main's anchors + T-0039 section derived at 13a019e7; FIX3 .env templates; NITs; merged e9364a70; 1.0.358). Re-review started. PR body needs: sabotage AC deferred to harness PR (T-0087).
 - 12:03: Land-prep onto e9364a70 started: #368 (1.0.361), #344 (1.0.362, localgpu one past main). Version placeholders in use now: 1.0.340-1.0.362.
 - 12:03: #351 merge review ad9bc03a: 0/0/1 CLEAN (on e9364a70; needs #392 catch-up + re-bump at its turn).
