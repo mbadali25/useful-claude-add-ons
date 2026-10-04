@@ -4,6 +4,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.316: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
+
+- **What changed.** `plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`
+  writes every diagram under `docs.diagramsDir` into the README nearest its
+  `%% Anchors:` paths, between `<!-- crew-diagrams:begin -->` and
+  `<!-- crew-diagrams:end -->` (each a whole line): a `## Diagrams` heading, then
+  per diagram its title, `%% Purpose:` text, the fenced mermaid block and a source
+  link - read exactly as `diagram_doc.py` reads it (a test pins the two over every
+  diagram in this repo). Text outside the markers is never touched; a second run
+  changes no byte; CRLF READMEs stay CRLF. Never a target: the repo-root README, a
+  `SKILL.md`, a README in the diagrams dir, one another generator owns
+  (`docs/qa/README.md`). `%% Embed: <README>|none` overrides. A Bitbucket `origin`
+  gets the rendered SVG plus the source in `<details>`, with a warning when git
+  ignores the SVG. `check` exits 1 on drift, malformed markers or anything
+  unreadable; a README never embedded is `pending` and passes.
+- **Behaviour change at `/crew:done` check 4.** `crew_refresh_check.py` prints a
+  `diagram-embeds` line per README whose section has drifted (judged over every
+  diagram, whatever the ticket reached): `stale` with `refresh with ...
+  crew_diagrams.py embed --root .`, which `/crew:implement` step 6 runs; malformed
+  markers are `stale` with a new `stop - needs judgement` ending; an unreadable
+  source is `unknown`. Either refuses done. `scripts/check-marketplace.py` runs the
+  same check (`check_diagram_embeds`), with `scripts/_test/check-diagram-embeds.py`
+  as its must-fail/must-pass suite (CI and `gate-runner.py`).
+- **Built on #375, not against it.** The diagrams page (`docs/diagrams/README.md`,
+  `index.html`, `diagram_doc.py`), the readability check and the flat
+  `<kind>-<topic>[-<part>].mmd` naming are #375's and unchanged. Not built here: the
+  spec's per-kind directory layout and nested discovery (it conflicts with #375's
+  flat naming - for the owner), the spec's own index writer (#375's page is it).
+  Split out earlier: the lint and theme (L-0547) and this repo's migration and
+  first `embed` run (L-0548); this repo's READMEs carry no section yet, and `check`
+  lists them as pending.
+- **Harness follow-ups (tooling-PR rule).** The completion-audit allowance for a
+  README changed only inside the markers (`completion_audit.py`, using
+  `crew_diagrams.outside_markers`) and a `sabotage_diagrams.py` registration are
+  harness paths and are left out. Until the allowance lands, a ticket whose `embed`
+  refresh writes a README its Touch does not name is flagged by the Stop audit:
+  name the README in Touch.
+
 ### Added — `crew` 1.0.252: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
