@@ -4,6 +4,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.350: a concurrent mint no longer dies on a delete-pending lock name (Windows)
+
+- **What changed.** `crew_config_files.Lock` treats a `PermissionError` from
+  its `O_CREAT | O_EXCL` create as a held lock while the lock file is there
+  (or `stat` cannot tell), bounded by the same wait, and raises `Busy` at the
+  deadline. A denial with no lock file to blame (an unwritable folder) is
+  raised as the `PermissionError` it is after a 0.25s grace.
+- **Why.** On Windows a lock file the previous holder has just removed stays
+  DELETE PENDING while any handle to it is open, and creating that name
+  answers access denied rather than "exists". One of eight concurrent mints
+  failed with `T-0003 claimed but not minted: [Errno 13] Permission denied:
+  ...INDEX.md.lock` on main's Windows run 37194523702.
+- **Tests.** The Windows answer is simulated with a patched `os.open`; four
+  lock tests and one mint test fail without the fix. The concurrent mint
+  tests print every process's stderr in full, and
+  `test_a_declared_rule_that_passes_is_measured` holds the measured rule time
+  between 1 and the test's own wall time instead of asserting exactly 1.
+- **Not verified.** Windows is not runnable where this was written; the fix
+  is checked against a simulation of the error the runner logged.
+
 ### Changed — `crew` 1.0.322: the review bundle and the completion audit account for merged main (T-0100)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
