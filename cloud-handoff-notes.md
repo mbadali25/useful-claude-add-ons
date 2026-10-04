@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:48: #338 L-0582 re-review 0d1766b1: 0/0/2 CLEAN (NITs: stranded note for non-.git layouts; file follow-up tickets at land). Still a DRAFT PR - mark ready at landing.
 - 13:48: #364 r3 fixes pushed 1b0de3cb (cancelled/superseded children ignored; refusal names exits; limit documented + TODO follow-up; 100 tests; 27 mutations; 1.0.387). Re-review started.
 - 13:48: #338 fix pushed 0d1766b1 (could-not-tell for non-.git common dir layouts; tests red-first; TODO follow-ups; 1.0.388). Re-review started.
 - 13:46: #356 T-0017 review 99ef016d: 1 BLOCK (placeholder version 1.0.373 < #396 1.0.376 -> 1.0.390) + FIX1 handoff exemption path mismatch when root is a subdir (can hide uncommitted top-level HANDOFF.md) + FIX2 sabotage follow-up tracking + FIX3 document --force skips wrap-up. Sent to builder.
