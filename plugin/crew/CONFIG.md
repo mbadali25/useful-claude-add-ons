@@ -166,7 +166,8 @@ descending at a template **leaf**.
 leaves. `leaf_paths(default_config())` yields **133**, so **58** are repo-only.
 For all 133, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on T-0066's branch after merging main edb2b8ff; `git.forbiddenTrailers` is the
+on T-0066's branch after merging main 155fe6d8, which changed no config key;
+`git.forbiddenTrailers` is the
 key T-0066 added to both layers. 74 / 132 / 58 on main after T-0013 added
 `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers, while
 this paragraph still said 72 / 130. 72 / 130 / 58 on T-0061's branch after merging

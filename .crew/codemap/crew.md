@@ -279,7 +279,7 @@ Re-executed on T-0040's branch (off `6387ab49`): 125 / 70 / 55 / 0 - T-0040 adde
 `shellRoute.mode` and `shellRoute.distro` to both `default_config()` and
 `default_global_config()`, so repo-only is unchanged. Re-executed on T-0040's landing merge of
 `6a8c60b1`: 127 / 70 / 57 / 0 - T-0010's two repo-only keys and T-0040's two in both layers
-(`plugin/crew/hooks/scripts/crew_config.py:339` and `:610`).
+(`plugin/crew/hooks/scripts/crew_config.py:340` and `:610`).
 Re-executed on T-0040-land's merge of main `844bfc36`: 129 / 72 / 57 / 0 - T-0028's two and
 T-0040's two, all in both layers. `plugin/crew/tests/test_crew_config.py:347` asserts 129.
 Re-executed on T-0061's branch after merging main `34d9f267`: 130 / 72 / 58 / 0 - T-0061's
@@ -288,7 +288,7 @@ repo-only `tickets.baseBranch`, read from the resolved repo config (`crew_common
 `crew_config`; a value naming no commit makes `scope_base.resolve` answer source `unknown`
 with no base (DERIVED). Re-executed on main `edb2b8ff` (T-0013 landed): 132 / 74 / 58 / 0 -
 T-0013's `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` in both layers.
-Re-executed on T-0066's branch after merging main `edb2b8ff` (crew 1.0.333): 133 / 75 / 58 / 0 -
+Re-executed on T-0066's branch after merging main `155fe6d8` (crew 1.0.333), which changed no config key: 133 / 75 / 58 / 0 -
 `git.forbiddenTrailers` in both layers on top of T-0013's 132 (131 / 73 / 58 / 0 on its earlier
 merge of `c9263465`). `plugin/crew/tests/test_crew_config.py` asserts 133. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and

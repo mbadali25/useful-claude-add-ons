@@ -378,8 +378,8 @@ def default_config():
         # never off -- which is a property of the tier ORDER in
         # `crew_state.CHANGE_REQUIREMENTS`, not of a second mechanism.
         "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
-        # T-0066: commit trailers crew refuses (scope_guard.py, in every
-        # `scope.mode`) and reports (`/crew:done`). Both layers, combined by
+        # T-0066: commit trailers crew reports (`crew_trailers.py --check`,
+        # run by `/crew:done`; nothing refuses them yet). Both layers, combined by
         # UNION in `crew_trailers.forbidden`, never by precedence -- a cloned
         # repo's `[]` must not disarm the machine owner's list. The list is
         # the switch: `[]` means off.
