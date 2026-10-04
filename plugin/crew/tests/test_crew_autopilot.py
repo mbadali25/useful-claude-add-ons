@@ -1470,6 +1470,21 @@ def test_settings_warns_on_inert_autopilot_keys(tmp_path):
            "autopilot run ships" in lines
 
 
+def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
+    # `settings` warns only, never refuses: when the escaping import that
+    # `inert_items` reaches fails, the run still gets its settings and the
+    # warning says the inert keys could not be told.
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "ship": "merge"})
+    monkeypatch.setitem(sys.modules, "completion_audit", None)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert got["armed"] is True
+    assert [w.split(" (")[0] for w in _inert(got)] == [
+        "inert: could not tell which settings are inert"], got["warnings"]
+
+
 def test_settings_names_the_global_layer(tmp_path, monkeypatch):
     import crew_config  # pylint: disable=import-outside-toplevel
     path = tmp_path / "global.json"

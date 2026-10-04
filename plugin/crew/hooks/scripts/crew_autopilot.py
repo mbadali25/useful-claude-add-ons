@@ -793,12 +793,12 @@ def _inert_warnings(top):
     not block the run it was meant to speed up. A repo `autopilot.deploy` value
     is left to the deploy warning above, which already names T-0045."""
     try:
-        entries = crew_config.inert_settings(top)
+        return [f"inert: {crew_config.inert_items([e], 10 ** 6)} - {e['effect']}"
+                for e in crew_config.inert_settings(top)
+                if e["key"].startswith("autopilot.")
+                and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
     except Exception as exc:  # pylint: disable=broad-except
         return [f"inert: could not tell which settings are inert ({_failure(exc)})"]
-    return [f"inert: {crew_config.inert_items([e], 10 ** 6)} - {e['effect']}" for e in entries
-            if e["key"].startswith("autopilot.")
-            and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
 
 
 def _settings_at(top):
