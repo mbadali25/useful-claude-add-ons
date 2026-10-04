@@ -481,6 +481,35 @@ contract itself. This section is what goes wrong with the approval and the audit
   reading the closed refusal as a false positive.</p>
 </li>
 </ul>
+<h2 id="verify-gate-says-could-not-tell">Verify Gate Says COULD NOT TELL</h2>
+<p><code>verify-gate.sh</code> / <code>.ps1</code> (T-0082). A rule counts as passed only when its wrapper ended with status 0
+<strong>and</strong> left a completion record saying the rule exited 0. Anything else that is not a plain exit
+status is FAILED as "could not tell": the gate prints <code>VERIFY FAILED: &lt;cmd&gt;</code>, then
+<code>verify-gate: COULD NOT TELL (&lt;reason&gt;): &lt;cmd&gt;</code>, exits 2, and neither marker advances. The summary
+adds <code>verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED</code>. The reasons:</p>
+<ul>
+<li><strong>"exit status N, above 128 and not a signal number - the rule's own status"</strong> (N from 193 to
+  255; signals stop at 64): the rule itself exited that code - 255 is common from <code>ssh</code> or a shell
+  error. It is still could-not-tell, because nothing distinguishes it from a crash code.</li>
+<li><strong>"exit status N: ended by signal N-128, or the rule's own status"</strong> (N from 129 to 192): the rule was
+  killed (137 is KILL, 143 is TERM) - an OOM kill, an outside <code>timeout -s KILL</code>, a CI step limit - or
+  it really exited that code. Re-run the command by hand and see which.</li>
+<li><strong>"the rule's runner ended with status N before it recorded a result"</strong>: the wrapper around the
+  rule was itself killed before it could write the record, so the rule's own result is unknown.</li>
+<li><strong>"no completion record"</strong>: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
+  above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
+  be told from that run.</li>
+<li><strong>"the rule's shell could not be started"</strong> (<code>.ps1</code> only): the resolved bash vanished or would not
+  launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.</li>
+<li><strong>"cannot create an output-capture file or a completion-record file"</strong> or <strong>"no usable bash
+  resolved"</strong>: the existing refusals, now named as could-not-tell.</li>
+<li><strong>"the gate received TERM while this command was running"</strong> (<code>.sh</code> only): the gate itself was
+  signalled mid-rule; it still exits 128+N. A killed <code>.ps1</code> gate prints nothing (PowerShell has no
+  signal trap); the marker not advancing covers it.</li>
+</ul>
+<p>The command log carries status <code>unknown</code> for such a rule; the record sync leaves that rule's entry as
+it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
+rule is not ended by the gate.</p>
 <h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
 <p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
 judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>
