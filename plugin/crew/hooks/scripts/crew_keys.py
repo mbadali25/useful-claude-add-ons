@@ -436,7 +436,7 @@ KEY_META = {
     "autopilot.maxAutoReplans": _row("Successor plans autopilot may start by rejecting an "
                                      "out-of-rounds BLOCK review itself; 0 is off, and "
                                      "anything but a non-negative integer reads as 0, and "
-                                     "above 5 as 5, with a warning.", "branch", None, "1.0.402",
+                                     "above 5 as 5, with a warning.", "branch", None, "1.0.339",
                                      _S + "crew_autopilot.py", type_="non-negative integer"),
     "autopilot.sleep.schedule": _row("A nightly window, `HH:MM-HH:MM` in machine local time "
                                      "(may cross midnight); inside it the two sleep "

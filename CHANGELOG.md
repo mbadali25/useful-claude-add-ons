@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.402: autopilot rejects an out-of-rounds BLOCK review and replans, capped (T-0074)
+### Added — `crew` 1.0.339: autopilot rejects an out-of-rounds BLOCK review and replans, capped (T-0074)
 
 - **What changed.** A new repo-only key, `autopilot.maxAutoReplans` (default
   `0`, off: today's behaviour). At 1 or more, with autopilot armed and
