@@ -342,6 +342,93 @@ refusal names the exact line: add <code>- repo-id: &lt;the id it prints&gt;</cod
 and run the command again. Crew never rewrites a note for you.</p>
 <p>The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in <code>plugin/crew/README.md</code>.</p>
+<h2 id="native-memories-as-vault-pointers">Native Memories as Vault Pointers</h2>
+<p>Claude Code keeps its own native memory, one Markdown file per fact under
+<code>~/.claude/projects/&lt;project&gt;/memory/</code>. Crew can read such a file whose body is
+a single pointer line into your vault, with the frontmatter left as it is:</p>
+<pre><code>vault: &lt;name&gt; | note: &lt;vault-relative path, forward slashes, ending .md&gt;
+</code></pre>
+<p>The vault is named, not given as a path, so the same file works on every
+machine the vault syncs to. The name is looked up in that machine's
+<code>~/.claude/obsidian/config.json</code> (<code>vaults.&lt;name&gt;.path</code>; a vault with role
+<code>ignore</code> is not looked up). Only the name <code>memory</code> falls back: to crew's
+<code>memory.vaultPath</code>, then, only when the Obsidian config has no <code>vaults</code> block,
+to its legacy top-level <code>vaultPath</code>. <code>OBSIDIAN_VAULT_PATH</code> is not used. The
+line is exact and must be the whole body: a first line that starts <code>vault</code> and
+<code>:</code>, in any case, indent or spacing, is a pointer attempt when <code>note:</code> or <code>|</code>
+is on that line, or the next line starts with <code>|</code> or <code>note:</code> (a pointer wrapped
+before its <code>|</code>), or the line is a bare vault name alone (<code>vault: work</code>) or nothing after the colon (<code>vault:</code>); a
+table or a <code>Note:</code> line further down does not count; anything less than the full
+grammar is then <code>malformed</code>. With neither the line is prose: <code>Vault: keep client notes in the work vault</code> is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
+that is there but does not read, parse or have the expected shape (a <code>vaults</code>
+object of objects with a string <code>path</code>, a string <code>vaultPath</code>, crew's <code>memory</code>
+an object with a string or null <code>vaultPath</code>; no duplicate key, not nested too
+deep, at most 1 MiB) is <code>no-vault-config</code>, naming the field. A bad Obsidian config stops every name; a bad crew config stops <code>memory</code>, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.</p>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file &lt;memory file&gt;
+python3 plugin/crew/hooks/scripts/crew_memory.py check --memory-dir &lt;memory dir&gt;
+</code></pre>
+<p><code>resolve</code> prints <code>state:</code> and, when the note is found, <code>path:</code>. <code>check</code> prints
+one row per memory file (not <code>MEMORY.md</code>) and a count per state. Both read
+only; <code>--json</code> gives the same rows as JSON.</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>meaning</th>
+<th>exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resolved</code></td>
+<td>the note exists on this host</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>full-text</code></td>
+<td>not a pointer; the body is the memory</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>malformed</code></td>
+<td>a <code>vault:</code> first line, in any case, indent or spacing, that is not a valid pointer alone in the body (absolute path, <code>:</code>, <code>..</code>, a second field, an invisible character)</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>no-vault-config</code></td>
+<td>no Obsidian config and no <code>memory.vaultPath</code>, or a config file that cannot be read, does not parse or has a field of the wrong shape</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>vault-unknown</code></td>
+<td>this machine names no vault of that name, or marks it <code>ignore</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>vault-unavailable</code></td>
+<td>the configured folder is not there (not mounted, not synced)</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>note-missing</code></td>
+<td>the vault is there, the note is not</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>outside-vault</code></td>
+<td>the path passes through a symlink inside the vault, or leaves it</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>unreadable</code></td>
+<td>the memory file is not a regular file readable as UTF-8 (<code>check</code> never opens a FIFO, device or directory), or a folder or note inside the vault cannot be read or opened</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>An unavailable vault is never replaced by another one that happens to hold a
+note at the same path. This crew version only reads pointers; writing them,
+and converting existing memories, arrive in later versions.</p>
 <h2 id="confirming-recall-reaches-your-sessions">Confirming Recall Reaches Your Sessions</h2>
 <p>(written by the context-hook ticket)</p>
 <h3 id="path-scoped-rules-from-the-code-map">Path-Scoped Rules from the Code Map</h3>

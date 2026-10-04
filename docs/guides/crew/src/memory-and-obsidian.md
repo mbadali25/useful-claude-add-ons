@@ -289,6 +289,58 @@ and run the command again. Crew never rewrites a note for you.
 The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in `plugin/crew/README.md`.
 
+## Native memories as vault pointers
+
+Claude Code keeps its own native memory, one Markdown file per fact under
+`~/.claude/projects/<project>/memory/`. Crew can read such a file whose body is
+a single pointer line into your vault, with the frontmatter left as it is:
+
+```
+vault: <name> | note: <vault-relative path, forward slashes, ending .md>
+```
+
+The vault is named, not given as a path, so the same file works on every
+machine the vault syncs to. The name is looked up in that machine's
+`~/.claude/obsidian/config.json` (`vaults.<name>.path`; a vault with role
+`ignore` is not looked up). Only the name `memory` falls back: to crew's
+`memory.vaultPath`, then, only when the Obsidian config has no `vaults` block,
+to its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not used. The
+line is exact and must be the whole body: a first line that starts `vault` and
+`:`, in any case, indent or spacing, is a pointer attempt when `note:` or `|`
+is on that line, or the next line starts with `|` or `note:` (a pointer wrapped
+before its `|`), or the line is a bare vault name alone (`vault: work`) or nothing after the colon (`vault:`); a
+table or a `Note:` line further down does not count; anything less than the full
+grammar is then `malformed`. With neither the line is prose: `Vault: keep client notes in the work vault` is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
+that is there but does not read, parse or have the expected shape (a `vaults`
+object of objects with a string `path`, a string `vaultPath`, crew's `memory`
+an object with a string or null `vaultPath`; no duplicate key, not nested too
+deep, at most 1 MiB) is `no-vault-config`, naming the field. A bad Obsidian config stops every name; a bad crew config stops `memory`, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file <memory file>
+python3 plugin/crew/hooks/scripts/crew_memory.py check --memory-dir <memory dir>
+```
+
+`resolve` prints `state:` and, when the note is found, `path:`. `check` prints
+one row per memory file (not `MEMORY.md`) and a count per state. Both read
+only; `--json` gives the same rows as JSON.
+
+| state | meaning | exit |
+|---|---|---|
+| `resolved` | the note exists on this host | 0 |
+| `full-text` | not a pointer; the body is the memory | 0 |
+| `malformed` | a `vault:` first line, in any case, indent or spacing, that is not a valid pointer alone in the body (absolute path, `:`, `..`, a second field, an invisible character) | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config file that cannot be read, does not parse or has a field of the wrong shape | 1 |
+| `vault-unknown` | this machine names no vault of that name, or marks it `ignore` | 1 |
+| `vault-unavailable` | the configured folder is not there (not mounted, not synced) | 1 |
+| `note-missing` | the vault is there, the note is not | 1 |
+| `outside-vault` | the path passes through a symlink inside the vault, or leaves it | 1 |
+| `unreadable` | the memory file is not a regular file readable as UTF-8 (`check` never opens a FIFO, device or directory), or a folder or note inside the vault cannot be read or opened | 1 |
+
+An unavailable vault is never replaced by another one that happens to hold a
+note at the same path. This crew version only reads pointers; writing them,
+and converting existing memories, arrive in later versions.
+
 ## Confirming recall reaches your sessions
 
 (written by the context-hook ticket)

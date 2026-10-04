@@ -388,9 +388,13 @@ contract itself. This section is what goes wrong with the approval and the audit
   those, never merged with the main checkout's - delete them to inherit. <code>/crew:status</code> names
   that case: <code>... the main checkout's (&lt;path&gt;) is not read ...</code>. A lane made before 1.0.69 almost
   always has one, a default that crew's SessionStart heal wrote there. <code>(unknown)</code> means git
-  could not name the main checkout; then no default is written either. The shell and PowerShell readers (<code>verify-gate.sh</code>,
-  <code>_common.sh</code>, <code>notify.sh</code>, the handoff scripts, <code>promote-gate.ps1</code>, <code>scope-guard.ps1</code>,
-  <code>cloud-guard.ps1</code>, <code>auto-clear.ps1</code>) do not inherit yet.</li>
+  could not name the main checkout; then no default is written either. Of the shell and
+  PowerShell readers (T-0096), the incident stand-down read (<code>_common.sh</code>,
+  <code>promote-gate.ps1</code>), both cloud-guard no-python fallbacks and <code>auto-clear.ps1</code> inherit too; in
+  the cloud guard's fallback <code>unknown</code> counts as armed. The session hooks (<code>notify</code>, the handoff
+  scripts, <code>context-watch</code>), the verify gate, the scope and completion wrappers and
+  <code>review_gate.py</code> do not inherit yet, so <code>verify-gate.ps1</code> still reads the lane's own
+  <code>emergency.standDown</code> while the bash gate reads the inherited one.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
   <strong>Check:</strong> approval status.</li>
 </ul>
