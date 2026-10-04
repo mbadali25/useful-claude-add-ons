@@ -228,15 +228,15 @@ the previous note's account of it** — see "Unverified at this anchor").
 ## Config, the guard vocabulary, and the ratchet
 
 **DERIVED at this anchor by importing `crew_config` and executing both
-default functions.** Measured 2026-09-27 on T-0023's merge of main (`502cb137`, T-0005
-landed) into T-0023, module resolved from this checkout
+default functions.** Measured 2026-10-04 on T-0066's branch after merging main `c9263465`
+(first measured 2026-09-27 on T-0023's merge of main `502cb137`), module resolved from this checkout
 (`plugin/crew/hooks/scripts/crew_config.py`), not an installed plugin cache:
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **127** | `plugin/crew/hooks/scripts/crew_config.py:245` |
-| `default_global_config()` | **70** | `plugin/crew/hooks/scripts/crew_config.py:428` |
-| repo-only | **57** | the set difference |
+| `default_config()` | **131** | `plugin/crew/hooks/scripts/crew_config.py:245` |
+| `default_global_config()` | **73** | `plugin/crew/hooks/scripts/crew_config.py:432` |
+| repo-only | **58** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
 from `plugin/crew/hooks/scripts/` rather than trusting the table:
@@ -286,7 +286,7 @@ Re-executed on T-0061's branch after merging main `34d9f267`: 130 / 72 / 58 / 0 
 repo-only `tickets.baseBranch`, read from the resolved repo config (`crew_common.repo_config_file`) by
 `scope_base.read_base_branch` (`plugin/crew/hooks/scripts/scope_base.py`), not through
 `crew_config`; a value naming no commit makes `scope_base.resolve` answer source `unknown`
-with no base (DERIVED). Re-executed on T-0066's branch after merging main `c9263465` (crew 1.0.320): 131 / 73 / 58 / 0 -
+with no base (DERIVED). Re-executed on T-0066's branch after merging main `c9263465` (crew 1.0.330): 131 / 73 / 58 / 0 -
 `git.forbiddenTrailers` in both layers on top of T-0061's 130.
 `plugin/crew/tests/test_crew_config.py` asserts 131. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
