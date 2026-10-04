@@ -1131,7 +1131,7 @@ flowchart TB
         pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 5, no round spent<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> to_im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check<br/>stamped?"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:904-915" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:919-930" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> to_sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Copilot /<br/>crew:reviewer fallback<br/>review.md:25-28, :451"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
@@ -1152,15 +1152,15 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `pf0` | preflight first (#264): a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:691 (_receipt_and_gate :701), called at :900 |
-| `tr0` | once the clone's train is armed (crew_train.py arm), does this ticket hold it? review_run.py train_gate :727, crew_train.acquire; unarmed is not asked (L-0526) |
+| `pf0` | preflight first (#264): a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:694 (_receipt_and_gate :716), called at :915 |
+| `tr0` | once the clone's train is armed (crew_train.py arm), does this ticket hold it? review_run.py train_gate :742, crew_train.acquire; unarmed or a spent budget is not asked (L-0526) |
 | `tr0->to_im5` | waiting behind an overlapping ticket, merge &lt;base&gt; first, or the train could not be read: exit 6, no round spent; stderr names the blocker and colliding paths; wait, or crew_train.py catch-up, then review again |
-| `pr0` | no linter finding the bundle adds against its base? could every configured linter check? review_run.py prereview_gate :785 |
+| `pr0` | no linter finding the bundle adds against its base? could every configured linter check? review_run.py prereview_gate :800 |
 | `rv0` | self-check stamped for this bundle and standards set? review_run.py standards_gate |
 | `rv1` | on one bundle; prompt carries the standards checklist, then the recurring-findings checklist, then any web tests |
 | `rv3` | report findings and every ignored line verbatim (:498-500); final round, 0 BLOCK? else fix, or the owner accepts :503, :505-508 |
 | `pr0->fx0` | NEW finding: exit 5, no round spent, not overridable; or COULD NOT CHECK: exit 5 unless --allow-unverified |
-| `pf0->replan` | the budget refusal answers first, no pre-review checks, no self-check |
+| `pf0->replan` | the budget refusal answers first, no train, no pre-review checks, no self-check |
 | `rv2->rv3` | FINDINGS (stray prose beside findings ignored and named: review_verdict.py:210-213) |
 | `rv3->rcpt` | auto-accept (L-0510): eligible, no specialist/control BLOCK; one follow-up ticket :505-506 - or the owner accepts :508 |
 

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6d913543
+anchor: useful-claude-add-ons@2fd5f846
 verified: 2026-10-04
 
 ## Re-derive provenance
@@ -716,8 +716,8 @@ not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal; a findin
 `auto_accept_refusal` (`:559`) returns None and quoting the refusal when not. `auto_accept`
 (`:669`) is the guarded verb, and its receipt carries `review_json_sha256` and `ignored_lines`, which `_receipt_binds_review_json` (`:735`) re-checks on every `receipt_stands` (review round 6 BLOCK 1); `accept` (`:421`) refuses a `--by` starting `auto:`;
 `check_follow_up` (`:756`) reads the follow-up's `direction.md` with `newline=""`, split on `\n` only, never `splitlines()` (review round 4 FIX 2, round 6 FIX 4; a CRLF line drops its one `\r`). `review_run.finish` records
-`findings` and `webtest_open` (`_webtest_open`, `plugin/crew/hooks/scripts/review_run.py:533`)
-and prints `auto_accept_line` (`:542`). JUDGEMENT: autopilot never calls `auto_accept`; the
+`findings` and `webtest_open` (`_webtest_open`, `plugin/crew/hooks/scripts/review_run.py:536`)
+and prints `auto_accept_line` (`:545`). JUDGEMENT: autopilot never calls `auto_accept`; the
 command prose (`plugin/crew/commands/autopilot.md:86`) runs it inside the review phase.
 
 T-0018 (crew 1.0.43) added the router and `status`. `route_args` (`:1328`)
@@ -1326,17 +1326,17 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `_STAMP_RE`'s line (`:86`) under the header through a temp file and `os.replace`
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
-- **Gate.** `review_run.run` first calls `preflight` (`plugin/crew/hooks/scripts/review_run.py:691`,
-  at `:900`; #264): `_receipt_and_gate` (`:701`) answers CLEAN from a CLEAN receipt covering the
-  bundle with no round, and refuses a tree the verify gate has not passed with exit 5 (owner
-  2026-09-30, "Preflight first"); then `train_gate` (`:727`, L-0526): once the clone's train is
-  armed, anything but holding from `crew_train.acquire` is exit 6 (`EXIT_TRAIN` `:187`), no round.
-  Then (L-0574, DERIVED) `prereview_gate` (`:785`, called at `:911`) runs
+- **Gate.** `review_run.run` first calls `preflight` (`plugin/crew/hooks/scripts/review_run.py:694`,
+  at `:915`; #264): `_receipt_and_gate` (`:716`) answers CLEAN from a CLEAN receipt and refuses a
+  tree the verify gate has not passed (exit 5); a spent budget (`_budget_spent` `:709`) skips the
+  rest; else `train_gate` (`:742`, L-0526): once the clone's train is armed, anything but holding
+  from `crew_train.acquire` is exit 6 (`EXIT_TRAIN` `:190`), no round, before the later gates.
+  Then (L-0574, DERIVED) `prereview_gate` (`:800`, called at `:926`) runs
   `plugin/crew/hooks/scripts/review_checks.py` over the bundle's changed files against their base
   blobs, per `.crew/verify.json`'s `preReview`: a NEW linter finding is exit 5 and not
   overridable; COULD NOT CHECK is exit 5 unless `--allow-unverified`; only an active incident
-  stands it down. Only then does it call `standards_gate` (`:753`) at `:913`, before
-  `review_ledger.reserve` (`:917`), for every provider, unless `review_ledger.status` already
+  stands it down. Only then does it call `standards_gate` (`:768`) at `:928`, before
+  `review_ledger.reserve` (`:932`), for every provider, unless `review_ledger.status` already
   reads `NEEDS_REPLAN` or no rounds left: then the budget refusal answers first and neither the
   pre-review checks nor the self-check is asked for (review round 3). `crew_standards.review_gate`
   (`:663`) applies unless `gate_applies` (`:597`) proves there is no approval receipt: only
@@ -1347,7 +1347,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:635`, behind
   `gate_problems` `:629`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
   note carries `std:<first 8 of the digest>` for the metrics row. Problems return
-  `EXIT_USAGE` (`review_run.py:778`) unless `crew_incident.read_state` is active, which logs
+  `EXIT_USAGE` (`review_run.py:793`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:714`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:315`, defined at `crew_standards.py:664`)
@@ -1404,7 +1404,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
 - **DERIVED**: nothing launches Kimi for a review yet. `review_run.py`'s `--provider` choices are
-  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:995`), and
+  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:1010`), and
   `commands/review.md` has no Kimi row; L-0527 (tooling only) adds the launch, and adding `kimi`
   to `review_run.LAUNCHED` makes Kimi eligible with no crew_config change.
 
@@ -1463,7 +1463,7 @@ S16-S19 and L-0558's S20-S33 never reached the repo, `TODO.md`).
   and HEAD under the lock and prints `LAND_OK` and the `gh pr merge ... --match-head-commit` line
   and logs `check-land`. `release` (`:901`) logs `release`, `merged` (paths from
   `<sha>^1..<sha>`, `null` when unreadable) or `force-release` (needs `--by` and `--reason`).
-- **Callers and tests.** `review_run.py` (`plugin/crew/hooks/scripts/review_run.py:174`) and
+- **Callers and tests.** `review_run.py` (`plugin/crew/hooks/scripts/review_run.py:177`) and
   `review_prompt.py` (`plugin/crew/hooks/scripts/review_prompt.py:65`) import it, and
   `plugin/crew/tests/test_crew_train.py` asserts exactly those two (L-0526). `/crew:done` describes
   landing (`plugin/crew/commands/done.md`, "Landing through the merge train"). `.crew/verify.json`'s
@@ -1653,8 +1653,8 @@ S16-S19 and L-0558's S20-S33 never reached the repo, `TODO.md`).
   (`plugin/crew/hooks/scripts/review_prompt.py:108`) and on the webtest
   overflow line (`plugin/crew/hooks/scripts/review_prompt.py:301`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:559`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:561`). `parse` and
+  (`plugin/crew/hooks/scripts/review_run.py:562`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:564`). `parse` and
   `codex_final_message` split reviewer output on `\n` only, never
   `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
   (`plugin/crew/hooks/scripts/review_verdict.py:170`,
@@ -1663,11 +1663,11 @@ S16-S19 and L-0558's S20-S33 never reached the repo, `TODO.md`).
 - DERIVED (L-0576): `parse` recovers a FINDINGS round despite stray lines
   (`plugin/crew/hooks/scripts/review_verdict.py:210`): only beside a finding, with no
   other reason (`prior_reasons` lead the list, `:190`; `review_run.finish` passes its
-  bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:568`), and
+  bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:571`), and
   only when no stray line is `contract_like` (`plugin/crew/hooks/scripts/review_verdict.py:135`;
   the shortfall wording net `_SHORTFALL` is `:125`). The ignored lines go to
-  review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:588`), a
-  `review: FINDINGS kept; ...` line (`:641`) and, as a count, the ledger row
+  review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:591`), a
+  `review: FINDINGS kept; ...` line (`:644`) and, as a count, the ledger row
   (`plugin/crew/hooks/scripts/review_ledger.py:394`; null when review.json's value is missing or not a non-negative int, never 0).
   `/crew:review` states the same verdict rule (`plugin/crew/commands/review.md:482-486`) and, in
   step 3.1, shows every ignored line verbatim beside the BLOCK/FIX lines (`:498-500`); CLEAN is
@@ -1679,8 +1679,8 @@ S16-S19 and L-0558's S20-S33 never reached the repo, `TODO.md`).
   else `reviewer`. `VERDICTS`, `FINDING_FORM` and the class names are at
   `plugin/crew/hooks/scripts/review_verdict.py:90`, `:93` and `:95`, and the Codex
   event and item vocabularies start at `:98`. `review_run.finish` computes the class at
-  `plugin/crew/hooks/scripts/review_run.py:579` and prints the refund line at `:645`
-  (not refunded, `:648`). The ledger refunds a `tool` round up to `REFUND_LIMIT`
+  `plugin/crew/hooks/scripts/review_run.py:582` and prints the refund line at `:648`
+  (not refunded, `:651`). The ledger refunds a `tool` round up to `REFUND_LIMIT`
   (`plugin/crew/hooks/scripts/review_ledger.py:135`; `BUDGET` `:132` unchanged).
   `_refunded` (`:296`) counts refunded rows after the successor boundary
   (`_boundary`, `:288`), `_charged` (`:302`) is spent minus refunded, and
@@ -2401,7 +2401,7 @@ the refresh artifacts. The conflicting provenance sections keep both sides, T-00
 its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
 merge); each one that moved was re-read with `sed -n` on the merge and corrected: the version,
 1.0.44, at `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`;
-T-0004's "117 -> 119" `CHANGELOG.md:1057-1058` -> `:517-518` (T-0021's entry now sits above
+T-0004's "117 -> 119" `CHANGELOG.md:1062-1063` -> `:517-518` (T-0021's entry now sits above
 T-0042's). `.crew/verify.json` is 313 lines and 29 rules: rule 26 carries T-0042's pricing
 (62s, `seconds`/`why` changed in place) and T-0021's tracker rule is rule 28 at `:301-308`.
 `crew_resume.py`, `crew_context.py` and `crew_tracker.py` each changed on one side only, so
@@ -2480,7 +2480,7 @@ carries T-0023's `route_item` hunk on main's tree, so main's `_record_author_log
 rule at `:309-317`, after T-0021's tracker rule 28 at `:301-308`. The version is 1.0.46 at
 `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`. Config
 leaves re-executed on the merge: 122 / 68 / 54 / 0. T-0004's "117 -> 119" is now
-`CHANGELOG.md:1217-1218` (T-0023's entry sits first). `crew_tracker.py`, `crew_resume.py` and
+`CHANGELOG.md:1222-1223` (T-0023's entry sits first). `crew_tracker.py`, `crew_resume.py` and
 `role_write_guard.py` changed on one side only, so their citations stand. On the merge,
 `test_crew_route.py`, `test_crew_route_hook.py`, `test_crew_context.py`, `test_crew_tracker.py`
 and `test_crew_config.py` ran: 588 passed.
@@ -2540,7 +2540,7 @@ citation into them was re-read with `grep -n`/`sed -n` at `29a987b0`:
   `_handoff_ticket`.
 - `.crew/verify.json` - rule 26's `seconds` and `why` changed in place; `:281-289` holds, 294
   lines.
-- `CHANGELOG.md` and the tests - cited by name only here, except `CHANGELOG.md:846` (the config
+- `CHANGELOG.md` and the tests - cited by name only here, except `CHANGELOG.md:851` (the config
   key count paragraph), which did not match "116 -> 118" at `4ff7e764` either and is left as it
   was, outside this refresh.
 
@@ -2988,7 +2988,7 @@ Leaves re-executed on the merge: 122 / 68 / 54 / 0; `test_crew_config.py:279` as
 `.crew/verify.json` is 325 lines, 30 rules: autopilot rule 27 `:296-303`, tracker 28 `:304-311`,
 routing 29 `:312-320`. `sabotage.py` imports `ROUTE_MUTATIONS` at `:79` and
 `CONFIG_MENU_MUTATIONS` at `:80`, both appended at `:3053`. T-0004's "117 -> 119" is
-`CHANGELOG.md:1214-1215` (T-0075's entry now sits first). The version is 1.0.47 at
+`CHANGELOG.md:1219-1220` (T-0075's entry now sits first). The version is 1.0.47 at
 `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`; `:217`
 states 36 commands. `crew_context.py`, `crew_route.py` and the templates changed on main's side
 only, so the routing section's citations stand.
@@ -3071,7 +3071,7 @@ tracker section (+62 up to `:998`, +105 to +123 past the pinning hunks, each mat
 with the Windows pinning sentence rewritten for T-0077 (`_parent_check` removed; `_hold_dirs`
 `:1066`, `_held_check` `:1161`, `_win_open_dir` `:331`, `_WIN_PIN` `:328`) and the tracker rule
 corrected to `.crew/verify.json:345-353` (missed at `7d217751`); 87 `TRACKER_MUTATIONS`; T-0004's
-"117 -> 119" is `CHANGELOG.md:1425-1426`; the version is 1.0.50. `.crew/verify.json` did not change.
+"117 -> 119" is `CHANGELOG.md:1430-1431`; the version is 1.0.50. `.crew/verify.json` did not change.
 
 ## Re-anchor provenance - `8cabe586` + `5050ea3b` -> `5e2d71a7`, 2026-09-28 (T-0075 sabotage re-anchor, merges shipstation's main)
 
@@ -3080,7 +3080,7 @@ whole block" entry over both block guards (the T-0075 subset run found it vacuou
 rule and `value_allowed`'s shape rule each refuse a block alone), the 1.0.49/1.0.50 step-back and
 re-set (`1a3cd377`, `1afd2216`), and `5e2d71a7` merging origin/main `5050ea3b` (shipstation 1.1.1:
 `skills/shipstation/`, its marketplace entry and a CHANGELOG entry, none cited here). Moved in
-this note: T-0004's "117 -> 119" is `CHANGELOG.md:1436-1437`. `CONFIG_MENU_MUTATIONS` is still 50;
+this note: T-0004's "117 -> 119" is `CHANGELOG.md:1441-1442`. `CONFIG_MENU_MUTATIONS` is still 50;
 crew is still 1.0.50 (`1afd2216`). Nothing else this note cites changed.
 
 ## Re-anchor provenance - `5e2d71a7` + `81685adf` -> `3724731b`, 2026-09-28 (T-0075 review round 3, merge of `e6e10432`)
@@ -3163,7 +3163,7 @@ T-0085's files. Every body citation into a changed file was compared by script (
 line's text at `9631c707` against `22399a9c`); the ten that moved are corrected in place:
 `review.md:449,464` -> `:452,467`, `plan.md:60` -> `:61`, `implement.md:36`/`:110` ->
 `:34`/`:112`, `implement.md:89-111`/`:96` -> `:86-114`/`:93`, `review_prompt.py:93`/`:239` ->
-`:91`/`:246`, `review_run.py:334`/`:317` -> `:328`/`:330`, and the inventory's skill count and
+`:91`/`:246`, `review_run.py:337`/`:317` -> `:328`/`:330`, and the inventory's skill count and
 version (30, 1.0.52). The new "Development standards" section is read from source at
 `22399a9c`. Citations inside the earlier provenance paragraphs are history and were not
 moved. No suite was executed for this note.
@@ -3230,7 +3230,7 @@ this section names it.
 The conflicting hunks were resolved by hand and re-read at `d7c7c75c` with `grep -n` per
 symbol: the version line (1.0.55), the leaf table and paragraph (re-executed: 125 / 68 / 57 / 0;
 `plugin/crew/tests/test_crew_config.py:284` asserts 125; T-0004's "117 -> 119" is
-`CHANGELOG.md:1652-1653`), the `crew.json` warning (`:911-915`), the whole `/crew:autopilot`
+`CHANGELOG.md:1657-1658`), the `crew.json` warning (`:911-915`), the whole `/crew:autopilot`
 section (T-0072's `deploy-allowed`, `_settings_at` and `DEPLOY_VALUES` merged into T-0010's
 text; every `crew_autopilot.py` and `commands/autopilot.md` citation in it re-read), the
 `deploy_allowed` paragraph, the `.crew/verify.json` rules sentence (rules 28-32), and the
@@ -3251,7 +3251,7 @@ that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another
 
 Resolved by hand and re-read at `cd106b8b`: the version sentence (1.0.60; `.claude-plugin/marketplace.json:217`
 keeps T-0075's 36 slash commands), the leaf table and paragraph (re-executed: 125 / 68 / 57 / 0;
-`plugin/crew/tests/test_crew_config.py:288` asserts 125; T-0004's "117 -> 119" is `CHANGELOG.md:1776`),
+`plugin/crew/tests/test_crew_config.py:288` asserts 125; T-0004's "117 -> 119" is `CHANGELOG.md:1781`),
 `AUTOPILOT_DEFAULTS` (`crew_state.py:1094-1095`, deep-copied at `crew_config.py:384`), the autopilot and
 policy rule sentences (`.crew/verify.json` `:298-306`, `:307-313`, tracker `:314-321`, route `:322-330`,
 approval `:332-339`; `POLICY_MUTATIONS` 55 by `len()`, appended at `plugin/crew/tests/sabotage.py:3061`),
@@ -3383,7 +3383,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 
 ## Re-anchor provenance - `bbd9a66d` + `f79e9f58` -> `6375524b`, 2026-09-29 (T-0094 merges `8ab733d7`; review round 2's successor)
 
-`f050cd47` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored `bbd9a66d`) into T-0094-build at `ca5b1f35` (T-0094's side anchored `f79e9f58`, plus review round 2's FIX 1 `da1532d6` and FIX 2 `ca5b1f35`). The artifact conflicts were anchor, version, provenance and cited-line text only: both sides' provenance kept, main's first; INDEX history columns joined; body hunks resolved to main's lines except T-0094's own refresh-admission paragraph and refresh-check entry point. After it, `157237c2` splits `.crew/verify.json` rule 25 (the admission suite is rule 32 at `:342-349`, rule 25 `:269-287`, every later rule moves by the merged and split lengths), restates the sabotage counts in `plugin/crew/tests/sabotage_refresh.py`, and edits `plugin/crew/README.md` and `docs/guides/crew/src/daily-workflow-scope.md` in place; `ef5b4c89` re-measures `plugin/crew/BUDGETS.md` (19,500 lines across 128 files); `fc348c89` sets crew 1.0.62; `6375524b` rebuilds the daily-workflow guide. `git diff --name-only bbd9a66d 6375524b`, refresh artifacts aside, is T-0094's files only: `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, the daily-workflow guide and its source, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `commands/done.md`, `commands/implement.md`, `completion_audit.py`, `crew_refresh_check.py`, `scope_guard.py` and T-0094's five test files. Every body `path:N` citation was traced to the side whose copy of this note carries its line (`8ab733d7` or `ca5b1f35`) and mapped to HEAD with a `difflib` line diff (`/root/crew-tmp/t-0094/cite_map_merge.py`, machine-local); each that did not map to itself was read with `sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were that misattribution and hold; a history position ("before", "at <sha>", "since ...") was left as written. Re-derived here: `scope_guard.py`'s T-0010 citations (`:124-128`, `:243`, `:263`, `:271`, `:287`, `:132-133`, the merged file carrying T-0094's rule-6 docstring) and the refresh allowance (`:215-226`); `crew_refresh_check.py`'s positions after FIX 1's six lines (`artifact_verdicts` `:688`, the reach `:706-715`, `_rendered_verdict` `:745`, `ticket_freshness` `:956`, `main` `:1056`) and the unreadable-rule branch (`:652-654`); the round-2 tests; the verify rules 26-32 (rule 30 is T-0023's routing rule and 31 T-0024's, corrected in place with a `Corrected` clause); T-0004's "117 -> 119" at `CHANGELOG.md:1672` (review round 2 NIT 6); the version sentence (1.0.62). No test was run by this note.
+`f050cd47` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored `bbd9a66d`) into T-0094-build at `ca5b1f35` (T-0094's side anchored `f79e9f58`, plus review round 2's FIX 1 `da1532d6` and FIX 2 `ca5b1f35`). The artifact conflicts were anchor, version, provenance and cited-line text only: both sides' provenance kept, main's first; INDEX history columns joined; body hunks resolved to main's lines except T-0094's own refresh-admission paragraph and refresh-check entry point. After it, `157237c2` splits `.crew/verify.json` rule 25 (the admission suite is rule 32 at `:342-349`, rule 25 `:269-287`, every later rule moves by the merged and split lengths), restates the sabotage counts in `plugin/crew/tests/sabotage_refresh.py`, and edits `plugin/crew/README.md` and `docs/guides/crew/src/daily-workflow-scope.md` in place; `ef5b4c89` re-measures `plugin/crew/BUDGETS.md` (19,500 lines across 128 files); `fc348c89` sets crew 1.0.62; `6375524b` rebuilds the daily-workflow guide. `git diff --name-only bbd9a66d 6375524b`, refresh artifacts aside, is T-0094's files only: `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, the daily-workflow guide and its source, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `commands/done.md`, `commands/implement.md`, `completion_audit.py`, `crew_refresh_check.py`, `scope_guard.py` and T-0094's five test files. Every body `path:N` citation was traced to the side whose copy of this note carries its line (`8ab733d7` or `ca5b1f35`) and mapped to HEAD with a `difflib` line diff (`/root/crew-tmp/t-0094/cite_map_merge.py`, machine-local); each that did not map to itself was read with `sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were that misattribution and hold; a history position ("before", "at <sha>", "since ...") was left as written. Re-derived here: `scope_guard.py`'s T-0010 citations (`:124-128`, `:243`, `:263`, `:271`, `:287`, `:132-133`, the merged file carrying T-0094's rule-6 docstring) and the refresh allowance (`:215-226`); `crew_refresh_check.py`'s positions after FIX 1's six lines (`artifact_verdicts` `:688`, the reach `:706-715`, `_rendered_verdict` `:745`, `ticket_freshness` `:956`, `main` `:1056`) and the unreadable-rule branch (`:652-654`); the round-2 tests; the verify rules 26-32 (rule 30 is T-0023's routing rule and 31 T-0024's, corrected in place with a `Corrected` clause); T-0004's "117 -> 119" at `CHANGELOG.md:1677` (review round 2 NIT 6); the version sentence (1.0.62). No test was run by this note.
 
 ## Re-anchor provenance - `6375524b` -> `f5d0f1b1`, 2026-09-30 (T-0094 merges `a61a6f38`, crew 1.0.70)
 
@@ -3703,3 +3703,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
 
 **Re-anchored `42effe14` -> `6d913543` on 2026-10-04 (L-0526: the gate round takes the merge train, exit 6; the reviewer's rerere block; sabotage_train.py).** L-0526's change outside refresh artifacts is `review_run.py` (docstring, `crew_train` import, `EXIT_TRAIN`, `_receipt_and_gate`/`train_gate`; 1006 -> 1060 lines), `review_prompt.py` (docstring and `_catch_up_block`; 402 -> 443), `commands/review.md` and `plugin/crew/README.md` (in place), `sabotage.py` (one comment line folded, one import added, same 3400 lines), the new `sabotage_train.py` and `test_review_run_train.py`, three tests, three guide sources and their nine builds, `.crew/verify.json` rule 38 (in place, still `:445`), `CHANGELOG.md` (+30 at the top) and `TODO.md` (+6 near the top). Path-qualified citations outside dated provenance were moved by difflib from `66655deb` (this branch's merge of origin/main) to the new tree; the relative `review_run.py` citations in the Gate paragraph and the auto-accept/refund bullets were re-read with `grep -n` (`preflight` `:691` at `:900`, `prereview_gate` `:785` at `:911`, `standards_gate` `:753` at `:913`, `reserve` `:917`, `auto_accept_line` `:542`, the refund lines `:641`/`:645`/`:648`); two `sabotage.py:3060`/`:3061` citations of `POLICY_MUTATIONS`' registration, already stale at `66655deb`, now read `:3067`. The Gate paragraph and the merge-train section's opening and callers bullet were rewritten for L-0526. The version sentence was not re-checked by this note. No suite was executed for this note.
+
+**Re-anchored `6d913543` -> `2fd5f846` on 2026-10-04 (L-0526 review round 1: a spent budget never takes the train).** `git diff --name-only 6d913543 2fd5f846` outside refresh artifacts is L-0526's own follow-up: `review_run.py` (`_budget_spent` and docstring lines; 1060 -> 1075 lines, later lines shifting by 3 to 15), `plugin/crew/docs/external-tool-formats.md` (its `review_run.py` citations), `commands/review.md` and `plugin/crew/README.md` (in place), the train tests and `sabotage_train.py`, `.crew/verify.json` rule 38 (in place), `CHANGELOG.md` and the graph. Path-qualified citations were moved by difflib from `2fd5f846^`; the Gate paragraph was rewritten (`preflight` `:694` at `:915`, `_budget_spent` `:709`, `_receipt_and_gate` `:716`, `train_gate` `:742`, `EXIT_TRAIN` `:190`, `prereview_gate` `:800` at `:926`, `standards_gate` `:768` at `:928`, `reserve` `:932`) and the auto-accept/refund relative citations re-read with `grep -n` (`:545`, `:644`/`:648`/`:651`). No suite was executed for this note.
