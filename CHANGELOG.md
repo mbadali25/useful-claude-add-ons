@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew`: mint never reads INDEX.md mid-replace (L-1510)
+### Fixed — `crew` 1.0.338: mint never reads INDEX.md mid-replace (L-1510)
 
 - **What broke.** On the Windows runner, `test_concurrent_mints_distinct` and
   `test_index_rows_intact_after_concurrent_mints` failed now and then with
