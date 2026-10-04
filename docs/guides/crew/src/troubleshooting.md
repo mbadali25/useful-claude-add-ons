@@ -261,7 +261,16 @@ contract itself. This section is what goes wrong with the approval and the audit
   formatter or a `git mv` never reaches it. The audit instead diffs the **whole working tree**
   against the ticket's scope base (`scope_base.resolve` — the commit the ticket started from) across
   committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
-  though nothing blocked it at the time.
+  though nothing blocked it at the time. A file byte-identical to main as last merged is not
+  counted; a `merged main: could not tell` line (a detached HEAD, none of `origin/HEAD`,
+  `origin/main` and `main` naming a commit, or a git error) means every merged-in file was
+  counted, so check out the ticket branch and rerun. A missing `origin/main` alone is not that:
+  a local `main` is used instead. An untracked merged-in file (after `git rm --cached`) is main's
+  only when `git add` would record it identically: with `core.fileMode=false` its execute bit is
+  ignored, as git ignores it. On the review side, `diffed-from-merged=could-not-tell` (or
+  `fork: could not tell` from `--check-receipt`) means `git merge-base <start> <merged>` gave no
+  answer, so a file main also changed shows main's lines as the ticket's: fetch, check the start
+  commit still exists, and rebuild.
   **Check it directly, without waiting for a Stop:**
   ```bash
   python3 "<crew>/hooks/scripts/completion_audit.py" --check --ticket <id>
@@ -269,6 +278,19 @@ contract itself. This section is what goes wrong with the approval and the audit
   **Fix:** either the path genuinely needs to be in scope (widen Touch and re-approve), or revert
   the out-of-scope change. Files git ignores (including everything under `.crew/`) and `.work/`
   itself are outside what the audit can see at all — that is by design, not a gap to work around.
+
+- **Symptom: the scope base is the merge-base with `main` on a repo whose branches come from
+  `development`.** `scope_base.py --record` says "(fallback) recorded ... the merge-base with
+  origin/main", and the review bundle or the completion audit lists hundreds of files the ticket
+  never touched. With no `tickets.baseBranch`, the base branch is `origin/HEAD`'s target, then
+  `origin/main`, then `main`, so a branch cut from `development` is measured against `main` and
+  the whole integration branch looks like this ticket's change.
+  **Fix:** set `"tickets": {"baseBranch": "development"}` in the repo's `.crew/config.json`, then
+  `scope_base.py --root . --record <id>`. A fallback recorded against the old branch is re-derived
+  ("re-derived ... was a merge-base guess against origin/main"); an exact record is never moved.
+  A value that names no commit here, or a config that does not parse, reads as **could not tell**:
+  `--record` exits 1, `--base` exits 3 with nothing on stdout, and the audit fails. It never falls
+  back to `origin/HEAD` silently. Fix the value; do not unset it to make the error go away.
 
 - **`scope.mode` values, and what "auto" means:** `off` (hooks do nothing, the default), `report`
   (allows everything, logs the row to `.crew/guard.log`), `block` (refuses out-of-scope writes and
