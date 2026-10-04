@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:50: WAVE2 #427 L-0652 built -> b844b794 (manual sleep/wake; untrusted state=unknown(strict), allowCliApproval checked at read, wake keeps stricter night; ~37 tests; 8 sabotages). Review started.
 - 16:50: #421 fixes -> 76c85c03 (userIgnoreFilters removed per spec rule - follow-up to verify on owner vault; case-insensitive archive/kinds; realpath link checks; whole-word terms; obsidian-vault 0.5.0). Round-2 review started.
 - 16:47: #420 L-0662 review 76aba34a: 0/2/6. OWNER DECIDED: bare greetings (good night/morning) must ASK, not route to sleep/wake; explicit 'I'm heading to bed'/'I'm back' still route. Sent + rule time via pytest_rule.py, allow curly ’ in I’m.
 - 16:46: H2a #399 built -> e6138c16 (T-0082 verify-gate rule-completion records sh+ps1, fixes ps1 rc carry-over bug; T-0080 sabotage_bound RLIMIT_DATA 4GiB/600s (spec fallback from RLIMIT_AS); tooling-pr OK 7 harness paths; 54 tests; 19 sabotage RED). Review started. Rule 4 now 123s > 60 Stop.
