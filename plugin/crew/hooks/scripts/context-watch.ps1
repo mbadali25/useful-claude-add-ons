@@ -78,7 +78,8 @@ function Get-CrewRepoConfigDir([string]$Root) {
 function Get-CrewHandoffPath($Value) {
   # The handoff note's path relative to the cwd (the checkout root):
   # context.handoffPath, or .work/HANDOFF.md when it is unset or leaves the
-  # checkout -- absolute, `..`, or through a link -- with a warning on stderr.
+  # checkout -- absolute, `..`, or through a link -- or names a directory (the
+  # checkout itself, `notes/`), with a warning on stderr. Forward slashes.
   # Twin of crew_state.handoff_path (crew_freshness.contained_path), stricter
   # on links: 5.1 cannot resolve one as realpath does, so any link between the
   # root and the target reads as leaving. In a linked worktree inheriting the
@@ -98,9 +99,18 @@ function Get-CrewHandoffPath($Value) {
       if ($item -and $item.LinkType) { $inside = $false }
     }
   } catch { $inside = $false }
-  if ($inside) { return $full.Substring($base.Length + 1) }
-  [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
-  return $default
+  if (-not $inside) {
+    $script:CrewHandoffPathLeft = $true   # context-watch.ps1 says so in its message
+    [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
+    return $default
+  }
+  # A directory (`notes/`, an existing folder) cannot hold the note.
+  if ($Value.EndsWith('/') -or $Value.EndsWith('\') -or (Test-Path -LiteralPath $full -PathType Container)) {
+    [Console]::Error.WriteLine("crew: context.handoffPath names a directory - using $default")
+    return $default
+  }
+  # Forward slashes on every OS, as the bash twin prints it.
+  return $full.Substring($base.Length + 1).Replace('\', '/')
 }
 
 $raw = [Console]::In.ReadToEnd()
@@ -693,6 +703,15 @@ This figure is a fallback estimate from transcript size, not a measurement -
 no usage record was found yet. It reads high after a compaction.
 "@
 }
+$leftNote = ""
+if ($script:CrewHandoffPathLeft) {
+  $leftNote = @"
+
+context.handoffPath in $cfgShown leaves this checkout, so the handoff goes
+to $handoff here instead.
+"@
+}
+$note += $leftNote
 
 # Name the rule that fired. A percentage alone cannot explain why an 800k
 # reading on a 1M window said nothing and 900k did.
@@ -727,7 +746,7 @@ if ($autoWrapUp) {
 You are at roughly $pctH% of the context budget. Reach a stopping point
 now: finish or safely abandon the change in flight, write $handoff per the
 crew-context skill, update the ticket, then tell the user the session is
-ready to clear. Do not start new work.
+ready to clear. Do not start new work.$leftNote
 "@)
 } else {
 [Console]::Error.WriteLine(@"

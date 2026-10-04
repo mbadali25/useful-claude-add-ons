@@ -335,7 +335,8 @@ function Get-CrewRepoConfigDir([string]$Root) {
 function Get-CrewHandoffPath($Value) {
   # The handoff note's path relative to the cwd (the checkout root):
   # context.handoffPath, or .work/HANDOFF.md when it is unset or leaves the
-  # checkout -- absolute, `..`, or through a link -- with a warning on stderr.
+  # checkout -- absolute, `..`, or through a link -- or names a directory (the
+  # checkout itself, `notes/`), with a warning on stderr. Forward slashes.
   # Twin of crew_state.handoff_path (crew_freshness.contained_path), stricter
   # on links: 5.1 cannot resolve one as realpath does, so any link between the
   # root and the target reads as leaving. In a linked worktree inheriting the
@@ -355,9 +356,18 @@ function Get-CrewHandoffPath($Value) {
       if ($item -and $item.LinkType) { $inside = $false }
     }
   } catch { $inside = $false }
-  if ($inside) { return $full.Substring($base.Length + 1) }
-  [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
-  return $default
+  if (-not $inside) {
+    $script:CrewHandoffPathLeft = $true   # context-watch.ps1 says so in its message
+    [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
+    return $default
+  }
+  # A directory (`notes/`, an existing folder) cannot hold the note.
+  if ($Value.EndsWith('/') -or $Value.EndsWith('\') -or (Test-Path -LiteralPath $full -PathType Container)) {
+    [Console]::Error.WriteLine("crew: context.handoffPath names a directory - using $default")
+    return $default
+  }
+  # Forward slashes on every OS, as the bash twin prints it.
+  return $full.Substring($base.Length + 1).Replace('\', '/')
 }
 
 $stdinStream = [Console]::OpenStandardInput()
@@ -470,7 +480,10 @@ if ($d.transcript_path -and (Test-Path $d.transcript_path)) {
     # clamped to Int32.MaxValue -- a bare [int] cast throws past it, which left
     # 5 and deleted what the user kept. An integer only, as documented: a digit
     # string, a bool or a negative keeps 5, the same as handoff-write.sh.
-    if (($k -is [int] -or $k -is [long]) -and $k -ge 0) { $keep = [int][math]::Min([long]$k, [long][int]::MaxValue) }
+    # Past Int64 it arrives as BigInteger.
+    if (($k -is [int] -or $k -is [long] -or $k -is [System.Numerics.BigInteger]) -and $k -ge 0) {
+      $keep = if ($k -gt [int]::MaxValue) { [int]::MaxValue } else { [int]$k }
+    }
   } catch { }
   Get-ChildItem ".crew/transcripts/*.jsonl" -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -Skip $keep |

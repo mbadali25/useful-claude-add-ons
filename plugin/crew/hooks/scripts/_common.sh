@@ -361,7 +361,8 @@ crew_repo_config_file() {
 # crew_state.handoff_path -- the Python readers' own containment
 # (crew_freshness.contained_path): a value that leaves the checkout (absolute,
 # `..`, a symlink out) is the default .work/HANDOFF.md, with a warning on
-# stderr. Matters most in a linked worktree that inherits the main checkout's
+# stderr; so is one naming a directory (`.`, `notes/`, an existing folder),
+# which cannot hold the note. Printed with forward slashes on every OS. Matters most in a linked worktree that inherits the main checkout's
 # config (L-0680): an absolute path there would name the main checkout's file.
 # Any failure prints the default, which is inside the checkout.
 crew_handoff_path() {
@@ -383,7 +384,10 @@ try:
     value = ctx.get("handoffPath") if isinstance(ctx, dict) else None
     if isinstance(value, str) and value and os.path.realpath(os.path.join(root, value)) != got:
         sys.stderr.write("crew: context.handoffPath leaves this checkout - using %s\n" % default)
-    print(os.path.relpath(got, root))
+    elif got == root or os.path.isdir(got) or (isinstance(value, str) and value.endswith(("/", "\\"))):
+        sys.stderr.write("crew: context.handoffPath names a directory - using %s\n" % default)
+        got = os.path.join(root, default)
+    print(os.path.relpath(got, root).replace(os.sep, "/"))
 except Exception:
     print(default)
 PY

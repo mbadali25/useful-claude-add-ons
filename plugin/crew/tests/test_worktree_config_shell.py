@@ -680,9 +680,9 @@ def test_context_watch_in_a_lane_warns_at_the_inherited_threshold(tmp_path, driv
         return  # the no-python branch asks once per turn and claims no marker, by design
     err = first.stderr.decode("utf-8", "replace")
     # the message names the file in force, the main checkout's, not the lane's
-    shown = {str(main / ".crew" / "config.json"),
-             os.path.join(os.path.realpath(main), ".crew", "config.json")}
-    assert any(s in err for s in shown), err
+    # By its full path, in whatever form the flavour prints it (Git Bash's
+    # /c/..., a Windows drive path, a resolved link): its tail names main's file.
+    assert "/main/.crew/config.json" in err.replace("\\", "/"), err
     second = _context_watch(tmp_path, flavour, wt, extra)
     assert second.returncode == 0, second.stderr
     assert len(_markers(wt)) == 1
@@ -709,6 +709,7 @@ def test_session_hooks_read_only_their_own_file_when_git_cannot_tell(tmp_path, f
                  context=dict(_context_cfg()["context"], handoffPath="notes/H.md",
                               keepTranscripts=1))
     main, wt = _lane(tmp_path, loose)
+    (wt / ".git").unlink()  # Windows: git marks it hidden, and a hidden file cannot be opened "w"
     (wt / ".git").write_text("gitdir: " + str(tmp_path / "nowhere") + "\n", encoding="utf-8")
     (wt / ".crew").mkdir()
     _note(wt, "LANE NOTE")
@@ -753,6 +754,33 @@ def test_handoff_write_never_writes_outside_the_lane(tmp_path, flavour, kind):
     assert b"handoffPath" in proc.stderr  # warned
 
 
+@pytest.mark.parametrize("value", [".", "./", "notes/", "notes"])
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_a_directory_valued_handoff_path_is_the_default(tmp_path, flavour, value):
+    """Round-2 N1: a handoffPath naming a directory (the checkout itself, or one
+    in it) cannot hold the note; both flavours use .work/HANDOFF.md and warn."""
+    main, _wt = _lane(tmp_path, None)
+    (main / "notes").mkdir()
+    _own(main, "config.json", {"context": {"handoffPath": value}})
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
+        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(main),
+        "session_id": f"s-dir-{flavour}"})
+    assert proc.returncode == 0, proc.stderr
+    assert (main / ".work" / "HANDOFF.md").exists(), proc.stderr
+    assert b"handoffPath" in proc.stderr, proc.stderr
+    assert not list((main / "notes").iterdir())
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_path_reaches_the_model_with_forward_slashes(tmp_path, flavour):
+    """Windows pre-flight: the contained path came back as `notes\\H.md`."""
+    main, _wt = _lane(tmp_path, _context_cfg(handoffPath="notes/H.md", autoWrapUp=True))
+    proc = _context_watch(tmp_path, flavour, main)
+    err = proc.stderr.decode("utf-8", "replace")
+    assert proc.returncode == 2, err
+    assert "notes/H.md" in err, err
+
+
 @pytest.mark.parametrize("kind", ESCAPES)
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
 def test_handoff_read_never_prints_a_note_outside_the_lane(tmp_path, flavour, kind):
@@ -779,9 +807,12 @@ def test_context_watch_never_names_a_handoff_outside_the_lane(tmp_path, flavour,
     proc = _context_watch(tmp_path, flavour, wt)
     err = proc.stderr.decode("utf-8", "replace")
     assert proc.returncode == 2, err
-    for named in (_escaping(kind, main), str(main), os.path.realpath(main), "../"):
+    for named in (_escaping(kind, main), str(main / ".work"),
+                  os.path.join(os.path.realpath(main), ".work"), "../"):
         assert named not in err.replace("\\", "/"), err
-    assert ".work/HANDOFF.md" in err.replace("\\", "/")
+    assert ".work/HANDOFF.md" in err  # forward slashes on every OS
+    # the model is told, in the message itself, why the path is not the configured one
+    assert "leaves this checkout, so the handoff goes" in err, err
 
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
@@ -811,8 +842,10 @@ def _seed_transcripts(root, count):
         os.utime(path, (stamp, stamp))
 
 
-@pytest.mark.parametrize("keep,left", [(3_000_000_000, 7), ("2", 5), (True, 5), (-1, 5), (0, 0)],
-                         ids=["above-int32", "digit-string", "bool", "negative", "zero"])
+@pytest.mark.parametrize("keep,left", [(3_000_000_000, 7), (10 ** 20, 7), ("2", 5), (True, 5),
+                                       (-1, 5), (0, 0), (2.0, 5)],
+                         ids=["above-int32", "above-int64", "digit-string", "bool", "negative",
+                              "zero", "float"])
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
 def test_keep_transcripts_reads_the_same_in_both_flavours(tmp_path, flavour, keep, left):
     """F2/N2: an integer past Int32 keeps everything (the .ps1 used to fall back
@@ -862,3 +895,22 @@ def test_no_session_hook_names_the_own_config_path():
             name = f"{hook}.{ext}"
             assert _executable_mentions(os.path.join(SCRIPTS, name)) == \
                 OWN_PATH_ALLOWED.get(name, {}), name
+
+
+@pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash),
+                                     pytest.param("ps1", marks=needs_pwsh)])
+def test_auto_clear_knows_wrap_up_is_a_key(tmp_path, flavour):
+    """From the #356 review: auto-clear.ps1's known-key list lacked `wrapUp`
+    (crew_autocycle.KNOWN_KEYS has it), so it logged a recognised key as not."""
+    main = make_repo(tmp_path, mode=None, name="main")
+    (main / ".crew" / "config.json").write_text("{}", encoding="utf-8")
+    home = tmp_path / "home"
+    (home / ".claude" / "crew").mkdir(parents=True)
+    (home / ".claude" / "crew" / "config.json").write_text(
+        json.dumps({"context": {"autoClear": {"enabled": True, "wrapUp": True}}}),
+        encoding="utf-8")
+    proc = _auto_clear(main, home, flavour)
+    assert proc.returncode == 0, proc.stderr
+    log = main / ".crew" / ".autoclear.log"
+    text = log.read_text(encoding="utf-8") if log.exists() else ""
+    assert "wrapUp" not in text or "not a recognised key" not in text, text

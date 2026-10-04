@@ -352,10 +352,12 @@ else:
         from crew_state import handoff_path
         root = os.path.realpath(os.getcwd())
         got = handoff_path(root, raw)
-        handoff = os.path.relpath(got, root)
         v = c.get("handoffPath")
         if isinstance(v, str) and v and os.path.realpath(os.path.join(root, v)) != got:
             escaped = "escaped"
+        elif got == root or os.path.isdir(got) or (isinstance(v, str) and v.endswith(("/", "\\"))):
+            got = os.path.join(root, ".work/HANDOFF.md")  # a directory cannot hold the note
+        handoff = os.path.relpath(got, root).replace(os.sep, "/")
     except Exception:
         pass
     print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, handoff, str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve, escaped)
@@ -608,11 +610,13 @@ if [ "$SOURCE" = "estimated" ]; then
 This figure is a fallback estimate from transcript size, not a measurement -
 no usage record was found yet. It reads high after a compaction."
 fi
+LEFT_NOTE=""
 if [ "$HANDOFF_ESCAPED" = "escaped" ]; then
-  NOTE="${NOTE}
+  LEFT_NOTE="
 context.handoffPath in ${CFG_SHOWN} leaves this checkout, so the handoff goes
 to ${HANDOFF} here instead."
 fi
+NOTE="${NOTE}${LEFT_NOTE}"
 
 # Name the rule that fired. A percentage alone cannot explain why an 800k
 # reading on a 1M window said nothing and 900k did.
@@ -639,7 +643,7 @@ cat >&2 << MSG
 You are at roughly ${PCT_H}% of the context budget. Reach a stopping point
 now: finish or safely abandon the change in flight, write ${HANDOFF} per the
 crew-context skill, update the ticket, then tell the user the session is
-ready to clear. Do not start new work.
+ready to clear. Do not start new work.${LEFT_NOTE}
 MSG
 else
 cat >&2 << MSG
