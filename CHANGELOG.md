@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `obsidian-vault` 0.4.17: vault recall relevance (T-0083)
+### Changed — `obsidian-vault`: vault recall relevance (T-0083)
 
 - **Behaviour change: default recall results.** `vault_ops.py recall` (the CLI crew's context hook
   calls on every prompt) returns fewer, more relevant notes for every caller, with no crew change:
