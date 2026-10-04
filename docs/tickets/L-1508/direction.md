@@ -31,7 +31,27 @@ The repo already knows the fix: `skills/intune-graph/scripts/auth.py` `_find_az`
 Option 1, delivered in two PRs (see spec): the feature PR (shared resolver, non-harness call sites, lint test, Windows stub tests) first, then a harness-only PR for the five harness files, which the lint test's allowlist names until then.
 
 ## Open questions for the owner
-- Skill scripts outside crew (`skills/repo-docs`, `skills/notify`, `plugin/obsidian-vault`, `plugin/crew/skills/crew-qa-standards`): in scope here, or one follow-up ticket per plugin? Taken: in scope for the lint scan's *report*, but only crew's own hook scripts are fixed here; each other plugin gets a one-line follow-up in this ticket's done note. Changing them needs their own version bumps.
+**Scope: the 6 call sites outside crew's hook scripts.** Checked one by one (origin/main `f1cace4a`):
 
+| Site | Plugin | Tool | Finding | Suggested handling |
+|---|---|---|---|---|
+| `plugin/crew/skills/crew-qa-standards/scripts/qa_audit.py:331` | **crew** | git | Bare git; `stamp()` records the audited HEAD | Fix in PR A |
+| `.../crew-qa-standards/scripts/qa_audit_env.py:273` | **crew** | git | Bare git | Fix in PR A |
+| `.../crew-qa-standards/scripts/qa_doc.py:45` | **crew** | git | Bare git | Fix in PR A |
+| `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:857` | obsidian-vault | ps | Inside `_macos_obsidian_running()`, never reached on Windows | Allowlist with that reason; no change |
+| `skills/notify/scripts/notifyd.py:264` | notify | tasklist | Windows-only tool that ships as `tasklist.exe`, so a bare name is correct | Allowlist with that reason; no change |
+| `skills/repo-docs/scripts/git_changelog.py:71` | repo-docs | git | Bare git; changelog generation only, not a guard | Small follow-up with its own repo-docs bump |
+
+Options:
+1. **(Recommended) Crew-only fixes, plus a repo-wide lint.** The three crew-qa-standards scripts ship inside the crew plugin, so they ride PR A's crew bump at no extra cost. The lint scans every plugin and skill. obsidian-vault and notify are allowlisted because they are already correct. repo-docs gets a one-line follow-up ticket.
+   - Why: every real fix lands in the plugin that is already being bumped, and the lint stops new cases anywhere.
+   - Cost: one tiny extra ticket.
+2. **Fix everything in this ticket.** One PR also bumps repo-docs (and touches obsidian-vault/notify only if their allowlisting needs a code comment).
+   - Why: closes it in one go.
+   - Cost: a multi-plugin PR with more registration places to keep in step, and a bigger review, for a non-guard script.
+3. **Crew hooks only, as first written.** Leaves three bare-git calls inside crew's own plugin unfixed.
+   - Not recommended: same plugin, same bump, no reason to defer.
+
+Taken unless the owner says otherwise: option 1.
 ## Next
 /crew:spec is done (spec.md beside this file). /crew:plan by the implementing session.

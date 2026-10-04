@@ -11,7 +11,7 @@ Every subprocess call in crew's hook scripts runs the executable that `shutil.wh
 ## Exclusions
 - No change to *what* any tool is asked, only to which binary runs.
 - No `shell=True` anywhere.
-- Skill scripts outside crew's hooks are scanned and reported, not changed (each needs its own plugin bump): `skills/repo-docs/scripts/git_changelog.py:71`, `skills/notify/scripts/notifyd.py:264` (`tasklist`, Windows-only, already correct: tasklist is an .exe), `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:857`, `plugin/crew/skills/crew-qa-standards/scripts/qa_audit.py:331`, `qa_audit_env.py:273`, `qa_doc.py:45`. `skills/intune-graph/scripts/auth.py` already does it right (`_find_az`).
+- Outside crew's hook scripts (owner option 1, see direction.md): the three `plugin/crew/skills/crew-qa-standards/scripts/` git sites (`qa_audit.py:331`, `qa_audit_env.py:273`, `qa_doc.py:45`) ARE fixed in PR A (same crew bump). `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:857` (`ps`, macOS-only function) and `skills/notify/scripts/notifyd.py:264` (`tasklist.exe`, Windows-only) are allowlisted with those reasons, unchanged. `skills/repo-docs/scripts/git_changelog.py:71` is a follow-up ticket (its own bump). `skills/intune-graph/scripts/auth.py` already does it right (`_find_az`).
 - Not the Windows test-skip audit (#399 F-A, native Python probing `/proc` to skip tests). That is its own concern; note it in the done report.
 
 ## Evidence (origin/main `f1cace4a`, read 2026-10-04)
@@ -31,13 +31,13 @@ Bare-name calls in `plugin/crew/hooks/scripts/`:
 
 ## Touch (PR A)
 - `plugin/crew/hooks/scripts/crew_common.py` (resolver)
-- the non-harness call sites listed above
+- the non-harness call sites listed above, plus the three crew-qa-standards scripts
 - `plugin/crew/tests/test_tool_resolution.py` (new: the AST lint plus resolver unit tests)
 - per-site tests where a guard reads the tool's answer (stub as `<name>` plus `<name>.cmd`, failing; must-block on every OS, the way `test_check_runs_the_git_which_resolves` does in #356)
 - `plugin/crew/README.md` or CONFIG troubleshooting note, `CHANGELOG.md`, `.crew/verify.json` (rule for the new test, measured `seconds`), `.crew/codemap/**`, `.claude/rules/**`, version files
 
 ## Acceptance checks
-1. `test_tool_resolution.py` fails on origin/main (lists the 19 sites), passes after PR A with only the 5 harness files and justified POSIX-gated sites allowlisted.
+1. `test_tool_resolution.py` scans every plugin and skill script. It fails on origin/main (lists every bare-name site), and passes after PR A with only the 5 harness files, justified POSIX- or Windows-gated sites (obsidian-vault `ps`, notify `tasklist`) and the repo-docs follow-up allowlisted, each with its reason.
 2. Sabotage: add a bare `subprocess.run(["git", "status"])` to any non-allowlisted hook script and the lint goes red; remove an allowlist reason and it goes red.
 3. Each guard that reads a tool (wrap-up veto, ci_receipt, crew_status, crew_tracker) has a test where the only failing tool is reachable through `shutil.which` but not by a bare name, and the guard refuses on every OS.
 4. Windows CI green on PR A's own head (crew-windows-default, crew-windows-slow, crew-shell-matrix (windows-latest)) before it joins a landing batch.
