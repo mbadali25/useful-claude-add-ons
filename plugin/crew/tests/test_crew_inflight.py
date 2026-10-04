@@ -643,3 +643,340 @@ def test_scope_guard_refuses_write_edit_under_inflight(repo):
     assert scope_guard.protected(top, state, _path(repo), top)
     assert scope_guard.shell_refusal(f"echo x > {_path(repo)}", crew_ticket.common_dir(str(repo)),
                                      top)
+
+
+# --- review round 1: no /proc, the dead holder, transient errors, log first ----------
+
+_SHIM = '''
+import builtins, os, os.path
+_isdir, _exists, _open, _readlink = os.path.isdir, os.path.exists, builtins.open, os.readlink
+def _p(x):
+    return str(x).startswith("/proc")
+os.path.isdir = lambda p: False if _p(p) else _isdir(p)
+os.path.exists = lambda p: False if _p(p) else _exists(p)
+def _op(f, *a, **k):
+    if _p(f):
+        raise FileNotFoundError(2, "no /proc here", str(f))
+    return _open(f, *a, **k)
+builtins.open = _op
+def _rl(p, *a, **k):
+    if _p(p):
+        raise FileNotFoundError(2, "no /proc here", str(p))
+    return _readlink(p, *a, **k)
+os.readlink = _rl
+'''
+
+
+@pytest.fixture(name="no_proc")
+def _no_proc(monkeypatch):
+    """In-process: this host has no /proc (macOS, BSD), as the shim does for a CLI."""
+    namespace = {}
+    real = {"isdir": os.path.isdir, "exists": os.path.exists, "readlink": os.readlink}
+    import builtins  # pylint: disable=import-outside-toplevel
+    real_open = builtins.open
+
+    def proc(path):
+        return str(path).startswith("/proc")
+
+    def fake_open(path, *args, **kwargs):
+        if proc(path):
+            raise FileNotFoundError(2, "no /proc here", str(path))
+        return real_open(path, *args, **kwargs)
+
+    def fake_readlink(path, *args, **kwargs):
+        if proc(path):
+            raise FileNotFoundError(2, "no /proc here", str(path))
+        return real["readlink"](path, *args, **kwargs)
+    monkeypatch.setattr(os.path, "isdir", lambda p: False if proc(p) else real["isdir"](p))
+    monkeypatch.setattr(os.path, "exists", lambda p: False if proc(p) else real["exists"](p))
+    monkeypatch.setattr(os, "readlink", fake_readlink)
+    monkeypatch.setattr(builtins, "open", fake_open)
+    return namespace
+
+
+_NO_PS = '''
+import subprocess
+_run = subprocess.run
+def _no_ps(args, *a, **k):
+    if args and args[0] == "ps":
+        raise FileNotFoundError(2, "no ps here (a sandbox)", "ps")
+    return _run(args, *a, **k)
+subprocess.run = _no_ps
+'''
+
+
+def _shim_env(tmp_path, no_ps=False, **extra):
+    """No /proc (and, with `no_ps`, no ps either: nothing can walk to the
+    Claude Code process, so the session decides)."""
+    shim = tmp_path / "shim"
+    shim.mkdir(exist_ok=True)
+    (shim / "sitecustomize.py").write_text(_SHIM + (_NO_PS if no_ps else ""), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PID"}
+    env.update(PYTHONPATH=str(shim), CLAUDE_CODE_SESSION_ID="sess-cli", **extra)
+    return env
+
+
+def _bash_cli(root, env, *args):
+    """One `Bash tool call`: a fresh shell whose child runs the CLI."""
+    # `; exit $?`: bash must fork, not exec, so each call has its own parent shell.
+    line = " ".join([sys.executable, "-B", _SCRIPT, *args, "--root", str(root)]) + "; exit $?"
+    return subprocess.run(["bash", "-c", line], capture_output=True, text=True, check=False,
+                          timeout=60, stdin=subprocess.DEVNULL, env=env)
+
+
+def _kill_beat(stdout):
+    if "heartbeat pid " in stdout:
+        try:
+            os.kill(int(stdout.rsplit("pid ", 1)[1].split(")")[0]), 9)
+        except (OSError, ValueError):
+            pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="bash -c stands in for the Bash tool")
+@pytest.mark.parametrize("claude_pid,no_ps", [(False, False), (True, False), (False, True),
+                                               (True, True)],
+                         ids=["ps", "ps-CLAUDE_PID", "no-ps", "no-ps-CLAUDE_PID"])
+def test_no_proc_later_call_in_same_session_is_mine(repo, tmp_path, claude_pid, no_ps):
+    """BLOCK (a): without /proc, claim in one Bash call and holds in the next
+    are the same holder, never `live` against itself."""
+    env = _shim_env(tmp_path, no_ps=no_ps,
+                    **({"CLAUDE_PID": str(os.getpid())} if claude_pid else {}))
+    done = _bash_cli(repo, env, "claim", "--ticket", T, "--runner", "autopilot")
+    try:
+        assert done.returncode == 0, done.stdout + done.stderr
+        got = _bash_cli(repo, env, "holds", "--ticket", T, "--runner", "autopilot")
+        assert got.stdout.startswith("state=mine "), got.stdout + got.stderr
+        if claude_pid:
+            with open(_path(repo), encoding="utf-8") as handle:
+                assert json.load(handle)["pid"] == os.getpid()
+    finally:
+        _kill_beat(done.stdout)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="bash -c stands in for the Bash tool")
+@pytest.mark.parametrize("no_ps", [False, True], ids=["ps", "no-ps"])
+def test_no_proc_other_session_is_live(repo, tmp_path, no_ps):
+    env = _shim_env(tmp_path, no_ps=no_ps)
+    done = _bash_cli(repo, env, "claim", "--ticket", T, "--runner", "autopilot")
+    try:
+        got = _bash_cli(repo, dict(env, CLAUDE_CODE_SESSION_ID="other"), "holds", "--ticket", T)
+        assert got.stdout.startswith("state=live "), got.stdout
+    finally:
+        _kill_beat(done.stdout)
+
+
+def test_claude_pid_not_an_ancestor_is_not_the_holder(monkeypatch):
+    monkeypatch.undo()
+    monkeypatch.setenv("CLAUDE_PID", str(_dead_pid()))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "")
+    assert crew_inflight._holder_pid() != int(os.environ["CLAUDE_PID"])  # pylint: disable=protected-access
+
+
+def test_holder_names_are_claude_only():
+    assert crew_inflight.HOLDER_NAMES == ("claude",)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX kill and ps")
+def test_no_proc_dead_holder_is_stale(repo, no_proc):  # pylint: disable=unused-argument
+    """BLOCK (b): without /proc a dead holder is still measured gone."""
+    _put(repo, _marker(repo, pid=_dead_pid(), pid_start=None))
+    got = _state(repo)
+    assert (got["state"], "gone" in got["why"]) == ("stale", True)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX kill and ps")
+def test_no_proc_live_holder_is_not_gone(repo, no_proc):  # pylint: disable=unused-argument
+    _put(repo, _marker(repo, session="other"))
+    assert _state(repo)["state"] == "live"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX kill and ps")
+def test_no_proc_pid_reused_is_stale(repo, no_proc):  # pylint: disable=unused-argument
+    marker = _marker(repo, session="other")
+    assert marker["pid_start"] is not None, "ps gives a start time without /proc"
+    _put(repo, dict(marker, pid_start=marker["pid_start"] + 7))
+    assert _state(repo)["state"] == "stale"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX kill and ps")
+def test_no_proc_zombie_is_stale(repo, no_proc):  # pylint: disable=unused-argument
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])  # pylint: disable=consider-using-with
+    try:
+        child.kill()
+        time.sleep(0.3)
+        _put(repo, _marker(repo, pid=child.pid, pid_start=None, session="o"))
+        assert _state(repo)["state"] == "stale"
+    finally:
+        child.wait()
+
+
+def test_windows_probe_reads_exit_code_and_creation_time(monkeypatch):
+    """The Windows branch, driven through its one OS seam."""
+    monkeypatch.setattr(crew_inflight, "_platform", lambda: "nt")
+    me = {"host": "h", "boot_id": "", "pidns": ""}
+    answers = {11: ("running", 500), 12: ("missing", None), 13: ("running", 999)}
+    monkeypatch.setattr(crew_inflight, "_win_process", answers.__getitem__)
+    marker = dict(me, pid=11, pid_start=500)
+    assert [crew_inflight.probe(dict(marker, pid=p), me) for p in (11, 12, 13)] == [
+        "alive", "gone", "gone"]
+
+
+def test_windows_probe_error_is_unmeasured(monkeypatch):
+    monkeypatch.setattr(crew_inflight, "_platform", lambda: "nt")
+
+    def boom(_pid):
+        raise OSError("access denied")
+    monkeypatch.setattr(crew_inflight, "_win_process", boom)
+    me = {"host": "h", "boot_id": "", "pidns": ""}
+    assert crew_inflight.probe(dict(me, pid=11, pid_start=None), me) == "unmeasured"
+
+
+class _Clock:
+    def __init__(self):
+        self.now = 1000.0
+        self.sleeps = 0
+
+    def sleep(self, seconds):
+        self.sleeps += 1
+        self.now += seconds
+        assert self.sleeps < 50, "the beat loop never stopped"
+
+    def __call__(self):
+        return self.now
+
+
+def test_beat_loop_stops_when_holder_unconfirmed_past_ttl(repo):
+    """BLOCK (b): an unmeasurable holder is beaten for at most TTL, so the
+    marker goes stale on its own when nobody can confirm the holder."""
+    _put(repo, _marker(repo, pidns="pid:[other]"))
+    clock = _Clock()
+    reason = crew_inflight.beat_loop(str(repo), T, "tok-1", sleep=clock.sleep, clock=clock)
+    assert "unconfirmed" in reason
+    beats = crew_inflight.TTL_SECONDS // crew_inflight.HEARTBEAT_SECONDS
+    assert beats <= clock.sleeps <= beats + 1
+
+
+def test_beat_loop_keeps_beating_a_confirmed_holder(repo):
+    _put(repo, _marker(repo))
+    clock = _Clock()
+    calls = []
+
+    def sleep(seconds):
+        clock.sleep(seconds)
+        calls.append(seconds)
+        if len(calls) == 10:
+            os.remove(_path(repo))
+    reason = crew_inflight.beat_loop(str(repo), T, "tok-1", sleep=sleep, clock=clock)
+    assert (reason, len(calls)) == ("exit: marker gone", 10)
+
+
+def test_beat_once_transient_oserror_skips(repo, monkeypatch):
+    """FIX 1: os.replace refused while a reader holds the file (Windows) is a
+    skipped beat, not the end of the heartbeat."""
+    _put(repo, _marker(repo))
+    real = os.replace
+    fails = [PermissionError(13, "in use")]
+
+    def flaky(src, dst):
+        if fails:
+            raise fails.pop()
+        return real(src, dst)
+    monkeypatch.setattr(os, "replace", flaky)
+    assert crew_inflight.beat_once(str(repo), T, "tok-1") == "skipped"
+    assert crew_inflight.beat_once(str(repo), T, "tok-1") == "beat"
+    assert [n for n in os.listdir(_folder(repo)) if n.endswith(".tmp")] == []
+
+
+def test_beat_loop_transient_errors_are_bounded_by_ttl(repo, monkeypatch):
+    _put(repo, _marker(repo))
+
+    def refuse(_src, _dst):
+        raise PermissionError(13, "in use")
+    monkeypatch.setattr(os, "replace", refuse)
+    clock = _Clock()
+    reason = crew_inflight.beat_loop(str(repo), T, "tok-1", sleep=clock.sleep, clock=clock)
+    assert reason.startswith("exit") and clock.sleeps <= (
+        crew_inflight.TTL_SECONDS // crew_inflight.HEARTBEAT_SECONDS) + 1
+
+
+def test_beat_once_leftover_lock_dead_holder_exits(repo):
+    """FIX 2: a leftover lock never keeps a dead holder's loop alive."""
+    pid = _dead_pid() if LINUX else 999999
+    _put(repo, _marker(repo, pid=pid, pid_start=None))
+    with open(_path(repo) + ".lock", "w", encoding="utf-8") as handle:
+        handle.write("leftover")
+    assert crew_inflight.beat_once(str(repo), T, "tok-1") == "exit: holder pid gone"
+
+
+def test_beat_once_leftover_lock_marker_gone_exits(repo):
+    os.makedirs(_folder(repo))
+    with open(_path(repo) + ".lock", "w", encoding="utf-8") as handle:
+        handle.write("leftover")
+    assert crew_inflight.beat_once(str(repo), T, "tok-1") == "exit: marker gone"
+
+
+def test_beat_once_leftover_lock_superseded_exits(repo):
+    _put(repo, _marker(repo, token="new"))
+    with open(_path(repo) + ".lock", "w", encoding="utf-8") as handle:
+        handle.write("leftover")
+    assert crew_inflight.beat_once(str(repo), T, "old").startswith("exit: superseded")
+
+
+def _events(root):
+    path = os.path.join(_folder(root), "events.jsonl")
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def test_claim_log_failure_claims_nothing(repo, monkeypatch):
+    """FIX 3: the event is written before the effect; no log, no claim."""
+    def broken(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(crew_inflight, "_log", broken)
+    code, text = crew_inflight.claim(str(repo), T, "autopilot", spawn=_no_beat)
+    assert (code, text.startswith("refused: unknown"), os.path.exists(_path(repo))) == (
+        3, True, False)
+
+
+def test_claim_publish_failure_leaves_no_event(repo, monkeypatch):
+    def broken(*_args, **_kwargs):
+        raise OSError(1, "link refused")
+    monkeypatch.setattr(os, "link", broken)
+    code, _text = crew_inflight.claim(str(repo), T, "autopilot", spawn=_no_beat)
+    assert (code, os.path.exists(_path(repo)), _events(repo)) == (3, False, [])
+
+
+def test_clear_log_failure_keeps_marker(repo, monkeypatch):
+    _put(repo, _marker(repo, heartbeat_at=_ago(99999)))
+
+    def broken(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(crew_inflight, "_log", broken)
+    code, text = crew_inflight.clear(str(repo), T, "owner", "x")
+    assert (code, text.startswith("refused: unknown"), os.path.exists(_path(repo))) == (
+        3, True, True)
+
+
+def test_clear_remove_failure_leaves_no_event(repo, monkeypatch):
+    _put(repo, _marker(repo, heartbeat_at=_ago(99999)))
+    real = os.remove
+
+    def broken(path):
+        if path == _path(repo):
+            raise PermissionError(13, "in use")
+        return real(path)
+    monkeypatch.setattr(os, "remove", broken)
+    code, _text = crew_inflight.clear(str(repo), T, "owner", "x")
+    assert (code, os.path.exists(_path(repo)), _events(repo)) == (3, True, [])
+
+
+def test_release_log_failure_keeps_marker(repo, monkeypatch):
+    crew_inflight.claim(str(repo), T, "autopilot", spawn=_no_beat)
+
+    def broken(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(crew_inflight, "_log", broken)
+    code, _text = crew_inflight.release(str(repo), T)
+    assert (code, os.path.exists(_path(repo))) == (3, True)

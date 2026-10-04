@@ -25,13 +25,18 @@ clone (two CLONES share nothing; that case is out of scope):
 `claim` publishes a complete marker with `os.link`, which fails if one exists,
 so two claimers cannot both win. Every rewrite is a temp file + `os.replace`.
 
-HOLDER. `session` is `CLAUDE_CODE_SESSION_ID` when the environment has it;
-`pid` is the long-lived process that holds the claim: the nearest ancestor
-whose name is `claude` or `node` (or `CLAUDE_PID`), else the claiming CLI's
-parent (a lane's own shell); `pid_start` is its start time, `pidns` and
-`boot_id` say which pid space the number belongs to. `mine` needs the same
-worktree, host, session, pid and pid start (and runner, when the reader names
-one): a session id alone would let `claude --resume` take a working claim.
+HOLDER. `session` is `CLAUDE_CODE_SESSION_ID` when the environment has it.
+`pid` is the long-lived process that holds the claim: `CLAUDE_PID` when it is
+an ancestor of the claiming CLI (or, where ancestry cannot be walked -
+Windows - whenever it is set), else the nearest ancestor named `claude`; with
+neither, a Claude Code session (the session id is set) records no pid, and
+anything else (a lane's script) records the CLI's parent, its own shell.
+`pid_start` is that process's start time (Linux /proc, `ps -o lstart` on other
+POSIX, the creation time on Windows); `pidns` and `boot_id` say which pid
+space the number belongs to. `mine` needs the same worktree, host, session,
+pid and pid start (and runner, when the reader names one): a session id alone
+would let `claude --resume` take a working claim. Only where no pid could be
+named on either side (both None) does a non-empty session id decide.
 
 STATES. `holds(root, ticket)` answers exactly one of STATES and writes nothing:
   unknown    anything that cannot be read, parsed, probed or trusted: the
@@ -40,6 +45,8 @@ STATES. `holds(root, ticket)` answers exactly one of STATES and writes nothing:
              or runner, a ticket that is not the file's, a heartbeat more than
              FUTURE_SKEW_SECONDS in the future, the lock held past its wait, the
              inflight path not a directory, git unable to name the common dir
+             or the READER's own worktree (a reader outside git cannot tell
+             mine from live)
   stale      heartbeat older than TTL_SECONDS, or the holder's pid measured
              gone (missing, a zombie, or reused: a different start time)
   mine       the reader is the holder
@@ -47,21 +54,34 @@ STATES. `holds(root, ticket)` answers exactly one of STATES and writes nothing:
   live       a fresh holder in this worktree that is not the reader
   free       no marker
 in that order. The pid is probed only when host, boot_id and pidns all match
-the reader's (Linux /proc); otherwise, or when the probe errors, it is
-unmeasured and the heartbeat decides alone. Unmeasured is never gone.
+the reader's (an empty boot_id/pidns matches only an empty one: macOS,
+Windows): /proc on Linux, `os.kill(pid, 0)` plus `ps -o stat=,lstart=` on
+other POSIX, OpenProcess/GetExitCodeProcess/GetProcessTimes on Windows. A
+probe that errors, or a pid that was never recorded, is unmeasured and the
+heartbeat decides alone. Unmeasured is never gone.
 
 NEVER CLEARED BY AGE. A stale or unknown marker is reported with the owner's
 `clear` command (CLEAR_COMMAND); autopilot never runs it
 (`crew_state.AUTONOMOUS_STOPS` `clear-inflight`). `clear` re-reads the state
-under the lock, refuses anything but stale or unknown, and logs who and why.
+under the lock and refuses anything but stale or unknown (unknown included:
+a marker nothing can read is cleared only by the owner, never by age). Every
+write logs its event to events.jsonl BEFORE the effect and refuses when the
+log cannot be written; an effect that then fails takes its event back.
 
 HEARTBEAT. `claim` starts one detached `beat-loop` keyed by the marker's
-token. Every HEARTBEAT_SECONDS it rewrites `heartbeat_at`; it exits when the
-marker is gone, names another token (a refresh or a new holder: an old loop
-never blocks a new one), cannot be read, or its holder pid is measured gone.
-Measured 2026-10-04 on Linux (Claude Code 2.1.42, cloud container, no pid
-namespace): a child started this way outlives the Bash tool call that started
-it, reparented to pid 1, beating for 2+ minutes across later calls.
+token. Every HEARTBEAT_SECONDS it rewrites `heartbeat_at`. Before taking the
+lock it exits when the marker is gone, names another token (a refresh or a new
+holder: an old loop never blocks a new one), cannot be read, or its holder pid
+is measured gone, so a leftover lock never keeps a dead holder's loop alive.
+A busy lock or a transient OSError (Windows refuses `os.replace` while a
+reader has the file open) skips that beat. The loop also stops once its holder
+has not been confirmed alive for more than TTL_SECONDS - an unmeasurable
+holder, or beats that keep failing - so the marker then goes stale on its own:
+the TTL decides whenever the pid cannot. Measured 2026-10-04 on Linux (Claude
+Code 2.1.42, cloud container, no pid namespace): a child started this way
+outlives the Bash tool call that started it, reparented to pid 1, beating for
+2+ minutes across later calls. Not measured on Windows, macOS or a sandboxed
+(bubblewrap) Linux session.
 
 Exit codes: 0 done (and `holds` always, even for unknown), 2 bad arguments,
 3 refused.
@@ -91,7 +111,7 @@ LOCK_WAIT_SECONDS = 5.0
 MAX_MARKER_BYTES = 65536
 STATES = ("free", "mine", "live", "stale", "elsewhere", "unknown")
 RUNNERS = ("autopilot", "lane", "session")
-HOLDER_NAMES = ("claude", "node")
+HOLDER_NAMES = ("claude",)
 CLEAR_COMMAND = ('python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py" clear '
                  '--root . --ticket {ticket} --by <you> --reason "<why>"')
 FIELDS = {"schema": (int,), "ticket": (str,), "runner": (str,), "token": (str,),
@@ -159,6 +179,13 @@ def _read(path):
         return ""
 
 
+def _platform():
+    """`linux` (a /proc to read), `nt`, or `posix` (macOS, BSD: no /proc)."""
+    if os.name == "nt":
+        return "nt"
+    return "linux" if os.path.isdir("/proc/self") else "posix"
+
+
 def _proc_stat(pid):
     """(state, ppid, start, name) from /proc/<pid>/stat. Raises
     FileNotFoundError when the pid has no entry, OSError/ValueError when it
@@ -170,36 +197,122 @@ def _proc_stat(pid):
     return rest[0], int(rest[1]), int(rest[19]), name
 
 
-def _holder_pid():
-    """The long-lived process the claim belongs to: the nearest ancestor named
-    `claude`/`node` or equal to CLAUDE_PID, else this process's parent."""
-    parent = os.getppid()
+def _posix_process(pid):
+    """(status, start, ppid, name) without /proc: `os.kill(pid, 0)` says
+    whether the pid exists, `ps` its state, parent, start and name. Raises
+    OSError when it cannot tell."""
     try:
-        hinted = int(os.environ.get("CLAUDE_PID", ""))
-    except ValueError:
-        hinted = None
-    if not os.path.isdir("/proc/self"):
-        return hinted or parent
-    pid = parent
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return "missing", None, None, ""
+    except PermissionError:
+        pass  # it exists; another user owns it
+    done = subprocess.run(["ps", "-o", "stat=,ppid=,lstart=,comm=", "-p", str(pid)],
+                          capture_output=True, text=True, check=False, timeout=10,
+                          stdin=subprocess.DEVNULL, env=dict(os.environ, LC_ALL="C", LANG="C"))
+    parts = done.stdout.split()
+    if done.returncode != 0 or len(parts) < 7:
+        raise OSError(f"ps could not read pid {pid}")
+    start = int(time.mktime(time.strptime(" ".join(parts[2:7]), "%a %b %d %H:%M:%S %Y")))
+    name = os.path.basename(" ".join(parts[7:]))
+    return ("zombie" if parts[0].startswith("Z") else "running"), start, int(parts[1]), name
+
+
+def _win_process(pid):  # pragma: no cover - exercised on Windows only
+    """(status, start) from OpenProcess, GetExitCodeProcess (259 STILL_ACTIVE)
+    and GetProcessTimes' creation time, in seconds. Raises OSError when it
+    cannot tell; a pid with no process (ERROR_INVALID_PARAMETER) is missing."""
+    import ctypes  # pylint: disable=import-outside-toplevel
+    from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        error = ctypes.get_last_error()
+        if error == 87:
+            return "missing", None
+        raise OSError(error, f"OpenProcess({pid}) failed")
+    try:
+        code = wintypes.DWORD()
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+            raise OSError(ctypes.get_last_error(), "GetExitCodeProcess failed")
+        if code.value != 259:
+            return "missing", None
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+            return "running", None
+        created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        return "running", created // 10_000_000
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _process(pid):
+    """(status, start, ppid, name): status `running`, `zombie` or `missing`.
+    Raises (OSError, ValueError, IndexError, SubprocessError) when it cannot tell."""
+    where = _platform()
+    if where == "nt":
+        status, start = _win_process(pid)
+        return status, start, None, ""
+    if where == "posix":
+        return _posix_process(pid)
+    try:
+        state, ppid, start, name = _proc_stat(pid)
+    except FileNotFoundError:
+        return "missing", None, None, ""
+    return ("zombie" if state == "Z" else "running"), start, ppid, name
+
+
+_PROBE_ERRORS = (OSError, ValueError, IndexError, subprocess.SubprocessError)
+
+
+def _ancestors():
+    """[(pid, name)] from this process's parent upward, or None where the
+    chain cannot be walked (Windows, or a probe that fails)."""
+    if _platform() == "nt":
+        return None
+    chain, pid = [], os.getppid()
     for _ in range(64):
         if pid <= 1:
             break
         try:
-            _, ppid, _, name = _proc_stat(pid)
-        except (OSError, ValueError, IndexError):
+            status, _, ppid, name = _process(pid)
+        except _PROBE_ERRORS:
+            return chain or None
+        if status != "running" or ppid is None:
             break
-        if name in HOLDER_NAMES or pid == hinted:
-            return pid
+        chain.append((pid, name))
         pid = ppid
-    return parent
+    return chain
+
+
+def _holder_pid():
+    """The long-lived process the claim belongs to, or None (see HOLDER)."""
+    try:
+        hinted = int(os.environ.get("CLAUDE_PID", ""))
+    except ValueError:
+        hinted = None
+    hinted = hinted if hinted and hinted > 1 else None
+    chain = _ancestors()
+    if chain is None:
+        if hinted:
+            return hinted
+    else:
+        for pid, name in chain:
+            if pid == hinted or name in HOLDER_NAMES:
+                return pid
+    if os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        return None
+    return os.getppid()
 
 
 def _pid_start(pid):
-    if pid is None or not os.path.isdir("/proc/self"):
+    if pid is None:
         return None
     try:
-        return _proc_stat(pid)[2]
-    except (OSError, ValueError, IndexError):
+        return _process(pid)[1]
+    except _PROBE_ERRORS:
         return None
 
 
@@ -214,7 +327,8 @@ def _git(root, *args):
 
 
 def machine():
-    """What says which pid space a pid number belongs to."""
+    """What says which pid space a pid number belongs to (empty where the OS
+    has no such notion)."""
     try:
         pidns = os.readlink("/proc/self/ns/pid")
     except OSError:
@@ -235,21 +349,22 @@ def identity(root, session=None):
 
 def probe(marker, me):
     """`alive`, `gone` or `unmeasured`. `gone` only when host, boot_id and
-    pidns all match the reader's and /proc shows the pid missing, a zombie, or
-    started at another time (reused). Any error is `unmeasured`."""
-    same = all(marker.get(k) and marker.get(k) == me.get(k) for k in ("host", "boot_id", "pidns"))
+    pidns all equal the reader's and the pid is missing, a zombie, or started
+    at another time (reused). Any error is `unmeasured`."""
+    if not marker.get("host") or any(marker.get(k) != me.get(k)
+                                     for k in ("host", "boot_id", "pidns")):
+        return "unmeasured"
     pid = marker.get("pid")
-    if not same or pid is None or pid <= 0 or not os.path.isdir("/proc/self"):
+    if pid is None or pid <= 0:
         return "unmeasured"
     try:
-        state, _, start, _ = _proc_stat(pid)
-    except FileNotFoundError:
-        return "gone"
-    except (OSError, ValueError, IndexError):
+        status, start = _process(pid)[:2]
+    except _PROBE_ERRORS:
         return "unmeasured"
-    if state == "Z":
+    if status != "running":
         return "gone"
-    if marker.get("pid_start") is not None and start != marker["pid_start"]:
+    if marker.get("pid_start") is not None and start is not None \
+            and start != marker["pid_start"]:
         return "gone"
     return "alive"
 
@@ -405,6 +520,9 @@ def _is_mine(marker, me, runner):
         return False
     if marker["host"] != me["host"] or marker["session"] != me["session"]:
         return False
+    if marker["pid"] is None and me["pid"] is None:
+        # Neither side could name a long-lived process: the session decides.
+        return bool(me["session"])
     if marker["pid"] is None or marker["pid"] != me["pid"]:
         return False
     return marker["pid_start"] == me["pid_start"]
@@ -502,14 +620,38 @@ def _replace(path, marker):
 
 
 def _log(folder, kind, ticket, **fields):
-    line = json.dumps(dict({"at": _iso(_now()), "kind": kind, "ticket": ticket}, **fields),
-                      sort_keys=True) + "\n"
-    fd = os.open(os.path.join(folder, "events.jsonl"),
-                 os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o644)
+    """Append one event; returns what `_unlog` needs to take it back. Raises
+    OSError when it cannot be written (nothing is then half-written)."""
+    line = (json.dumps(dict({"at": _iso(_now()), "kind": kind, "ticket": ticket}, **fields),
+                       sort_keys=True) + "\n").encode("utf-8")
+    path = os.path.join(folder, "events.jsonl")
+    created = not os.path.lexists(path)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
+                 0o644)
     try:
-        os.write(fd, line.encode("utf-8"))
+        size = os.fstat(fd).st_size
+        if os.write(fd, line) != len(line):
+            os.ftruncate(fd, size)
+            raise OSError(f"short write to {path}")
     finally:
         os.close(fd)
+    return {"path": path, "size": size, "end": size + len(line), "created": created,
+            "kind": kind, "ticket": ticket}
+
+
+def _unlog(entry):
+    """Take back an event whose effect failed: truncate it away while it is
+    still the last line, else append an `undone` record. Best effort."""
+    try:
+        if os.path.getsize(entry["path"]) == entry["end"]:
+            if entry["created"]:
+                os.remove(entry["path"])
+            else:
+                os.truncate(entry["path"], entry["size"])
+            return
+        _log(os.path.dirname(entry["path"]), "undone", entry["ticket"], of=entry["kind"])
+    except OSError:
+        pass
 
 
 def _ensure_dir(folder):
@@ -559,7 +701,8 @@ def _refusal(answer):
 
 def claim(root, ticket, runner, session=None, spawn=spawn_beat):
     """(exit code, line). Claims when `holds` is free, refreshes when mine
-    (new token, so the old heartbeat exits), refuses otherwise."""
+    (new token, so the old heartbeat exits), refuses otherwise. Under the
+    lock: re-read, log the event, then publish; no log, no claim."""
     if runner not in RUNNERS:
         return EXIT_USAGE, f"refused: runner must be one of {', '.join(RUNNERS)}"
     top = crew_ticket.toplevel(root)
@@ -567,34 +710,52 @@ def claim(root, ticket, runner, session=None, spawn=spawn_beat):
     if top is None or folder is None:
         return EXIT_REFUSED, "refused: unknown - git cannot name this worktree or its common dir"
     answer = holds(root, ticket, runner=runner, session=session)
+    if answer["state"] not in ("free", "mine"):
+        return EXIT_REFUSED, _refusal(answer)
     me = identity(root, session)
     path = _marker_path(folder, ticket)
-    if answer["state"] == "free":
+    try:
         _ensure_dir(folder)
-        marker = _new_marker(top, ticket, runner, me)
-        tmp = _write_temp(path, marker)
-        try:
-            os.link(tmp, path)
-        except FileExistsError:
-            return EXIT_REFUSED, _refusal(holds(root, ticket, runner=runner, session=session))
-        finally:
-            os.remove(tmp)
-        word = "claimed"
-    elif answer["state"] == "mine":
         with _Lock(path):
             current, marker_now, _ = _assess(root, ticket, runner, session, None)
-            if current["state"] != "mine":
+            if current["state"] not in ("free", "mine"):
                 return EXIT_REFUSED, _refusal(current)
-            marker = _new_marker(top, ticket, runner, me, since=marker_now["since"])
-            _replace(path, marker)
-        word = "refreshed"
-    else:
-        return EXIT_REFUSED, _refusal(answer)
-    _log(folder, "claim", ticket, runner=runner, worktree=top, session=me["session"],
-         pid=me["pid"], refreshed=word == "refreshed")
+            word = "claimed" if current["state"] == "free" else "refreshed"
+            marker = _new_marker(top, ticket, runner, me,
+                                 since=marker_now["since"] if marker_now else None)
+            entry = _log(folder, "claim", ticket, runner=runner, worktree=top,
+                         session=me["session"], pid=me["pid"], refreshed=word == "refreshed")
+            try:
+                _publish(path, marker, word == "claimed")
+            except OSError:
+                _unlog(entry)
+                raise
+    except (InflightError, OSError) as exc:
+        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing claimed")
     beat = spawn(top, ticket, marker["token"])
     tail = f"heartbeat pid {beat}" if beat else "heartbeat did not start; the TTL decides"
     return EXIT_OK, f"{word} {ticket} as {runner} ({tail})"
+
+
+def _publish(path, marker, new):
+    """A new marker by `os.link` (fails if one exists), a refresh by replace."""
+    if not new:
+        _replace(path, marker)
+        return
+    tmp = _write_temp(path, marker)
+    try:
+        os.link(tmp, path)
+    finally:
+        os.remove(tmp)
+
+
+def _remove_logged(folder, path, kind, ticket, **fields):
+    entry = _log(folder, kind, ticket, **fields)
+    try:
+        os.remove(path)
+    except OSError:
+        _unlog(entry)
+        raise
 
 
 def release(root, ticket, runner=None, session=None):
@@ -608,18 +769,21 @@ def release(root, ticket, runner=None, session=None):
     if answer["state"] != "mine":
         return EXIT_REFUSED, _refusal(answer)
     path = _marker_path(folder, ticket)
-    with _Lock(path):
-        current, marker, _ = _assess(root, ticket, runner, session, None)
-        if current["state"] != "mine":
-            return EXIT_REFUSED, _refusal(current)
-        os.remove(path)
-    _log(folder, "release", ticket, runner=marker["runner"], token=marker["token"])
+    try:
+        with _Lock(path):
+            current, marker, _ = _assess(root, ticket, runner, session, None)
+            if current["state"] != "mine":
+                return EXIT_REFUSED, _refusal(current)
+            _remove_logged(folder, path, "release", ticket, runner=marker["runner"],
+                           token=marker["token"])
+    except (InflightError, OSError) as exc:
+        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing released")
     return EXIT_OK, f"released {ticket}"
 
 
 def clear(root, ticket, by, reason):
     """(exit code, line): the owner's removal of a stale or unknown marker,
-    re-read under the lock and logged with who and why."""
+    re-read under the lock, logged with who and why before it is removed."""
     if not clean(by) or not clean(reason):
         return EXIT_USAGE, "refused: clear needs --by <who> and --reason <text>"
     folder = inflight_dir(root)
@@ -634,49 +798,66 @@ def clear(root, ticket, by, reason):
     if not stat.S_ISDIR(info.st_mode):
         return EXIT_REFUSED, f"refused: {folder} is not a directory - fix it by hand"
     path = _marker_path(folder, ticket)
-    with _Lock(path):
-        current, marker, _ = _assess(root, ticket, None, None, None)
-        if current["state"] not in ("stale", "unknown"):
-            return EXIT_REFUSED, (f"refused: {current['state']} - clear removes only a stale "
-                                  "or unknown marker")
-        if os.path.isdir(path) and not os.path.islink(path):
-            return EXIT_REFUSED, f"refused: {path} is a directory - remove it by hand"
-        os.remove(path)
-    _log(folder, "clear", ticket, by=clean(by), reason=clean(reason, 500),
-         state=current["state"], why=current["why"],
-         runner=clean((marker or {}).get("runner", "")))
+    try:
+        with _Lock(path):
+            current, marker, _ = _assess(root, ticket, None, None, None)
+            if current["state"] not in ("stale", "unknown"):
+                return EXIT_REFUSED, (f"refused: {current['state']} - clear removes only a "
+                                      "stale or unknown marker")
+            if os.path.isdir(path) and not os.path.islink(path):
+                return EXIT_REFUSED, f"refused: {path} is a directory - remove it by hand"
+            _remove_logged(folder, path, "clear", ticket, by=clean(by),
+                           reason=clean(reason, 500), state=current["state"],
+                           why=current["why"], runner=clean((marker or {}).get("runner", "")))
+    except (InflightError, OSError) as exc:
+        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing cleared")
     return EXIT_OK, f"cleared {ticket} ({current['state']}) by {clean(by)}"
 
 
 # --- the heartbeat -----------------------------------------------------------------------
 
+def _beat_check(path, ticket, token):
+    """(marker, probe, exit_reason): read without the lock."""
+    if not os.path.lexists(path):
+        return None, "", "exit: marker gone"
+    marker, why = load_marker(path, ticket)
+    if marker is None:
+        return None, "", f"exit: {why or 'marker gone'}"
+    if marker["token"] != token:
+        return None, "", "exit: superseded by another token"
+    seen = probe(marker, machine())
+    if seen == "gone":
+        return None, "", "exit: holder pid gone"
+    return marker, seen, ""
+
+
 def beat_once(root, ticket, token):
-    """`beat`, `skipped` (the lock was busy) or why the loop should exit."""
+    """`beat` (holder confirmed alive), `beat (holder unconfirmed)`,
+    `skipped` (a busy lock or a transient OSError) or why the loop exits.
+    Marker, token and holder are checked BEFORE the lock, so a leftover lock
+    never keeps a dead holder's loop alive, and again under it."""
     folder = inflight_dir(root)
     if folder is None:
         return "exit: git cannot name <git-common-dir>"
     path = _marker_path(folder, ticket)
-    if not os.path.lexists(path):
-        return "exit: marker gone"
+    _, seen, stop = _beat_check(path, ticket, token)
+    if stop:
+        return stop
     try:
         with _Lock(path, wait=1.0):
-            marker, why = load_marker(path, ticket)
-            if marker is None:
-                return f"exit: {why or 'marker gone'}"
-            if marker["token"] != token:
-                return "exit: superseded by another token"
-            if probe(marker, machine()) == "gone":
-                return "exit: holder pid gone"
+            marker, seen, stop = _beat_check(path, ticket, token)
+            if stop:
+                return stop
             _replace(path, dict(marker, heartbeat_at=_iso(_now())))
-    except LockBusy:
+    except (InflightError, OSError):
         return "skipped"
-    except InflightError as exc:
-        return f"exit: {exc}"
-    return "beat"
+    return "beat" if seen == "alive" else "beat (holder unconfirmed)"
 
 
-def beat_loop(root, ticket, token, sleep=time.sleep):
-    """Beat until beat_once says exit. Returns that reason."""
+def beat_loop(root, ticket, token, sleep=time.sleep, clock=time.monotonic):
+    """Beat until beat_once says exit, or until the holder has gone more than
+    TTL_SECONDS without being confirmed alive by a successful beat. Returns why."""
+    confirmed = clock()
     while True:
         sleep(HEARTBEAT_SECONDS)
         try:
@@ -685,6 +866,11 @@ def beat_loop(root, ticket, token, sleep=time.sleep):
             return f"exit: {exc!r}"
         if result.startswith("exit"):
             return result
+        if result == "beat":
+            confirmed = clock()
+        elif clock() - confirmed > TTL_SECONDS:
+            return (f"exit: holder unconfirmed for over {TTL_SECONDS}s "
+                    f"(last: {result}); the TTL decides")
 
 
 # --- CLI ---------------------------------------------------------------------------------
