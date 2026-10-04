@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` NEXTVER: `crew_memory.py save`, the vault note first and then the pointer (L-0677)
+### Added — `crew` 1.0.336: `crew_memory.py save`, the vault note first and then the pointer (L-0677)
 
 - `crew_memory.py save --file <memory> --tag <tag> [--tag ...] [--title] [--note] [--type]
   [--project] [--root] [--apply] [--json]` turns a native memory holding its full text into a
