@@ -68,3 +68,52 @@ that cannot rot into irrelevance — only into inaccuracy, which anchors catch.
 Repo-local `.crew/codemap/` is the source of truth; the vault mirrors it. If the
 vault is on the same machine, symlink `.crew/codemap` into the vault rather than
 copying, so there is never a divergence question.
+
+## Native memories as vault pointers
+
+A native memory file (Claude Code's `~/.claude/projects/<project>/memory/<fact>.md`)
+may hold one line in place of its body, with the frontmatter left as it is:
+
+```
+vault: <name> | note: <vault-relative path, forward slashes, ending .md>
+```
+
+The vault is named, never given as an absolute path, so the same file works on
+every machine the vault is synced to. When you meet one, resolve it on this host
+and read the path it prints:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" resolve --file <memory file>
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" check --memory-dir <memory dir>
+```
+
+The name maps to a path through `vaults.<name>.path` in `~/.claude/obsidian/config.json`
+(a `role: ignore` vault is not resolved). Only the name `memory` falls back: to the
+crew config's `memory.vaultPath`, then, only when that file has no `vaults` block, to
+its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured. The pointer
+line is exact and must be the whole body: a first line that starts `vault` and `:` in
+any case, indent or spacing, is a pointer attempt when `note:` or `|` is on that line,
+or the next line starts with `|` or `note:` (a pointer wrapped before its `|`), or the
+line is a bare vault name alone (`vault: work`); anything less than the full grammar is then `malformed`. With
+neither it is prose (`Vault: keep client notes in the work vault` is a memory, not a
+pointer). A config file counts as missing
+only when it is not there at all; one that is there and does not read, parse or match
+its expected shape (or has a duplicate key, nests too deep or is over 1 MiB) is
+`no-vault-config`, naming the field. A bad Obsidian config stops every name; a bad crew config stops `memory`, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.
+
+| state | meaning | exit |
+|---|---|---|
+| `resolved` | the note exists; `path:` is printed | 0 |
+| `full-text` | not a pointer; the body is the memory | 0 |
+| `malformed` | a `vault:` first line holding `note:` or `|` (any case, indent or spacing) that fails the grammar or is not alone | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that cannot be read, does not parse or has a field of the wrong shape | 1 |
+| `vault-unknown` | this host names no such vault, or it is `ignore` | 1 |
+| `vault-unavailable` | the configured path is not an absolute, listable directory here | 1 |
+| `note-missing` | the vault is there, the note is not | 1 |
+| `outside-vault` | a symlink below the vault, or the path leaves it | 1 |
+| `unreadable` | the memory file is not a readable UTF-8 regular file, or a folder or note below the vault cannot be read or opened | 1 |
+
+Any state other than `resolved` or `full-text`: tell the user the state and its
+reason. Do not guess the note, search another vault for it, or treat the pointer
+as the memory. This crew version only reads pointers; writing them arrives in a
+later version.
