@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.312: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval (T-0012)
+### Added — `crew` 1.0.318: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval (T-0012)
 
 - **What changed.** `/crew:autopilot goal "<goal>"` routes through T-0018's
   router (`goal` joins `AVAILABLE`) as `route --root . --first goal`, so the
