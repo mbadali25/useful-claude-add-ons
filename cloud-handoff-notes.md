@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 13:45 UTC
+Last updated: 2026-10-04 13:46 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:46: #356 T-0017 review 99ef016d: 1 BLOCK (placeholder version 1.0.373 < #396 1.0.376 -> 1.0.390) + FIX1 handoff exemption path mismatch when root is a subdir (can hide uncommitted top-level HANDOFF.md) + FIX2 sabotage follow-up tracking + FIX3 document --force skips wrap-up. Sent to builder.
 - 13:45: #340 L-0526 re-review c7f7354d: 0/0/1 CLEAN (harness-only; lands alone). NIT: _budget_spent outside train_gate try (pre-existing exposure).
 - 13:45: #396 T-0016 re-review d7eb9fbd: 0/0/3 CLEAN (BLOCK + 3 FIX closed; INHIBIT=spawn can't reach a keystroke; NIT1 shared-tty parent/child with comm node/python3 still types - document in CONFIG §14 at landing; NIT3 Windows/macOS/live -p unverified). #356 T-0017 (stacked on d7eb9fbd) review running.
 - 13:44: #363 T-0060 review 9b664d51: 0/3/5 (FIX1 holds() why with abs paths sent to chat; FIX2 dedupe key suppresses new episodes; FIX3 document spec deviations/deferrals). Sent to builder (1.0.389).
