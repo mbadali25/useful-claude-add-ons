@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:44: #358 r3 re-review on 88e7295f: CLEAN (0 BLOCK, 0 FIX, 2 NIT cosmetic). Waits its turn in merge order (needs main merge + re-bump + merge-only review at front).
 - 00:44: #352 fixes pushed: 113eccbf (crew 1.0.231; accepted-risk sentence + docstring + test, stuck-marker clear hint). Sonnet re-review r3 started.
 - 00:42: #358 fixes pushed: 88e7295f (crew 1.0.232; corrupt base -> unknown; cat-file-only + README GitFailed tests, sabotage red). Sonnet re-review r3 started.
 - 00:42: OWNER: approved #337 scope ('Merge 337') - documented-limit accepted. Proceeding: #372 merge on green CI, then re-merge main into #337 (1.0.230), merge-only review, CI, merge.
