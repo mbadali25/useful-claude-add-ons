@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:51 UTC
+Last updated: 2026-10-04 15:52 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:52: #450 round-5 fix -> 5080f05c (mark only line 1 or line 2 starting with |/note:; 121 tests). Round-6 quick delta started.
 - 15:51: #416 round-4 2eaac674: head CLEAN (0 BLOCK; FIX is at-landing). CARRY AT LANDING MERGE: switch 3 _autopilot _answer(route) sites to T-0069's _route(); drop T-0057 _LINE_BREAKS (normalise now rejects them); resolve test_crew_route.py conflict; re-review the merge; re-bump all 6 'since 1.0.399' prose spots.
 - 15:51: #351 merge-only review 75a0d5db: 0/0/3 CLEAN, but CI RED (real, merge-caused): done.md 123 lines > budget 120 (check_instructions + test_lifecycle_commands). Sent to land-prep agent: trim in place, revert/re-set version.
 - 15:50: Created CLOUD-SESSION-TICKETS.md at repo root on the notes branch (PR #391) - per-ticket hand-back status; refresh it on every merge/state change. WAVES plan copied to docs/handoff/cloud/WAVES-2026-10-04.md.
