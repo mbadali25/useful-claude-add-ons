@@ -1026,7 +1026,7 @@ instead of `block`, `scope.mode`, `scope.allowCliApproval`, `roleWrites` and
 and machine-global. A lane that wants its own guards writes its own
 `.crew/config.json`, and that file then wins whole.
 
-**The shell and PowerShell readers (crew 1.0.396, T-0096, partly).** `_common.sh`'s
+**The shell and PowerShell readers (crew 1.0.330, T-0096, partly).** `_common.sh`'s
 `crew_repo_config_dir` and the PowerShell `Get-CrewRepoConfigDir` (one body,
 copied into each script that uses it) resolve the same directory by the same
 rules, without python. Routed through them: the incident stand-down read

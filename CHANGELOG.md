@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.396: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
+### Fixed — `crew` 1.0.330: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
 
 - **What changed.** `_common.sh` gains `crew_repo_config_dir` (and
   `crew_repo_config_file`), and the `.ps1` hooks that need it carry one copied
