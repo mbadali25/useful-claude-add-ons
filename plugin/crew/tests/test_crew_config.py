@@ -364,10 +364,28 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # by running this test on T-0040-land after merging main 844bfc36.
     assert "qa.kimi.model" in declared
     assert "dev.kimi.model" in declared
-    # 131 with T-0051's `notify.realertHours` and `notify.questionTypes`,
-    # measured by running this test after merging main (crew 1.0.167).
+    # 131 with T-0013: `resume.typeDelaySeconds` and
+    # `resume.readyTimeoutSeconds`, measured by running this test after
+    # merging main 4f6ef540 for crew 1.0.186.
+    assert {"resume.typeDelaySeconds", "resume.readyTimeoutSeconds"} <= declared
+    # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
+    # merging main 34d9f267.
+    assert "tickets.baseBranch" in declared
+    # 132 with both, measured after merging main into T-0013.
+    # 134 with T-0051's `notify.realertHours` and `notify.questionTypes`,
+    # measured by running this test after merging main ce235468.
     assert {"notify.realertHours", "notify.questionTypes"} <= declared
-    assert len(declared) == 131
+    assert len(declared) == 134
+
+
+def test_tickets_base_branch_is_repo_only_and_null_by_default():
+    """T-0061. Which branch ticket branches are cut from is a fact about one
+    repository, so a machine-global file may not set it, and `null` keeps
+    today's origin/HEAD default for every repo that never names it."""
+    assert crew_config.default_config()["tickets"] == {"baseBranch": None}
+    assert "tickets.baseBranch" not in set(
+        crew_config.leaf_paths(crew_config.default_global_config()))
+    assert not crew_config.is_global_path("tickets.baseBranch")
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -425,13 +443,19 @@ def test_resume_auto_is_global_settable_and_defaults_to_null():
     otherwise `filter_global` prunes it and `/crew:config` refuses to write
     the one place it can be switched on. Null, not false, in both defaults so
     the /crew:init template (which writes every key) never vetoes a machine
-    opt-in."""
-    kept, ignored = crew_config.filter_global({"resume": {"auto": True}})
+    opt-in. T-0013's two typing keys sit beside it, settable globally too
+    (the machine file is the only one their reader opens)."""
+    kept, ignored = crew_config.filter_global({"resume": {"auto": True, "typeDelaySeconds": 4,
+                                                          "readyTimeoutSeconds": 30}})
+    block = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
 
     assert (kept, ignored, crew_config.is_global_path("resume.auto"),
+            crew_config.is_global_path("resume.typeDelaySeconds"),
+            crew_config.is_global_path("resume.readyTimeoutSeconds"),
             crew_config.default_config()["resume"], crew_config.default_global_config()["resume"],
             crew_state.RESUME_DEFAULTS) == \
-        ({"resume": {"auto": True}}, [], True, {"auto": None}, {"auto": None}, {"auto": None})
+        ({"resume": {"auto": True, "typeDelaySeconds": 4, "readyTimeoutSeconds": 30}}, [], True, True, True,
+         block, block, block)
 
 
 def test_a_globally_set_autoclear_reaches_a_repo(tmp_path, monkeypatch):

@@ -109,7 +109,9 @@
     }
   },
   "resume": {
-    "auto": null
+    "auto": null,
+    "typeDelaySeconds": 2,
+    "readyTimeoutSeconds": 15
   },
   "emergency": {
     "standDown": true,
@@ -218,6 +220,9 @@
     "deploy": "none",
     "approval": "risk",
     "questions": "risk"
+  },
+  "tickets": {
+    "baseBranch": null
   },
   "route": {
     "enabled": false

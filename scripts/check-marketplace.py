@@ -1369,6 +1369,46 @@ def _policy_block(relative: str, text: str) -> str | None:
     return fence.group(1) if fence else None
 
 
+CONFIG_REFERENCE = os.path.join("docs", "guides", "crew", "src", "config_reference.py")
+
+
+def check_config_reference(fail, root=ROOT):
+    """crew's generated configuration reference is current (T-0048).
+
+    `docs/guides/crew/src/configuration-reference.md` and the two generated
+    tables inside `plugin/crew/CONFIG.md` are rendered from the code by
+    `config_reference.py`; this runs its `--check` and fails once per stale
+    file, naming the regenerate command.
+
+    Run as a SUBPROCESS rather than imported: the generator imports crew's
+    modules, and an in-process import would reuse whichever `crew_state` this
+    interpreter loaded first -- the wrong tree's defaults, compared as current.
+    Anything but a clean exit 0 or a stale list is a failure carrying the
+    generator's own message: a check that could not run compared nothing, and
+    must never read as a pass.
+    """
+    script = os.path.join(root, CONFIG_REFERENCE)
+    if not os.path.isfile(script):
+        fail(f"{CONFIG_REFERENCE} is missing, so the crew configuration reference "
+             "was not checked")
+        return
+    try:
+        done = subprocess.run([sys.executable, "-I", script, "--check"],
+                              capture_output=True, text=True, check=False, timeout=180)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        fail(f"{CONFIG_REFERENCE} --check did not run: {exc}")
+        return
+    if done.returncode == 0:
+        return
+    stale = [line for line in done.stdout.splitlines() if line.startswith("stale: ")]
+    if done.returncode == 1 and stale:
+        for line in stale:
+            fail(f"crew configuration reference {line}")
+        return
+    detail = (done.stderr.strip() or done.stdout.strip() or "no output").splitlines()
+    fail(f"{CONFIG_REFERENCE} --check exited {done.returncode}: " + " | ".join(detail[-5:]))
+
+
 def check_crew_ignore_policy(fail):
     """The `.crew/` un-ignore list is one set, stated in several places at once.
 
@@ -1743,6 +1783,7 @@ def main() -> int:
     check_command_backtick_spans(fail)
     check_versions(entries, fail)
     check_self_claims(entries, fail)
+    check_config_reference(fail)
     check_description_claims(entries, fail)
     check_catalog_claims(entries, fail)
     check_crew_ignore_policy(fail)

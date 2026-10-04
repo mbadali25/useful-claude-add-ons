@@ -96,6 +96,12 @@ SUBJECTS = {
     ("deploy", "fail"): "Deploy FAILED",
     ("deploy", "unknown"): "Promotion outcome unknown",
 }
+# The `notify` leaves honoured from the machine-global file ONLY, each with what it
+# names: a repo's value is ignored with a notice (`effective_config`). Each names
+# the variable whose value becomes the request URL. `crew_keys.layer_of` reads
+# this table, so the configuration reference shows these keys as machine-only.
+GLOBAL_ONLY_KEYS = {"tokenEnv": "(or the notify skill's config) names the token",
+                    "urlEnv": "names the webhook URL"}
 EXAMPLE_CHAT_ID = "-1001234567890"
 MAX_REASON = 280
 MAX_EXCERPT = 200
@@ -309,8 +315,7 @@ def effective_config(root):
     # tokenEnv / urlEnv name the variable whose value becomes the request URL (the
     # bot token in its path, the Teams webhook itself): only the owner's own
     # machine-global file may name either, never a cloned repo's config.
-    for key, names in (("tokenEnv", "(or the notify skill's config) names the token"),
-                       ("urlEnv", "names the webhook URL")):
+    for key, names in GLOBAL_ONLY_KEYS.items():
         global_env = global_notify.get(key)
         cfg[key] = global_env if isinstance(global_env, str) and global_env else None
         if repo.get(key) is not None and repo.get(key) != cfg[key]:

@@ -73,6 +73,9 @@ HARNESS = (
     "plugin/crew/hooks/scripts/completion_audit.py",
     "plugin/crew/hooks/scripts/completion-audit.sh",
     "plugin/crew/hooks/scripts/completion-audit.ps1",
+    # T-0100: the merged-main drop rule the review bundle and the completion
+    # audit share; a change here moves both, so it is harness like them.
+    "plugin/crew/hooks/scripts/merged_main.py",
     "plugin/crew/tests/sabotage*.py",
     "plugin/crew/tests/review_fixtures.py",
     "plugin/crew/tests/golden_build.py",

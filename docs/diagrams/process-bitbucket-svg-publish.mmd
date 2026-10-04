@@ -1,0 +1,37 @@
+%% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
+%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml
+%% Purpose: What is committed together, how Bitbucket shows it, why the SVG is committed at all, and what the shipped pipeline snippet says about checking or rendering it in CI.
+%% Part of process-bitbucket-svg.mmd (the overview, which keeps the provenance history).
+%% Every bare :NNN is a line in skills/mermaid-svg-bitbucket/scripts/render_mermaid.py; other files are cited in full.
+%% COMMIT is drawn in process-bitbucket-svg-render.mmd, where it is written; repeated here as the entry.
+%% Note P1: A) verify-diagrams, RECOMMENDED. python:3.11-slim, one line: python scripts/render_mermaid.py . --check No
+%%    push credentials, no commit loop, and the diff lands in review where a human can see it. Never reaches
+%%    resolve_mmdc at all - which is why the WinError 2 above was a developer-machine and strategy-B failure,
+%%    invisible to strategy A
+%% Note P2: in its own header: a repo whose manifest predates version 2 fails the first run, and --force is REQUIRED to
+%%    fix it because the source hash already matches and a plain run would skip them. The script's own message says
+%%    the same thing. Two places, one sentence - deliberately, because whichever one a reader hits first has to be
+%%    enough.
+%% Note P3: Needs write access and [skip ci], or the commit retriggers the pipeline. fonts-liberation is not optional:
+%%    Chromium in a slim image has no fonts, mermaid MEASURES text to lay out nodes, and no fonts means every label
+%%    is mis-sized and the boxes overlap.
+%% Note ORDER: Bitbucket Cloud has never rendered Mermaid in Markdown (BCLOUD-21675, open for years); a fenced block shows as
+%%    raw source. The .mmd stays the reviewable artifact and the .svg is a build product that happens to be
+%%    committed - which is why the manifest exists to say whether the two still agree.
+flowchart TB
+
+    COMMIT[("committed together:<br/>the .mmd, the .svg, the rewritten .md,<br/>and .mermaid-svg.json")]
+    COMMIT --> BB(["Bitbucket renders the .svg through an &lt;img&gt; tag.<br/>Nothing in the browser runs mermaid."])
+
+    subgraph CI["What the shipped pipeline snippet actually says"]
+        direction TB
+        P1["<b>A) verify-diagrams,<br/>RECOMMENDED.</b><br/>render_mermaid.py . --check"]
+        P2["<b>The snippet warns about<br/>the one-time red</b><br/>--force is REQUIRED to fix it"]
+        P3["<b>B) render-diagrams</b><br/>renders and commits back.<br/>needs fonts-liberation"]
+        P1 --- P2 --- P3
+    end
+
+    BB -.-> CI
+
+    ORDER>"<b>Why the SVG is<br/>committed at all.</b><br/>Bitbucket never renders Mermaid"]
+    BB -.-> ORDER

@@ -27,12 +27,87 @@ if [ "${1:-}" = "--price" ]; then
   PRICE_FORCE=""
   for a in "$@"; do
     case "$a" in
+      # --ci is a gate run and --price is not one: the pair is refused in
+      # this order here, and in the other order by the argument check below,
+      # rather than pricing a file literally named "--ci".
+      --ci) echo "verify-gate: --price and --ci cannot be combined (--price times the map and writes it; --ci is a gate run). Pass one of them. Nothing was verified." >&2
+            exit 2 ;;
       --force) PRICE_FORCE="--force" ;;
       *) PRICE_TARGET="$a" ;;
     esac
   done
   "$PRICE_PY" "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
   exit $?
+fi
+
+# --ci: the gate as a consumer repo's CI job runs it on a pull request. Never
+# from the Stop hook (hooks.json passes no argument or "--all", never this).
+# It is NOT a spelling of --all, and every place this file reads "--all" was
+# decided one by one rather than widened by a grep:
+#
+#   SCOPE is the whole map like --all's - no Stop budget, no fingerprint
+#   skip - but over TRACKED files only. A PR job is asked about the whole
+#   tree, not about what changed since a marker a fresh checkout does not
+#   have; and what a CI workspace holds untracked (a crew checkout, a
+#   `.venv`, build output) is the job's own furniture, not the change, so it
+#   must not trip `"unmapped": "fail"`.
+#
+#   REACH is Stop's: a `network`/`host` rule, and an undeclared one the scan
+#   cannot clear, is excluded exactly as on Stop. A CI runner is not the
+#   operator's machine - it holds none of the credentials or network paths
+#   such a rule was written against - so running it there either fails for a
+#   reason that is not the change, or reaches a target nobody pointed a PR
+#   job at. Excluding it does not fail the run; it is named, and counted.
+#   `requiresCleanTree` is the one Stop exclusion --ci does NOT take: a CI
+#   checkout is clean by construction, which is precisely the place that rule
+#   was pushed to.
+#
+#   VERDICT is stricter than either: rc 77 (SKIP) and any deferral exit 2,
+#   because a CI job that goes green on a check it never ran is the same
+#   unknown-into-safe-value collapse this file exists to refuse. The same
+#   rule governs EVERY early exit: under --ci, any path that would end
+#   having checked nothing - no project dir, a disabled gate, no map, no
+#   tracked file, zero commands left to run, a lock held by another run -
+#   exits 2 with a named `verify-gate --ci:` reason, never 0. The Stop-only
+#   stand-downs (the stop_hook_active retry, the emergency lane, the
+#   deploy-record check) do not apply to a CI job at all and are skipped.
+#
+#   MARKERS never advance. The sha baseline and the fingerprint both mean
+#   "everything the map asked for ran clean here"; under --ci a
+#   reach-excluded rule may not have run, and a CI job's pass belongs to the
+#   job, not to a later Stop in some other checkout. So the pass lives in the
+#   exit code. The gate's other machine-local files (the per-rule record,
+#   synced with "all" false, the timings cache and the tree-pass cache) are
+#   still written.
+#
+# ARGUMENTS are checked strictly, in every mode: only --all, --ci, and
+# --price as the first argument (with its own arguments, handled above) are
+# accepted. Anything else - `-ci`, `--CI`, `--ci=1`, a typo - is a usage
+# error, exit 2. A gate that silently ignores a misspelt `--ci` runs as a
+# Stop gate in CI: budgeted, diffed against a base, and green on a skip,
+# which is exactly the run --ci exists to refuse. The Stop hook passes no
+# argument and /crew:verify passes `--all`, so neither is affected.
+#
+# --all and --ci together is a usage error rather than a silent precedence:
+# the two disagree on reach and on the markers, and either reading of the
+# pair would be a guess about what the caller meant.
+CI_MODE=0
+CI_ALL_SEEN=0
+for CI_ARG in "$@"; do
+  case "$CI_ARG" in
+    --ci) CI_MODE=1 ;;
+    --all) CI_ALL_SEEN=1 ;;
+    --price)
+      echo "verify-gate: --price must be the first argument and cannot be combined with --ci or --all. Nothing was verified." >&2
+      exit 2 ;;
+    *)
+      echo "verify-gate: unknown argument '$CI_ARG' - the gate accepts --all, --ci, or --price as the first argument. Nothing was verified." >&2
+      exit 2 ;;
+  esac
+done
+if [ "$CI_MODE" -eq 1 ] && [ "$CI_ALL_SEEN" -eq 1 ]; then
+  echo "verify-gate: --all and --ci cannot be combined (--all runs every rule and records a pass; --ci excludes network/host rules and never records one). Pass one of them. Nothing was verified." >&2
+  exit 2
 fi
 
 # End-of-turn gate. Runs the checks that the CHANGED FILES actually require,
@@ -66,8 +141,13 @@ fi
 # comes first, and preserves whatever partial input arrived either way. The
 # Stop hook's payload is one line and arrives immediately in every real
 # invocation, so this never differs from the old behaviour on the real path.
+#
+# --ci reads nothing at all. stdin carries the Stop hook's payload and only
+# that; a CI job has none, so the stop_hook_active retry check below cannot
+# fire for it (a stray `{"stop_hook_active": true}` on a job's stdin must not
+# turn a failing run into exit 0), and a held-open pipe cannot cost it 5s.
 INPUT=""
-if [ ! -t 0 ]; then
+if [ "$CI_MODE" -eq 0 ] && [ ! -t 0 ]; then
   IFS= read -r -t 5 -d '' INPUT || true
 fi
 
@@ -75,8 +155,19 @@ fi
 # gate blocks its own retry forever, and a failing check becomes a stuck session.
 case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 0 ;; esac
 
-cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
-grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null && exit 0
+# Under --ci each "nothing to do here" exit below is a failure instead: a CI
+# job that checked nothing must not report green (see CI_MODE above).
+cd "${CLAUDE_PROJECT_DIR:-.}" || {
+  [ "$CI_MODE" -eq 1 ] && { echo "verify-gate --ci: cannot cd into ${CLAUDE_PROJECT_DIR:-.} - nothing was checked" >&2; exit 2; }
+  exit 0
+}
+if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null; then
+  if [ "$CI_MODE" -eq 1 ]; then
+    echo "verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, so nothing was checked. Turn it on or remove the CI job." >&2
+    exit 2
+  fi
+  exit 0
+fi
 
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
@@ -86,7 +177,15 @@ grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/nu
 # The deploy-record check below stands down too, deliberately: an incident is
 # exactly when a deploy goes out ahead of its paperwork. It is recorded as
 # owed rather than enforced now.
-if crew_incident_active; then
+#
+# Under --ci the lane does not apply: it exists so an operator mid-incident is
+# not blocked at Stop, and a PR job blocks nobody's turn. An incident file in
+# the checkout is said out loud and the rules run.
+if [ "$CI_MODE" -eq 1 ]; then
+  if [ -f .crew/incident.json ]; then
+    echo "verify-gate --ci: .crew/incident.json is present - the emergency lane stands down only the Stop gate, so --ci runs the rules anyway" >&2
+  fi
+elif crew_incident_active; then
   CHANGED_N=$( { git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
   crew_incident_log verify "stop gate stood down with $CHANGED_N changed file(s) unverified"
   if [ -f .crew/.deploy-in-flight ]; then
@@ -100,7 +199,11 @@ fi
 # It does not get to end without a row in the promotions log. A deploy nobody
 # wrote down is a deploy nobody can audit, and "is prod running what qa signed
 # off on" becomes unanswerable one turn later.
-if [ -f .crew/.deploy-in-flight ]; then
+#
+# Not under --ci: the marker belongs to the operator's checkout and the turn
+# that deployed, a CI job neither deploys nor owns the promotions log, and the
+# check removes the marker on success - a job must not consume it.
+if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then
   read -r DENV DSHA < .crew/.deploy-in-flight
   if grep -qE "\|[[:space:]]*$DENV[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
     rm -f .crew/.deploy-in-flight
@@ -227,7 +330,9 @@ fi
 # a later edit to that file kept the passing digest and verification was
 # skipped. Fixed at the SOURCE rather than by unquoting downstream, because
 # the matcher and the scope report read the same list.
-if [ "${1:-}" = "--all" ]; then
+# --ci takes this branch too: its scope is the whole tree, for the same reason
+# --all's is, and a fresh CI checkout has no marker to diff from anyway.
+if [ "${1:-}" = "--all" ] || [ "$CI_MODE" -eq 1 ]; then
   # --all does not diff against ANY commit. A commit-range diff, however
   # wide, is still bounded by SOME ancestor, and on a single-branch repo
   # (or one sitting ON its own default branch) merge-base(HEAD, main) IS
@@ -266,12 +371,21 @@ if [ "${1:-}" = "--all" ]; then
             git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>/dev/null; \
             git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; \
             git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>/dev/null | cut -f2- | tr '\t' '\n'; \
-            git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
+            { [ "$CI_MODE" -eq 1 ] || git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })
+  # ^ --ci leaves untracked files out: see SCOPE in the CI_MODE header.
 else
   CHANGED=$(git -c core.quotePath=false diff --name-only "$BASE" 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
 fi
 CHANGED=$(printf '%s\n' "$CHANGED" | sort -u | sed '/^$/d')
 if [ -z "$CHANGED" ]; then
+  # Under --ci an empty list is never "nothing changed": the scope is every
+  # tracked file, so empty means git could not list them (not a work tree, or
+  # git refused, e.g. a dubious-ownership checkout) or there are none. Either
+  # way nothing was checked, and a CI job says so in red.
+  if [ "$CI_MODE" -eq 1 ]; then
+    echo "verify-gate --ci: no tracked files found in $PWD (not a git work tree, git failed - e.g. refused a dubious-ownership checkout - or nothing is tracked) - nothing was checked" >&2
+    exit 2
+  fi
   # A turn that changed nothing still owes a reminder for any rule this
   # tree has never actually been checked against - a chronic over-budget
   # rule, a reach-excluded one, or one still SKIPping on rc 77. Without
@@ -354,8 +468,15 @@ fi
 # --all runs the WHOLE map with no Stop budget. /crew:verify is the caller
 # that wants it; the Stop hook never passes it. Anything else leaves the flag
 # empty so the matcher always sees the same argv shape.
+#
+# --ci passes its OWN value, never "--all": the matcher reads it as "no
+# budget, but keep Stop's reach filter", and the record sync below reads
+# `"all"` as true only for the literal "--all", so a --ci run is never taken
+# for the full verification that would let the record clear a reach-excluded
+# rule it did not run.
 BUDGET_FLAG=""
 [ "${1:-}" = "--all" ] && BUDGET_FLAG="--all"
+[ "$CI_MODE" -eq 1 ] && BUDGET_FLAG="--ci"
 
 # --- CLAUDE_PLUGIN_ROOT for the rule commands ------------------------------
 # A verify.json rule can call a crew script (`python3
@@ -390,11 +511,15 @@ fi
 # It also SAYS it skipped. 0.19.65 had to fix a silent exit 0 that was
 # byte-identical to a pass; a silent skip would reintroduce exactly that.
 # No python means no fingerprint and no skip -- the safe direction.
+#
+# Neither --all nor --ci ever skips here: any non-empty BUDGET_FLAG means the
+# caller asked for the whole map, and a PR job that exits 0 on a fingerprint
+# left by an earlier run would pass a change it never looked at.
 FP_PY=$(crew_py 2>/dev/null) || FP_PY=""
 FP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FP_FILE=".crew/.verify-gate.fingerprint"
 FINGERPRINT=""
-if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ "$BUDGET_FLAG" != "--all" ]; then
+if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FLAG" ]; then
   FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
   if [ -n "$FINGERPRINT" ] && [ "$FINGERPRINT" = "$(cat "$FP_FILE" 2>/dev/null)" ]; then
     echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
@@ -408,6 +533,18 @@ if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ "$BUDGET_FLAG"
 fi
 
 LOCK=".crew/.verify-gate.lock"
+# Every back-off below goes through here. On Stop it is exit 0 (the other
+# flavour's run governs the turn, and each back-off already says NOTHING WAS
+# VERIFIED). Under --ci it is exit 2 with a named reason: the job that backed
+# off checked nothing, and whichever run holds the lock is not this job's
+# verdict.
+lock_back_off() {
+  if [ "$CI_MODE" -eq 1 ]; then
+    echo "verify-gate --ci: $1 - this run checked nothing" >&2
+    exit 2
+  fi
+  exit 0
+}
 # 700 until crew 0.19.65, sized to exceed the hook's own 600s timeout because
 # a held lock was only ever dated at acquisition. It now has a HEARTBEAT (see
 # lock_touch below), so the mtime tracks the last rule that FINISHED rather
@@ -593,14 +730,14 @@ if ! mkdir "$LOCK" 2>/dev/null; then
       esac
       if [ -n "$HOLD_DEADLINE" ] && [ "$((10#$HOLD_DEADLINE))" -gt 0 ] 2>/dev/null && [ "$NOW" -lt "$((10#$HOLD_DEADLINE))" ] 2>/dev/null; then
         echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') (holder declared it may run for another $((10#$HOLD_DEADLINE - NOW))s); NOTHING WAS VERIFIED this turn." >&2
-        exit 0
+        lock_back_off "backed off: the lock at $LOCK is held by another gate run"
       fi
       if [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null; then
         echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') ($((NOW - HOLDER_AT))s old, ttl ${LOCK_TTL}s); NOTHING WAS VERIFIED this turn." >&2
-        exit 0
+        lock_back_off "backed off: the lock at $LOCK is held by another gate run"
       fi
       rm -rf "$LOCK" 2>/dev/null
-      mkdir "$LOCK" 2>/dev/null || exit 0
+      mkdir "$LOCK" 2>/dev/null || lock_back_off "another gate run reclaimed the stale lock at $LOCK first"
       RECLAIMED=1
     fi
   fi
@@ -673,7 +810,7 @@ if [ "$UNLOCKED" -eq 0 ]; then
   # Do not tax the common path with the settle wait.
   if [ "$RECLAIMED" -eq 1 ]; then
     sleep 1
-    [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ] || exit 0
+    [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ] || lock_back_off "another gate run took the reclaimed lock at $LOCK"
   fi
 fi
 
@@ -720,7 +857,13 @@ if [ ! -f .crew/verify.json ]; then
   for cand in ./_verify/smoke.sh ./scripts/smoke.sh; do
     [ -f "$cand" ] && { SMOKE="$cand"; break; }
   done
-  [ -n "$SMOKE" ] || exit 0
+  if [ -z "$SMOKE" ]; then
+    if [ "$CI_MODE" -eq 1 ]; then
+      echo "verify-gate --ci: no .crew/verify.json and no _verify/smoke.sh - nothing to verify, so nothing was checked" >&2
+      exit 2
+    fi
+    exit 0
+  fi
   OUT=$(bash "$SMOKE" 2>&1) || { echo "Smoke FAILED. Work is not complete." >&2; echo "$OUT" | grep -E '^(FAIL|SMOKE:)' >&2; exit 2; }
   exit 0
 fi
@@ -836,8 +979,14 @@ except (OSError, ValueError) as e:
 # `--all` asks for, and what /crew:verify uses to run the whole map. An
 # unreadable or malformed config falls back to the DEFAULT rather than to no
 # limit: "could not read the config" must not quietly become "no limit".
+#
+# `--ci` is no budget too: a PR job is asked about the whole map, and a rule
+# deferred for time is a rule the job never ran. CI_MODE is kept as its own
+# flag rather than folded into "budget is None", because the two no-budget
+# callers part ways on reach (see REACH_FILTER below).
+CI_MODE = len(sys.argv) > 2 and sys.argv[2] == "--ci"
 budget = 60
-if len(sys.argv) > 2 and sys.argv[2] == "--all":
+if len(sys.argv) > 2 and sys.argv[2] in ("--all", "--ci"):
     budget = None
 else:
     try:
@@ -957,8 +1106,9 @@ def note_cost(cmd, rule):
 #
 # `local` | `network` | `host`. The Stop gate runs ONLY `local` rules;
 # `network`/`host` rules run under /crew:verify --all (and the merge gate),
-# never unattended on Stop. STOP_MODE is false exactly when --all was passed
-# (budget is None then), which is the one case reach never excludes anything.
+# never unattended on Stop. STOP_MODE is false exactly when --all or --ci was
+# passed (budget is None then); --all is the one case reach never excludes
+# anything, and --ci keeps the exclusion through REACH_FILTER below.
 #
 # UNDECLARED reach is NOT quietly treated as local. That was this brief's
 # first draft and it is this repo's own named failure mode -- an unknown
@@ -971,6 +1121,13 @@ def note_cost(cmd, rule):
 # about why. An undeclared rule that matches nothing stays `local`, so an
 # ordinary repo with no remote commands is unaffected.
 STOP_MODE = budget is not None
+# REACH_FILTER is the one Stop behaviour --ci shares, and it is a separate
+# name so that sharing it cannot drag the rest of STOP_MODE along: the
+# budget, the tree-pass cache and requiresCleanTree all stay Stop-only. A CI
+# runner holds none of the credentials or network paths a `network`/`host`
+# rule was written against, so --ci excludes it here exactly as Stop does;
+# --all is still the one caller that reaches everything.
+REACH_FILTER = STOP_MODE or CI_MODE
 # Reach scanning is verify_record.scan_reach - ONE function, shared with
 # verify-gate.ps1 (which shells out to it) and verify_price.py (which
 # imports it directly, same as here). Round 2 deleted the THREE independent
@@ -1074,7 +1231,7 @@ for f in changed:
                     if isinstance(cached, int) and cached > 0:
                         rule_secs[ri] = cached
                         measured_used[ri] = True
-                if STOP_MODE:
+                if REACH_FILTER:
                     # requiresCleanTree shares this exclusion plumbing with
                     # reach: a rule that refuses on a dirty tree (the SRL
                     # case: sabotage-test.sh's "REFUSING TO RUN: the working
@@ -1087,7 +1244,12 @@ for f in changed:
                     # it actually check something. Checked BEFORE reach so a
                     # rule naming both gets the clean-tree reason, since that
                     # is the more specific precondition of the two.
-                    if r.get("requiresCleanTree") is True:
+                    #
+                    # STOP_MODE only, not REACH_FILTER: --ci runs on a CI
+                    # checkout, the clean tree this rule was sent to, so it
+                    # RUNS there. Its reach is still read below, so a rule
+                    # naming both a clean tree and `network` stays excluded.
+                    if STOP_MODE and r.get("requiresCleanTree") is True:
                         stop_excluded[ri] = ("clean_tree_required",
                             "requires a clean working tree - not run on Stop, run /crew:verify --all")
                     else:
@@ -1106,6 +1268,10 @@ for f in changed:
                 r_env = {k: v for k, v in r["env"].items()
                          if isinstance(k, str) and isinstance(v, str)}
             for c in r["run"]:
+                # Under --ci a blank command checks nothing: drop it, so a map
+                # of blanks reaches the zero-commands failure instead of a pass.
+                if CI_MODE and not str(c).strip():
+                    continue
                 ident = _identity(c, r_env)
                 if ident not in cmds: cmds.append(ident)
                 if ident not in rule_cmds[ri]: rule_cmds[ri].append(ident)
@@ -1130,7 +1296,9 @@ for ri in rule_order:
 # `notices` itself is not defined yet at this point in the file.
 fallback_notices = []
 for c in cfg.get("always",[]) or []:
-    _cls = _classify_run_reach([c]) if STOP_MODE else None
+    if CI_MODE and not str(c).strip():
+        continue
+    _cls = _classify_run_reach([c]) if REACH_FILTER else None
     if _cls is not None:
         fallback_notices.append("`always` command %r %s" % (c, _cls[1]))
         continue
@@ -1139,7 +1307,9 @@ for c in cfg.get("always",[]) or []:
 if not cmds:
     _default_kept = []
     for c in cfg.get("default",[]) or []:
-        _cls = _classify_run_reach([c]) if STOP_MODE else None
+        if CI_MODE and not str(c).strip():
+            continue
+        _cls = _classify_run_reach([c]) if REACH_FILTER else None
         if _cls is not None:
             fallback_notices.append("`default` command %r %s" % (c, _cls[1]))
             continue
@@ -1173,6 +1343,14 @@ for _ri in rule_order:
         notices.append("verify-gate: rules[%d] %s" % (_ri, _reason))
 for _fn in fallback_notices:
     notices.append("verify-gate: %s" % _fn)
+# --ci: one line that counts what the per-rule notices above name, so a PR
+# job's log says in one place that the green it reports is short of these.
+# An exclusion does not fail the run - the rule is not broken, it is aimed
+# at something a CI runner cannot reach - but it must not read as covered.
+if CI_MODE and (stop_excluded or fallback_notices):
+    notices.append("verify-gate --ci: %d rule(s) and %d `always`/`default` command(s) "
+                   "excluded for reach and NOT run here - they run only under --all, "
+                   "where they can reach their target" % (len(stop_excluded), len(fallback_notices)))
 for _ri in sorted(measured_used):
     notices.append("verify-gate: rules[%d] priced from a cached measurement (%ss, measured not declared) - "
                     "add `seconds` to verify.json to make this permanent" % (_ri, int(rule_secs[_ri])))
@@ -1385,7 +1563,25 @@ for _ri in rule_order:
         "cmds": rule_cmds.get(_ri, []),
         "unknown": bool(truly_unknown.get(_ri)),
     })
-extras = json.dumps({"matched_rules": matched_rules})
+_extras = {"matched_rules": matched_rules}
+# --ci only: how many rules and fallback commands the reach filter took out
+# (the pass line says whether any did), and, when nothing is left to run,
+# why - the caller exits 2 on an empty command list and names this reason.
+if CI_MODE:
+    _n_excl = sum(1 for _ri in rule_order if _ri in stop_excluded)
+    _extras["ci_excluded"] = _n_excl + len(fallback_notices)
+    if cmds:
+        _extras["ci_nothing"] = ""
+    elif rule_order and _n_excl == len(rule_order):
+        _extras["ci_nothing"] = "%d rule(s) matched, all excluded for reach" % _n_excl
+    elif rule_order:
+        _extras["ci_nothing"] = ("%d rule(s) matched (%d excluded for reach) and none named a command"
+                                 % (len(rule_order), _n_excl))
+    else:
+        _extras["ci_nothing"] = "no rule matched any tracked file, and `always`/`default` added nothing"
+    if not cmds and fallback_notices:
+        _extras["ci_nothing"] += " (%d `always`/`default` command(s) excluded for reach)" % len(fallback_notices)
+extras = json.dumps(_extras)
 sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices)
                  + "\x1d" + str(acute_count)
                  + "\x1d" + str(int(max_cost))
@@ -1498,6 +1694,33 @@ if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
 
+# --ci: zero commands to run is not a pass. Every matched rule excluded for
+# reach, or no rule matching anything with `always`/`default` adding nothing,
+# leaves a job that would report green having checked nothing. CI_EXCLUDED_N
+# feeds the pass line at the bottom; unreadable means UNKNOWN (-1), which
+# that line treats as "some may not have run", never as "none were excluded".
+CI_EXCLUDED_N=-1
+CI_NOTHING=""
+if [ "$CI_MODE" -eq 1 ]; then
+  CI_FIELDS=$(printf '%s' "$EXTRAS" | "$PY" -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read() or "{}")
+    n = d.get("ci_excluded")
+    print(n if isinstance(n, int) and not isinstance(n, bool) and n >= 0 else -1)
+    print(str(d.get("ci_nothing") or ""))
+except ValueError:
+    print(-1)
+' 2>/dev/null | tr -d '\r')
+  CI_EXCLUDED_N=$(printf '%s\n' "$CI_FIELDS" | sed -n 1p)
+  case "$CI_EXCLUDED_N" in ''|*[!0-9]*) CI_EXCLUDED_N=-1 ;; esac
+  CI_NOTHING=$(printf '%s\n' "$CI_FIELDS" | sed -n 2p)
+  if ! printf '%s\n' "$CMDS" | grep -q .; then
+    echo "verify-gate --ci: zero commands to run - ${CI_NOTHING:-the matcher selected none} - nothing was checked" >&2
+    exit 2
+  fi
+fi
+
 # A rule's `run` string is bash-flavoured and most of .crew/verify.json's
 # rules hardcode `python3` - but CLAUDE.md's own landmine holds here too:
 # Git Bash ships with no python3 at all, so a rule that is otherwise
@@ -1595,6 +1818,9 @@ TOTAL_ELAPSED=0
 # would hit the fingerprint match and never even attempt the command again,
 # on the strength of a run that never actually checked it.
 ANY_SKIPPED=0
+# How many, not only whether: --ci names the count when it fails the run on
+# them (a skip is not a pass in CI). Nothing else reads it.
+SKIP_N=0
 # NDJSON accumulator: one line per command actually run this turn, with its
 # outcome and elapsed time, fed to verify_record.py sync below. Built from
 # python's own JSON encoding of $c rather than hand-quoted in bash, so a
@@ -1897,6 +2123,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     echo "verify-gate: SKIP (rc 77, environment absent): $c" >&2
     CMD_STATUS="skip77"
     ANY_SKIPPED=1
+    SKIP_N=$((SKIP_N + 1))
   elif [ "$RC" -ne 0 ]; then
     echo "VERIFY FAILED: $c" >&2
     echo "$OUT" | tail -25 >&2
@@ -2055,7 +2282,39 @@ fi
 # rule's) has just been synced above -- never before. SYNC_STATUS plays no
 # part in this decision on purpose: whether the record write succeeded or
 # not, a turn with a real failure exits 2 either way.
+#
+# --ci adds its own two failures here, through FAILED and so through the same
+# exit 2, after the record sync has kept every passing rule's evidence. On
+# Stop a SKIP and a deferral only hold the baseline back and the turn ends; a
+# PR job has no next turn to catch up in, so a check it did not run is a red
+# job, not a quiet one. Deferral cannot happen with no budget; it is checked
+# anyway, because "cannot happen" is an argument and this is the exit code.
+# fully_verified is the deferral test here: its TREE_MOVED half is only ever
+# set by a tree-pass credit, which is Stop-only, so under --ci it is 0.
+if [ "$CI_MODE" -eq 1 ]; then
+  if [ "$SKIP_N" -gt 0 ]; then
+    echo "verify-gate --ci: $SKIP_N command(s) exited 77 (SKIP) - a skip is not a pass in CI" >&2
+    FAILED=1
+  fi
+  if ! fully_verified; then
+    echo "verify-gate --ci: $DEFERRED_COUNT rule(s) deferred - not every check ran" >&2
+    FAILED=1
+  fi
+fi
 [ "$FAILED" -eq 0 ] || exit 2
+
+# --ci never advances either marker, pass or not - see MARKERS in the CI_MODE
+# header. The line says WHY in the terms of this run: excluded rules that did
+# not run when there were any (or when the count could not be read), and the
+# design choice otherwise.
+if [ "$CI_MODE" -eq 1 ]; then
+  if [ "$CI_EXCLUDED_N" -ne 0 ]; then
+    echo "verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and the fingerprint were NOT advanced - reach-excluded rules did not run" >&2
+  else
+    echo "verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and the fingerprint were NOT advanced - --ci never writes them, by design" >&2
+  fi
+  exit 0
+fi
 
 # THREE things must ALL hold before either marker may advance: nothing was
 # ACUTELY deferred (fully_verified), nothing SKIPPED (rc 77 is not a check),

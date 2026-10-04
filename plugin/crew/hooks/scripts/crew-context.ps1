@@ -229,7 +229,7 @@ try {
   # straight to the hook's own stdout.
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = $py
-  $psi.Arguments = '"' + (Join-Path $dir 'crew_context.py') + '" --harness ' + $Harness
+  $psi.Arguments = '"' + (Join-Path $dir 'crew_context.py') + '" --flavour ps1 --harness ' + $Harness
   $psi.UseShellExecute = $false
   $psi.RedirectStandardInput = $true
   $proc = [System.Diagnostics.Process]::Start($psi)

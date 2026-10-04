@@ -1,6 +1,6 @@
 ---
 description: Guided phased setup for this repo — resumable, one phase at a time
-argument-hint: [--status | --phase N]
+argument-hint: "[--status | --phase N | --audit [--all-repos DIR]]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill
 ---
 
@@ -12,6 +12,10 @@ nine phases, the status file format, and the rules about stopping between phases
 Arguments: $ARGUMENTS
 - `--status` — print the phase table from `.crew/STATUS.md` and stop
 - `--phase N` — run that phase only, warning about incomplete prerequisites
+- `--audit` — the QA audit only (`crew-qa-standards`): run
+  `qa_audit.py --root .`, show the table verbatim with UNKNOWN as unknown, then `qa_doc.py --root .`
+  (dry run) and offer `--write` once. Fix nothing unasked; offer `--stamp` after the report
+- `--audit --all-repos DIR` — `qa_audit.py --all-repos DIR`: one line per crew checkout
 - no argument — resume at the first phase not marked `done`
 
 ## Web phase (inside Phase 6, Browser tests)
