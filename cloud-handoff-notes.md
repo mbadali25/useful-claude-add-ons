@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:54 UTC
+Last updated: 2026-10-04 11:55 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:55: #392 land-prep: merged main e9364a70 (version files + CHANGELOG both kept), crew 1.0.324 last -> 136eaade. Gates + 297 tests pass. Merge-only review + CI next.
 - 11:54: MERGED #360 T-0048 at e9364a70 (crew 1.0.323; re-run of Windows shard green; review clean a30f6679). main = e9364a70. Next: #392 (Windows lock fix) land-prep -> 1.0.324, then #393 alone, then #377 and train.
 - 11:52: #394 T-0037 re-review b80f8cbf: 0/0/3 CLEAN. Joins train (before #364/#365/#366, which depend on it).
 - 11:52: #394 review 1ed50584: 0/1/3. FIX (README:832 /crew:approve precheck list lacked cancelled/superseded) fixed by hand + re-versioned 1.0.354 -> b80f8cbf; delta re-review started. NITs: needs-owner rows are 'open' so route/autopilot may pick one and stop (spec-consistent; mention in PR body); 19-mutation count unverified by reviewer.
