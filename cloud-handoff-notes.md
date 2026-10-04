@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:13 UTC
+Last updated: 2026-10-04 03:20 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:13 UTC
 
 ## Log (newest first)
 
+- 03:20: MERGED #385 (35cfcfcf: verify.json maps the handoff docs; notes). #339 re-merged main -> 6da2a486 (no plugin change, crew stays 1.0.246); merge-only review + CI next. Notes continue on a new PR from ccr-b039f2bb-6jks7g.
 - 03:13: #377 r1 (Sonnet) on 05be104b: CLEAN (0 BLOCK, 0 FIX, 2 NIT: implement.md reflow, LANDING_ORDER literal duplicated in test).
 - 03:12: #339 CI verify-gate red: every row PASS but 'UNMAPPED CHANGES: cloud-handoff-notes.md, pending-tickets.md' (#374 added them without a verify.json rule -> gate exit 2 on EVERY PR). Fix dc9c2154 on #385 (docs rule maps both). #385 now lands FIRST; then #339 re-merges main.
 - 03:09: #333 FIX pushed 5b8be69d (terminate OSError -> CouldNotCheck, must-block/allow tests, sabotage entry; 1.0.304 placeholder). Sonnet re-review r2 started.
