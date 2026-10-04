@@ -351,11 +351,35 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
     # merging main 34d9f267.
     assert "tickets.baseBranch" in declared
-    # 132 with both, measured after merging main into T-0013.
-    # 133 with T-0074's repo-only `autopilot.maxAutoReplans`, measured by
-    # running this test after merging main baf193aa.
+    # 132 with T-0013's two machine keys (`resume.typeDelaySeconds`,
+    # `resume.readyTimeoutSeconds`), measured after merging main into T-0013.
+    # 133 with T-0066: `git.forbiddenTrailers` on top of those 132, measured
+    # by running this test after merging main edb2b8ff.
+    # 136 with T-0053's repo-only `autopilot.sleep.schedule`,
+    # `autopilot.sleep.approval` and `autopilot.sleep.questions` on top of
+    # those 133, measured by running this test after merging main 86d96fa1.
+    assert "git.forbiddenTrailers" in declared
+    assert {"autopilot.sleep.schedule", "autopilot.sleep.approval",
+            "autopilot.sleep.questions"} <= declared
+    # 137 with T-0017's `context.autoClear.wrapUp` on top of those 136,
+    # measured by running this test on T-0017-build after merging main
+    # a27c5e38 through T-0016-build.
+    assert "context.autoClear.wrapUp" in declared
+    # 138 with T-0074's repo-only `autopilot.maxAutoReplans` on top of those
+    # 137, measured by running this test on T-0074-build after merging main
+    # 8c0843ca.
     assert "autopilot.maxAutoReplans" in declared
-    assert len(declared) == 133
+    assert len(declared) == 138
+
+
+def test_forbidden_trailers_is_global_settable_and_defaults_empty():
+    """T-0066: `git.forbiddenTrailers` is in BOTH layers, default `[]` (the
+    list is the switch; empty means off). Global-settable because the owner
+    who forbids a trailer forbids it on every repo of the machine, and
+    `is_global_path` requires a global key to be a repo key too."""
+    assert crew_config.is_global_path("git.forbiddenTrailers")
+    assert crew_config.default_config()["git"] == {"forbiddenTrailers": []}
+    assert crew_config.default_global_config()["git"] == {"forbiddenTrailers": []}
 
 
 def test_tickets_base_branch_is_repo_only_and_null_by_default():
@@ -1702,7 +1726,8 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
                               "context.autoClear.delaySeconds",
                               "context.autoClear.minHandoffLines",
                               "context.autoClear.onlyRepos",
-                              "context.autoClear.onlySessions"]
+                              "context.autoClear.onlySessions",
+                              "context.autoClear.wrapUp"]
     assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 
@@ -2017,6 +2042,7 @@ def _repo_bytes(root):
     ("context.autoClear.onlySessions", ["y"]),
     ("autopilot.frobnicate", 1),
     ("context.autoClear.enabled", True),
+    ("context.autoClear.wrapUp", True),
     ("resume.auto", True),
     # `0 == False` in Python; the readers test `is False`, so 0 vetoes nothing.
     ("context.autoClear.enabled", 0),

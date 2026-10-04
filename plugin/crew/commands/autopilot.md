@@ -45,7 +45,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .
 
 `settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say `autopilot.mode: plan`
 in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; nothing here deploys),
-`maxAutoReplans` (0: off), `approval` and `questions`. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:`
+`maxAutoReplans` (0: off), `approval`, `questions`, `sleep=`. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:`
 and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is
 open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).
 `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
@@ -103,7 +103,6 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 
 ## 5. Context runs low, and the report
 
-When context-watch asks for a handoff: finish the step in hand, run `/crew:handoff` with
-`resume: /crew:autopilot <ticket>` (T-0006's grammar) and `branch:`/`head:` on their own lines,
-then stop. Report the ticket and its source, each phase run with its command, every
+When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with
+`resume: /crew:autopilot <ticket>` as its resume line, then stop. Report the ticket and its source, each phase run with its command, every
 `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.

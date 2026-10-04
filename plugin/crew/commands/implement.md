@@ -44,9 +44,11 @@ test it names, watch it fail, make the minimal change, watch it pass, then the n
 match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 
 Who types is not assumed: read the effective dev table with
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
-and dispatch whatever `dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch
-prompt. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models` and dispatch whatever
+`dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch prompt. A dispatched prompt
+carries no attribution or trailer instruction of its own, not even one a harness reminder supplied: the owner's own
+instructions decide. `/crew:done` reports `git.forbiddenTrailers` hits; they are refused at commit once the scope-guard
+change lands. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
 returns, with what actually ran, never the pin:
 
 ```bash
@@ -85,9 +87,8 @@ confirm the `.crew/verify.json` rule it falls under actually fires.
 
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
-Coverage above is the tests. Then `/crew:docs`, deciding which documents this
-touches ("none" is common and correct). Then commit, and check the code maps,
-diagrams and code graph this ticket's changed paths reach:
+Coverage above is the tests. Then `/crew:docs`, deciding which documents this touches ("none" is common and
+correct). Then commit, and check the code maps, diagrams and code graph this ticket's changed paths reach:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1
@@ -115,6 +116,5 @@ A catch-up after review lands in `/crew:done`'s order (resolve, bump, refresh, c
 
 ## 7. Done is not this command's
 
-`/crew:done $1` moves it to `done` once the review receipt, the gate, the
-completion audit and the artifact check all pass — this command does not set
-`done` itself.
+`/crew:done $1` moves it to `done` once the review receipt, the gate, the completion audit and the artifact check all
+pass — this command does not set `done` itself.

@@ -139,7 +139,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>133 keys</strong>: 74 settable in the machine-global file, 59 repo-only.</p>
+<p><strong>138 keys</strong>: 76 settable in the machine-global file, 62 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -775,6 +775,14 @@ the plugin.</p>
 <td>list of session ids, or null (coerced in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
 <td>1.0.25</td>
 <td>As <code>onlyRepos</code>, for session ids; with both set, both must match.</td>
+</tr>
+<tr>
+<td><code>context.autoClear.wrapUp</code></td>
+<td>machine-arms</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
+<td>1.0.334</td>
+<td>Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly <code>true</code>), only where <code>enabled</code> is armed; a repo <code>false</code> vetoes it.</td>
 </tr>
 <tr>
 <td><code>context.autoWrapUp</code></td>
@@ -1530,6 +1538,29 @@ the plugin.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="git"><code>Git</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>git.forbiddenTrailers</code></td>
+<td>both</td>
+<td><code>[]</code></td>
+<td>list of trailer tokens (letters, digits and <code>-</code>, no <code>:</code>) (checked in <code>plugin/crew/hooks/scripts/crew_trailers.py</code>)</td>
+<td>1.0.328</td>
+<td>Commit trailer tokens the owner forbids, reported by <code>/crew:done</code>. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (CONFIG.md section 22).</td>
+</tr>
+</tbody>
+</table>
 <h3 id="scope"><code>Scope</code></h3>
 <table>
 <thead>
@@ -1621,6 +1652,30 @@ the plugin.</p>
 <td>non-negative integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
 <td>1.0.402</td>
 <td>Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.sleep.schedule</code></td>
+<td>repo</td>
+<td><code>null</code></td>
+<td>HH:MM-HH:MM or null (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
+<td>1.0.332</td>
+<td>A nightly window, <code>HH:MM-HH:MM</code> in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies.</td>
+</tr>
+<tr>
+<td><code>autopilot.sleep.approval</code></td>
+<td>repo</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>human</code> | <code>self</code> | <code>risk</code> (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
+<td>1.0.332</td>
+<td><code>autopilot.approval</code> inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.sleep.questions</code></td>
+<td>repo</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>human</code> | <code>self</code> | <code>risk</code> (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
+<td>1.0.332</td>
+<td><code>autopilot.questions</code> inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning.</td>
 </tr>
 </tbody>
 </table>
@@ -1778,29 +1833,6 @@ the plugin.</p>
 <td>off</td>
 <td><code>off</code> | <code>plan</code> | <code>backlog</code></td>
 <td>Adds <code>backlog</code>: work a goal's tickets one at a time.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="t-0017">T-0017</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>context.autoClear.wrapUp</code></td>
-<td>new key</td>
-<td>machine-arms</td>
-<td>null</td>
-<td></td>
-<td>Machine opt-in for the automatic wrap-up; only exactly <code>true</code> arms it.</td>
 </tr>
 </tbody>
 </table>

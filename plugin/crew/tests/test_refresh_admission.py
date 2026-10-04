@@ -1268,6 +1268,75 @@ def test_an_index_mode_check_that_cannot_run_is_could_not_tell(anchored, monkeyp
             "--cached" in reason) == (None, True, True), reason
 
 
+# --- L-0688: T-0094 review round 8 --------------------------------------------
+# `git rm --cached` left the file on disk in admissible shape, and both diff
+# passes print `:100644 000000 ... D` for it, which the mode loop skipped; the
+# commit then deletes what the verdict called a re-anchor. A new artifact with
+# no base copy, untracked or staged, stays judged as before.
+
+@pytest.mark.parametrize("kind", ["map", "diagram", "graph"])
+def test_an_artifact_removed_from_the_index_but_left_on_disk_is_refused(anchored, kind):
+    root, base = anchored
+    rel, data, companions = _admitted_shape(root, kind)
+    path = root.joinpath(*rel.split("/"))
+    path.write_bytes(data)
+    git(root, "rm", "-q", "--cached", "--", rel)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (git(root, "ls-files", "-s", "--", rel), path.is_file(),
+            got[rel][0], "removed from the index" in got[rel][1]) == ("", True, False, True), got
+
+
+def test_a_new_untracked_rendered_file_beside_its_source_is_still_admitted(anchored):
+    root, base = anchored
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+    pdf = "docs/diagrams/flow.pdf"
+    write(root, pdf, "pdf bytes\n")
+
+    got = _verdicts(root, base, REACH, [FLOW, pdf])
+
+    assert (git(root, "ls-files", "--", pdf), got[FLOW][0], got[pdf][0]) == ("", True, True), got
+
+
+def test_a_new_staged_artifact_is_still_admitted(anchored):
+    root, base = anchored
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+    png = "docs/diagrams/flow.png"
+    write(root, png, "png bytes\n")
+    git(root, "add", "--", png)
+
+    got = _verdicts(root, base, REACH, [FLOW, png])
+
+    assert (git(root, "diff", "--cached", "--name-status", base, "--", png).split(),
+            got[FLOW][0], got[png][0]) == (["A", png], True, True), got
+
+
+@pytest.mark.parametrize("kind", ["map", "diagram"])
+def test_an_artifact_unmerged_in_the_index_is_refused_as_unmerged(anchored, kind):
+    """L-0688 review NIT: a conflicted merge leaves the artifact unmerged, and
+    the `--cached` pass prints `:100644 000000 ... U` for it -- the same modes
+    as a `git rm --cached`. It is still refused, but not as a deletion."""
+    root, base = anchored
+    rel = APP if kind == "map" else FLOW
+    trunk = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    git(root, "checkout", "-q", "-b", "side")
+    write(root, rel, "side\n")
+    git(root, "commit", "-qam", "side")
+    git(root, "checkout", "-q", trunk)
+    write(root, rel, "trunk\n")
+    git(root, "commit", "-qam", "trunk")
+    git(root, "merge", "-q", "side", check=False)
+    rel, data, companions = _admitted_shape(root, kind)
+    root.joinpath(*rel.split("/")).write_bytes(data)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (git(root, "diff", "--name-only", "--diff-filter=U"), got[rel][0],
+            "unmerged" in got[rel][1], "removed from the index" in got[rel][1]) == \
+        (rel, False, True, False), got
+
+
 def _cfg(**dirs):
     cfg = {}
     if "diagrams" in dirs:

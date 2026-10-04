@@ -702,10 +702,8 @@ AUTOCLEAR_DEFAULTS = {
     "command": "/clear",
     "delaySeconds": 3,
     "minHandoffLines": 5,
-    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
-    # at `:187`. Missed on the first pass because the .ps1 consumers never
-    # read it, and the first pass read the Windows scripts -- a default set
-    # from one platform's consumer is a default half-derived.
+    # Wayland only (`auto-clear.sh`, the `wtype` method). The first pass read only
+    # the .ps1 consumers: a default from one platform's consumer is half-derived.
     "unsafeFocus": False,
     # NARROWING-ONLY, and read from the machine file only
     # (`crew_autocycle.in_scope`, `auto-clear.ps1`'s twin): null arms every
@@ -715,6 +713,8 @@ AUTOCLEAR_DEFAULTS = {
     # be widening, which is exactly what `enabled` forbids.
     "onlyRepos": None,
     "onlySessions": None,
+    # T-0017: auto wrap-up. The `enabled` rule, and it arms only where `enabled` does.
+    "wrapUp": None,
 }
 
 # The `resume` block (T-0006): auto-resume after /clear or a manual /compact.
@@ -1127,12 +1127,14 @@ AUTONOMOUS_STOPS = (
 # `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is
 # read by crew_autopilot.deploy_allowed. Every AUTONOMOUS_STOPS entry above
 # binds it too: commands/autopilot.md names each, a test iterates the tuple.
-# `approval` and `questions` (T-0010) are `human|self|risk`: what autopilot
-# does at plan approval and at an open question. `risk` acts only on a spec
-# header saying `risk: low`; any other value reads as `human`, and approval
-# needs `scope.allowCliApproval: true`. `maxAutoReplans` (T-0074): 0 off, N replans max.
+# `approval`/`questions` (T-0010, plan approval and open questions) are
+# `human|self|risk`: `risk` acts only on a spec header saying `risk: low`, any
+# other value reads `human`, approval also needs `scope.allowCliApproval: true`
+# (crew_autopilot.approval_policy). `sleep` (T-0053): crew_sleep.py's window.
+# `maxAutoReplans` (T-0074): 0 off, N replans max.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
-                      "questions": "risk", "maxAutoReplans": 0}
+                      "questions": "risk", "maxAutoReplans": 0,
+                      "sleep": {"schedule": None, "approval": None, "questions": None}}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work
