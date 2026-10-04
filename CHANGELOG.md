@@ -18,15 +18,23 @@ All notable changes to this repository are documented here. Format follows [Keep
   written; a router that raises or answers an unknown shape asks; a name the router does
   not know produces no line. A row goes live the day its ticket adds the name to
   `crew_autopilot.AVAILABLE`, with no edit to `crew_route.py`.
-- **What never routes.** A bare pronoun as the work (`handle it`), work naming approve,
-  any `?` except on the two status questions; work holding a quote, `$`, a backtick or a
-  backslash asks the user to rephrase (`/crew:autopilot` refuses those characters). A
+- **One structural check, not a phrase list.** Assign, goal and focus text is folded
+  (NFKC, casefold, format characters removed). No line: a Unicode line break (U+2028,
+  U+2029, U+0085), a first token such as `it`, `that` or `everything`, or the stem
+  `approv`, also with every non-letter removed. Ask: a non-ASCII letter left after
+  folding (Cyrillic, dotless i, long s, Kelvin sign), a `/`, a trailing negation, or a
+  quote, `$`, backtick or backslash (`/crew:autopilot` refuses those). `?` is accepted
+  only on the two status questions. A router answer whose `sub` is not a string naming
+  the subcommand asked about asks; a stop with no reason reads "not available yet". A
   `goal` route also asks Claude to say what changed and how to undo it. Every decision
   carries `unavailable`, and a non-ticket ask no longer says "which ticket".
+- **Ticket ids are ASCII digits.** `_ID` is `[0-9]+`, not `\d+`, for every row, so
+  `implement T-\u0661` (an Arabic-Indic digit) no longer matches.
 - **Tests.** `test_crew_route.py` and `test_crew_route_hook.py` (both wrappers): one case
   per gate branch, must-route and must-not-route prompts, shell characters, the undo line,
-  bounded lines. Fourteen local sabotage mutations of the new branches each went red; they
-  are committed separately as L-0661, because `sabotage*.py` is harness.
+  bounded lines, and review round 1's must-not-route and must-ask cases. Thirty-one local
+  sabotage mutations of the new branches each went red; they are committed separately as
+  L-0661, because `sabotage*.py` is harness.
 
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 
