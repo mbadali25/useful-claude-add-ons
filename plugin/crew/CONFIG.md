@@ -162,12 +162,14 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **73**
-leaves. `leaf_paths(default_config())` yields **131**, so **58** are repo-only.
-For all 131, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **75**
+leaves. `leaf_paths(default_config())` yields **133**, so **58** are repo-only.
+For all 133, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on T-0066's branch after merging main c9263465; `git.forbiddenTrailers` is the
-key T-0066 added to both layers. 72 / 130 / 58 on T-0061's branch after merging
+on T-0066's branch after merging main edb2b8ff; `git.forbiddenTrailers` is the
+key T-0066 added to both layers. 74 / 132 / 58 on main after T-0013 added
+`resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers, while
+this paragraph still said 72 / 130. 72 / 130 / 58 on T-0061's branch after merging
 main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
@@ -679,13 +681,14 @@ them:
 
 ---
 
-## 10. Global-settable keys — 73
+## 10. Global-settable keys — 75
 
-73 measured (`leaf_paths(default_global_config())`, crew 1.0.330, T-0066 after
-T-0061); the table below lists 67 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+75 measured (`leaf_paths(default_global_config())`, crew 1.0.333, T-0066 after
+T-0013 and T-0061); the table below lists 67 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
 global-settable and not tabled here; `shellRoute.mode` and `shellRoute.distro`
-are tabled in §11 with both layers' defaults.
+are tabled in §11 with both layers' defaults, and `resume.typeDelaySeconds` and
+`resume.readyTimeoutSeconds` in §14b.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -2767,7 +2770,7 @@ included.
 
 ## 22. `git.forbiddenTrailers` — commit trailers the owner forbids
 
-`git.forbiddenTrailers` (T-0066, since 1.0.330) is a list of commit trailer
+`git.forbiddenTrailers` (T-0066, since 1.0.333) is a list of commit trailer
 tokens, such as `["Co-Authored-By"]`, that the owner does not want on any commit
 crew's sessions make. crew takes no side on attribution: the owner's own
 instructions (CLAUDE.md, memory) decide, crew never adds a trailer, and a

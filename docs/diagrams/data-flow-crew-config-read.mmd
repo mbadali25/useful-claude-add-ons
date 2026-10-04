@@ -2,13 +2,14 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py
 %% Purpose: The read side: the three config sources (built-in defaults, the machine file, the repo file), how the machine layer is pruned to its template before merging, and how resolve_config() merges them.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
-%% Re-drawn for T-0066 (crew 1.0.330, merging origin/main c9263465): crew_config.py gains a `git` block (forbiddenTrailers,
-%%    default []) in both default functions. Counts re-executed: 131 / 73 / 58, 19 global blocks. DEF and TMPL updated.
-%%    Every crew_config.py and crew_state.py line cite re-pointed with grep -n on T-0066's branch (crew_guards and
-%%    crew_upgrade cites unchanged).
-%% Note DEF: default_config() plugin/crew/hooks/scripts/crew_config.py:245 <b>131 leaves</b> (executed, this
-%%    pass) composed from crew_state's PM_DEFAULTS :1140, QA_DEFAULTS :1192, DEV_DEFAULTS :1202,
-%%    WORKTREE_DEFAULTS :1230, CONTEXT_DEFAULTS :765, RESUME_DEFAULTS :728, AUTOPILOT_DEFAULTS :1129 -
+%% Re-drawn for T-0066 (crew 1.0.333, merging origin/main edb2b8ff): crew_config.py gains a `git` block (forbiddenTrailers,
+%%    default []) in both default functions. Counts re-executed: 133 / 75 / 58 (T-0013's two resume keys on main
+%%    made it 132 / 74 / 58), 19 global blocks. DEF and TMPL updated. Every crew_config.py and crew_state.py line
+%%    cite re-pointed with grep -n on the merged tree (main's RESUME_DEFAULTS comment moved crew_state below :728
+%%    by 5; crew_guards and crew_upgrade cites unchanged).
+%% Note DEF: default_config() plugin/crew/hooks/scripts/crew_config.py:245 <b>133 leaves</b> (executed, this
+%%    pass) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207,
+%%    WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1134 -
 %%    repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS
 %%    :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and
 %%    crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 /
@@ -19,7 +20,7 @@
 %% Note REPO: .crew/config.json - schema 7 crew_state.load_config()
 %%    plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the
 %%    TwoFiles section below
-%% Note TMPL: default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 <b>73 leaves</b> (executed,
+%% Note TMPL: default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 <b>75 leaves</b> (executed,
 %%    this pass) across <b>19 blocks</b>: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves),
 %%    notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs,
 %%    bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route,
@@ -29,21 +30,21 @@
 %% Note FILT: filter_global() plugin/crew/hooks/scripts/crew_config.py:725 returns (kept, ignored)
 %% Note NULLS: without_null_shadows() plugin/crew/hooks/scripts/crew_config.py:676 drops a repo <i>null</i>
 %%    ONLY where the global layer supplies a real value.
-%% Note M1: merge_defaults(default_config(), global) call: crew_config.py:853 def: plugin/crew/hooks/scripts/crew_state.py:1380
+%% Note M1: merge_defaults(default_config(), global) call: crew_config.py:853 def: plugin/crew/hooks/scripts/crew_state.py:1385
 %% Note OUT: resolved config <i>repo beats global beats default</i> this is ONLY .crew/config.json's
 %%    precedence - autoClear's own read path bypasses it, below
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>131 leaves, repo template"]
+        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>133 leaves, repo template"]
         GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
         REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
     end
 
     subgraph Gate["The global layer is filtered BEFORE it is merged"]
         direction TB
-        TMPL["<b>default_global_config()</b><br/>crew_config.py:432<br/>73 leaves across 19 blocks"]
+        TMPL["<b>default_global_config()</b><br/>crew_config.py:432<br/>75 leaves across 19 blocks"]
         PRUNE["<b>_prune()</b><br/>keeps only keys present<br/>in the template"]
         FILT["<b>filter_global()</b><br/>returns (kept, ignored)"]
     end

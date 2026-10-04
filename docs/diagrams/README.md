@@ -270,14 +270,14 @@ flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>131 leaves, repo template"]
+        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>133 leaves, repo template"]
         GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
         REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
     end
 
     subgraph Gate["The global layer is filtered BEFORE it is merged"]
         direction TB
-        TMPL["<b>default_global_config()</b><br/>crew_config.py:432<br/>73 leaves across 19 blocks"]
+        TMPL["<b>default_global_config()</b><br/>crew_config.py:432<br/>75 leaves across 19 blocks"]
         PRUNE["<b>_prune()</b><br/>keeps only keys present<br/>in the template"]
         FILT["<b>filter_global()</b><br/>returns (kept, ignored)"]
     end
@@ -307,14 +307,14 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 131 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1140, QA_DEFAULTS :1192, DEV_DEFAULTS :1202, WORKTREE_DEFAULTS :1230, CONTEXT_DEFAULTS :765, RESUME_DEFAULTS :728, AUTOPILOT_DEFAULTS :1129 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
+| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 133 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1134 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
 | `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:767 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
 | `REPO` | .crew/config.json - schema 7 crew_state.load_config() plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the TwoFiles section below |
-| `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 73 leaves (executed, this pass) across 19 blocks: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route, shellRoute - the single definition both rules below are enforced against |
+| `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 75 leaves (executed, this pass) across 19 blocks: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route, shellRoute - the single definition both rules below are enforced against |
 | `PRUNE` | _prune() plugin/crew/hooks/scripts/crew_config.py:699 keeps only keys present in the template. Descends structurally, so naming a block grants only the leaves under it. |
 | `FILT` | filter_global() plugin/crew/hooks/scripts/crew_config.py:725 returns (kept, ignored) |
 | `NULLS` | without_null_shadows() plugin/crew/hooks/scripts/crew_config.py:676 drops a repo null ONLY where the global layer supplies a real value. |
-| `M1` | merge_defaults(default_config(), global) call: crew_config.py:853 def: plugin/crew/hooks/scripts/crew_state.py:1380 |
+| `M1` | merge_defaults(default_config(), global) call: crew_config.py:853 def: plugin/crew/hooks/scripts/crew_state.py:1385 |
 | `OUT` | resolved config repo beats global beats default this is ONLY .crew/config.json's precedence - autoClear's own read path bypasses it, below |
 
 - **Source:** `data-flow-crew-config-read.mmd`
@@ -365,9 +365,9 @@ flowchart TB
 
     subgraph Split["What may be set where - measured, not asserted (executed this pass)"]
         direction TB
-        S1["<b>73 global-settable</b> leaves<br/>across nineteen blocks"]
+        S1["<b>75 global-settable</b> leaves<br/>across nineteen blocks"]
         S2["<b>58 repo-only</b> leaves<br/>(set difference, executed)"]
-        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>131 / 73 / 58"]
+        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>133 / 75 / 58"]
         S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus<br/>is excluded from the global template"]
         S1 --- S2 --- S3 --- S4
     end
@@ -377,10 +377,10 @@ flowchart TB
 |---|---|
 | `A2` | The WRITE path additionally rejects VALUES the READ path only reports. |
 | `A3` | resolve_config NEVER raises - a malformed file must not wedge every session on the machine. |
-| `S1` | 73 global-settable leaves, across nineteen blocks: qa, dev, worktree, secondOpinion, memory, notify, pm, context.autoClear, docs, bitbucket, github, install, guards (all TEN), change, resume (T-0006: machine opt-in, repo may only veto), environments (prodUnattended only, T-0005), route (T-0023: route.enabled, repo beats machine - read by crew_route.settings through resolve_config), shellRoute (T-0040: mode + distro, both layers), git (T-0066: forbiddenTrailers, both layers, combined by UNION in crew_trailers.forbidden, not precedence) |
+| `S1` | 75 global-settable leaves, across nineteen blocks: qa, dev, worktree, secondOpinion, memory, notify, pm, context.autoClear, docs, bitbucket, github, install, guards (all TEN), change, resume (T-0006: machine opt-in, repo may only veto; T-0013: typeDelaySeconds, readyTimeoutSeconds), environments (prodUnattended only, T-0005), route (T-0023: route.enabled, repo beats machine - read by crew_route.settings through resolve_config), shellRoute (T-0040: mode + distro, both layers), git (T-0066: forbiddenTrailers, both layers, combined by UNION in crew_trailers.forbidden, not precedence) |
 | `S2` | 58 repo-only leaves (set difference, executed), environments.nonProd (T-0005), tickets.baseBranch (T-0061), autopilot.deploy (T-0072) and autopilot.approval/questions (T-0010) among them. Whole blocks absent from the global template: autopilot, cloud, emergency, graph, jira, obsidian, platform, production, roles, schema, scope, sdp, tier, tracker, verifyGate - cloud and scope are NEW repo-only blocks since the previous anchor (cloud identity pins, the T3 scope guard); autopilot is NEW at 07ca3972 (T-0004, mode + maxPhases, CONFIG.md §20; deploy added by T-0072, approval + questions by T-0010) |
-| `S3` | Counts are executed, not read by eye. 131 repo-template / 73 global / 58 repo-only on T-0066 after merging main c9263465 (130 / 72 / 58 on T-0061 after main 34d9f267, 129 / 72 / 57 on T-0040-land's merge of main 844bfc36, 127 / 70 / 57 on its merge of 6a8c60b1, 125 / 70 / 55 on T-0040's branch, 125 / 68 / 57 at d7c7c75c, T-0010-solo's merge of 6387ab49, 123 / 68 / 55 on T-0072's merge of main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53 at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6, 117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives the re-measure command. |
-| `S4` | Consent is not capability. context.autoClear.unsafeFocus is excluded from the global template on purpose (AUTOCLEAR_CONSENT_KEYS, crew_state.py:711) - a Wayland focus-typing risk accepted once must not arm for every repo. |
+| `S3` | Counts are executed, not read by eye. 133 repo-template / 75 global / 58 repo-only on T-0066 after merging main edb2b8ff (132 / 74 / 58 on main after T-0013, 131 / 73 / 58 on T-0066 after main c9263465, 130 / 72 / 58 on T-0061 after main 34d9f267, 129 / 72 / 57 on T-0040-land's merge of main 844bfc36, 127 / 70 / 57 on its merge of 6a8c60b1, 125 / 70 / 55 on T-0040's branch, 125 / 68 / 57 at d7c7c75c, T-0010-solo's merge of 6387ab49, 123 / 68 / 55 on T-0072's merge of main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53 at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6, 117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives the re-measure command. |
+| `S4` | Consent is not capability. context.autoClear.unsafeFocus is excluded from the global template on purpose (AUTOCLEAR_CONSENT_KEYS, crew_state.py:746) - a Wayland focus-typing risk accepted once must not arm for every repo. |
 
 - **Source:** `data-flow-crew-config-split.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`
