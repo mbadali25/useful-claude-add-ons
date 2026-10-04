@@ -500,11 +500,11 @@ that changed shape or are newly documented here:
   start inherit the previous rule's pass), `:2042` the private record
   directory (`New-Item` refuses an existing name; 0700 off Windows; `.crew/`
   fallbacks absolute from `$root`, since `[IO.File]::Open` resolves relative
-  paths against the process directory), `:2105` the wrapper (record path in
+  paths against the process directory), `:2108` the wrapper (record path in
   `CREW_VERIFY_RULE_DONE`, unset before `eval`, kept as the shell variable
   `RULE_DONE_FILE`), the call wrapped in try/catch so a launch failure leaves
-  `$rc` `$null`, `:2120` the bounded read, `:2235` the table, `:2256` the
-  output, `:2294` the summary. `verify_record.py:988` - `_sync`'s branch for
+  `$rc` `$null`, `:2123` the bounded read, `:2238` the table, `:2259` the
+  output, `:2297` the summary. `verify_record.py:988` - `_sync`'s branch for
   any other status - is where `unknown` lands: the rule's record entry is left
   as it was. Tests: `plugin/crew/tests/test_verify_gate_rule_completion.py`
   (sh and ps1; ps1 runs wherever pwsh exists; the [ps1] halves are `slow`

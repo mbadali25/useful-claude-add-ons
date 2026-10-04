@@ -2045,7 +2045,10 @@ foreach ($ident in $cmds) {
         if (-not (Test-Path -LiteralPath $doneBase -PathType Container)) { continue }
         $candidate = Join-Path $doneBase (".verify-rule-done." + [System.IO.Path]::GetRandomFileName())
         New-Item -ItemType Directory -Path $candidate -ErrorAction Stop | Out-Null
-        if ((Test-Path variable:IsWindows) -and -not $IsWindows) {
+        # The real-OS test, not the $env:OS seam (the suite fakes OS=Windows_NT
+        # on Linux), in the form 5.1 survives: no $IsWindows there means Windows.
+        $doneDirRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+        if (-not $doneDirRealWindows) {
           [System.IO.File]::SetUnixFileMode($candidate, [System.IO.UnixFileMode]'UserRead, UserWrite, UserExecute')
         }
         $ruleDoneDir = $candidate

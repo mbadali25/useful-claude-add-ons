@@ -221,6 +221,8 @@ def test_the_cap_is_absent_below_linux_4_7(monkeypatch, release, enforced):
     older or unreadable kernel version says absent, never enforced."""
     monkeypatch.setattr(sabotage_bound.sys, "platform", "linux")
     monkeypatch.setattr(sabotage_bound.platform, "release", lambda: release)
+    if sabotage_bound.resource is None:  # Windows: only the kernel check is under test
+        monkeypatch.setattr(sabotage_bound, "resource", object())
 
     line = sabotage_bound.describe(4096, 600)
 
