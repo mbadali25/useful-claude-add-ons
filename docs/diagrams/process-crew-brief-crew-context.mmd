@@ -1,0 +1,43 @@
+%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py
+%% Purpose: The crew-context SessionStart hook: how it reads the config, applies the stale-handoff rule and the auto-resume decision, and what it emits as additionalContext for each session source.
+%% Part of process-crew-brief.mmd (the overview, which keeps the re-anchoring history).
+%% crew_context.py:993 no .crew/ directory -> emits nothing; :121-132 reads
+%%   crew.json else config.json; :1000-1003 inject:false -> incident banner only;
+%%   :881-892 branch@HEAD, incident banner, codemap-behind line; :893 stale
+%%   verdict + archive (_handoff_verdict :638); :900-901 auto-resume decision
+%%   (resume_decision :661, crew_resume.decide; `off` unless armed and source is
+%%   clear/compact); :908-910 startup -> pointer + next action; :911-923 other
+%%   sources -> full note, next action first, then the auto-resume line; :924 no
+%%   note but a resume line -> that line alone; :1090 JSON additionalContext (LF stdout, :1086-1089).
+%% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
+%%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
+%% Note stale: crew_state.py:646, :859-914
+%% Note cc6: machine resume.auto true, no repo veto; source clear / manual compact; note
+%%    written by this session (T-0042); :900, crew_resume.decide
+%% Note rs1: ready to run the re-rendered command; resume_line :687, never initialUserMessage
+flowchart TB
+    CC[crew-context]
+    subgraph crewContext["crew-context (crew_context.py)"]
+        CC --> cc1{".crew/ directory?<br/>:993"}
+        cc1 -- no --> ccx([emit nothing])
+        cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
+        cc2 --> cc3{"memory.inject?<br/>:1000-1003"}
+        cc3 -- off --> cc4[incident banner only]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:881-892"]
+        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch"}
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
+        stale -- no --> cc6
+        arch --> cc6
+        stale -. "stale but the move failed:<br/>note stays, stale passed on (:893)" .-> cc6
+        cc6{"auto-resume armed?<br/>:900"}
+        cc6 -- "no (off)" --> src{"source?"}
+        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :687"]
+        rs1 --> src
+        src -- startup --> ptr["pointer + next action<br/>:908-910"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
+    end
+
+    ptr --> out(["additionalContext JSON<br/>:1090"])
+    full --> out
+    cc4 --> out

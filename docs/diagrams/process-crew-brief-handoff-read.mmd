@@ -1,0 +1,23 @@
+%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/handoff-read.sh
+%% Purpose: The handoff-read SessionStart hook: the three checks that make it exit, and when it prints the handoff note. In crew 1.0 it usually exits, because crew-context delivers the note instead.
+%% Part of process-crew-brief.mmd (the overview, which keeps the re-anchoring history).
+%% handoff-read.sh:34 exits unless source is clear|compact|resume|fork;
+%%   :41 exits silently when memory.inject is on (the 1.0 default) - crew-context
+%%   delivers the handoff instead; :42 claim; :44 needs .crew/config.json.
+%% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
+%% so a 1.0-only repo with inject:false gets no handoff from either hook -
+%% traced in the sh flavour only; the ps1 body was not read past :241.
+flowchart TB
+    HR[handoff-read]
+    subgraph handoffRead["handoff-read.sh"]
+        HR --> hr1{"source is<br/>clear/compact/resume/fork?<br/>:34"}
+        hr1 -- no --> hrx([exit 0])
+        hr1 -- yes --> hr2{"memory.inject on?<br/>:41 (1.0 default: on)"}
+        hr2 -- yes --> hrx
+        hr2 -- no --> hr3{".crew/config.json?<br/>:44"}
+        hr3 -- no --> hrx
+        hr3 -- yes --> hr4[stale check / print note<br/>:63-89]
+    end
+
+    hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
