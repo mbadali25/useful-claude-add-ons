@@ -1190,7 +1190,7 @@ line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin; a
 `handoff-author.json` that could not be read; no record of which session wrote
-this handoff; the handoff changed since its author session wrote it; the
+this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
 identified; a `<git-common-dir>/crew/resume-state.json` that cannot be read,
 is not the shape `record_run` writes, or whose directory cannot be searched
@@ -1235,7 +1235,10 @@ while the directory is still writable, an old `manual` record lives for up to
 (the `precompact-*.json` sweep can fail with no key to mark). Two sessions
 writing the handoff in the same instant can attribute it to the wrong one;
 the record hashes the bytes it reads under a lock, which narrows the window
-but does not close it.
+but does not close it. And when `crew_resume.py` can neither unlink nor blank
+a stale `handoff-author.json` nor write its `.stuck` marker while `os.access`
+still reports it writable (EIO, ENOSPC, an immutable attribute, a Windows file
+held open), the stale author record is trusted.
 
 **Unchanged, and reported to the owner:** a malformed repo file still vetoes
 nothing. It is the same class as round 4's FIX (an unreadable veto reads as no

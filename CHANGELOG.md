@@ -32,6 +32,40 @@ All notable changes to this repository are documented here. Format follows [Keep
   line (L-0670) and the committed sabotage entries plus the `review.md`
   sentence (L-0671, a tooling-only PR).
 
+### Fixed - `crew` 1.0.327: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
+
+- **T-0023 r2 FIX 1 (route clipping).** A route whose command `_clip` would change - cut past
+  `FIELD_CHARS["command"]` (200) or with its whitespace reflowed - is now an `ask` in `decide`, and
+  `render` refuses one the same way, so the router never passes `--refresh aaaa...` for a longer
+  argument. Tests: `test_an_over_long_command_asks_instead_of_clipping`, its 200-character boundary
+  twin, the reflow neighbour (four commands), a `render`-only defence test; the three huge-command
+  rows of `test_render_is_one_bounded_line_whatever_the_fields` now end with the ask tail, and two
+  short-command route rows keep the ticket, source and phase clips under test.
+- **T-0023 r2 FIX 2 (Unicode line boundaries).** `normalise` refuses every line boundary
+  `str.splitlines` knows (U+000B, U+000C, U+001C-U+001E, U+0085, U+2028, U+2029 beside `\n`/`\r`).
+  `test_every_unicode_line_boundary_is_not_a_route` derives the set and pins it; U+00A0, tab and
+  U+2003 still route.
+- **T-0042 r2 FIX 1 (undeletable author record).** `_drop_author` blanks `handoff-author.json` in
+  place when the unlink is refused (a crew state directory without write permission); an empty
+  record reads as unreadable and waits. `test_an_undeletable_author_record_is_blanked_and_waits`
+  (lock and write paths), the neighbour now refuses the blank too, and a real-permission twin
+  (skips as root; passed under `setpriv` as uid 65534). Review round 1 FIX: when the unlink AND
+  the blank both fail, `_drop_author` leaves `handoff-author.json.stuck` and `_author_refusal` waits
+  while it stands (or cannot be stat'ed) until a later record lands; when the marker cannot be
+  written either, a record that neither its file nor its directory lets anyone replace or remove
+  is not trusted. Six new tests, including a 0444-record-in-a-0555-directory twin that returned
+  `run` before the fix under `setpriv`; both new wait reasons are named in the four reason lists.
+  Review round 2: CONFIG.md's accepted risks name the residual (unlink, blank and marker all fail
+  while `os.access` reports writable: the stale record is trusted), and the stuck reason says how
+  to clear it.
+- **T-0042 r2 FIX 2 (pwsh-only fixture).** `_claude` in `test_crew_resume_hook.py` skips by name
+  without bash instead of raising TypeError; `test_never_emits_initial_user_message` is parametrised
+  and its `wait`/`off` cases no longer need the fixture.
+- **Not in this change.** T-0024 r4's two FIXes (`crew_ticket.py` `_index_closed`, `approval_hook.py`
+  `_wrote`) and every new sabotage entry are harness paths (`scripts/check-tooling-pr.py` `HARNESS`),
+  so they land in a harness-only follow-up. Every existing sabotage anchor on the changed files is
+  kept, and all 75 shipped mutations aimed at them were re-run through `sabotage.py`: RED.
+
 ### Changed — `crew` 1.0.326: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
 
 - `crew_train.py check-land`'s two catch-up refusals (merge-tree conflict, base moved in Touch)

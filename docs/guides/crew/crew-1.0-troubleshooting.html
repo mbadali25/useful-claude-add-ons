@@ -842,7 +842,7 @@ cleanly, clear, and pick up where it stopped.</p>
    unknown command, or an excluded one such as <code>/crew:approve</code>); the note's <code>branch:</code> or <code>head:</code>
    does not match the checkout; the ticket directory or goal file is missing; the command is not
    installed; <code>handoff-author.json</code> could not be read; no record of which session wrote this
-   handoff; the handoff changed since its author session wrote it; the handoff was written by
+   handoff; a later handoff write could not replace or remove <code>handoff-author.json</code> (<code>handoff-author.json.stuck</code>), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the handoff was written by
    another session; this session's process could not be identified (always on a host without
    <code>/proc</code>, such as native Windows or macOS); the record of past auto-resumes (<code>resume-state.json</code>)
    could not be read, or its directory cannot be searched; this handoff was already resumed; the
