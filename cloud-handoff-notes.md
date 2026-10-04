@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:44: Slot freed -> H1 harness bundle build started on #418 (T-0098+T-0109+T-0101, crew 1.0.400); #461/#422 to be closed as bundled at landing.
 - 14:44: WAVE1 #405 L-0688 built -> 760691de (crew 1.0.397; refusal for cached record -> 000000; 5 tests, 3 sabotages red; decisions Q1-Q3 = recommended). Review started. Harness follow-up for L-0540/H2: sabotage_refresh entry on the 000000 line.
 - 14:37: #365 round-3 16228584: 0/0/2 CLEAN. Carry at landing (stacked, lands after #364/#354): NIT1 _gate_stage must pick stage like _phase (spec gate stop wins) - else autopilot stops at owner instead of applying approved split (probe P4, pin in test); NIT2 split_report current= from _not_current.
 - 14:36: Cancelled 50 CI runs on spec-only drafts (owner OK). #366 e14b5a45: 0/0/1 CLEAN (fuzzed 62k pairs). #365 -> 16228584, round-3 review started. #347 round-2: 6 BLOCK/2 FIX/1 NIT (PS iex/group/assignment/glued-call bypasses, terragrunt exec wrappers) -> builder told to add fail-closed PS backstop. WAVE 1 started (v1.0.394-399): #403 T-0053, #407 T-0045, #398 T-0096, #405 L-0688, #450 T-0084, #416 T-0057. Plan: WAVES.md (64 feature/27 harness; H1-H4 bundles; 23 blocked incl. by #336 T-0009, #354, #394, missing T-0029/T-0030/L-0541).
