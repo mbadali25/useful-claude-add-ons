@@ -1541,3 +1541,46 @@ def test_base_main_with_a_step_of_unknown_files_refused():
     _, problems = crew_split.parse_slices(plan)
 
     assert any("slice 2" in p and "cannot tell" in p for p in problems), problems
+
+
+# --- review of #366: a step after the section, glob-vs-glob overlap, `## Step` -----
+
+def test_step_heading_after_the_slices_section_is_uncovered():
+    """A `### Step 5` written after `## PR slices` is still a plan step, so a
+    partition that leaves it out is refused, never silently short a step."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3, 4"))
+    plan = plan.replace("### Step 5: step 5\n", "").replace("Files: src/s5.py\n", "")
+    plan += "\n### Step 5: late\nFiles: src/s5.py\nTest: pytest\nRisk: low\n"
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("step 5 is in no slice" in p for p in problems), problems
+
+
+def test_base_main_with_two_overlapping_globs_cannot_tell():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"),
+        files={1: "plugin/crew/hooks/scripts/*.py", 3: "plugin/**/crew_split.py"}))
+
+    assert any("slice 2" in p and "Base: main" in p and "cannot tell" in p
+               for p in problems), problems
+
+
+def test_base_main_with_disjoint_glob_prefixes_allowed():
+    """Two globs under different literal directories are provably disjoint."""
+    slices, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"),
+        files={1: "docs/**", 2: "docs/b.md", 3: "src/**"}))
+
+    assert (problems, slices[1]["base"]) == ([], "main")
+
+
+def test_level_two_step_heading_refused():
+    """measure counts only `### Step`; a `## Step` would be counted by one
+    reader and not the other, so parse_slices refuses it."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("### Step 3: step 3", "## Step 3: step 3")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("## Step 3" in p and "### Step" in p for p in problems), problems

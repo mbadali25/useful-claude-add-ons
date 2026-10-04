@@ -153,6 +153,7 @@ _MINTED_RE = re.compile(r"^-[ \t]+Child[ \t]+(\d+):[ \t]*(\S+)[ \t]*$")
 _MINTED_HEAD_RE = re.compile(r"(?m)^##[ \t]+Minted\b.*$")
 _ANY_HEADING_RE = re.compile(r"^(#{1,3})\s+(.*?)\s*#*\s*$")
 _PLAN_STEP_RE = re.compile(r"^#{2,3}\s+Step\s+(\d+)\b", re.IGNORECASE)
+_WILD = re.compile(r"[*?\[]")
 _SLICE_RE = re.compile(r"^###\s+Slice\s+(\d+)\s*:?\s*(.*?)\s*$", re.IGNORECASE)
 _SLICE_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?(steps|base):[ \t]*(.*?)\s*$", re.IGNORECASE)
 MINTED_RULE = ("a ## Minted section is written by apply only: the last section, holding "
@@ -978,24 +979,28 @@ def apply(top, ticket, via, session=None):
 
 def _step_blocks(text):
     """{step number: the step's text} for every `## Step N` / `### Step N`
-    heading outside `## PR slices`. A block runs to the next heading of level
+    heading, wherever it sits: a Step heading written after `## PR slices`
+    is still a plan step (and ends that section), so a partition that leaves
+    it out reports it uncovered. A block runs to the next heading of level
     three or above."""
-    blocks, current, inside_slices = {}, None, False
+    blocks, current = {}, None
     for line in text.splitlines():
         heading = _ANY_HEADING_RE.match(line)
         if heading:
             current = None
-            level, title = len(heading.group(1)), heading.group(2)
-            if level <= 2:
-                inside_slices = _norm(title).casefold() == SLICES_HEADING.casefold()
             step = _PLAN_STEP_RE.match(line)
-            if step and not inside_slices:
+            if step:
                 current = int(step.group(1))
                 blocks.setdefault(current, [])
             continue
         if current is not None:
             blocks[current].append(line)
     return {n: "\n".join(lines) for n, lines in blocks.items()}
+
+
+def _level_two_steps(text):
+    """Step numbers written as `## Step N` rather than `### Step N`."""
+    return {int(m.group(1)) for m in re.finditer(r"(?im)^##\s+Step\s+(\d+)\b", text)}
 
 
 def _slice_section(text):
@@ -1005,8 +1010,11 @@ def _slice_section(text):
     inside = False
     for line in text.splitlines():
         heading = _ANY_HEADING_RE.match(line)
-        if heading and len(heading.group(1)) <= 2:
-            inside = _norm(heading.group(2)).casefold() == SLICES_HEADING.casefold()
+        if heading and (len(heading.group(1)) <= 2 or _PLAN_STEP_RE.match(line)):
+            # A Step heading ends the section too: it is a plan step, never
+            # part of the last slice's block.
+            inside = (not _PLAN_STEP_RE.match(line)
+                      and _norm(heading.group(2)).casefold() == SLICES_HEADING.casefold())
             found = found or inside
             continue
         if not inside:
@@ -1034,11 +1042,36 @@ def _step_list(value):
     return steps or None
 
 
+def _literal_dir(glob):
+    """The path segments before the first one holding a wildcard."""
+    parts = []
+    for part in glob.split("/"):
+        if any(c in part for c in "*?["):
+            break
+        parts.append(part)
+    return parts
+
+
+def _disjoint_globs(a, b):
+    """True only when two wildcard globs provably match nothing in common:
+    their literal leading directories diverge. Anything else is unknown."""
+    left, right = _literal_dir(a), _literal_dir(b)
+    common = min(len(left), len(right))
+    return left[:common] != right[:common]
+
+
 def _overlaps(mine, theirs):
-    """The paths in `mine` that equal or glob-match a path in `theirs`."""
-    return sorted({a for a in mine for b in theirs
-                   if a == b or crew_ticket.path_matches(a, b)
-                   or crew_ticket.path_matches(b, a)})
+    """(shared, unknown): the paths in `mine` that equal or glob-match a path
+    in `theirs`, and the glob pairs whose overlap cannot be told (both sides
+    wildcards, not provably disjoint) - an unknown is never "disjoint"."""
+    shared, unknown = set(), set()
+    for a in mine:
+        for b in theirs:
+            if a == b or crew_ticket.path_matches(a, b) or crew_ticket.path_matches(b, a):
+                shared.add(a)
+            elif _WILD.search(a) and _WILD.search(b) and not _disjoint_globs(a, b):
+                unknown.add(f"{a} vs {b}")
+    return sorted(shared), sorted(unknown)
 
 
 def _slice_problems(slices, steps):
@@ -1089,7 +1122,11 @@ def _base_problems(slices, step_files):
                             f"shares Files with an earlier slice (no Files: on step "
                             f"{', '.join(map(str, sorted(set(unknown))))})")
             continue
-        shared = _overlaps(piece["files"], [f for e in slices[:i] for f in e["files"]])
+        shared, unknown = _overlaps(piece["files"], [f for e in slices[:i] for f in e["files"]])
+        if unknown and not shared:
+            problems.append(f"slice {piece['n']}: Base: main, but cannot tell whether it "
+                            f"shares Files with an earlier slice (two globs: "
+                            f"{'; '.join(unknown)}) - use Base: slice <k> or exact paths")
         if shared:
             problems.append(f"slice {piece['n']}: Base: main, but it shares Files with an "
                             f"earlier slice ({', '.join(shared)}) - use Base: slice <k>")
@@ -1124,6 +1161,8 @@ def parse_slices(plan_text):
         steps = steps or []
         slices.append({"n": n, "name": name, "steps": steps, "base": base,
                        "files": sorted({f for s in steps for f in step_files.get(s, [])})})
+    problems += [f"plan.md `## Step {n}`: write steps as `### Step N` (measure counts only "
+                 "those, so the two readers would disagree)" for n in sorted(_level_two_steps(text))]
     problems += _slice_problems(slices, set(blocks))
     problems += _base_problems(slices, step_files)
     return slices, problems

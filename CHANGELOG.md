@@ -16,8 +16,10 @@ Stacked on T-0052 (#364, which carries T-0037) and T-0011 (#353).
   non-contiguous or out-of-order slice, `Base: slice <k>` for a k not
   earlier, and `Base: main` when the slice's `Files:` share a path (equal
   or glob-matching) with an earlier slice's, or when a step names no
-  `Files:` (cannot tell is not "shares nothing"). No section is a valid
-  plan. `/crew:autopilot` runs a sliced plan one slice at a time:
+  `Files:`, or when two globs are not provably disjoint (cannot tell is
+  not "shares nothing"). A Step heading after the section is still a step
+  and must be in a slice; `## Step N` is refused (`measure` counts only
+  `### Step`). No section is a valid plan. `/crew:autopilot` runs a sliced plan one slice at a time:
   `next` stops a refused section at `plan` (`PR slices: ...`), names
   `implement` with `slice n of m (<name>): steps a-b only`, and keeps the
   state in `<git-common-dir>/crew/tickets/<id>/slices.json` (an unreadable
@@ -43,12 +45,14 @@ Stacked on T-0052 (#364, which carries T-0037) and T-0011 (#353).
   Until they land, `next-slice` refuses with nothing written, so a sliced
   ticket stops after its first slice ships; autopilot's own plan check
   stands in for `validate`.
-- **Tests.** 19 `parse_slices` cases in `test_crew_split.py` and 43 in the
-  new `test_crew_autopilot_slices.py` (stubbed gh, tmp_path repos). Four
+- **Tests.** 23 `parse_slices` cases in `test_crew_split.py` and 43 in the
+  new `test_crew_autopilot_slices.py` (stubbed gh, tmp_path repos). Six
   mutations hand-run, each red on its named test: the `Base: main` overlap
-  check, the contiguity check, the predecessor-merged check, and
-  `_current_rounds` ignoring slice rows. `.crew/verify.json`'s `crew_split`
-  rule gains `test_crew_autopilot_slices.py`, `test_crew_ticket.py` and
+  check, the contiguity check, the predecessor-merged check,
+  `_current_rounds` ignoring slice rows, a late Step heading dropped, and
+  glob-vs-glob overlap read as disjoint. `.crew/verify.json`'s `crew_split`
+  rule gains `crew_autopilot.py` as a path and runs
+  `test_crew_autopilot_slices.py`, `test_crew_ticket.py` and
   `test_review_ledger.py`.
 
 ### Added — `crew` 1.0.387: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)

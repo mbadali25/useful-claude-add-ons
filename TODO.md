@@ -17,6 +17,17 @@ be wrong can be closed on evidence.
   test. `plugin/crew/tests/sabotage*.py` is HARNESS (`scripts/check-tooling-pr.py`), so PR #364
   ran its 27 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
   body) and could not commit them.
+- **T-0059 follow-up (harness PR, T-0087): the PR slices half.** (a) Append T-0059's six mutations
+  to `SPLIT_MUTATIONS`, each red on its named test: the `Base: main` overlap check removed
+  (`test_base_main_with_shared_files_refused`), the contiguity check removed
+  (`test_non_contiguous_slice_refused`), the predecessor-merged check loosened
+  (`test_slice_n_refused_while_n_minus_1_open_under_merge`), `_current_rounds` ignoring slice rows
+  (`test_spent_counts_from_latest_slice_or_successor`), a Step heading after `## PR slices` dropped
+  from the partition (`test_step_heading_after_the_slices_section_is_uncovered`), and glob-vs-glob
+  overlap read as disjoint (`test_base_main_with_two_overlapping_globs_cannot_tell`). (b)
+  `review_ledger.open_slice` and `_spent` counting the latest slice row (the per-slice budget;
+  `next-slice` refuses until it lands), `review_ledger.summary` carrying `slices`, and
+  `crew_ticket.validate` appending `parse_slices`' problems as `PR slices:`.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and

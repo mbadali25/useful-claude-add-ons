@@ -1230,29 +1230,29 @@ Obsidian vault). A CLI the commands call, not a hook.
   `ACCEPTANCE_LOOK` (`:112`), `SUBSYSTEMS_LOOK` (`:115`), `CHILDREN_MIN,
   CHILDREN_MAX` (`:118`); `EVIDENCE_KEYS` (`:127`), `VIAS` (`:135`, `command`
   only; T-0058 appends `autopilot`), `SDP_STOP` (`:136`). `measure`
-  (`:254`) returns None, never 0, for a measure it cannot read or a readable
-  section that yields nothing, and `triggers` (`:281`) reports it as
-  `unknown:<name>`. `check_proposal` (`:431`) over `parse_proposal` (`:365`)
+  (`:255`) returns None, never 0, for a measure it cannot read or a readable
+  section that yields nothing, and `triggers` (`:282`) reports it as
+  `unknown:<name>`. `check_proposal` (`:432`) over `parse_proposal` (`:366`)
   is the placement rule (every parent criterion exactly once,
-  whitespace-collapsed equality); `minted_tail` (`:343`) accepts `## Minted`
+  whitespace-collapsed equality); `minted_tail` (`:344`) accepts `## Minted`
   only as a trailing block of `- Child N: <id>` lines, and `_proposal_sha`
-  (`:508`) hashes everything else. `tracker_mode` (`:478`) reads
-  `crew_tracker.resolve`. `check` (`:587`) records the proposal's sha256, the
-  current turn (`current_turn`, `:546`) and a hash of the prompt that set it
-  (`current_prompt`, `:561`), both read from the context hook's per-session
+  (`:509`) hashes everything else. `tracker_mode` (`:479`) reads
+  `crew_tracker.resolve`. `check` (`:588`) records the proposal's sha256, the
+  current turn (`current_turn`, `:547`) and a hash of the prompt that set it
+  (`current_prompt`, `:562`), both read from the context hook's per-session
   state through `crew_context._session_file`
   (`plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1071-1072`),
-  keyed by `CLAUDE_CODE_SESSION_ID` (`plugin/crew/hooks/scripts/crew_split.py:137`); `confirm` (`:644`) passes
+  keyed by `CLAUDE_CODE_SESSION_ID` (`plugin/crew/hooks/scripts/crew_split.py:137`); `confirm` (`:645`) passes
   only on a different turn for the same session, an unchanged proposal, and a
   readable prompt that is neither a `<`-envelope nor check's own (owner
   decision 2026-10-04: a self-scheduled plain-text "yes" passes; a documented
-  limit). `apply` (`:916`) refuses through `_refuse_mode` (`:838`) and
-  `_existing_children` (`:773`: under an apply record, `apply_record_path`
-  `:519`, each `## Minted` entry and each orphan, `_orphans` `:757`, needs
-  provenance, `_provenance` `:719`, an open INDEX row, `_indexed` `:734` (a
+  limit). `apply` (`:917`) refuses through `_refuse_mode` (`:839`) and
+  `_existing_children` (`:774`: under an apply record, `apply_record_path`
+  `:520`, each `## Minted` entry and each orphan, `_orphans` `:758`, needs
+  provenance, `_provenance` `:720`, an open INDEX row, `_indexed` `:735` (a
   `cancelled`/`superseded` child is never reused), and a direction equal to
-  the current proposal's child, `_written_for` `:746`), then writes
-  `spec.pre-split.md`, mints through `_mint_children` (`:870`, calling
+  the current proposal's child, `_written_for` `:747`), then writes
+  `spec.pre-split.md`, mints through `_mint_children` (`:871`, calling
   `crew_ticket.mint`, `plugin/crew/hooks/scripts/crew_ticket.py:1355`,
   unedited: it takes no risk, so the child's `risk:` rides in its direction
   body), and only then sets the parent `superseded`.
@@ -1270,11 +1270,11 @@ Obsidian vault). A CLI the commands call, not a hook.
 ## PR slices (T-0059)
 
 - DERIVED (T-0059; measured on this tree, anchors not moved). `crew_split.parse_slices`
-  (`plugin/crew/hooks/scripts/crew_split.py:1099`) reads a plan's `## PR slices` section into
+  (`plugin/crew/hooks/scripts/crew_split.py:1136`) reads a plan's `## PR slices` section into
   `{n, name, steps, base, files}` per slice; `SLICES_MIN, SLICES_MAX` (`:123`) are the children's
-  bounds. `_slice_problems` (`:1044`) holds the count, numbering, partition, contiguity and order
-  rules; `_base_problems` (`:1074`) the `Base:` rule, through `_overlaps` (`:1037`, equality or
-  `crew_ticket.path_matches` either way) over each step's `Files:` from `_step_blocks` (`:979`)
+  bounds. `_slice_problems` (`:1077`) holds the count, numbering, partition, contiguity and order
+  rules; `_base_problems` (`:1107`) the `Base:` rule, through `_overlaps` (`:1063`, equality or
+  `crew_ticket.path_matches` either way; two wildcard globs not provably disjoint are "cannot tell") over each step's `Files:` from `_step_blocks` (`:980`)
   and `crew_ticket.parse_plan`; a step with no `Files:` is "cannot tell", never independent.
 - `plugin/crew/hooks/scripts/crew_autopilot.py` consumes it (all lines at this tree):
   `_slice_context` (`:1158`) and `slices_path` (`:1116`, `<git-common-dir>/crew/tickets/<id>/slices.json`,
