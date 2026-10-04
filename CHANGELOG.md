@@ -31,6 +31,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   clean gate, and the missing pass alone is not a defect in the diff. Never printed when the gate
   accepts the tree. The original wording `not yet run (gate follows review)` is dropped: since
   gate first the gate runs before review, so it would be false.
+- **Review of 24cb235c.** `--by` on `--reject` (with or without the flag) and on `--accept`, and
+  `--by` / `--reason` on `--correct-acceptance`, are checked before the lock: one non-empty line
+  (every Unicode line break refused, not only `\n` and `\r`) that can be written as UTF-8, so a
+  lone surrogate is refused instead of being written and then crashing the success line. The
+  reserved `auto:` prefix is tested after NFKC, casefold and stripping format characters, so a
+  fullwidth or zero-width lookalike is refused. The latest round's number is type-checked (bool,
+  float and string refused) as the receipt's is. `review_ledger.py` turns off argparse prefix
+  matching (`allow_abbrev=False`): `--super` or `--correct` is a usage error, never a verb.
 - **Tests and sabotage.** `test_review_reject_accepted.py` and `test_review_correct_acceptance.py`
   (must-block cases each checked byte-for-byte, must-allow cases, the successor-plan cycle, usage
   errors, concurrent corrections), five cases in `test_review_prompt.py`, and sixteen mutations in

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@42effe14
-verified: 2026-10-03
+anchor: useful-claude-add-ons@9e851ec0
+verified: 2026-10-04
 
 ## Re-derive provenance
 
@@ -705,38 +705,41 @@ allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.
 
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:491`) asks `review_ledger.receipt_stands`
-(`plugin/crew/hooks/scripts/review_ledger.py:709`) whether a FINDINGS receipt stands, the same
-predicate `check_receipt` (`:833`) uses (a CLEAN round stands only under a `clean`
+(`plugin/crew/hooks/scripts/review_ledger.py:767`) whether a FINDINGS receipt stands, the same
+predicate `check_receipt` (`:1002`) uses (a CLEAN round stands only under a `clean`
 receipt): `owner-accepted`, or `auto-accepted` with
 `accepted_by == AUTO_BY`, lines equal to the row's, provider and model family equal to the row's
-(`_receipt_names_the_reviewer` `:748`, review round 3 FIX 2) and the row passing `_auto_row_problem`
-(`:497`), which first asks `_family_problem` (`:474`, owner decision 2026-10-01 #3): the row's
+(`_receipt_names_the_reviewer` `:806`, review round 3 FIX 2) and the row passing `_auto_row_problem`
+(`:555`), which first asks `_family_problem` (`:532`, owner decision 2026-10-01 #3): the row's
 `provider` is in `AUTO_PROVIDERS` (codex, kimi) and its `model_family` a non-empty string that is
-not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal; a finding carrying `\n` or `\r` is could-not-tell before it is classified (review round 4 FIX 1), and a row whose `ignored_lines` (L-0576's count) is above 0 is refused as recovered, missing / non-int / bool / negative as could-not-tell, never 0 (owner decision 2026-10-01 #6); `auto_accept` also reads this round's `review.json` (`_review_json_problem` `:637`, reading it through `read_review_json` `:613`: never through a link, a duplicate key at any depth refused, review round 6 BLOCK 2) and refuses an unreadable one, another round's or bundle's, one whose `ignored_lines` is not a non-negative int count (L-0576's shape; review round 5 BLOCK), or a count above 0. `review_run.finish` writes the field on every round since L-0576 (`ignored_lines`, with the lines in `ignored_text`), and `review_ledger._ignored_count` records an unknown one as None. Otherwise it stops at `accept-review`, naming `--auto-accept` when
-`auto_accept_refusal` (`:559`) returns None and quoting the refusal when not. `auto_accept`
-(`:669`) is the guarded verb, and its receipt carries `review_json_sha256` and `ignored_lines`, which `_receipt_binds_review_json` (`:735`) re-checks on every `receipt_stands` (review round 6 BLOCK 1); `accept` (`:421`) refuses a `--by` starting `auto:`;
-`check_follow_up` (`:756`) reads the follow-up's `direction.md` with `newline=""`, split on `\n` only, never `splitlines()` (review round 4 FIX 2, round 6 FIX 4; a CRLF line drops its one `\r`). `review_run.finish` records
+not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal; a finding carrying `\n` or `\r` is could-not-tell before it is classified (review round 4 FIX 1), and a row whose `ignored_lines` (L-0576's count) is above 0 is refused as recovered, missing / non-int / bool / negative as could-not-tell, never 0 (owner decision 2026-10-01 #6); `auto_accept` also reads this round's `review.json` (`_review_json_problem` `:695`, reading it through `read_review_json` `:671`: never through a link, a duplicate key at any depth refused, review round 6 BLOCK 2) and refuses an unreadable one, another round's or bundle's, one whose `ignored_lines` is not a non-negative int count (L-0576's shape; review round 5 BLOCK), or a count above 0. `review_run.finish` writes the field on every round since L-0576 (`ignored_lines`, with the lines in `ignored_text`), and `review_ledger._ignored_count` records an unknown one as None. Otherwise it stops at `accept-review`, naming `--auto-accept` when
+`auto_accept_refusal` (`:617`) returns None and quoting the refusal when not. `auto_accept`
+(`:727`) is the guarded verb, and its receipt carries `review_json_sha256` and `ignored_lines`, which `_receipt_binds_review_json` (`:793`) re-checks on every `receipt_stands` (review round 6 BLOCK 1); `accept` (`:480`) refuses a `--by` starting `auto:`;
+`check_follow_up` (`:814`) reads the follow-up's `direction.md` with `newline=""`, split on `\n` only, never `splitlines()` (review round 4 FIX 2, round 6 FIX 4; a CRLF line drops its one `\r`). `review_run.finish` records
 `findings` and `webtest_open` (`_webtest_open`, `plugin/crew/hooks/scripts/review_run.py:514`)
 and prints `auto_accept_line` (`:523`). JUDGEMENT: autopilot never calls `auto_accept`; the
 command prose (`plugin/crew/commands/autopilot.md:86`) runs it inside the review phase.
 
-**Supersede and correct (H1 bundle: T-0109, T-0098).** DERIVED on branch `T-0098-build`,
-2026-10-04, at the line numbers the H1 content commit leaves; re-check against the anchor above
-before trusting them. `reject` (`plugin/crew/hooks/scripts/review_ledger.py:864`) takes
+**Supersede and correct (H1 bundle: T-0109, T-0098).** DERIVED at the anchor above
+(`9e851ec0`, 2026-10-04). `reject` (`plugin/crew/hooks/scripts/review_ledger.py:902`) takes
 `supersede_accepted`: without it an ACCEPTED or NEEDS_REPLAN ticket still refuses, and the
 ACCEPTED refusal names the flag; with it an `auto:` name refuses before the lock and `_supersede`
-(`:830`) takes ONLY an ACCEPTED ledger whose receipt kind is in `SUPERSEDABLE` (`:165`; clean,
-owner-accepted, auto-accepted), whose round is an int and the latest completed round, and whose
-`superseded` is absent or a list of objects (`_is_dict_list` `:826`); it appends `{receipt, by,
+(`:864`) takes ONLY an ACCEPTED ledger whose receipt kind is in `SUPERSEDABLE` (`:170`; clean,
+owner-accepted, auto-accepted), whose round and the latest row's round are ints (never a bool) and the latest row is completed, and whose
+`superseded` is absent or a list of objects (`_is_dict_list` `:860`); it appends `{receipt, by,
 at}` to `superseded`, writes `rejected` with the kind, clears `receipt` and sets NEEDS_REPLAN, never
-rebuilding the bundle. `correct_acceptance` (`:909`) rewrites `accepted_by` on an `owner-accepted`
+rebuilding the bundle. `correct_acceptance` (`:931`) rewrites `accepted_by` on an `owner-accepted`
 receipt only and appends `{round, was, now, reason, at}` to top-level `acceptance_corrections`;
-`_one_line_arg` (`:894`) refuses an empty, multi-line or non-UTF-8 `--by` / `--reason`. It never
-reads the ledger state or calls `_current_hash`. `summary` (`:1071`) adds `rejected`, `superseded`
-and `acceptance_corrections`; `main` (`:1106`) adds `--correct-acceptance` to the action group and
-`--reason` / `--supersede-accepted` with usage errors for the wrong verb. Tests:
+`_one_line_arg` (`:455`) refuses an empty or non-UTF-8 `--by` / `--reason`, or one carrying
+any `str.splitlines` break, before the lock, for `--accept` and `--reject` too (review of
+`24cb235c`); `_is_auto_name` (`:471`) tests the `auto:` prefix after NFKC, casefold and
+stripping format characters, for all three verbs. It never
+reads the ledger state or calls `_current_hash`. `summary` (`:1093`) adds `rejected`, `superseded`
+and `acceptance_corrections`; `main` (`:1128`) adds `--correct-acceptance` to the action group and
+`--reason` / `--supersede-accepted` with usage errors for the wrong verb, and builds its parser
+with `allow_abbrev=False`. Tests:
 `plugin/crew/tests/test_review_reject_accepted.py`, `plugin/crew/tests/test_review_correct_acceptance.py`;
-fourteen mutations in `plugin/crew/tests/sabotage_review.py`. JUDGEMENT: neither verb authenticates
+twenty-one mutations in `plugin/crew/tests/sabotage_review.py`. JUDGEMENT: neither verb authenticates
 a caller; both only take a receipt away or rename its accepter, never mint one.
 
 T-0018 (crew 1.0.43) added the router and `status`. `route_args` (`:1328`)
@@ -814,7 +817,7 @@ refused. `question_policy` (`:1075`) is `take|stop` by the same rule without the
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`
 (`crew_ticket._register_ramp`, `plugin/crew/hooks/scripts/crew_ticket.py:705`, as for every
 route); and, for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger moved
-NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:884`). `questions_check` (`:1246`) validates
+NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:1054`). `questions_check` (`:1246`) validates
 `.work/tickets/<id>/questions.md` against `QUESTIONS_SHAPE` (`:1154`) and refuses a `taken:` line
 naming a policy that never takes (only `self`/`risk` do; the name is history, not compared with
 today's) or any `taken:` while the policy in force says `stop`. `next` appends
@@ -1369,13 +1372,13 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `EXIT_USAGE` (`review_run.py:724`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:714`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:306`, defined at `crew_standards.py:664`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:389`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
   manifest)`, the recurring-findings classes keyed to the manifest's changed files (every class
   under `UNKNOWN:` when the file lists are unusable), then the web tests.
-- **Override line (T-0101).** DERIVED on branch `T-0098-build`, 2026-10-04. In the
+- **Override line (T-0101).** DERIVED at the anchor (`9e851ec0`). In the
   not-accepted branch of `_receipts_block` (`plugin/crew/hooks/scripts/review_prompt.py:250`),
   after the unchanged `Gate answer for HEAD` line, `out.append(OVERRIDE_LINE)` (`:292`, constant
   `:215`) says a round on such a tree is reserved only under `--allow-unverified`, recorded as
@@ -1621,7 +1624,7 @@ then the train is advisory.
   an empty list as `excluded (never in the bundle): none`, and a missing
   key or anything but a list of non-blank strings as
   `excluded: not recorded by this manifest (unknown)` (T-0099)
-  (`plugin/crew/hooks/scripts/review_prompt.py:111`).
+  (`plugin/crew/hooks/scripts/review_prompt.py:122`).
 - DERIVED (T-0100, crew 1.0.202): `merged_main.resolve`
   (`plugin/crew/hooks/scripts/merged_main.py:67`) names the latest merged
   integration commit, `git merge-base HEAD <ref>` with `<ref>` from T-0061's
@@ -1663,11 +1666,11 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/completion_audit.py:287`); `changed_paths`
   without `merged` is unchanged for `crew_refresh_check`. The prompt's
   `merged main:` line is `_merged_main_line`
-  (`plugin/crew/hooks/scripts/review_prompt.py:123`), which appends
-  `_fork_clause` (`plugin/crew/hooks/scripts/review_prompt.py:143`) on a null
+  (`plugin/crew/hooks/scripts/review_prompt.py:134`), which appends
+  `_fork_clause` (`plugin/crew/hooks/scripts/review_prompt.py:154`) on a null
   fork, and the receipt check's note `_merged_note`
-  (`plugin/crew/hooks/scripts/review_ledger.py:834`), which adds
-  `; fork: could not tell` there (`plugin/crew/hooks/scripts/review_ledger.py:848`).
+  (`plugin/crew/hooks/scripts/review_ledger.py:981`), which adds
+  `; fork: could not tell` there (`plugin/crew/hooks/scripts/review_ledger.py:995`).
   `merged_main.py` is in `HARNESS` (`scripts/check-tooling-pr.py`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:149`):
@@ -1676,8 +1679,8 @@ then the train is advisory.
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:199`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:108`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:99`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:292`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:105`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:375`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:540`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:542`). `parse` and
@@ -1694,7 +1697,7 @@ then the train is advisory.
   the shortfall wording net `_SHORTFALL` is `:125`). The ignored lines go to
   review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:569`), a
   `review: FINDINGS kept; ...` line (`:622`) and, as a count, the ledger row
-  (`plugin/crew/hooks/scripts/review_ledger.py:394`; null when review.json's value is missing or not a non-negative int, never 0).
+  (`plugin/crew/hooks/scripts/review_ledger.py:423`; null when review.json's value is missing or not a non-negative int, never 0).
   `/crew:review` states the same verdict rule (`plugin/crew/commands/review.md:482-486`) and, in
   step 3.1, shows every ignored line verbatim beside the BLOCK/FIX lines (`:498-500`); CLEAN is
   exact, so a stray line beside it is still INCOMPLETE (`review_verdict.py:207-209`).
@@ -1707,11 +1710,11 @@ then the train is advisory.
   event and item vocabularies start at `:98`. `review_run.finish` computes the class at
   `plugin/crew/hooks/scripts/review_run.py:560` and prints the refund line at `:626`
   (not refunded, `:629`). The ledger refunds a `tool` round up to `REFUND_LIMIT`
-  (`plugin/crew/hooks/scripts/review_ledger.py:135`; `BUDGET` `:132` unchanged).
-  `_refunded` (`:296`) counts refunded rows after the successor boundary
-  (`_boundary`, `:288`), `_charged` (`:302`) is spent minus refunded, and
-  `reserve` tests `_charged` against `BUDGET`. `summary` (`:923`, `load = _load` at
-  `:920`) is the dict `status` returns and the one `crew_status._review_lines`
+  (`plugin/crew/hooks/scripts/review_ledger.py:161`; `BUDGET` `:158` unchanged).
+  `_refunded` (`:325`) counts refunded rows after the successor boundary
+  (`_boundary`, `:317`), `_charged` (`:331`) is spent minus refunded, and
+  `reserve` tests `_charged` against `BUDGET`. `summary` (`:1093`, `load = _load` at
+  `:1090`) is the dict `status` returns and the one `crew_status._review_lines`
   renders (`plugin/crew/hooks/scripts/crew_status.py:140`). Autopilot sends a
   refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:532`,
   `_toward_review` `:548`), and `next_phase`'s no-progress stop (`:597`) lets that
@@ -1724,7 +1727,7 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/review_patch.py:126`, `:123`, `:124`) and
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:212`) and `crew_status._verify_line`
+  (`plugin/crew/hooks/scripts/review_prompt.py:293`) and `crew_status._verify_line`
   (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one
@@ -3727,3 +3730,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
+
+**Re-anchored `42effe14` -> `9e851ec0` on 2026-10-04 (H1 harness bundle, #418: T-0098, T-0109, T-0101 and the review-of-`24cb235c` fixes; `9e851ec0` is the last content commit on `T-0098-build`, over origin/main `baf193aa`).** Scope of the re-check, stated so nobody reads more into the anchor than was done: every citation into the two files this branch changes was re-derived by name on `9e851ec0`. `review_ledger.py`: a difflib map from `42effe14`, each target then confirmed by its `def` or statement (`receipt_stands` `:767`, `check_receipt` `:1002`, `_merged_note` `:981` and its fork clause `:995`, which were written after `42effe14` and were set by name, `continue_with_successor_plan` `:1054`, `summary` `:1093`, the refund helpers and constants); bare citations of other files in the same paragraphs (`crew_autopilot.py`, `crew_ticket.py`, `commands/autopilot.md`) were left as they were. `review_prompt.py`: seven citations set by name (`build`'s checklist call `:389`, the excluded-unknown line `:122`, `_merged_main_line` `:134`, `_fork_clause` `:154`, `_bundle_block` `:105`, the webtest READ line `:375`, `read_record` in `_receipts_block` `:293`); they did not match `42effe14` either. The H1 paragraphs are new. NOT re-verified: citations into the other files origin/main changed between `42effe14` and `baf193aa` (the per-path diff lists, among others, `crew_ticket.py`, `crew_config_files.py`, `crew_state.py`, `merged_main.py`, `review_patch.py`, `verify-gate.sh`/`.ps1`, `completion_audit.py`, `.crew/verify.json` and several sabotage files); this branch did not touch them, and their re-check belongs to the lanes that changed them.
