@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew`: `.gitignore` kept right for the languages in the repo (T-0039)
+### Added — `crew` 1.0.358: `.gitignore` kept right for the languages in the repo (T-0039)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`,
   `summary`) detects the languages and build tools from the files git lists (python, node, dotnet,
