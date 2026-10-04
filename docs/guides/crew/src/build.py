@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the five crew 1.0 guides -- HTML, DOCX and PDF -- from the Markdown
+"""Build the crew 1.0 guides -- HTML, DOCX and PDF -- from the Markdown
 sources in this directory. Reproduces the commit-cbbdfca2 build (theme
 `midnight`, brand `neutral`, LibreOffice on Linux), so a rebuild after any
 guide edit is one command rather than a remembered ad hoc recipe.
@@ -37,9 +37,19 @@ docstring, and `references/word-traps.md`). A descendant selector here would
 render in a browser and vanish from the .docx/.pdf with nothing to say so.
 
 Usage:
-    build.py                      # all five guides, HTML + DOCX + PDF
+    build.py                      # every guide, HTML + DOCX + PDF
     build.py --guide quickstart   # just one
     build.py --html-only          # skip the LibreOffice conversion pass
+    build.py --check              # is every committed HTML current? writes nothing
+
+`--check` (T-0048) rebuilds every guide's HTML in memory exactly as a build
+does and compares it with the committed `crew-1.0-<name>.html`: exit 0 when
+all match, 1 naming each stale guide, and 2 when the build cannot run at all
+(no `markdown` module, or doc-builder fails to import) -- never 0, because a
+check that compared nothing is not "current". DOCX and PDF are not compared:
+LibreOffice's output is not byte-stable. `.crew/verify.json` runs it, and so
+does CI's verify-gate.yml (its venv installs `markdown`); the other workflows
+do not.
 """
 
 from __future__ import annotations
@@ -49,17 +59,15 @@ import pathlib
 import re
 import sys
 
-import markdown
-
 SRC = pathlib.Path(__file__).resolve().parent
 GUIDES_DIR = SRC.parent
 REPO_ROOT = SRC.parents[3]
 DOC_BUILDER_SCRIPTS = REPO_ROOT / "skills" / "doc-builder" / "scripts"
 
 sys.path.insert(0, str(DOC_BUILDER_SCRIPTS))
-import house_style  # noqa: E402
-import resolve_brand  # noqa: E402
-import render_engine  # noqa: E402
+# Imported inside `main`, not here, so `--check` can report a missing module as
+# "did not run" (exit 2) rather than crash before it has said anything.
+house_style = resolve_brand = render_engine = None  # pylint: disable=invalid-name
 
 MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists", "toc"]
 
@@ -71,6 +79,8 @@ GUIDES = {
     "memory-and-obsidian": ["memory-and-obsidian.md", "memory-recall-proof.md"],
     "working-with-codex": ["working-with-codex.md"],
     "troubleshooting": ["troubleshooting.md", "auto-cycle.md"],
+    "guide": ["guide.md"],
+    "configuration-reference": ["configuration-reference.md"],
 }
 
 _FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
@@ -174,6 +184,7 @@ def title_of(md_text: str) -> str:
 
 
 def to_html_document(md_text: str) -> str:
+    import markdown  # pylint: disable=import-outside-toplevel
     body = markdown.markdown(md_text, extensions=MD_EXTENSIONS)
     title = title_of(md_text)
     return (
@@ -201,7 +212,12 @@ def apply_house_style(html_text: str, pal: "house_style.Palette") -> str:
 # property) on the header cell does. Same family as `house_style.mark_page`'s
 # `bgcolor` attribute: a value CSS carries that this converter's importer does
 # not honour, restated in the one form it does.
-_NARROW_HEADERS = {"Min": "8%"}
+#
+# The configuration reference's six-column tables (T-0048) wrapped their short
+# columns mid-word the same way ("Laye"/"r"), so its `Setting`, `Layer` and
+# `Since` headers get the same attribute. Those three header words appear in
+# no other guide, so no other guide's HTML moves.
+_NARROW_HEADERS = {"Min": "8%", "Setting": "20%", "Layer": "11%", "Since": "9%"}
 
 
 def fix_narrow_columns(html_text: str) -> str:
@@ -219,11 +235,18 @@ def fenced_block_count(md_text: str) -> int:
     return len(fences) // 2
 
 
-def build_one(name: str, names: list[str], pal: "house_style.Palette",
-              html_only: bool) -> None:
+def render_html(names: list[str], pal: "house_style.Palette") -> tuple[str, str]:
+    """`(markdown, styled html)` for one guide, built in memory."""
     md_text = build_source(names)
     html_text = to_html_document(md_text)
-    html_text = apply_house_style(html_text, pal)
+    return md_text, apply_house_style(html_text, pal)
+
+
+def build_one(name: str, names: list[str], pal: "house_style.Palette",
+              html_only: bool) -> None:
+    # The whole text exists before the file is opened (root CLAUDE.md,
+    # Landmines: `open(p, "w")` truncates at open time).
+    md_text, html_text = render_html(names, pal)
 
     out_html = GUIDES_DIR / f"crew-1.0-{name}.html"
     out_html.write_text(html_text, encoding="utf-8", newline="\n")
@@ -242,17 +265,63 @@ def build_one(name: str, names: list[str], pal: "house_style.Palette",
         raise SystemExit(rc)
 
 
+def check(pal: "house_style.Palette") -> list[str]:
+    """The guide names whose committed HTML differs from a fresh in-memory build."""
+    stale = []
+    for name in sorted(GUIDES):
+        _md, html_text = render_html(GUIDES[name], pal)
+        out_html = GUIDES_DIR / f"crew-1.0-{name}.html"
+        try:
+            committed = out_html.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            committed = None
+        if committed != html_text:
+            stale.append(name)
+    return stale
+
+
+def _load_builders() -> None:
+    global house_style, resolve_brand, render_engine  # pylint: disable=global-statement
+    import house_style as _hs  # pylint: disable=import-outside-toplevel
+    import resolve_brand as _rb  # pylint: disable=import-outside-toplevel
+    import render_engine as _re  # pylint: disable=import-outside-toplevel
+    import markdown  # noqa: F401  pylint: disable=import-outside-toplevel,unused-import
+    house_style, resolve_brand, render_engine = _hs, _rb, _re
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--guide", choices=sorted(GUIDES), default=None,
-                     help="build only this guide (default: all five)")
+                     help="build only this guide (default: every guide)")
     ap.add_argument("--brand", default="neutral")
     ap.add_argument("--theme", default="midnight")
     ap.add_argument("--html-only", action="store_true",
                      help="write the HTML only; skip the LibreOffice DOCX/PDF pass")
+    ap.add_argument("--check", action="store_true",
+                     help="compare every committed HTML with a fresh build; write nothing")
     args = ap.parse_args(argv)
 
+    if args.check:
+        try:
+            _load_builders()
+        except ImportError as exc:
+            print(f"build.py --check: markdown not importable - the check DID NOT RUN "
+                  f"({exc})", file=sys.stderr)
+            return 2
+        try:
+            brand = resolve_brand.resolve(args.brand, theme=args.theme)
+            stale = check(house_style.Palette(brand))
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"build.py --check: the check DID NOT RUN: {type(exc).__name__}: {exc}",
+                  file=sys.stderr)
+            return 2
+        for name in stale:
+            print(f"stale: crew-1.0-{name}.html - rebuild with "
+                  f"python3 docs/guides/crew/src/build.py --guide {name}")
+        return 1 if stale else 0
+
+    _load_builders()
     brand = resolve_brand.resolve(args.brand, theme=args.theme)
     pal = house_style.Palette(brand)
 
