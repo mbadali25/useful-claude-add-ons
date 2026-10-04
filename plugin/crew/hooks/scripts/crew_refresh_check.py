@@ -12,7 +12,8 @@ tree check 1's review receipt was taken over. T-0004's autopilot imports
 ## What is judged, and against what
 
 Three artifact kinds, each with the question `crew_freshness.py` already
-asks of it for the status line, narrowed here to THIS ticket:
+asks of it for the status line, narrowed here to THIS ticket, plus the
+README embeds of the diagrams:
 
   codemap  `.crew/codemap/<subsystem>.md`, in scope when a path it cites is
            one the ticket changed. Citations are backticked paths with an
@@ -33,6 +34,13 @@ asks of it for the status line, narrowed here to THIS ticket:
            Refresh: `graphify update .` where the repo tracks GRAPH_REPORT.md
            beside the graph, else `graphify . --no-viz --code-only` -- the
            choice `_read_graph`'s `reportTracked` already encodes.
+  diagram-embeds  (T-0035) each README whose generated `crew-diagrams`
+           section differs from what `crew_diagrams.py embed` writes now,
+           judged over every diagram whatever the ticket reached: a drifted
+           embed is wrong whoever caused it. Refresh: `crew_diagrams.py
+           embed`. Malformed markers are `stale` with `stop - needs
+           judgement` (embed refuses them); a README with no section yet is
+           no line (`crew_diagrams` calls it pending).
 
 "The ticket changed" is `scope_base.resolve` then
 `completion_audit.changed_paths`: the base against the WORKING TREE plus
@@ -199,6 +207,7 @@ import subprocess
 import sys
 
 import completion_audit
+import crew_diagrams
 import crew_ticket
 import scope_base
 import crew_common
@@ -1222,6 +1231,29 @@ def _diagrams(root, dirpath, changed, code, untracked):
     return found
 
 
+def _embeds(top):
+    """T-0035: one `diagram-embeds` line per README whose generated diagram
+    section is not what `crew_diagrams.py embed` would write now. Judged over
+    EVERY diagram, not only the ones this ticket reached: a drifted embed is
+    wrong whoever caused it. Drift is refreshable by `embed`; malformed
+    markers or an `%% Embed:` naming no README need judgement (`embed`
+    refuses them), and anything unreadable is `unknown`. A README with no
+    section yet is not a line at all (crew_diagrams' `pending`)."""
+    command = crew_diagrams.EMBED_COMMAND
+    result = crew_diagrams.check(top)
+    found = [_entry("diagram-embeds", result["diagrams_dir"] or "diagrams", UNKNOWN,
+                    f"embeds cannot be judged: {why}", command, refreshable=False)
+             for why in result["unknown"]]
+    for why in result["problems"]:
+        found.append(_entry("diagram-embeds", why.split(":", 1)[0], STALE,
+                            f"needs judgement: {why}", command, refreshable=False))
+    for item in result["drift"]:
+        named = f" ({', '.join(item['diagrams'])})" if item["diagrams"] else ""
+        found.append(_entry("diagram-embeds", item["readme"], STALE,
+                            f"the generated diagram section {item['reason']}{named}", command))
+    return found
+
+
 def _graph(root, info, graph_out, code, untracked, which):
     command = ("graphify update ." if info["reportTracked"]
                else "graphify . --no-viz --code-only")
@@ -1357,6 +1389,7 @@ def ticket_freshness(root, ticket, which=shutil.which):
 
     artifacts = _codemaps(top, changed, untracked)
     artifacts += _diagrams(top, diagrams, changed, code, untracked)
+    artifacts += _embeds(top)
     graph = _graph(top, info, graph_out, code, untracked, which)
     if graph:
         artifacts.append(graph)
@@ -1399,6 +1432,8 @@ def _render(ticket, result):
             line += f"; refresh with {item['command']}"
         elif item["status"] == UNKNOWN:
             line += "; stop - a refresh cannot settle this, report it"
+        elif item["status"] == STALE:
+            line += "; stop - needs judgement, report it"
         lines.append(line)
     if not result["artifacts"]:
         if result["status"] in (FRESH, STALE):

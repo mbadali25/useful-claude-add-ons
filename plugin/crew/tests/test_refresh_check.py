@@ -963,7 +963,8 @@ def test_no_artifact_keeps_a_measured_status_under_a_fallback_equal_to_head(tmp_
 # crew_instructions.py joined in T-0094: the audit's rule admission is
 # `expected_rules`, so an edit there can widen a blocking check.
 _GUARD_MODULES = ("crew_refresh_check.py", "scope_guard.py", "completion_audit.py",
-                  "crew_freshness.py", "scope_base.py", "crew_instructions.py")
+                  "crew_freshness.py", "scope_base.py", "crew_instructions.py",
+                  "crew_diagrams.py")
 
 
 def _gate_matches(path, pat):
@@ -991,3 +992,116 @@ def test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule(name):
             and any("pytest" in c for c in r["run"])]
 
     assert hits, f"{path} maps to no rule that runs pytest"
+
+
+# --- T-0035: README embeds of the diagrams -----------------------------------
+
+_EMBED_CMD = "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_diagrams.py embed --root ."
+
+
+def _embedded_repo(tmp_path):
+    """A repo whose plugin README carries a current embed of one diagram that
+    anchors src/app.py's neighbour, committed, with the scope base after it."""
+    import crew_diagrams  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path)
+    _commit(root, "src/app.py", "print('app')\n")
+    _commit(root, "plugin/x/README.md", "# x\n")
+    _commit(root, "plugin/x/a.py", "a\n")
+    start = head_sha(root, length=40)
+    _commit(root, "docs/diagrams/process-x.mmd",
+            f"%% Generated from repo@{start[:8]} on 2026-10-04.\n%% Anchors: plugin/x/a.py\n"
+            "%% Purpose: x.\nflowchart LR\n  a -->|go| b\n")
+    assert crew_diagrams.main(["embed", "--root", str(root)]) == 0
+    commit_file(root, "plugin/x/README.md")
+    scope_base.record(str(root), TICKET)
+    return root
+
+
+def _embeds(result):
+    return [a for a in result["artifacts"] if a["kind"] == "diagram-embeds"]
+
+
+def test_current_embeds_add_no_line(tmp_path):
+    """Must-allow: embeds that match their sources say nothing and refuse nothing."""
+    root = _embedded_repo(tmp_path)
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    result = _check(root)
+
+    assert (_embeds(result), result["status"]) == ([], "fresh")
+
+
+def test_embed_drift_is_stale_with_command(tmp_path):
+    root = _embedded_repo(tmp_path)
+    with open(os.path.join(str(root), "plugin", "x", "README.md"), encoding="utf-8") as handle:
+        text = handle.read()
+    _commit(root, "plugin/x/README.md", text.replace("|go|", "|hand edit|"))
+
+    result = _check(root)
+    item = _artifact(result, "diagram-embeds", "plugin/x/README.md")
+
+    assert (item["status"], item["command"], item["refreshable"], result["status"]) == \
+        ("stale", _EMBED_CMD, True, "stale")
+    assert "process-x" in item["reason"]
+    assert "refresh with " + _EMBED_CMD in crew_refresh_check._render(  # pylint: disable=protected-access
+        TICKET, result)
+
+
+def test_embed_check_judges_all_diagrams(tmp_path):
+    """A drifted embed is wrong whoever caused it: the ticket here changed
+    only src/app.py, which no diagram anchors."""
+    root = _embedded_repo(tmp_path)
+    with open(os.path.join(str(root), "docs", "diagrams", "process-x.mmd"),
+              encoding="utf-8") as handle:
+        _write(root, "docs/diagrams/process-x.mmd", handle.read().replace("|go|", "|went|"))
+    commit_file(root, "docs/diagrams/process-x.mmd")
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    assert _artifact(_check(root), "diagram-embeds", "plugin/x/README.md")["status"] == "stale"
+
+
+def test_embed_marker_problem_is_a_stop(tmp_path):
+    root = _embedded_repo(tmp_path)
+    _commit(root, "plugin/x/README.md", "# x\n<!-- crew-diagrams:begin -->\nno end\n")
+
+    result = _check(root)
+    item = _artifact(result, "diagram-embeds", "plugin/x/README.md")
+    line = crew_refresh_check._render(TICKET, result)  # pylint: disable=protected-access
+
+    assert (item["status"], item["refreshable"]) == ("stale", False)
+    assert "needs judgement" in item["reason"] and "refresh with " + _EMBED_CMD not in line
+    assert "stop - needs judgement" in line
+
+
+def test_embed_unreadable_source_is_unknown(tmp_path):
+    root = _embedded_repo(tmp_path)
+    with open(os.path.join(str(root), "docs", "diagrams", "bad.mmd"), "wb") as handle:
+        handle.write(b"\xff\xfe bad \xc3")
+    commit_file(root, "docs/diagrams/bad.mmd")
+
+    result = _check(root)
+    items = _embeds(result)
+
+    assert [(i["status"], i["refreshable"]) for i in items] == [("unknown", False)]
+    assert result["status"] == "unknown"
+
+
+def test_pending_embed_does_not_refuse(tmp_path):
+    """Must-allow: a README a diagram targets that has never been embedded is
+    not drift -- adopting is one `embed` run, not a refusal on upgrade."""
+    root, start = _repo(tmp_path)
+    _commit(root, "plugin/x/README.md", "# x\n")
+    _commit(root, "plugin/x/a.py", "a\n")
+    _diagram(root, "process-x", start[:8], ["plugin/x/a.py"])
+
+    assert _embeds(_check(root)) == []
+
+
+def test_implement_and_done_name_the_diagram_embeds():
+    """The embed line reaches /crew:implement step 6 and /crew:done check 4
+    through the existing `refresh with` / `stop` loop; the commands say so."""
+    step = _section(_read("implement.md"), "## 6.")
+    check4 = _section(_read("done.md"), "## Check 4")
+
+    assert ("crew_diagrams.py" in step, "embed" in step) == (True, True)
+    assert ("embed" in check4, "embed markers" in check4) == (True, True)

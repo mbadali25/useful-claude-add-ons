@@ -110,6 +110,7 @@
               "python3 scripts/_test/self-claims.py",
               "python3 scripts/_test/version-drift.py",
               "python3 scripts/_test/verifying-doc.py",
+              "python3 scripts/_test/check-diagram-embeds.py",
               "python3 scripts/sync-updates.py --check",
               "./scripts/_test/menu-groups.sh",
               "bash scripts/_test/check-powershell.sh",
@@ -543,6 +544,14 @@
       "reach": "local",
       "why": "pytest_rule.py runs the crew rules above that call it: `-n auto -m \"not wallclock\"` then `-m wallclock` serially, the way pytest-crew.yml runs the suite, or one serial run without xdist. Its exit code is what the gate reads, so the suite pins every combination: exit 5 from one half is not a failure, from both it is, and a half killed by a signal is a failure (max() of the codes would have read 0). 1.6s here. reach: local - a unit suite with the pytest calls stubbed."
     },
+    { "paths": ["plugin/crew/hooks/scripts/crew_diagrams.py", "plugin/crew/tests/test_crew_diagrams_embed.py",
+                "plugin/crew/skills/crew-diagrams/scripts/diagram_doc.py", "docs/diagrams/*.mmd", "docs/diagrams/*.mermaid"],
+      "seconds": 12,
+      "run": ["python3 -m pytest plugin/crew/tests/test_crew_diagrams_embed.py -q",
+              "python3 -m pytest plugin/crew/tests/test_refresh_check.py -q -k embed",
+              "python3 plugin/crew/hooks/scripts/crew_diagrams.py check --root ."],
+      "reach": "local",
+      "why": "T-0035 (crew 1.0.362): crew_diagrams.py embeds each diagram between crew-diagrams markers in the README nearest its anchors, and its check feeds crew_refresh_check.py's diagram-embeds line, which /crew:done check 4 refuses on, and check-marketplace.py's check_diagram_embeds. The suite holds must-refuse (drift, a source not re-embedded, an orphaned section, malformed markers, an unreadable source or dir: unknown) and must-allow (current embeds, a README never embedded is pending, prose outside the markers) cases, plus a parity test that its title, purpose and body read every docs/diagrams source exactly as diagram_doc.py does - hence diagram_doc.py and the sources here. README and docs edits reach check_diagram_embeds through rule 2's check-marketplace.py. Every guard sabotaged by hand, each red (T-0035 report). 7s measured 2026-10-04 on a 4-CPU container at load 6.2-6.6; 12 for headroom. reach: local - tmp_path fixture trees, and a read of this checkout's READMEs and diagrams." },
     {
       "paths": [
         "plugin/crew/hooks/scripts/crew_keys.py",
