@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:13 UTC
+Last updated: 2026-10-04 10:15 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:15: #360 land-prep on edb2b8ff done: head f6795d74 (1.0.332); #355's resume.* keys moved COMING->KEY_META (since 1.0.321, kind type), ref regen 132/74/58, guides rebuilt. Merge review started. NOTE: CONFIG.md 'Measured, not argued' paragraph on MAIN says 72/130 but code is 74/132 after #355 - pre-existing on main; #351's fixer touches same paragraph.
 - 10:13: #371 merge-only review 00cdf632: 0/0/0 CLEAN. Waits CI (waiter running), then merge.
 - 10:11: #371 re-merged main edb2b8ff -> 00cdf632 crew 1.0.322 (version/CHANGELOG conflicts only; 157 tests + tooling-pr 17 pass); merge-only review + CI. #360 land-prep started (add KEY_META rows for #355's keys, 1.0.332).
 - 10:10: MERGED #355 at edb2b8ff (crew 1.0.321; CI 24/24 + review clean). Next: re-merge #371 (harness) -> 1.0.322; #360 land-prep (config conflicts with #355).
