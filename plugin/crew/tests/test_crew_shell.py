@@ -16,6 +16,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_common
 import crew_shell
 import crew_state
 
@@ -279,7 +280,8 @@ def test_resolve_pwsh_defaults_systemroot():
 
 def _git_exec_path(out, rc=0):
     def runner(argv, timeout):
-        assert argv == ["git", "--exec-path"] and timeout
+        # The resolved git (L-1508), never the bare name.
+        assert argv == [crew_common.resolve_tool("git"), "--exec-path"] and timeout
         return rc, out, b""
     return runner
 

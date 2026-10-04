@@ -37,6 +37,7 @@ import crew_common
 import crew_fixtures
 import crew_instructions
 import crew_refresh_check
+import crew_shell
 import crew_state
 import crew_status
 import crew_tracker
@@ -85,7 +86,7 @@ ALLOWLIST = (
     {"file": "plugin/crew/hooks/scripts/crew_autocycle.py", "function": "_proc",
      "tool": "ps", "reason": "POSIX only: _proc returns before ps on native Windows",
      "gate": "plugin/crew/hooks/scripts/crew_autocycle.py:651",
-     "gate_text": 'os.name == "nt"'},
+     "gate_text": 'if found is not None or os.name == "nt":'},
     {"file": "plugin/crew/hooks/scripts/crew_platform.py", "function": "_wsl_facts",
      "tool": "ip", "reason": "WSL2 only: _wsl_facts is called only when platform.system() is Linux",
      "gate": "plugin/crew/hooks/scripts/crew_platform.py:144",
@@ -94,10 +95,21 @@ ALLOWLIST = (
      "function": "_macos_obsidian_running", "tool": "ps",
      "reason": "macOS only: Windows returns earlier and Linux reads /proc",
      "gate": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py:912",
-     "gate_text": 'if system == "Linux" else _macos_obsidian_running()'},
+     "gate_text": ('running = _linux_obsidian_running() if system == "Linux" '
+                   'else _macos_obsidian_running()')},
     {"file": "skills/notify/scripts/notifyd.py", "function": "_pid_alive", "tool": "tasklist",
      "reason": "Windows only, and tasklist ships as tasklist.exe, the one form CreateProcess tries",
      "gate": "skills/notify/scripts/notifyd.py:261", "gate_text": 'if os.name == "nt":'},
+    {"file": "plugin/crew/hooks/scripts/crew_shell.py", "function": "run", "tool": "bash",
+     "reason": "POSIX only: run() takes `bash -c` only off native Windows",
+     "gate": "plugin/crew/hooks/scripts/crew_shell.py:776", "gate_text": "if not on_windows():"},
+    {"file": "plugin/crew/hooks/scripts/webtest_guard.py", "function": "check_visual", "tool": "npx",
+     "reason": "Playwright Linux container only: check_visual returns before npx without container evidence",
+     "gate": "plugin/crew/hooks/scripts/webtest_guard.py:664", "gate_text": "if not markers:"},
+    {"file": "plugin/obsidian-vault/hooks/scripts/vault_garden.py", "function": "commit_owned",
+     "tool": "git", "reason": "L-1509"},
+    {"file": "plugin/rule-of-two/scripts/rule_of_two.py", "function": "run_codex",
+     "tool": "codex", "reason": "L-1509"},
     {"file": "skills/repo-docs/scripts/git_changelog.py", "function": "git",
      "tool": "git", "reason": "L-1509"},
     {"file": "skills/repo-docs/scripts/repo_survey.py", "function": "run_git",
@@ -154,59 +166,137 @@ def test_require_tool_names_the_missing_tool_as_a_file_not_found(tmp_path, monke
 
 # --- the lint ---------------------------------------------------------------------
 
-def _literal_head(node):
-    """The string literal an argv expression starts with, or None."""
+# Calls whose first argument is an argv list (or a command string), by module.
+ARGV_FNS = {"subprocess": SUBPROCESS_FNS | {"getoutput", "getstatusoutput"},
+            "os": {"system", "popen"}}
+# Calls whose first argument is the program name itself.
+PROGRAM_FNS = {"os": {"execlp", "execlpe", "execvp", "execvpe", "spawnlp", "spawnlpe",
+                      "spawnvp", "spawnvpe"},
+               "asyncio": {"create_subprocess_exec"}}
+# Known argv wrappers: a function in a scanned script that hands its first
+# argument to subprocess unchanged, matched by name when called bare (never as
+# an attribute: `conn.execute("SELECT ...")` is sqlite). crew_shell's
+# injectable `runner`/`execute` and their defaults, obsidian's `_run_bounded`.
+WRAPPERS = {"capture", "runner", "execute", "execute_job", "_run_bounded"}
+
+
+def _first_word(text):
+    words = text.split()
+    return words[0] if words else None
+
+
+def _literal_head(node, assigns=None):
+    """The program an argv expression names literally, or None: the first
+    element of a list/tuple (or of the left side of a `+`), the first word of
+    a command string, or -- for a bare name -- the same of the one value the
+    enclosing function assigns to it."""
+    assigns = assigns or {}
     if isinstance(node, (ast.List, ast.Tuple)):
         if not node.elts:
             return None
         first = node.elts[0]
         return first.value if isinstance(first, ast.Constant) and isinstance(first.value, str) else None
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return _literal_head(node.left)
+        return _literal_head(node.left, assigns)
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return _first_word(node.value)
+    if isinstance(node, ast.JoinedStr) and node.values:
+        first = node.values[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value[:1].strip():
+            return _first_word(first.value)
+        return None
+    if isinstance(node, ast.Name) and node.id in assigns:
+        return _literal_head(assigns[node.id])
     return None
 
 
-def _subprocess_names(tree):
-    """(module aliases, function aliases) this file binds to `subprocess`."""
-    modules, functions = {"subprocess"}, set()
+def _program(node):
+    """A program-name argument (`os.execvp("git", ...)`): the literal itself."""
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _aliases(tree):
+    """{local name: (module, function or None)} for the modules this file uses."""
+    names = {m: (m, None) for m in set(ARGV_FNS) | set(PROGRAM_FNS)}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            modules.update(a.asname or a.name for a in node.names if a.name == "subprocess")
-        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
-            functions.update(a.asname or a.name for a in node.names if a.name in SUBPROCESS_FNS)
-    return modules, functions
+            for a in node.names:
+                if a.name in names:
+                    names[a.asname or a.name] = (a.name, None)
+        elif isinstance(node, ast.ImportFrom) and node.module in names:
+            for a in node.names:
+                names[a.asname or a.name] = (node.module, a.name)
+    return names
 
 
-def _is_subprocess_call(call, modules, functions):
+def _classify(call, aliases):
+    """("argv" | "program", node) for a call that starts a process, else None."""
     func = call.func
-    if isinstance(func, ast.Attribute):
-        return (func.attr in SUBPROCESS_FNS and isinstance(func.value, ast.Name)
-                and func.value.id in modules)
-    return isinstance(func, ast.Name) and func.id in functions
+    module = fn = None
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        bound = aliases.get(func.value.id)
+        if bound and bound[1] is None:
+            module, fn = bound[0], func.attr
+    elif isinstance(func, ast.Name):
+        bound = aliases.get(func.id)
+        if bound and bound[1]:
+            module, fn = bound
+        elif func.id in WRAPPERS:
+            module, fn = "<wrapper>", func.id
+    if module == "<wrapper>":
+        kind = "argv"
+    elif fn in ARGV_FNS.get(module, ()):
+        kind = "argv"
+    elif fn in PROGRAM_FNS.get(module, ()):
+        kind = "program"
+    else:
+        return None
+    at = 1 if fn.startswith("spawn") else 0  # os.spawn*p(mode, file, ...)
+    if len(call.args) > at:
+        return kind, call.args[at]
+    key = "args" if kind == "argv" else "program"
+    found = next((k.value for k in call.keywords if k.arg in (key, "cmd")), None)
+    return (kind, found) if found is not None else None
 
 
-def _argv(call):
-    if call.args:
-        return call.args[0]
-    return next((k.value for k in call.keywords if k.arg == "args"), None)
+def _single_assigns(func):
+    """{name: value} for names assigned exactly once in `func` (nested defs excluded)."""
+    seen = {}
+    stack = list(ast.iter_child_nodes(func))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    seen.setdefault(target.id, []).append(node.value)
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)) and isinstance(node.target, ast.Name):
+            seen.setdefault(node.target.id, []).append(getattr(node, "value", None))
+        stack.extend(ast.iter_child_nodes(node))
+    return {k: v[0] for k, v in seen.items() if len(v) == 1 and v[0] is not None}
 
 
 def bare_sites(source, rel):
     """[(rel, enclosing function, tool, line)] for every bare-name call in `source`."""
     tree = ast.parse(source)
-    modules, functions = _subprocess_names(tree)
+    aliases = _aliases(tree)
     found = []
 
-    def walk(node, where):
+    def walk(node, where, assigns):
         for child in ast.iter_child_nodes(node):
-            inner = child.name if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else where
-            if isinstance(child, ast.Call) and _is_subprocess_call(child, modules, functions):
-                argv = _argv(child)
-                tool = _literal_head(argv) if argv is not None else None
-                if tool:
-                    found.append((rel, where, tool, child.lineno))
-            walk(child, inner)
-    walk(tree, "<module>")
+            inner, inner_assigns = where, assigns
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inner, inner_assigns = child.name, _single_assigns(child)
+            if isinstance(child, ast.Call):
+                got = _classify(child, aliases)
+                if got:
+                    kind, arg = got
+                    tool = _literal_head(arg, assigns) if kind == "argv" else _program(arg)
+                    if tool:
+                        found.append((rel, where, tool, child.lineno))
+            walk(child, inner, inner_assigns)
+    walk(tree, "<module>", _single_assigns(tree))
     return found
 
 
@@ -245,7 +335,7 @@ def problems(sites, allowlist, root=REPO):
                 text = (root / gate_file).read_text(encoding="utf-8").splitlines()[int(gate_line) - 1]
             except (OSError, ValueError, IndexError):
                 text = ""
-            if entry.get("gate_text", "\0") not in text:
+            if text.strip() != entry.get("gate_text"):
                 out.append(f"{key}: gate {entry['gate']} no longer reads {entry.get('gate_text')!r}")
     return out
 
@@ -281,6 +371,19 @@ BLOCK = {
     "module alias": 'import subprocess as sp\ndef f():\n    sp.run(["git", "status"])\n',
     "imported function": 'from subprocess import run\ndef f():\n    run(["git", "status"])\n',
     "module level": 'import subprocess\nsubprocess.run(["git", "status"])\n',
+    "name assigned once (a)": 'import subprocess\ndef f(x):\n    cmd = ["git", "-C", x]\n    subprocess.run(cmd)\n',
+    "name assigned a concatenation (a)": ('import subprocess\ndef f(args):\n'
+                                          '    argv = ("git", "log") + args\n    subprocess.run(argv)\n'),
+    "command string (b)": 'import subprocess\ndef f():\n    subprocess.run("git status", shell=True)\n',
+    "f-string command (b)": 'import subprocess\ndef f(x):\n    subprocess.check_output(f"git -C {x} status")\n',
+    "getoutput (c)": 'import subprocess\ndef f():\n    subprocess.getoutput("git status")\n',
+    "os.system (c)": 'import os\ndef f():\n    os.system("git status")\n',
+    "os.popen (c)": 'import os\ndef f():\n    os.popen("ps -A")\n',
+    "os.execvp (c)": 'import os\ndef f(argv):\n    os.execvp("git", argv)\n',
+    "os.spawnlp (c)": 'import os\ndef f():\n    os.spawnlp(os.P_WAIT, "git", "git")\n',
+    "asyncio exec (c)": 'import asyncio\nasync def f():\n    await asyncio.create_subprocess_exec("git", "status")\n',
+    "wrapper runner (d)": 'def f(runner):\n    runner(["git", "--exec-path"], 10)\n',
+    "wrapper _run_bounded (d)": 'def f(vault):\n    _run_bounded(["git", "-C", vault, "add"], 5)\n',
 }
 
 
@@ -298,6 +401,10 @@ ALLOW = {
     "interpreter": 'import subprocess, sys\ndef f():\n    subprocess.run([sys.executable, "-c", "1"])\n',
     "argv built elsewhere": 'import subprocess\ndef f(cmd):\n    subprocess.run(cmd)\n',
     "not subprocess": 'import other\ndef f():\n    other.run(["git", "status"])\n',
+    "name assigned twice": ('import subprocess\ndef f(git, x):\n    cmd = ["git"]\n'
+                            '    cmd = [git, x]\n    subprocess.run(cmd)\n'),
+    "sqlite execute": 'def f(conn):\n    conn.execute("SELECT 1")\n',
+    "resolved wrapper": 'import crew_common\ndef f(runner):\n    runner([crew_common.require_tool("git"), "x"], 10)\n',
 }
 
 
@@ -364,7 +471,19 @@ def test_every_gate_citation_still_points_at_its_gate():
 
     got = [p for p in problems(list(_repo_sites()), moved) if "no longer reads" in p]
 
-    assert len(got) == sum("gate" in e for e in ALLOWLIST) == 4
+    assert len(got) == sum("gate" in e for e in ALLOWLIST) == 6
+
+
+def test_a_gate_weakened_on_its_own_line_goes_red():
+    # The whole stripped line must match: `if found is not None or os.name == "nt":`
+    # weakened to `if True or os.name == "nt":` still contains the old substring.
+    cited = [dict(e, gate_text='os.name == "nt"') if e["tool"] == "ps" and "gate" in e
+             and e["function"] == "_proc" else e for e in ALLOWLIST]
+
+    got = [p for p in problems(list(_repo_sites()), cited) if "no longer reads" in p]
+
+    assert got == ["('plugin/crew/hooks/scripts/crew_autocycle.py', '_proc', 'ps'): gate "
+                   "plugin/crew/hooks/scripts/crew_autocycle.py:651 no longer reads 'os.name == \"nt\"'"]
 
 
 # --- per site: the resolved path runs, and an unresolved tool fails as before --------
@@ -427,6 +546,8 @@ SITES = [
     ("qa_audit_env._git", "git", lambda r: qa_audit_env._git(r, "status"), None),
     ("qa_doc._git", "git", lambda r: qa_doc._git(r, "status"), None),
     ("crew_upgrade._head", "git", crew_upgrade._head, None),
+    ("crew_shell.resolve_gitbash", "git",
+     lambda r: crew_shell.resolve_gitbash(exists=lambda _p: False, which=lambda _n: None)[0], None),
 ]
 
 

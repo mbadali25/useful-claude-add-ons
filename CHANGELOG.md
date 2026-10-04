@@ -18,21 +18,32 @@ All notable changes to this repository are documented here. Format follows [Keep
   path. Fixed: `ci_receipt`, `crew_common.git_out`, `crew_instructions`,
   `crew_refresh_check`, `crew_state.in_git_repo`, `crew_status` (tree line),
   `crew_tracker`, `crew_trailers`, `event_claim`, `crew_autocycle`'s process
-  table (`ps`; native Windows has no `/proc`) and `xdotool`, `crew_upgrade`,
-  and the three `crew-qa-standards` scripts.
+  table (`ps`; native Windows has no `/proc`) and `xdotool`, `crew_shell`'s
+  Git Bash probe (`git --exec-path`), `crew_upgrade`, and the three
+  `crew-qa-standards` scripts. `crew_status` is a `SEAM` path in
+  `scripts/check-tooling-pr.py`; its commit carries a `Tooling-seam` trailer,
+  which has no effect here because the check reads SEAM only when a harness
+  path changed, and none does.
 - **At a guard, a tool that does not resolve is "could not tell".** The CI
   receipt reads UNKNOWN, crew status shows `tree unknown`, the tracker refuses
   a board inside the worktree, the wrap-up veto refuses the clear.
 - **New lint.** `plugin/crew/tests/test_tool_resolution.py` AST-scans every
-  plugin and skill script and fails on a `subprocess` call whose argv starts
-  with a string literal unless its allowlist names the file, function, tool and
-  reason. Allowlisted: the review/gate harness files (fixed in L-1508 PR B,
-  which lands alone under T-0087), `ps` in `crew_autocycle._proc` and `ip` in
-  `crew_platform._wsl_facts` (gated off Windows; the gate's line is checked),
-  obsidian-vault's macOS-only `ps`, notify's Windows-only `tasklist.exe`, and
-  repo-docs' two git calls (L-1509).
-- **Not covered.** An argv built elsewhere and passed through a wrapper (for
-  example `crew_shell`'s `git --exec-path` probe) is not seen by the lint.
+  plugin and skill script and fails on a process start that names its program
+  literally: a `subprocess` argv list or tuple (or a `+` of one), a command
+  string, a name the function assigns such a value exactly once,
+  `subprocess.getoutput`, `os.system`/`os.popen`/`os.exec*p`/`os.spawn*p`,
+  `asyncio.create_subprocess_exec`, and the known argv wrappers (`crew_shell`'s
+  `runner`/`execute`, obsidian-vault's `_run_bounded`). Each exception is on an
+  allowlist naming the file, function, tool and reason: the review/gate harness
+  files (fixed in L-1508 PR B, which lands alone under T-0087); POSIX- or
+  container-only sites, each with its gate's `path:line`, whose whole line is
+  checked (`ps` in `crew_autocycle._proc`, `ip` in `crew_platform._wsl_facts`,
+  `bash -c` in `crew_shell.run`, `npx` in `webtest_guard.check_visual`);
+  obsidian-vault's macOS-only `ps` and notify's Windows-only `tasklist.exe`;
+  and L-1509's sites (repo-docs' two git calls, obsidian-vault's
+  `vault_garden` git, rule-of-two's `codex`).
+- **Not covered.** An argv built in another function, or assigned more than
+  once, is not seen.
 
 ### Added — `crew` 1.0.334: auto wrap-up before auto-clear (T-0017)
 

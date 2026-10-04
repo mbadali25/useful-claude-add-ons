@@ -1672,14 +1672,17 @@ citations taken with `grep -n` there.
   `crew_common`'s when crew's hooks sit beside them and an equivalent `shutil.which` fallback when
   they do not (`plugin/crew/skills/crew-qa-standards/scripts/qa_audit_env.py:31`).
   `crew_autocycle._git_out` (`crew_autocycle.py:421`) resolves git itself (T-0017).
-- DERIVED: `plugin/crew/tests/test_tool_resolution.py:252` fails on any
-  `subprocess.run/Popen/check_output/check_call/call` in a plugin or skill script whose argv starts
-  with a string literal (`bare_sites`, `:193`), unless `ALLOWLIST` (`:59`) names the file, function,
-  tool and reason; a stale entry, an empty reason, or a gate citation whose line moved also fails
-  (`problems`, `:224`). Guard tests stub a failing tool reachable only through `shutil.which`
+- DERIVED: `plugin/crew/tests/test_tool_resolution.py:349` fails on any process start in a plugin
+  or skill script that names its program literally (`bare_sites`, `:280`), unless `ALLOWLIST`
+  (`:61`) names the file, function, tool and reason; a stale entry, an empty reason, or a gate
+  citation whose whole line no longer matches also fails
+  (`problems`, `:315`). Guard tests stub a failing tool reachable only through `shutil.which`
   (`plugin/crew/tests/tool_fixtures.py:31`).
-- JUDGEMENT: the lint sees only a literal at the call. An argv built elsewhere and passed through a
-  wrapper (`crew_shell.py`'s `runner(["git", "--exec-path"], ...)`) is not checked.
+- DERIVED: `crew_shell.resolve_gitbash` runs the resolved git through its injectable `runner`
+  (`plugin/crew/hooks/scripts/crew_shell.py:245`); the lint knows `runner`, `execute` and
+  obsidian-vault's `_run_bounded` as argv wrappers (`WRAPPERS`, `:180`).
+- JUDGEMENT: the lint sees a literal at the call, or in a name the same function assigns once. An
+  argv built in another function, or reassigned, is not checked.
 
 ## Entry points
 
