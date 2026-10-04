@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` NEXTVER: the verify gate passes a rule only on a completion record; the sabotage harness bounds each entry (T-0082 + T-0080, harness PR H2a)
+### Fixed — `crew` 1.0.401: the verify gate passes a rule only on a completion record; the sabotage harness bounds each entry (T-0082 + T-0080, harness PR H2a)
 
 - **T-0082, what changed.** `verify-gate.sh` and `verify-gate.ps1` run each rule
   inside a wrapper that writes the rule's exit status to a temp completion
