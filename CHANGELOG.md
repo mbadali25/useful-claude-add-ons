@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.302: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
+### Added — `crew` 1.0.249: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
   (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
