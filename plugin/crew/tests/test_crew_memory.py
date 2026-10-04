@@ -465,37 +465,37 @@ def _ps_quote(value):
     return "'" + value.replace("'", "''") + "'"
 
 
-def test_cli_from_bash_and_pwsh(host):
+def _bash_argv(mem, host):
+    bash = crew_fixtures.resolve_bash()
+    if not bash:
+        pytest.skip("no bash on this machine - the bash flavour is SKIPPED")
+    return [bash, "-c", '"$0" "$1" resolve --file "$2" --root "$3"',
+            sys.executable, SCRIPT, str(mem), str(host.root)]
+
+
+def _pwsh_argv(mem, host):
+    pwsh = crew_fixtures.resolve_pwsh()
+    if not pwsh:
+        pytest.skip("no pwsh 7 on this machine - the pwsh flavour is SKIPPED")
+    exe, script, file, root = (_ps_quote(v) for v in
+                               (sys.executable, SCRIPT, str(mem), str(host.root)))
+    command = f"& {exe} {script} resolve --file {file} --root {root}; exit $LASTEXITCODE"
+    return [pwsh, "-NoProfile", "-NonInteractive", "-Command", command]
+
+
+@pytest.mark.parametrize("shell", ["bash", "pwsh"])
+def test_cli_from_bash_and_pwsh(host, shell):
+    """Each shell is its own case and skips on its own: one shell missing
+    never lets the other's case pass for it."""
     vault = host.vault("work")
     host.obsidian({"vaults": {"work": {"path": str(vault)}}})
     mem = host.memory("vault: work | note: notes/fact.md\n", name="a fact.md")
-    lines = {}
-    bash = crew_fixtures.resolve_bash()
-    if bash:
-        proc = subprocess.run(
-            [bash, "-c", '"$0" "$1" resolve --file "$2" --root "$3"',
-             sys.executable, SCRIPT, str(mem), str(host.root)],
-            capture_output=True, check=False, env=host.env(), timeout=60)
-        out = proc.stdout.decode("utf-8")
-        assert proc.returncode == 0, out + proc.stderr.decode("utf-8")
-        lines["bash"] = out.splitlines()[0]
-    else:
-        print("crew tests: no bash - the bash flavour is SKIPPED")
-    pwsh = crew_fixtures.resolve_pwsh()
-    if pwsh:
-        exe, script, file, root = (_ps_quote(v) for v in
-                                   (sys.executable, SCRIPT, str(mem), str(host.root)))
-        command = f"& {exe} {script} resolve --file {file} --root {root}; exit $LASTEXITCODE"
-        proc = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
-                              capture_output=True, check=False, env=host.env(), timeout=120)
-        out = proc.stdout.decode("utf-8")
-        assert proc.returncode == 0, out + proc.stderr.decode("utf-8")
-        lines["pwsh"] = out.splitlines()[0]
-    else:
-        print("crew tests: no pwsh - the pwsh flavour is SKIPPED")
-    if not lines:
-        pytest.skip("neither bash nor pwsh is available here")
-    assert set(lines.values()) == {"state: resolved"}, lines
+    argv = _bash_argv(mem, host) if shell == "bash" else _pwsh_argv(mem, host)
+    proc = subprocess.run(argv, capture_output=True, check=False, env=host.env(), timeout=120)
+    out = proc.stdout.decode("utf-8")
+    assert proc.returncode == 0, out + proc.stderr.decode("utf-8")
+    assert out.splitlines()[:2] == [
+        "state: resolved", "path: " + os.path.realpath(str(vault / "notes" / "fact.md"))]
 
 
 def test_cli_output_is_lf_only(host):
@@ -523,3 +523,223 @@ def test_global_crew_config_is_isolated():
     """The autouse conftest fixture keeps the real global crew config out of
     reach; the `memory` fallback reads it through crew_config's attribute."""
     assert not os.path.exists(crew_config.GLOBAL_CONFIG_PATH)
+
+
+# --- review round 1 (e5c17322) ---------------------------------------------
+
+@pytest.mark.parametrize("config", [
+    {"vaults": {"memory": "/somewhere"}},
+    {"vaults": {"memory": None}},
+    {"vaults": ["memory"]},
+    {"vaults": "memory"},
+], ids=["entry-string", "entry-null", "vaults-list", "vaults-string"])
+def test_wrong_shape_vaults_is_config_unreadable(host, capsys, config):
+    """B1: a `vaults` block or entry of the wrong shape is not "no entry": the
+    crew config's memory.vaultPath must not answer for it."""
+    host.crew_vault_path(str(host.vault("other")))
+    host.obsidian(config)
+    mem = host.memory("vault: memory | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: ")
+
+
+def _deny(monkeypatch, denied, contents_only=False):
+    """Make the file calls raise EACCES for `denied` and everything under it,
+    as a folder without read/search permission does (the suite runs as root
+    here, where chmod would not deny anything). With `contents_only`, `denied`
+    itself still stats - a folder with mode 0 does, from its parent - but it
+    cannot be listed and nothing under it can be reached."""
+    denied = os.path.abspath(str(denied))
+
+    def blocked(path, listing=False):
+        text = os.path.abspath(os.fspath(path))
+        if text.startswith(denied + os.sep):
+            return True
+        return text == denied and (listing or not contents_only)
+
+    def wrap(real, listing):
+        def fake(*args, **kwargs):
+            path = args[0] if args else kwargs.get("path", kwargs.get("file", "."))
+            if not isinstance(path, int) and blocked(path, listing):
+                raise PermissionError(13, "Permission denied", os.fspath(path))
+            return real(*args, **kwargs)
+        return fake
+    for name, listing in (("stat", False), ("lstat", False), ("listdir", True),
+                          ("scandir", True)):
+        monkeypatch.setattr(os, name, wrap(getattr(os, name), listing))
+    monkeypatch.setattr("builtins.open", wrap(open, True))
+
+
+def test_unreadable_obsidian_config_folder_is_not_absent(host, capsys, monkeypatch):
+    """F1: a config whose folder cannot be read is not "no config"; the
+    `memory` name must not fall back to memory.vaultPath past it."""
+    host.crew_vault_path(str(host.vault("other")))
+    host.obsidian({"vaults": {"memory": {"path": str(host.base / "unmounted")}}})
+    mem = host.memory("vault: memory | note: notes/fact.md\n")
+    _deny(monkeypatch, host.config)
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: ")
+
+
+def test_unreadable_crew_config_is_not_unset(host, capsys, monkeypatch):
+    """F1 for `.crew/`: memory.vaultPath behind a denied folder is not unset,
+    so the legacy top-level vaultPath does not answer for it."""
+    host.crew_vault_path(str(host.vault("crewvault")))
+    host.obsidian({"vaultPath": str(host.vault("legacy"))})
+    mem = host.memory("vault: memory | note: notes/fact.md\n")
+    _deny(monkeypatch, host.root / ".crew")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "no-vault-config")
+    assert reason_of(out).startswith("config unreadable: ")
+
+
+@pytest.mark.parametrize("body", [
+    "  vault: work | note: notes/fact.md\n",
+    "Vault: work | note: notes/fact.md\n",
+    "VAULT: work | note: notes/fact.md\n",
+    "\tvault: work | note: notes/fact.md\n",
+], ids=["indented", "capital", "upper", "tab"])
+def test_near_pointer_is_malformed(host, capsys, body):
+    """F2: a line that is a pointer but for case or indentation is malformed,
+    never full text that exits 0."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(body)
+    _assert_degraded(*resolve(host, mem, capsys), "malformed")
+
+
+def test_cr_only_line_breaks_are_line_breaks(host, capsys):
+    """F2: a file with lone CR line breaks is read like an LF file, not as one
+    line that classifies as full text."""
+    vault = host.vault("work")
+    host.obsidian({"vaults": {"work": {"path": str(vault)}}})
+    mem = host.memory("vault: work | note: notes/fact.md\n", newline="\r")
+    code, out = resolve(host, mem, capsys)
+    assert (code, state_of(out)) == (0, "resolved"), out
+    bad = host.memory("vault: work | note: ../x.md\n", name="b.md", newline="\r")
+    _assert_degraded(*resolve(host, bad, capsys), "malformed")
+
+
+@pytest.mark.parametrize("note", ["notes/C:fact.md", "notes/fact.md:stream.md", "C:fact.md"],
+                         ids=["drive-relative-inner", "ads", "drive-relative"])
+def test_colon_in_any_segment_is_malformed(host, capsys, note):
+    """F3: `:` is refused in every segment (drive-relative paths, NTFS
+    alternate data streams), not only a leading `X:`."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(f"vault: work | note: {note}\n")
+    _assert_degraded(*resolve(host, mem, capsys), "malformed")
+
+
+def test_check_lists_a_dangling_symlink_as_unreadable(host, capsys):
+    """F4: a dangling `*.md` link is a memory file nobody can read, not one
+    to leave out of the list."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    host.memory("prose\n", name="a.md")
+    try:
+        os.symlink(str(host.base / "gone.md"), str(host.mem / "b.md"))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"this platform cannot create a symlink here: {exc}")
+    code, out = run(["check", "--memory-dir", str(host.mem), "--root", str(host.root),
+                     "--json"], capsys)
+    data = json.loads(out)
+    assert code == 1
+    assert [(r["file"], r["state"]) for r in data["rows"]] == [
+        ("a.md", "full-text"), ("b.md", "unreadable")]
+
+
+def test_unreadable_vault_is_unavailable_not_note_missing(host, capsys, monkeypatch):
+    """F5: a vault that cannot be read is vault-unavailable; note-missing is
+    only for a vault that was read and has no such note."""
+    vault = host.vault("work")
+    host.obsidian({"vaults": {"work": {"path": str(vault)}}})
+    mem = host.memory("vault: work | note: notes/fact.md\n")
+    _deny(monkeypatch, vault, contents_only=True)
+    _assert_degraded(*resolve(host, mem, capsys), "vault-unavailable")
+
+
+def test_unreadable_notes_folder_is_unreadable_not_note_missing(host, capsys, monkeypatch):
+    """F5: a folder inside the vault that cannot be read is `unreadable`."""
+    vault = host.vault("work")
+    host.obsidian({"vaults": {"work": {"path": str(vault)}}})
+    mem = host.memory("vault: work | note: notes/fact.md\n")
+    _deny(monkeypatch, vault / "notes", contents_only=True)
+    _assert_degraded(*resolve(host, mem, capsys), "unreadable")
+
+
+def test_legacy_vault_path_only_without_a_vaults_block(host, capsys):
+    """F6: as obsidian_common.list_vaults / writer_vault read it, the legacy
+    top-level vaultPath is the `memory` vault only when there is no `vaults`
+    block at all."""
+    host.obsidian({"vaultPath": str(host.vault("legacy")),
+                   "vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory("vault: memory | note: notes/fact.md\n")
+    _assert_degraded(*resolve(host, mem, capsys), "vault-unknown")
+
+
+def test_relative_vault_path_reason_says_relative(host, capsys):
+    """N1: a relative path is named as relative, not as "not a directory"."""
+    host.obsidian({"vaults": {"work": {"path": "vaults/work"}}})
+    mem = host.memory("vault: work | note: notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "vault-unavailable")
+    assert "absolute" in reason_of(out)
+
+
+def test_unlistable_memory_dir_exits_2(host, capsys, monkeypatch):
+    """N3: a memory folder that cannot be listed is a usage-level refusal with
+    a message, not a traceback."""
+    _deny(monkeypatch, host.mem, contents_only=True)
+    code, _out = run(["check", "--memory-dir", str(host.mem), "--root", str(host.root)],
+                     capsys)
+    assert code == 2
+
+
+@pytest.mark.parametrize("body", [
+    "vault: work | note: notes/fa\u200bct.md",
+    "vault: work | note: notes/\u202efact.md",
+    "vault: wo\u200drk | note: notes/fact.md",
+], ids=["zero-width-space", "rtl-override", "zwj-in-name"])
+def test_format_characters_are_malformed(host, capsys, body):
+    """N4: Unicode category Cf (invisible format characters) is refused like
+    Cc: a pointer must say what it looks like it says."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(body + "\n")
+    _assert_degraded(*resolve(host, mem, capsys), "malformed")
+
+
+def test_broken_crew_config_only_affects_the_memory_name(host, capsys):
+    """N6: a broken crew config is no-vault-config for `memory`, the one name
+    it could answer for; another unknown name is plain vault-unknown."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    (host.root / ".crew").mkdir()
+    (host.root / ".crew" / "config.json").write_text("{broken", encoding="utf-8")
+    mem = host.memory("vault: elsewhere | note: notes/fact.md\n")
+    _assert_degraded(*resolve(host, mem, capsys), "vault-unknown")
+    mem = host.memory("vault: memory | note: notes/fact.md\n", name="b.md")
+    _assert_degraded(*resolve(host, mem, capsys), "no-vault-config")
+
+
+def test_bom_memory_and_bom_config(host, capsys):
+    """N8: a UTF-8 BOM on the memory file or the config changes nothing."""
+    vault = host.vault("work")
+    host.config.write_bytes(b"\xef\xbb\xbf" + json.dumps(
+        {"vaults": {"work": {"path": str(vault)}}}).encode("utf-8"))
+    mem = host.mem / "bom.md"
+    mem.write_bytes(b"\xef\xbb\xbf" + (FRONTMATTER + "vault: work | note: notes/fact.md\n")
+                    .encode("utf-8"))
+    code, out = resolve(host, mem, capsys)
+    assert (code, state_of(out)) == (0, "resolved"), out
+
+
+def test_memory_md_is_skipped_exactly_and_md_suffix_any_case(host, capsys):
+    """N2: only `MEMORY.md` itself is the index; `memory.md` is a memory file,
+    and a `.MD` suffix is still a memory file."""
+    host.memory("- index\n", name="MEMORY.md", frontmatter="")
+    host.memory("prose\n", name="memory.md")
+    host.memory("prose\n", name="upper.MD")
+    code, out = run(["check", "--memory-dir", str(host.mem), "--root", str(host.root),
+                     "--json"], capsys)
+    data = json.loads(out)
+    assert code == 0
+    assert sorted(r["file"] for r in data["rows"]) == ["memory.md", "upper.MD"]
