@@ -36,6 +36,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   sabotage mutations of the new branches each went red; they are committed separately as
   L-0661, because `sabotage*.py` is harness.
 
+### Changed — `crew` 1.0.326: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
+
+- `crew_train.py check-land`'s two catch-up refusals (merge-tree conflict, base moved in Touch)
+  now print one order (`LANDING_ORDER`): catch up, resolve, bump the version one past the base,
+  refresh artifacts, commit, gate the merged head, review it again if `review_ledger.py
+  --check-receipt` reads stale, then check-land again - so the tree the gate passed is the tree
+  that lands. `test_check_land_refusal_names_bump_and_refresh_before_the_gate` (both refusals) is
+  red on the old text.
+- `/crew:done`, `/crew:implement` step 6, the README's train section and the daily-workflow guide
+  (rebuilt HTML, DOCX, PDF) say the same, and that a re-anchor after review changes only the
+  `anchor:` sha, its provenance going in the ticket's `notes.md`. The troubleshooting guide's two
+  catch-up fixes (`acquire`'s `merge <base> first`, `check-land`'s base-moved refusal) state the
+  same order (rebuilt HTML, DOCX, PDF); `test_guides_state_landing_order_after_every_catch_up`
+  holds both guides to it and was red on the old troubleshooting text.
+
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 
 - `plugin/crew/tests/sabotage_config.py` gains three mutations against the
