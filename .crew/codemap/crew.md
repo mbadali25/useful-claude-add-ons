@@ -220,7 +220,7 @@ filter, the subject line, the dedupe and episode records under
 `plugin/crew/hooks/scripts/notify.sh` and `plugin/crew/hooks/scripts/notify.ps1`
 name no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
 
-**Blocker pings (T-0060).** DERIVED at T-0060's content commit (the lines as this ticket ships them). `blocker` is in `EVENTS`
+**Blocker pings (T-0060).** DERIVED at `ad0c7a19`. `blocker` is in `EVENTS`
 (`plugin/crew/hooks/scripts/crew_notify.py:86`), with one subject per `KINDS` entry (`:90`) in
 `SUBJECTS` (`:105`), `Blocked` for no kind; `_filter` (`:706`) refuses a send under the pre-1.0
 names `phase`/`review`/`done` as a retired caller. `run_stop` (`:853`) is the one decision for
