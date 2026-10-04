@@ -1,10 +1,13 @@
 """The ticket-contract block of the review prompt: every piece is either
 present or stated as MISSING, never silently omitted."""
+import json
+import pathlib
 import re
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_train
 import review_prompt as rp
 import recurring_findings
 import review_verdict
@@ -501,11 +504,6 @@ def test_build_lists_every_recurring_class_when_the_manifest_cannot_say(repo):
 
 
 # --- L-0526: catch-up merges the reviewer must see as changes ------------------------------
-
-import json  # noqa: E402  pylint: disable=wrong-import-position
-import pathlib  # noqa: E402  pylint: disable=wrong-import-position
-
-import crew_train  # noqa: E402  pylint: disable=wrong-import-position
 
 CATCH_UP_HEAD = "== Catch-up merges (rerere) =="
 STANDARDS_HEAD = "== Development standards checklist (appendix) =="
