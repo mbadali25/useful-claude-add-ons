@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:04 UTC
+Last updated: 2026-10-04 03:06 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:04 UTC
 
 ## Log (newest first)
 
+- 03:06: #336 r1 (Sonnet) on f08ae7fb: 0 BLOCK, 0 FIX, 2 NIT (numeric workflow ID / gh alias read as unlisted; docstring limit list). CI verify-gate red ONLY on check-tooling-pr.py (owner waiver in PR body). Plan at landing: split the harness part (sabotage_cloud.py) into its own tooling PR, as L-0516/L-0563 did, so both go green.
 - 03:04: #333 r1 (Sonnet) on 73af42d7: 0 BLOCK, 1 FIX (review_checks.py:755 bare job.terminate() on clean exit raises OSError, not CouldNotCheck), 1 NIT. Fixer started, placeholder 1.0.304.
 - 03:03: #331 r1 (Sonnet) on 5bd46939: 0 BLOCK, 1 FIX (test_every_platform_only_label_names_exactly_one_shipped_mutation fails without pwsh), 2 NIT. Fixer started, placeholder crew 1.0.303.
 - 03:02: Content reviews (Sonnet) started on #377, #333, #331, #336 (current heads); merge-only reviews follow at landing. #339 CI: Windows legs, shell, test 3.12, verify-gate still running.
