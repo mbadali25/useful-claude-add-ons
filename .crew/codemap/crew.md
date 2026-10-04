@@ -601,6 +601,32 @@ and gets nothing created.
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
 
+### Which terminal: the session's own process (T-0016, crew 1.0.351)
+
+Read in full on `T-0016-build` before its version commit; line citations taken with `grep -n` there.
+
+- DERIVED: the bash flavour binds after `resolve_method` and before returning `send`
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:957`, `bind_to_session` at `:1002`), so the
+  sender's sent-marker claim (`plugin/crew/hooks/scripts/auto-clear.sh`, after the plan) never
+  runs for a binding refusal. `session_owner` (`crew_autocycle.py:537`) walks the hook's chain to
+  the first `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json` whose `sessionId` and
+  `procStart` match; `classify` (`:576`) needs kind `interactive`, entrypoint in
+  `TERMINAL_ENTRYPOINTS` (`:108`, `{"cli"}`) and a non-zero `tty_nr` for `terminal`;
+  `prove_target` (`:696`) re-proves the pane/window from the owner, with `other_sessions`
+  (`:604`) and `_shared_window` (`:660`, the descendant tty scan). Headless becomes method
+  `notify-headless`, its text from `headless_notice` (`:974`), printed and claimed at
+  `plugin/crew/hooks/scripts/auto-clear.sh:312`.
+- DERIVED: `plugin/crew/hooks/scripts/auto-clear.ps1` carries the same rules natively
+  (`Get-CrewSessionOwner` `:657`, `Get-CrewSessionClass` `:685` with no tty, the binding block from
+  `:743`, the owner-anchored window walk from `:878`); Windows' parent walk treats an exited parent
+  as the top of the chain.
+- DERIVED: every process fact goes through `_proc`, and `CREW_AUTOCLEAR_PROC_STUB`
+  (`crew_autocycle.py:101`) replaces the whole table; the suite's fixtures are
+  `plugin/crew/tests/crew_fixtures.py:1312` (`write_session_record`), `:1334` (`proc_stub`) and
+  `:1357` (`bind_session`), which T-0017 builds on.
+- JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
+  sabotage anchors); `prove_target` is the stricter proof and the one that decides.
+
 ## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43)
 
 `plugin/crew/hooks/scripts/crew_resume.py` owns the `resume:` line a handoff
