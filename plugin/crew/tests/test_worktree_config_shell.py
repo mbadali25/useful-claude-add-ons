@@ -9,7 +9,9 @@ main checkout armed the cloud guard let a command through unjudged. This file
 holds the two shell resolvers to the Python one case by case, and the readers
 this slice routes (`_common.sh`'s incident stand-down, both cloud-guard
 fallbacks, promote-gate.ps1's stand-down, auto-clear.ps1's repo veto) to the
-inherited layer, with must-block and must-allow cases.
+inherited layer, with must-block and must-allow cases. L-0680 adds the session
+hooks (notify, handoff-read, handoff-write, context-watch, both flavours): they
+read the resolved file, and everything they write stays in the lane.
 
 Every case builds throwaway repositories under tmp_path; nothing reads the real
 repository's config. bash cases skip where bash is absent, PowerShell cases
@@ -40,7 +42,8 @@ needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 needs_pwsh = pytest.mark.skipif(
     _PWSH is None, reason="pwsh is not installed here; the .ps1 cases are written and skipped")
 
-PS_COPIES = ("cloud-guard", "promote-gate", "auto-clear")
+PS_COPIES = ("cloud-guard", "promote-gate", "auto-clear",
+             "notify", "handoff-read", "handoff-write", "context-watch")  # L-0680: the last four
 SHELL_SOURCE = {crew_common.SOURCE_OWN: "own", crew_common.SOURCE_MAIN: "main",
                 crew_common.SOURCE_UNKNOWN: "unknown"}
 NO_PYTHON = {"PYTHONHOME": "/nonexistent-python-home"}
@@ -430,3 +433,296 @@ def test_auto_clear_ps1_reads_the_inherited_repo_veto(tmp_path, flavour, main_en
 
     assert proc.returncode == 0, proc.stderr
     assert (wt / ".crew" / ".autoclear.log").exists() is armed, proc.stderr
+
+
+# --- the session hooks (L-0680) ----------------------------------------------------------
+#
+# notify, handoff-read, handoff-write and context-watch, both flavours, read the
+# resolved repo config: a lane with none of its own reads the main checkout's,
+# its own file wins whole, and `unknown` reads nothing. Every write stays in the
+# lane. No test sends a real notification: the provider is `teams` pointed (via
+# urlEnv) at a local HTTP stub that counts the posts.
+
+SESSION_DRIVERS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+SESSION_HOOKS = ("notify", "handoff-read", "handoff-write", "context-watch")
+_URL_ENV = "CREW_L0680_STUB_URL"
+
+
+def _session_env(tmp_path, root, flavour, extra=None):
+    env = {k: v for k, v in os.environ.items()
+           if k.lower() not in ("http_proxy", "https_proxy", "all_proxy", "no_proxy")
+           and k not in ("CLAUDE_PROJECT_DIR", "OS", "CI", "CREW_UNATTENDED")}
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    env.update({"HOME": str(home), "USERPROFILE": str(home), "CLAUDE_PROJECT_DIR": str(root),
+                "CREW_AUTOCLEAR_INHIBIT": "1", "PYTHONDONTWRITEBYTECODE": "1",
+                "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"})
+    if flavour == "ps1":
+        env["OS"] = "Windows_NT"
+    env.update(extra or {})
+    return env
+
+
+def _run_session_hook(tmp_path, hook, flavour, root, payload=None, args=(), extra=None):
+    if flavour == "sh":
+        argv = [_BASH, _posix(os.path.join(SCRIPTS, hook + ".sh")), *args]
+    else:
+        argv = [_PWSH, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+                os.path.join(SCRIPTS, hook + ".ps1"), *args]
+    data = b"" if payload is None else json.dumps(payload).encode("utf-8")
+    return subprocess.run(argv, input=data, capture_output=True, cwd=str(root),
+                          env=_session_env(tmp_path, root, flavour, extra), timeout=120,
+                          check=False)
+
+
+class _Stub:
+    """A local HTTP endpoint that counts POSTs: the notify provider."""
+
+    def __init__(self):
+        import http.server  # pylint: disable=import-outside-toplevel
+        import threading  # pylint: disable=import-outside-toplevel
+        posts = self.posts = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802  pylint: disable=invalid-name
+                length = int(self.headers.get("Content-Length") or 0)
+                posts.append(self.rfile.read(length))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *_args):  # pylint: disable=arguments-differ
+                return
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/hook"
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture
+def stub():
+    server = _Stub()
+    yield server
+    server.close()
+
+
+NOTIFY_CFG = {"notify": {"provider": "teams", "urlEnv": _URL_ENV, "events": ["waiting"]}}
+
+
+def _notify(tmp_path, flavour, root, stub_server):
+    return _run_session_hook(tmp_path, "notify", flavour, root, args=("waiting", "suite ping"),
+                             extra={_URL_ENV: stub_server.url})
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_notify_in_a_lane_uses_the_main_checkouts_provider(tmp_path, flavour, stub):
+    _main, wt = _lane(tmp_path, NOTIFY_CFG)
+    proc = _notify(tmp_path, flavour, wt, stub)
+    assert proc.returncode == 0, proc.stderr
+    assert len(stub.posts) == 1, proc.stderr
+    assert b"suite ping" in stub.posts[0]
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_notify_in_a_lane_with_its_own_config_ignores_the_main_checkouts(tmp_path, flavour, stub):
+    _main, wt = _lane(tmp_path, NOTIFY_CFG)
+    _own(wt, "config.json", {"scope": {"mode": "block"}})
+    proc = _notify(tmp_path, flavour, wt, stub)
+    assert proc.returncode == 0, proc.stderr
+    assert not stub.posts, proc.stderr
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_notify_in_the_main_checkout_still_uses_its_own_provider(tmp_path, flavour, stub):
+    main, _wt = _lane(tmp_path, NOTIFY_CFG)
+    proc = _notify(tmp_path, flavour, main, stub)
+    assert proc.returncode == 0, proc.stderr
+    assert len(stub.posts) == 1, proc.stderr
+
+
+HANDOFF_CFG = {"context": {"handoffPath": "notes/H.md"}, "memory": {"inject": False}}
+
+
+def _note(root, text):
+    (root / "notes").mkdir(exist_ok=True)
+    (root / "notes" / "H.md").write_text(text + "\n", encoding="utf-8")
+
+
+def _handoff_read(tmp_path, flavour, root, session="s-read"):
+    return _run_session_hook(tmp_path, "handoff-read", flavour, root,
+                             payload={"source": "clear", "cwd": str(root), "session_id": session})
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_read_in_a_lane_prints_the_note_at_the_inherited_path(tmp_path, flavour):
+    main, wt = _lane(tmp_path, HANDOFF_CFG)
+    _note(main, "MAIN CHECKOUT NOTE")
+    _note(wt, "LANE NOTE")
+    proc = _handoff_read(tmp_path, flavour, wt)
+    out = proc.stdout.decode("utf-8", "replace")
+    assert proc.returncode == 0, proc.stderr
+    assert "LANE NOTE" in out, proc.stderr
+    assert "MAIN CHECKOUT NOTE" not in out
+
+
+def _transcripts(root):
+    return sorted((root / ".crew" / "transcripts").glob("*.jsonl"))
+
+
+def _crew_listing(root):
+    return sorted(str(p.relative_to(root)) for p in (root / ".crew").rglob("*"))
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_write_in_a_lane_keeps_the_inherited_transcript_count(tmp_path, flavour):
+    main, wt = _lane(tmp_path, {"context": {"keepTranscripts": 2}})
+    before = _crew_listing(main)
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text('{"x": 1}\n', encoding="utf-8")
+    for n in range(3):
+        if n:
+            time.sleep(1.1)  # the copy is named to the second
+        proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
+            "transcript_path": str(transcript), "trigger": "manual", "cwd": str(wt),
+            "session_id": f"s-write-{n}"})
+        assert proc.returncode == 0, proc.stderr
+    assert len(_transcripts(wt)) == 2
+    assert _crew_listing(main) == before
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_write_in_the_main_checkout_keeps_its_own_transcript_count(tmp_path, flavour):
+    """Own file. The .ps1 used to drop keepTranscripts on PowerShell 7, whose
+    ConvertFrom-Json reads a JSON integer as Int64, not [int]."""
+    main, _wt = _lane(tmp_path, {"context": {"keepTranscripts": 1}})
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text('{"x": 1}\n', encoding="utf-8")
+    for n in range(2):
+        if n:
+            time.sleep(1.1)
+        proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
+            "transcript_path": str(transcript), "trigger": "manual", "cwd": str(main),
+            "session_id": f"s-own-{n}"})
+        assert proc.returncode == 0, proc.stderr
+    assert len(_transcripts(main)) == 1
+
+
+def _context_cfg(**over):
+    cfg = {"warnAt": 0.8, "budgetTokens": 100, "reserveTokens": 0, "autoWrapUp": False}
+    cfg.update(over)
+    return {"context": cfg}
+
+
+def _context_watch(tmp_path, flavour, root, extra=None, session="s-watch"):
+    transcript = root / "transcript.jsonl"
+    transcript.write_bytes(b"x" * 500)  # over 0.8 of a 100-token budget
+    return _run_session_hook(tmp_path, "context-watch", flavour, root, payload={
+        "transcript_path": str(transcript), "cwd": str(root), "session_id": session,
+        "stop_hook_active": False}, extra=extra)
+
+
+CONTEXT_DRIVERS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh),
+                   pytest.param("sh-no-python", marks=needs_bash)]
+
+
+def _watch_flavour(driver):
+    return ("sh", NO_PYTHON) if driver == "sh-no-python" else (driver, None)
+
+
+def _markers(root):
+    return list((root / ".crew").glob(".handoff-requested-*"))
+
+
+@pytest.mark.parametrize("driver", CONTEXT_DRIVERS)
+def test_context_watch_in_a_lane_follows_the_inherited_enabled_false(tmp_path, driver):
+    _main, wt = _lane(tmp_path, _context_cfg(enabled=False))
+    (wt / ".crew").mkdir()
+    flavour, extra = _watch_flavour(driver)
+    proc = _context_watch(tmp_path, flavour, wt, extra)
+    assert proc.returncode == 0, proc.stderr
+    assert not _markers(wt)
+
+
+@pytest.mark.parametrize("driver", CONTEXT_DRIVERS)
+def test_context_watch_in_a_lane_warns_at_the_inherited_threshold(tmp_path, driver):
+    main, wt = _lane(tmp_path, _context_cfg())
+    (wt / ".crew").mkdir()
+    flavour, extra = _watch_flavour(driver)
+    first = _context_watch(tmp_path, flavour, wt, extra)
+    assert first.returncode == 2, first.stderr
+    if driver == "sh-no-python":
+        return  # the no-python branch asks once per turn and claims no marker, by design
+    err = first.stderr.decode("utf-8", "replace")
+    # the message names the file in force, the main checkout's, not the lane's
+    shown = {str(main / ".crew" / "config.json"),
+             os.path.join(os.path.realpath(main), ".crew", "config.json")}
+    assert any(s in err for s in shown), err
+    second = _context_watch(tmp_path, flavour, wt, extra)
+    assert second.returncode == 0, second.stderr
+    assert len(_markers(wt)) == 1
+    assert not _markers(main)
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_context_watch_in_the_main_checkout_keeps_its_message(tmp_path, flavour):
+    """Own file: the message still says `.crew/config.json`, byte for byte."""
+    main, _wt = _lane(tmp_path, _context_cfg())
+    proc = _context_watch(tmp_path, flavour, main)
+    err = proc.stderr.decode("utf-8", "replace")
+    assert proc.returncode == 2, err
+    assert "That came from .crew/config.json." in err
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_session_hooks_read_only_their_own_file_when_git_cannot_tell(tmp_path, flavour, stub):
+    """`.git` naming a missing directory: nothing is inherited (there is no
+    main checkout to name) and each hook behaves as with no config."""
+    root = _case_git_file_naming_a_missing_dir(tmp_path)
+    (root / ".crew").mkdir()
+    _note(root, "UNKNOWN NOTE")
+    assert _notify(tmp_path, flavour, root, stub).returncode == 0
+    assert not stub.posts
+    read = _handoff_read(tmp_path, flavour, root)
+    assert read.returncode == 0 and b"UNKNOWN NOTE" not in read.stdout
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("{}\n", encoding="utf-8")
+    write = _run_session_hook(tmp_path, "handoff-write", flavour, root, payload={
+        "transcript_path": str(transcript), "trigger": "manual", "cwd": str(root),
+        "session_id": "s-unknown"})
+    assert write.returncode == 0 and not _transcripts(root)
+    watch = _context_watch(tmp_path, flavour, root)
+    assert watch.returncode == 0 and not _markers(root), watch.stderr
+
+
+# Lines in the eight scripts that may still name the own file outside a comment:
+# the user-facing default of the name a message shows. Exact text and count.
+OWN_PATH_ALLOWED = {
+    "context-watch.ps1": {
+        "$cfgShown = if ($repoCfg.Source -eq 'main') { $cfgPath } else { '.crew/config.json' }": 1,
+    },
+}
+
+
+def _executable_mentions(path):
+    found = {}
+    for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if text.startswith("#") or not any(n in text for n in (".crew/config.json",
+                                                                ".crew/crew.json")):
+            continue
+        found[text] = found.get(text, 0) + 1
+    return found
+
+
+def test_no_session_hook_names_the_own_config_path():
+    for hook in SESSION_HOOKS:
+        for ext in ("sh", "ps1"):
+            name = f"{hook}.{ext}"
+            assert _executable_mentions(os.path.join(SCRIPTS, name)) == \
+                OWN_PATH_ALLOWED.get(name, {}), name

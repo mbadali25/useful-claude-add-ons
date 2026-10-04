@@ -41,11 +41,17 @@ PY=$(crew_py) || { echo "crew handoff-read: no usable python - the handoff note 
 "$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_context as c; sys.exit(0 if c.inject_enabled(c.find_root(sys.argv[2])) else 1)' "$DIR" "$PWD" 2>/dev/null && exit 0
 "$PY" "$DIR/hook_once.py" handoff-read "${SESSION}-${SOURCE}" || exit 0
 
-[ -f .crew/config.json ] || exit 0
+# L-0680: the repo config is the resolved one (_common.sh's crew_repo_config_dir,
+# T-0096): a linked worktree with none of its own reads the main checkout's; own
+# files win whole; `unknown` reads only the own .crew/. An inherited relative
+# handoffPath still names a file in this checkout.
+crew_repo_config_dir .
+CREW_CFG="$CREW_CFG_DIR/config.json"
+[ -f "$CREW_CFG" ] || exit 0
 
 PY=$(crew_py) || exit 0
 
-HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
+HANDOFF=$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' "$CREW_CFG" 2>/dev/null)
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 [ -f "$HANDOFF" ] || exit 0
 

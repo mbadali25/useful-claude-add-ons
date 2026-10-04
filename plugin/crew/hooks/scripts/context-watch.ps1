@@ -26,6 +26,55 @@
 # that bug once - the guard stood down on Windows and blocked nothing there.
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
+function Get-CrewRepoConfigDir([string]$Root) {
+  # @{ Dir; Source }: the `.crew/` the repo config is read from, and own, main
+  # or unknown. Twin of crew_repo_config_dir in _common.sh and of
+  # crew_common.repo_config_dir (T-0088, T-0096): own files win whole, never
+  # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
+  # into each script that needs it (a dot-sourced function is invisible to
+  # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
+  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
+  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
+  # root, likely) in either path compared below reads `unknown`, never `main`.
+  if (-not $Root) { $Root = '.' }
+  $own = Join-Path $Root '.crew'
+  $result = @{ Dir = $own; Source = 'own' }
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $own $n) -Force -ErrorAction SilentlyContinue) { return $result }
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
+  $result.Source = 'unknown'
+  # git prints paths as UTF-8; a native command's output is decoded with
+  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
+  # this one call and put the caller's back.
+  $encoding = [Console]::OutputEncoding
+  try {
+    $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
+  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
+  $real = New-Object System.Collections.Generic.List[string]
+  foreach ($p in $lines) {
+    $full = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $base $p }))
+    for ($at = $full; $at; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if (-not $item -or $item.LinkType) { return $result }
+    }
+    $real.Add($full.TrimEnd('\', '/'))
+  }
+  $result.Source = 'own'
+  $same = if ($env:OS -eq 'Windows_NT') { $real[0] -eq $real[1] } else { $real[0] -ceq $real[1] }
+  if ($same -or (Split-Path -Leaf $real[1]) -cne '.git') { return $result }
+  $main = Join-Path (Split-Path -Parent $real[1]) '.crew'
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $main $n) -Force -ErrorAction SilentlyContinue) {
+      return @{ Dir = $main; Source = 'main' }
+    }
+  }
+  return $result
+}
+
 $raw = [Console]::In.ReadToEnd()
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
@@ -137,7 +186,15 @@ if ($d.stop_hook_active -eq $true) {
 # -- still requires a fully initialised crew repo. Unchanged from before F4:
 # a `.crew/` directory with no config.json gets no warnings and writes no
 # marker, exactly as a repo that never ran `/crew:init` always has.
-if (-not (Test-Path ".crew/config.json")) { exit 0 }
+# L-0680: the resolved repo config (Get-CrewRepoConfigDir, T-0096): a linked
+# worktree with none of its own reads the main checkout's, own files win whole,
+# `unknown` reads only the own .crew/. The marker stays in this .crew/.
+# $cfgShown is the name a message gives it: the main checkout's full path when
+# it is inherited, `.crew/config.json` when it is this checkout's own.
+$repoCfg  = Get-CrewRepoConfigDir '.'
+$cfgPath  = Join-Path $repoCfg.Dir 'config.json'
+$cfgShown = if ($repoCfg.Source -eq 'main') { $cfgPath } else { '.crew/config.json' }
+if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf)) { exit 0 }
 
 if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 
@@ -147,7 +204,7 @@ if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 # once-per-crossing gate for this hook, reset by handoff-read.ps1 at this
 # session's next SessionStart -- that stays.
 
-$cfg = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).context
+$cfg = (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).context
 if ($null -eq $cfg -or $cfg.enabled -eq $false) { exit 0 }
 # $null test, not truthiness: warnAt 0 is a legal "always fire" and 0 is falsy.
 $warnAt     = if ($null -ne $cfg.warnAt) { [double]$cfg.warnAt } else { 0.5 }
@@ -350,10 +407,10 @@ try { & "$PSScriptRoot/notify.ps1" waiting "context $pctH% - writing handoff" 2>
 # Report the absolute numbers, not only the percentage. A budgetTokens that does
 # not match the model in use is otherwise invisible - it just makes the gate
 # fire early forever, and a warning that is always on is one nobody reads.
-$budgetNote = " Set context.budgetTokens in .crew/config.json to pin it."
+$budgetNote = " Set context.budgetTokens in $cfgShown to pin it."
 if ($how -eq "configured+observed") {
   $budgetNote = @"
- context.budgetTokens in .crew/config.json says a smaller window,
+ context.budgetTokens in $cfgShown says a smaller window,
 but this session has already held more than that - and observed usage cannot
 exceed the real window, so the larger figure wins. That pin is stale; set it to
 null to let crew work the window out from the model.
@@ -367,7 +424,7 @@ the id alone is not trusted. Pin it with context.budgetTokens if you prefer.
 "@.TrimEnd()
 } elseif ($how -eq "configured") {
   $budgetNote = @"
- That came from .crew/config.json. Remove it to let crew work the
+ That came from $cfgShown. Remove it to let crew work the
 window out from the model and this session's own usage.
 "@.TrimEnd()
 }
