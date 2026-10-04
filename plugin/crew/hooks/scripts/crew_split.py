@@ -62,11 +62,15 @@ notification, wake or webhook: anything opening with `<`) and not the prompt
 check ran under (a loop). Could not tell is a refusal, never a yes. A
 successful apply spends the check; a failed one drops it.
 
-Accepted limits: the session is found through `CLAUDE_CODE_SESSION_ID`, an
-environment variable any process can set; and a scheduled prompt delivered
-as plain text reads as typed. The gate stops a session answering its own
-question by accident, not a process forging the turn record; the prose
-confirmation is what reads the answer.
+Accepted limits (owner decision 2026-10-04): the gate is NOT owner-proof
+against the session itself. A session can schedule its own plain-text "yes"
+(send_later, a routine) and that prompt passes the gate, because a scheduled
+prompt delivered as plain text reads as typed. The session is also found
+through `CLAUDE_CODE_SESSION_ID`, an environment variable any process can
+set. The gate stops a session answering its own question in the same turn
+or from a harness envelope, not a session or process that sets out to forge
+the answer; the prose confirmation is what reads it. Follow-up: route split
+approval through the /crew:approve harness path (TODO.md).
 
 CLI (exit 0 ok, 1 refused):
     crew_split.py [measure] --root . --ticket <id> [--stage spec|plan]
@@ -631,8 +635,9 @@ def confirm(top, ticket, session=None):
     prompt that is readable, not a harness envelope (task notification,
     wake, webhook) and not the prompt check ran under (a loop re-sending
     it). Autopilot runs its phases with no prompt in between, so it can
-    never pass this. Accepted limit: a scheduled prompt delivered as plain
-    text reads as typed; the prose confirmation is what reads it."""
+    never pass this. Accepted limit (owner, 2026-10-04): a session can
+    schedule its own plain-text "yes" (send_later, a routine), which reads
+    as typed and passes; the gate is not owner-proof against the session."""
     top = _top(top)
     record, why = _read_check_record(top, ticket)
     if why:
@@ -714,9 +719,15 @@ def _provenance(top, child_id, parent):
 
 
 def _indexed(top, child_id):
-    """True when .work/INDEX.md holds a row for `child_id` (mint writes one)."""
+    """True when .work/INDEX.md holds an OPEN row for `child_id` (mint writes
+    one). A row closed with a T-0037 word (`cancelled`, `superseded`) is the
+    owner's way out of a stale child, so it no longer counts as minted."""
     text = _read(os.path.join(top, ".work", "INDEX.md")) or ""
-    return any(line.split("|", 1)[0].strip() == child_id for line in text.splitlines())
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.split("|")]
+        if cells[0] == child_id:
+            return len(cells) > 1 and cells[1] not in crew_tracker.CLOSED_STATUSES
+    return False
 
 
 def _written_for(top, child_id, parent, child):
@@ -760,35 +771,42 @@ def _existing_children(top, ticket, children, minted):
                          f"{ticket}; {MINTED_RULE}; nothing was written")
     if not record:
         return {}
+    live = {}
     for number, child_id in sorted(minted.items()):
-        if _provenance(top, child_id, ticket) != number or not _indexed(top, child_id):
+        if _provenance(top, child_id, ticket) != number:
             raise SplitError(f"## Minted names {child_id} as Child {number}, but it carries no "
                              f"provenance (`origin: split of {ticket}`, `split-child: "
-                             f"{number}`) or INDEX row; nothing was written")
+                             f"{number}`); nothing was written")
+        if _indexed(top, child_id):
+            live[number] = child_id  # a cancelled/superseded or row-less entry is minted again
     found = dict(_orphans(top, ticket))
-    found.update(minted)
+    found.update(live)
     by_number = {child["number"]: child for child in children}
     for number, child_id in sorted(found.items()):
         child = by_number.get(number)
         if child is None or not _written_for(top, child_id, ticket, child):
             raise SplitError(f"{child_id} was minted as Child {number} for a different proposal "
                              f"(its direction no longer matches this {PROPOSAL}'s Child "
-                             f"{number}); restore that child, or cancel {child_id} and remove it "
-                             f"from ## Minted; nothing was written")
+                             f"{number}); nothing was written. Either restore Child {number}'s "
+                             f"text in {PROPOSAL}, or cancel the stale ticket with "
+                             f"`crew_tracker.py move --ticket {child_id} --to cancelled`; then "
+                             f"re-run check and ask for a new yes")
     return found
 
 
 def _record_minted(path, number, ticket):
-    """Append `- Child N: <id>` under a trailing `## Minted` (made on first
-    use), in the file's own line ending."""
+    """Set `- Child N: <id>` in the trailing `## Minted` (made on first use;
+    an entry for N, a cancelled child's, is replaced in place), in the file's
+    own line ending."""
     with open(path, "rb") as handle:
         text = handle.read().decode("utf-8")
     eol = "\r\n" if "\r\n" in text else "\n"
-    if not text.endswith(("\n", "\r")):
-        text += eol
-    if minted_tail(text)[1] is None:
-        text += f"{eol}## Minted{eol}"
-    text += f"- Child {number}: {ticket}{eol}"
+    body, entries = minted_tail(text)
+    if entries is None:
+        body, entries = text, {}
+    entries[number] = ticket
+    lines = "".join(f"- Child {n}: {t}{eol}" for n, t in entries.items())
+    text = f"{body.rstrip()}{eol}{eol}## Minted{eol}{lines}"
     _atomic_write(path, text.encode("utf-8"))
 
 
@@ -846,7 +864,7 @@ def _mint_children(top, ticket, children, existing, path):
         number = child["number"]
         found = existing.get(number)
         if found:
-            if number not in minted:
+            if minted.get(number) != found:
                 minted[number] = found
                 _record_minted(path, number, found)
             kids.append(found)
@@ -855,8 +873,8 @@ def _mint_children(top, ticket, children, existing, path):
             got = crew_ticket.mint(top, child["title"], status="ready",
                                    direction=_direction(ticket, child))
         except Exception as exc:  # pylint: disable=broad-except
-            done = [f"Child {c['number']}" for c in children if c["number"] in minted]
-            left = [f"Child {c['number']}" for c in children if c["number"] not in minted]
+            done = [f"Child {c['number']}" for c in children[:len(kids)]]
+            left = [f"Child {c['number']}" for c in children[len(kids):]]
             raise SplitError(
                 f"mint of Child {number} ({child['title']}) failed: {exc}; minted: "
                 f"{', '.join(done) or 'none'}; not minted: {', '.join(left)}; the parent's "

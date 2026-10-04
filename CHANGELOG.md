@@ -60,6 +60,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   A `## Minted` section apply did not write is refused, and the proposal
   hash covers every byte but a valid trailing block. An unknown evidence key
   is refused even beside a known one.
+- **Accepted limit (owner decision 2026-10-04).** The confirmation gate is
+  not owner-proof against the session itself: a session can schedule its own
+  plain-text "yes" (`send_later`, a routine) and pass it. Documented in the
+  module docstring and the README; the follow-up routes split approval
+  through the `/crew:approve` harness path (`TODO.md`).
 - **Review round 1 (#364).** Three BLOCKs (a `## Minted` heading that hid
   later edits from the hash, an unverified `## Minted` that let apply skip a
   child, a turn moved by a task notification passing `confirm`), four FIXes
@@ -70,13 +75,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   is compared to the current proposal (a swapped child was reused with its
   old criteria), orphans need the apply record and an INDEX row, and the
   repeated-prompt refusal says the owner may have typed the same words.
-- **Tests.** `test_crew_split.py` (97 cases): must-block and must-allow for
+  **Round 3:** a `cancelled` or `superseded` child is never reused, so
+  cancelling a stale child unblocks the apply, and the refusal names that
+  exit and restoring the child's text.
+- **Tests.** `test_crew_split.py` (100 cases): must-block and must-allow for
   every rule, the confirm gate, `apply` in files and Obsidian mode, and the
   command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
   entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
-  Twenty-six mutations (the first ten: child bound, substring placement,
+  Twenty-seven mutations (the first ten: child bound, substring placement,
   duplicates, exclusions, `separable-criteria`, `None` as 0, the sdp stop,
-  mint order, parent-status order, the confirm turn check; sixteen more for
+  mint order, parent-status order, the confirm turn check; seventeen more for
   the review rounds' guards) were run by hand, each red on its named test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
   paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
   maps `crew_split.py`, its test, the fixture and `split.md`.

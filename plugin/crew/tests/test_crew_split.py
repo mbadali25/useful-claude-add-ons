@@ -1317,3 +1317,76 @@ def test_repeated_prompt_reason_names_typed_words():
     with open(SCRIPT, encoding="utf-8") as handle:
         text = handle.read()
     assert "typed the same words" in text and "first 500 characters" in text
+
+
+# --- review round 3 (#364 at 91ec7d6c) ----------------------------------------------
+
+def _partial_then_swap(root, ticket, monkeypatch, keep_minted):
+    """Apply fails after Child 1 is minted; the owner then swaps the
+    children (Child 1 now takes the ship criteria). Returns Child 1's id."""
+    _checked(root, ticket)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    old = path.read_text(encoding="utf-8")
+    first = re.search(r"- Child 1: (T-\d+)", old).group(1)
+    crit = _criteria()
+    swapped = _t0004_proposal(children=[
+        ("autopilot ship policy", "high", crit[7:10]),
+        ("autopilot approval and question policies", "high", crit[4:7]),
+        ("autopilot goal: tickets from a goal file", "med", crit[10:11])])
+    path.write_text(swapped + ("\n" + old[old.index("## Minted"):] if keep_minted else ""),
+                    encoding="utf-8")
+    return first
+
+
+def _recheck(root, ticket, turn):
+    _turn(root, f"{turn}-a")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, f"{turn}-b")
+
+
+@pytest.mark.parametrize("keep_minted", [False, True])
+def test_stale_child_refusal_names_the_exits_and_cancel_unblocks(tmp_path, monkeypatch,
+                                                                 keep_minted):
+    """FIX 1: a stale child is refused naming how to get out (restore it, or
+    cancel it), and once it is cancelled apply proceeds with a fresh child."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    stale = _partial_then_swap(root, ticket, monkeypatch, keep_minted)
+    _recheck(root, ticket, "t3")
+
+    with pytest.raises(crew_split.SplitError) as raised:
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert "--to cancelled" in str(raised.value) and "restore" in str(raised.value)
+
+    report = crew_tracker.move(str(root), stale, "cancelled")
+    assert crew_tracker.exit_code(report) == 0, report
+    _recheck(root, ticket, "t5")
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert stale not in got["children"] and len(set(got["children"])) == 3
+    assert _index_status(root, ticket) == "superseded"
+    tail = crew_split.minted_tail(
+        (root / ".work" / "tickets" / ticket / "split.md").read_text(encoding="utf-8"))[1]
+    assert tail == dict(enumerate(got["children"], 1))
+
+
+def test_superseded_child_is_not_reused(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    first = re.search(r"- Child 1: (T-\d+)", (root / ".work" / "tickets" / ticket /
+                                              "split.md").read_text(encoding="utf-8")).group(1)
+    assert crew_tracker.exit_code(crew_tracker.move(str(root), first, "superseded")) == 0
+    _recheck(root, ticket, "t3")
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert first not in got["children"]
