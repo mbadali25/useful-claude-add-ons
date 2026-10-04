@@ -19,6 +19,8 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GH = os.path.join(CREW, "hooks", "scripts", "crew_ghdeploy.py")
 _T = "tests/test_crew_ghdeploy.py::"
 _P = _T + "test_entry_problem[{}]"
+_C = _T + "test_check_refuses_an_environment_another_one_matches"
+_A = _T + "test_gate_pick_agrees_with_the_real_gate"
 
 GHDEPLOY_MUTATIONS = (
     # --- exit 2: entry problems -------------------------------------------
@@ -153,20 +155,55 @@ GHDEPLOY_MUTATIONS = (
     ("ghdeploy: a detail line prints the environment name raw", GH,
      'f"{env!r} github[{index}]: ', 'f"{env} github[{index}]: ',
      _T + "test_an_env_name_is_never_printed_raw"),
-    ("ghdeploy: another environment's deploy inside this dispatch is allowed", GH,
-     "        dep = _overlap(lines, theirs)\n", "        dep = None\n",
-     _T + "test_check_refuses_an_environment_another_one_matches"
-     "[plain deploy contained in a dispatch]"),
-    ("ghdeploy: this deploy inside another environment's dispatch is allowed", GH,
-     "        if dep is None:\n            dep = _overlap(_dispatches(other, cfg), mine)\n",
-     "",
-     _T + "test_check_refuses_an_environment_another_one_matches"
-     "[shaInput-only staging before production]"),
-    ("ghdeploy: the overlap check is case-sensitive", GH,
-     "dep.lower() in line.lower() or line.lower() in dep.lower()",
-     "dep in line or line in dep",
-     _T + "test_check_refuses_an_environment_another_one_matches"
-     "[qa/Prod before production/prod]"),
+    # --- the gate simulation (_gate_pick, _like, _ambiguity) -------------
+    ("ghdeploy: the .ps1 simulation is case-sensitive", GH,
+     "re.IGNORECASE | re.DOTALL", "re.DOTALL",
+     _C + "[qa/Prod before production/prod]"),
+    ("ghdeploy: -like reads * literally", GH,
+     '            out.append(".*")\n', "            out.append(re.escape(char))\n",
+     _C + "[distinct targets]"),
+    ("ghdeploy: -like reads ? literally", GH,
+     '            out.append(".")\n', "            out.append(re.escape(char))\n",
+     _C + "[F4 question mark in an earlier plain string]"),
+    ("ghdeploy: -like reads [set] literally", GH,
+     '        elif char == "[":\n', "        elif False:\n",
+     _C + "[F4 bracket set in an earlier plain string]"),
+    ("ghdeploy: -like ignores the backtick escape", GH,
+     '        if char == "`" and i + 1 < len(pattern):\n', "        if False:\n",
+     _T + "test_like_is_powershell_wildcard_matching"),
+    ("ghdeploy: an unreadable wildcard set reads as readable", GH,
+     "            if close <= i + 1:\n", "            if False:\n",
+     _T + "test_an_unreadable_wildcard_set_is_refused"),
+    ("ghdeploy: the .sh simulation ignores case", GH,
+     "hit = dep in command or command in dep",
+     "hit = dep.lower() in command.lower() or command in dep",
+     _A + "[qa/Prod before production/prod-sh]"),
+    ("ghdeploy: the .sh simulation drops `cmd in d`", GH,
+     "hit = dep in command or command in dep", "hit = dep in command",
+     _A + "[B2 with production listed first-sh]"),
+    ("ghdeploy: the .ps1 simulation drops `$d -like *$cmd*`", GH,
+     ' or _like(dep, f"*{command}*")', "",
+     _A + "[B2 with production listed first-ps1]"),
+    ("ghdeploy: the simulation takes the last match, not the first", GH,
+     "    for name, cfg in envs.items():\n        for dep in _deploys(cfg) or []:\n",
+     "    for name, cfg in reversed(list(envs.items())):\n"
+     "        for dep in _deploys(cfg) or []:\n",
+     _A + "[inputless staging before production-sh]"),
+    ("ghdeploy: only the .sh gate is simulated", GH,
+     "        for flavour in FLAVOURS:\n", '        for flavour in ("sh",):\n',
+     _C + "[F4 star in an earlier plain string]"),
+    ("ghdeploy: the printed dispatches are not simulated", GH,
+     "    wanted = [(dispatch(e, env, sha), env)", "    wanted = [] and [(dispatch(e, env, sha), env)",
+     _C + "[an earlier string matching only an all-f sha]"),
+    ("ghdeploy: one sample sha only", GH,
+     'SAMPLE_SHAS = ("0" * 40, "f" * 40)', 'SAMPLE_SHAS = ("0" * 40,)',
+     _C + "[an earlier string matching only an all-f sha]"),
+    ("ghdeploy: this environment's own deploy strings are not simulated", GH,
+     "    wanted += [(dep, env) for dep in mine if dep]\n", "",
+     _C + "[B2 with production listed first]"),
+    ("ghdeploy: other environments' deploy strings are not simulated", GH,
+     " if other != env\n", " if False\n",
+     _C + "[B2 plain production string contains staging's prefix]"),
     # --- exit 3: could-not-tell -------------------------------------------
     ("ghdeploy: an absent map is not named as absent", GH,
      "    if not os.path.lexists(path):\n", "    if False:\n",
@@ -188,7 +225,7 @@ GHDEPLOY_MUTATIONS = (
      "    if False:\n",
      _T + "test_check_unreadable_map_is_could_not_tell"),
     ("ghdeploy: a malformed other environment is not could-not-tell", GH,
-     "        if theirs is None:\n", "        if False:\n",
+     "        if not isinstance(cfg, dict) or _deploys(cfg) is None:\n", "        if False:\n",
      _T + "test_another_unreadable_environment_is_could_not_tell"),
     ("ghdeploy: check runs gh", GH,
      "    sha = _head(root)\n",

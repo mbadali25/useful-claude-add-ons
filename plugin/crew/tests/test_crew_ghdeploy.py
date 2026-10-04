@@ -439,6 +439,46 @@ _CONFIGS = {
     "plain deploy contained in a dispatch": (_envs(
         ("legacy", None, ["gh workflow run deploy.yml"]),
         ("production", _PROD, None), human=("production",)), {"legacy"}),
+    # Review round 2, B2: a PLAIN production string that contains staging's
+    # prefix. Production's own command is gated as staging, with no human.
+    "B2 plain production string contains staging's prefix": (_envs(
+        ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
+        ("production", None, ["gh workflow run deploy.yml --ref main -f target=staging"
+                              " -f promote=prod"]), human=("production",)), set()),
+    # B2 with production listed first: staging's own prefix is inside
+    # production's string, which both gates also match (`cmd in d`).
+    "B2 with production listed first": (_envs(
+        ("production", None, ["gh workflow run deploy.yml --ref main -f target=staging"
+                              " -f promote=prod"]),
+        ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
+        human=("production",)), {"production"}),
+    # Only a dispatch for an all-f sha matches this earlier string: the reason
+    # `check` renders more than one sample sha.
+    "an earlier string matching only an all-f sha": (_envs(
+        ("legacy", None, ["-f sha=ffff"]),
+        ("production", _PROD, None), human=("production",)), {"legacy"}),
+    # F4: -like reads `*`, `?` and `[...]` in an earlier environment's string
+    # as wildcards, so the .ps1 gates production's dispatch as `legacy`.
+    "F4 star in an earlier plain string": (_envs(
+        ("legacy", None, ["gh workflow run deploy.yml --ref main -f target=*"]),
+        ("production", _PROD, None), human=("production",)), {"legacy"}),
+    "F4 question mark in an earlier plain string": (_envs(
+        ("legacy", None, ["gh workflow run deploy.yml --ref main -f target=pro?"]),
+        ("production", _PROD, None), human=("production",)), {"legacy"}),
+    "F4 bracket set in an earlier plain string": (_envs(
+        ("legacy", None, ["gh workflow run [d]eploy.yml --ref main"]),
+        ("production", _PROD, None), human=("production",)), {"legacy"}),
+    # A chain: each later plain string extends the one before, so qa's and
+    # production's own commands are all gated as dev.
+    "three-environment chain": (_envs(
+        ("dev", _with(inputs={"target": "dev"}, correlationInput=_DROP), None),
+        ("qa", None, ["gh workflow run deploy.yml --ref main -f target=dev -f stage=qa"]),
+        ("production", None, ["gh workflow run deploy.yml --ref main -f target=dev"
+                              " -f stage=qa -f go=prod"]), human=("production",)),
+        {"qa", "production"}),
+    "a plain environment beside a github one": (_envs(
+        ("legacy", None, ["./deploy.sh legacy"]),
+        ("production", _PROD, None), human=("production",)), {"legacy", "production"}),
     "distinct targets": (_envs(
         ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
         ("production", _PROD, None), human=("production",)),
@@ -520,3 +560,51 @@ def test_every_accepted_dispatch_is_gated_as_its_own_environment(tmp_path, label
                     f"{label}: {env}'s dispatch is gated as another environment")
         gated.add(env)
     assert gated == {e for e in accepted if "github" in doc["environments"][e]}
+
+
+def _commands(doc):
+    """Every command `check` reasons about for this map: each github entry's
+    dispatch for both sample shas, and every deploy string."""
+    out = []
+    for env, cfg in doc["environments"].items():
+        if "github" in cfg:
+            for entry in crew_ghdeploy.entries(cfg):
+                if crew_ghdeploy.entry_problem(entry, env) is None:
+                    out += [crew_ghdeploy.dispatch(entry, env, sha)
+                            for sha in crew_ghdeploy.SAMPLE_SHAS]
+        out += [d for d in cfg.get("deploy") or [] if d]
+    return out
+
+
+@pytest.mark.parametrize("flavour", ["sh", "ps1"])
+@pytest.mark.parametrize("label", sorted(_CONFIGS))
+def test_gate_pick_agrees_with_the_real_gate(tmp_path, label, flavour):
+    """The simulation is only as good as its agreement with the real hooks:
+    for every command of every map above, `_gate_pick` names the environment
+    the real promote-gate.<flavour> gates it as (None for no match)."""
+    doc, _accepted = _CONFIGS[label]
+    root = _repo(tmp_path, doc)
+    for command in _commands(doc):
+        real = _gate(flavour, root, command)
+        assert crew_ghdeploy._gate_pick(command, doc["environments"], flavour) == real, (  # pylint: disable=protected-access
+            f"{label}: {command!r}")
+
+
+@pytest.mark.parametrize("text, pattern, hit", [
+    ("abc", "*B*", True), ("abc", "a?c", True), ("ac", "a?c", False),
+    ("deploy", "[d]eploy", True), ("eploy", "[d]eploy", False),
+    ("x", "[a-z]", True), ("5", "[a-z]", False), ("a*b", "a`*b", True),
+    ("axb", "a`*b", False), ("ab", "a*", True), ("ba", "a*", False),
+])
+def test_like_is_powershell_wildcard_matching(text, pattern, hit):
+    assert crew_ghdeploy._like(text, pattern) is hit  # pylint: disable=protected-access
+
+
+def test_an_unreadable_wildcard_set_is_refused(tmp_path):
+    doc = _envs(("legacy", None, ["gh workflow run [deploy.yml"]), ("production", _PROD, None))
+    root = _repo(tmp_path, doc)
+
+    proc = _check(root, env="production")
+
+    assert proc.returncode == 2, proc.stdout
+    assert _last(proc) == "result=refused reason=ambiguous-environment"

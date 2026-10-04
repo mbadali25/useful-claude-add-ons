@@ -17,11 +17,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   validates it against a closed key set and the value grammar
   `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
   requires `deploy` to list exactly the entries' canonical prefixes so
-  promote-gate's existing match fires on the real dispatch, refuses as
-  `ambiguous-environment` any environment whose dispatch contains another
-  environment's `deploy` string or whose `deploy` is inside another's
-  dispatch (case-insensitively: both gates take the first substring match, the
-  PowerShell one ignoring case), and prints the one
+  promote-gate's existing match fires on the real dispatch, and simulates
+  both gates (`.sh` substrings, `.ps1` `-like` with case folding and `*`, `?`,
+  `[...]` wildcards, first environment in file order): it refuses as
+  `ambiguous-environment` unless each dispatch (two sample shas) and each of
+  its `deploy` strings is gated as this environment, and each other
+  environment's `deploy` strings as that one. Known gap: `-like`'s
+  current-culture case folding (tr-TR) is not simulated. It prints the one
   literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
   (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
   HEAD unreadable - never "no github entry"). It writes nothing and runs no
@@ -29,9 +31,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Nothing dispatches, identifies, watches or records a run
   (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
   does not deploy (L-0649).
-- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 99 cases, including
-  two-environment cases that feed every accepted dispatch to the real
-  `promote-gate.sh` and `promote-gate.ps1`. The 56
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 161 cases. Multi-
+  environment maps feed every command to the real `promote-gate.sh` and
+  `promote-gate.ps1` and assert the simulation names the same environment.
+  The 68
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 

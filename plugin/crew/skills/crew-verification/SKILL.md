@@ -452,11 +452,14 @@ Every value must fit `[A-Za-z0-9._/@:+-]`; one that does not is refused by
 name, never quoted. There is no key for `-R/--repo`, and an unknown key is
 refused. `python3 <crew>/hooks/scripts/crew_ghdeploy.py check --root . --env
 <name>` validates the entries, checks `deploy` lists exactly their prefixes,
-and refuses an environment whose dispatch would be gated as another one: the
-gates take the first environment whose `deploy` string is in the command,
-ignoring case in PowerShell, so no environment's `deploy` may sit inside
-another's dispatch (`ambiguous-environment`). It prints the literal dispatch
-for HEAD, writes nothing and runs no `gh`. Exit 0 is valid (or no `github` entry), 2 is refused with
+and simulates both gates, which take the first environment whose `deploy`
+string matches the command either way round (`.sh`: plain substrings; `.ps1`:
+`-like`, ignoring case, with `*`, `?` and `[...]` as wildcards). Unless both
+pick this environment for each dispatch it prints (two sample shas) and each
+`deploy` string it lists, and pick every other environment for each of that
+one's strings, it refuses with `ambiguous-environment`. Known gap: `-like`
+folds case by the current culture (tr-TR), the simulation does not. It
+prints the literal dispatch for HEAD, writes nothing and runs no `gh`. Exit 0 is valid (or no `github` entry), 2 is refused with
 `result=refused reason=<code>`, 3 is could-not-tell (map, environment or HEAD
 unreadable). **The dispatch sequence is not built yet:** nothing dispatches,
 finds the run, watches it or records it. Run the printed command by hand.

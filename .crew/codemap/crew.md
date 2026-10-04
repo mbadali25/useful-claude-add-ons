@@ -334,13 +334,14 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 `environments.*` section, not re-derived here.
 
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
-environment's `github` entry out of `.crew/verify.json` (`_environment`, `:276`; `entries`, `:191`),
-validates each against a closed key set (`KEYS`, `:65`) and value grammar (`VALUE`, `:62`;
-`entry_problem`, `:153`; the ref as a branch name, `_ref_problem`, `:92`), requires `deploy` to be
-exactly the entries' prefixes (`check`, `:310`; `prefix`, `:204`), refuses an environment another
-environment's `deploy` would match, case-insensitively, because both gates take the first
-substring match (`_ambiguity`, `:254`), and prints the dispatch for HEAD (`dispatch`, `:212`). It
-runs only `git rev-parse HEAD` (`_head`, `:297`) and writes nothing; no hook calls it yet, and promote-gate
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:318`; `entries`, `:199`),
+validates each against a closed key set (`KEYS`, `:72`) and value grammar (`VALUE`, `:69`;
+`entry_problem`, `:161`; the ref as a branch name, `_ref_problem`, `:100`), requires `deploy` to be
+exactly the entries' prefixes (`check`, `:352`; `prefix`, `:212`), and simulates both promote-gate
+flavours' first-match environment pick (`_gate_pick`, `:275`: `.sh` substrings, `.ps1` `-like`)
+so every command it or another environment declares is gated as its own environment
+(`_ambiguity`, `:291`). It prints the dispatch for HEAD (`dispatch`, `:220`), runs only
+`git rev-parse HEAD` (`_head`, `:339`) and writes nothing; no hook calls it yet, and promote-gate
 ignores the `github` key. DERIVED from the definitions cited. Its unwired mutations are
 `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after the anchor;
 the anchor was not moved for it.

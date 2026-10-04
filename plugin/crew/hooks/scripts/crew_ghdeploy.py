@@ -34,13 +34,20 @@ must not start with `-` or `@` (PowerShell splats `@name`), and must not be
 tag given by its bare name is NOT detected: telling it from a branch needs
 the remote, and `check` asks nothing.
 
-ONE ENVIRONMENT PER DISPATCH. Both promote-gate flavours gate a command as
-the FIRST environment, in file order, one of whose `deploy` strings is a
-substring of it (the .ps1 with `-like`, which ignores case). So `check`
-refuses, as `ambiguous-environment`, an environment whose dispatch contains
-another environment's `deploy` string, or whose `deploy` string is contained
-in another environment's dispatch, compared case-insensitively. Otherwise an
-input-less staging entry would gate production's dispatch as staging.
+ONE ENVIRONMENT PER COMMAND: THE GATES ARE SIMULATED. Both promote-gate
+flavours gate a command as the FIRST environment, in file order, with a
+`deploy` string `d` that matches it either way round: promote-gate.sh with
+plain substrings (`d in cmd or cmd in d`), promote-gate.ps1 with
+`$cmd -like "*$d*" -or $d -like "*$cmd*"`, which ignores case and reads `*`,
+`?` and `[...]` in `d` (or in the command) as wildcards. `_gate_pick` mirrors
+both. `check <env>` refuses as `ambiguous-environment` unless both flavours
+pick `<env>` for every dispatch it prints (rendered for two sample shas),
+for every `deploy` string it lists, and pick each OTHER environment for each
+of that environment's `deploy` strings. Pairwise overlap rules missed a plain
+string that contains `<env>`'s prefix, and wildcards. Only the clean-map path
+is simulated: with the map dirty the gates block before any deploy. Known
+gap: `-like` folds case by the current culture (tr-TR maps `I` to dotless
+`i`); this simulation folds culture-invariantly.
 
 Exit codes, with the last stdout line always `result=...`:
   0  `result=ok entries=N sha=<sha>` after one `dispatch: <command>` per entry,
@@ -64,7 +71,8 @@ NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 WORKFLOW = re.compile(r"[A-Za-z0-9._][A-Za-z0-9._-]*\.ya?ml")
 KEYS = ("workflow", "ref", "inputs", "shaInput", "correlationInput",
         "deployJob", "watchMinutes", "identifySeconds")
-SAMPLE_SHA = "0" * 40
+SAMPLE_SHAS = ("0" * 40, "f" * 40)
+FLAVOURS = ("sh", "ps1")
 RANGES = {"watchMinutes": (1, 360, 60, "watch-minutes-range"),
           "identifySeconds": (10, 900, 120, "identify-seconds-range")}
 
@@ -230,47 +238,81 @@ def _deploys(cfg):
     return declared
 
 
-def _dispatches(env, cfg):
-    """Sample-sha dispatches of an environment's entries; [] when it has none
-    or any is invalid (its own `check` refuses those)."""
-    try:
-        found = entries(cfg)
-    except Refused:
-        return []
-    if not found or any(entry_problem(e, env) for e in found):
-        return []
-    return [dispatch(e, env, SAMPLE_SHA) for e in found]
+def _like_regex(pattern):
+    """PowerShell's `-like` pattern as a regex: `*`, `?`, `[set]` with ranges,
+    and a backtick escaping the next character. ValueError when PowerShell
+    could not read it (an unclosed or empty `[`)."""
+    out, i = [], 0
+    while i < len(pattern):
+        char = pattern[i]
+        if char == "`" and i + 1 < len(pattern):
+            out.append(re.escape(pattern[i + 1]))
+            i += 2
+        elif char == "*":
+            out.append(".*")
+            i += 1
+        elif char == "?":
+            out.append(".")
+            i += 1
+        elif char == "[":
+            close = pattern.find("]", i + 1)
+            if close <= i + 1:
+                raise ValueError(f"unreadable wildcard set in {pattern!r}")
+            body = pattern[i + 1:close].replace("`", "")
+            out.append("[" + "".join("-" if c == "-" else re.escape(c) for c in body) + "]")
+            i = close + 1
+        else:
+            out.append(re.escape(char))
+            i += 1
+    return re.compile("".join(out), re.IGNORECASE | re.DOTALL)
 
 
-def _overlap(lines, deploys):
-    """The first `deploy` string a gate would match against one of `lines`."""
-    for line in lines:
-        for dep in deploys:
-            if dep and (dep.lower() in line.lower() or line.lower() in dep.lower()):
-                return dep
+def _like(text, pattern):
+    """`$text -like $pattern`, culture-invariant (see the docstring's gap)."""
+    return _like_regex(pattern).fullmatch(text) is not None
+
+
+def _gate_pick(command, envs, flavour):
+    """The environment promote-gate.<flavour> gates `command` as, or None.
+    Raises ValueError where the .ps1 could not read a pattern."""
+    for name, cfg in envs.items():
+        for dep in _deploys(cfg) or []:
+            if not dep:
+                continue
+            if flavour == "sh":
+                hit = dep in command or command in dep
+            else:
+                hit = _like(command, f"*{dep}*") or _like(dep, f"*{command}*")
+            if hit:
+                return name
     return None
 
 
 def _ambiguity(envs, env, mine):
-    """Refuse when another environment's `deploy` matches this environment's
-    dispatch, or this one's `deploy` matches another's, case-insensitively."""
-    lines = _dispatches(env, envs[env])
+    """Refuse unless both simulated gates pick `env` for each of its own
+    commands and each other environment for each of that one's."""
     for other, cfg in envs.items():
-        if other == env:
-            continue
-        theirs = _deploys(cfg) if isinstance(cfg, dict) else None
-        if theirs is None:
+        if not isinstance(cfg, dict) or _deploys(cfg) is None:
             raise CouldNotTell("verify-json-unreadable",
                                f"environment {other!r} is not an object with a `deploy` "
                                "command or list of commands")
-        dep = _overlap(lines, theirs)
-        if dep is None:
-            dep = _overlap(_dispatches(other, cfg), mine)
-        if dep is not None:
-            raise Refused("ambiguous-environment",
-                          f"{env!r} and {other!r} overlap on {dep!r}: a gate takes the first "
-                          "environment whose deploy string is in the command (ignoring "
-                          "case in PowerShell), so one would be gated as the other")
+    wanted = [(dispatch(e, env, sha), env) for sha in SAMPLE_SHAS
+              for e in entries(envs[env])]
+    wanted += [(dep, env) for dep in mine if dep]
+    wanted += [(dep, other) for other, cfg in envs.items() if other != env
+               for dep in _deploys(cfg) if dep]
+    for command, owner in wanted:
+        for flavour in FLAVOURS:
+            try:
+                picked = _gate_pick(command, envs, flavour)
+            except ValueError as exc:
+                raise Refused("ambiguous-environment",
+                              f"promote-gate.ps1 cannot read a deploy pattern: {exc}") from exc
+            if picked != owner:
+                raise Refused("ambiguous-environment",
+                              f"promote-gate.{flavour} would gate {command!r} as {picked!r}, "
+                              f"not {owner!r}: a gate takes the first environment whose deploy "
+                              "string matches the command")
 
 
 def _environment(root, env):
