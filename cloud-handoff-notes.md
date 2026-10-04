@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:08: #341 L-0509 review f7f052a2: 0/3/4, verdict LAND THIS HALF NOW (no guard weakened; split cases fail closed). FIX1 _phase reads archived ticket's spec as absent; FIX2 resume_target live isdir; FIX3 harness follow-up (check_ticket accepts 'Complete'). FIX1-2 sent to builder (re-version 1.0.363).
 - 12:08: #368 land-prep onto e9364a70 done: 29889e98 (1.0.361; troubleshooting guide rebuilt; no config leaf). Merge-only review started. (Pre-existing stale cite noted: repo-docs.md:313 README.md:2320 -> 2357.)
 - 12:06: #344 merge review f6a74770: 0/0/0 CLEAN (on e9364a70).
 - 12:06: L-0509 BUILT (non-harness half only) on #341: L-0509-build f7f052a2 (crew 1.0.347; crew_common.locate_ticket resolver; ~90 tests; 20/20 hand sabotage red; merged e9364a70). HARNESS follow-ups needed (crew_ticket ticket_dir/check_ticket/resolve_active/read_contract/mint, scope_guard own-files, approval_hook._is_folder, review_prompt/run/ledger/checks, sabotage_scope/tracker rows, test_crew_ticket allowlists). First review started with the key question: safe to land this half before the harness half (split-brain)?
