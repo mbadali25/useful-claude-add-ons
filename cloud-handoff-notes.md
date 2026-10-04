@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 13:40 UTC
+Last updated: 2026-10-04 13:41 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:41: Reviews running: #363 T-0060, #338 L-0582, #347 T-0047 (bypass hunt), #356 T-0017 (first); re-reviews #364 (r3, owner-accepted limit), #396 (r2), #340 (r2). Held: #365/#366 reviews until #364 final (they must re-merge T-0052-build).
 - 13:40: OWNER DECISION: #364 split gate - ACCEPT self-scheduled plain-text 'yes' as documented limit + follow-up ticket (route split approval via /crew:approve harness path). BATCH IN: #363 T-0060 built 9b664d51 (1.0.383; stop-gate wiring + review_ledger/review.md changes = harness follow-up); #338 L-0582 ported+finished face2d55 (1.0.384; spec was approved); #396 T-0016 round-1 fixed d7eb9fbd (1.0.376; tmux tty rule, stubs gated on INHIBIT + INHIBIT=spawn mode, ps1 chain, unreadable record); #365 T-0058 built 890f36a5 (1.0.379; stacked #364+#354; DECISION: absent sources 'unmeasured' don't stop); #366 T-0059 built 47ff72d1 (1.0.380; stacked #364+#353; next-slice refuses until review_ledger harness PR); #364 round-2 fixed 91ec7d6c (1.0.386); #340 fixed c7f7354d (1.0.385; budget before train; 26 rows PASS); #356 T-0017 built 99ef016d (1.0.373; stacked on #396 d7eb9fbd); #347 T-0047 built ffa8a9ab (1.0.368; 33 must-block/16 must-allow; 21 mutations red). #393 Windows jobs started 13:30 (queue), finishing ~13:46. Reviews starting for all.
 - 13:09: #364 re-review 687d1edd: 1 BLOCK (stale minted child reused after proposal edit -> criteria lost) + FIX2 (orphan path skips apply record) -> builder (1.0.386). FIX1 OWNER DECISION NEEDED: a session can self-schedule a plain-text 'yes' (send_later/create_trigger) and pass the split confirm gate; currently documented as accepted limit.
 - 13:06: #345 re-review 0350da69: 0/0/4 CLEAN (NITs: assigned-unquoted over-blocks *_name/*_header keys; remaining known-gap misses; title-first doc refused by design). Lands after #344.
