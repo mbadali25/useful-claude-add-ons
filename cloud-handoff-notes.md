@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 23:43 UTC
+Last updated: 2026-10-04 23:44 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 23:44: #407 T-0045 FIX-1 + NITs at 62ca0756 (refuse when either gate refuses: empty key, .NET-only twins table, DateTime deploy; RecursionError -> exit 2). Focused re-check sent to a5bddc9. Goes into batch 6 (batch PR) once clean + green.
 - 23:43: #407 T-0045 re-review fixes pushed 62ca0756: either-gate-refuses rule (empty key, 27 .NET-only folds, ConvertFrom-Json DateTime deploy), union-fold match, RecursionError -> gate-refuses-map, docstring/SKILL NITs; merged main 189c3b80; crew 1.0.345 version-only last; 294 tests, 83 mutations RED; CI running at handback
 - 23:38: #497 L-1512 review: 0 BLOCK, 2 FIX (bash 3.2 read -t timeout status = EOF status -> hung probe never killed on macOS; group kill still runs on clean path), 3 NIT. Sent back to builder (positive clean-exit signal on fd 3; kill only on timeout path).
 - 23:27: #497 L-1512 opened at c56ffc72, CI green: python probe's kill -9 of a live watchdog killed the hook itself on Windows (2304) - a guard-bypass risk; watchdog now read -t on a pipe, killed hook reads as could-not-tell in tests. Review spawned. Minted L-1516 (same probe in obsidian-vault hooks).
