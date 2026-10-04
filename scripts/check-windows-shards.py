@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The fan-in for crew's sharded Windows CI: pass only when nothing was lost.
 
-    python3 scripts/check-windows-shards.py --shards 3 --artifacts <dir> \
+    python3 scripts/check-windows-shards.py --shards 6 --artifacts <dir> \
         --decide-result <result> --run <true|false> --event <event_name> \
         --job default=<result> --job slow=<result> --job wallclock=<result>
 
