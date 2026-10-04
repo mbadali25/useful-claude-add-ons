@@ -396,3 +396,84 @@ def test_every_shipped_anchor_is_present_in_its_target_exactly_once():
     assert not orphans, "\n".join(orphans)
     assert len(sabotage.MUTATIONS) > 100, (
         "the table shrank -- a mutation was deleted rather than re-anchored")
+
+
+# --- T-0080: the per-entry bound ---------------------------------------------
+
+def test_main_reports_a_timed_out_entry_as_unproven_and_fails(tmp_path, monkeypatch,
+                                                              capsys):
+    """A timeout is could-not-tell: it fails the suite and never reads as RED."""
+    target = _target(tmp_path)
+    pristine = sabotage.digest(target)
+    monkeypatch.delenv("CREW_SABOTAGE_TIMEOUT_S", raising=False)
+    monkeypatch.setattr(sabotage, "MUTATIONS", (
+        ("a label", target, "beta", "gamma", "test_nothing"),
+    ))
+    monkeypatch.setattr(sabotage, "run_test",
+                        lambda _test: (sabotage.sabotage_bound.TIMED_OUT, ""))
+
+    assert sabotage.main() == 1
+    printed = capsys.readouterr().out
+    assert "RED BUT UNPROVEN -- timed out after 600s" in printed
+    assert "RED (good)" not in printed
+    assert "SABOTAGE SUITE: FAIL" in printed
+    assert sabotage.digest(target) == pristine
+
+
+@pytest.mark.parametrize("name, value", [("CREW_SABOTAGE_MEM_MB", "lots"),
+                                         ("CREW_SABOTAGE_TIMEOUT_S", "0")])
+def test_main_refuses_an_unreadable_limit_before_any_mutation(tmp_path, monkeypatch,
+                                                              capsys, name, value):
+    target = _target(tmp_path)
+    pristine = sabotage.digest(target)
+    monkeypatch.setenv(name, value)
+    monkeypatch.setattr(sabotage, "MUTATIONS", (
+        ("a label", target, "beta", "gamma", "test_nothing"),
+    ))
+
+    def _never(*_args):
+        raise AssertionError("a refused run must not mutate or run a test")
+
+    monkeypatch.setattr(sabotage, "run_test", _never)
+    monkeypatch.setattr(sabotage, "apply_mutation", _never)
+
+    assert sabotage.main() == 2
+    printed = capsys.readouterr().out
+    assert "REFUSING TO RUN" in printed
+    assert name in printed
+    assert sabotage.digest(target) == pristine
+
+
+def test_main_prints_the_bound_before_the_first_mutation(tmp_path, monkeypatch, capsys):
+    target = _target(tmp_path)
+    monkeypatch.setenv("CREW_SABOTAGE_MEM_MB", "0")
+    monkeypatch.setenv("CREW_SABOTAGE_TIMEOUT_S", "42")
+    monkeypatch.setattr(sabotage, "MUTATIONS", (
+        ("a label", target, "beta", "gamma", "test_nothing"),
+    ))
+    monkeypatch.setattr(sabotage, "run_test",
+                        lambda _test: (sabotage._REAL_TEST_FAILURE, ""))
+
+    assert sabotage.main() == 0
+    printed = capsys.readouterr().out
+    assert "bound: memory cap absent (CREW_SABOTAGE_MEM_MB=0), 42 s per entry" in printed
+    assert printed.index("bound:") < printed.index("RED (good)")
+
+
+def test_run_test_hands_pytest_to_the_bounded_runner(monkeypatch):
+    seen = {}
+
+    def _bounded(argv, cwd, env, mem_mib, timeout_s):
+        seen.update(argv=argv, cwd=cwd, env=env, mem=mem_mib, timeout=timeout_s)
+        return 1, "out"
+
+    monkeypatch.setenv("CREW_SABOTAGE_MEM_MB", "1234")
+    monkeypatch.setenv("CREW_SABOTAGE_TIMEOUT_S", "56")
+    monkeypatch.setattr(sabotage.sabotage_bound, "run", _bounded)
+
+    assert sabotage.run_test("tests/test_x.py::test_y") == (1, "out")
+    assert seen["argv"][1:] == ["-m", "pytest", "tests/test_x.py::test_y", "-q",
+                                "--no-header", "-x", "--run-slow"]
+    assert seen["cwd"] == sabotage.CREW
+    assert seen["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert (seen["mem"], seen["timeout"]) == (1234, 56)

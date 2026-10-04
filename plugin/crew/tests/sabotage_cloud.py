@@ -540,7 +540,9 @@ CLOUD_GUARD_MUTATIONS += (
      '                    if ctx is not None and ("$" in word or "`" in word):\n',
      "                    if False:\n",
      _OP + "[export-cat-prod-env-terraform-apply-p-tfplan]"),
-    # FIX :1218 -- only regular files are opened.
+    # FIX :1218 -- only regular files are opened. T-0080 measured: constant
+    # memory (the plan is hashed in 1 MiB blocks, peak 58 MiB); the test's own
+    # 30 s ceiling is what fails it.
     ("cloud guard r1: a FIFO or device is opened as a plan", GUARD,
      "    return stat.S_ISREG(mode)\n", "    return True\n",
      # Not the FIFO case: the non-blocking open makes a FIFO read as empty
@@ -562,6 +564,9 @@ CLOUD_GUARD_MUTATIONS += (
      '            if ctx is not None and not payload.strip():\n',
      "            if False:\n",
      _OP + "[Get-Content-prod-ps1-iex-terraform-apply-p-t]"),
+    # T-0080: the unbounded reader (json.load on /dev/zero). It grew one
+    # python3 to ~20 GB before sabotage_bound's per-entry RLIMIT_AS; under the
+    # 4096 MiB default it goes RED on the test's "unknown" assertion (peak 3.7 GiB).
     ("cloud guard r1: azureProfile.json opened whatever it is", GUARD,
      "        data = json.loads(_read_small(path, _AZ_PROFILE_MAX_BYTES)\n"
      '                          .decode("utf-8-sig"))\n',

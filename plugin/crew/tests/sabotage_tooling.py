@@ -1053,3 +1053,47 @@ TOOLING_MUTATIONS += (
         _CI + "test_a_deploy_marker_is_left_alone_and_does_not_block[sh]",
     ),
 )
+
+# T-0080: the per-entry bound `sabotage.py` runs every entry under. Mutating
+# `sabotage_bound.py` cannot weaken the run doing the mutating: that run
+# imported it before the first entry, and only the child pytest reads the
+# mutated file.
+BOUND = os.path.join(CREW, "tests", "sabotage_bound.py")
+_BOUND = "tests/test_sabotage_bound.py::"
+TOOLING_MUTATIONS += (
+    (
+        "sabotage bound: the memory cap is never applied",
+        BOUND,
+        '    if cap:\n        kwargs["preexec_fn"]',
+        '    if False:\n        kwargs["preexec_fn"]',
+        _BOUND + "test_a_child_over_the_memory_cap_fails_instead_of_growing",
+    ),
+    (
+        "sabotage bound: a timeout stops only the leader",
+        BOUND,
+        "        os.killpg(pid, sig)\n",
+        "        os.kill(pid, sig)\n",
+        _BOUND + "test_a_timeout_stops_the_whole_group_and_returns_124",
+    ),
+    (
+        "sabotage bound: an unreadable limit reads as the default",
+        BOUND,
+        '    if not re.fullmatch(r"[0-9]+", raw) or int(raw) < minimum:\n',
+        '    if not re.fullmatch(r"[0-9]+", raw) or int(raw) < minimum:\n        return default\n',
+        _BOUND + "test_an_unreadable_limit_refuses_and_never_means_no_cap[CREW_SABOTAGE_MEM_MB-abc]",
+    ),
+    (
+        "sabotage bound: a timed-out entry counts as RED",
+        BOUND,
+        "    if code == REAL_TEST_FAILURE:\n",
+        "    if code in (REAL_TEST_FAILURE, TIMED_OUT):\n",
+        "tests/test_sabotage_harness.py::test_main_reports_a_timed_out_entry_as_unproven_and_fails",
+    ),
+    (
+        "sabotage bound: the harness dying leaves its child running",
+        BOUND,
+        "    except BaseException:\n        _stop(proc)\n        raise\n",
+        "    except BaseException:\n        raise\n",
+        _BOUND + "test_the_harness_dying_stops_a_running_child",
+    ),
+)
