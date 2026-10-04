@@ -52,9 +52,9 @@ python3 "<crew plugin root>/hooks/scripts/crew_context.py" --slice-for-subagent 
   the CLI fails, times out or prints something other than JSON, the session goes on without recall
   and the log records a miss with the reason.
 - An empty recall can be the CLI working as meant: it skips stop words, needs more than one
-  matching word for a query of three or more words, and never reads `wiki/sessions/archive/` or
-  the vault's `userIgnoreFilters` folders. To check whether a note is there but held back, run the
-  CLI with `--min-terms 1` (no floor) and `--include-excluded` (every folder).
+  matching word for a query of three or more words, matches whole words only, and never reads
+  `wiki/sessions/archive/`. To check whether a note is there but held back, run the
+  CLI with `--min-terms 1` (no floor) and `--include-excluded` (the archive too).
 - Every recall line starts with the vault's name: `- [vault:<name>] <note path>: <text>`. Any snippet
   the CLI returns without a vault name is dropped.
 

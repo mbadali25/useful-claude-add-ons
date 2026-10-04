@@ -235,11 +235,12 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
 - Query terms are the words of three or more characters that are not common
   English stop words (`what`, `the`, `for`, `this`, `with`, ...), first 12
   kept. A query of stop words only has no terms and returns nothing, exit 0.
-- Excluded folders are never read: `wiki/sessions/archive/` and every plain
-  entry of the vault's `.obsidian/app.json` `userIgnoreFilters` (a path
-  prefix; what you hid from Obsidian search is hidden from recall). A `/regex/`
-  entry is not applied, only counted in `skipped_filters`. A missing or broken
-  `app.json` still excludes the archive. `--include-excluded` reads them all.
+  Terms match whole words: `port` is not found in `support` or `report`.
+- `wiki/sessions/archive/` (in any letter case) is never read, and a
+  symlinked note whose real path is inside it is skipped too.
+  `--include-excluded` reads it. A symlinked note that resolves outside the
+  vault is always skipped. The vault's `.obsidian/app.json` `userIgnoreFilters`
+  are not read: their format has not yet been checked against a real vault.
 - Relevance floor: a note is returned only when it holds enough distinct query
   terms - 1 for a query of one or two terms, 2 for three to five, 3 for six or
   more. `--min-terms N` sets the floor (capped at the term count); `--min-terms 1`
@@ -250,8 +251,10 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
   repeatable, case-insensitive) a note whose frontmatter `project:` or any
   folder of its path is `crew` ranks first (`match`), a note with no project
   next (`none`), a note whose `project:` names another project last (`other`;
-  ranked last, never dropped). Kind: `wiki/concepts/` and `wiki/decisions/`
-  notes, then other notes, then `wiki/sessions/` notes. Score is plain text
+  ranked last, never dropped). A topic folder that happens to share the
+  project's name also matches; that only promotes a note, never hides one.
+  Kind: `wiki/concepts/` and `wiki/decisions/` notes, then other notes, then
+  `wiki/sessions/` notes (folder names in any letter case). Score is plain text
   matching per query term: title (frontmatter `title`, else filename) 6, each
   heading 3 (max 3), each body line 1 (max 5).
 - `--max-chars` (default 4000) bounds `sum(len(line) + 1)` over the results;
@@ -276,7 +279,7 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
   ],
   "chars": 104, "max_chars": 4000, "truncated": false,
   "errors": [ { "vault": "nosuch", "error": "not a configured vault (or its path is not on disk)" } ],
-  "project": [], "need": 1, "below_floor": 0, "excluded_dirs": 1, "skipped_filters": 0
+  "project": [], "need": 1, "below_floor": 0, "excluded_dirs": 1, "skipped_links": 0
 }
 ```
 
@@ -284,8 +287,8 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
 `none` or `other`; `matched` is the distinct query terms the note holds. At the
 top, `project` lists the names asked for, `need` is the floor applied,
 `below_floor` counts notes that scored but missed it, `excluded_dirs` counts
-folders pruned unread and `skipped_filters` counts `userIgnoreFilters` regex
-entries not applied.
+folders pruned unread and `skipped_links` counts symlinked notes skipped
+(into the archive, or out of the vault).
 
 `path` is vault-relative with forward slashes. `line` is the text to inject.
 `truncated` is true when the budget, the timeout or the file cap cut anything.
