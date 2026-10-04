@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:02 UTC
+Last updated: 2026-10-04 03:03 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:02 UTC
 
 ## Log (newest first)
 
+- 03:03: #331 r1 (Sonnet) on 5bd46939: 0 BLOCK, 1 FIX (test_every_platform_only_label_names_exactly_one_shipped_mutation fails without pwsh), 2 NIT. Fixer started, placeholder crew 1.0.303.
 - 03:02: Content reviews (Sonnet) started on #377, #333, #331, #336 (current heads); merge-only reviews follow at landing. #339 CI: Windows legs, shell, test 3.12, verify-gate still running.
 - 03:01: RESUMED by new session (owner 2026-10-04: work all open PRs #323-#379, merge as I go, build all handoffs). Merged #374 (b1e9bd7e) and #375 (38adba44, crew 1.0.242). #339 re-merged main -> 210901b0 crew 1.0.246, merge-only Sonnet review CLEAN (1 NIT CHANGELOG blank line), CI running. Builders started: T-0068 #343, T-0050 #361, T-0019 #379 fixes.
 ## Previous session's log (session_014TLaGTaf3GDU1wccRotE67)
