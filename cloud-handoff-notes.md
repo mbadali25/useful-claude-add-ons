@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 21:32 UTC
+Last updated: 2026-10-04 21:41 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 21:41: #400 round-3 at 0fe83674: 0 BLOCK, 1 FIX (ps1 Get-CrewHandoffPath converts \ to / AFTER containment -> on POSIX pwsh '..\main\...' escapes the lane; real Windows unaffected), 2 NIT. Sent back to builder: convert only when DirectorySeparatorChar is '\'.
 - 21:32: #400 L-0680 at 0fe83674, CI all green (6+3 Windows). Windows causes: backslash handoff path, hidden .git file in test, Git Bash /c/ path in test. N1-N5 + wrapUp known key + stale cites carried. Behaviour changes -> round-3 review sent to a9a5cd1; candidate for batch 4.
 - 21:32: MERGED #494 L-1510 at e15a652f -> main 8c0843ca, crew 1.0.338 (coordinator reviewed land-prep delta: sabotage entry 4 now distinct; merge conflict CHANGELOG only). 18 merged. Batch 3 land-prep spawned: #481 1.0.339, #493 1.0.340, #427 1.0.341, #489 1.0.342 (all Windows-green on own heads).
 - 21:29: #489 L-1503 Windows fixed at c1c07aa9, CI all green (6+3 shards). Cause: union names printed one per line; Windows python writes CRLF, Git Bash keeps 'qa\r'. Fix: strip CR from ENVNAMES (coordinator reviewed: safe, names with control chars already refused in python). Red-first CRLF-shim test. Ready for batch 3; must land before #407.
