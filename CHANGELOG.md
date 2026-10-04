@@ -4,6 +4,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` NEXTVER: the verify gate passes a rule only on a completion record; the sabotage harness bounds each entry (T-0082 + T-0080, harness PR H2a)
+
+- **T-0082, what changed.** `verify-gate.sh` and `verify-gate.ps1` run each rule
+  inside a wrapper that writes the rule's exit status to a temp completion
+  record after the rule ends. A rule passes only when the wrapper ended 0 and
+  the record exists and says 0. One decision table, the same order in both
+  flavours: no bash / no temp file, the wrapper never started (`.ps1`), the
+  wrapper ended non-zero, a record missing / empty / not 1-3 digits / above
+  255, or a record above 128 is FAILED as **could not tell** - `VERIFY FAILED:
+  <cmd>` then `verify-gate: COULD NOT TELL (<reason>): <cmd>`, status
+  `unknown` in the command log (the record sync leaves the rule's entry as it
+  was, the tree-pass cache never stores it), a `COULD NOT BE JUDGED - counted
+  as FAILED` summary line, exit 2, neither marker advancing. 77 is still SKIP,
+  any other non-zero still a plain failure. `.ps1` resets `$rc` to `$null`
+  every rule and catches a bash that cannot start: before, that rule
+  inherited the previous rule's 0 and passed without running (reproduced on
+  Linux pwsh). A signalled `.sh` gate names the command in flight and removes
+  the rule's temp files; it still exits 128+N.
+- **T-0082, why.** A Windows run saw a rule hang, the runner killed, and no
+  `VERIFY FAILED` line for it: the gate decided pass from the absence of a
+  failure line, an unknown collapsing into the safe-looking value.
+  `test_verify_gate_rule_completion.py` (32 cases, sh and ps1) and 14 sabotage
+  entries; joins rule 4's `run`. Not here: a per-rule deadline (L-0674, held)
+  and the CI receipt's parser (L-0673).
+- **T-0080, what changed.** `tests/sabotage.py` runs each entry through the new
+  `tests/sabotage_bound.py`: its own process group, an `RLIMIT_AS` cap every
+  spawned process inherits (Linux; default 4096 MiB, `CREW_SABOTAGE_MEM_MB`, 0 =
+  none) and a wall-clock limit (default 600 s, `CREW_SABOTAGE_TIMEOUT_S`). A
+  timeout stops the whole group and reads `RED BUT UNPROVEN -- timed out`; an
+  unreadable limit refuses the run (exit 2). The run prints a `bound:` line
+  first, `memory cap absent` off Linux. `sabotage.py` shrank 3400 -> 3381
+  lines (the exit-code classification moved to `sabotage_bound.verdict`).
+- **T-0080, why.** The azureProfile cloud-guard entry reads /dev/zero without
+  bound: measured 5.9 GiB at a 6 GiB wrapper cap before, 3.7 GiB peak and
+  `RED (good)` under the new default with no wrapper. The plan-dev-zero entry
+  blamed in the report is constant memory (58 MiB). 17 + 5 new tests, five
+  sabotage entries for the bound itself.
+
 ### Changed — `crew` 1.0.326: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
 
 - `crew_train.py check-land`'s two catch-up refusals (merge-tree conflict, base moved in Touch)
