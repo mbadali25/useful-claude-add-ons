@@ -305,7 +305,13 @@ machine the vault syncs to. The name is looked up in that machine's
 `ignore` is not looked up). Only the name `memory` falls back: to crew's
 `memory.vaultPath`, then, only when the Obsidian config has no `vaults` block,
 to its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not used. The
-line is exact: an indented or `Vault:` line is `malformed`, not prose.
+line is exact and must be the whole body: a first line that starts `vault` and
+`:`, in any case, indent or spacing, and is anything less is `malformed`, not
+prose. A config file counts as missing only when it is not there at all; one
+that is there but does not read, parse or have the expected shape (a `vaults`
+object of objects with a string `path`, a string `vaultPath`, crew's `memory`
+an object with a string or null `vaultPath`) is `no-vault-config`, naming the
+field.
 
 ```bash
 python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file <memory file>
@@ -320,13 +326,13 @@ only; `--json` gives the same rows as JSON.
 |---|---|---|
 | `resolved` | the note exists on this host | 0 |
 | `full-text` | not a pointer; the body is the memory | 0 |
-| `malformed` | a `vault:` line, in any case or indent, that is not a valid pointer (absolute path, `:`, `..`, a second field, an invisible character) | 1 |
-| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config file that cannot be read, does not parse or has a `vaults` block of the wrong shape | 1 |
+| `malformed` | a `vault:` first line, in any case, indent or spacing, that is not a valid pointer alone in the body (absolute path, `:`, `..`, a second field, an invisible character) | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config file that cannot be read, does not parse or has a field of the wrong shape | 1 |
 | `vault-unknown` | this machine names no vault of that name, or marks it `ignore` | 1 |
 | `vault-unavailable` | the configured folder is not there (not mounted, not synced) | 1 |
 | `note-missing` | the vault is there, the note is not | 1 |
 | `outside-vault` | the path passes through a symlink inside the vault, or leaves it | 1 |
-| `unreadable` | the memory file cannot be read as UTF-8, or a folder or note inside the vault cannot be read | 1 |
+| `unreadable` | the memory file is not a regular file readable as UTF-8 (`check` never opens a FIFO, device or directory), or a folder or note inside the vault cannot be read or opened | 1 |
 
 An unavailable vault is never replaced by another one that happens to hold a
 note at the same path. This crew version only reads pointers; writing them,

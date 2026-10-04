@@ -146,11 +146,11 @@
 
     { "paths": ["plugin/crew/hooks/scripts/crew_memory.py",
                 "plugin/crew/tests/test_crew_memory.py"],
-      "seconds": 5,
+      "seconds": 6,
       "coveredBy": "crew-suite",
       "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_memory.py -q"],
       "reach": "local",
-      "why": "T-0084 (crew_memory.py resolve and check, the native-memory vault pointer). 3.3s wall measured on 2026-10-04 through pytest_rule.py on a 4-CPU Linux container after review round 1 (74 tests, 2.0s under xdist, no wallclock test; 4.7s at 47 tests before): the grammar accept/refuse tables, one test per degraded state, the no-substitution and unparseable-config cases, symlink containment, check's rows and counts, a tree hash proving nothing is written, and separate bash and pwsh cases, each SKIPPED on its own where that shell is absent, simulated permission denial (os.stat/lstat/listdir/scandir/open raising EACCES), wrong-shaped vaults blocks, and near-pointers. Before this rule only ruff and pylint reached these paths. reach: local - every fixture is under tmp_path with HOME, USERPROFILE, CREW_OBSIDIAN_CONFIG and the crew root pointed at it; no real vault or memory directory is read." },
+      "why": "T-0084 (crew_memory.py resolve and check, the native-memory vault pointer). Re-timed after review round 2 (102 tests, no wallclock test): pytest reported 5.8s under xdist, 17-19s wall, on a 4-CPU Linux container at load average 20-25 (shared); 3.3s wall at 74 tests and 4.7s at 47 when the container was quiet, so 6 is declared and a quiet host is under it: the grammar accept/refuse tables, one test per degraded state, the no-substitution and unparseable-config cases, symlink containment, check's rows and counts, a tree hash proving nothing is written, and separate bash and pwsh cases, each SKIPPED on its own where that shell is absent, simulated permission denial (os.stat/lstat/listdir/scandir/open raising EACCES, and a mode-000 note when run as root), real dangling config links, one schema case per config field, real FIFOs in check run in a subprocess under a 20s timeout, wrong-shaped vaults blocks, and near-pointers. Before this rule only ruff and pylint reached these paths. reach: local - every fixture is under tmp_path with HOME, USERPROFILE, CREW_OBSIDIAN_CONFIG and the crew root pointed at it; no real vault or memory directory is read." },
 
     { "paths": ["plugin/crew/hooks/scripts/cloud_guard.py",
                 "plugin/crew/hooks/scripts/crew_guards.py",

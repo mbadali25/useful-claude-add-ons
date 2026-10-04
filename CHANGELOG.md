@@ -14,29 +14,40 @@ All notable changes to this repository are documented here. Format follows [Keep
   only the name `memory` falls back to `memory.vaultPath`, then - only when the Obsidian config
   has no `vaults` block, as obsidian-vault's `list_vaults` reads it - the legacy top-level
   `vaultPath`.
+- Three structural rules (review round 2): a config file is absent only when `os.lstat` raises
+  FileNotFoundError; both configs pass one schema check before any resolution (the Obsidian
+  config's `vaults` an object of objects with a string `path` and `vaultPath` a string; crew's
+  `memory` an object and `memory.vaultPath` a string or null), else `config unreadable`, naming
+  the field; and files are opened, non-blocking and fstat-checked, not only statted. A pointer
+  attempt is the first non-blank line that, with Cf removed and stripped, starts `vault` and `:`
+  in any case or spacing; it must be the whole body and match exactly.
 - Every failure is a named state with exit 1: `malformed` (absolute, backslash, `:` in any
-  segment, `.`/`..` or empty segment, not `.md`, a Cc or Cf character, a second field, and a
+  segment, `.`/`..` or empty segment, not `.md`, a Cc, Cf, Zl or Zp character, a second field, and a
   `vault:` line that is indented or not lower case), `no-vault-config` (including a config file
   that exists but cannot be reached, read or parsed, or whose `vaults` block or entry has the
   wrong shape - never read as "no vaults"; only FileNotFoundError is absent), `vault-unknown`,
   `vault-unavailable` (not absolute, not there, or not listable; never replaced by another
   vault), `note-missing`, `outside-vault` (a symlink below the vault, or a real path that leaves
   it) and `unreadable` (the memory file, or a folder or note below the vault that cannot be
-  examined). `check` lists a dangling `*.md` link as `unreadable` and exits 2 on a folder it
-  cannot list. The frontmatter is split on its `---` lines and never parsed; CRLF, LF and a lone
+  examined, or a note that does not open). `check` lists a dangling `*.md` link, a FIFO, a device
+  or a directory as `unreadable` without opening it, and exits 2 on a folder it cannot list. The frontmatter is split on its `---` lines and never parsed; CRLF, LF and a lone
   CR all end a line. Read-only; no hook, no config key.
 - The `crew-memory` skill gains "Native memories as vault pointers"; README section 14 and the
   memory guide describe it. Writing pointers (L-0677) and migration (L-0678) are later versions;
   `OBSIDIAN_VAULT_PATH` is not honoured.
-- **Tests.** `plugin/crew/tests/test_crew_memory.py`, 74 cases on fixtures only (permission
-  denial is simulated, since a root test run cannot be denied); bash and pwsh are separate
+- **Tests.** `plugin/crew/tests/test_crew_memory.py`, 102 cases on real fixture files (permission
+  denial is simulated, since a root test run cannot be denied: the round-1 EACCES cases and the
+  mode-000 note when euid is 0; the FIFO cases use real FIFOs in a subprocess with a timeout); bash and pwsh are separate
   cases that each skip on their own. A new `.crew/verify.json` rule runs it. Sabotaged by hand
   (dropping the `..` check, the symlink check, the `:` check, the Cc/Cf check or the `ignore`
   rule; substituting another vault; reading a broken or wrong-shaped config as empty; reading
   EACCES as absent; case-sensitive or CR-blind classification; dropping dangling links from
   `check`; reporting an unreadable component as `note-missing`; not listing the vault; the
   legacy `vaultPath` beside a `vaults` block; a traceback on an unlistable folder; reading a
-  malformed pointer as full text): each turned a named test red.
+  malformed pointer as full text; `stat` for `lstat`; each schema check off; null refused; the
+  note not opened; `check` opening non-regular files; a blocking open; no fstat check; Cf kept in
+  the probe; no whitespace before the colon; a pointer followed by prose; Zl/Zp allowed): each
+  turned a named test red.
 
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 

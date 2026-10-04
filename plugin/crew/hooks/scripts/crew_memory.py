@@ -16,25 +16,30 @@ Rules, each with a test in plugin/crew/tests/test_crew_memory.py:
 - The frontmatter is never parsed as YAML. It is split off on its first two
   `---` lines and ignored; the harness owns its shape. CRLF, LF and a lone CR
   all end a line.
-- A body is `pointer`, else `malformed` (one line that, stripped and without
-  case, starts `vault:` but is not exactly the grammar -- an indented or
-  `Vault:` line included; never read as full text, never resolved), else
-  `full-text`. The note path refuses `:` in any segment and any Cc or Cf
-  character.
+- A body is `pointer`, else `malformed`, else `full-text`. The first
+  non-blank line, with Cf characters removed and then stripped, that starts
+  `vault`, optional whitespace and `:` in any case is a pointer attempt: it
+  must be the whole body and match the grammar exactly, or it is `malformed`
+  (never read as full text, never resolved). The note path refuses `:` in
+  any segment and any Cc, Cf, Zl or Zp character.
 - A vault name maps to a path through `vaults.<name>.path` in the machine's
   Obsidian config (`crew_recall.obsidian_config_path`); a `role: ignore`
   entry is not resolved. Only the name `memory`, only when that config has no
   such entry, falls back to the crew config's `memory.vaultPath`, then -- only
   when the config has no `vaults` block, as obsidian-vault's `list_vaults`
   reads it -- the legacy top-level `vaultPath`. No other vault is ever
-  substituted for an unavailable one. A config file that exists but cannot be
-  read or parsed, or whose `vaults` block or entry has the wrong shape, is
-  `no-vault-config` ("config unreadable"), never "no vaults"; only
-  FileNotFoundError means absent.
+  substituted for an unavailable one.
+- A config file is absent only when `os.lstat` raises FileNotFoundError.
+  Anything else there (a dangling link, any other OSError, bad JSON, a wrong
+  shape) must read, parse and pass one schema check, run for both files
+  before any resolution, or it is `no-vault-config` ("config unreadable",
+  naming the field).
 - The note must exist under the vault's real path with no symlink component
   between the vault and the note. A vault that cannot be listed is
-  `vault-unavailable`; a component below it that cannot be examined is
-  `unreadable`, never `note-missing`.
+  `vault-unavailable`; a component below it that cannot be examined, or a
+  note that does not open, is `unreadable`, never `note-missing`. Files are
+  opened non-blocking and fstat-checked, and `check` stats every entry
+  first, so a FIFO or device is listed `unreadable` and never blocks.
 - `OBSIDIAN_VAULT_PATH` is not honoured (T-0084, accepted risk).
 
 Standard library only. Read-only: this module writes nothing anywhere.

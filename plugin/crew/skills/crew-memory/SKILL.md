@@ -91,19 +91,22 @@ The name maps to a path through `vaults.<name>.path` in `~/.claude/obsidian/conf
 (a `role: ignore` vault is not resolved). Only the name `memory` falls back: to the
 crew config's `memory.vaultPath`, then, only when that file has no `vaults` block, to
 its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured. The pointer
-line is exact: an indented or `Vault:` line is `malformed`, not prose.
+line is exact and must be the whole body: a first line that starts `vault` and `:` in
+any case, indent or spacing, and is anything less, is `malformed`, not prose. A config
+file counts as missing only when it is not there at all; one that is there and does
+not read, parse or match its expected shape is `no-vault-config`, naming the field.
 
 | state | meaning | exit |
 |---|---|---|
 | `resolved` | the note exists; `path:` is printed | 0 |
 | `full-text` | not a pointer; the body is the memory | 0 |
-| `malformed` | a `vault:` line (any case, any indent) that fails the grammar | 1 |
-| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that cannot be read, does not parse or has a wrong-shaped `vaults` | 1 |
+| `malformed` | a `vault:` first line (any case, indent or spacing) that fails the grammar or is not alone | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that cannot be read, does not parse or has a field of the wrong shape | 1 |
 | `vault-unknown` | this host names no such vault, or it is `ignore` | 1 |
 | `vault-unavailable` | the configured path is not an absolute, listable directory here | 1 |
 | `note-missing` | the vault is there, the note is not | 1 |
 | `outside-vault` | a symlink below the vault, or the path leaves it | 1 |
-| `unreadable` | the memory file is not readable UTF-8, or a folder or note below the vault cannot be read | 1 |
+| `unreadable` | the memory file is not a readable UTF-8 regular file, or a folder or note below the vault cannot be read or opened | 1 |
 
 Any state other than `resolved` or `full-text`: tell the user the state and its
 reason. Do not guess the note, search another vault for it, or treat the pointer
