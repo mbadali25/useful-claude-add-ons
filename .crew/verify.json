@@ -77,20 +77,6 @@
     ]
   },
   "rules": [
-    {
-      "paths": [
-        "plugin/crew/hooks/scripts/crew_gitignore.py",
-        "plugin/crew/hooks/scripts/crew_status.py",
-        "plugin/crew/tests/test_crew_gitignore.py",
-        "plugin/crew/tests/test_status.py"
-      ],
-      "seconds": 5,
-      "run": [
-        "python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_gitignore.py plugin/crew/tests/test_status.py -q"
-      ],
-      "reach": "local",
-      "why": "T-0039: crew_gitignore.py is the only crew code that writes a repo's .gitignore, and /crew:status prints its summary. The suite holds the contract: detection from git-listed files only, covered measured by git check-ignore with the global excludes file, local config and info/exclude disabled, tracked matches named, a tracked secret exit 3, a human negation a directory pattern would defeat reported as conflict, the managed block at the top with every human line byte-identical, idempotence, CRLF/BOM, the atomic write, malformed markers and every git failure as unknown exit 4, the opt-out and Touch refusals exit 5, and the status line in all four states. 4.9s wall (74 passed) measured 2026-10-04 on a 4-CPU Linux container with the run line verbatim; 5 is that rounded up. Sabotage-proven by hand the same day: 16 mutations (covered always true, global excludes honoured two ways, a human line rewritten, the block at the bottom, a tracked secret downgraded to exit 0, check-ignore 128 read as not-ignored, a git timeout read as an empty listing, the Touch refusal removed, the .crew filter removed, a .crew row added, a truncating open, both conflict checks removed, the overridden guard removed, the status line omitted on import failure), each red on its named test and the file restored sha256-identical. They are not yet in sabotage.py: plugin/crew/tests/sabotage*.py is harness (scripts/check-tooling-pr.py HARNESS), so registering them is a tooling-alone follow-up (TODO.md). reach: local - every case builds a throwaway git repository under tmp_path; no network call."
-    },
     { "paths": [".claude-plugin/marketplace.json", "**/.claude-plugin/plugin.json",
                 "**/pyproject.toml", "plugin/**", "skills/**", "MARKETPLACE.md",
                 "skills-lock.json"],
@@ -586,7 +572,21 @@
       "seconds": 2,
       "run": ["python3 -m pytest plugin/crew/tests/test_verify_reach.py -q"],
       "reach": "local",
-      "why": "L-0562 (crew 1.0.229): /crew:verify --stamp-reach. Proposals come from verify_record.scan_reach run from --root as cwd (as the gate does), a null reach is undeclared, --apply moves each stamped rule's timings/record entries to its new rule_key so Stop's runs and prices are unchanged (the test models the gate's pricing), a deferred rule runs only on --set, and the map is edited as text and checked to round-trip. 16 passed in 0.29s, 2026-10-03, 4-CPU container. Eight new mutations (cache move, null reach, cwd, clean tree, empty rule) sabotage-tested by hand, each red, after the seven before. reach: local - every case writes a throwaway map under tmp_path." }
+      "why": "L-0562 (crew 1.0.229): /crew:verify --stamp-reach. Proposals come from verify_record.scan_reach run from --root as cwd (as the gate does), a null reach is undeclared, --apply moves each stamped rule's timings/record entries to its new rule_key so Stop's runs and prices are unchanged (the test models the gate's pricing), a deferred rule runs only on --set, and the map is edited as text and checked to round-trip. 16 passed in 0.29s, 2026-10-03, 4-CPU container. Eight new mutations (cache move, null reach, cwd, clean tree, empty rule) sabotage-tested by hand, each red, after the seven before. reach: local - every case writes a throwaway map under tmp_path." },
+    {
+      "paths": [
+        "plugin/crew/hooks/scripts/crew_gitignore.py",
+        "plugin/crew/hooks/scripts/crew_status.py",
+        "plugin/crew/tests/test_crew_gitignore.py",
+        "plugin/crew/tests/test_status.py"
+      ],
+      "seconds": 5,
+      "run": [
+        "python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_gitignore.py plugin/crew/tests/test_status.py -q"
+      ],
+      "reach": "local",
+      "why": "T-0039: crew_gitignore.py is the only crew code that writes a repo's .gitignore, and /crew:status prints its summary. The suite holds the contract: detection from git-listed files only, covered measured by git check-ignore with the global excludes file, local config and info/exclude disabled, tracked matches named, a tracked secret exit 3, a human negation a directory pattern would defeat reported as conflict, the managed block at the top with every human line byte-identical, idempotence, CRLF/BOM, the atomic write, malformed markers and every git failure as unknown exit 4, the opt-out and Touch refusals exit 5, and the status line in all four states. 4.9s wall (74 passed) measured 2026-10-04 on a 4-CPU Linux container with the run line verbatim; 5 is that rounded up. Sabotage-proven by hand the same day: 16 mutations (covered always true, global excludes honoured two ways, a human line rewritten, the block at the bottom, a tracked secret downgraded to exit 0, check-ignore 128 read as not-ignored, a git timeout read as an empty listing, the Touch refusal removed, the .crew filter removed, a .crew row added, a truncating open, both conflict checks removed, the overridden guard removed, the status line omitted on import failure), each red on its named test and the file restored sha256-identical. They are not yet in sabotage.py: plugin/crew/tests/sabotage*.py is harness (scripts/check-tooling-pr.py HARNESS), so registering them is a tooling-alone follow-up (TODO.md). reach: local - every case builds a throwaway git repository under tmp_path; no network call."
+    }
   ],
 
   "default": ["bash _verify/smoke.sh"],
