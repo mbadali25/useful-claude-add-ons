@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@bd422497
+anchor: useful-claude-add-ons@53bee6e5
 verified: 2026-10-04
 
 ## Does
@@ -79,17 +79,18 @@ violation visible at all. (JUDGEMENT.)
 - `plugin/obsidian-vault/hooks/scripts/vault_import.py:330` - `add_parsers`, registers `import` (new
   module this pass; module docstring at `:1-20`). (DERIVED, not read beyond the docstring - see
   Unverified.)
-- `plugin/obsidian-vault/hooks/scripts/vault_recall.py:398` - `add_parsers`, registers `recall` - "the
-  contract crew's context hook calls" per its own module docstring (`:1`), read-only, no network, no
-  bridge, no writes, no cache. Read in full at T-0083 (2026-10-04): relevance is `terms_of` `:92`
-  (stop words `:76`, three-character minimum, joined words split by `PART_RE` `:89`), whole-word
-  matching via `words_of` `:147` (each word and its parts) and `variants` `:103` (s/es plurals) in
-  `score_note` `:157`, the floor `need_for` `:113` applied at `:291`, `ARCHIVE_PREFIX` `:82` matched
-  in any letter case by `is_excluded` `:194` and pruned in `iter_notes` `:200`, symlinked notes
-  resolved by `link_target` `:243` (into the archive, a SKIP_DIRS or dot folder, or out of the
-  vault: skipped), `kind_of` `:223`, `project_of` `:231`, and the in-vault sort `:298` (project,
-  kind, score, path) inside `search_vault` `:260`; `recall` `:314` still appends vault by vault,
-  so vault priority wins. The
+- `plugin/obsidian-vault/hooks/scripts/vault_recall.py:448` - `add_parsers`, registers `recall` - "the
+  contract crew's context hook calls" per its own module docstring (`:1-58`), read-only, no network,
+  no bridge, no writes, no cache. Read in full at T-0083 (2026-10-04): relevance is `terms_of` `:106`
+  (stop words `:82`, three-character minimum, a joined word kept as one term), `matcher` `:132` (a
+  plain term against any word or part; a joined term whole or as a contiguous in-order run of the
+  part sequence `words_of` `:189` builds), `variants` `:119` (es only after `ES_ENDINGS` `:98`, plain
+  s stripped only with `MIN_S_STEM` `:99` left, never a stop word), used by `score_note` `:203`; the
+  floor `need_for` `:155` applied at `:341`, `ARCHIVE_PREFIX` `:88` matched in any letter case by
+  `is_excluded` `:244` and pruned in `iter_notes` `:250`, symlinked notes resolved by `link_target`
+  `:293` (into the archive, a SKIP_DIRS or dot folder, or out of the vault: skipped), `kind_of`
+  `:273`, `project_of` `:281`, and the in-vault sort `:348` (project, kind, score, path) inside
+  `search_vault` `:310`; `recall` `:364` still appends vault by vault, so vault priority wins. The
   vault's `.obsidian/app.json` is not read (review round 1, FIX6). (DERIVED.)
 - `plugin/obsidian-vault/hooks/scripts/vault_garden.py:1095` - `add_parsers`, registers `queue`,
   `ack`, `garden-run`, `drain`, `reconcile`, `schedule` (new module this pass, 1137 lines - the
@@ -423,11 +424,12 @@ violation visible at all. (JUDGEMENT.)
   calls" - a pure read (no network, no bridge, no writes, no cache) that scores hits by
   title/heading/body and orders results by vault priority, then (since T-0083) project, note kind
   and score, after skipping excluded folders and notes under the relevance floor, budgeted by
-  `--max-chars` (`plugin/obsidian-vault/hooks/scripts/vault_recall.py:1-38`). `vault_import.py` copies notes from
+  `--max-chars` (`plugin/obsidian-vault/hooks/scripts/vault_recall.py:1-58`). `vault_import.py` copies notes from
   another vault or a plain Markdown folder into the primary, dry-run by default, never overwriting,
   stamping `imported_from`/`imported_at` frontmatter so a re-run is a no-op
-  (`plugin/obsidian-vault/hooks/scripts/vault_import.py:1-20`). None of these four modules' internals
-  were read past the module docstring and `add_parsers` signature - see Unverified. (DERIVED.)
+  (`plugin/obsidian-vault/hooks/scripts/vault_import.py:1-20`). Of these four modules only
+  `vault_recall.py` has been read in full (T-0083, its `add_parsers` bullet above); the other three
+  were not read past the module docstring and `add_parsers` signature - see Unverified. (DERIVED.)
 - **`bridge-status.sh`/`.ps1` and `vault-capture.sh`/`.ps1` now carry their own proven-interpreter
   resolvers, closing the gap the previous version of this note flagged as open risk.** Each is an
   independently-copied near-twin of `vault-guard.sh`'s `_vault_guard_resolve_python` (bash) or
@@ -510,9 +512,10 @@ violation visible at all. (JUDGEMENT.)
   but no function body beyond that was read - treat any claim about its per-state wording as
   unverified.
 - **New this pass, module docstring and signature only:** `vault_setup.py` (454 lines),
-  `vault_import.py` (341 lines), `vault_recall.py` (231 lines then; 416 and read in full at T-0083), `vault_garden.py` (1137 lines - the
-  largest of the four). None of the four was read past its opening docstring and `add_parsers`
-  definition. Every claim this note makes about them (the role contract, the import
+  `vault_import.py` (341 lines), `vault_recall.py` (231 lines then; 466 and read in full at T-0083), `vault_garden.py` (1137 lines - the
+  largest of the four). At that pass none of the four was read past its opening docstring and
+  `add_parsers` definition; since T-0083 `vault_recall.py` is the exception (read in full, and its
+  relevance cases run standalone through `test_memory_ops.py`). Every claim this note makes about them (the role contract, the import
   never-overwrites rule, recall's read-only scope, the gardener's bounds) is taken from those
   docstrings, not from tracing the implementation, and none was executed - `test_memory_ops.py`
   (1368 lines, new this pass) is the regression suite for all four, run only as one folded case
@@ -1340,3 +1343,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5c2f0d6e` -> `17ea9d1e` on 2026-10-04 (T-0083 review round 1).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. The `vault_recall.py` bullet was re-derived (userIgnoreFilters no longer read; case-insensitive folders; symlink resolution; whole-word terms) with fresh cites; `_t_recall_relevance` is still at `:398`.
 
 **Re-anchored `17ea9d1e` -> `bd422497` on 2026-10-04 (T-0083 review round 2).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. The `vault_recall.py` bullet was re-derived (joined-word parts, plurals, links into skipped folders, whole-word snippet) with fresh cites; `_t_recall_relevance` is still at `:398`.
+
+**Re-anchored `bd422497` -> `53bee6e5` on 2026-10-04 (T-0083 review round 3).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. The `vault_recall.py` bullet was re-derived (joined query word as one contiguous term, the s/es plural rule, stop-word guard) with fresh cites; the roles-pass docstring cite moved `:1-38` -> `:1-58`, and its "none of these four ... read past the docstring" sentence now excepts `vault_recall.py`, which this note's own bullet says was read in full. `_t_recall_relevance` is still at `:398`.

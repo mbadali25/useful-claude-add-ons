@@ -236,10 +236,17 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
   English stop words (`what`, `the`, `for`, `this`, `with`, ...), first 12
   kept. A query of stop words only has no terms and returns nothing, exit 0.
   Terms match whole words: `port` is not found in `support` or `report`. A
-  joined word counts as its parts too (split on `-`, `.`, `_`): `context`
-  finds `crew-context.sh`, `recall` finds `vault_recall.py`, and a joined query
-  word (`vault_recall`) is searched as its parts. A term also matches its
-  plural or singular by a trailing `s` or `es` (`bridge` / `bridges`).
+  note's joined word counts as its parts too (split on `-`, `.`, `_`):
+  `context` finds `crew-context.sh`, `recall` finds `vault_recall.py`. A
+  joined query word is one term: `vault_recall.py`, `t-0083` or
+  `port-collision` match the whole joined word or its parts side by side in
+  order (`port collision`, `port-collisions`), never the parts scattered
+  (`t-0083` does not find `L-0083`; `github.com` does not find `example.com`).
+  Plurals: `es` is added or stripped only after s, x, z, ch or sh (`box` /
+  `boxes`, but `plan` never finds `planes`); a plain `s` is stripped only when
+  four letters remain (`bridges` finds `bridge`, `news` never finds `new`,
+  `bugs` does not find `bug`); no form is a stop word (`notes` never finds
+  `not`). CamelCase is not split: `PortCollision` does not contain `port`.
 - `wiki/sessions/archive/` (in any letter case) is never read, and a
   symlinked note whose real path is inside it is skipped too.
   `--include-excluded` reads it. A symlinked note that resolves outside the

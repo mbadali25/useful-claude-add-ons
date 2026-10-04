@@ -14,8 +14,11 @@ All notable changes to this repository are documented here. Format follows [Keep
     detected; Windows junctions are untested);
   - stop words and words under three characters are not query terms; a stop-word-only query
     returns nothing, exit 0; terms match whole words only (`port` no longer matches `support`),
-    where a joined word (`crew-context.sh`, `vault_recall.py`) also counts as its parts, a
-    joined query word is searched as its parts, and a trailing `s`/`es` plural matches;
+    where a note's joined word (`crew-context.sh`, `vault_recall.py`) also counts as its parts,
+    a joined query word (`t-0083`, `github.com`) is one term matched whole or as its parts side
+    by side in order, `es` plurals apply only after s/x/z/ch/sh, a plain `s` is stripped only
+    when four letters remain (`news` is not `new`; `bugs` does not find `bug`), no plural form
+    is a stop word, and CamelCase is not split;
   - a note must hold 1 distinct term for a query of one or two terms, 2 for three to five, 3 for
     six or more;
   - inside a vault the order is project, note kind (`wiki/concepts/` and `wiki/decisions/`, then
