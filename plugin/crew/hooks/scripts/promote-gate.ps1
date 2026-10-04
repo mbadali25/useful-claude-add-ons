@@ -139,6 +139,55 @@ foreach ($p in $vm.environments.PSObject.Properties) {
 }
 if (-not $envName) { exit 0 }
 
+function Get-CrewRepoConfigDir([string]$Root) {
+  # @{ Dir; Source }: the `.crew/` the repo config is read from, and own, main
+  # or unknown. Twin of crew_repo_config_dir in _common.sh and of
+  # crew_common.repo_config_dir (T-0088, T-0096): own files win whole, never
+  # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
+  # into each script that needs it (a dot-sourced function is invisible to
+  # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
+  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
+  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
+  # root, likely) in either path compared below reads `unknown`, never `main`.
+  if (-not $Root) { $Root = '.' }
+  $own = Join-Path $Root '.crew'
+  $result = @{ Dir = $own; Source = 'own' }
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $own $n) -Force -ErrorAction SilentlyContinue) { return $result }
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
+  $result.Source = 'unknown'
+  # git prints paths as UTF-8; a native command's output is decoded with
+  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
+  # this one call and put the caller's back.
+  $encoding = [Console]::OutputEncoding
+  try {
+    $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
+  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
+  $real = New-Object System.Collections.Generic.List[string]
+  foreach ($p in $lines) {
+    $full = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $base $p }))
+    for ($at = $full; $at; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if (-not $item -or $item.LinkType) { return $result }
+    }
+    $real.Add($full.TrimEnd('\', '/'))
+  }
+  $result.Source = 'own'
+  $same = if ($env:OS -eq 'Windows_NT') { $real[0] -eq $real[1] } else { $real[0] -ceq $real[1] }
+  if ($same -or (Split-Path -Leaf $real[1]) -cne '.git') { return $result }
+  $main = Join-Path (Split-Path -Parent $real[1]) '.crew'
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $main $n) -Force -ErrorAction SilentlyContinue) {
+      return @{ Dir = $main; Source = 'main' }
+    }
+  }
+  return $result
+}
+
 # --- Emergency lane -------------------------------------------------------
 #
 # Twin of crew_incident_active / crew_incident_log in _common.sh, inline for
@@ -148,7 +197,8 @@ if (-not $envName) { exit 0 }
 function Test-CrewIncidentActive {
   if (-not (Test-Path ".crew/incident.json")) { return $false }
   try {
-    $c = Get-Content .crew/config.json -Raw -ErrorAction Stop | ConvertFrom-Json
+    # standDown from the resolved repo config (T-0096); incident.json stays own.
+    $c = Get-Content -LiteralPath (Join-Path (Get-CrewRepoConfigDir '.').Dir 'config.json') -Raw -ErrorAction Stop | ConvertFrom-Json
     if ($c.emergency -and $c.emergency.standDown -eq $false) { return $false }
   } catch { }
   try { $inc = Get-Content .crew/incident.json -Raw -ErrorAction Stop | ConvertFrom-Json }

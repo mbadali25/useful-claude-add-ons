@@ -144,8 +144,28 @@ the heal path creates nothing there again.
 The writers never follow it: `crew_platform` (heal and `platform-sync`),
 `crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
 keep their own-path behaviour, and the heal path creates nothing in a worktree
-that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
-routed yet and read only the worktree's own file.
+that inherits a config, or in one where git could not tell.
+
+**The shell and PowerShell resolvers (crew 1.0.396, T-0096).** `crew_repo_config_dir` in
+`hooks/scripts/_common.sh` sets `CREW_CFG_DIR` and `CREW_CFG_SOURCE` (`own`, `main`
+or `unknown`) by rules 1-4 above, with no python; `Get-CrewRepoConfigDir`, one
+body copied verbatim into `cloud-guard.ps1`, `promote-gate.ps1` and
+`auto-clear.ps1`, is its PowerShell twin. `tests/test_worktree_config_shell.py`
+holds both to `crew_common.repo_config_dir` case by case and the copies
+byte-identical. Windows PowerShell 5.1 cannot resolve a symlink the way
+`realpath` does, so on every PowerShell (7 as well) a symlink, a junction, or an
+ancestor `Get-Item` cannot read (likely a UNC share's root) in either path the
+PowerShell resolver compares reads `unknown`, never `main`. It pins
+`[Console]::OutputEncoding` to UTF-8 around its git call, so a non-ASCII path
+survives a console on the OEM code page. In the cloud guard's bash fallback a
+missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
+`crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
+in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
+veto. Still own-file only: the session hooks (`notify`, `handoff-read`,
+`handoff-write`, `context-watch`), the verify gate, the scope and completion
+wrappers, and `review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
+lane's own `emergency.standDown` while the bash verify gate and
+`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 
