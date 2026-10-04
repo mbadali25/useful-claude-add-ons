@@ -333,6 +333,16 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
 
+**GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:185`; `entries`, `:153`),
+validates each against a closed key set (`KEYS`, `:51`) and value grammar (`VALUE`, `:48`;
+`entry_problem`, `:117`), requires `deploy` to be exactly the entries' prefixes (`check`, `:219`;
+`prefix`, `:166`) and prints the dispatch for HEAD (`dispatch`, `:174`). It runs only
+`git rev-parse HEAD` (`_head`, `:206`) and writes nothing; no hook calls it yet, and promote-gate
+ignores the `github` key. DERIVED from the definitions cited. Its unwired mutations are
+`plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after the anchor;
+the anchor was not moved for it.
+
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls
 `_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2785`, called at `:2834`, and only at

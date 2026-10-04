@@ -2541,6 +2541,8 @@ The sequence lives in the `environments` block of `.crew/verify.json`, beside th
 
 `/crew:init` Phase 8 builds this by asking, per environment, what actually deploys it and what actually proves it worked. It fills in only what exists. A block with `deploy` and `smoke` and nothing else is honest; one with five aspirational commands nobody has run is worse than an empty file, because it reads as coverage.
 
+**A GitHub Actions deploy** (since 1.0.395, first slice only) is described by a `github` entry in the environment: the workflow filename, a branch `ref`, fixed `inputs`, and optionally `shaInput`, `correlationInput`, `deployJob`, `watchMinutes` and `identifySeconds`. `deploy` must list each entry's canonical prefix (`gh workflow run <workflow> --ref <ref> -f k=v ...`). `python3 hooks/scripts/crew_ghdeploy.py check --root . --env <name>` validates the entry, refuses any value outside `[A-Za-z0-9._/@:+-]` by name, and prints the literal dispatch for HEAD; it writes nothing and runs no `gh`. Dispatching, identifying, watching and recording the run are not built yet. The key table is in the crew-verification skill, section 4.
+
 ### The promotion record
 
 Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:

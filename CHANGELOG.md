@@ -4,6 +4,30 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.395: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
+
+- **What changed.** A `.crew/verify.json` environment may carry a `github`
+  entry (one object or a list): `workflow` (a `.yml`/`.yaml` filename),
+  `ref` (a branch), fixed `inputs`, and optional `shaInput`,
+  `correlationInput`, `deployJob`, `watchMinutes` (1-360) and
+  `identifySeconds` (10-900). The new
+  `plugin/crew/hooks/scripts/crew_ghdeploy.py check --root . --env <name>`
+  validates it against a closed key set and the value grammar
+  `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
+  requires `deploy` to list exactly the entries' canonical prefixes so
+  promote-gate's existing match fires on the real dispatch, and prints the one
+  literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
+  (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
+  HEAD unreadable - never "no github entry"). It writes nothing and runs no
+  `gh`.
+- **Not yet.** Nothing dispatches, identifies, watches or records a run
+  (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
+  does not deploy (L-0649).
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 48 cases, including
+  one that feeds the printed dispatch to the real `promote-gate.sh`. The 35
+  mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
+  named case red; they are unwired until L-0650 (tooling only).
+
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 
 - `plugin/crew/tests/sabotage_config.py` gains three mutations against the
