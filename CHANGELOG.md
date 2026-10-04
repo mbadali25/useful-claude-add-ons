@@ -4,6 +4,58 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — crew 1.0.232: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
+
+- **Scope is the whole map, over tracked files:** every file `git ls-files` lists (staged deletions
+  and renames included), no Stop budget, no fingerprint skip. Untracked files are left out, so a crew
+  checkout, a `.venv` or build output in the CI workspace cannot trip `"unmapped": "fail"`.
+- **Reach is Stop's:** a `network`/`host` rule, an undeclared one the scan cannot clear, and an
+  `always`/`default` command the same scan excludes are not run on a CI runner. Each is named as on
+  Stop, and one `verify-gate --ci:` line counts them and says they run only under `--all`. They do not
+  fail the run. A new `REACH_FILTER` (`$reachFilter` in the `.ps1`) carries this, so the budget, the
+  tree-pass cache and `requiresCleanTree` stay Stop-only. A `requiresCleanTree` rule **runs** under
+  `--ci`, because a CI checkout is clean.
+- **The verdict is stricter:** a failing command exits 2 as before; a command exiting 77 now exits 2
+  (`N command(s) exited 77 (SKIP) - a skip is not a pass in CI`), and so does any deferral.
+- **Nothing checked is never green under `--ci`.** Every path that would end having checked nothing
+  exits 2 with a named `verify-gate --ci:` reason, where Stop exits 0: `verifyGate: false`; no
+  `.crew/verify.json` and no `_verify/smoke.sh`; a project directory the gate cannot enter; no tracked
+  files (not a git work tree, git refusing the checkout, or nothing tracked); zero commands to run
+  (every matched rule reach-excluded, no rule matching anything with `always`/`default` adding
+  nothing, or every command blank); a lock held by another gate run; and the `.ps1` called with `-Ci`
+  off Windows, where its flavour guard used to stand down silently. With no map, a passing smoke
+  harness still passes (unscoped, as on Stop).
+- **Stop-only stand-downs are skipped:** `--ci` reads no stdin, so a `stop_hook_active` payload cannot
+  end it; the emergency lane does not stand it down (an `.crew/incident.json` is named and the rules
+  run); and the `.deploy-in-flight` check neither runs nor removes the marker.
+- **The verified marker and the fingerprint are never written.** `.crew/.verify-verified-at` and
+  `.crew/.verify-gate.fingerprint` stay as they were, even on a full pass. The pass line says why: some
+  reach-excluded rules did not run, or, when none were excluded, that `--ci` never writes them by
+  design. The gate's other machine-local files are still written: the per-rule record (synced with
+  `all` false, since the matcher and the sync receive `--ci`, never `--all`), and the timings and
+  tree-pass caches, updated as on any other run.
+- **Arguments are checked strictly in every mode:** the `.sh` accepts only `--all` and `--ci` (in any
+  position) and `--price` (first only); anything else (`-ci`, `--CI`, `--ci=1`) exits 2, so a misspelt
+  `--ci` cannot run as a Stop gate in CI. The `.ps1` has no `[CmdletBinding()]`, so PowerShell itself
+  let an unknown argument through (into `$args`, or a bare word into `-PriceTarget`) and the gate ran
+  as Stop; that now exits 2 too. `--all` with `--ci`, `--ci` with `--price` (both orders), `-All -Ci`
+  and `-Ci -Price` are usage errors. The Stop hook passes no argument and `/crew:verify` passes
+  `--all`.
+- `plugin/crew/tests/test_verify_gate_ci_mode.py`: must-block and must-allow cases for each behaviour
+  above, in both flavours. The `.ps1` cases run wherever `pwsh` exists, past the flavour guard with
+  `OS=Windows_NT`. The suite joins `.crew/verify.json`'s gate rule. `sabotage_tooling.py` registers 22
+  `--ci` mutations against the `.sh` and 19 against the `.ps1` (appended where `pwsh` exists); each one
+  turns the suite red.
+- Review (Sonnet 5.5): round 1, 2 BLOCK (zero commands and an empty file list both passed) and 6 FIX;
+  round 2, 1 BLOCK (`.ps1 -Ci` off Windows stood down green; `pwsh` ships on ubuntu runners), 2 FIX
+  (blank commands passed; a false doc example), 4 NIT. All fixed but two lock-reclaim paths that
+  no test can reach.
+- The `.ps1` refuses `-Ci` off Windows at parameter binding (`ValidateScript`, exit 1), not with a
+  statement: `hooks/scripts/_test/test_flavour_guard.py` requires the flavour guard to stay the first
+  executable statement and the hook pair's stand-down to run nothing past it. CI caught the first
+  placement.
+- A harness change under T-0087, so it lands alone.
+
 ### Added — `crew` 1.0.230: QA standards for repositories crew sets up (L-0618)
 
 - E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
