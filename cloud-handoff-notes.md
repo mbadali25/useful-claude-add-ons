@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:37 UTC
+Last updated: 2026-10-04 03:50 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:37 UTC
 
 ## Log (newest first)
 
+- 03:50: MERGED #378 at f7ab26b9 (crew 1.0.247; CI 25/25 green incl verify-gate, merge-only review clean; marked ready then merged). #339 re-merged -> c2a3ccb5 crew 1.0.248, merge-only review CLEAN; CI pending runner disk fix (owner fixing runners 4/5/6 on the self-hosted host). #379 re-merged -> a88e9b07 crew 1.0.249 (543 tests pass on merged tree), merge-only review next. Next free: 1.0.250.
 - 03:37: BLOCKER (owner): self-hosted runner host DISK FULL - #339 verify-gate rerun: 'verify-gate.sh: line 911: printf: No space left on device' (runner-6). Earlier pwsh SIGBUS -7 on runners 4/5 same cause. All PR CI red until freed. Notes pushes paused (they trigger CI on the same runners). #339 and #378 are review-clean, merge on green after cleanup.
 - 03:36: #339 CI 6da2a486: verify-gate red at ~03:29 on self-hosted runner-5: pwsh killed by SIGBUS (-7) and the full suite errored en masse, then every later step (even 0s scripts) failed - host fault (same minute as runner-4's -7s on #387). Re-ran the failed job ONCE (run 37173806451). If it fails again the same way: host needs attention (tmpfs/memory) - owner.
 - 03:34: #379 r3 on d93f3e5a: CLEAN (0/0/3 NIT: mint --status '' -> ready; untested drop-note branch; >4300-digit id ValueError). All 6 r2 findings verified red-on-revert. Train reordered: #379 lands right after #378 (unblocks #354 T-0012).
