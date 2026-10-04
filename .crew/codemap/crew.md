@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@42effe14
+anchor: useful-claude-add-ons@51b2222b
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -66,16 +66,16 @@ count-disagreement sweep across `README.md`/`plugin/README.md`/
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
 `pm` agent that dispatched them. Crew 1.0 (`docs/review/04-redesign.md`,
 "Roster: 54 agents -> 4", cited in comment at
-`plugin/crew/hooks/scripts/crew_state.py:1252-1257`) replaces that with:
+`plugin/crew/hooks/scripts/crew_state.py:1289-1294`) replaces that with:
 
 - **Four read-only subagents on a tier ladder**, `ROLE_TIERS`
-  (`plugin/crew/hooks/scripts/crew_state.py:1261-1266`): `explorer` and
+  (`plugin/crew/hooks/scripts/crew_state.py:1298-1303`): `explorer` and
   `reviewer` at tier 0, `security` at tier 1, `researcher` at tier 2. None of
   the four grants `Write` or `Edit` — confirmed by reading each agent file's
   frontmatter (`explorer.md`, `researcher.md`, `reviewer.md`, `security.md`,
   all `tools: Read, Grep, Glob, Bash, Skill`).
 - **No specialist roles.** `SPECIALIST_ROLES` is now `frozenset()`
-  (`plugin/crew/hooks/scripts/crew_state.py:1276`) — domain knowledge that
+  (`plugin/crew/hooks/scripts/crew_state.py:1313`) — domain knowledge that
   used to be a specialist agent now lives in the on-demand `stack-*` skills
   (`stack-angular`, `stack-bash`, `stack-dotnet`, `stack-powershell`,
   `stack-python`, `stack-sql`, `stack-terraform`, `stack-web`), which are
@@ -84,16 +84,16 @@ Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
   this anchor (`find . -iname pm.md` returns nothing). The interactive session
   itself is the "unnamed PM": it implements, dispatches the four subagents,
   and is never itself given an `agent_type`. `PM_DEFAULTS`
-  (`plugin/crew/hooks/scripts/crew_state.py:1108-1121`) and `pm.authority`
-  (`AUTHORITY_DEFAULT = "report-only"`, `:1065`; three values —
-  `report-only`/`act`/`autonomous`, `normalise_authority` at `:1308-1319`)
+  (`plugin/crew/hooks/scripts/crew_state.py:1145-1158`) and `pm.authority`
+  (`AUTHORITY_DEFAULT = "report-only"`, `:1102`; three values —
+  `report-only`/`act`/`autonomous`, `normalise_authority` at `:1345-1356`)
   still exist as config that governs how far that unnamed session may act
   without asking, and `AUTONOMOUS_STOPS`
-  (`plugin/crew/hooks/scripts/crew_state.py:1078-1085`) still names the four
+  (`plugin/crew/hooks/scripts/crew_state.py:1115-1122`) still names the four
   things even `autonomous` may not do unasked (`offboard-role`, `delete-map`,
   `rewrite-metrics`, `git-destruction`). Since T-0004 they bind
-  `/crew:autopilot` too (comment at `:1087-1092`).
-- `known_role` (`plugin/crew/hooks/scripts/crew_state.py:1279-1288`) still
+  `/crew:autopilot` too (comment at `:1124-1129`).
+- `known_role` (`plugin/crew/hooks/scripts/crew_state.py:1316-1325`) still
   distinguishes a deliberately-onboarded off-ladder role from a typo, even
   though `SPECIALIST_ROLES` is empty today.
 
@@ -145,7 +145,7 @@ draws it:
 | `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the digest of `spec.md` and `plan.md` (`:7-16`; since T-0026 a `crew-approval/2` digest that normalises only the header's status value, so the lifecycle's status edits keep the approval); the command body only relays the result. Since T-0024 (crew 1.0.42) several ids, a range `T-0010..T-0012` or the one plain-text form `approve T-1 through T-3` record nothing on that prompt: the hook blocks it with a PENDING list bound to each ticket's hashes, and only the user's own one-line `/crew:approve --confirm` (same session, within `PENDING_TTL`) records one receipt per ticket, or none (`plugin/crew/hooks/scripts/approval_hook.py:361`, `:433`; relay at `approve.md:27-43`). Since 1.0.44 only the prompt's own top-level command counts (a command tag nested in another is refused, and the expanded form carries nothing outside its tags, for a single id too since 1.0.45), commas go only between ids, and the closed-row check matches the id whole and in any case (`crew_ticket.py` `precheck` `:859`; the row's id cell is its first id-shaped cell) | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
-| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:55-66`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:61-64`) | new in 1.0 |
+| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:55-66`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:61-64`). After check 4, a report that is not a check (`:68-79`, T-0066): `crew_trailers.py --check` lists commits carrying a `git.forbiddenTrailers` token and never refuses or rewrites | new in 1.0 |
 
 `/crew:ticket` and `/crew:work` are now **removal stubs with no behaviour**
 (`plugin/crew/commands/ticket.md`, `plugin/crew/commands/work.md`, each a
@@ -228,15 +228,15 @@ the previous note's account of it** — see "Unverified at this anchor").
 ## Config, the guard vocabulary, and the ratchet
 
 **DERIVED at this anchor by importing `crew_config` and executing both
-default functions.** Measured 2026-09-27 on T-0023's merge of main (`502cb137`, T-0005
-landed) into T-0023, module resolved from this checkout
+default functions.** Measured 2026-10-04 on T-0066's branch after merging main `edb2b8ff`
+(first measured 2026-09-27 on T-0023's merge of main `502cb137`), module resolved from this checkout
 (`plugin/crew/hooks/scripts/crew_config.py`), not an installed plugin cache:
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **127** | `plugin/crew/hooks/scripts/crew_config.py:245` |
-| `default_global_config()` | **70** | `plugin/crew/hooks/scripts/crew_config.py:422` |
-| repo-only | **57** | the set difference |
+| `default_config()` | **133** | `plugin/crew/hooks/scripts/crew_config.py:245` |
+| `default_global_config()` | **75** | `plugin/crew/hooks/scripts/crew_config.py:432` |
+| repo-only | **58** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
 from `plugin/crew/hooks/scripts/` rather than trusting the table:
@@ -279,14 +279,18 @@ Re-executed on T-0040's branch (off `6387ab49`): 125 / 70 / 55 / 0 - T-0040 adde
 `shellRoute.mode` and `shellRoute.distro` to both `default_config()` and
 `default_global_config()`, so repo-only is unchanged. Re-executed on T-0040's landing merge of
 `6a8c60b1`: 127 / 70 / 57 / 0 - T-0010's two repo-only keys and T-0040's two in both layers
-(`plugin/crew/hooks/scripts/crew_config.py:339` and `:596`).
+(`plugin/crew/hooks/scripts/crew_config.py:340` and `:610`).
 Re-executed on T-0040-land's merge of main `844bfc36`: 129 / 72 / 57 / 0 - T-0028's two and
 T-0040's two, all in both layers. `plugin/crew/tests/test_crew_config.py:347` asserts 129.
 Re-executed on T-0061's branch after merging main `34d9f267`: 130 / 72 / 58 / 0 - T-0061's
 repo-only `tickets.baseBranch`, read from the resolved repo config (`crew_common.repo_config_file`) by
 `scope_base.read_base_branch` (`plugin/crew/hooks/scripts/scope_base.py`), not through
 `crew_config`; a value naming no commit makes `scope_base.resolve` answer source `unknown`
-with no base (DERIVED). `plugin/crew/tests/test_crew_config.py` asserts 130. T-0004's `CHANGELOG.md` entry
+with no base (DERIVED). Re-executed on main `edb2b8ff` (T-0013 landed): 132 / 74 / 58 / 0 -
+T-0013's `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` in both layers.
+Re-executed on T-0066's branch after merging main `155fe6d8` (crew 1.0.342), which changed no config key: 133 / 75 / 58 / 0 -
+`git.forbiddenTrailers` in both layers on top of T-0013's 132 (131 / 73 / 58 / 0 on its earlier
+merge of `c9263465`). `plugin/crew/tests/test_crew_config.py` asserts 133. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:703-704` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:692-693` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
@@ -366,15 +370,15 @@ before the subcommand (`crew_guards.tf_skip_options` `:1541`, used by `_terrafor
 `:1541`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
 wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1560`). DERIVED from the code cited.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2527-2639`)
-now holds 14 keys**, built in seven steps (a literal dict of two at `:2527`, four `.update()`
-calls at `:2542`, `:2555`, `:2566` and `:2576`, and two single-key assignments at `:2612` and
-`:2635`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2541-2653`)
+now holds 14 keys**, built in seven steps (a literal dict of two at `:2541`, four `.update()`
+calls at `:2556`, `:2569`, `:2580` and `:2590`, and two single-key assignments at `:2626` and
+`:2649`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
 `PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard`,
 `change.requireForProduction` and `environments.prodUnattended` (T-0005) =
 2 + 6 + 2 + 1 + 1 + 1 + 1 = 14. Counted by reading the construction sites and confirmed with
 `len(crew_config._RATCHETED)` on the T-0005 landing merge and again on T-0023's merge of main
-(14), not by trusting the literal alone — the literal at `:2527-2538` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
+(14), not by trusting the literal alone — the literal at `:2541-2552` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
 sites were already six then — the literal, four `.update()` calls and one assignment.) The
 same key is registered in `crew_guards.RATCHETED_KEYS`
 (`plugin/crew/hooks/scripts/crew_guards.py:545-549`). `autopilot.*` is not ratcheted
@@ -416,19 +420,19 @@ closed by where the check sits, not by a patch at the call site.
   original may have no other name; Windows: `os.rename`); `move_aside` (`:508`) is that move plus
   the moved bytes, `create_bytes` (`:517`) a new file by the same move.
 - **Per-leaf judgement and per-leaf writing, shared by both planners.** `leaf_updates`
-  (`crew_config.py:2660`) flattens every update to its leaves, a whole-block value included, so a
-  consent key cannot ride inside a block; `value_allowed` (`:2776`) judges each leaf: the layer's
-  path rule (`MACHINE_REFUSED` `:2696` via `_consent_refusal` `:2748`, and `is_global_path` `:734`
-  at the machine layer; `REPO_REFUSED` `:2989`, `is_repo_path` `:3046` (`_shape` `:2707` is a leaf
-  or open; since round 5 `_shape` also returns `under` for a path past a template leaf, `:2715`) and `REPO_VETO_ONLY` `:3010` by identity, `is_repo_veto` `:3013`, at the repo layer), a
-  path under a leaf (`:2784`) and an object at a leaf (both round 5, both layers), a
-  block emptied or replaced by a scalar, the null rule (`null_means`, `:2733`), then membership in
-  `enum_values` (`:2642`). `assignments` (`:2679`) is what is WRITTEN: the same leaves for a block
+  (`crew_config.py:2674`) flattens every update to its leaves, a whole-block value included, so a
+  consent key cannot ride inside a block; `value_allowed` (`:2790`) judges each leaf: the layer's
+  path rule (`MACHINE_REFUSED` `:2710` via `_consent_refusal` `:2762`, and `is_global_path` `:748`
+  at the machine layer; `REPO_REFUSED` `:3003`, `is_repo_path` `:3060` (`_shape` `:2721` is a leaf
+  or open; since round 5 `_shape` also returns `under` for a path past a template leaf, `:2729`) and `REPO_VETO_ONLY` `:3024` by identity, `is_repo_veto` `:3027`, at the repo layer), a
+  path under a leaf (`:2798`) and an object at a leaf (both round 5, both layers), a
+  block emptied or replaced by a scalar, the null rule (`null_means`, `:2747`), then membership in
+  `enum_values` (`:2656`). `assignments` (`:2693`) is what is WRITTEN: the same leaves for a block
   (its untouched siblings, unknown keys included, survive; the widening is marked on the leaf),
-  and one whole pin per role for an open role table. `_plan_on` (`:2889`) is both planners on an
-  already-read file. `merged_problems` (`:2835`) then judges the FILE the write would produce,
-  every known leaf by `_content_problem` (`:2808`): an enum value outside its tuple (a legacy null
-  tolerated), a key under a leaf or an object at a leaf (`:2821-2824`, round 5, fixable in the
+  and one whole pin per role for an open role table. `_plan_on` (`:2903`) is both planners on an
+  already-read file. `merged_problems` (`:2849`) then judges the FILE the write would produce,
+  every known leaf by `_content_problem` (`:2822`): an enum value outside its tuple (a legacy null
+  tolerated), a key under a leaf or an object at a leaf (`:2835-2838`, round 5, fixable in the
   same write since a leaf under a touched key is skipped), a consent key in the machine file, an armed veto-only key in the repo file, each
   named "pre-existing"; unknown keys and write-only refusals (`REPO_REFUSED` keys in the repo file,
   a repo-only key in the machine file) are not judged (JUDGEMENT in the docstring). Then
@@ -439,23 +443,23 @@ closed by where the check sits, not by a patch at the call site.
   not an object or `null`, and an entry under it that is not a pin object or `null`, before the
   pin's provider check - so `qa.roles=1` can no longer wipe every pin, at either layer, in the
   update, the merged file and the menu's probe alike.
-- **Machine:** `plan_global_write` (`:2922`) on `global_snapshot` (`:2873`, strict: an
+- **Machine:** `plan_global_write` (`:2936`) on `global_snapshot` (`:2887`, strict: an
   unparsable or non-object machine file is refused, never merged onto `{}`; absent is `ABSENT`) /
-  `write_global_config` (`:2941`), which re-runs `_plan_on` on the bytes `update_json` read under
+  `write_global_config` (`:2955`), which re-runs `_plan_on` on the bytes `update_json` read under
   the lock, `expect` (a digest or `ABSENT`) refusing a changed file (`GlobalWriteConflict`);
   any other `OSError` from the directory, the lock or the write is a `GlobalWriteRefused`
-  naming the path (`:2964`, round 5), exit 2 and never a traceback.
-- **Repo:** `plan_repo_write` (`:3122`) on `repo_snapshot` (`:3110`, strict: absent or malformed
-  is refused, never created) and `machine_view` (`:3141`, the filtered machine file and its
-  `state_digest` from one `read_tolerant`) / `write_repo_config` (`:3148`), the same
+  naming the path (`:2978`, round 5), exit 2 and never a traceback.
+- **Repo:** `plan_repo_write` (`:3136`) on `repo_snapshot` (`:3124`, strict: absent or malformed
+  is refused, never created) and `machine_view` (`:3155`, the filtered machine file and its
+  `state_digest` from one `read_tolerant`) / `write_repo_config` (`:3162`), the same
   compare-and-swap (`RepoWriteConflict`), plus `expect_global`: the machine file is read once under
   `machine_lock` (taken before the repo lock, even when `~/.claude/crew/` is absent) and a changed
   one is refused; an `OSError` from the machine directory, either lock or the write is a
-  `RepoWriteRefused` (`:3178`, round 5). `!` on a widening: the ratchet by what is in force (`repo_widens`, `:3054`) and
-  the `_REPO_WIDENING` table (`:3023`).
+  `RepoWriteRefused` (`:3192`, round 5). `!` on a widening: the ratchet by what is in force (`repo_widens`, `:3068`) and
+  the `_REPO_WIDENING` table (`:3037`).
 - **CLI:** `--set PATH=JSON [--repo] [--apply [--expect DIGEST|absent] [--expect-global
-  DIGEST|absent]]` through `_set_layer` (`:3207`), which prints `digest:` of the bytes the plan
-  read and, with `--repo`, `machine digest:`; `main` (`:3302`) refuses a malformed path, value or
+  DIGEST|absent]]` through `_set_layer` (`:3282`), which prints `digest:` of the bytes the plan
+  read and, with `--repo`, `machine digest:`; `main` (`:3316`) refuses a malformed path, value or
   digest with exit 2. `wc -l` is 3399 at `3648f59a`, under `.pylintrc`'s 3400.
 
 `plugin/crew/hooks/scripts/crew_config_menu.py` (new) is what the menu procedure
@@ -514,7 +518,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1293`, through `crew_common.repo_config_file`
+  (`plugin/crew/hooks/scripts/crew_config.py:1307`, through `crew_common.repo_config_file`
   since T-0088, which in a linked worktree with no config of its own reads the
   main checkout's; and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
@@ -526,7 +530,7 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3992`, "T2 (lane D, additive) deferred items", filed
+  (`TODO.md:4003`, "T2 (lane D, additive) deferred items", filed
   2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
   `:3884` at `f2bb919b` and `:3952` at `1e0706ac`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
@@ -768,10 +772,10 @@ script itself sets `sys.dont_write_bytecode` under `__main__` before its sibling
 (`:149-151`), so neither the command nor the direct CLI writes a bytecode cache into the plugin;
 a module importing it keeps its own setting. `main` registers `deploy-allowed` at `:1683`
 (T-0072; the policy itself is the `deploy_allowed` paragraph below). Defaults live in
-`crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1097-1098`,
+`crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1134-1135`,
 `{"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk"}`
 since T-0072 and T-0010 merged), deep-copied into `default_config()`
-(`plugin/crew/hooks/scripts/crew_config.py:394`). It registers no hook -
+(`plugin/crew/hooks/scripts/crew_config.py:400`). It registers no hook -
 `plugin/crew/hooks/hooks.json` is unchanged since `a0c0847e`.
 
 `crew_ticket.parse_risk` (`plugin/crew/hooks/scripts/crew_ticket.py:509`)
@@ -910,7 +914,7 @@ everything: off native Windows `probe` returns `n/a`, `status_line` returns None
 (`:768`) execs `["bash", "-c", cmd]` with no config read and no message, mapping a
 signal-killed child's -N to 128+N as `bash -c` does. The preference is
 `shellRoute.mode`/`.distro` in both config layers (`plugin/crew/hooks/scripts/crew_config.py:340`
-and `:596`), read through `resolve_config` by `settings` (`:444`). The repo layer's `mode`
+and `:610`), read through `resolve_config` by `settings` (`:444`). The repo layer's `mode`
 is null (review round 2), so a repo that chose nothing inherits the machine's value; `mode`
 (`:482`) reads an unset value as `auto`, and an unrecognised one as `auto` naming it. The probe
 (`:338`) runs only `wsl.exe --list
@@ -1038,7 +1042,7 @@ a persistent `.crew/endpoints.json.oslock` across the whole cycle (comment at
 `:258-290`; `_acquire_endpoints_lock`, `:510`), and a lock or write failure is
 returned as an error rather than reported as a landed write -
 `crew_state.py`'s `--record-scan-artifact` exits 3 on it
-(`plugin/crew/hooks/scripts/crew_state.py:3332-3338`). Function bodies past
+(`plugin/crew/hooks/scripts/crew_state.py:3376-3382`). Function bodies past
 those lines were not read. `.crew/endpoints.json` still does not exist in this
 checkout; `git ls-files .crew/` still returns only the codemap `.md` files
 plus `.crew/verify.json`.
@@ -1158,7 +1162,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   The ticket note (`_note_text` `:1227`) is an exclusive create
   (`_create_note_once` `:1236`, `_NOTE_FLAGS` `:292`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:61`,
-  `implement.md:33` and `:112`, `done.md:72` and `fix.md:27`, `:73`, `:81`,
+  `implement.md:33` and `:113`, `done.md:82` and `fix.md:27`, `:73`, `:81`,
   `:90`, `:92` (all under `plugin/crew/commands/`); brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
@@ -1188,8 +1192,8 @@ whole answer `unknown`, and every artifact measured against that base with it
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
-- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:86-115`) runs
-  it after `/crew:docs` and before `/crew:review` (`:93`), runs each named
+- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:88-116`) runs
+  it after `/crew:docs` and before `/crew:review` (`:94`), runs each named
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:55-66`) runs it again
   and refuses on `stale` or `unknown` without refreshing (`:61-64`).
@@ -1386,11 +1390,11 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
 ## The Kimi Code provider (T-0028, feature half; the review launch is L-0527)
 
 - **DERIVED** at `c43a54c1`: `kimi` is in both provider tuples
-  (`plugin/crew/hooks/scripts/crew_state.py:1450-1451`), second in the default `qa.order`
-  (`plugin/crew/hooks/scripts/crew_state.py:1162`), with `qa.kimi` / `dev.kimi` blocks holding
-  only `model` (`plugin/crew/hooks/scripts/crew_state.py:1166`, `:1175`). `family`
-  (`plugin/crew/hooks/scripts/crew_state.py:1454`) answers `kimi` for the `kimi` provider before
-  it reads the model (`:1496-1497`), since the Kimi Code id `k3` would otherwise read as family
+  (`plugin/crew/hooks/scripts/crew_state.py:1487-1488`), second in the default `qa.order`
+  (`plugin/crew/hooks/scripts/crew_state.py:1199`), with `qa.kimi` / `dev.kimi` blocks holding
+  only `model` (`plugin/crew/hooks/scripts/crew_state.py:1203`, `:1212`). `family`
+  (`plugin/crew/hooks/scripts/crew_state.py:1491`) answers `kimi` for the `kimi` provider before
+  it reads the model (`:1533-1534`), since the Kimi Code id `k3` would otherwise read as family
   `k`. `crew_config.PATH_PROVIDERS` (`plugin/crew/hooks/scripts/crew_config.py:136`) asks `which`
   about `kimi`, presence only.
 - **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:81`), only `ok`
@@ -1408,8 +1412,8 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `unknown`; config.toml is opened once, non-blocking, and checked and read through that handle
   (`_read_config`, `:348`).
 - **DERIVED**: the launch gate. `crew_config.review_launchable`
-  (`plugin/crew/hooks/scripts/crew_config.py:1884`) is `review_run.LAUNCHED` plus the in-session
-  `claude`, None when that list cannot be read; `order_candidates` (`:1907`) refuses a `qa.order`
+  (`plugin/crew/hooks/scripts/crew_config.py:1898`) is `review_run.LAUNCHED` plus the in-session
+  `claude`, None when that list cannot be read; `order_candidates` (`:1921`) refuses a `qa.order`
   provider outside it ("/crew:review cannot launch `kimi` yet") and None admits nothing. It is the
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
@@ -1481,17 +1485,54 @@ then the train is advisory.
   scripts call it, nothing forces a lane through the train; its value is the queue, the land check
   and the merge log for lanes that use it.
 
+## Forbidden commit trailers (T-0066, crew 1.0.328)
+
+DERIVED from the code cited. `git.forbiddenTrailers` is declared in both layers,
+default `[]` (`plugin/crew/hooks/scripts/crew_config.py:386` and `:603`). Its two
+layers are NOT combined by `resolve_config`'s precedence: `crew_trailers.forbidden`
+(`plugin/crew/hooks/scripts/crew_trailers.py:124`) reads both raw through `_layers`
+(`:85`) and returns their union, case-folded and deduplicated, so a repo `[]` never
+disarms the machine list. The repo layer is the `.crew/` `crew_common.repo_config_dir`
+resolves (a lane worktree with none reads the main checkout's; could-not-tell is unknown). A layer `crew_config.layer_state` calls corrupt, a `git`
+that is not an object, or a value that is not a list of `TOKEN_RE` (`:63`) tokens is
+returned as an unknown reason, never as `[]`.
+
+`commit_refusal` (`:270`) is the textual command check: `writes_commit` (`:240`)
+finds `git [-C d|-c k=v|...] commit|commit-tree|merge` or `gh pr merge` in any simple
+command (`_commits`, `:212`; heredoc and here-string bodies kept out of the split by
+`_strip_bodies`, `:150`), then the whole text and every literal `-F`/`--file`/
+`--body-file` file (`_message_files`, `:247`) is searched with `_trailer_re` (`:146`,
+`(?i)\b<token>\s*[:=]`). A `-F` path holding `$`, `%` or a backtick, or a missing one
+not written earlier in the command (`_written_earlier`, `:261`), is could-not-tell.
+JUDGEMENT: nothing calls `commit_refusal` at this anchor. Its caller, the scope guard
+running it ahead of `scope.mode`, touches `HARNESS` paths
+(`scripts/check-tooling-pr.py`) and lands in its own change.
+
+`check` (`:351`) is `/crew:done`'s report (`plugin/crew/commands/done.md:68-76`):
+`scope_base.resolve`, then `git log --first-parent <base>..HEAD` (`_log_messages`, `:329`), so
+commits merged in from main are not the ticket's (a deliberate refinement of the spec), printing
+`trailers: clean (<n> commits)`, one `trailers: FINDING <sha7> <Token>` per hit, or
+`trailers: unknown - <why>`, exit 0 / 1 / 2. A `head` last-resort base, and a
+fallback base that reads no commit, are unknown; a line from any other fallback base
+says so. `main` (`:385`) is the `--check` CLI; any unexpected exception, an import failure included, is `unknown` with exit 2. Suite: `plugin/crew/tests/test_crew_trailers.py`,
+mapped by `.crew/verify.json:539-546`. The practice note it replaces said a
+repository's attribution adds `Co-Authored-By`; it now says the owner's instructions
+decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
+`/crew:implement` step 2 says a dispatched prompt carries no attribution or trailer
+instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
+(`plugin/crew/CONFIG.md:2639`) is the user-facing account.
+
 ## Entry points
 
-- `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry
+- `plugin/crew/hooks/scripts/crew_state.py:1034` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
-- `plugin/crew/hooks/scripts/crew_state.py:2942` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:245` / `:422` —
+- `plugin/crew/hooks/scripts/crew_state.py:2979` — `evaluate_triggers`.
+- `plugin/crew/hooks/scripts/crew_config.py:245` / `:432` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2527` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2541` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:3122` / `:3148` — `plan_repo_write` /
-  `write_repo_config`, the one repo-layer writer (T-0075); `:2922` / `:2941` — the machine pair.
+- `plugin/crew/hooks/scripts/crew_config.py:3136` / `:3162` — `plan_repo_write` /
+  `write_repo_config`, the one repo-layer writer (T-0075); `:2936` / `:2955` — the machine pair.
 - `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and
   compare-and-swap both writers stand on (T-0075).
 - `plugin/crew/hooks/scripts/crew_config_menu.py:1051` — `main()`, the `spec` / `save` /
@@ -1541,11 +1582,11 @@ then the train is advisory.
   whole story.
 - `.crew/crew.json` — the schema-1 format only `/crew:migrate` writes and
   only `crew_context.py`'s consumers prefer.
-- `crew_state.ROLE_TIERS` (`plugin/crew/hooks/scripts/crew_state.py:1261-1266`)
+- `crew_state.ROLE_TIERS` (`plugin/crew/hooks/scripts/crew_state.py:1298-1303`)
   — 4 roles, all tiered, none a specialist.
-- `crew_state.PM_DEFAULTS` (`:1108-1121`) and `crew_state.AUTHORITY_DEFAULT`
-  (`:1065`) — the unnamed session's own dispatch authority.
-- `crew_state.AUTOPILOT_DEFAULTS` (`:1097-1098`) — the repo-only `autopilot` block, `deploy`
+- `crew_state.PM_DEFAULTS` (`:1145-1158`) and `crew_state.AUTHORITY_DEFAULT`
+  (`:1102`) — the unnamed session's own dispatch authority.
+- `crew_state.AUTOPILOT_DEFAULTS` (`:1134-1135`) — the repo-only `autopilot` block, `deploy`
   included (T-0072), with T-0010's `approval` and `questions` keys.
 - `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`)
   — 10 guard names across 4 vocabularies.
@@ -3711,3 +3752,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
+
+**Re-anchored to `51b2222b` on 2026-10-03 (T-0066, crew 1.0.185: `git.forbiddenTrailers` and the `/crew:done` trailer report; `51b2222b` merges origin/main `4f6ef540`, crew 1.0.162, into `T-0066-build`).** Main's maps were taken at the merge and T-0066's edits re-applied on them. T-0066 changes, among the paths these maps cite: `.crew/verify.json` (one rule appended, `:539-546`), `plugin/crew/CONFIG.md` (section 10/11 headings, one section 10 row, new section 22), `plugin/crew/commands/done.md` (a report section after check 4, `:68-79`), `plugin/crew/commands/implement.md` (step 2 `:46-52`; still 120 lines), `plugin/crew/hooks/scripts/crew_config.py` (the `git` block, +6 after main's `:380` and +4 after its `:595`), `plugin/crew/skills/crew-setup/SKILL.md`, the two templates, `plugin/crew/tests/test_crew_config.py`, the new `crew_trailers.py` and its suite, and release bookkeeping (`CHANGELOG.md`, `TODO.md` +11 at `:241`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, both version files). Body `path:N` citations into those files were re-mapped by a difflib line diff from main `4f6ef540` to the merged tree; a bare `:N` was re-mapped only where T-0066's earlier pass (`f7fd2e78`) had read the sentence and applied it. History notes were not re-mapped. No other claim was re-derived and no suite was executed for this note.

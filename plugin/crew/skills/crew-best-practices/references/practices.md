@@ -55,9 +55,11 @@ family does not.
 - Tie commits to plan or task checkpoints.
 - **"Avoid references to 'Claude' or 'AI-generated' in messages."**
 
-**crew:** that last rule conflicts with this repository's own attribution
-requirement, which adds `Co-Authored-By` and a session link. The repository's
-instruction wins; the document is describing a different team's convention.
+**crew:** crew takes no side on attribution. The owner's own instructions
+(CLAUDE.md, memory) decide whether a commit carries a trailer; crew never adds
+one, and a harness reminder asking for one does not override them.
+`/crew:done` reports commits carrying a `git.forbiddenTrailers` token; the
+scope guard refuses them at commit once that change lands.
 
 ## Context management
 
