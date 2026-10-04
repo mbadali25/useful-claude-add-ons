@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5479ac05
+anchor: useful-claude-add-ons@e4f17af4
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -630,18 +630,28 @@ executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
 (`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
-hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
-parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+hook matrix.
+
+**DERIVED** (read at `e4f17af4` by `grep -n`; L-0577, L-1506, L-1507). On
+Windows, L-0577 replaced the one serial leg (p50 37.1 min) with parallel jobs
+(`.github/workflows/pytest-crew.yml:211-487`): `crew-windows-decide` (`:276`, T-0110's rule: on a
 pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
-`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
-parity-sample set split in 3 by pytest-split, since the `test` job above only runs
-that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
-(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
-`crew-shell-matrix (windows-latest)` so the required check name is unchanged.
-The gate runs `if: always()` and passes only through
-`scripts/check-windows-shards.py`: every Windows job succeeded, every shard
-collected the identical default set, the shards' JUnit name each collected test
-exactly once, and slow and wallclock ran what they collected (suite
+`pytest-crew.yml`), `crew-windows-default` (`:310`, crew's default
+parity-sample set split in 6 by pytest-split since L-1506, matrix `group` at
+`:322`, since the `test` job above only runs that set on Ubuntu),
+`crew-windows-slow` (`:362`, the `-m slow` set split in 3 by pytest-split since
+L-1507, matrix `group` at `:374`, each shard collecting the whole slow set),
+`crew-windows-wallclock` (`:414`, one serial job), and the fan-in
+`crew-windows-gate` (`:457`), named `crew-shell-matrix (windows-latest)` so the
+required check name is unchanged; it calls the checker with `--shards 6
+--slow-shards 3` (`:487`). The gate runs `if: always()` and passes only through
+`scripts/check-windows-shards.py`: every Windows job succeeded; for each split
+set (`SPLIT_SETS`, `scripts/check-windows-shards.py:74`) the one
+`check_partition` (`scripts/check-windows-shards.py:150`) finds every shard
+collected the identical set, the shards' JUnit name each collected test exactly
+once, a missing or extra shard directory named, and an unsplit
+`crew-windows-<set>/` artifact a stale layout (`:178-181`); and wallclock ran
+what it collected (`check_whole_set`, `:223`; suite
 `scripts/_test/windows-shards.py`). Each Windows `run:` step carries
 `if: runner.os == 'Windows'`, the `WINDOWS_ONLY_IFS` condition
 `scripts/gate-runner.py`'s drift check excludes. The Windows jobs take `runs-on` from one
@@ -2372,3 +2382,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
   `pytest_rule.py`, priced 13s (41 passed in 12.5s with pwsh on PATH on an idle 4-CPU container; 43 after review round 1). It is
   appended, so no earlier rule number moves. This section does not move the file's
   `anchor:`.
+
+**Re-anchored `5479ac05` -> `b7b37e12` on 2026-10-04 (L-1507: crew's Windows slow set split into 3 shards, on `L-1507-build` from origin/main `f1cace4a`).** Per-path: `git diff --name-only 5479ac05..b7b37e12 -- .github/workflows/pytest-crew.yml scripts/check-windows-shards.py scripts/_test/windows-shards.py .crew/verify.json` returns all four (L-1506 #491 and L-1507 on the workflow and checker; L-1507 on the suite and the windows-shards rule's `why`, in place, line count unchanged). The Windows-jobs paragraph under `.github/workflows/` was re-derived at `b7b37e12` by `grep -n`: the job lines it cites (`:276`, `:310`, `:322`, `:362`, `:374`, `:414`, `:457`, `:487`) had already drifted under L-1506's comment lines and were re-read, the default set's 3 shards became L-1506's 6, the slow job became 3 shards, and the checker's partition code is cited by line. No other claim in this map cites those files by line. `b7b37e12` is the last commit touching a cited path; the commit adding this note changes only docs and generated rules. Suites run for it: `scripts/_test/windows-shards.py` (44 passed).
+
+**Re-anchored `b7b37e12` -> `e4f17af4` on 2026-10-04 (L-1507 review FIX: suite cases for the unsplit default layout and an empty slow set; the checker's docstring names both stale layouts).** Per-path: `git diff --name-only b7b37e12..e4f17af4 -- .github/workflows/pytest-crew.yml scripts/check-windows-shards.py scripts/_test/windows-shards.py` returns the checker and its suite. The docstring edit keeps its line count, so `scripts/check-windows-shards.py:74`, `:150`, `:178-181` and `:223` were re-read by `grep -n` and are unmoved. The Windows-jobs paragraph now opens with its own DERIVED marker (review NIT) and names `.github/workflows/pytest-crew.yml` on its first cite. Suites run for it: `scripts/_test/windows-shards.py` (46 passed).
