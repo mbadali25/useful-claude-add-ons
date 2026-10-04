@@ -334,6 +334,12 @@ if [ "$ENV_STATUS" -ne 0 ]; then
   echo "  JSON, or delete .crew/verify.json if this repo should not be gated." >&2
   exit 2
 fi
+# Python's stdout is text mode: on Windows every newline it writes reaches
+# here as CRLF, and Git Bash's command substitution drops only the final one,
+# so `qa\r\nprod` split on LF named an environment `qa\r` that no map holds
+# (the Windows pre-flight of L-1503). bad_name refuses a name holding any
+# control character, so removing every CR cannot join or invent a name.
+ENVNAMES=$(crew_strip_cr "$ENVNAMES")
 [ -z "$ENVNAMES" ] && exit 0
 # Several matching environments are named together, `staging,prod`, in every
 # message, skip row and the in-flight marker; their requirements are checked
