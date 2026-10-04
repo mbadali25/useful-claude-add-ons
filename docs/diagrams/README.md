@@ -281,7 +281,7 @@ flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>133 leaves, repo template"]
+        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>136 leaves, repo template"]
         GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
         RES{"which .crew/?<br/>own, else the main<br/>checkout's (a lane)"}
         REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
@@ -320,7 +320,7 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 133 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1134 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
+| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 136 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1134 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
 | `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:767 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
 | `REPO` | .crew/config.json - schema 7 crew_state.load_config() plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the TwoFiles section below |
 | `RES` | which .crew/ the repo file is read from. Python: crew_common.repo_config_dir plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:126 (T-0096). Own config.json or crew.json wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both flavours; the .ps1 copies at notify.ps1:290, handoff-read.ps1:186, handoff-write.ps1:286, context-watch.ps1:29). Still own-file only: the verify gate, the scope and completion wrappers. |

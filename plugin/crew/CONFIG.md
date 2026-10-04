@@ -186,13 +186,15 @@ both directions:
 descending at a template **leaf**.
 
 **Measured, not argued.** `leaf_paths(default_global_config())` yields **75**
-leaves. `leaf_paths(default_config())` yields **133**, so **58** are repo-only.
-For all 133, `filter_global` and `is_global_path` (which `plan_global_write`
+leaves. `leaf_paths(default_config())` yields **136**, so **61** are repo-only.
+For all 136, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on T-0066's branch after merging main e9364a70, which changed no config key;
-`git.forbiddenTrailers` is the
-key T-0066 added to both layers, and the generated tables in §10 and §11 state
-the same 75 / 133 / 58. 74 / 132 / 58 on main after T-0013 added
+on T-0053's branch after merging main 86d96fa1; the repo-only
+`autopilot.sleep.schedule`, `.approval` and `.questions` are the three T-0053
+added, and the generated tables in §10 and §11 state the same 75 / 136 / 61.
+75 / 133 / 58 on T-0066's branch after merging main e9364a70, which changed no
+config key; `git.forbiddenTrailers` is the key T-0066 added to both layers.
+74 / 132 / 58 on main after T-0013 added
 `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers, while
 this paragraph still said 72 / 130. 72 / 130 / 58 on T-0061's branch after merging
 main 34d9f267; the repo-only
@@ -723,7 +725,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-75 of 133 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
+76 of 137 keys are settable in the machine-global file (generated; 61 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -761,6 +763,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `context.autoClear.minHandoffLines` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `5` |
 | `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `context.autoClear.onlySessions` | machine-only | list of session ids, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
+| `context.autoClear.wrapUp` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `resume.auto` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_resume.py`) | `null` |
 | `resume.typeDelaySeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `2` |
 | `resume.readyTimeoutSeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `15` |
@@ -839,7 +842,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-58 of 133 keys are repo-only (generated; 75 are global-settable, section 10).
+61 of 137 keys are repo-only (generated; 76 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -903,6 +906,9 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
 | `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
 | `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
+| `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -1091,11 +1097,11 @@ for.
 | Value | What it does | Where it can run |
 |---|---|---|
 | `"auto"` *(default)* | Picks per platform, below. | everywhere |
-| `"tmux"` | Types into the `$TMUX_PANE` that is an ancestor of the hook. Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
-| `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
+| `"tmux"` | Types into the `$TMUX_PANE` whose pid is this session's own process or an ancestor of it (T-0016, below). Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
+| `"xdotool"` | Types into the one X11 window owned by an ancestor of this session's own process and hosting no other terminal (or matching `windowTitle`). | Linux with `xdotool` installed |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor of this session's own process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -1106,6 +1112,145 @@ Bash alike — and absent inside WSL, which has its own init); else refused
 (`"no usable method"`). `auto` **never** resolves to `sendkeys`: typing into
 a window this hook found itself is a risk `auto` does not get to accept on
 your behalf. Request `sendkeys` by name to opt in to it.
+
+### Which terminal: this session's own process (T-0016)
+
+A `claude -p` child started from a session's Bash tool inherits `$TMUX`, and
+its parent's pane and window are ancestors of its hook, so a target found
+from the hook alone typed `/clear` into the **parent**. Both flavours
+(`crew_autocycle.session_owner`/`classify`/`prove_target`, and the same
+rules natively in `auto-clear.ps1`) now bind first, after the handoff checks
+and the method, before the sent-marker claim:
+
+1. **Owner.** The nearest ancestor of the hook named by a Claude Code session
+   record, `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`, whose
+   `sessionId` is the payload's and whose `procStart` is that process's start
+   time (`/proc/<pid>/stat` field 22) wherever one can be read. No
+   environment variable counts: `CLAUDE_PID` and `CLAUDE_CODE_ENTRYPOINT` are
+   copied into every child.
+2. **Class.** `terminal` needs kind `interactive`, an entrypoint on the
+   measured allowlist (`cli`), and a controlling terminal (`tty_nr` non-zero;
+   native Windows has none to read, so there it rests on kind and entrypoint).
+   `headless` needs positive evidence: an `sdk*` entrypoint (`claude -p` is
+   `sdk-cli`, with or without a pty around it), a kind other than
+   `interactive`, or `tty_nr` 0. Anything else — no record, another session's
+   record, an unreadable one, a start-time mismatch, an entrypoint nobody
+   measured (e.g. `remote_mobile`) — is `unknown`, and unknown is never called
+   headless.
+3. **What each class gets.** `headless`, whatever the method (`notify`
+   included): method `notify-headless` — nothing typed, one `systemMessage` naming the handoff
+   and its `resume:` line and saying the process that started this session
+   must start a new one, claimed like `notify` (once per session) and logged
+   in full (a `-p` parent may never show the message). `unknown`: `notify`
+   is unchanged, `auto` falls back to plain `notify` (logged), an explicit
+   typing method refuses with the reason. `terminal`: `notify` unchanged;
+   tmux, xdotool and sendkeys are proven from the owner.
+4. **Target, from the owner.** tmux: the pane's pid is the owner or an
+   ancestor of it, and every process from the owner up to the pane is on the
+   owner's tty or on none — a pane reached through a process on another tty
+   is someone else's terminal (an interactive child on its own pty under its
+   parent's pane, whose parent's record is in another config dir and whose
+   name is not `claude`, is caught only by this), and a tty that cannot be
+   read refuses. xdotool/sendkeys: the window is owned by a strict ancestor
+   (never the claude process itself). The walk refuses when it passes
+   through another Claude Code process or another live session record (a
+   child under its parent's pane or window), or when the chain could not be
+   read to the end (a parent that cannot be read, a loop, more than 16
+   processes). xdotool also refuses a window whose owner hosts another
+   terminal — any descendant outside the owner's own subtree on another
+   `tty_nr`, another live session, or a process scan that fails — because
+   one terminal server owns one X window for many tabs and a sibling can be
+   invisible to a record scan (`tmux attach`, ssh, another config dir, a
+   plain shell). `sendkeys` refuses a window whose owner is also above
+   another live session; Windows Terminal's one-tab rule (above) still
+   applies. A window found by `windowTitle` alone, or one with no owning
+   process (pid ≤ 1), refuses whenever another live session record exists. A
+   record whose process is gone or whose start time names a reused pid is
+   not live (Claude Code leaves records behind when a session is killed); a
+   LIVE process whose record cannot be read means no other session can be
+   ruled out, and every check that needs that refuses. "Another Claude Code
+   process" is a live record, a process named `claude`, or one named like a
+   version (`2.1.289`: a native install runs from
+   `~/.local/share/claude/versions/<x.y.z>`); the names are a heuristic that
+   only makes the walk fail closed sooner — `node` and other names are not
+   recognised, which is why the records and the tty rule carry the proof.
+
+The chain end to end: T-0017 wrap-up → T-0016 target proof → clear → T-0006
+`decide` → T-0013 typing (which takes the same binding, below).
+
+**Test stubs are inert in production.** `CREW_AUTOCLEAR_PROC_STUB` (the
+whole process table) and `CREW_AUTOCLEAR_WINDOW_STUB` (the window list) are
+read only while `CREW_AUTOCLEAR_INHIBIT` is set, in both flavours: a repo's
+`.claude/settings.json` env reaches every hook, and with the inhibit set no
+keystroke is ever sent. `CREW_AUTOCLEAR_INHIBIT=spawn` (`auto-clear.sh`
+only, for the suite's spawn tests) still builds and spawns the detached
+sender, which stops after its sleep, before any keystroke.
+
+**Stated limits.** Measured on Linux only (Claude Code 2.1.289,
+`plugin/crew/docs/session-record-spike.md`). On native Windows `entrypoint`
+is unmeasured and there is no tty: a value outside the allowlist is unknown,
+and a record is bound by pid and session id with `procStart` unchecked; with
+no tty, a parent session above a console window is told apart only by its
+record and its process name, so one in another config dir under an
+unrecognised name is not seen there (Windows Terminal's one-tab rule and the
+title-fallback refusals still apply). A parent that has exited ends the walk
+on Windows; one that exists but cannot be read (`Get-Process` denied, or no
+parent id) refuses. On
+macOS (no `/proc`), parent and tty come from `ps -o ppid=,tty=,comm=` and
+`procStart` is unchecked, so a pid reused within a record's life is not
+caught there.
+
+**A shared tty proves nothing.** The tty rule tells two sessions apart only
+when they sit on different ttys. A process on the session's own tty (its
+shell, or a parent session started in the same terminal) counts as the
+session's own, and xdotool's shared-window scan reads it the same way. A
+parent session on the same tty is caught only by its live record or its
+process name (`claude`, or a version number); one in another config dir
+under an unrecognised name (`node`) is not seen. Two sessions on one tty
+share one terminal, so a keystroke reaches whichever of them is reading it.
+
+### `wrapUp` — auto wrap-up before the clear (T-0017)
+
+Off by default. Armed only when the machine file says exactly
+`"context.autoClear": {"wrapUp": true}`, `enabled` is armed and the session is
+inside `onlyRepos`/`onlySessions`; a repo `false` vetoes it, a repo `true`
+alone arms nothing (`crew_autocycle.wrapup_armed`). Unarmed, every output is
+byte-identical to before.
+
+Armed, context-watch's warning **is** the wrap-up procedure and supersedes both
+of `autoWrapUp`'s messages (that key keeps its meaning: the wording of the
+unarmed warning, default `true`). The procedure: start no new step; the step is
+the active ticket's plan step in flight, or the tracked diff with no ticket;
+run its `Test:` command and commit only if it passes; if it cannot pass, do not
+commit and write `resume: none` with the reason under **Verify first**; run
+`/crew:handoff --wrap-up`; end the turn. `/crew:handoff --wrap-up` is the one
+wrap-up path — `/crew:autopilot`'s context-watch step runs it too.
+
+Auto-clear then clears only when, beside the existing handoff checks, all four
+hold (`crew_autocycle.wrapup_check`, run before the method, the T-0016 binding
+and the sent-marker claim):
+
+1. the handoff's `head:` is HEAD (a handoff written before the commit fails);
+2. its `branch:` is the checked-out branch;
+3. no tracked file is modified (`git status --porcelain --untracked-files=no`;
+   untracked files and the handoff file itself do not count);
+4. its `resume:` line parses under T-0006's grammar, or is `resume: none`.
+
+Anything that cannot be told — git failing, T-0006's `crew_resume` missing, an
+unreadable handoff — refuses. `auto-clear.sh --force` / `auto-clear.ps1 -Force`
+skip this check along with the handoff checks; they are for testing by hand
+only — `hooks.json` and context-watch never pass them, and no config key can. A refusal is logged, shown to you as a
+`systemMessage` (`crew wrap-up: not clearing - <reason>`), and fed back to the
+model **once**, at the session's next ordinary Stop (claimed with
+`.crew/.wrapup-escalated-<session>`, reset at SessionStart and on re-arm);
+a `stop_hook_active` Stop never blocks.
+
+**Stated limits.** No hook commits, stages or reverts anything: the model
+commits and crew checks the result. Crew checks that a commit happened, not
+that the step's test passed — verify-gate stands down on the forced
+continuation the commit is made on. On native Windows the check needs a
+python (`Resolve-CrewPython`): without one, context-watch.ps1 sends today's
+message and auto-clear.ps1 refuses the clear.
 
 ### What the widening costs
 
@@ -1311,7 +1456,11 @@ Order, first refusal wins, and each is logged to `.crew/.autoclear.log`
 that is not an ancestor of the hook; `wtype`; `xdotool` (no probe can see an
 X11 input line); `sendkeys` on the bash flavour or `tmux` on the PowerShell
 one; `auto` on native Windows is `notify`, which types, claims and records
-nothing. Then the per-handoff marker
+nothing; then, for a typing method, T-0016's binding (§14): a headless or
+unknown session refuses ("auto-resume types only into this session's own
+terminal: ..."), and the pane or window is proven from the session's own
+process. A record's `sessionId` follows `/clear` (measured), so the new
+session's SessionStart binds. Then the per-handoff marker
 `<git-common-dir>/crew/resume-typed-<handoff sha256[:16]>` is claimed with
 `O_EXCL`/`CreateNew` (taken: refuse), then `crew_resume.py record` runs
 (failed: refuse, nothing typed), then the detached sender starts. tmux:
@@ -1680,15 +1829,18 @@ nobody does and denied under `block`; a live one-shot marker for that exact
 text still lets it through under `ask`/`allow`. Nothing else below is
 consulted for it (guard.log policy `could-not-tell`). Unusual quoting on a
 terraform line is asked about, not allowed; unattended, it is refused — which
-includes `terraform apply "p.tfplan"`, `terraform plan 2>$null` and a commit
-message that quotes the word terraform. Plain lines are read exactly as
-before.
+includes `terraform apply "p.tfplan"`. A read-only subcommand (`terraform plan
+2>$null`, `terraform workspace select "staging"`) and a line that only
+mentions terraform (a commit message quoting it) are not gated for their
+quoting (below). Plain lines are read exactly as before.
 
 **Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
-`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
-delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
+`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy` (and
+terragrunt's `destroy-all`, `stack run destroy`, `graph destroy`, and `exec --
+terraform destroy`), `workspace delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
 whose sidecar lists none, `workspace new`, `select -or-create`. Everything
-else is `unknown` — an apply with no saved plan, any terragrunt apply, a plan
+else is `unknown` — an apply with no saved plan, any terragrunt apply
+(`apply-all`, `stack run apply` and `graph apply` included), a plan
 with no sidecar, a stale one (the plan's sha256 changed), a malformed or
 unreadable one, a plan path that is not a literal, a plan over 64 MiB, and a
 saved-plan apply that is **not the only command** in the invocation. The plan
@@ -1749,12 +1901,31 @@ subcommand are skipped as terraform and terragrunt read them (`terragrunt
 --working-dir infra destroy` is a destroy).
 
 **What the guard does not catch.** It catches terraform, terragrunt and tofu
-written directly: bare or path-qualified, behind the listed wrappers, inside
+written directly: bare or path-qualified, behind the listed wrappers
+(`aws-vault exec`, `unbuffer` and `sem` among them; an option a listed
+`xargs`, `parallel`, `sem`, `aws-vault` or `unbuffer` does not know makes the
+line `could-not-tell`, and so does a `workspace select` that `xargs` or
+`parallel` may append `-or-create` to), inside
 `bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
-PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
+PowerShell's `&`, `.`, `terraform.exe`, `Start-Process` and `Invoke-Expression`
+(a script that is not a literal string, or a parameter crew does not know,
+is `could-not-tell`). On a PowerShell line, **every mention of terraform,
+tofu or terragrunt must be accounted for** (any case, a word or a path's last
+part, `.exe` and backtick spellings included), or the line is
+`could-not-tell`: the command word of a command the guard judged (after an
+optional `$x =` and a `&`/`.` with a plain name), a literal script given to
+`Invoke-Expression`, or, when nothing on the line can run a value made at run
+time (a launcher, an eval, an alias definition, `return`/`throw`/`exit`, or a
+command word that is not a plain name), a literal argument of a plainly named
+command or a string that is only printed or assigned. So `git commit -m
+"terraform destroy"` and `Write-Output ("terraform" + " destroy")` are data,
+while `return terraform destroy`, `$t="terraform"; Start-Process $t destroy`
+and `[Diagnostics.Process]::Start("terraform","destroy")` are not. A group or
+an array among terraform's own arguments is `could-not-tell` too.
+`terragrunt exec -- cmd` is unwrapped like any listed wrapper. It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
--e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
+-e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
 entrypoint. No command-line guard can: unattended work must run interpreters
 and scripts. The real boundary is the credentials an unattended run holds,
@@ -2632,6 +2803,18 @@ read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
 than removing the budget. See `commands/verify.md` for the full mechanism and
 `hooks/scripts/verify_record.py` / `verify_price.py` for the code.
 
+**A rule passes only on a completion record (T-0082), not a config key.** Each
+rule's wrapper writes the rule's exit status to a temp record file after the
+rule ends. The rule passes only when the wrapper ended 0 and the record exists
+and says 0. A rule killed or signalled (record above 128), a wrapper that
+ended before writing (killed, or never started on `.ps1`), or a record that is
+missing or unreadable is FAILED as "could not tell": `VERIFY FAILED` plus
+`verify-gate: COULD NOT TELL (<reason>)`, status `unknown` in the command log,
+counted in a summary line, and neither marker advances. Exit 77 is still SKIP
+and a plain non-zero still a plain failure. The gate still has no per-rule
+deadline: a hung rule is waited for. See `docs/guides/crew/src/troubleshooting.md`
+("Verify gate says COULD NOT TELL") for each reason.
+
 **Limitation (1.0): the gate does not reap background processes a rule
 leaves behind; a rule must not background work — a rule that does can keep
 running (and writing) after the gate returns.** Per-rule process-group
@@ -2665,6 +2848,9 @@ driven is a fact about that checkout.
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
+| `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an override that is not a policy or cannot be read, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
+| `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` (`"Human"` included) counts as `human`, the strictest, with a warning: it applies asleep and, under could not tell, is the stricter value; it never reads as permission. |
+| `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2672,7 +2858,52 @@ adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
 no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
-line, `approval` and `questions` on its second, and all five with `--json`.
+line, the effective `approval` and `questions` on its second, and
+`sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
+questions=<override|->` on its third; `--json` adds `day` (the two day values)
+and `sleep`.
+
+**Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
+every day, `HH:MM-HH:MM` in the machine's local time: start inclusive, end
+exclusive, and a start later than the end crosses midnight (`22:00-07:00` is
+asleep from 22:00 to 06:59). Inside it, a non-null `autopilot.sleep.approval`
+or `autopilot.sleep.questions` replaces the day value, so an unattended run
+keeps going where the day setting would stop. The window is re-resolved from
+the clock on every policy read, never cached, so a run that crosses 07:00 is
+back on the day values at its next decision. A window can be as long as
+23h59 (`00:00-23:59`; only start equal to end is refused), and a night
+override looser than the day value applies for the whole of it. Anything that
+cannot be told — a malformed schedule, `autopilot.sleep` that is not an
+object, a clock or resolver that fails — is `unknown`, with a warning naming
+the key: per key, the **stricter** of the day value and a valid night
+override applies (`human` over `risk` over `self`), so could-not-tell never
+loosens a policy and never drops a tightening the owner set (review round 1,
+owner decision taken on the recommendation). Each override is read on its
+own, and its value rendered bounded in a warning: one that cannot be read at
+all counts as `human`, and the other key keeps its own. An `autopilot.sleep`
+that is not an object has no night value to read, so both keys read as
+`human` (review round 2, owner decision taken on the recommendation). An
+override that is readable but not a policy (`"always"`, `true`, `"Human"`)
+counts as `human` too, asleep and under `unknown`, rather than keeping the day
+value (landing decision, consistent with review round 2's). `settings`' third line ends with `applied=<keys|->` under `unknown`. A key under `autopilot.sleep` this version does not have
+(`deploy`, `reviewPolicy`, held pings) is named "not available in this crew
+version" and has no effect. An override can lower authority as well as raise
+it. Everything else still binds asleep: `scope.allowCliApproval` exactly
+`true`, autopilot armed, a readable ledger, every stop. While asleep the
+reason of a policy a night override set, and `approve`'s line, end with
+`(asleep <window>; day value <day>)`; `approve` makes one decision and its
+receipt, its line and `crew_ticket.approve`'s re-check all use it, so a
+window edge between the reads cannot split them. **A receipt written asleep stops standing when the window ends**
+wherever the day value would not have approved it: `crew_ticket.accepted`
+re-asks the policy, so in the morning the ticket reads unaccepted until the
+owner types `/crew:approve <id>`; the work done overnight stays. In the same
+way a `taken:` line written asleep makes `questions-check` say `valid=0` by
+day when the day policy stops. The clock is local time as each process sees
+it, so it follows that process's `TZ`: `approve` and `questions-check` run in
+the model's shell environment, and a different `TZ` there moves the window.
+crew adds no variable or flag of its own that moves the clock. Not in this version: manual `sleep` / `wake`, a sleep log, a
+`deploy` override (sleep leaves `deploy_allowed` unchanged), and a
+machine-global `autopilot.sleep`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets

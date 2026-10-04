@@ -17,10 +17,11 @@ KEY="${SESSION//[^A-Za-z0-9_-]/_}"
 KEY="${KEY:0:100}"
 KEY="${KEY:-nosession}"
 rm -f ".crew/.handoff-requested-${KEY}" ".crew/.autoclear-sent-${KEY}"
+rm -f ".crew/.wrapup-escalated-${KEY}"    # T-0017: session_id survives /compact
 rm -f .crew/.handoff-requested .crew/.autoclear-sent
 # Another session's markers are never touched here, so the ones a cleared
 # session leaves behind (its id is gone for good) are aged out instead.
-find .crew -maxdepth 1 \( -name '.handoff-requested-*' -o -name '.autoclear-sent-*' \) -mtime +7 -exec rm -f {} + 2>/dev/null
+find .crew -maxdepth 1 \( -name '.handoff-requested-*' -o -name '.autoclear-sent-*' -o -name '.wrapup-escalated-*' \) -mtime +7 -exec rm -f {} + 2>/dev/null
 rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be recorded now
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,

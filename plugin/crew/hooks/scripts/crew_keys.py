@@ -47,6 +47,9 @@ KINDS = ("tuple", "ratchet", "branch", "type", "open-table", "prose", "unvalidat
 # Built once, so `values_of("qa.provider")` is the same object every call and
 # its tail holds `QA_PROVIDERS`' own items.
 QA_PROVIDER_VALUES = ("auto",) + crew_state.QA_PROVIDERS
+# T-0053: a sleep override is a policy or null ("not overridden"); its tail
+# holds `crew_autopilot.POLICIES`' own items.
+SLEEP_OVERRIDE_VALUES = (None,) + crew_autopilot.POLICIES
 
 
 def _union_in_order(table):
@@ -243,6 +246,12 @@ KEY_META = {
                                            "both must match.", "type", since="1.0.25",
                                            source=_S + "crew_autocycle.py",
                                            type_="list of session ids, or null"),
+    "context.autoClear.wrapUp": _row("Auto wrap-up before auto-clear (T-0017): the warning "
+                                     "becomes the wrap-up procedure and the clear waits for "
+                                     "its results. Only the machine file arms it (exactly "
+                                     "`true`), only where `enabled` is armed; a repo `false` "
+                                     "vetoes it.", "branch", (None, True, False), "1.0.334",
+                                     _S + "crew_autocycle.py"),
     "context.autoWrapUp": _unv("Ask for a wrap-up when the budget runs low.", "0.19.10",
                                _S + "context-watch.sh", "boolean"),
     "context.autoResume": _unv("Retired: read by nothing since 1.0.0; kept so "
@@ -424,6 +433,20 @@ KEY_META = {
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),
+    "autopilot.sleep.schedule": _row("A nightly window, `HH:MM-HH:MM` in machine local time "
+                                     "(may cross midnight); inside it the two sleep "
+                                     "overrides apply. Anything else is could not tell: "
+                                     "only a stricter override applies.", "branch",
+                                     since="1.0.332", source=_S + "crew_sleep.py",
+                                     type_="HH:MM-HH:MM or null"),
+    "autopilot.sleep.approval": _row("`autopilot.approval` inside the sleep window; null "
+                                     "keeps the day value; anything else counts as human, "
+                                     "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                     "1.0.332", _S + "crew_sleep.py"),
+    "autopilot.sleep.questions": _row("`autopilot.questions` inside the sleep window; null "
+                                      "keeps the day value; anything else counts as human, "
+                                      "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                      "1.0.332", _S + "crew_sleep.py"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
@@ -463,9 +486,6 @@ COMING = (
     _coming("autopilot.mode", "T-0012", "changes values",
             "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
             ("off", "plan", "backlog")),
-    _coming("context.autoClear.wrapUp", "T-0017", "new key",
-            "Machine opt-in for the automatic wrap-up; only exactly `true` arms it.",
-            "null", "machine-arms"),
     _coming("guards.deployWorkflow", "T-0009", "new key",
             "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
     _coming("environments.workflows", "T-0009", "new key",

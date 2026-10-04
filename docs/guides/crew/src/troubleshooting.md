@@ -255,6 +255,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   (written by `crew_ticket.py approve` directly, for tests/CI) is accepted only when
   `.crew/config.json` sets `scope.allowCliApproval: true`, and an `autopilot` receipt (from
   `crew_autopilot.py approve`) only while that is true and `autopilot.approval` still allows it.
+  That includes a receipt written inside an `autopilot.sleep.schedule` window under
+  `autopilot.sleep.approval`: once the window ends, the day value decides, and it may not allow it.
   **Fix:** re-approve. The user types `/crew:approve <id>` again — the only other route is
   `/crew:autopilot` under an opted-in `autopilot.approval`; `scope_guard.py` refuses a Write/Edit
   under `<git-common-dir>/crew/` in every mode but `off`, so a session cannot forge or refresh its
@@ -315,6 +317,37 @@ contract itself. This section is what goes wrong with the approval and the audit
   prove `off` (a corrupt file, `report`, `auto`, `block`, or no `scope` key at all) fails **closed**
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.
+
+## Verify gate says COULD NOT TELL
+
+`verify-gate.sh` / `.ps1` (T-0082). A rule counts as passed only when its wrapper ended with status 0
+**and** left a completion record saying the rule exited 0. Anything else that is not a plain exit
+status is FAILED as "could not tell": the gate prints `VERIFY FAILED: <cmd>`, then
+`verify-gate: COULD NOT TELL (<reason>): <cmd>`, exits 2, and neither marker advances. The summary
+adds `verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED`. The reasons:
+
+- **"exit status N, above 128 and not a signal number - the rule's own status"** (N from 193 to
+  255; signals stop at 64): the rule itself exited that code - 255 is common from `ssh` or a shell
+  error. It is still could-not-tell, because nothing distinguishes it from a crash code.
+- **"exit status N: ended by signal N-128, or the rule's own status"** (N from 129 to 192): the rule was
+  killed (137 is KILL, 143 is TERM) - an OOM kill, an outside `timeout -s KILL`, a CI step limit - or
+  it really exited that code. Re-run the command by hand and see which.
+- **"the rule's runner ended with status N before it recorded a result"**: the wrapper around the
+  rule was itself killed before it could write the record, so the rule's own result is unknown.
+- **"no completion record"**: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
+  above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
+  be told from that run.
+- **"the rule's shell could not be started"** (`.ps1` only): the resolved bash vanished or would not
+  launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.
+- **"cannot create an output-capture file or a completion-record file"** or **"no usable bash
+  resolved"**: the existing refusals, now named as could-not-tell.
+- **"the gate received TERM while this command was running"** (`.sh` only): the gate itself was
+  signalled mid-rule; it still exits 128+N. A killed `.ps1` gate prints nothing (PowerShell has no
+  signal trap); the marker not advancing covers it.
+
+The command log carries status `unknown` for such a rule; the record sync leaves that rule's entry as
+it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
+rule is not ended by the gate.
 
 ## Promote gate blocks a worktree deploy
 

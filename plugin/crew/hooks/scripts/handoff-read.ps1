@@ -273,12 +273,14 @@ $sessionKey = [regex]::Replace([string]$d.session_id, '[^A-Za-z0-9_-]', '_')
 if ($sessionKey.Length -gt 100) { $sessionKey = $sessionKey.Substring(0, 100) }
 if (-not $sessionKey) { $sessionKey = "nosession" }
 Remove-Item -LiteralPath ".crew/.handoff-requested-$sessionKey", ".crew/.autoclear-sent-$sessionKey" -Force -ErrorAction SilentlyContinue
+# T-0017: session_id survives /compact, so the escalation claim is reset too.
+Remove-Item -LiteralPath ".crew/.wrapup-escalated-$sessionKey" -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath ".crew/.handoff-requested", ".crew/.autoclear-sent" -Force -ErrorAction SilentlyContinue
 # Another session's markers are never touched here, so the ones a cleared
 # session leaves behind are aged out instead.
 $cutoff = (Get-Date).AddDays(-7)
 Get-ChildItem ".crew" -Force -File -ErrorAction SilentlyContinue |
-  Where-Object { ($_.Name -like ".handoff-requested-*" -or $_.Name -like ".autoclear-sent-*") -and $_.LastWriteTime -lt $cutoff } |
+  Where-Object { ($_.Name -like ".handoff-requested-*" -or $_.Name -like ".autoclear-sent-*" -or $_.Name -like ".wrapup-escalated-*") -and $_.LastWriteTime -lt $cutoff } |
   Remove-Item -Force -ErrorAction SilentlyContinue
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,

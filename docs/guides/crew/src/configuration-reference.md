@@ -62,7 +62,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**133 keys**: 75 settable in the machine-global file, 58 repo-only.
+**137 keys**: 76 settable in the machine-global file, 61 repo-only.
 
 Columns:
 
@@ -188,6 +188,7 @@ Columns:
 | `context.autoClear.unsafeFocus` | repo | `false` | not validated - read by `plugin/crew/hooks/scripts/auto-clear.sh` (expects boolean) | 0.19.11 | Consent to `wtype` typing into whatever has focus. No longer read: `auto-clear.sh` refuses `wtype` whatever this says. |
 | `context.autoClear.onlyRepos` | machine-only | `null` | list of absolute repo paths, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | Narrowing only, machine file only: null narrows nothing, a list arms only those repos, `[]` or a non-list arms nothing. |
 | `context.autoClear.onlySessions` | machine-only | `null` | list of session ids, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | As `onlyRepos`, for session ids; with both set, both must match. |
+| `context.autoClear.wrapUp` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.334 | Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly `true`), only where `enabled` is armed; a repo `false` vetoes it. |
 | `context.autoWrapUp` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects boolean) | 0.19.10 | Ask for a wrap-up when the budget runs low. |
 | `context.autoResume` | repo | `true` | not validated - read by `plugin/crew/commands/migrate.md` (expects boolean) | 0.19.10 | Retired: read by nothing since 1.0.0; kept so `/crew:migrate` carries it. |
 | `context.staleHandoff.maxAgeHours` | repo | `72` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.16.33 | A handoff older than this is archived. |
@@ -355,6 +356,9 @@ Columns:
 | `autopilot.deploy` | repo | `"none"` | `none` \| `nonprod` \| `all` | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
 | `autopilot.approval` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
 | `autopilot.questions` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
+| `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
+| `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
+| `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 
 ### `tickets`
 
@@ -394,12 +398,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 | `autopilot.maxTicketsPerRun` | new key | repo | 3 |  | Tickets one goal run may work before it stops. |
 | `autopilot.maxTokensPerSession` | new key | repo | 2000000 |  | Token cap for one goal session. |
 | `autopilot.mode` | changes values | repo | off | `off` \| `plan` \| `backlog` | Adds `backlog`: work a goal's tickets one at a time. |
-
-### T-0017
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `context.autoClear.wrapUp` | new key | machine-arms | null |  | Machine opt-in for the automatic wrap-up; only exactly `true` arms it. |
 
 ### T-0029
 

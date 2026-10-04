@@ -23,6 +23,17 @@ Three rules, each one a bug that shipped:
    hook), and a configured `windowTitle` is only a fallback that refuses on
    zero or several matches. `wtype` identifies nothing and is refused outright.
 
+4. **Type only into this session's OWN terminal (T-0016).** A `claude -p`
+   child inherits `$TMUX`, and its parent's pane and window are ancestors of
+   its hook, so rule 3 alone typed `/clear` into the PARENT. The session is
+   bound to its own process -- the nearest ancestor named by a Claude Code
+   session record whose `sessionId` is the payload's and whose `procStart`
+   matches -- and classified terminal / headless / unknown. Only terminal is
+   typed into, and the pane or window is then proven by walking up from that
+   process: through another session, past a truncated chain, or into a
+   window that hosts another terminal, it refuses. Headless gets one notice
+   naming its handoff and the restart; unknown is never called headless.
+
 Two methods never type anything at all. **`notify`** prints a `systemMessage`
 saying the handoff is written and verified and it is safe to run the
 configured command yourself -- never that anything was cleared or compacted,
@@ -55,6 +66,10 @@ command, delay, key. Never raises; an internal error is a refusal.
 is T-0013's: the same eight lines with the rendered resume prompt as the
 command, then timeout, marker and decision, then ".". `probe` reads a
 `tmux capture-pane -p -e` on stdin and prints ready|busy|nonempty|noprompt.
+T-0017's wrap-up verbs, for context-watch and auto-clear.ps1: `wrapup-armed
+--root R --session S` prints on|off; `wrapup-check --root R` prints ok or the
+refusal reason; `wrapup-message --root R --session S --pct N` prints the
+wrap-up procedure when armed and nothing otherwise. None of them raises.
 """
 
 import argparse
@@ -85,8 +100,24 @@ _DEFAULTS = {"method": "auto", "windowTitle": "", "command": "/clear",
 # does nothing today, which is exactly the "unknown collapsing into the
 # safe-looking default" shape this file's warnings exist to surface.
 _RECOGNIZED_AUTOCLEAR_KEYS = frozenset(_DEFAULTS) | {
-    "enabled", "onlyRepos", "onlySessions", "unsafeFocus"}
+    "enabled", "onlyRepos", "onlySessions", "unsafeFocus", "wrapUp"}
 _ANCESTOR_LIMIT = 16
+PROC_STUB_ENV = "CREW_AUTOCLEAR_PROC_STUB"
+# Measured 2026-10-04, Claude Code 2.1.289 on Linux
+# (plugin/crew/docs/session-record-spike.md): an interactive session in a tmux
+# pane records entrypoint "cli"; `claude -p` records "sdk-cli", with or
+# without a pty around it. Both record kind "interactive", so kind alone
+# proves nothing. Windows and macOS are unmeasured: an entrypoint outside
+# this set is unknown, never a terminal.
+TERMINAL_ENTRYPOINTS = frozenset({"cli"})
+HEADLESS_ENTRYPOINT_PREFIX = "sdk"
+CLAUDE_COMM = "claude"
+# A native install runs as `~/.local/share/claude/versions/<x.y.z>`, so its comm
+# is the version. Unmeasured beyond that path's shape: the records and the
+# tty rule carry the proof, and this only makes the walk fail closed sooner.
+_VERSIONED_COMM = re.compile(r"\d+\.\d+\.\d+")
+INHIBIT_ENV = "CREW_AUTOCLEAR_INHIBIT"
+_SCAN_LIMIT = 4096
 
 
 def session_key(session_id):
@@ -179,6 +210,9 @@ def settings(root, global_path=None):
         text = str(out[key] or "").splitlines()
         out[key] = text[0] if text else _DEFAULTS[key]
     out["enabled"] = machine.get("enabled") is True and repo.get("enabled") is not False
+    # T-0017: the same machine-opt-in rule. It arms nothing on its own: it
+    # acts only where `enabled` is armed and in scope (`wrapup_armed`).
+    out["wrapUp"] = machine.get("wrapUp") is True and repo.get("wrapUp") is not False
     # Machine only, and deliberately not in the repo-then-machine loop above.
     out["onlyRepos"] = machine.get("onlyRepos")
     out["onlySessions"] = machine.get("onlySessions")
@@ -357,27 +391,601 @@ def verify_handoff(root, session_id, cfg):
     return True, ""
 
 
-def _ppid(pid):
+# --------------------------------------------------------------------------
+# T-0017: auto wrap-up. A hook cannot make the model do anything, so the one
+# enforcement point is the clear itself: armed, it happens only when the
+# wrap-up's results are on disk. Crew checks the commit, the handoff's
+# `head:`/`branch:`, a clean tracked tree and a parseable `resume:` line; it
+# never claims the step's test passed (verify-gate stands down on the
+# forced-continuation turn the commit is made on). No hook commits.
+
+WRAPUP_PREFIX = "wrap-up: "
+ESCALATED_PREFIX = ".wrapup-escalated-"
+_GIT_TIMEOUT = 10
+
+
+def wrapup_armed(cfg, root, session_id):
+    """Machine `wrapUp: true`, no repo veto, and `enabled` armed and in scope."""
+    return bool(cfg.get("enabled") and cfg.get("wrapUp") and in_scope(cfg, root, session_id))
+
+
+def _git_out(root, *args):
+    """stdout of `git <args>` in `root`; raises RuntimeError naming the failure."""
+    # Run the git that shutil.which resolves, never a bare "git": on native
+    # Windows a bare name reaches CreateProcess, which tries only git.exe,
+    # while which() -- and bash, and pwsh -- honour PATHEXT (git.cmd). A git
+    # the user's PATH puts first as a .cmd was skipped for a later git.exe,
+    # so the veto judged a different git than every other caller ran: a
+    # failing git read as a clean tree and the clear went ahead (fail-open).
+    # No git found is "could not tell", a refusal like any other.
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError(f"could not run git {args[0]} (git is not on PATH)")
+    try:
+        # UTF-8 whatever the locale: a -z path is UTF-8 bytes, and Windows'
+        # cp1252 default would mangle it or raise.
+        done = subprocess.run((git, *args), cwd=root, capture_output=True, text=True,
+                              encoding="utf-8", errors="surrogateescape",
+                              stdin=subprocess.DEVNULL, timeout=_GIT_TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"could not run git {args[0]} ({exc.__class__.__name__})") from exc
+    if done.returncode != 0:
+        detail = " ".join((done.stderr or "").split())[:160]
+        raise RuntimeError(f"git {args[0]} failed ({detail or 'exit ' + str(done.returncode)})")
+    return done.stdout
+
+
+def _handoff_field(regex, text):
+    found = regex.search(text)
+    return found.group(1) if found else None
+
+
+def _top_relative(toplevel, path):
+    """The contained handoff `path` (absolute, resolved) as git names it from
+    the repository top -- whether handoffPath was relative or absolute."""
+    rel = os.path.relpath(path, os.path.realpath(toplevel.strip()))
+    return os.path.normcase(rel.replace("\\", "/"))
+
+
+def _porcelain_z_paths(text):
+    """(paths, sources) from `git status --porcelain=v1 -z`. A rename or copy
+    entry is followed by its source as a field of its own: returned apart,
+    because a source is never the handoff -- its staged deletion is
+    uncommitted work even when the destination is the exempt handoff."""
+    fields = text.split("\0")
+    paths, sources, index = [], [], 0
+    while index < len(fields):
+        entry = fields[index]
+        index += 1
+        if len(entry) < 4:
+            continue
+        paths.append(entry[3:])
+        if set(entry[:2]) & {"R", "C"}:
+            if index < len(fields) and fields[index]:
+                sources.append(fields[index])
+            index += 1
+    return paths, sources
+
+
+def wrapup_check(root, cfg):
+    """(ok, reason): are the wrap-up's results on disk? First failure wins.
+    Every "could not tell" -- an unreadable handoff, crew_resume missing, git
+    failing -- is a refusal, never a pass."""
+    rel = cfg["handoffPath"]
+    path = _contained(root, rel)
+    if path is None:
+        return False, "handoffPath points outside the repository"
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        return False, f"{rel} has not been written"
+    except OSError:
+        return False, f"{rel} is unreadable"
+    try:
+        import crew_resume  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        return False, "T-0006's crew_resume is not installed"
+    parsed = crew_resume.parse_resume(text)
+    if not parsed.get("ok") and parsed.get("reason") != "resume: none":
+        return False, f"resume line: {parsed.get('reason') or 'could not be read'}"
+    import crew_state  # pylint: disable=import-outside-toplevel
+    noted_branch = _handoff_field(crew_state._HANDOFF_BRANCH_RE, text)  # pylint: disable=protected-access
+    noted_head = _handoff_field(crew_state._HANDOFF_HEAD_RE, text)  # pylint: disable=protected-access
+    try:
+        branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        head = _git_out(root, "rev-parse", "HEAD").strip().lower()
+        toplevel = _git_out(root, "rev-parse", "--show-toplevel")
+        # -z: paths verbatim (never octal-quoted) and relative to the
+        # repository top, whatever directory root is.
+        status = _git_out(root, "status", "--porcelain=v1", "-z", "--untracked-files=no")
+    except RuntimeError as exc:
+        return False, str(exc)
+    if noted_branch is None:
+        return False, f"{rel} has no branch: line"
+    if noted_branch != branch:
+        return False, f"the handoff's branch: is {noted_branch}, but {branch} is checked out"
+    if noted_head is None:
+        return False, f"{rel} has no head: line - commit first, then rewrite the handoff"
+    if not head.startswith(noted_head.lower()):
+        return False, "the handoff's head: is not HEAD - commit first, then rewrite the handoff"
+    # The handoff itself is exempt: its head: is HEAD, so it is written after
+    # the commit, and in a repo that tracks it, it is always modified.
+    own = _top_relative(toplevel, path)
+    changed, sources = _porcelain_z_paths(status)
+    dirty = [p for p in changed if os.path.normcase(p) != own] + sources
+    if dirty:
+        noun = "file is" if len(dirty) == 1 else "files are"
+        return False, (f"{len(dirty)} tracked {noun} modified ({dirty[0]}"
+                       f"{', ...' if len(dirty) > 1 else ''}) - the step was not committed")
+    return True, ""
+
+
+def wrapup_message(root, pct):
+    """The one wrap-up procedure context-watch sends, in both flavours."""
+    try:
+        import crew_ticket  # pylint: disable=import-outside-toplevel
+        ticket, _source = crew_ticket.active_ticket(root)
+        step = (f"Active ticket: {ticket} - the step is its plan step in flight." if ticket
+                else "No active ticket - the step is the tracked diff (git status).")
+    except Exception:  # pylint: disable=broad-except
+        step = "The active ticket could not be read - treat the step as the tracked diff (git status)."
+    return "\n".join((
+        f"crew wrap-up (context.autoClear.wrapUp) - context at {pct}%.",
+        "Do not start a new step.",
+        step,
+        "1. Run the step's Test: command now (no ticket: the checks that cover the tracked diff).",
+        "2. Commit only if it passes.",
+        "3. If it cannot pass now, do not commit: leave the tree as it is, and the handoff",
+        "   says resume: none with the reason under Verify first.",
+        "4. Run /crew:handoff --wrap-up.",
+        "5. End the turn. Do not ask the user to /clear.",
+        "Auto-clear clears only when all four hold:",
+        "- the handoff's head: is HEAD;",
+        "- its branch: is the checked-out branch;",
+        "- no tracked file is modified;",
+        "- its resume: line parses (T-0006's grammar), or is resume: none.",
+        "Crew checks the commit, not that the test passed.",
+    ))
+
+
+# --------------------------------------------------------------------------
+# T-0016: which process is this session, and does it have a terminal?
+#
+# Every process fact below is read through `_proc`, so one stub replaces the
+# whole process table: CREW_AUTOCLEAR_PROC_STUB names a JSON object
+# `{"self": <pid the walk starts from>, "<pid>": {"ppid", "tty", "start",
+# "comm"} | null, ..., "scanFails": true?}`. When it is set it is the ONLY
+# process table -- a pid it does not name does not exist -- the same standing
+# as CREW_AUTOCLEAR_WINDOW_STUB, and for the same reason: no test may depend on
+# the real process tree, and on native Windows the bash flavour has no other
+# way to read one. No environment variable is evidence of WHICH process is
+# this session (CLAUDE_PID and CLAUDE_CODE_ENTRYPOINT are copied into every
+# child); the stub only replaces where facts are read from. `{"gone": true}`
+# is a pid that no longer exists (the top of a chain); null is one that
+# exists but cannot be read.
+#
+# Both stubs are honoured ONLY while CREW_AUTOCLEAR_INHIBIT is set (review
+# round 1): a repo's `.claude/settings.json` env reaches every hook, so a stub
+# honoured on its own could make a parent's window look like this session's.
+# With the inhibit set no keystroke is ever sent, so a stub can steer nothing
+# that types; every suite case sets it.
+
+def _stubs_allowed():
+    return bool(os.environ.get(INHIBIT_ENV))
+
+
+def _proc_stub():
+    """(table, scan_fails, start_pid) from CREW_AUTOCLEAR_PROC_STUB, or
+    (None, False, None) when it is unset. A stub that is set but unreadable is
+    an empty table whose scans fail: nothing in it, so nothing is proven."""
+    path = os.environ.get(PROC_STUB_ENV)
+    if not path or not _stubs_allowed():
+        return None, False, None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}, True, None
+    if not isinstance(data, dict):
+        return {}, True, None
+    table = {}
+    for key, entry in data.items():
+        if key.isdigit() and (entry is None or isinstance(entry, dict)):
+            table[int(key)] = entry
+    return table, data.get("scanFails") is True, _num(data.get("self"), 0) or None
+
+
+def _stub_entry(entry):
+    if entry is None or entry.get("gone") is True:
+        return None
+    tty = entry.get("tty")
+    return {"ppid": _num(entry.get("ppid"), 0),
+            "tty": None if tty is None or isinstance(tty, bool) else _num(tty, None),
+            "start": entry.get("start"), "comm": str(entry.get("comm") or "")}
+
+
+def _read_stat(pid):
+    """/proc/<pid>/stat as {ppid, tty, start, comm}, or None. tty is field 7
+    (tty_nr, 0 = no controlling terminal), start is field 22."""
     try:
         with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as handle:
-            return int(handle.read().rsplit(")", 1)[1].split()[1])
+            text = handle.read()
+        rest = text.rsplit(")", 1)[1].split()
+        return {"ppid": int(rest[1]), "tty": int(rest[4]), "start": int(rest[19]),
+                "comm": text[text.index("(") + 1:text.rindex(")")]}
     except (OSError, IndexError, ValueError):
-        pass
-    try:
-        out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True,
-                             text=True, timeout=5, check=False).stdout
-        return int(out.strip() or 0)
-    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _tty_token(text):
+    """A `ps` tty column as a number: 0 for none (`?`, `??`, `-`), otherwise
+    a stable non-zero stand-in -- only equality and zero-ness are ever used."""
+    text = (text or "").strip()
+    if text in ("", "?", "??", "-"):
         return 0
+    return int.from_bytes(text.encode("utf-8")[-7:], "big") or 1
+
+
+def _parse_ps(line):
+    """One `ps -o ppid=,tty=,comm=` line as {ppid, tty, start, comm}, or None.
+    No start time: `ps` gives none comparable to a record's `procStart`, so a
+    record is then bound by pid and session id only (OWNER DECISION, macOS)."""
+    parts = (line or "").split(None, 2)
+    if len(parts) < 3:
+        return None
+    try:
+        ppid = int(parts[0])
+    except ValueError:
+        return None
+    return {"ppid": ppid, "tty": _tty_token(parts[1]), "start": None,
+            "comm": os.path.basename(parts[2].strip())}
+
+
+def _proc(pid):
+    """{ppid, tty, start, comm} for `pid`, or None when it cannot be read."""
+    table, _fails, _self = _proc_stub()
+    if table is not None:
+        return _stub_entry(table.get(pid))
+    found = _read_stat(pid)
+    if found is not None or os.name == "nt":
+        return found
+    try:
+        out = subprocess.run(["ps", "-o", "ppid=,tty=,comm=", "-p", str(pid)], capture_output=True,
+                             text=True, timeout=5, check=False).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return _parse_ps(out.strip().splitlines()[0] if out.strip() else "")
+
+
+def _gone(pid):
+    """True only when `pid` provably no longer exists -- not when it merely
+    cannot be read."""
+    table, _fails, _self = _proc_stub()
+    if table is not None:
+        entry = table.get(pid)
+        return isinstance(entry, dict) and entry.get("gone") is True
+    return os.path.isdir("/proc") and not os.path.exists(f"/proc/{pid}")
+
+
+def _ppid(pid):
+    found = _proc(pid)
+    return found["ppid"] if found else 0
+
+
+def _start_pid():
+    _table, _fails, start = _proc_stub()
+    return start or os.getpid()
+
+
+def ancestry(pid=None):
+    """(chain, complete, why): `pid` (default: this process) and its
+    ancestors, nearest first. `complete` is False when the walk stopped before
+    reaching the top -- a parent that could not be read, a loop, or more than
+    _ANCESTOR_LIMIT processes -- and `why` says which. An incomplete chain
+    proves nothing about what lies above it."""
+    out, pid = [], pid or _start_pid()
+    while True:
+        if pid in out:
+            return out, False, f"the process chain loops back to pid {pid}"
+        if len(out) >= _ANCESTOR_LIMIT:
+            return out, False, f"the process chain is deeper than {_ANCESTOR_LIMIT} processes"
+        out.append(pid)
+        found = _proc(pid)
+        if found is None:
+            if len(out) > 1 and _gone(pid):
+                # A recorded parent that has exited: the top of the chain.
+                out.pop()
+                return out, True, ""
+            return out, False, f"the parent of pid {pid} could not be read"
+        pid = found["ppid"]
+        if pid <= 1:
+            return out, True, ""
 
 
 def ancestors(pid=None):
     """This process and its ancestors, nearest first."""
-    out, pid = [], pid or os.getpid()
+    out, pid = [], pid or _start_pid()
     while pid and pid > 1 and pid not in out and len(out) < _ANCESTOR_LIMIT:
         out.append(pid)
         pid = _ppid(pid)
     return out
+
+
+def claude_config_dir(env=None):
+    """`$CLAUDE_CONFIG_DIR` when set and non-empty, else `~/.claude` -- where
+    Claude Code writes `sessions/<pid>.json`. A record found only under the
+    other one is not this session's (measured: plugin/crew/docs/session-record-spike.md)."""
+    env = os.environ if env is None else env
+    value = env.get("CLAUDE_CONFIG_DIR") or ""
+    return value if value else os.path.join(os.path.expanduser("~"), ".claude")
+
+
+def _read_record(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def session_owner(session_id, env=None):
+    """The process that IS this session: {"pid", "record", "info", "how"}, or
+    {"unknown": reason}.
+
+    The nearest ancestor of this hook named by a session record in
+    `<config>/sessions/<pid>.json` whose `sessionId` is the payload's and
+    whose `procStart` is that process's start time wherever the start time
+    can be read (a reused pid is a different process). Anything else --
+    no record, another session's record, an unreadable one, a start-time
+    mismatch, a chain that could not be read to the end -- is unknown, and
+    unknown is never "headless" and never "terminal"."""
+    if not session_id:
+        return {"unknown": "no session id, so no session record can be matched"}
+    sessions = os.path.join(claude_config_dir(env), "sessions")
+    chain, complete, why = ancestry()
+    for pid in chain:
+        path = os.path.join(sessions, f"{pid}.json")
+        if not os.path.lexists(path):
+            continue
+        record = _read_record(path)
+        if record is None:
+            return {"unknown": f"the session record for pid {pid} is unreadable or not a JSON object"}
+        if record.get("sessionId") != session_id:
+            return {"unknown": f"the session record for pid {pid} names another session"}
+        info = _proc(pid)
+        start = info.get("start") if info else None
+        if start is None:
+            return {"pid": pid, "record": record, "info": info,
+                    "how": "session record + session id (start time unreadable here)"}
+        if str(record.get("procStart")) != str(start):
+            return {"unknown": (f"the session record for pid {pid} has procStart "
+                                f"{record.get('procStart')!r} but that process started at {start} - "
+                                "a reused pid is a different process")}
+        return {"pid": pid, "record": record, "info": info, "how": "session record + session id + start time"}
+    if not complete:
+        return {"unknown": f"no session record names a process above this hook, and {why}"}
+    return {"unknown": f"no session record under {sessions} names a process above this hook"}
+
+
+def classify(owner):
+    """("terminal" | "headless" | "unknown", evidence).
+
+    `terminal` needs all three: kind "interactive", an entrypoint on the
+    measured allowlist, and a controlling terminal (tty_nr != 0). `headless`
+    needs positive evidence: an `sdk*` entrypoint, a kind other than
+    "interactive", or tty_nr 0. Anything else is unknown -- an entrypoint
+    nobody measured is never assumed to have a terminal."""
+    if "unknown" in owner:
+        return "unknown", owner["unknown"]
+    record, info = owner["record"], owner.get("info") or {}
+    kind, entry, tty = record.get("kind"), record.get("entrypoint"), info.get("tty")
+    if isinstance(entry, str) and entry.startswith(HEADLESS_ENTRYPOINT_PREFIX):
+        return "headless", f"entrypoint {entry}"
+    if isinstance(kind, str) and kind != "interactive":
+        return "headless", f"kind {kind}"
+    if tty == 0:
+        return "headless", "no controlling terminal: tty_nr 0"
+    if kind != "interactive":
+        return "unknown", f"the session record for pid {owner['pid']} has no usable kind ({kind!r})"
+    if entry not in TERMINAL_ENTRYPOINTS:
+        return "unknown", (f"entrypoint {entry!r} is not one measured to have a terminal "
+                           f"({', '.join(sorted(TERMINAL_ENTRYPOINTS))})")
+    if tty is None:
+        return "unknown", f"the controlling terminal of pid {owner['pid']} could not be read"
+    return "terminal", f"kind interactive, entrypoint {entry}, tty_nr {tty}"
+
+
+def other_sessions(owner_pid, env=None):
+    """Pids of every OTHER live session record (process exists, start time
+    matches where readable), or None when the records cannot be listed."""
+    sessions = os.path.join(claude_config_dir(env), "sessions")
+    try:
+        names = os.listdir(sessions)
+    except OSError:
+        return None
+    out = set()
+    for name in names:
+        match = re.fullmatch(r"(\d+)\.json", name)
+        if not match or int(match.group(1)) == owner_pid:
+            continue
+        pid = int(match.group(1))
+        record = _read_record(os.path.join(sessions, name))
+        info = _proc(pid)
+        if info is None:
+            continue
+        if record is None:
+            # A live process whose record cannot be read may be a session:
+            # it cannot be ruled out, so nothing is ruled out (review round 1).
+            return None
+        if info.get("start") is not None and str(record.get("procStart")) != str(info["start"]):
+            continue
+        out.add(pid)
+    return out
+
+
+def _process_table():
+    """{pid: {ppid, tty, start, comm}} for every process, or None when the
+    table cannot be read (a scan that fails proves nothing)."""
+    table, fails, _self = _proc_stub()
+    if table is not None:
+        return None if fails else {pid: _stub_entry(e) for pid, e in table.items() if e is not None}
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        names = None
+    if names is not None:
+        out = {}
+        for name in names:
+            if name.isdigit():
+                found = _read_stat(int(name))
+                if found is not None:  # gone mid-scan: not a terminal anybody types into
+                    out[int(name)] = found
+        return out or None
+    try:
+        lines = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,tty=,comm="], capture_output=True,
+                               text=True, timeout=10, check=False).stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = {}
+    for line in lines:
+        head, _, rest = line.strip().partition(" ")
+        found = _parse_ps(rest)
+        if head.isdigit() and found is not None:
+            out[int(head)] = found
+    return out or None
+
+
+def _shared_window(window_pid, owner, others):
+    """"" when every terminal under the window's owning process is this
+    session's, else why not. One terminal server can host many tabs, so
+    proving the owner is an ancestor does not prove the window is this
+    session's: every descendant of `window_pid` outside the owner's own
+    subtree that has a controlling terminal must be on the owner's, and none
+    may be another session. A sibling can be invisible to a record scan
+    (`tmux attach`, ssh, another config dir, a plain shell), which is why this
+    reads ttys, not records."""
+    table = _process_table()
+    if table is None:
+        return (f"the processes under the window's owner (pid {window_pid}) could not be listed, so it "
+                "cannot be shown that the window hosts only this session")
+    children = {}
+    for pid, entry in table.items():
+        children.setdefault(entry["ppid"], []).append(pid)
+    owner_tty = (owner.get("info") or {}).get("tty")
+    seen, queue = set(), list(children.get(window_pid, ()))
+    while queue:
+        pid = queue.pop()
+        if pid in seen or pid == owner["pid"]:
+            continue
+        seen.add(pid)
+        if len(seen) > _SCAN_LIMIT:
+            return (f"more than {_SCAN_LIMIT} processes run under the window's owner (pid {window_pid}), so "
+                    "the scan for another terminal was cut short")
+        if pid in others:
+            return f"the window's owner (pid {window_pid}) also hosts another Claude Code session (pid {pid})"
+        tty = table[pid].get("tty")
+        if tty and tty != owner_tty:
+            return (f"the window's owner (pid {window_pid}) also hosts another terminal (pid {pid} on "
+                    f"tty_nr {tty}, this session is on {owner_tty})")
+        queue.extend(children.get(pid, ()))
+    return ""
+
+
+def prove_target(owner, got, cfg, env=None):
+    """The method's target, proven from the session's OWN process rather than
+    from this hook: {"ok", "target", "label"} or {"ok": False, "reason"}.
+
+    tmux: the pane's pid is the owner or an ancestor of it. xdotool: the
+    window is owned by a strict ancestor of the owner, and hosts no other
+    terminal. Either way the walk refuses when it passes through another
+    Claude Code process or another live session record (a child under its
+    parent's pane or window), or when the chain could not be read to the
+    end. A window found by title alone, or with no owning process, refuses
+    whenever another session is live: a title cannot tell two apart."""
+    me = owner["pid"]
+    chain, complete, why = ancestry(me)
+    others = other_sessions(me, env)
+    if others is None:
+        return {"ok": False, "reason": ("the session records could not be listed or read, so another session "
+                                        "cannot be ruled out")}
+
+    def crossing(pid):
+        comm = (_proc(pid) or {}).get("comm") or ""
+        return pid in others or comm == CLAUDE_COMM or bool(_VERSIONED_COMM.fullmatch(comm))
+
+    if got["method"] == "tmux":
+        pane_pid = got.get("pane_pid") or 0
+        if pane_pid not in chain:
+            tail = f", and {why}" if not complete else ""
+            return {"ok": False, "reason": (
+                f"tmux pane {got['target']} (pane pid {pane_pid or 'unknown'}) is not this session's: it is "
+                f"not an ancestor of this session's own process (pid {me}){tail}")}
+        for pid in chain[1:chain.index(pane_pid) + 1]:
+            if crossing(pid):
+                return {"ok": False, "reason": (
+                    f"the way from this session (pid {me}) up to tmux pane {got['target']} passes through "
+                    f"another Claude Code session (pid {pid})")}
+        # Review round 1 BLOCK: a parent session in another config dir, under
+        # a comm that is not `claude`, is invisible to both checks above. The
+        # pane types into ITS tty, so every process from this session up to
+        # the pane must be on this session's tty or on none.
+        own_tty = (owner.get("info") or {}).get("tty")
+        for pid in chain[1:chain.index(pane_pid) + 1]:
+            tty = (_proc(pid) or {}).get("tty")
+            if tty is None:
+                return {"ok": False, "reason": (
+                    f"the controlling terminal of pid {pid}, between this session and tmux pane "
+                    f"{got['target']}, could not be read")}
+            if tty and tty != own_tty:
+                return {"ok": False, "reason": (
+                    f"tmux pane {got['target']} is not this session's terminal: pid {pid} is on tty_nr {tty}, "
+                    f"this session (pid {me}) is on {own_tty}")}
+        return {"ok": True, "target": got["target"], "label": got["label"], "owner": me}
+    windows, reason = list_windows()
+    if windows is None:
+        return {"ok": False, "reason": f"cannot list windows: {reason}"}
+    for pid in chain[1:]:
+        if crossing(pid):
+            return {"ok": False, "reason": (
+                f"the way from this session (pid {me}) up to its window passes through another Claude Code "
+                f"session (pid {pid})")}
+        if not any(_num(w.get("pid"), 0) == pid for w in windows):
+            continue
+        found = resolve_target([pid], windows, cfg["windowTitle"])
+        if not found["ok"]:
+            return {"ok": False, "reason": found["reason"]}
+        shared = _shared_window(pid, owner, others)
+        if shared:
+            return {"ok": False, "reason": shared}
+        return _window_result(found, me)
+    if not complete:
+        return {"ok": False, "reason": f"no window belongs to a process above this session (pid {me}), and {why}"}
+    if not cfg["windowTitle"]:
+        return {"ok": False, "reason": (
+            f"no window belongs to any ancestor of this session's process (pid {me}), and no "
+            "context.autoClear.windowTitle is set to fall back on")}
+    found = resolve_target([], windows, cfg["windowTitle"])
+    if not found["ok"]:
+        return {"ok": False, "reason": found["reason"]}
+    if others:
+        sibling = min(others)
+        if _num(found["window"].get("pid"), 0) <= 1:
+            return {"ok": False, "reason": (
+                f"window {found['window'].get('id')} has no owning process, and another Claude Code session "
+                f"is live (pid {sibling}), so nothing ties that window to this session")}
+        return {"ok": False, "reason": (
+            f"window {found['window'].get('id')} was found by its title alone, and another Claude Code "
+            f"session is live (pid {sibling}) - a title cannot tell two sessions apart")}
+    return _window_result(found, me)
+
+
+def _window_result(found, me):
+    win = found["window"]
+    return {"ok": True, "target": str(win.get("id")),
+            "label": (f"{win.get('title') or ''} [window {win.get('id')}, pid {win.get('pid')}, "
+                      f"{found['how']}]"), "owner": me}
 
 
 def _xdotool(*args):
@@ -394,7 +1002,7 @@ def list_windows():
     CREW_AUTOCLEAR_WINDOW_STUB names a JSON list that replaces the real window
     system. The suite uses it so no test ever enumerates, let alone types
     into, a real window."""
-    stub = os.environ.get(WINDOW_STUB_ENV)
+    stub = os.environ.get(WINDOW_STUB_ENV) if _stubs_allowed() else None
     if stub:
         try:
             with open(stub, encoding="utf-8") as handle:
@@ -447,8 +1055,17 @@ def resolve_target(ancestor_pids, windows, title):
 
 
 def _tmux_pane_pid(pane):
+    # Run the tmux that shutil.which found -- the one resolve_method's "on
+    # PATH" check just accepted -- not a bare "tmux". On native Windows a bare
+    # name reaches CreateProcess, which tries only tmux.exe, while which()
+    # also honours PATHEXT (tmux.cmd, tmux.bat): the check passed, the run
+    # raised OSError, and the refusal named the pane pid "unknown" for a tmux
+    # that was never run. An unresolvable tmux is still 0, still refused.
+    tmux = shutil.which("tmux")
+    if not tmux:
+        return 0
     try:
-        out = subprocess.run(["tmux", "display-message", "-p", "-t", pane, "#{pane_pid}"],
+        out = subprocess.run([tmux, "display-message", "-p", "-t", pane, "#{pane_pid}"],
                              capture_output=True, text=True, timeout=5, check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return 0
@@ -510,7 +1127,7 @@ def resolve_method(cfg, env=None):
                 f"tmux pane {pane} could not be confirmed as the pane running this session "
                 f"(pane pid {pane_pid or 'unknown'} is not an ancestor of this hook)")}
         return {"ok": True, "method": "tmux", "target": pane,
-                "label": f"{pane} [pane pid {pane_pid}]"}
+                "label": f"{pane} [pane pid {pane_pid}]", "pane_pid": pane_pid}
     if method == "xdotool":
         if not shutil.which("xdotool"):
             return {"ok": False, "reason": "method xdotool but xdotool is not on PATH"}
@@ -554,17 +1171,90 @@ def plan(root, session_id, force=False, global_path=None, env=None):
         if not ok:
             out["reason"] = why
             return out
+        # T-0017: after the handoff checks, before the method -- and so before
+        # the binding and the sender's claim. Unarmed, nothing here runs.
+        if wrapup_armed(cfg, root, session_id):
+            ok, why = wrapup_check(root, cfg)
+            if not ok:
+                out["reason"] = WRAPUP_PREFIX + why
+                return out
     got = resolve_method(cfg, env)
     if not got["ok"]:
         out["reason"] = got["reason"]
         return out
-    if got["method"] == "notify":
+    # T-0016: after the handoff checks and the method, before the sender's
+    # claim. Nothing types until this session's own process is proven to
+    # have a terminal and the target is proven from that process.
+    got = bind_to_session(root, session_id, cfg, got, env, force)
+    if not got["ok"]:
+        out["reason"] = got["reason"]
+        return out
+    if got["method"] in ("notify", "notify-headless"):
         # Nothing to wait for: there is no prompt to type into, so the delay
         # that exists for tmux/xdotool (the turn is still ending when this
         # runs) buys nothing here.
         out["delay"] = "0"
-    out.update(status="send", method=got["method"], target=got["target"], label=got["label"])
+    out.update(status="send", method=got["method"], target=got["target"], label=got["label"],
+               reason=got.get("notice", ""))
     return out
+
+
+_RESUME_LINE = re.compile(r"^resume:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
+
+
+def headless_notice(root, cfg, evidence, force=False):
+    """The one message a headless session gets instead of a keystroke. It
+    names the handoff and its `resume:` line (read as text, not parsed) and
+    says the process that started this session must restart it -- a fresh
+    process is a different author, so nothing here can resume it."""
+    rel = cfg["handoffPath"]
+    line = "(none in the handoff)"
+    path = _contained(root, rel)
+    try:
+        with open(path or "", encoding="utf-8", errors="replace") as handle:
+            found = _RESUME_LINE.search(handle.read())
+        if found and found.group(1):
+            line = found.group(1)
+    except OSError:
+        pass
+    written = (f"Its handoff at {rel} was not checked (--force)" if force
+               else f"Its handoff is written and verified at {rel}")
+    return (f"crew: this session has no terminal of its own ({evidence}), so nothing was cleared or "
+            f"typed. {written}; resume: {line}. The process that started this session must start a new "
+            "one to continue.")
+
+
+def _unknown_reason(owner, evidence):
+    if "unknown" in owner:
+        return f"could not identify this session's process ({evidence})"
+    return f"could not tell whether this session has a terminal of its own ({evidence})"
+
+
+def bind_to_session(root, session_id, cfg, got, env=None, force=False):
+    """T-0016: `got` (a resolved method) bound to this session's own process.
+
+    headless -> `notify-headless` whatever the method, carrying its notice;
+    unknown -> `notify` stays `notify`, `auto` falls back to plain `notify`
+    (logged), and an explicitly configured typing method refuses; terminal
+    -> `notify` unchanged, tmux/xdotool re-proven from the owner by
+    `prove_target`."""
+    owner = session_owner(session_id, env)
+    cls, evidence = classify(owner)
+    if cls == "headless":
+        return {"ok": True, "method": "notify-headless", "target": "", "label": "",
+                "notice": headless_notice(root, cfg, evidence, force)}
+    if got["method"] == "notify":
+        return got
+    if cls == "unknown":
+        reason = _unknown_reason(owner, evidence)
+        if cfg["method"] == "auto":
+            log_autoclear(root, f"auto-clear: {reason} - auto falls back to notify, nothing is typed")
+            return {"ok": True, "method": "notify", "target": "", "label": ""}
+        return {"ok": False, "reason": reason}
+    proof = prove_target(owner, got, cfg, env)
+    if not proof["ok"]:
+        return proof
+    return dict(got, target=proof["target"], label=proof["label"])
 
 
 # --------------------------------------------------------------------------
@@ -651,6 +1341,23 @@ def resume_plan(root, session_id, source, global_path=None, env=None, flavour="s
         out["reason"] = ("auto-resume types through tmux (which has a ready probe) or sendkeys only; "
                          "xdotool cannot see whether the input line is ready")
         return out
+    if got["method"] != "notify":
+        # T-0016: the same binding as /clear, before anything is typed. A
+        # headless child's SessionStart never types into its parent's pane.
+        owner = session_owner(session_id, env)
+        cls, evidence = classify(owner)
+        if cls == "headless":
+            out["reason"] = ("auto-resume types only into this session's own terminal: this session has "
+                             f"no terminal of its own ({evidence})")
+            return out
+        if cls == "unknown":
+            out["reason"] = ("auto-resume types only into this session's own terminal: "
+                             f"{_unknown_reason(owner, evidence)}")
+            return out
+        proof = prove_target(owner, got, cfg, env)
+        if not proof["ok"]:
+            out["reason"] = f"auto-resume types only into this session's own terminal: {proof['reason']}"
+            return out
     if got["method"] == "notify":
         out["delay"] = "0"
     out.update(status="send", method=got["method"], target=got["target"], label=got["label"])
@@ -690,7 +1397,37 @@ def probe_input_line(capture):
     return "noprompt"
 
 
+def _wrapup_cli(args):
+    """T-0017's three CLI verbs. Never raise: an error reads as unarmed for
+    `wrapup-armed` / `wrapup-message` (today's message is sent) and as a
+    refusal for `wrapup-check`."""
+    root = os.path.abspath(args.root)
+    if args.cmd == "wrapup-check":
+        try:
+            ok, why = wrapup_check(root, settings(root))
+        except Exception as exc:  # pylint: disable=broad-except
+            ok, why = False, f"internal error: {exc.__class__.__name__}"
+        print("ok" if ok else " ".join(why.splitlines()))
+        return 0
+    try:
+        armed = wrapup_armed(settings(root), root, args.session)
+    except Exception:  # pylint: disable=broad-except
+        armed = False
+    if args.cmd == "wrapup-armed":
+        print("on" if armed else "off")
+    elif armed:
+        print(wrapup_message(root, args.pct))
+    return 0
+
+
 def main(argv=None):
+    # A refusal reason can carry any character a branch name or a file path
+    # does; a cp1252 console's strict encoder would crash the print and turn
+    # a refusal into a traceback. Escape what the console cannot show.
+    try:
+        sys.stdout.reconfigure(errors="backslashreplace")
+    except (AttributeError, ValueError):
+        pass  # a replaced stdout (tests) has no reconfigure
     parser = argparse.ArgumentParser(prog="crew_autocycle.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_plan = sub.add_parser("plan")
@@ -705,7 +1442,18 @@ def main(argv=None):
     p_resume.add_argument("--source", default="")
     p_resume.add_argument("--flavour", default="sh", choices=("sh", "ps1"))
     sub.add_parser("probe")
+    p_armed = sub.add_parser("wrapup-armed")
+    p_armed.add_argument("--root", default=".")
+    p_armed.add_argument("--session", default="")
+    p_check = sub.add_parser("wrapup-check")
+    p_check.add_argument("--root", default=".")
+    p_msg = sub.add_parser("wrapup-message")
+    p_msg.add_argument("--root", default=".")
+    p_msg.add_argument("--session", default="")
+    p_msg.add_argument("--pct", default="?")
     args = parser.parse_args(argv)
+    if args.cmd in ("wrapup-armed", "wrapup-message", "wrapup-check"):
+        return _wrapup_cli(args)
     if args.cmd == "key":
         print(session_key(args.session))
         return 0
