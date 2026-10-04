@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.413: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
+### Fixed — `crew` NEXT: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
 
 - **What changed.** The harness files PR A left on its lint's allowlist now run
   `crew_common.require_tool("git")` instead of a bare `"git"`, so on native
