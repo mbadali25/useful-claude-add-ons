@@ -1,11 +1,11 @@
 # Cloud handoff notes
 
-Live log of the cloud session working ALL open PRs #323-#379 (session
-`session_01YVvVmFJquzLKR26dG6oSQS`, branch `ccr-b039f2bb-6jks7g`, which carries only this file and
+Live log of the cloud session working ALL open PRs (session
+`session_016wQA2o38aSB65bpjaGpMVJ` since 11:06 UTC 2026-10-04; before it `session_01YVvVmFJquzLKR26dG6oSQS`, branch `ccr-b039f2bb-6jks7g`, which carries only this file and
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:51 UTC
+Last updated: 2026-10-04 11:25 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:25: NEW SESSION session_016wQA2o38aSB65bpjaGpMVJ (container fresh: worktrees, scratchpad helpers and in-flight agents of the previous session are GONE; lost in flight: #353 land-prep 1.0.338, #357 merge review on 1176d0ab). #360 CI on 2b2da3e8 red: (a) verify-gate rows build.py --check + crew-guide.py FAIL - gate venv has no markdown (exit 2 did-not-run); fixed 69f1352b (verify-gate.yml installs markdown; rule why no longer says LOCAL ONLY). (b) crew-windows-default 1/3: test_verify_gate_stop_budget::test_a_declared_rule_that_passes_is_measured[sh] timings 2 != 1 (echo took 2s on slow runner; pre-existing test, not touched by #360) - watching the new run; if it recurs, small fix PR on main. Delta review + CI running.
 - 10:51: #357 land-prep on 155fe6d8 done: head 1176d0ab (1.0.339; README writer sentence reworded - review checks it). Merge review started. Owner shown spec decisions 1-11 with recommendations (changed #2 macOS: ps -o lstart keeps start-time check; #11 autopilot.md: net-0 else raise budget <=3); awaiting approval.
 - 10:45: Land-prep started: #353 T-0011 (1.0.338), #357 T-0020 (1.0.339).
 - 10:44: #377 delta review e82da750: 0/0/0 CLEAN (index.html 4 pairs = 1 one-line summary table + 3 sections, consistent). Waits turn.
