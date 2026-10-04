@@ -4,6 +4,63 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` VERSION_PLACEHOLDER: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+
+- **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
+  `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
+  acceptance checks, Touch, codemap subsystems and the repo findings rate;
+  an unreadable measure is `None`, reported `unknown:<name>`, never "not
+  fired"), `check_proposal` (2-5 children, each with a title, risk,
+  subsystem, criteria and exclusions; every parent acceptance criterion
+  placed verbatim exactly once across the children and `## Stays on parent`;
+  a `separable-criteria` evidence line for a split; "not too big" is a
+  result), and `check` / `confirm` / `apply`. `/crew:split` drops "Jira
+  only": in **files and Obsidian mode** it writes `split.md`, runs `check`,
+  asks one confirmation, then `apply --via command` keeps the parent's text
+  as `spec.pre-split.md`, mints each child `ready` through
+  `crew_ticket.mint` with a direction pointing back, and only after every
+  mint returned marks the parent `superseded` (T-0037's word) with a
+  `split-into:` line. Its **Jira** steps are unchanged, now with `check`
+  before the confirmation and `confirm` before the first create. **SDP
+  stops**: "SDP is a service desk, not where this work gets decomposed".
+- **The confirmation refuses without a new human turn.** `/crew:split` stays
+  model-invocable. `check`, on a pass, records the proposal's sha256 and the
+  session's current human-turn id (the context hook's `turn.id`, found
+  through `CLAUDE_CODE_SESSION_ID`); `confirm`, and `apply` through it,
+  passes only when the proposal is unchanged and a different turn id is
+  readable for the same session. No session id, an absent or unreadable turn
+  record, or a check that saw no turn is a refusal; under `/crew:autopilot`
+  the command stops and names T-0058's `/crew:autopilot split <id>`.
+- **Thresholds, with their evidence** (constants, not config):
+  `PLAN_STEPS_LOOK = 9`, `ACCEPTANCE_LOOK = 12`, `SUBSYSTEMS_LOOK = 2`,
+  measured 2026-09-26 on 19 review ledgers and documented in the README's
+  "Splitting a ticket" section. A trigger means look, never split. Not
+  re-measured here: the ledgers live in the owner's git common dir, not in
+  this container.
+- **Why.** The owner's 2026-09-26 direction: one split rulebook that
+  `/crew:split` and autopilot both use, so autopilot gets no rules of its own
+  that could drift. T-0058 (autopilot's size check and `/crew:autopilot
+  split`) and T-0059 (plan PR slices) build on this API.
+- **Decisions on the spec.** `crew_ticket.mint` takes no `risk` argument, so
+  the child's `risk:` rides in its direction body (as `assign` does), and
+  `crew_ticket.py` (HARNESS) is not edited. An unconfigured tracker reads
+  `files` for the prose but `apply` refuses it, because `mint` does. Under
+  Obsidian, `mint` now writes the card itself; `/crew:obsidian-sync` is named
+  only when a warning names the board. A failed mint records the minted
+  children under `## Minted` in `split.md`, and a re-run after a new check
+  and yes skips them rather than minting duplicates. An unknown evidence key
+  is refused even beside a known one.
+- **Tests.** `test_crew_split.py` (74 cases): must-block and must-allow for
+  every rule, the confirm gate, `apply` in files and Obsidian mode, and the
+  command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
+  entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
+  Ten mutations (child bound, substring placement, duplicates, exclusions,
+  `separable-criteria`, `None` as 0, the sdp stop, mint order, parent-status
+  order, the confirm turn check) were run by hand, each red on its named
+  test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
+  paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
+  maps `crew_split.py`, its test, the fixture and `split.md`.
+
 ### Changed — `crew` 1.0.367: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
 
 - **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
