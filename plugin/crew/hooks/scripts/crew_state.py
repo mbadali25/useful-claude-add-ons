@@ -2195,7 +2195,7 @@ def in_git_repo(root):
     # is not a work tree. Only a failure to execute is unknown.
     try:
         done = subprocess.run(
-            ("git", "rev-parse", "--is-inside-work-tree"), cwd=root,
+            (crew_common.require_tool("git"), "rev-parse", "--is-inside-work-tree"), cwd=root,
             capture_output=True, text=True, timeout=GIT_TIMEOUT,
             check=False, stdin=subprocess.DEVNULL,
         )

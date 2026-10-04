@@ -3183,6 +3183,7 @@ The **commands** are the other half, and they do require it: 14 of the files und
 | Tests connect fine on Windows, time out in WSL | WSL2 — the service is on the Windows host, not `localhost`. Use the gateway IP from `.crew/config.json`. |
 | Smoke suite takes minutes instead of seconds | Repo is on `/mnt/c`. Re-clone inside WSL. |
 | One hook flavour errors, the other runs | Expected on a matcher-less event (`SessionStart`, `PreCompact`, `Notification`, `Stop`) — both `.sh` and `.ps1` are registered unconditionally there, and only one shell is actually on the machine. Check which one succeeded before assuming a real failure. |
+| On Windows a guard reads git differently from your shell | crew runs the tool `shutil.which` finds (PATHEXT order, the same as bash and pwsh), never a bare name. `where git` (cmd) or `Get-Command git -All` (pwsh) shows the order; the first hit is the git crew judges. A failing `git.cmd` shim first on PATH now makes guards say "could not tell". |
 | No hook fires at all on Windows | No `bash` and no PowerShell resolve, or the wrong `bash.exe` is first on `PATH` — Git for Windows ships two, and only `bin/bash.exe` runs these scripts reliably. |
 | Code map contradicts the code | The map is stale. Code wins. Re-run `/crew:onboard --refresh <area>` and delete what cannot be verified. |
 

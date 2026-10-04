@@ -77,6 +77,8 @@ import sys
 import threading
 import time
 
+import crew_common
+
 LOST = 10
 WINDOW = 60
 GRACE = 5
@@ -95,7 +97,7 @@ def claims_dir(root):
     context-claims, so a worktree and its main checkout share one set and
     nothing lands in the working tree. Outside git, `.crew/event-claims`."""
     try:
-        done = subprocess.run(["git", "-C", root, "rev-parse", "--git-common-dir"],
+        done = subprocess.run([crew_common.require_tool("git"), "-C", root, "rev-parse", "--git-common-dir"],
                               capture_output=True, text=True, timeout=10, check=False)
         common = done.stdout.strip() if done.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
