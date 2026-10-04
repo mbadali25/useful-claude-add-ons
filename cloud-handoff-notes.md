@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 18:07 UTC
+Last updated: 2026-10-04 18:13 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 18:13: Batch 2 merge review: #396/#356/#347 clean; #456 1 FIX (codemap cites _invisible :102, is :106). Fixed by coordinator: revert version, cite fix, regenerate rules, 1.0.336 last -> #456 head f831386e (an intermediate push 7c9d89d6 had stale rules; superseded). Carried to #400: ps1 known-keys list lacks wrapUp.
 - 18:07: #489 L-1503 at 7670dbc3: rule now 29-45s (was 65-84s; ps1 cases slow-marked in 3 files, run in CI slow jobs); README notes post-union requires; L-1505 named. Round-3 re-review sent to a1134b5 (focus: union rule, Find-DuplicateJsonKey scanner).
 - 18:03: Batch 2 land-prepped and pushed: #396 0a880a5d 1.0.333, #356 fb5b9169 1.0.334 (real conflicts: auto-clear.ps1 resolver, test_crew_config key count 137, CONFIG.md), #347 14ce284f 1.0.335, #456 94b2bd24 1.0.336 (23 codemap cites re-derived +3). Merge-resolution review spawned. CI running on all 4. Stale codemap auto-clear.ps1 cites carried to batch 3 (#400).
 - 18:01: #489 L-1503 fixes pushed at 7b8462b1: union rule both gates, [] fixed, exact-dup keys + non-scalar requireHuman refuse; 106 cases, 11 sabotages (all red in CI slow run). Rule 65-84s, chronic pre-existing -> authorised slow-marking ps1 cases in 2 existing files. Minted L-1505 (harness: per-env PROMOTIONS rows for union deploys; fails closed meanwhile).
