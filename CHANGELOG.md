@@ -19,6 +19,37 @@ All notable changes to this repository are documented here. Format follows [Keep
   same order (rebuilt HTML, DOCX, PDF); `test_guides_state_landing_order_after_every_catch_up`
   holds both guides to it and was red on the old troubleshooting text.
 
+### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
+
+- `plugin/crew/tests/sabotage_config.py` gains three mutations against the
+  `PermissionError` branch 1.0.324 added to `crew_config_files.Lock`: a denied
+  create that refuses instead of waiting, an unknown `stat` counted as a lock
+  seen held, and a not-a-lock `stat` error waited on. Each turns its named
+  `test_config_files.py` test red. Harness only, landed apart from the fix.
+
+### Fixed — `crew` 1.0.324: a concurrent mint no longer dies on a delete-pending lock name (Windows)
+
+- **What changed.** `crew_config_files.Lock` waits on a `PermissionError`
+  from its `O_CREAT | O_EXCL` create while the lock file is there or `stat`
+  is itself denied, bounded by the same wait. Only a lock file seen present
+  during the wait makes the deadline `Busy` (now saying "held, or still being
+  deleted by another process"); a wait that never saw one re-raises the
+  `PermissionError`. A file confirmed absent re-raises it after a 0.25s
+  grace, and any other `stat` error (NotADirectoryError, ...) at once.
+- **Why.** On Windows a lock file the previous holder has just removed stays
+  DELETE PENDING while any handle to it is open, and creating that name
+  answers access denied rather than "exists". One of eight concurrent mints
+  failed with `T-0003 claimed but not minted: [Errno 13] Permission denied:
+  ...INDEX.md.lock` on main's Windows run 37194523702.
+- **Tests.** The Windows answer is simulated with a patched `os.open` and
+  `os.stat`; each new lock test, and the mint test, is red against main or
+  against the first cut of this fix. The concurrent mint
+  tests print every process's stderr in full, and
+  `test_a_declared_rule_that_passes_is_measured` holds the measured rule time
+  between 1 and the test's own wall time instead of asserting exactly 1.
+- **Not verified.** Windows is not runnable where this was written; the fix
+  is checked against a simulation of the error the runner logged.
+
 ### Added — `crew` 1.0.323: the full crew 1.0 guide and a generated configuration reference (T-0048)
 
 - `plugin/crew/hooks/scripts/crew_keys.py`: one row per config leaf (132 today), each with a
