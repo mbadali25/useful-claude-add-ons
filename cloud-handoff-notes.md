@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 17:07 UTC
+Last updated: 2026-10-04 17:08 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 17:08: #489 L-1503 fixes -> 3f23339a (both gates one rule: literal case-insensitive, CR/newline strip, deploy key case-insensitive, 2+ matches block, throw blocks; 69 tests; 6 sabotages). Sent follow-up: requireHuman/requires/rollback case-insensitive in both (sh fails open on 'RequireHuman') + deploy:null same in both.
 - 17:07: OWNER DECIDED #427: manual sleep TIGHTEN-ONLY now; harness follow-up L-1504 (approval hook accepts only owner-typed /crew:autopilot sleep, then unlock). Reviews back: #427 1 BLOCK (session self-sleep) -> tighten-only sent; #400 1 BLOCK (inherited abs handoffPath writes into main) + 3 FIX sent; H2a #399 0/6/7 sent (rule 4 chronic, CI never ran, ps1 relative record path, /tmp record race, bound killpg, kernel<4.7). Fixes pushed -> re-reviews: #420 aa3e06d5, #456 febb3d3b, #347 fbc7690c (mention rule). Batch1: #450 3ff3b737 + #403 4cdf076f CI running (my diff check: test-portability + docs only).
 - 16:56: #421 round-2 76c85c03: 0/1/6 (whole-word change stopped matching parts of kebab/snake/dotted words - recall regression). Sent: split on [-._] keeping whole word, plural rule, links into SKIP_DIRS skipped, snippet on whole word.
 - 16:55: MERGED #405 (L-0688) at 66be99cd (crew 1.0.329) and #398 (T-0096) at 3c4ccd2f (crew 1.0.330). Batch merge review: no BLOCKs. #450 fixing Windows tests + doc example; then #403 re-merges. L-0540 follow-up NIT: add/add (000000->000000 U) path admitted - check U letter first.
