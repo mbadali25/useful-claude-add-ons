@@ -6,11 +6,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed — `crew` 1.0.351: sabotage covers Lock's delete-pending branch
 
-- `plugin/crew/tests/sabotage_config.py` gains two mutations against the
+- `plugin/crew/tests/sabotage_config.py` gains three mutations against the
   `PermissionError` branch 1.0.350 added to `crew_config_files.Lock`: a denied
-  create that refuses instead of waiting, and a `stat` that cannot tell read
-  as absent. Each turns its named `test_config_files.py` test red. Harness
-  only, landed apart from the fix.
+  create that refuses instead of waiting, an unknown `stat` counted as a lock
+  seen held, and a not-a-lock `stat` error waited on. Each turns its named
+  `test_config_files.py` test red. Harness only, landed apart from the fix.
 
 ### Fixed — `crew` 1.0.350: a concurrent mint no longer dies on a delete-pending lock name (Windows)
 
