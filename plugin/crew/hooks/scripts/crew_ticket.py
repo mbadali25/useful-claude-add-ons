@@ -141,6 +141,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -1151,15 +1152,16 @@ def _mint_failures(crew_tracker, report):
 
 
 def _mint_row(top, ticket, title):
-    """(outcome, report): `written`, `taken` or `failed` for one `create`.
-    The row is written when the files half reports `updated`; a later half
-    failing (the board, under obsidian) is then a warning, never an unwind of
-    a row that cannot be atomically taken back."""
+    """(outcome, report): `written`, `incomplete`, `taken` or `failed` for one
+    `create`. The row is written when the files half reports `updated`; when a
+    later half (the board, under obsidian) did not update, the mint is
+    `incomplete`: the row cannot be atomically taken back, so the ticket is
+    kept at `direction` and mint refuses (review round 2, :1161)."""
     import crew_tracker  # pylint: disable=import-outside-toplevel
     report = crew_tracker.create(top, ticket, title)
     results = report["results"]
     if any(r["backend"] == "files" and r["state"] == crew_tracker.UPDATED for r in results):
-        return "written", report
+        return ("incomplete" if crew_tracker.exit_code(report) else "written"), report
     if any(str(r.get("reason") or "").startswith(crew_tracker.TAKEN) for r in results):
         return "taken", report
     return "failed", report
@@ -1181,21 +1183,55 @@ def _mint_indexed(top, ticket):
     return False
 
 
+def _mint_made_note(report):
+    """Whether this `create` wrote the obsidian ticket note (its claim)."""
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    return any(r["backend"] == "obsidian-note" and r["state"] == crew_tracker.UPDATED
+               for r in (report or {}).get("results", []))
+
+
+def _mint_drop_note(top, ticket):
+    """Take back the obsidian note a `create` of this mint wrote, when no row
+    came of it (review round 2, :1255). Only a note that still names this
+    repo's repo-id is removed; anything else stays and the text says so."""
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    # pylint: disable=protected-access
+    info = crew_tracker.resolve(top)
+    if info["kind"] != "obsidian":
+        return ""
+    paths, problem = crew_tracker._vault_paths(top, info["settings"], [("note", f"{ticket}.md")])
+    if problem:
+        return f"; its obsidian note could not be found to remove ({problem})"
+    owner, detail, exists = crew_tracker._card_owner(paths, crew_tracker.repo_id(top))
+    if not exists:
+        return ""
+    if owner != crew_tracker.OURS:
+        return f"; {paths['noteShown']} kept: it is not provably this mint's ({detail})"
+    try:
+        os.remove(paths["note"])
+    except OSError as exc:
+        return f"; {paths['noteShown']} could not be removed ({exc.strerror or exc})"
+    return ""
+
+
 def _mint_create(top, ticket, title, folder):
-    """`(outcome, report)` from `_mint_row`, retried while the tracker fails
-    for a reason other than `id taken`. A `create` that raises anything
-    unwinds: the folder is released unless INDEX already holds the row (or
-    could not be read), and then it is kept and the error says so. An
+    """`(outcome, report, made_note)` from `_mint_row`, retried while the
+    tracker fails for a reason other than `id taken`; `made_note` says a
+    `create` of this mint wrote the obsidian note. A `create` that raises
+    anything unwinds: the folder is released unless INDEX already holds the
+    row (or could not be read), and then it is kept and the error says so. An
     `Exception` becomes a TicketError; anything else (KeyboardInterrupt) is
     re-raised as it is, after the same unwind."""
-    outcome, report = "failed", None
+    outcome, report, made_note = "failed", None, False
     for _ in range(MINT_ATTEMPTS):
         try:
             outcome, report = _mint_row(top, ticket, title)
+            made_note = made_note or _mint_made_note(report)
         except BaseException as exc:
             indexed = _mint_indexed(top, ticket)
             if indexed is False:
-                tail = f"; nothing was minted{_mint_release(folder)}"
+                tail = (f"; nothing was minted{_mint_release(folder)}"
+                        f"{_mint_drop_note(top, ticket) if made_note else ''}")
             elif indexed:
                 tail = f"; {ticket} kept: its INDEX row was written before the tracker raised"
             else:
@@ -1208,21 +1244,50 @@ def _mint_create(top, ticket, title, folder):
         if outcome != "failed":
             break
         time.sleep(_MINT_RETRY_PAUSE)
-    return outcome, report
+    return outcome, report, made_note
+
+
+def _mint_row_status(top, ticket):
+    """The status cell of `ticket`'s INDEX row, or None when INDEX cannot be
+    read or holds no such row (could not tell)."""
+    text = crew_common.read_text(os.path.join(top, ".work", "INDEX.md"))
+    for line in (text or "").splitlines():
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) > 1 and cells[0] == ticket:
+            return cells[1]
+    return None
 
 
 def _mint_ready(top, ticket):
-    """`(state, warnings)` for the `move` to `ready`: a move that fails or
-    raises leaves the ticket at `direction` with a warning, never an unwind of
-    a row that is already written."""
+    """`(state, warnings)` for the `move` to `ready`. A move that fails or
+    raises leaves the ticket at `direction` with a warning. When the files
+    half did land (the INDEX row is `ready`) and a later half failed (the
+    board), the row is put back to `direction`, so the stop mint reports is
+    the one autopilot reads (review round 2, :1225); whatever happens, the
+    state returned is the row's own, never one INDEX does not hold."""
     import crew_tracker  # pylint: disable=import-outside-toplevel
     try:
         report = crew_tracker.move(top, ticket, "ready")
     except Exception as exc:  # pylint: disable=broad-except  # noqa: BLE001
-        return "direction", [f"tracker: move to ready raised {type(exc).__name__}: {exc}"]
-    if crew_tracker.exit_code(report) == 0:
-        return "ready", []
-    return "direction", _mint_failures(crew_tracker, report)
+        warnings = [f"tracker: move to ready raised {type(exc).__name__}: {exc}"]
+    else:
+        if crew_tracker.exit_code(report) == 0:
+            return "ready", []
+        warnings = _mint_failures(crew_tracker, report)
+    if _mint_row_status(top, ticket) == "ready":
+        try:
+            back = crew_tracker.move(top, ticket, "direction", reopen=True)
+            warnings += [f"{w} (moving back to direction)"
+                         for w in _mint_failures(crew_tracker, back)]
+        except Exception as exc:  # pylint: disable=broad-except  # noqa: BLE001
+            warnings.append(f"tracker: move back to direction raised {type(exc).__name__}: {exc}")
+        if _mint_row_status(top, ticket) == "direction":
+            warnings.append(f"{ticket} put back to direction in INDEX after the failed move")
+    state = _mint_row_status(top, ticket)
+    if state is None:
+        raise TicketError(f"{ticket} kept, but its INDEX status cannot be told after a failed "
+                          f"move to ready: {'; '.join(warnings)}")
+    return state, warnings
 
 
 def _mint_claim(top, ticket, title, folder, direction, status):
@@ -1240,21 +1305,39 @@ def _mint_claim(top, ticket, title, folder, direction, status):
         except BaseException:
             _mint_release(folder)
             raise
-    state, moved = "direction", []
+    state, moved, entered = "direction", [], False
     try:
         with crew_config_files.Lock(os.path.join(top, ".work", "INDEX.md"), _MINT_LOCK_WAIT):
-            outcome, report = _mint_create(top, ticket, title, folder)
+            entered = True
+            outcome, report, made_note = _mint_create(top, ticket, title, folder)
             if outcome == "written" and status == "ready":
                 state, moved = _mint_ready(top, ticket)
     except crew_config_files.Busy as exc:
         raise TicketError(f"{ticket} claimed but not minted: {exc}"
                           f"{_mint_release(folder)}") from exc
+    except BaseException as exc:
+        # Any other failure taking the lock (an OSError creating the lock
+        # file, review round 2, :1245) reached no tracker: the folder and
+        # direction go. One raised inside it was already unwound there.
+        if entered:
+            raise
+        tail = _mint_release(folder)
+        if not isinstance(exc, Exception):
+            raise
+        raise TicketError(f"{ticket} claimed but not minted: {exc}{tail}") from exc
     lines = _mint_lines(crew_tracker, report)
+    if outcome in ("taken", "failed") and made_note:
+        dropped = _mint_drop_note(top, ticket)
+        lines = lines + ([dropped[2:]] if dropped else [])
     if outcome == "taken":
         return "taken", lines, state
     if outcome == "failed":
         raise TicketError(f"{ticket} claimed but its tracker row was not written: "
                           f"{'; '.join(lines)}{_mint_release(folder)}")
+    if outcome == "incomplete":
+        raise TicketError(f"{ticket} kept at direction, not minted complete: its INDEX row is "
+                          f"written but {'; '.join(_mint_failures(crew_tracker, report))}; "
+                          "nothing was moved to ready")
     return "written", _mint_failures(crew_tracker, report) + moved, state
 
 
@@ -1267,10 +1350,14 @@ def mint(root, title, status="ready", direction=None):
     `# <id> direction` header before the tracker is asked; then
     `crew_tracker.create` writes the INDEX row (and, under obsidian, the note
     and card) and, for `ready`, `crew_tracker.move` moves it there, both under
-    the INDEX lock. A tracker `id taken` releases the folder and takes the
-    next id; a direction write that raises, or a `create` that keeps failing
-    or raises before its row is in INDEX, releases the folder and raises. A
-    move that fails or raises leaves the ticket at `direction`, with a warning.
+    the INDEX lock. A tracker `id taken` releases the folder (and the note
+    this mint wrote) and takes the next id; a direction write that raises, a
+    lock that cannot be taken, or a `create` that keeps failing or raises
+    before its row is in INDEX, releases the folder (and that note) and
+    raises. A `create` whose row lands but whose card does not keeps the
+    ticket at `direction` and raises, saying so. A move that fails or raises
+    leaves the ticket at `direction`, with a warning: a row the move did set
+    to `ready` is put back, and `status` is always what the INDEX row holds.
     Refused before anything is claimed: a bad title or status, an unreadable
     INDEX, a tracker whose create does not write the row here."""
     if status not in MINT_STATUSES:
@@ -1300,6 +1387,26 @@ def mint(root, title, status="ready", direction=None):
         return {"ticket": ticket, "folder": folder, "status": state, "warnings": warnings}
     raise TicketError(f"no free ticket id after {MINT_ATTEMPTS} attempts (last tried "
                       f"T-{number:04d}); nothing was minted")
+
+
+def _read_regular(path):
+    """A staged file's text (utf-8-sig, universal newlines), or TicketError
+    when it is not a regular file. Opened non-blocking and checked on the open
+    descriptor, so a FIFO with no writer is refused at once instead of
+    hanging the open (review round 2, :1377)."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise TicketError(f"{path} is not a regular file")
+        if hasattr(os, "set_blocking"):
+            os.set_blocking(fd, True)
+        handle = os.fdopen(fd, encoding="utf-8-sig")
+    except BaseException:
+        os.close(fd)
+        raise
+    with handle:
+        return handle.read()
 
 
 # --- /crew:autopilot assign (T-0019) ---------------------------------------------------
@@ -1374,8 +1481,9 @@ def assign(root, direction_file):
         raise TicketError("autopilot is not armed (autopilot.mode is not plan in "
                           ".crew/config.json); nothing was minted")
     try:
-        with open(real, encoding="utf-8-sig") as handle:
-            text = handle.read()
+        text = _read_regular(real)
+    except TicketError as exc:
+        raise TicketError(f"{direction_file}: {exc}; nothing was minted") from exc
     except (OSError, ValueError) as exc:
         raise TicketError(f"{direction_file} could not be read ({type(exc).__name__}: "
                           f"{exc}); nothing was minted") from exc
@@ -1406,6 +1514,12 @@ def _mint_main(parser, args, root):
         if args.action == "assign":
             if not args.direction_file:
                 parser.error("assign needs --direction-file <staging file>")
+            # Mint-only options are refused, never ignored (review round 2,
+            # :1439): the title is the staging file's, the status `ready`.
+            for flag, value in (("--title", args.title), ("--status", args.mint_status)):
+                if value is not None:
+                    raise TicketError(f"assign takes no {flag}: the staging file sets the "
+                                      "title, and assign mints ready; nothing was minted")
             got = assign(root, args.direction_file)
             print(f"ticket={got['ticket']} risk={got['risk']}")
         else:
@@ -1414,12 +1528,11 @@ def _mint_main(parser, args, root):
             body = None
             if args.direction_file:
                 try:
-                    with open(args.direction_file, encoding="utf-8-sig") as handle:
-                        body = handle.read()
+                    body = _read_regular(args.direction_file)
                 except (OSError, ValueError) as exc:
                     raise TicketError(f"{args.direction_file} could not be read "
                                       f"({type(exc).__name__}: {exc})") from exc
-            got = mint(root, args.title, status=args.mint_status, direction=body)
+            got = mint(root, args.title, status=args.mint_status or "ready", direction=body)
             print(f"ticket={got['ticket']}")
     except (TicketError, OSError) as exc:
         print(f"refused: {exc}")
@@ -1437,7 +1550,7 @@ def main(argv):
     parser.add_argument("--ticket")
     parser.add_argument("--by", help="who is approving (default: git user.name)")
     parser.add_argument("--title", help="mint: the new ticket's title")
-    parser.add_argument("--status", dest="mint_status", default="ready",
+    parser.add_argument("--status", dest="mint_status", default=None,
                         help=f"mint: the new row's status, {'|'.join(MINT_STATUSES)} (mint "
                              "refuses any other, exit 1)")
     parser.add_argument("--direction-file",

@@ -500,3 +500,152 @@ def test_mint_cli_direction_file_bom_is_not_carried(tmp_path):
     assert (done.returncode, (root / ".work" / "tickets" / "T-0001" / "direction.md")
             .read_text(encoding="utf-8")) == (
         0, "# T-0001 direction\n## Ask\nfrom a file\n"), done.stderr
+
+
+# --- review round 2 (Codex): BLOCK :1225, FIX :1161, :1245, :1255, :1377 ------------
+
+def _obsidian(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = make_repo(tmp_path)
+    (root / ".crew" / "crew.json").write_text(json.dumps({"tracker": {
+        "kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo",
+                                         "board": "Board.md"}}}), encoding="utf-8")
+    return root, vault / "Boards" / "repo"
+
+
+def _board_fails_during(monkeypatch, which):
+    """`crew_tracker._board_write` answers `could not update` while `which`
+    (`create` or `move`) runs, and writes for real otherwise."""
+    real_write, inside = crew_tracker._board_write, []  # pylint: disable=protected-access
+
+    def wrap(name):
+        real = getattr(crew_tracker, name)
+
+        def call(*args, **kwargs):
+            inside.append(name)
+            try:
+                return real(*args, **kwargs)
+            finally:
+                inside.pop()
+        monkeypatch.setattr(crew_tracker, name, call)
+
+    def board_write(paths, columns, edit):
+        if which in inside:
+            return crew_tracker._result(  # pylint: disable=protected-access
+                "obsidian", crew_tracker.FAILED, "Boards/repo/Board.md: vault went away")
+        return real_write(paths, columns, edit)
+
+    wrap("create")
+    wrap("move")
+    monkeypatch.setattr(crew_tracker, "_board_write", board_write)
+
+
+def _index_status(root, ticket):
+    for line in (_index(root) or b"").decode("utf-8").splitlines():
+        if line.startswith(ticket + " |"):
+            return line.split("|")[1].strip()
+    return None
+
+
+def test_mint_board_failure_on_move_reports_the_rows_status(tmp_path, monkeypatch):
+    """BLOCK :1225. The files half of the move to `ready` lands and the board
+    half fails: mint promised `direction` (the stop autopilot honours), so the
+    row is put back to `direction`, and the reported status is the row's."""
+    root, _ = _obsidian(tmp_path)
+    _board_fails_during(monkeypatch, "move")
+
+    got = crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (got["status"], _index_status(root, got["ticket"]),
+            any("vault went away" in w for w in got["warnings"])) == (
+        "direction", "direction", True), got["warnings"]
+
+
+def test_mint_board_failure_on_move_whose_revert_fails_says_ready(tmp_path, monkeypatch):
+    """The neighbouring case: the row cannot be put back, so mint says what
+    INDEX holds (`ready`) and never the `direction` it could not keep."""
+    root, _ = _obsidian(tmp_path)
+    _board_fails_during(monkeypatch, "move")
+    real = crew_tracker.move
+
+    def move(where, ticket, status, reopen=False):
+        if status == "direction":
+            return _report(crew_tracker.FAILED, ".work/INDEX.md changed during write")
+        return real(where, ticket, status, reopen=reopen)
+
+    monkeypatch.setattr(crew_tracker, "move", move)
+
+    got = crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (got["status"], _index_status(root, got["ticket"])) == ("ready", "ready"), got
+
+
+def test_mint_board_failure_on_create_is_not_a_successful_mint(tmp_path, monkeypatch):
+    """FIX :1161. The INDEX row lands but the card does not: mint refuses
+    (naming the board and that the ticket is kept), never moves it to ready."""
+    root, _ = _obsidian(tmp_path)
+    _board_fails_during(monkeypatch, "create")
+    moves = []
+    real = crew_tracker.move
+    monkeypatch.setattr(crew_tracker, "move",
+                        lambda *a, **k: moves.append(a) or real(*a, **k))
+
+    with pytest.raises(crew_ticket.TicketError) as err:
+        crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (moves, _index_status(root, "T-0001"), "vault went away" in str(err.value),
+            "T-0001 kept" in str(err.value), _tickets(root)) == (
+        [], "direction", True, True, ["T-0001"]), str(err.value)
+
+
+def test_mint_lock_error_releases_the_claimed_folder(tmp_path, monkeypatch):
+    """FIX :1245. Creating `INDEX.md.lock` fails with an OSError (not Busy):
+    mint refuses with nothing left behind, no folder and no direction."""
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    root = _files_repo(tmp_path, rows="T-0003 | spec | - | r | old\n")
+    before = _index(root)
+
+    def enter(self):
+        raise PermissionError(13, "Permission denied", self.path)
+
+    monkeypatch.setattr(crew_config_files.Lock, "__enter__", enter)
+
+    with pytest.raises(crew_ticket.TicketError) as err:
+        crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (_tickets(root), _index(root) == before, _no_temp(root),
+            "Permission denied" in str(err.value)) == ([], True, [], True), str(err.value)
+
+
+def test_mint_failed_index_write_under_obsidian_removes_its_note(tmp_path, monkeypatch):
+    """FIX :1255. The note is claimed, then the INDEX write fails on every
+    attempt: mint refuses, and the note it made goes with the folder."""
+    root, folder = _obsidian(tmp_path)
+    monkeypatch.setattr(crew_tracker, "_files_create", lambda where, ticket, title:
+                        crew_tracker._result(  # pylint: disable=protected-access
+                            "files", crew_tracker.FAILED, ".work/INDEX.md changed during write"))
+    monkeypatch.setattr(crew_ticket, "_MINT_RETRY_PAUSE", 0)
+
+    with pytest.raises(crew_ticket.TicketError):
+        crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (_tickets(root), sorted(p.name for p in folder.iterdir())) == ([], ["Board.md"])
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+def test_mint_cli_direction_file_fifo_is_refused_not_waited_on(tmp_path):
+    """FIX :1377's neighbour: `mint --direction-file` naming a FIFO with no
+    writer refuses at once instead of blocking on the open."""
+    root = _files_repo(tmp_path)
+    fifo = tmp_path / "direction-body.md"
+    os.mkfifo(fifo)
+
+    try:
+        done = subprocess.run([sys.executable, SCRIPT, "mint", "--root", ".", "--title", "x",
+                               "--direction-file", str(fifo)], capture_output=True, text=True,
+                              check=False, cwd=str(root), stdin=subprocess.DEVNULL, timeout=20)
+    except subprocess.TimeoutExpired:
+        pytest.fail("mint --direction-file blocked on a FIFO")
+
+    assert (done.returncode, done.stdout.startswith("refused: "),
+            "not a regular file" in done.stdout, _tickets(root)) == (1, True, True, []), done.stdout

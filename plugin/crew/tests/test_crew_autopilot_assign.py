@@ -28,7 +28,7 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _TICKET_SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_ticket.py")
 T = "T-0001"
 POLICIES = ("human", "self", "risk")
-ASSIGN_COUNT = 27
+ASSIGN_COUNT = 34
 
 STAGED = """title: add a dry-run flag
 risk: {risk}
@@ -310,6 +310,42 @@ def test_check_direction_takes_a_title_after_a_bom():
 def test_assign_cli_takes_no_title():
     with pytest.raises(SystemExit):
         crew_ticket.main(["assign", "--root", ".", "--title", "x"])
+
+
+@pytest.mark.parametrize("extra", [["--title", "override"], ["--status", "direction"]],
+                         ids=["title", "status"])
+def test_assign_cli_refuses_a_mint_only_option(tmp_path, extra):
+    """FIX :1439. The title and status come from the staging file and
+    `ready` only: an assign given --title or --status refuses, exit 1, and
+    mints nothing, rather than silently using the staged values."""
+    root = _repo(tmp_path)
+    _stage(root)
+
+    done = _cli(root, "assign", "--root", ".", "--direction-file",
+                ".work/autopilot/assign-1.md", *extra)
+
+    assert (done.returncode, done.stdout.startswith("refused: "), extra[0] in done.stdout,
+            _tickets(root)) == (1, True, True, []), done.stdout
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+def test_assign_refuses_a_fifo_staging_file_without_waiting(tmp_path):
+    """FIX :1377. A FIFO at the staged path, no writer: assign refuses at once
+    (not a regular file) instead of blocking in open()."""
+    root = _repo(tmp_path)
+    (root / ".work" / "autopilot").mkdir(parents=True, exist_ok=True)
+    os.mkfifo(root / ".work" / "autopilot" / "assign-1.md")
+
+    try:
+        done = subprocess.run([sys.executable, _TICKET_SCRIPT, "assign", "--root", ".",
+                               "--direction-file", ".work/autopilot/assign-1.md"],
+                              capture_output=True, text=True, check=False, cwd=str(root),
+                              stdin=subprocess.DEVNULL, timeout=20)
+    except subprocess.TimeoutExpired:
+        pytest.fail("assign blocked on a FIFO staging file")
+
+    assert (done.returncode, "not a regular file" in done.stdout, _tickets(root)) == (
+        1, True, []), done.stdout
 
 
 # --- step 3: the approve phase is T-0010's, for an assigned ticket -------------
