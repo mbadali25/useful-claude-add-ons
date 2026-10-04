@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:21 UTC
+Last updated: 2026-10-04 03:22 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:21 UTC
 
 ## Log (newest first)
 
+- 03:22: #378 merged main + re-bumped -> 9b701365 crew 1.0.247 pushed (CI early signal; will re-merge after #339). #333 r2 on 5b8be69d: CLEAN (0/0/0). Next free: 1.0.248.
 - 03:21: #339 merge-only review r2 on 6da2a486: CLEAN (0/0/0); CI running. #378 pre-merged main locally (not pushed): im1 relabel moved into main's split process-crew-lifecycle-implement.mmd; re-bump waits for #339 to land. Suites running.
 - 03:20: MERGED #385 (35cfcfcf: verify.json maps the handoff docs; notes). #339 re-merged main -> 6da2a486 (no plugin change, crew stays 1.0.246); merge-only review + CI next. Notes continue on a new PR from ccr-b039f2bb-6jks7g.
 - 03:13: #377 r1 (Sonnet) on 05be104b: CLEAN (0 BLOCK, 0 FIX, 2 NIT: implement.md reflow, LANDING_ORDER literal duplicated in test).
