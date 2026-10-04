@@ -323,7 +323,10 @@ status is FAILED as "could not tell": the gate prints `VERIFY FAILED: <cmd>`, th
 `verify-gate: COULD NOT TELL (<reason>): <cmd>`, exits 2, and neither marker advances. The summary
 adds `verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED`. The reasons:
 
-- **"exit status N: ended by signal N-128, or the rule's own status"** (N above 128): the rule was
+- **"exit status N, above 128 and not a signal number - the rule's own status"** (N from 193 to
+  255; signals stop at 64): the rule itself exited that code - 255 is common from `ssh` or a shell
+  error. It is still could-not-tell, because nothing distinguishes it from a crash code.
+- **"exit status N: ended by signal N-128, or the rule's own status"** (N from 129 to 192): the rule was
   killed (137 is KILL, 143 is TERM) - an OOM kill, an outside `timeout -s KILL`, a CI step limit - or
   it really exited that code. Re-run the command by hand and see which.
 - **"the rule's runner ended with status N before it recorded a result"**: the wrapper around the

@@ -393,21 +393,24 @@ measurements, except where a command was actually re-run above.
 
 - **The sabotage runner bounds each entry (T-0080, H2a).** DERIVED at the H2a
   branch head. `plugin/crew/tests/sabotage.py:3098-3099` - `run_test` keeps its
-  signature and hands pytest to `plugin/crew/tests/sabotage_bound.py:142`
+  signature and hands pytest to `plugin/crew/tests/sabotage_bound.py:156`
   (`run`): own session/process group, `RLIMIT_DATA` set before exec on Linux
   (not `RLIMIT_AS`: pwsh 7.4.6 dies under any address-space cap tried up to
   30 GiB, which failed 1121 unmutated crew tests under a 4 GiB one)
   (default 4096 MiB, `CREW_SABOTAGE_MEM_MB`, 0 = none), wall-clock limit
   (default 600 s, `CREW_SABOTAGE_TIMEOUT_S`), a timeout stopping the whole
-  group and returning `TIMED_OUT` (`:49`). `sabotage.py:3345-3349` reads the
+  group and returning `TIMED_OUT` (`:58`). `sabotage.py:3345-3349` reads the
   limits once (an unreadable value refuses the run, exit 2) and prints the
-  `bound:` line; `:3372` classifies through `sabotage_bound.verdict` (`:103`),
+  `bound:` line; `:3372` classifies through `sabotage_bound.verdict` (`:117`),
   which now holds the pytest exit-code reasoning (finding 13) that used to sit
   in `sabotage.py` - 3400 -> 3381 lines. Measured: the azureProfile entry
   (`sabotage_cloud.py`) peaked at 3.7 GiB under the cap where it reached the
   6 GiB wrapper cap without it; the plan-dev-zero entry is constant memory
-  (58 MiB). Rule 11 runs `test_sabotage_bound.py`; five sabotage entries for
-  the bound at `sabotage_tooling.py:1057` onward.
+  (58 MiB). The entry's process group is KILLed when `run` returns, on every
+  path (review F5; `setsid` escapes it, documented), and the cap reads
+  `absent` below Linux 4.7 or on an unreadable release (F6); `RLIMIT_DATA`
+  never covers `MAP_SHARED` or tmpfs. Rule 11 runs `test_sabotage_bound.py`;
+  seven sabotage entries for the bound at `sabotage_tooling.py:1057` onward.
 
 ## `verify-gate.sh` / `verify-gate.ps1` — the rule runner
 
@@ -474,35 +477,41 @@ that changed shape or are newly documented here:
   limitation to design rules around, not as a bug ticket.
 - **A rule passes only on a completion record (T-0082, H2a).** DERIVED at the
   H2a branch head (line numbers are that tree's, not this map's anchor's).
-  `verify-gate.sh:2044` makes a second temp path beside `RULE_OUT_FILE` and
-  removes it, so absence means "not written"; `:2093` is the wrapper
+  `verify-gate.sh:2051` makes a fresh private directory per rule run
+  (`mktemp -d`, 0700, `.crew/` fallback) and the record path is `<dir>/rc`,
+  so absence means "not written"; `:2101` is the wrapper
   `( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) ... &` - the inner
   subshell keeps a rule's own `exit N` isolated, the outer writes the record
-  once the rule has ended. `:2100` reads it bounded (`head -c 8`; the rule can
-  see the path), `:2110` starts the decision table: wrapper status not 0, then
-  record missing / not 1-3 digits / above 255, then record above 128 - each an
-  `unknown` with its reason - then 77 skip, 0 pass, else fail. `:2187` prints
-  `VERIFY FAILED` then `verify-gate: COULD NOT TELL (<reason>)`, sets `FAILED`
-  and logs status `unknown`; `:2236` the `COULD NOT BE JUDGED` summary line.
-  `:796-802` the TERM/INT/HUP traps name the command in flight
-  (`RULE_IN_FLIGHT`, cleared at `:2097` the moment `wait` returns), printed
-  from the trap because the cleanup dispatcher discards stderr; `:1845`
-  registers the rule's two temp files for cleanup on a signalled exit.
-  `verify-gate.ps1` is the twin in the same order: `:1951` resets `$rc`,
-  `$ruleRec` and `$ruleWhy` to `$null` every rule (the stale `$rc` that let a
-  rule whose bash could not start inherit the previous rule's pass),
-  `:2033` the record path, `:2090` the wrapper (record path in
+  once the rule has ended. `:2108` reads it bounded (`head -c 8`; the rule can
+  see the path) and accepts exactly `0|[1-9][0-9]{0,2}` and a newline, then
+  removes the directory whole (a wrapper a signalled gate left running finds
+  nowhere to write). `:2120` starts the decision table: wrapper status not 0,
+  then record missing / malformed / above 255, then 193-255 ("not a signal
+  number"), then 129-192 (signal N-128) - each an `unknown` with its reason -
+  then 77 skip, 0 pass, else fail. `:2204` prints `VERIFY FAILED` then
+  `verify-gate: COULD NOT TELL (<reason>)`, sets `FAILED` and logs status
+  `unknown`; `:2253` the `COULD NOT BE JUDGED` summary line. `:796-802` the
+  TERM/INT/HUP traps name the command in flight (`RULE_IN_FLIGHT`, cleared at
+  `:2105` the moment `wait` returns), printed from the trap because the
+  cleanup dispatcher discards stderr; `:1849` registers the rule's temp file
+  and record directory for cleanup on a signalled exit. `verify-gate.ps1` is
+  the twin in the same order: `:1951` resets `$rc`, `$ruleRec` and `$ruleWhy`
+  to `$null` every rule (the stale `$rc` that let a rule whose bash could not
+  start inherit the previous rule's pass), `:2042` the private record
+  directory (`New-Item` refuses an existing name; 0700 off Windows; `.crew/`
+  fallbacks absolute from `$root`, since `[IO.File]::Open` resolves relative
+  paths against the process directory), `:2105` the wrapper (record path in
   `CREW_VERIFY_RULE_DONE`, unset before `eval`, kept as the shell variable
   `RULE_DONE_FILE`), the call wrapped in try/catch so a launch failure leaves
-  `$rc` `$null`, `:2105` the bounded read, `:2219` the table, `:2238` the
-  output, `:2276` the summary. `verify_record.py:988` - `_sync`'s branch for
+  `$rc` `$null`, `:2120` the bounded read, `:2235` the table, `:2256` the
+  output, `:2294` the summary. `verify_record.py:988` - `_sync`'s branch for
   any other status - is where `unknown` lands: the rule's record entry is left
   as it was. Tests: `plugin/crew/tests/test_verify_gate_rule_completion.py`
-  (sh and ps1; ps1 runs wherever pwsh exists), added to rule 4's `run`;
-  14 sabotage entries in `plugin/crew/tests/sabotage_tooling.py:1101` onward.
-  JUDGEMENT: the gate still has no per-rule deadline (L-0674, held) - a hung
-  rule is waited for; and a rule a signalled gate leaves running can still
-  write its record into TMPDIR afterwards, the descoped-orphan limitation.
+  (sh and ps1; ps1 runs wherever pwsh exists; the [ps1] halves are `slow`
+  apart from a smoke set of three), in its own rule beside the subset-cover
+  rule (review F1: inside rule 4 it made that rule chronic); sabotage entries
+  in `plugin/crew/tests/sabotage_tooling.py:1117` onward. JUDGEMENT: the gate
+  still has no per-rule deadline (L-0674, held) - a hung rule is waited for.
 - **`crew_py_strict`, not plain `crew_py`, resolves the interpreter that reads
   `.crew/verify.json`.** `verify-gate.sh:737`. The comment at `:723-736`
   records why: plain `crew_py` (`command -v` alone) happily resolves a
@@ -719,7 +728,7 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   exit-77 port.
 - `plugin/crew/hooks/scripts/verify-gate.sh:63-66` — the bounded single-read
   stdin gate.
-- `plugin/crew/hooks/scripts/verify-gate.sh:1777-1893` /
+- `plugin/crew/hooks/scripts/verify-gate.sh:1777-1897` /
   `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
 - `.crew/verify.json:311` (rule 24) — the `.claude/rules/` sync check.

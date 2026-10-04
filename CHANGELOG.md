@@ -26,7 +26,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   `VERIFY FAILED` line for it: the gate decided pass from the absence of a
   failure line, an unknown collapsing into the safe-looking value.
   `test_verify_gate_rule_completion.py` (32 cases, sh and ps1) and 14 sabotage
-  entries; joins rule 4's `run`. Not here: a per-rule deadline (L-0674, held)
+  entries; its own `.crew/verify.json` rule (16s; the [ps1] halves are `slow`
+  apart from a smoke set of three). Not here: a per-rule deadline (L-0674, held)
   and the CI receipt's parser (L-0673).
 - **T-0080, what changed.** `tests/sabotage.py` runs each entry through the new
   `tests/sabotage_bound.py`: its own process group, an `RLIMIT_DATA` cap every
@@ -41,6 +42,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   up to 30 GiB); the spec's fallback, taken. Under `ulimit -d 4194304` the crew
   suite (`-n 4 --run-slow`, not wallclock) gives 11608 passed, 294 skipped - the
   same as without it.
+- **Review round 1 (H2a, 0 BLOCK / 6 FIX).** The record is `<dir>/rc` in a
+  fresh private directory per rule run (`mktemp -d`, 0700; `.ps1`: `New-Item`
+  then mode 0700), removed whole, so a wrapper left running by a signalled
+  gate cannot write a late record; `.ps1`'s `.crew/` fallbacks are absolute
+  from the repo root (a gate started from a subdirectory never found them);
+  the record must read exactly `0|[1-9][0-9]{0,2}`; 193-255 is reported as
+  "above 128 and not a signal number". `sabotage_bound` KILLs the entry's
+  process group on every path (a same-group child left behind by a passing
+  test no longer survives; `setsid` escapes, documented) and reports the cap
+  `absent` below Linux 4.7 or on an unreadable release; `RLIMIT_DATA` never
+  covers `MAP_SHARED` or tmpfs. CI fixes: the killed-child case no longer
+  uses `timeout -s KILL` (newer coreutils report 124), and two Linux-only
+  mechanisms skip on Windows.
 - **T-0080, why.** The azureProfile cloud-guard entry reads /dev/zero without
   bound: measured 5.9 GiB at a 6 GiB wrapper cap before, 3.7 GiB peak and
   `RED (good)` under the new default with no wrapper. The plan-dev-zero entry

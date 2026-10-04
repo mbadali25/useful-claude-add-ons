@@ -962,7 +962,7 @@ writable (`:1863-1870`), rather than falling back to the old pipe form.
 
 - **The captured output is capped at 1 MiB (1048576 bytes), read as the
   LAST N bytes (`tail -c`), not the first.** `RULE_OUT_CAP`
-  (`verify-gate.sh:1851`) defaults to 1048576 and is clamped into `[1,
+  (`verify-gate.sh:1855`) defaults to 1048576 and is clamped into `[1,
   1048576]` (`:1677-1683`); a rule that legitimately writes more than that
   before backgrounding something no longer turns a bounded gate into an
   unbounded read. `tail -c`, not `head -c` (`:1850-1860`): what a failing
@@ -1031,7 +1031,7 @@ was discarded before the next call regardless.
 **The completion record (T-0082, H2a; DERIVED at the H2a branch head).** The
 same capture now carries a second temp file per rule, the completion record:
 the wrapper writes the rule's exit status there after the rule ends
-(`plugin/crew/hooks/scripts/verify-gate.sh:2093`), and a rule passes only when
+(`plugin/crew/hooks/scripts/verify-gate.sh:2101`), and a rule passes only when
 the wrapper ended 0 and the record says 0. Killed, never-started (`.ps1`) or
 unrecorded is FAILED as `COULD NOT TELL`, status `unknown`, never advancing the
 marker. The full decision table and both flavours' line references are in
