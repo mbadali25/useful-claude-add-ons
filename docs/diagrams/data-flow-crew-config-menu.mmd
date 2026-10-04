@@ -1,0 +1,63 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_config.py
+%% Purpose: The /crew:config menu (its rows, choices, Save, and repo-file delete and restore) and the one file layer every crew config write goes through: lock, compare-and-swap update, no-clobber move.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%% Note FLOCK: Lock :104 - O_CREAT|O_EXCL &lt;path&gt;.lock holding the PID (a failed PID write removes it,
+%%    :134-141); Busy :63 after LOCK_WAIT_SECONDS :43. Serialises crew's writers, not a hand edit.
+%%    machine_lock() :273 is the machine file's Lock, ALWAYS taken (creates ~/.claude/crew/, never the file),
+%%    before any repo Lock - one nesting order
+%% Note FUPD: update_json() :364 - inside the lock: read_strict() :181 (absent / unparsable / empty /
+%%    notobject), state_digest() :243 (ABSENT :50 for no file) compared with expect (Conflict :67), mutate,
+%%    replace_text() :352 (sibling, fsync, os.replace, CRLF and BOM kept)
+%% Note FMOVE: move_no_clobber() :466 - a rename that NEVER replaces its destination: os.link, then
+%%    _unlink_source() :418 renames the source to a reserved name and removes it only when it IS the linked
+%%    inode; a foreign file is linked back and its *.moving name KEPT (Displaced :71, exit 1; the link to the
+%%    backup is never undone after the rename). move_aside() :508 (the backup IS the inode), create_bytes()
+%%    :517
+%% Note FREST: read_restorable() :199 - a REGULAR file that restorable() :171 accepts: the ONE read delete
+%%    refuses by and restore accepts by
+%% Note MSPEC: menu_spec() :317 rows = leaf_paths(default_global_config()) (machine, plus platform.* and
+%%    schema read-only) / leaf_paths(default_config()) (repo); returns the layer file's digest
+%% Note MCHOICE: choices() :215 - a value is offered only when _probe_for() :168 accepts it: the layer's own
+%%    planner on one snapshot, with the --pending set plus the candidate; all refused = a read-only row naming
+%%    the key to fix
+%% Note MSAVE: save() :480 _plan_both() :446 plans BOTH layers before writing either (the repo against the
+%%    machine as this Save leaves it), prints the machine digest whenever anything changes, checks every given
+%%    --expect-* before either write and binds each writer, the repo write to the machine digest too
+%% Note MPLAN: plan_delete() :800 - holds the file's bytes, its digest, the machine digest and machinePath;
+%%    refuses what read_restorable() refuses (a symlink included); delete_preview() :637 walks the file's OWN
+%%    leaves too (removed / re-detected - only the platform keys platform-sync writes, _redetected() :629 - /
+%%    held by the ratchet)
+%% Note MDEL: apply_delete() :852 - typed repo name AND both preview digests (_unbound() :836), then under
+%%    machine_lock and then the repo Lock the machine digest AGAIN (changed: exit 2, nothing deleted),
+%%    move_aside() to .crew/config.json.bak-UTC, compare with the held bytes (changed: moved back no-clobber,
+%%    nothing deleted); prints three restore lines, sh / cmd / PowerShell (restore_lines :773)
+%% Note MREST: restore_repo_config() :962 - _valid_backup() :946 then read_restorable(); under the Lock moves
+%%    any current file aside (Displaced: exit 1, every path named), create_bytes() (never over a file that
+%%    appeared), reads back
+flowchart TB
+
+    subgraph Files["NEW (T-0075): the one file layer - plugin/crew/hooks/scripts/crew_config_files.py"]
+        direction TB
+        FLOCK["<b>Lock</b> :104<br/>&lt;path&gt;.lock holding the PID;<br/>machine_lock() first"]
+        FUPD["<b>update_json()</b> :364<br/>read, compare digest, mutate,<br/>replace - inside the lock"]
+        FMOVE["<b>move_no_clobber()</b> :466<br/>a rename that NEVER<br/>replaces its destination"]
+        FREST["<b>read_restorable()</b> :199<br/>the ONE read delete refuses by<br/>and restore accepts by"]
+        FLOCK --- FUPD
+    end
+    subgraph Menu["NEW (T-0075): the /crew:config menu - plugin/crew/hooks/scripts/crew_config_menu.py"]
+        direction TB
+        MSPEC["<b>menu_spec()</b> :317<br/>rows from the layer's template"]
+        MCHOICE["<b>choices()</b> :215<br/>a value is offered only when<br/>the layer's planner accepts it"]
+        MSAVE["<b>save()</b> :480<br/>plans BOTH layers<br/>before writing either"]
+        MPLAN["<b>plan_delete()</b> :800<br/>holds the file's bytes and digests;<br/>delete_preview()"]
+        MDEL["<b>apply_delete()</b> :852<br/>move_aside() to<br/>.crew/config.json.bak-UTC"]
+        MREST["<b>restore_repo_config()</b> :962<br/>moves any current file aside,<br/>create_bytes()"]
+        MSPEC --> MCHOICE
+        MCHOICE --> MSAVE
+        MPLAN --> MDEL
+    end
+    MDEL --> FMOVE
+    MREST --> FMOVE
+    FREST -.-> MPLAN
+    FREST -.-> MREST

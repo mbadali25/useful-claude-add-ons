@@ -1,0 +1,55 @@
+%% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
+%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py
+%% Purpose: What "up to date" means: the source hash and the manifest decide whether a diagram is current, then --check goes to verification and a normal run skips or renders.
+%% Part of process-bitbucket-svg.mmd (the overview, which keeps the provenance history).
+%% Every bare :NNN is a line in skills/mermaid-svg-bitbucket/scripts/render_mermaid.py; other files are cited in full.
+%% POOL is drawn in process-bitbucket-svg-collect.mmd and repeated here as the entry.
+%% Verify and Render stand for the parts drawn in -check and -render.
+%% TWO VERSION NUMBERS, and conflating them is the easy mistake - unchanged by this
+%% pass, both still at the same lines:
+%%   RENDER_VERSION :35 is the string "2" and is INSIDE the source hash - bump it
+%%     to invalidate every SVG at once.
+%%   MANIFEST_VERSION :40 is the integer 2 and describes the manifest FORMAT -
+%%     version 2 entries carry svgHash; a version-1 entry cannot be content-checked.
+%% They are both 2 today, which is precisely when a reader stops distinguishing them.
+%% Note H3: trailing space and leading and trailing blank lines stripped - a whitespace edit must not cost a re-render
+%% Note H4: digest() covers the source only. The artifact is covered separately by svgHash - svg_digest() :77-97, recorded
+%%    at render time :548-549 and compared on --check :528. NEW in 1.2.5: svg_digest() also folds CRLF/CR to LF
+%%    before hashing :96-97, not just at write time - closes a false DAMAGED on a Windows clone with
+%%    core.autocrlf=true (no .gitattributes entry marks *.svg as binary here), which checks out the committed LF
+%%    bytes as CRLF and would otherwise hash differently from what was recorded. Regression:
+%%    tests/test_check_reads_the_svg.py:276 (test_check_tolerates_a_crlf_checkout_of_a_committed_svg). Its own
+%%    subtlety, unchanged: the hash is taken AFTER postprocess(), which REWRITES the SVG. Hashing before would
+%%    record a digest the file never has.
+%% Note MANIFEST: An unreadable manifest is a warning, not an error - it degrades to 'nothing is current', which re-renders
+%%    rather than silently skipping. save() :166-173 now pins newline="\n" :172-173 - a Windows-rendered manifest is
+%%    byte-identical to a Linux one for the same JSON. Regression: tests/test_check_reads_the_svg.py:381
+flowchart TB
+
+    POOL(["mmd_files - sorted, de-duplicated :501"])
+
+    subgraph Hash["What 'up to date' means - digest() :67-74"]
+        direction TB
+        H1["RENDER_VERSION :35 - the string <b>2</b><br/>bump it to invalidate every SVG at once"]
+        H2["config fingerprint<br/>sha256(mermaid-config.json)[:16] + background<br/>so changing htmlLabels re-renders everything"]
+        H3["normalize(source) :57-64<br/>CRLF folded, blank lines<br/>and trailing space stripped"]
+        H4>"<b>Not in this hash:<br/>the SVG itself.</b><br/>covered by <b>svgHash</b>"]
+        H1 --- H2 --- H3 --- H4
+    end
+
+    CURRENT{"have['hash'] == want<br/><b>and</b> svg.exists() :515<br/>source unchanged, artifact present"}
+    POOL --> CURRENT
+    Hash -.->|"want"| CURRENT
+    MANIFEST[(".mermaid-svg.json :37<br/>Manifest :143-173")]
+    MANIFEST -.->|"have"| CURRENT
+
+    MODE{"--check ?<br/>:517"}
+    CURRENT --> MODE
+
+    Verify["--check - CI strategy A. Bare Python, no Node, no Chromium<br/>process-bitbucket-svg-check.mmd"]
+    Render["render() :248-278 - needs mmdc and headless Chromium<br/>process-bitbucket-svg-render.mmd"]
+    MODE -->|yes| Verify
+
+    MODE -->|no| SKIP{"current and not --force ?<br/>:538"}
+    SKIP -->|yes| SKIPPED(["counted as unchanged"])
+    SKIP -->|no| Render

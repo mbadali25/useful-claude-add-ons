@@ -1,0 +1,37 @@
+%% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
+%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py
+%% Purpose: How the two kinds of source, a Mermaid fence in Markdown and a standalone .mmd file, are collected into one sorted list, including how a fence is extracted to a sidecar .mmd without changing any other line ending.
+%% Part of process-bitbucket-svg.mmd (the overview, which keeps the provenance history).
+%% Every bare :NNN is a line in skills/mermaid-svg-bitbucket/scripts/render_mermaid.py; other files are cited in full.
+%% Note MMD: skips DEFAULT_EXCLUDES :42 (.git, node_modules, .venv, venv, vendor, dist, build, .tox)
+%% Note EXTRACT: (newline="\n" pinned :410) and rewrites the fence into an image link. Idempotent by construction: once the
+%%    fence is gone there is nothing left for FENCE_RE to match, so re-runs are no-ops - the file is not marked, the
+%%    evidence is the absence itself
+%% Note EXTRACT2: Every line the rewrite does NOT touch keeps its own original terminator - CRLF, LF, bare CR, or no trailing
+%%    newline at all. Before: the whole file was read with read_text() (which collapses every terminator to "\n")
+%%    and written back the same way - so one CRLF line in a mostly-LF file flipped every OTHER line to CRLF too.
+%%    Now: raw_text is decoded but NOT collapsed; a parallel normalized copy is built for FENCE_RE/HEADING_RE
+%%    matching, and an offset map lets pass-through spans be sliced out of raw_text :412, :427 instead. The one line
+%%    the function DOES write - the inserted image link - takes the terminator that already ended the fence's own
+%%    closing line :413-422, then the whole result is written with newline="" :435 so nothing gets re-translated at
+%%    write time. Regressions: tests/test_check_reads_the_svg.py :460 (preserves CRLF convention), :602 (preserves
+%%    CRLF after the last fence), :582 (adds no trailing newline), :638 (sidecar content correct for a CRLF source)
+%% Note NAME: walks every heading before the block and keeps the LAST, so the filename says which section it came from
+flowchart TB
+
+    subgraph Inputs["Two entry shapes, collected separately - main :444-606, collection at :474-487"]
+        direction TB
+        MD["a Markdown file with a<br/>```mermaid fence<br/>FENCE_RE :44-49 - indent-aware, and the<br/>closing fence must match the opener"]
+        MMD["a standalone .mmd / .mermaid file<br/>walk() :129-136"]
+    end
+
+    EXTRACT["process_markdown() :369-437<br/>writes a sidecar .mmd per block<br/><b>Idempotent by construction</b>"]
+    EXTRACT2["<b>NEW in 1.2.5:<br/>_normalize_with_offsets() :335-366</b><br/>untouched lines keep their terminator"]
+    NAME["stem = slug(md stem)-NN[-slug(heading)]<br/>heading_before() :328-332"]
+
+    MD --> EXTRACT
+    EXTRACT --- EXTRACT2
+    EXTRACT --> NAME
+    NAME --> POOL
+    MMD --> POOL
+    POOL(["mmd_files - sorted, de-duplicated :501"])
