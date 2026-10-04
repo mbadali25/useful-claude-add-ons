@@ -1070,7 +1070,7 @@ def test_resume_goal_line_stops_until_t0012(tmp_path, stub_resume):  # pylint: d
 
     got = crew_autopilot.resume_target(str(root))
 
-    assert (got["ticket"], got["stop"], "T-0012" in got["reason"]) == (None, True, True)
+    assert (got["ticket"], got["stop"], "L-0541" in got["reason"]) == (None, True, True)
 
 
 def test_resume_active_ticket(tmp_path):

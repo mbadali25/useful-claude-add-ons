@@ -4,15 +4,13 @@ argument-hint: "[status|run|assign|goal|focus] [ticket id | --goal <slug>]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
-Subcommands `status`, `run`, `assign`, `goal`, `focus`; a bare ticket id or nothing is `run`: drive
-one ticket through spec, plan, approval, implement, refresh, review and done, following each phase
-command's procedure here in the order `crew_autopilot.py next` names from disk, stopping when a
-phase needs a person. Nothing here accepts a review or skips a phase, and nothing approves except
+Subcommands `status`, `run`, `assign`, `goal`, `focus`; a bare ticket id or nothing is `run`: drive one ticket through spec, plan, approval, implement, refresh, review and done, following each phase command's procedure here in the order `crew_autopilot.py next` names from disk, stopping when a phase needs a person. Nothing here accepts a review or skips a phase, and nothing approves except
 section 3's `approve`, under the approval policy; it writes `approval.json`, `scope-tickets.json`
 on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move.
 
 ## 0. Route
 
+A first word of exactly `goal`: run the line below as `route --root . --first goal`, never `--args` (the goal's text stays off every shell line); `sub=goal stop=0` is section 6 only.
 If the arguments hold a quote, `$`, a backtick or a backslash, stop without
 running anything: no subcommand or ticket id has one. Otherwise:
 
@@ -22,7 +20,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
 a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
-never read as a ticket; `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020). `sub=status`:
+never read as a ticket; `assign`, `focus` arrive with T-0019, T-0020, `--goal` resume with L-0541). `sub=status`:
 section 1 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
 arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 
@@ -43,12 +41,9 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root . --ticket <ticket>
 ```
 
-`settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say `autopilot.mode: plan`
-in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; nothing here deploys),
-`approval` and `questions`. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:`
-and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is
-open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).
-`stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
+`settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say `autopilot.mode: plan` in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; nothing here deploys),
+`approval` and `questions`. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:` and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is
+open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins). `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
 active one. `activate=1` (no pointer is set): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>`
 so the scope guard judges edits by it; it also records the scope base (print its stderr). Never pick from `## Next action`.
@@ -104,7 +99,13 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 
 ## 5. Context runs low, and the report
 
-When context-watch asks for a handoff: finish the step in hand, run `/crew:handoff` with
-`resume: /crew:autopilot <ticket>` (T-0006's grammar) and `branch:`/`head:` on their own lines,
-then stop. Report the ticket and its source, each phase run with its command, every
-`self-approved` and `taken:` line, where `next` stopped, why, and the command the human types next.
+When context-watch asks for a handoff: finish the step in hand, run `/crew:handoff` with `resume: /crew:autopilot <ticket>` (T-0006's grammar) and `branch:`/`head:` on their own lines,
+then stop. Report the ticket and its source, each phase run with its command, every `self-approved` and `taken:` line, where `next` stopped, why, and the command the human types next.
+
+## 6. goal - research once, propose, print the /goal line, ask for the split
+
+Research the goal once (crew:explorer, crew:researcher) and write `.work/autopilot/<name>.proposal.json`: `goal`, a one-line `done_condition`, `findings`, and `tickets` (`title`, `risk`, `depends_on`: indexes of earlier tickets), the recommendation first, in dependency order. Then:
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py goal-propose --root . --proposal-file <file>`
+Show its lines as printed: the proposal, and its `goal_line:` for the owner to paste (`goal_status=printed` - autopilot cannot see Claude Code's /goal state). `refused:` stops. Then
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py goal-approve --root . --goal <slug>`
+and print its lines; `refused:` stops - the human types its `owner:` line. Either way mint nothing and stop: minting, `--goal` resume and backlog arrive with L-0541.
