@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 17:31 UTC
+Last updated: 2026-10-04 17:34 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 17:34: #489 L-1503 re-review at 39f7b324: 1 BLOCK (ps1 unrolls deploy:[] to null -> every PS command blocked), 1 FIX (two-way match: bare 'git push' inside two deploy strings blocks forever). Decision: multi-env match applies the UNION of matched envs' requirements (fail-closed, no lockout) instead of blocking; #407 _gate_pick must adopt union rule. NITs: fold comment, refuse exact duplicate keys, non-scalar requireHuman refuses. Sent to builder with rule-time task.
 - 17:31: #421 T-0083 round-3 fixes pushed at 94beefde: es only after s/x/z/ch/sh, plain-s stem>=4, no stopword forms; joined query word = one term (whole or adjacent in-order parts); 11 must/must-not pairs, 20 sabotages. Over-match gone (news 48->0, github.com 45->8). Round-4 re-review sent to a608304 (incl. recall check for path/punctuation forms).
 - 17:26: #456 L-0677 round-3 at 60be2dbb: 0 BLOCK, 1 FIX (HOME unset -> relative lock dir under cwd, silent no-lock), 2 NIT (dev:ino lock key; SKILL.md wrap). All prior findings confirmed; 60 kills, 0 losses. Sent back to builder.
 - 17:25: #427 L-0652 fixes pushed at 05269a89 (B1 tighten-only manual sleep, N1 UTC, N2 wake msgs, N3 safe state read; S9-S14; ff, b844b794 ancestor verified). Fresh re-review spawned. #400 L-0680 fixes pushed at 15160c4a (B1 handoff containment sh/ps1/py, F1-F3, N1-N3; merged main 3c4ccd2f). Round-2 re-review sent to a9a5cd1.
