@@ -1625,7 +1625,9 @@ def test_fixed_stops_name_the_inflight_phases():
 def test_command_claims_passes_runner_and_releases():
     text = " ".join(_command_text().split())
     claim = text.index("crew_inflight.py claim --root . --ticket <ticket> --runner autopilot")
-    assert (text.index("crew_ticket.py activate") < claim < text.index("## 3. The loop"),
+    assert (text.index("resume --root . --ticket <ticket>") < claim
+            < text.index("crew_ticket.py activate") < text.index("Then `claim`")
+            < text.index("## 3. The loop"),
             '--last-command "LAST" --runner autopilot' in text,
             "`refused:`" in text,
             "crew_inflight.py release --root . --ticket <ticket>" in text) == (
