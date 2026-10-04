@@ -328,3 +328,90 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 
     assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
         0, True), done.stdout + done.stderr
+
+
+# --- T-0049: in-flight markers ------------------------------------------------------
+
+def _inflight_marker(root, ticket, **over):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    folder = crew_inflight.inflight_dir(str(root))
+    os.makedirs(folder, exist_ok=True)
+    marker = {"schema": 1, "ticket": ticket, "runner": "lane", "token": "t", "session": "s",
+              "pid": None, "pid_start": None, "pidns": "", "boot_id": "", "host": "h",
+              "worktree": "/elsewhere/wt", "branch": "b", "since": "2026-10-04T10:00:00+00:00",
+              "heartbeat_at": "2026-10-04T10:00:00+00:00"}
+    marker.update(over)
+    with open(os.path.join(folder, f"{ticket}.json"), "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(marker))
+    return folder
+
+
+def _inflight(lines):
+    return [line for line in lines if line.startswith("in-flight")]
+
+
+def test_status_inflight_lines(tmp_path):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path)
+    _inflight_marker(root, "T-1")
+    folder = _inflight_marker(root, "T-2")
+    with open(os.path.join(folder, "T-3.json"), "w", encoding="utf-8") as handle:
+        handle.write("{bad")
+
+    got = _inflight(crew_status.collect(str(root)))
+
+    assert got[0].startswith("in-flight: T-1 stale runner=lane since=2026-10-04T10:00:00+00:00")
+    assert got[0].endswith("clear: " + crew_inflight.clear_command("T-1"))
+    assert got[1].startswith("in-flight: T-2 stale")
+    assert got[2].startswith("in-flight: T-3 unknown") and "clear: " in got[2]
+    assert len(got) == 3 and all(line.isprintable() for line in got)
+
+
+def test_status_inflight_none(tmp_path):
+    root = make_repo(tmp_path)
+    assert _inflight(crew_status.collect(str(root))) == ["in-flight: none"]
+
+
+def test_status_inflight_unknown_dir(tmp_path):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path)
+    folder = crew_inflight.inflight_dir(str(root))
+    os.makedirs(os.path.dirname(folder), exist_ok=True)
+    with open(folder, "w", encoding="utf-8") as handle:
+        handle.write("not a directory")
+
+    got = _inflight(crew_status.collect(str(root)))
+
+    assert len(got) == 1 and got[0].startswith("in-flight: unknown - ")
+
+
+def test_status_inflight_import_error_is_unknown(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    monkeypatch.setitem(sys.modules, "crew_inflight", None)
+
+    got = _inflight(crew_status.collect(str(root)))
+
+    assert len(got) == 1 and got[0].startswith("in-flight: unknown - ")
+
+
+def test_status_inflight_caps_at_five(tmp_path):
+    root = make_repo(tmp_path)
+    for n in range(8):
+        _inflight_marker(root, f"T-{n}")
+
+    got = _inflight(crew_status.collect(str(root)))
+
+    assert (len(got), got[-1]) == (6, "in-flight: +3 more")
+
+
+def test_status_inflight_is_read_only_and_fits(tmp_path):
+    root = _busy_repo(tmp_path)
+    for n in range(8):
+        _inflight_marker(root, f"T-{n}", worktree="/w/x y")
+    before = _stat_tree(root)
+
+    done = _run(root, "--memory")
+
+    lines = done.stdout.splitlines()
+    assert (done.returncode, _stat_tree(root)) == (0, before)
+    assert len(lines) <= 40 and len(_inflight(lines)) == 6
