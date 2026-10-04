@@ -594,6 +594,12 @@ def default_global_config():
         # per-fork cost differs 16-21x between two of the owner's hosts), so
         # the shell route is settable here; a repo may still override it.
         "shellRoute": {"mode": "auto", "distro": None},
+        # T-0044. Which cloud identity an unattended run holds. In THIS layer
+        # only and absent from `default_config()`: `crew_unattended.py` reads
+        # it from the machine file alone, `resolve_config` drops a repo copy
+        # and `explain_config` reports one as ignored. `nonProd` is an open
+        # table (one leaf), like `dev.roles`.
+        "unattendedCloud": copy.deepcopy(crew_state.UNATTENDED_CLOUD_DEFAULTS),
     }
 
 
@@ -836,6 +842,7 @@ def resolve_config(root):
     # /crew:init template spells out every nullable key, so without this the
     # machine-global layer was inert for every repo crew had ever set up.
     repo_cfg = without_null_shadows(repo_cfg, global_cfg)
+    repo_cfg = _without_machine_only(repo_cfg)
     merged = crew_state.merge_defaults(default_config(), global_cfg)
     merged = crew_state.merge_defaults(merged, repo_cfg)
     if "schema" in repo_cfg:
@@ -1052,6 +1059,60 @@ def cloud_block_problem(block):
         if not isinstance(value, list) or not all(
                 isinstance(v, str) and v.strip() for v in value):
             return f"`cloud.{key}` is not a list of glob strings"
+    return ""
+
+
+def _unattended_target_problem(where, entry, need_named):
+    """Why one `{profile, identity, region}` entry cannot be read, or `""`."""
+    if not isinstance(entry, dict):
+        return f"`{where}` is not an object"
+    for key in ("profile", "identity", "region"):
+        value = entry.get(key)
+        if value is None:
+            if need_named and key in ("profile", "identity"):
+                return f"`{where}.{key}` must be named"
+            continue
+        if not isinstance(value, str) or not value.strip():
+            return f"`{where}.{key}` is not a non-blank string"
+    ident = entry.get("identity")
+    if isinstance(ident, str) and not ident.endswith("/"):
+        return (f"`{where}.identity` must end in `/` (an assumed-role ARN "
+                "prefix exactly as STS prints it)")
+    return ""
+
+
+def unattended_cloud_block_problem(block):
+    """Why a PRESENT machine-layer `unattendedCloud` block cannot be read, or `""`.
+
+    T-0044. A malformed block is never "nothing named, so use the ambient
+    credentials" -- `crew_unattended.py` refuses the launch on any problem
+    named here. A provider other than `aws` is the provider seam: named, and
+    refused as not implemented.
+    """
+    if not isinstance(block, dict):
+        return "`unattendedCloud` is not an object"
+    for provider in block:
+        if provider not in crew_state.UNATTENDED_CLOUD_PROVIDERS:
+            return (f"`unattendedCloud.{provider}`: provider not implemented "
+                    "(only `aws` is)")
+    aws = block.get("aws", {})
+    if not isinstance(aws, dict):
+        return "`unattendedCloud.aws` is not an object"
+    for key in aws:
+        if key not in ("readOnly", "nonProd"):
+            return f"`unattendedCloud.aws.{key}` is not a known key"
+    problem = _unattended_target_problem(
+        "unattendedCloud.aws.readOnly", aws.get("readOnly", {}), False)
+    if problem:
+        return problem
+    non_prod = aws.get("nonProd", {})
+    if not isinstance(non_prod, dict):
+        return "`unattendedCloud.aws.nonProd` is not a map of environment names"
+    for name, entry in non_prod.items():
+        problem = _unattended_target_problem(
+            f"unattendedCloud.aws.nonProd.{name}", entry, True)
+        if problem:
+            return problem
     return ""
 
 
@@ -1655,6 +1716,21 @@ _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
 
 
+def _without_machine_only(repo_cfg):
+    """`repo_cfg` minus every block that is read from the machine file ONLY
+    (T-0044's `unattendedCloud`). Does not mutate. A repo copy decides
+    nothing, so it must not reach the resolved config either."""
+    if not isinstance(repo_cfg, dict) or not any(
+            key in repo_cfg for key in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY):
+        return repo_cfg
+    return {key: value for key, value in repo_cfg.items()
+            if key not in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY}
+
+
+def _is_machine_only_block_path(dotted):
+    return dotted.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY
+
+
 def explain_config(root, path=None):
     """Every globally-settable key, with its effective value and its source.
 
@@ -1695,6 +1771,8 @@ def explain_config(root, path=None):
     # helper: if the report applied a different rule from the run, the source
     # column would credit `repo` for a value the run took from `global`.
     repo_cfg = without_null_shadows(repo_cfg, global_cfg, defaults)
+    raw_repo = repo_cfg if isinstance(repo_cfg, dict) else {}
+    repo_cfg = _without_machine_only(repo_cfg)
     resolved = crew_state.merge_defaults(
         crew_state.merge_defaults(defaults, global_cfg), repo_cfg)
 
@@ -1704,6 +1782,26 @@ def explain_config(root, path=None):
         from_repo = _layer_supplies(repo_cfg, parts, defaults)
         from_global = _layer_supplies(global_cfg, parts, defaults)
         value = _dig(resolved, parts)
+        if _is_machine_only_block_path(dotted):
+            # T-0044: `crew_unattended.py` reads `unattendedCloud` from the
+            # machine file alone. Judge the global layer against the block's
+            # own defaults (it is absent from `default_config()`), and flag a
+            # repo copy as ignored rather than crediting it.
+            block = {parts[0]: copy.deepcopy(
+                default_global_config()[parts[0]])}
+            only_value = _dig(crew_state.merge_defaults(
+                block, {parts[0]: global_cfg.get(parts[0], {})}), parts)
+            row = {
+                "path": dotted,
+                "value": None if only_value is _MISSING else only_value,
+                "source": "global" if _layer_supplies(
+                    global_cfg, parts, block) else "default",
+            }
+            if _layer_supplies(raw_repo, parts, block):
+                repo_value = _dig(raw_repo, parts)
+                row["repoIgnored"] = None if repo_value is _MISSING else repo_value
+            rows.append(row)
+            continue
         if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS:
             # `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos
             # / onlySessions from the machine file ONLY -- a repo's own copy
