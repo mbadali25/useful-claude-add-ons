@@ -62,7 +62,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**132 keys**: 74 settable in the machine-global file, 58 repo-only.
+**136 keys**: 75 settable in the machine-global file, 61 repo-only.
 
 Columns:
 
@@ -333,6 +333,12 @@ Columns:
 | `change.jiraIssueType` | both | `"Change"` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string) | 0.19.31 | Jira issue type for a change request. |
 | `change.category` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Change category. |
 
+### `git`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `git.forbiddenTrailers` | both | `[]` | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `plugin/crew/hooks/scripts/crew_trailers.py`) | 1.0.328 | Commit trailer tokens the owner forbids, reported by `/crew:done`. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (CONFIG.md section 22). |
+
 ### `scope`
 
 | Setting | Layer | Default | Values | Since | Summary |
@@ -349,6 +355,9 @@ Columns:
 | `autopilot.deploy` | repo | `"none"` | `none` \| `nonprod` \| `all` | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
 | `autopilot.approval` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
 | `autopilot.questions` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
+| `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
+| `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
+| `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 
 ### `tickets`
 

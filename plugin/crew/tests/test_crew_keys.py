@@ -122,7 +122,8 @@ def test_values_agree_with_the_writers_enum_values():
 
 
 # `branch` rows whose reader checks a shape rather than a closed value list.
-_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "tickets.baseBranch")
+_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "tickets.baseBranch",
+                     "git.forbiddenTrailers", "autopilot.sleep.schedule")
 
 
 def test_every_row_has_a_summary_and_a_values_kind():
@@ -190,6 +191,19 @@ def test_autopilot_mode_values_agree_with_the_reader(tmp_path, value):
     assert (value in declared) == (not any("autopilot.mode" in w for w in got["warnings"]))
 
 
+@pytest.mark.parametrize("key", ["approval", "questions"])
+@pytest.mark.parametrize("value", [None, "human", "self", "risk", "Self"])
+def test_sleep_override_values_agree_with_the_reader(tmp_path, key, value):
+    """T-0053: every declared value is read without a warning; one that is
+    not declared warns. The tail of the tuple is POLICIES' own items."""
+    declared = crew_keys.values_of(f"autopilot.sleep.{key}")
+    got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"sleep": {key: value}}}))
+    assert declared[1:] == crew_autopilot.POLICIES
+    assert all(a is b for a, b in zip(declared[1:], crew_autopilot.POLICIES))
+    assert (value in declared) == (
+        not any(f"autopilot.sleep.{key}" in w for w in got["warnings"]))
+
+
 @pytest.mark.parametrize("value, kept", [(1, True), (12, True), (0, False), ("12", False)])
 def test_autopilot_max_phases_agrees_with_the_reader(tmp_path, value, kept):
     got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"maxPhases": value}}))
@@ -216,6 +230,29 @@ def test_tickets_base_branch_is_checked_not_coerced(tmp_path, value, kept):
     assert row["kind"] == "branch"
     assert row["type"] == "branch name or null"
     assert row["source"] == "hooks/scripts/scope_base.py"
+
+
+@pytest.mark.parametrize("value, kept", [
+    ([], True), (["Co-Authored-By"], True), (["Signed-off-by", "X-1"], True),
+    ("Co-Authored-By", False), (["Co-Authored-By:"], False), ([7], False),
+    (None, False), ({"a": 1}, False),
+])
+def test_git_forbidden_trailers_is_checked_not_coerced(tmp_path, value, kept):
+    # crew_trailers.forbidden refuses anything but a list of tokens and the
+    # list becomes unknown, never `[]`: nothing is coerced, so the row is kind
+    # `branch` ("checked in"), never `type` ("coerced in").
+    import crew_trailers
+    root = _repo(tmp_path, {"git": {"forbiddenTrailers": value}})
+    got, unknown = crew_trailers.forbidden(root, global_path=str(tmp_path / "none.json"))
+    assert (unknown is None) == kept, (value, unknown)
+    if kept:
+        assert got == tuple(value)
+    else:
+        assert got == ()
+    row = crew_keys.KEY_META["git.forbiddenTrailers"]
+    assert row["kind"] == "branch"
+    assert row["source"] == "hooks/scripts/crew_trailers.py"
+    assert crew_keys.layer_of("git.forbiddenTrailers") == "both"
 
 
 def _machine(tmp_path, cfg):

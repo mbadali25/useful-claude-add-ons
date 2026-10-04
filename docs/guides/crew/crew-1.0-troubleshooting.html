@@ -347,7 +347,9 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   everything.
   <strong>Fix:</strong> wait for the holder to land and release, then acquire again before reviewing; fix an
   undeclared Touch in the spec. <code>merge &lt;base&gt; first</code> means the base moved in this ticket's Touch:
-  run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> and review the merged head. <code>could not tell</code> (exit 3)
+  run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (resolve any conflict), bump the version one past
+  the base's, refresh the artifacts, commit, gate the merged head, review it again if
+  <code>review_ledger.py --check-receipt</code> reads stale, then acquire again. <code>could not tell</code> (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.</p>
 <ul>
 <li><strong>Symptom: a lane holds the train and its session died.</strong> <code>status</code> prints <code>stale?:</code> beside it
@@ -364,8 +366,10 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   paths this ticket touches after it was gated, so the verdict covers a different tree.
   <strong>Fix:</strong> <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (a merge; conflicts and rerere-replayed files
   are listed and left unstaged for you to inspect, <code>git add</code> and commit; a version file is never
-  replayed and comes back conflicted), gate the merged head again (<code>/crew:review</code>),
-  then <code>check-land</code> again. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
+  replayed and comes back conflicted), then bump the version one past the base's, refresh the
+  artifacts, commit, gate the merged head, review it again (<code>/crew:review</code>) if
+  <code>review_ledger.py --check-receipt</code> reads stale, then <code>check-land</code> again, so the tree the gate
+  passed is the tree that lands. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
   conflict to resolve first.</li>
 </ul>
 <h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
@@ -384,9 +388,13 @@ contract itself. This section is what goes wrong with the approval and the audit
   those, never merged with the main checkout's - delete them to inherit. <code>/crew:status</code> names
   that case: <code>... the main checkout's (&lt;path&gt;) is not read ...</code>. A lane made before 1.0.69 almost
   always has one, a default that crew's SessionStart heal wrote there. <code>(unknown)</code> means git
-  could not name the main checkout; then no default is written either. The shell and PowerShell readers (<code>verify-gate.sh</code>,
-  <code>_common.sh</code>, <code>notify.sh</code>, the handoff scripts, <code>promote-gate.ps1</code>, <code>scope-guard.ps1</code>,
-  <code>cloud-guard.ps1</code>, <code>auto-clear.ps1</code>) do not inherit yet.</li>
+  could not name the main checkout; then no default is written either. Of the shell and
+  PowerShell readers (T-0096), the incident stand-down read (<code>_common.sh</code>,
+  <code>promote-gate.ps1</code>), both cloud-guard no-python fallbacks and <code>auto-clear.ps1</code> inherit too; in
+  the cloud guard's fallback <code>unknown</code> counts as armed. The session hooks (<code>notify</code>, the handoff
+  scripts, <code>context-watch</code>), the verify gate, the scope and completion wrappers and
+  <code>review_gate.py</code> do not inherit yet, so <code>verify-gate.ps1</code> still reads the lane's own
+  <code>emergency.standDown</code> while the bash gate reads the inherited one.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
   <strong>Check:</strong> approval status.</li>
 </ul>
@@ -399,6 +407,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   (written by <code>crew_ticket.py approve</code> directly, for tests/CI) is accepted only when
   <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>, and an <code>autopilot</code> receipt (from
   <code>crew_autopilot.py approve</code>) only while that is true and <code>autopilot.approval</code> still allows it.
+  That includes a receipt written inside an <code>autopilot.sleep.schedule</code> window under
+  <code>autopilot.sleep.approval</code>: once the window ends, the day value decides, and it may not allow it.
   <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — the only other route is
   <code>/crew:autopilot</code> under an opted-in <code>autopilot.approval</code>; <code>scope_guard.py</code> refuses a Write/Edit
   under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but <code>off</code>, so a session cannot forge or refresh its
@@ -840,7 +850,7 @@ cleanly, clear, and pick up where it stopped.</p>
    unknown command, or an excluded one such as <code>/crew:approve</code>); the note's <code>branch:</code> or <code>head:</code>
    does not match the checkout; the ticket directory or goal file is missing; the command is not
    installed; <code>handoff-author.json</code> could not be read; no record of which session wrote this
-   handoff; the handoff changed since its author session wrote it; the handoff was written by
+   handoff; a later handoff write could not replace or remove <code>handoff-author.json</code> (<code>handoff-author.json.stuck</code>), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the handoff was written by
    another session; this session's process could not be identified (always on a host without
    <code>/proc</code>, such as native Windows or macOS); the record of past auto-resumes (<code>resume-state.json</code>)
    could not be read, or its directory cannot be searched; this handoff was already resumed; the
