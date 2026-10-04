@@ -975,7 +975,7 @@ def wake_now(root):
     already says awake. Nothing to undo: `already awake`, nothing written."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     path, when = _manual_path(top), crew_sleep.now()
-    state = crew_sleep.UNKNOWN
+    state, schedule = crew_sleep.UNKNOWN, None
     if not _unreadable_autopilot(top):
         block = _sleep_block(top, crew_config.resolve_config(top).get("autopilot") or {})
         found = crew_sleep.resolve(block, when, POLICIES)
@@ -1196,7 +1196,7 @@ def _decision(top, ticket, key):
     if key in sleep.get("applied", ()) and sleep.get("state") == crew_sleep.ASLEEP:
         note = f" (asleep {_sleep_span(sleep)}; day value {day})"
     elif key in sleep.get("applied", ()) and sleep.get("tightenOnly"):
-        note = (f" (awake by hand; the stricter autopilot.sleep.{key} over day value {day})")
+        note = f" (awake by hand; the stricter autopilot.sleep.{key} over day value {day})"
     elif key in sleep.get("applied", ()):
         note = (f" (sleep could not be told; the stricter autopilot.sleep.{key} over "
                 f"day value {day})")
