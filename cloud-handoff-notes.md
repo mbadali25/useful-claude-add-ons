@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:51 UTC
+Last updated: 2026-10-04 11:52 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:52: #394 review 1ed50584: 0/1/3. FIX (README:832 /crew:approve precheck list lacked cancelled/superseded) fixed by hand + re-versioned 1.0.354 -> b80f8cbf; delta re-review started. NITs: needs-owner rows are 'open' so route/autopilot may pick one and stop (spec-consistent; mention in PR body); 19-mutation count unverified by reviewer.
 - 11:51: T-0039 BUILT on #346: T-0039-build c580f399 (crew 1.0.348; crew_gitignore.py; 42 tests; 16/16 hand sabotage red; harness follow-up sabotage_gitignore.py + sabotage.py registration; graphify not installed -> graph not refreshed; codemaps re-anchored bd72cd8a with bare :N cites unverified; diagrams README/index not regenerated). First review started. #346 is still a DRAFT PR - mark ready when clean.
 - 11:49: T-0037 BUILT -> PR #394 (T-0037-build 1ed50584, crew 1.0.352 placeholder; 19/19 hand sabotage red; harness follow-up PR B T-0037-sabotage NOT built: register mutations in sabotage_tracker/autopilot/scope.py). First review of #394 started.
 - 11:43: #392 re-review f5a7e23d: 0/0/1 CLEAN (NIT: lock delete-pending for whole wait with stat denied -> bare PermissionError after full wait; accepted). PR body updated to the final design. #392 lands right after #360 (needs re-merge main + re-bump to main+1 at its turn), then #393 alone.
