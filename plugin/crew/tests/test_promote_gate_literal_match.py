@@ -467,7 +467,8 @@ def _crlf_python(tmp_path):
     body = ("#!/usr/bin/env bash\nset -o pipefail\n"
             f"'{real}' \"$@\" | '{real}' -c 'import sys; d = sys.stdin.buffer.read(); "
             "t = d.endswith(b\"\\n\"); d = d[:-1] if t else d; "
-            "sys.stdout.buffer.write(d.replace(b\"\\n\", b\"\\r\\n\") + (b\"\\n\" if t else b\"\"))'\n")
+            "sys.stdout.buffer.write(d.replace(b\"\\n\", b\"\\r\\n\")"
+            " + (b\"\\n\" if t else b\"\"))'\n")
     for name in ("python3", "python"):
         (shim / name).write_text(body, encoding="utf-8", newline="\n")
         (shim / name).chmod(0o755)
