@@ -254,6 +254,9 @@ jobs:
   # merged from those artifacts balanced the shards but raised their total
   # from 28 to ~35 min and the slowest from 11.2 to 12.5 min, so the split
   # stays by count. Re-measure the slowest shard before trying it again.
+  # L-1506 (2026-10-04): 3 -> 6 shards. The slowest of 3 was the critical path
+  # of every PR's CI (~15 min under load); each shard re-collects the whole
+  # default set, so the per-shard floor is setup + collection, not zero.
   #
   # Runner: every crew-windows-* job takes `runs-on` from
   # crew-windows-decide's `runs-on` output, set in one line there. The Windows
@@ -299,7 +302,7 @@ jobs:
         echo 'runs_on="windows-latest"' >> "$GITHUB_OUTPUT"
 
   crew-windows-default:
-    name: crew-windows-default (${{ matrix.group }}/3)
+    name: crew-windows-default (${{ matrix.group }}/6)
     needs: crew-windows-decide
     if: needs.crew-windows-decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(needs.crew-windows-decide.outputs.runs-on) }}
@@ -307,10 +310,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The shard count is also in `--splits 3` below and in the gate's
-        # `--shards 3`. A mismatch fails closed: `--group` past `--splits` is
+        # The shard count is also in `--splits 6` below and in the gate's
+        # `--shards 6`. A mismatch fails closed: `--group` past `--splits` is
         # a usage error, and the gate fails on a missing or extra shard.
-        group: [1, 2, 3]
+        group: [1, 2, 3, 4, 5, 6]
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -337,10 +340,10 @@ jobs:
         python -m pytest plugin/crew/tests -m "not wallclock" --collect-only -q > crew-ci/collected.txt
         if ($LASTEXITCODE -ne 0) { Get-Content crew-ci/collected.txt -Tail 40; exit $LASTEXITCODE }
         Get-Content crew-ci/collected.txt -Tail 3
-    - name: Run crew's default set, shard ${{ matrix.group }} of 3
+    - name: Run crew's default set, shard ${{ matrix.group }} of 6
       if: runner.os == 'Windows'
       shell: pwsh
-      run: python -m pytest plugin/crew/tests -n auto -m "not wallclock" -v --splits 3 --group ${{ matrix.group }} --splitting-algorithm least_duration --store-durations --durations-path crew-ci/durations.json --durations=50 --junitxml=crew-ci/junit.xml
+      run: python -m pytest plugin/crew/tests -n auto -m "not wallclock" -v --splits 6 --group ${{ matrix.group }} --splitting-algorithm least_duration --store-durations --durations-path crew-ci/durations.json --durations=50 --junitxml=crew-ci/junit.xml
     - name: Upload the collection, JUnit and durations
       if: always()
       uses: actions/upload-artifact@v4
@@ -466,4 +469,4 @@ jobs:
         DEFAULT_RESULT: ${{ needs.crew-windows-default.result }}
         SLOW_RESULT: ${{ needs.crew-windows-slow.result }}
         WALLCLOCK_RESULT: ${{ needs.crew-windows-wallclock.result }}
-      run: python3 scripts/check-windows-shards.py --shards 3 --artifacts crew-ci-artifacts --decide-result "$DECIDE_RESULT" --run "$RUN" --event "$EVENT" --job "default=$DEFAULT_RESULT" --job "slow=$SLOW_RESULT" --job "wallclock=$WALLCLOCK_RESULT"
+      run: python3 scripts/check-windows-shards.py --shards 6 --artifacts crew-ci-artifacts --decide-result "$DECIDE_RESULT" --run "$RUN" --event "$EVENT" --job "default=$DEFAULT_RESULT" --job "slow=$SLOW_RESULT" --job "wallclock=$WALLCLOCK_RESULT"
