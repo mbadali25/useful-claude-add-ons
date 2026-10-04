@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 13:05 UTC
+Last updated: 2026-10-04 13:06 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:06: #340 L-0526 review 9cf6d93d: 0/2/3 (FIX1 spent-budget ticket can hold the train forever -> check budget before train; FIX2 ordering vs prereview/standards unpinned). Sent to builder (1.0.385). Train-only sabotage PASS 23/23 by reviewer.
 - 13:05: #364 round-1 fixes pushed 687d1edd (minted_tail; apply record + provenance; confirm refuses '<'/missing/same lastPrompt; None for zero counts; crash recovery; 92 tests; 22 mutations red; 1.0.382). API additive (minted_tail, current_prompt, apply_record_path, MINTED_RULE; split-child line; prompt_sha256). Re-review started. #365/#366 stacked builds must merge updated T-0052-build.
 - 13:04: #345 fixes pushed 0350da69 (17 secret kinds + must-allow; anchor echo suppressed; header at doc head only; abs/.. anchors refused; 42 hand mutations red; 1.0.381). Re-review started.
 - 12:59: L-0526 BUILT on #340 (harness-only): L-0526-build 9cf6d93d (1.0.371; EXIT_TRAIN=6; rerere block; sabotage_train S1-S15+R1-R3+P1-P5, suite PASS; S16-S19 + S20-S33 missing (machine-local drafts) -> TODO; graph rebuilt, graphifyy 0.9.75 installed in container). First review started.
