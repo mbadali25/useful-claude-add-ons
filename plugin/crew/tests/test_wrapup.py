@@ -486,12 +486,43 @@ def test_check_refuses_on_git_error(repo, monkeypatch):
     real = subprocess.run
 
     def broken(cmd, *args, **kwargs):
-        if cmd and cmd[0] == "git":
+        # The resolved git: a full path, git.exe or git.cmd on Windows.
+        if cmd and os.path.splitext(os.path.basename(str(cmd[0])))[0].lower() == "git":
             raise FileNotFoundError("git")
         return real(cmd, *args, **kwargs)  # pylint: disable=subprocess-run-check
     monkeypatch.setattr(crew_autocycle.subprocess, "run", broken)
     ok, why = _check(repo)
     assert not ok and "git" in why
+
+
+def _which_git(monkeypatch, git):
+    real = crew_autocycle.shutil.which
+
+    def which(name, *args, **kwargs):
+        return git if name == "git" else real(name, *args, **kwargs)
+    monkeypatch.setattr(crew_autocycle.shutil, "which", which)
+
+
+def test_check_runs_the_git_which_resolves(repo, monkeypatch, tmp_path):
+    # The veto must judge the git PATH resolves the way bash, pwsh and
+    # shutil.which do (PATHEXT: git.cmd), not whatever a bare "git" reaches --
+    # on Windows CreateProcess skips git.cmd for a later git.exe, so a failing
+    # git read as a clean tree and the clear went ahead. The resolved git is
+    # deliberately NOT on PATH here: a bare "git" would run the real one.
+    repo.arm()
+    repo.wrapped()
+    shim = cf.write_shim(tmp_path / "resolved", "git",
+                         "#!/bin/sh\necho 'fatal: broken' >&2\nexit 128\n",
+                         "@echo off\r\necho fatal: broken 1>&2\r\nexit /b 128\r\n")
+    _which_git(monkeypatch, shim + ".cmd" if os.name == "nt" else shim)
+    assert _check(repo) == (False, "git rev-parse failed (fatal: broken)")
+
+
+def test_check_refuses_when_git_does_not_resolve(repo, monkeypatch):
+    repo.arm()
+    repo.wrapped()
+    _which_git(monkeypatch, None)
+    assert _check(repo) == (False, "could not run git rev-parse (git is not on PATH)")
 
 
 def test_check_refuses_outside_a_git_repo(tmp_path):
