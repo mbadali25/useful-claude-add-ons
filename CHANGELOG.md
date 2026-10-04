@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.258: the review bundle and the completion audit account for merged main (T-0100)
+### Changed — `crew` 1.0.319: the review bundle and the completion audit account for merged main (T-0100)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
   latest merged integration commit (`git merge-base HEAD <ref>`, `<ref>` from
