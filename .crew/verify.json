@@ -555,7 +555,7 @@
     { "paths": ["plugin/crew/hooks/scripts/verify_agents.py", "plugin/crew/tests/test_verify_agents.py"],
       "seconds": 11,
       "coveredBy": "crew-suite",
-      "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_verify_agents.py plugin/crew/tests/test_status.py -q"],
+      "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_status.py plugin/crew/tests/test_verify_agents.py -q"],
       "reach": "local",
       "why": "T-0065 item 3. verify_agents.py names every agent a verify.json rule names that is not installed here; /crew:status shows it as its agents line, so test_status.py runs too. A false 'installed' is the defect (a silent under-review), so test_unknowns_never_read_as_installed is the one to watch. 11s measured 2026-10-04 with other builders' suites on the same 4 cores. reach: local - pytest against fake ~/.claude trees under tmp_path; nothing real is read." },
     { "paths": ["plugin/crew/hooks/scripts/provider_probe.py", "plugin/crew/tests/test_provider_probe.py"],

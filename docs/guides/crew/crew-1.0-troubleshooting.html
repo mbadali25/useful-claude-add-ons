@@ -656,9 +656,9 @@ agent this machine lacks reviews less, and nothing in the output says so.</p>
 <p>Earlier crew releases' test suites and auto-clear sender could leave files in the
 system temp directory: <code>crew-completion-audit.*</code> markers, <code>tmp.*</code> auto-clear sender scripts
 (<code>tmux send-keys ...</code> / <code>xdotool ...</code> followed by <code>rm -f -- &lt;itself&gt;</code>) and <code>tmp.*</code> fixture
-directories from <code>hooks/scripts/_test/run-tests.sh</code>. Enough of them exhaust the inodes, and the
+directories from crew's shell regression suite. Enough of them exhaust the inodes, and the
 guard and the Stop verify-gate then fail closed. Now every crew test runs with its own
-<code>TMPDIR</code>, the sender deletes itself before it sleeps, and <code>run-tests.sh</code> removes every fixture it
+<code>TMPDIR</code>, the sender deletes itself before it sleeps, and the shell suite removes every fixture it
 makes.</p>
 <ul>
 <li><strong>Symptom:</strong> <code>df -i /tmp</code> near 100%, or hooks failing on <code>mktemp</code>.
@@ -674,7 +674,7 @@ grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2&gt;/dev/null | wc -l
 find . -maxdepth 1 -name 'crew-completion-audit.*' -mmin +60 -delete
 grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2&gt;/dev/null | xargs -r rm -f --
 </code></pre>
-<p>Old <code>run-tests.sh</code> fixture directories are ordinary <code>tmp.*</code> directories (a <code>.crew/</code> and a
+<p>Old shell-suite fixture directories are ordinary <code>tmp.*</code> directories (a <code>.crew/</code> and a
   <code>.git/</code> inside); read each before removing it.</p>
 <h2 id="turning-things-off">Turning Things Off</h2>
 <p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires

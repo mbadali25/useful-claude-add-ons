@@ -36,19 +36,29 @@ def _under(path, base):
 # --- every test gets its own TMPDIR (conftest) ---------------------------------
 
 
-def test_every_test_gets_its_own_tmpdir(tmp_path):
+_SEEN = []
+
+
+@pytest.mark.parametrize("run", [1, 2])
+def test_every_test_gets_its_own_tmpdir(tmp_path_factory, run):  # pylint: disable=unused-argument
+    """Under pytest's basetemp (removed with it), and a different directory
+    for every test: two runs of this test never share one."""
+    base = tmp_path_factory.getbasetemp()
+    mine = os.environ["TMPDIR"]
     for name in ("TMPDIR", "TEMP", "TMP"):
-        assert _under(os.environ[name], tmp_path), (name, os.environ[name])
-    assert _under(tempfile.gettempdir(), tmp_path)
-    assert _under(tempfile.mkdtemp(), tmp_path)
+        assert os.environ[name] == mine and _under(mine, base), (name, os.environ[name])
+    assert _under(tempfile.gettempdir(), mine)
+    assert _under(tempfile.mkdtemp(), mine)
+    assert mine not in _SEEN
+    _SEEN.append(mine)
 
 
-def test_subprocess_env_inherits_the_isolated_tmpdir(tmp_path):
+def test_subprocess_env_inherits_the_isolated_tmpdir(tmp_path, tmp_path_factory):
     env = crew_fixtures.shim_env("sh", str(tmp_path / "bin"))
 
     for name in ("TMPDIR", "TEMP", "TMP"):
         assert env.get(name) == os.environ[name]
-        assert _under(env[name], tmp_path)
+        assert _under(env[name], tmp_path_factory.getbasetemp())
 
 
 # --- auto-clear.sh's detached sender --------------------------------------------

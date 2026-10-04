@@ -498,9 +498,9 @@ agent this machine lacks reviews less, and nothing in the output says so.
 Earlier crew releases' test suites and auto-clear sender could leave files in the
 system temp directory: `crew-completion-audit.*` markers, `tmp.*` auto-clear sender scripts
 (`tmux send-keys ...` / `xdotool ...` followed by `rm -f -- <itself>`) and `tmp.*` fixture
-directories from `hooks/scripts/_test/run-tests.sh`. Enough of them exhaust the inodes, and the
+directories from crew's shell regression suite. Enough of them exhaust the inodes, and the
 guard and the Stop verify-gate then fail closed. Now every crew test runs with its own
-`TMPDIR`, the sender deletes itself before it sleeps, and `run-tests.sh` removes every fixture it
+`TMPDIR`, the sender deletes itself before it sleeps, and the shell suite removes every fixture it
 makes.
 
 - **Symptom:** `df -i /tmp` near 100%, or hooks failing on `mktemp`.
@@ -517,7 +517,7 @@ makes.
   find . -maxdepth 1 -name 'crew-completion-audit.*' -mmin +60 -delete
   grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2>/dev/null | xargs -r rm -f --
   ```
-  Old `run-tests.sh` fixture directories are ordinary `tmp.*` directories (a `.crew/` and a
+  Old shell-suite fixture directories are ordinary `tmp.*` directories (a `.crew/` and a
   `.git/` inside); read each before removing it.
 
 ## Turning things off
