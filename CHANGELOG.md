@@ -4,6 +4,57 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.230: QA standards for repositories crew sets up (L-0618)
+
+- E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
+  `n`, `false` are no), a live credential's reach must name a known or declared environment
+  (`production only` is production; `not prod` or `prod replica` is unknown, not production), and
+  acceptance is a strict grammar over the cell in its own case: an ISO date, or `accepted` / `yes`
+  with an optional `by <Name>` (1-3 capitalised ASCII words) and date, either order; a name
+  without `by` is UNKNOWN. A refusal word or stem (`no`, `not`, `revok`, `cancel`, `maybe`,
+  `draft`, ...) is not an acceptance, and the GAP names that word; inside a `by` name only a whole
+  refusal word counts (`no`, `revoked`, `withdrew`, ..., also through `-` and apostrophes), so `accepted by Denise` is a name and
+  `accepted by No One` is not, and any other text (`accepted Under Review`,
+  `approved`, `ok`) is UNKNOWN, never accepted. An unparseable `.crew/verify.json` makes E5 UNKNOWN. Header columns match whole words,
+  so "Delivered" is not `live`. An unreadable runbook, `.gitignore` or inventory is UNKNOWN, not
+  missing; `qa_doc.py --write` refuses an unreadable file instead of overwriting it; a failed
+  `git ls-files` makes G4 UNKNOWN. Found in review of PR #337.
+
+- On Windows, E4 read CI paths as `.github\workflows\...` and so never asked a GitHub deploy
+  workflow for its `concurrency:` group; every comparison and every printed path is now `/`
+  separated (`qa_audit_env.posix`). Found by `crew-windows-default`.
+- G1 asks the Stop gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) which
+  undeclared rules it defers, and names only those as skipped: a plain local command without
+  `reach` still runs on Stop, so the review's "every rule without `reach` is skipped" overstated
+  D10. `--all-repos` reports D10 only for a deferred rule. Its `reach` references cite §19, not §18.
+- `qa_doc.py`'s diagrams draw without crossing lines: a red result ends in its own fix node
+  instead of looping back to the gate, and the audit loop is its own straight-line diagram
+  (`docs/diagrams/process-qa-audit.mmd`). `test_the_gate_diagram_has_no_back_edge` holds it.
+- `crew-qa-standards` gains `references/environments.md` (G1-G5, E1-E7) and `qa_audit_env.py`,
+  whose items join `qa_audit.py`'s report under the same PASS / GAP / N/A / UNKNOWN answers: rules
+  without `reach` (D10, the Stop gate that runs nothing), fire-and-forget commands, the `_verify`
+  template's known bugs in the repo's copy, unignored build directories, the `.crew/*` ignore block,
+  non-production data provenance, rollback rehearsed on every rung, deploys of
+  `$(git rev-parse HEAD)`, deploy workflows that swallow exit codes, the credential inventory's
+  reaches and live columns, verifiers under a web root, and `_verify` entry points CI never runs.
+  Report-only; it never deploys, reads a secret value or calls a remote host.
+- `qa_audit.py --stamp` records the audited HEAD in `.crew/.qa-audit-at`; `--all-repos DIR` prints
+  one line per crew checkout (setup phase, GAP and UNKNOWN counts, D10 live or not).
+- New session trigger `qaAuditStale` (`crew_state.py`): no stamp yet, or `.crew/verify.json`,
+  `_verify/`, CI or `.gitignore` moved since it; an unanswerable diff fires. Every existing crew
+  repo hears it once after this update.
+- `qa_doc.py` documents a repo's QA process: `docs/qa/README.md` with the gate-flow and promotion
+  ladder diagrams embedded as Mermaid, `docs/qa/qa-process.html`, and the `.mmd` sources under
+  `docs/diagrams/`. Dry run by default; never overwrites a file it did not generate.
+- `/crew:init --audit [--all-repos DIR]`; `/crew:upgrade` step 5c re-runs the audit as a report;
+  setup Phase 8 audits the `environments` block it just wrote.
+- Follows the owner decisions in the review's section 6: a setup phase with an open GAP is
+  `partial`, never `done`, and no hook is added; a live credential outside production is a GAP
+  until an owner acceptance is recorded; review validity (D8) moves to the QA-rounds stream.
+- Not in this change: slice b (corrected `_verify` templates, `--audit --fix`, a GitHub Actions CI
+  template first), slice c (the sabotage entries, a separate tooling PR), and L-0562's
+  `--stamp-reach`, which G1's GAP text no longer points to.
+
 ### Added — `crew` 1.0.229: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
 
 - `hooks/scripts/verify_reach.py`: for each rule without `reach`, proposes `local` when the Stop
