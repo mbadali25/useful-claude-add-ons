@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.394: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
+### Added — `crew` 1.0.332: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
 
 - **What changed.** `autopilot.sleep` in `.crew/config.json` (repo only, all
   three keys default `null`): `schedule` is one `HH:MM-HH:MM` window in the
