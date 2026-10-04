@@ -614,3 +614,71 @@ def test_the_provably_off_readers_are_byte_for_byte_twins():
         _sh_function("completion-audit", "_scope_provably_off")
     assert _ps_function("scope-guard", "Test-ScopeProvablyOff") == \
         _ps_function("completion-audit", "Test-ScopeProvablyOff")
+
+
+# --- T-0068: crew's own bookkeeping is never out of Touch -------------------------
+#
+# TheSelectSource's shape: `.gitignore` does not ignore `.crew/`, so the scope
+# base, the gate's records and the metrics rows are untracked, non-ignored
+# changes the audit used to list (TSS-510).
+
+def _tss_repo(tmp_path):
+    root = make_repo(tmp_path, mode="block")
+    (root / ".gitignore").write_text(".work/\n", encoding="utf-8")
+    git(root, "add", ".gitignore", ".crew/config.json")
+    git(root, "commit", "-qm", "crew config tracked, .crew not ignored")
+    return root
+
+
+def _with_bookkeeping(root):
+    paths = crew_fixtures.write_bookkeeping(root)
+    git(root, "add", "-f", ".crew/metrics.jsonl")
+    git(root, "commit", "-qm", "metrics committed after the base")
+    return paths
+
+
+def test_bookkeeping_is_never_out_of_touch(tmp_path):
+    """Must-allow: every bookkeeping file untracked, one committed, the
+    ticket approved -- the audit passes."""
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    _with_bookkeeping(root)
+
+    assert completion_audit.audit(str(root), "T-1") == (True, [])
+
+
+def test_an_out_of_touch_file_beside_bookkeeping_still_fails(tmp_path):
+    """Must-block: a real out-of-Touch file and crew's verify map, changed
+    beside the bookkeeping, are named -- and no bookkeeping path is."""
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    paths = _with_bookkeeping(root)
+    (root / "lib").mkdir()
+    (root / "lib" / "b.py").write_text("y = 1\n", encoding="utf-8")
+    (root / ".crew" / "verify.json").write_text("{}\n", encoding="utf-8")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    text = "\n".join(lines)
+    assert not ok
+    assert "lib/b.py" in text and ".crew/verify.json" in text
+    assert "2 changed path(s)" in text
+    assert not [p for p in paths if p in text.split()]
+
+
+def test_unapproved_touch_still_fails_but_lists_no_bookkeeping(tmp_path):
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 3\n", encoding="utf-8")
+    paths = _with_bookkeeping(root)
+    spec = root / ".work" / "tickets" / "T-1" / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("`src/**`", "`**`"),
+                    encoding="utf-8")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    text = "\n".join(lines)
+    assert not ok and "not approved" in text and "src/app.py" in text
+    assert not [p for p in paths if p in text.split()]

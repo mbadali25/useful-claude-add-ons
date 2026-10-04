@@ -1403,10 +1403,12 @@ def bookkeeping_samples():
 
 
 def write_bookkeeping(root, text="written by crew\n"):
-    """Write every `bookkeeping_samples()` path under `root`; return them."""
+    """Write every `bookkeeping_samples()` path under `root` that does not
+    exist yet (a real scope base stays the record it is); return them all."""
     paths = bookkeeping_samples()
     for rel in paths:
         target = pathlib.Path(root, *rel.split("/"))
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
+        if not target.exists():
+            target.write_text(text, encoding="utf-8")
     return paths

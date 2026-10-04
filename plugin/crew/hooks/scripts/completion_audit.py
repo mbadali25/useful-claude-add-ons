@@ -27,8 +27,14 @@ and drops the ones whose content and mode match the base. That is the only
 file content read, and it is what `git diff` read to decide the same thing.
 
 What it cannot see, stated rather than implied: files git ignores (`.crew/*`
-among them) and `.work/`, which is excluded on purpose (as the review bundle
-excludes it).
+among them where the repository's `.gitignore` says so), `.work/`, and crew's
+own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`: the scope base, the
+verify gate's records, the metrics files, logs, markers, locks). The last two
+are excluded on purpose, by name and whatever `.gitignore` says, as the review
+bundle excludes them (T-0068): no ticket makes those changes, and listing them
+deadlocked `/crew:done` in a repository that does not ignore `.crew/`. The
+exclusion is root-anchored (`sub/.crew/.scope-base` is judged), and what crew
+READS -- `.crew/verify.json`, `.crew/config.json`, the code map -- still is.
 
 Paths are printed with control characters escaped (`\n` in a filename would
 otherwise add lines), and the whole message is capped at six PHYSICAL lines.
@@ -71,9 +77,10 @@ import scope_base
 
 MAX_LINES = 6
 GIT_TIMEOUT = 60
-# The review bundle's `.work` exclusion: crew's scratch space is never a changed path.
-# `review_patch._EXCLUDE_SPEC` also drops generated `graphify-out/`; this audit keeps it.
-_ONLY = ["--", ".", ":(exclude).work"]
+# The review bundle's `.work` and bookkeeping exclusions: crew's scratch space and
+# its own records are never a changed path (T-0068). `review_patch._EXCLUDE_SPEC`
+# also drops generated `graphify-out/`; this audit keeps it.
+_ONLY = ["--", ".", ":(exclude).work"] + crew_ticket.bookkeeping_excludes()
 
 
 _NULL_OID = frozenset("0")
