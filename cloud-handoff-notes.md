@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 19:23 UTC
+Last updated: 2026-10-04 19:28 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 19:28: MERGED #492 L-1507 at 5607affe -> main 1a5b3dca (CI only). First run: slow shards 4.0-4.1 min (was ~11 single job); default shards 5.9-9.1 min; decide->gate 14.2 min incl ~4.5 min queue for default shards. Queueing at the concurrency limit is now the main cost.
 - 19:23: #399 H2a round-2 fixes at ce4e4083, CI GREEN (27, incl 6 shards): F-A /proc skip removed (killed/unknown tests now run on Windows), MSYS SIGKILL = 2304 still could-not-tell, NULs rejected in sh, N7 done. Round-3 review sent to a308d8b.
 - 19:23: Batch 2 still red on Windows (3rd run, 6-shard layout): #356 default 2/6 + slow; #347 default 5/6; #456 default 2-5/6. Triage sent to builder a44cc15. #492 5607affe CI in progress (20 pass, 7 running).
 - 19:12: #492 L-1507 FIX done at 5607affe (2 new suite cases, red against scratch checkers; codemap DERIVED marker). Coordinator verified delta is tests+docstring+docs only, suite 46 passed. Review-clean; merges when its Windows CI is green.
