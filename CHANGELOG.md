@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.330: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
+### Changed — `crew` 1.0.333: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
   `Co-Authored-By` and wins: the owner's own instructions decide attribution, crew never adds a
