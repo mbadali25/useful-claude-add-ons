@@ -700,9 +700,16 @@ def test_session_hooks_read_only_their_own_file_when_git_cannot_tell(tmp_path, f
     assert watch.returncode == 0 and not _markers(root), watch.stderr
 
 
-# Lines in the eight scripts that may still name the own file outside a comment:
-# the user-facing default of the name a message shows. Exact text and count.
+# Lines in the eight scripts that may still name the own file outside a comment,
+# exact text and count: the user-facing default of the name a message shows, and
+# handoff-write's own-or-unknown gate, where the resolved directory is the own
+# .crew/ and tests/sabotage_resume.py (a harness path) anchors on the literal text.
 OWN_PATH_ALLOWED = {
+    "handoff-write.sh": {"[ -f .crew/config.json ] || [ -f .crew/crew.json ] || exit 0": 1},
+    "handoff-write.ps1": {
+        'if (-not (Test-Path ".crew/config.json") -and -not (Test-Path ".crew/crew.json"))'
+        ' { exit 0 }': 1,
+    },
     "context-watch.ps1": {
         "$cfgShown = if ($repoCfg.Source -eq 'main') { $cfgPath } else { '.crew/config.json' }": 1,
     },

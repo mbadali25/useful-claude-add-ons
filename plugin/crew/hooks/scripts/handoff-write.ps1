@@ -347,10 +347,16 @@ Set-Location $cwd -ErrorAction SilentlyContinue
 # worktree with none of its own reads the main checkout's; own files win whole;
 # `unknown` reads only the own .crew/. The transcripts, the record and the
 # handoff skeleton are still written here, in this checkout.
-$cfgDir  = (Get-CrewRepoConfigDir '.').Dir
-$cfgPath = Join-Path $cfgDir 'config.json'
-if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf) -and
-    -not (Test-Path -LiteralPath (Join-Path $cfgDir 'crew.json') -PathType Leaf)) { exit 0 }
+$repoCfg = Get-CrewRepoConfigDir '.'
+$cfgPath = Join-Path $repoCfg.Dir 'config.json'
+# Own or unknown, the resolved directory IS this checkout's .crew/, so that
+# branch keeps the literal gate (tests/sabotage_resume.py anchors on its text).
+if ($repoCfg.Source -eq 'main') {
+  if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf) -and
+      -not (Test-Path -LiteralPath (Join-Path $repoCfg.Dir 'crew.json') -PathType Leaf)) { exit 0 }
+} else {
+  if (-not (Test-Path ".crew/config.json") -and -not (Test-Path ".crew/crew.json")) { exit 0 }
+}
 
 # No hook_once claim here on purpose: PreCompact can fire more than once per
 # session, and both writes below are idempotent (the transcript copy is

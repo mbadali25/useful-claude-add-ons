@@ -15,7 +15,13 @@ cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # record and the handoff skeleton are still written here, in this checkout.
 crew_repo_config_dir .
 CREW_CFG="$CREW_CFG_DIR/config.json"
-[ -f "$CREW_CFG" ] || [ -f "$CREW_CFG_DIR/crew.json" ] || exit 0
+# Own or unknown, the resolved directory IS this checkout's .crew/, so that
+# branch keeps the literal gate (tests/sabotage_resume.py anchors on its text).
+if [ "$CREW_CFG_SOURCE" = main ]; then
+  [ -f "$CREW_CFG" ] || [ -f "$CREW_CFG_DIR/crew.json" ] || exit 0
+else
+  [ -f .crew/config.json ] || [ -f .crew/crew.json ] || exit 0
+fi
 
 # No hook_once claim here on purpose: PreCompact can fire more than once per
 # session, and both writes below are idempotent (the transcript copy is
