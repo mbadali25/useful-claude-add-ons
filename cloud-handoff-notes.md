@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:19 UTC
+Last updated: 2026-10-04 15:22 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:22: #450 round-3 22271e7d: 0 BLOCK / 1 FIX (real 'Vault: ...' memory now malformed - false failure) / 6 NIT; all round-2 fixed (real-file uid 65534). Sent last-round fixes (attempt needs note:/|, dup keys, RecursionError+1MiB cap, FIFO note unreadable, docs).
 - 15:19: #352 merge-only review e50a37af: 0/0/0 CLEAN; CI 9 green, 14 running/queued. #403 fixes -> 69456696 (unknown=strictest per key, approve pins decision; 97 tests, 22 mutations); round-2 review started.
 - 15:17: #450 round-2 fixes -> 22271e7d (lstat-only absent, up-front schema, O_NONBLOCK+fstat S_ISREG; 102 tests, 24 red-before; 15 sabotages). Round-3 review started.
 - 15:15: #407 re-review 8ec0d228: 1 BLOCK (plain deploy of production contains staging's prefix when staging has shaInput -> prod runs unattended) / 1 FIX (ps1 -like wildcards in plain deploy strings) / 3 NIT. Sent back: replace pairwise overlap with _gate_pick simulating BOTH gates over every env's commands (+agreement test vs real gates).
