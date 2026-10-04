@@ -68,6 +68,8 @@ Next free untracked ID: **L-1515**.
 | L-1508 (PR A) | #493 | 0bf91c95 | 1.0.340 |
 | L-0652 | #427 | bbd1d0ee | 1.0.341 |
 | L-1503 | #489 | a31ac3bb | 1.0.342 |
+| L-0680 | #400 | 2aa06aca | 1.0.343 |
+| T-0083 | #421 | cab38cfa | obsidian-vault 0.5.0 |
 
 ## Closed without merging (your instruction)
 
