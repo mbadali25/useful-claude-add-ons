@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:05 UTC
+Last updated: 2026-10-04 10:07 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:07: #351 merge review f542d4f4: 2 FIX (CONFIG 'Measured' para 72/130 should be 73/131; config read/write diagram + codemap crew_config.py line cites stale by 10-14) + 3 NIT (since 1.0.320 placeholder; renders fine - FAILs are layout-check only, container-dependent). Fixer started (1.0.330).
 - 10:05: #344 merge review e96cade3: 0/0/0 CLEAN. Waits CI + turn.
 - 10:05: #342 merge review 41b113c6: 0/0/0 CLEAN. Waits CI + turn.
 - 10:05: #371 land-prep done: head 147c3f5d (1.0.326), still harness-only, autocrlf suites green; dropped an empty CHANGELOG heading (to verify). Merge-only review started.
