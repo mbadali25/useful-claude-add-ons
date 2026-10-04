@@ -52,7 +52,7 @@ row goes live the day its ticket adds the name to `crew_autopilot.AVAILABLE`.
   autopilot status [<id>]                         route  (an id resolves as above)
   focus on <id>                                   route, or ask with no folder
   take care of / handle / work toward <text>      route  `<command> <text>`, or ask
-                                                         on a quote, $, ` or \\
+                                                         (see `_screen` below)
   pick the goal back up                           ask    never picks a slug (T-0056)
 
 Assign, goal and focus pass `_screen` first. A Unicode line break, a first
@@ -147,16 +147,15 @@ _APPROVE = re.compile(r"approve", re.IGNORECASE)
 # fullwidth or lookalike slashes, separators, quotes, shell metacharacters), so
 # the text that routes is the text the user typed. On that ASCII, a word
 # starting with `-` (a flag) or a trailing negation asks.
+# Never a quote, $, backtick or backslash: `commands/autopilot.md` section 0 refuses them.
 _PLAIN = frozenset(string.ascii_letters + string.digits + " .,:;_#()-")
 _NOTHING = ("it", "this", "that", "them", "these", "those", "everything", "nothing",
             "something", "anything", "whatever")
 _LINE_BREAKS = ("\u2028", "\u2029", "\x85", "\x0b", "\x0c")
 _APPROV = "approv"
 _TOKEN = re.compile(r"[a-z0-9]+")
-_NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|don't|no|nah|nope|wait|cancel"
+_NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|no|nah|nope|wait|cancel"
                        r"|never ?mind|not now|cancel that|scratch that|forget it)$")
-# The characters `commands/autopilot.md` section 0 refuses in its arguments.
-_SHELL = re.compile(r"['\"$`\\]")
 _ROUTE_SHAPE = ("sub", "stop", "reason")
 # Intents whose ask is about which ticket; any other ask never says "which ticket".
 _TICKETED = ("spec", "plan", "implement", "review", "done", "continue", "focus")
@@ -344,10 +343,6 @@ def _autopilot(found, top):
     if found.get("refuse"):
         return _answer("ask", found, reason=found["refuse"])
     if found["rule"] == "autopilot-text":
-        if _SHELL.search(found["topic"]):
-            return _answer("ask", found, reason="autopilot's router refuses those characters "
-                                                "(a quote, $, a backtick or a backslash); ask "
-                                                "the user to rephrase or type the command")
         return _answer("route", found, command=command_for(found, None))
     if not found["ticket_arg"]:
         return _answer("route", found, command=command_for(found, None))
