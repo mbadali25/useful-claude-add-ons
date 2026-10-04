@@ -702,7 +702,7 @@ open questions; plan approval and open questions wait for a person unless T-0010
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
 
-**Ship (T-0011, crew 1.0.196).** DERIVED at `d616cc1f`, T-0011's merge of main `7846261c`; the
+**Ship (T-0011, crew 1.0.233).** DERIVED at `d616cc1f`, T-0011's merge of main `7846261c`; the
 line numbers in this paragraph are that commit's, not the anchor's. After `/crew:done`
 (spec header `status: done`, or INDEX `done` with that header), armed, `_phase` hands off to
 `_ship_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:581`): unarmed is `closed` without
