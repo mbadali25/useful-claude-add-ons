@@ -90,13 +90,15 @@ if [ -f "$TRANSCRIPT" ]; then
   [ -f "$DEST" ] || FAILED=1
   KEEP=5
   if PY=$(crew_py); then
-    K=$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("context",{}).get("keepTranscripts",5))' "$CREW_CFG" 2>/dev/null)
+    # An integer only, as documented (CONFIG.md); a digit string, a bool or a
+    # negative is ignored and 5 are kept -- the same as handoff-write.ps1.
+    K=$("$PY" -c 'import json,sys;k=json.load(open(sys.argv[1])).get("context",{}).get("keepTranscripts",5);print(k if type(k) is int and k>=0 else 5)' "$CREW_CFG" 2>/dev/null)
     case "$K" in ''|*[!0-9]*) ;; *) KEEP="$K" ;; esac
   fi
   ls -1t .crew/transcripts/*.jsonl 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f
 fi
 
-PY=$(crew_py) && HANDOFF=$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' "$CREW_CFG" 2>/dev/null)
+PY=$(crew_py) && HANDOFF=$(crew_handoff_path "$PY" "$CREW_CFG")
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 
 # If no handoff exists, write a factual skeleton from the repo, not from memory.

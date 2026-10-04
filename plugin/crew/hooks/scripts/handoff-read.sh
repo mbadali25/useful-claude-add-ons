@@ -51,7 +51,7 @@ CREW_CFG="$CREW_CFG_DIR/config.json"
 
 PY=$(crew_py) || exit 0
 
-HANDOFF=$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' "$CREW_CFG" 2>/dev/null)
+HANDOFF=$(crew_handoff_path "$PY" "$CREW_CFG")
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 [ -f "$HANDOFF" ] || exit 0
 

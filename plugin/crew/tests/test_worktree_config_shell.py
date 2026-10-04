@@ -44,6 +44,7 @@ needs_pwsh = pytest.mark.skipif(
 
 PS_COPIES = ("cloud-guard", "promote-gate", "auto-clear",
              "notify", "handoff-read", "handoff-write", "context-watch")  # L-0680: the last four
+HANDOFF_PATH_COPIES = ("handoff-read", "handoff-write", "context-watch")  # L-0680 review B1
 SHELL_SOURCE = {crew_common.SOURCE_OWN: "own", crew_common.SOURCE_MAIN: "main",
                 crew_common.SOURCE_UNKNOWN: "unknown"}
 NO_PYTHON = {"PYTHONHOME": "/nonexistent-python-home"}
@@ -256,10 +257,29 @@ def test_powershell_resolver_reads_a_non_ascii_lane_path_whatever_the_console_en
     assert (source, restored) == ("main", "True"), proc.stderr
 
 
-def test_powershell_resolver_copies_are_identical():
-    first = ps_function(PS_COPIES[0])
-    for stem in PS_COPIES[1:]:
-        assert ps_function(stem) == first, f"{stem}.ps1's Get-CrewRepoConfigDir differs"
+def _ps_copies_bytes(name):
+    """{script name: the function's bytes} for every .ps1 in hooks/scripts that
+    defines `name`, found by search rather than a hand list."""
+    marker = f"function {name}(".encode()
+    found = {}
+    for entry in sorted(os.listdir(SCRIPTS)):
+        if not entry.endswith(".ps1"):
+            continue
+        data = pathlib.Path(SCRIPTS, entry).read_bytes()
+        start = data.find(marker)
+        if start >= 0:
+            found[entry] = data[start:data.index(b"\n}\n", start) + 3]
+    return found
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("Get-CrewRepoConfigDir", {s + ".ps1" for s in PS_COPIES}),
+    ("Get-CrewHandoffPath", {s + ".ps1" for s in HANDOFF_PATH_COPIES}),
+])
+def test_powershell_resolver_copies_are_identical(name, expected):
+    copies = _ps_copies_bytes(name)
+    assert expected <= set(copies), sorted(copies)
+    assert len(set(copies.values())) == 1, f"{name} differs between {sorted(copies)}"
 
 
 @needs_bash
@@ -681,23 +701,131 @@ def test_context_watch_in_the_main_checkout_keeps_its_message(tmp_path, flavour)
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
 def test_session_hooks_read_only_their_own_file_when_git_cannot_tell(tmp_path, flavour, stub):
-    """`.git` naming a missing directory: nothing is inherited (there is no
-    main checkout to name) and each hook behaves as with no config."""
-    root = _case_git_file_naming_a_missing_dir(tmp_path)
-    (root / ".crew").mkdir()
-    _note(root, "UNKNOWN NOTE")
-    assert _notify(tmp_path, flavour, root, stub).returncode == 0
+    """A real lane of a main checkout whose config would make every hook act
+    (notify, an inherited handoff path, keepTranscripts, a low warnAt), with the
+    lane's `.git` naming a missing directory: git cannot tell, nothing is
+    inherited, and each hook behaves as with no config."""
+    loose = dict(NOTIFY_CFG, memory={"inject": False},
+                 context=dict(_context_cfg()["context"], handoffPath="notes/H.md",
+                              keepTranscripts=1))
+    main, wt = _lane(tmp_path, loose)
+    (wt / ".git").write_text("gitdir: " + str(tmp_path / "nowhere") + "\n", encoding="utf-8")
+    (wt / ".crew").mkdir()
+    _note(wt, "LANE NOTE")
+    assert _notify(tmp_path, flavour, wt, stub).returncode == 0
     assert not stub.posts
-    read = _handoff_read(tmp_path, flavour, root)
-    assert read.returncode == 0 and b"UNKNOWN NOTE" not in read.stdout
+    read = _handoff_read(tmp_path, flavour, wt)
+    assert read.returncode == 0 and b"LANE NOTE" not in read.stdout, read.stdout
     transcript = tmp_path / "session.jsonl"
     transcript.write_text("{}\n", encoding="utf-8")
-    write = _run_session_hook(tmp_path, "handoff-write", flavour, root, payload={
-        "transcript_path": str(transcript), "trigger": "manual", "cwd": str(root),
+    write = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
+        "transcript_path": str(transcript), "trigger": "manual", "cwd": str(wt),
         "session_id": "s-unknown"})
-    assert write.returncode == 0 and not _transcripts(root)
-    watch = _context_watch(tmp_path, flavour, root)
-    assert watch.returncode == 0 and not _markers(root), watch.stderr
+    assert write.returncode == 0 and not _transcripts(wt)
+    assert not (wt / ".work" / "HANDOFF.md").exists()
+    watch = _context_watch(tmp_path, flavour, wt)
+    assert watch.returncode == 0 and not _markers(wt), watch.stderr
+    # the same config does act in the main checkout itself: the case is not vacuous
+    assert _context_watch(tmp_path, flavour, main).returncode == 2
+
+
+# --- review round 1 ---------------------------------------------------------------------
+
+def _escaping(kind, main):
+    """An inherited handoffPath that leaves the lane, into the main checkout."""
+    return str(main / ".work" / "HANDOFF.md") if kind == "absolute" else "../main/.work/HANDOFF.md"
+
+
+ESCAPES = ["absolute", "dotdot"]
+
+
+@pytest.mark.parametrize("kind", ESCAPES)
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_write_never_writes_outside_the_lane(tmp_path, flavour, kind):
+    main, wt = _lane(tmp_path, None)
+    _own(main, "config.json", {"context": {"handoffPath": _escaping(kind, main)}})
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
+        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(wt),
+        "session_id": f"s-esc-{kind}"})
+    assert proc.returncode == 0, proc.stderr
+    assert not (main / ".work").exists(), "a lane hook wrote into the main checkout"
+    assert (wt / ".work" / "HANDOFF.md").exists(), proc.stderr
+    assert b"handoffPath" in proc.stderr  # warned
+
+
+@pytest.mark.parametrize("kind", ESCAPES)
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_read_never_prints_a_note_outside_the_lane(tmp_path, flavour, kind):
+    main, wt = _lane(tmp_path, None)
+    _own(main, "config.json", {"context": {"handoffPath": _escaping(kind, main)},
+                               "memory": {"inject": False}})
+    (main / ".work").mkdir()
+    (main / ".work" / "HANDOFF.md").write_text("MAIN CHECKOUT NOTE\n", encoding="utf-8")
+    (wt / ".work").mkdir()
+    (wt / ".work" / "HANDOFF.md").write_text("LANE DEFAULT NOTE\n", encoding="utf-8")
+    proc = _handoff_read(tmp_path, flavour, wt)
+    out = proc.stdout.decode("utf-8", "replace")
+    assert proc.returncode == 0, proc.stderr
+    assert "MAIN CHECKOUT NOTE" not in out
+    assert "LANE DEFAULT NOTE" in out, proc.stderr
+
+
+@pytest.mark.parametrize("kind", ESCAPES)
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_context_watch_never_names_a_handoff_outside_the_lane(tmp_path, flavour, kind):
+    main, wt = _lane(tmp_path, None)
+    _own(main, "config.json", _context_cfg(handoffPath=_escaping(kind, main), autoWrapUp=True))
+    (wt / ".crew").mkdir()
+    proc = _context_watch(tmp_path, flavour, wt)
+    err = proc.stderr.decode("utf-8", "replace")
+    assert proc.returncode == 2, err
+    assert _escaping(kind, main) not in err
+    assert ".work/HANDOFF.md" in err.replace("\\", "/")
+
+
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_write_records_a_compact_in_a_lane_whose_main_has_only_crew_json(tmp_path,
+                                                                                  flavour):
+    """F1: the inherited branch's crew.json disjunct. A main checkout retired to
+    crew.json alone still gets the lane its PreCompact record, and nothing else."""
+    main, wt = _lane(tmp_path, None)
+    _own(main, "crew.json", {"memory": {"inject": True}})
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
+        "hook_event_name": "PreCompact", "transcript_path": str(tmp_path / "none.jsonl"),
+        "trigger": "manual", "cwd": str(wt), "session_id": "s-crewjson"})
+    assert proc.returncode == 0, proc.stderr
+    import crew_resume  # pylint: disable=import-outside-toplevel
+    record = os.path.join(crew_resume.state_dir(str(wt)), "precompact-s-crewjson.json")
+    assert os.path.exists(record), proc.stderr
+    assert not (wt / ".work" / "HANDOFF.md").exists()
+
+
+def _seed_transcripts(root, count):
+    folder = root / ".crew" / "transcripts"
+    folder.mkdir(parents=True, exist_ok=True)
+    for n in range(count):
+        path = folder / f"2020010{n}-000000-auto.jsonl"
+        path.write_text("{}\n", encoding="utf-8")
+        stamp = time.time() - 3600 * (n + 1)
+        os.utime(path, (stamp, stamp))
+
+
+@pytest.mark.parametrize("keep,left", [(3_000_000_000, 7), ("2", 5), (True, 5), (-1, 5), (0, 0)],
+                         ids=["above-int32", "digit-string", "bool", "negative", "zero"])
+@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_keep_transcripts_reads_the_same_in_both_flavours(tmp_path, flavour, keep, left):
+    """F2/N2: an integer past Int32 keeps everything (the .ps1 used to fall back
+    to 5 and delete what the user kept); a non-integer, as documented
+    (CONFIG.md: expects integer), is ignored in both flavours, so 5 are kept."""
+    main, wt = _lane(tmp_path, {"context": {"keepTranscripts": keep}})
+    _seed_transcripts(main, 6)
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("{}\n", encoding="utf-8")
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
+        "transcript_path": str(transcript), "trigger": "manual", "cwd": str(main),
+        "session_id": f"s-keep-{flavour}"})
+    assert proc.returncode == 0, proc.stderr
+    assert len(_transcripts(main)) == left
 
 
 # Lines in the eight scripts that may still name the own file outside a comment,

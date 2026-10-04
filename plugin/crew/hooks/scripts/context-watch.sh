@@ -263,6 +263,9 @@ if [ -z "$PY" ]; then
   # approximation above), so the message names WHERE to look rather than
   # hard-coding the shipped default as if it were certainly correct.
   HANDOFF_NOTE="the configured handoff path (context.handoffPath in ${CFG_SHOWN}; .work/HANDOFF.md if unset)"
+  # Inherited: say the path is taken inside this checkout, so an absolute or
+  # `..` value in the main checkout's file is not read as "write there".
+  [ "$CREW_CFG_SOURCE" = main ] && HANDOFF_NOTE="the configured handoff path (context.handoffPath in ${CFG_SHOWN}, inside this checkout only; .work/HANDOFF.md if it is unset or leaves this checkout)"
   # NOT `$MARKER` -- see the header comment above this branch. Nothing is
   # claimed here; `stop_hook_active`, checked first at the top of this
   # script, is what bounds the retry Claude Code triggers after this exit 2.
@@ -307,8 +310,9 @@ STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 # once-per-session gate for this hook, reset by handoff-read.sh at the next
 # SessionStart -- that stays.
 
-CFG=$("$PY" - "$CREW_CFG" << 'PY' 2>/dev/null
+CFG=$("$PY" - "$CREW_CFG" "$(dirname "$0")" << 'PY' 2>/dev/null
 import json
+import os
 import sys
 # An unparseable file (json.load raises) is treated as "no context settings",
 # same as always -- the file's presence is already proven by bash above, and
@@ -337,7 +341,23 @@ else:
     # threshold below.
     try: reserve = max(0, int(c.get("reserveTokens", 0) or 0))
     except (TypeError, ValueError): reserve = 100_000
-    print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve)
+    # The handoff path the message names, kept inside this checkout by the
+    # Python readers' own rule (crew_state.handoff_path): a value that leaves
+    # it -- absolute, `..`, a symlink out; in a linked worktree, the main
+    # checkout's file (L-0680) -- is the default, and the 7th field says so.
+    handoff, escaped = ".work/HANDOFF.md", "ok"
+    try:
+        sys.path.insert(0, sys.argv[2])
+        from crew_state import handoff_path
+        root = os.path.realpath(os.getcwd())
+        got = handoff_path(root, raw)
+        handoff = os.path.relpath(got, root)
+        v = c.get("handoffPath")
+        if isinstance(v, str) and v and os.path.realpath(os.path.join(root, v)) != got:
+            escaped = "escaped"
+    except Exception:
+        pass
+    print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, handoff, str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve, escaped)
 PY
 )
 if [ "$CFG" = "MALFORMED_CONFIG_CONTEXT_BLOCK" ]; then
@@ -356,7 +376,7 @@ if [ -z "$CFG" ]; then
   echo "crew context-watch: python resolved but produced no config read (an unexpected interpreter failure, not a malformed config) - context warnings are OFF this turn" >&2
   exit 0
 fi
-read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE <<< "$CFG"
+read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE HANDOFF_ESCAPED <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
 # Read the ACTUAL window occupancy, not a guess at it.
@@ -572,6 +592,11 @@ if [ "$SOURCE" = "estimated" ]; then
   NOTE="
 This figure is a fallback estimate from transcript size, not a measurement -
 no usage record was found yet. It reads high after a compaction."
+fi
+if [ "$HANDOFF_ESCAPED" = "escaped" ]; then
+  NOTE="${NOTE}
+context.handoffPath in ${CFG_SHOWN} leaves this checkout, so the handoff goes
+to ${HANDOFF} here instead."
 fi
 
 # Name the rule that fired. A percentage alone cannot explain why an 800k

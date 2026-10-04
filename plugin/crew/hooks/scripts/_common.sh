@@ -356,6 +356,39 @@ crew_repo_config_file() {
   printf '%s/%s\n' "$CREW_CFG_DIR" "${1:-config.json}"
 }
 
+# Print where the handoff note lives, relative to the cwd (the checkout root):
+# context.handoffPath from config file $2, read with python $1 through
+# crew_state.handoff_path -- the Python readers' own containment
+# (crew_freshness.contained_path): a value that leaves the checkout (absolute,
+# `..`, a symlink out) is the default .work/HANDOFF.md, with a warning on
+# stderr. Matters most in a linked worktree that inherits the main checkout's
+# config (L-0680): an absolute path there would name the main checkout's file.
+# Any failure prints the default, which is inside the checkout.
+crew_handoff_path() {
+  "$1" - "$(dirname "${BASH_SOURCE[0]}")" "$2" << 'PY'
+import json, os, sys
+default = ".work/HANDOFF.md"
+try:
+    sys.path.insert(0, sys.argv[1])
+    from crew_state import handoff_path
+    try:
+        with open(sys.argv[2], encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except Exception:
+        cfg = {}
+    cfg = cfg if isinstance(cfg, dict) else {}
+    root = os.path.realpath(os.getcwd())
+    got = handoff_path(root, cfg)
+    ctx = cfg.get("context")
+    value = ctx.get("handoffPath") if isinstance(ctx, dict) else None
+    if isinstance(value, str) and value and os.path.realpath(os.path.join(root, value)) != got:
+        sys.stderr.write("crew: context.handoffPath leaves this checkout - using %s\n" % default)
+    print(os.path.relpath(got, root))
+except Exception:
+    print(default)
+PY
+}
+
 # --- Emergency lane -------------------------------------------------------
 #
 # Is an incident open, unexpired, and allowed to stand the gates down?

@@ -232,6 +232,34 @@ function Get-CrewRepoConfigDir([string]$Root) {
   return $result
 }
 
+function Get-CrewHandoffPath($Value) {
+  # The handoff note's path relative to the cwd (the checkout root):
+  # context.handoffPath, or .work/HANDOFF.md when it is unset or leaves the
+  # checkout -- absolute, `..`, or through a link -- with a warning on stderr.
+  # Twin of crew_state.handoff_path (crew_freshness.contained_path), stricter
+  # on links: 5.1 cannot resolve one as realpath does, so any link between the
+  # root and the target reads as leaving. In a linked worktree inheriting the
+  # main checkout's config (L-0680) an absolute value would name the main
+  # checkout's file. Copied verbatim into handoff-read.ps1, handoff-write.ps1
+  # and context-watch.ps1; test_worktree_config_shell.py holds the copies equal.
+  $default = '.work/HANDOFF.md'
+  if (-not ($Value -is [string]) -or -not $Value.Trim()) { return $default }
+  $inside = $false
+  try {
+    $base = [System.IO.Path]::GetFullPath((Get-Location).ProviderPath).TrimEnd('\', '/')
+    $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($base, $Value))
+    $cmp = if ($env:OS -eq 'Windows_NT' -and $IsLinux -ne $true) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $inside = $full.StartsWith($base + [System.IO.Path]::DirectorySeparatorChar, $cmp)
+    for ($at = $full; $inside -and $at.Length -gt $base.Length; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if ($item -and $item.LinkType) { $inside = $false }
+    }
+  } catch { $inside = $false }
+  if ($inside) { return $full.Substring($base.Length + 1) }
+  [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
+  return $default
+}
+
 $raw = [Console]::In.ReadToEnd()
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
@@ -281,7 +309,7 @@ $cfgPath = Join-Path (Get-CrewRepoConfigDir '.').Dir 'config.json'
 if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf)) { exit 0 }
 $cfg = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
 
-$path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
+$path = Get-CrewHandoffPath $cfg.context.handoffPath
 if (-not (Test-Path $path)) { exit 0 }
 
 # Stale-handoff check, right before this note would be injected as though it

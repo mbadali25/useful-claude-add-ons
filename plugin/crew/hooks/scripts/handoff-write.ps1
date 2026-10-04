@@ -332,6 +332,34 @@ function Get-CrewRepoConfigDir([string]$Root) {
   return $result
 }
 
+function Get-CrewHandoffPath($Value) {
+  # The handoff note's path relative to the cwd (the checkout root):
+  # context.handoffPath, or .work/HANDOFF.md when it is unset or leaves the
+  # checkout -- absolute, `..`, or through a link -- with a warning on stderr.
+  # Twin of crew_state.handoff_path (crew_freshness.contained_path), stricter
+  # on links: 5.1 cannot resolve one as realpath does, so any link between the
+  # root and the target reads as leaving. In a linked worktree inheriting the
+  # main checkout's config (L-0680) an absolute value would name the main
+  # checkout's file. Copied verbatim into handoff-read.ps1, handoff-write.ps1
+  # and context-watch.ps1; test_worktree_config_shell.py holds the copies equal.
+  $default = '.work/HANDOFF.md'
+  if (-not ($Value -is [string]) -or -not $Value.Trim()) { return $default }
+  $inside = $false
+  try {
+    $base = [System.IO.Path]::GetFullPath((Get-Location).ProviderPath).TrimEnd('\', '/')
+    $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($base, $Value))
+    $cmp = if ($env:OS -eq 'Windows_NT' -and $IsLinux -ne $true) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $inside = $full.StartsWith($base + [System.IO.Path]::DirectorySeparatorChar, $cmp)
+    for ($at = $full; $inside -and $at.Length -gt $base.Length; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if ($item -and $item.LinkType) { $inside = $false }
+    }
+  } catch { $inside = $false }
+  if ($inside) { return $full.Substring($base.Length + 1) }
+  [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
+  return $default
+}
+
 $stdinStream = [Console]::OpenStandardInput()
 $memStream = New-Object System.IO.MemoryStream
 $stdinStream.CopyTo($memStream)
@@ -438,8 +466,11 @@ if ($d.transcript_path -and (Test-Path $d.transcript_path)) {
   $keep = 5
   try {
     $k = (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).context.keepTranscripts
-    # [long] too: PowerShell 7's ConvertFrom-Json reads a JSON integer as Int64.
-    if (($k -is [int] -or $k -is [long]) -and $k -ge 0) { $keep = [int]$k }
+    # [long] too: PowerShell 7's ConvertFrom-Json reads a JSON integer as Int64,
+    # clamped to Int32.MaxValue -- a bare [int] cast throws past it, which left
+    # 5 and deleted what the user kept. An integer only, as documented: a digit
+    # string, a bool or a negative keeps 5, the same as handoff-write.sh.
+    if (($k -is [int] -or $k -is [long]) -and $k -ge 0) { $keep = [int][math]::Min([long]$k, [long][int]::MaxValue) }
   } catch { }
   Get-ChildItem ".crew/transcripts/*.jsonl" -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -Skip $keep |
@@ -447,7 +478,7 @@ if ($d.transcript_path -and (Test-Path $d.transcript_path)) {
 }
 
 $cfg  = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
-$path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
+$path = Get-CrewHandoffPath $cfg.context.handoffPath
 if (Test-Path $path) {
   if (-not $failed) { Complete-CrewEventClaim $claim }
   exit 0
