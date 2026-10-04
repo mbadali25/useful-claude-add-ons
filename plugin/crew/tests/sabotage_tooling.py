@@ -1097,3 +1097,110 @@ TOOLING_MUTATIONS += (
         _BOUND + "test_the_harness_dying_stops_a_running_child",
     ),
 )
+
+# T-0082: a rule passes only on a completion record. Each mutation names the
+# test that must catch it; the .ps1 ones run wherever pwsh exists.
+_DONE = "tests/test_verify_gate_rule_completion.py::"
+TOOLING_MUTATIONS += (
+    (
+        "(a) sh: pass on the wrapper status alone (record not read)",
+        GATE_SH,
+        '    RULE_REC=$(head -c 8 "$RULE_DONE_FILE" 2>/dev/null; printf x)\n',
+        "    RULE_REC=\"$RULE_WRAP_RC\"$'\\n'x\n",
+        _DONE + "test_a_rule_killed_mid_run_could_not_tell[sh]",
+    ),
+    (
+        "(b) sh: pass on the record alone (wrapper status not read)",
+        GATE_SH,
+        '    if [ "$RULE_WRAP_RC" -ne 0 ]; then\n',
+        "    if false; then\n",
+        _DONE + "test_no_completion_record_could_not_tell[wrapper-killed-sh]",
+    ),
+    (
+        "(c) sh: a missing record reads as 0",
+        GATE_SH,
+        '      *) RULE_REC="" ;;\n',
+        "      *) RULE_REC=0 ;;\n",
+        _DONE + "test_no_completion_record_could_not_tell[record-vanished-sh]",
+    ),
+    (
+        "sh: a record above 255 is read as a status",
+        GATE_SH,
+        '    [ -n "$RULE_REC" ] && [ "$RULE_REC" -gt 255 ] && RULE_REC=""\n',
+        "",
+        _DONE + "test_unreadable_record_could_not_tell[256-sh]",
+    ),
+    (
+        "(d) sh: a status above 128 reads as a plain failure",
+        GATE_SH,
+        '    elif [ "$RULE_REC" -gt 128 ]; then\n',
+        "    elif false; then\n",
+        _DONE + "test_a_rule_killed_mid_run_could_not_tell[sh]",
+    ),
+    (
+        "(e) sh: unknown is logged as pass",
+        GATE_SH,
+        '    CMD_STATUS="unknown"\n',
+        '    CMD_STATUS="pass"\n',
+        _DONE + "test_unknown_status_is_never_recorded_clean[sh]",
+    ),
+    (
+        "(f) sh: the trap's in-flight lines removed",
+        GATE_SH,
+        '  [ -n "${RULE_IN_FLIGHT:-}" ] || return 0\n',
+        "  return 0\n",
+        _DONE + "test_a_signalled_gate_names_the_command_in_flight",
+    ),
+    (
+        "sh: the in-flight command is never cleared",
+        GATE_SH,
+        '    RULE_WRAP_RC=$?\n    RULE_IN_FLIGHT=""\n',
+        "    RULE_WRAP_RC=$?\n",
+        _DONE + "test_a_signalled_gate_with_no_rule_in_flight_names_nothing",
+    ),
+    (
+        "sh: a signalled gate leaves the rule's temp files",
+        GATE_SH,
+        "_crew_gate_register_cleanup _crew_gate_rule_files_cleanup\n",
+        "",
+        _DONE + "test_a_signalled_gate_leaves_no_record_file",
+    ),
+)
+if shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            "(g) ps1: $rc not reset per rule",
+            GATE_PS1,
+            "  $rc = $null\n  $ruleRec = $null\n",
+            "  $ruleRec = $null\n",
+            _DONE + "test_ps1_launch_failure_does_not_inherit_the_previous_status",
+        ),
+        (
+            "(h) ps1: a missing record takes the wrapper's status",
+            GATE_PS1,
+            '      $ruleWhy = "no completion record"\n',
+            "      $ruleRec = $rc\n",
+            _DONE + "test_no_completion_record_could_not_tell[record-vanished-ps1]",
+        ),
+        (
+            "(i) ps1: unknown does not set $failed",
+            GATE_PS1,
+            "    $failed = $true\n    $unknownCount++\n",
+            "    $unknownCount++\n",
+            _DONE + "test_unknown_never_advances_the_marker[ps1]",
+        ),
+        (
+            "ps1: a status above 128 reads as a plain failure",
+            GATE_PS1,
+            "    } elseif ($ruleRec -gt 128) {\n",
+            "    } elseif ($false) {\n",
+            _DONE + "test_a_rule_killed_mid_run_could_not_tell[ps1]",
+        ),
+        (
+            "ps1: unknown is logged as pass",
+            GATE_PS1,
+            '    $cmdStatus = "unknown"\n',
+            '    $cmdStatus = "pass"\n',
+            _DONE + "test_unknown_status_is_never_recorded_clean[ps1]",
+        ),
+    )

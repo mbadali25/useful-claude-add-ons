@@ -788,9 +788,20 @@ _crew_gate_run_cleanup() {
 # exact gap that let a rule's own escaped process group outlive this
 # whole gate being killed. EXIT needs no explicit exit of its own - the
 # script is already on its way out with whatever code got it there.
-trap '_crew_gate_run_cleanup; exit $((128 + 15))' TERM
-trap '_crew_gate_run_cleanup; exit $((128 + 2))' INT
-trap '_crew_gate_run_cleanup; exit $((128 + 1))' HUP
+#
+# T-0082: a rule in flight when the gate is signalled is named here, from the
+# trap itself - the dispatcher above discards its functions' stderr, so a line
+# printed from a registered cleanup would never be seen. Without this the log
+# held no VERIFY FAILED line for the command that was running at all.
+RULE_IN_FLIGHT=""
+_crew_gate_in_flight() {
+  [ -n "${RULE_IN_FLIGHT:-}" ] || return 0
+  echo "VERIFY FAILED: $RULE_IN_FLIGHT" >&2
+  echo "verify-gate: COULD NOT TELL (the gate received $1 while this command was running): $RULE_IN_FLIGHT" >&2
+}
+trap '_crew_gate_in_flight TERM; _crew_gate_run_cleanup; exit $((128 + 15))' TERM
+trap '_crew_gate_in_flight INT; _crew_gate_run_cleanup; exit $((128 + 2))' INT
+trap '_crew_gate_in_flight HUP; _crew_gate_run_cleanup; exit $((128 + 1))' HUP
 trap '_crew_gate_run_cleanup' EXIT
 
 if [ "$UNLOCKED" -eq 0 ]; then
@@ -1821,6 +1832,17 @@ ANY_SKIPPED=0
 # How many, not only whether: --ci names the count when it fails the run on
 # them (a skip is not a pass in CI). Nothing else reads it.
 SKIP_N=0
+# T-0082: rules that could not be judged (killed, signalled, no completion
+# record). Each one also sets FAILED; this count only feeds the summary line.
+UNKNOWN_N=0
+# The two per-rule temp files go on a signalled exit too: the cleanup
+# registry runs on TERM/INT/HUP/EXIT, and a rule still in flight would
+# otherwise leave both behind. (A rule left running by a signalled gate can
+# still write its record afterwards - the descoped orphan limitation below.)
+RULE_OUT_FILE=""
+RULE_DONE_FILE=""
+_crew_gate_rule_files_cleanup() { rm -f "${RULE_OUT_FILE:-}" "${RULE_DONE_FILE:-}"; }
+_crew_gate_register_cleanup _crew_gate_rule_files_cleanup
 # NDJSON accumulator: one line per command actually run this turn, with its
 # outcome and elapsed time, fed to verify_record.py sync below. Built from
 # python's own JSON encoding of $c rather than hand-quoted in bash, so a
@@ -2013,7 +2035,19 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   if [ -z "$RULE_OUT_FILE" ]; then
     RULE_OUT_FILE=$(mktemp ".crew/.verify-rule-out.XXXXXX" 2>/dev/null) || RULE_OUT_FILE=""
   fi
-  if [ -n "$RULE_OUT_FILE" ]; then
+  # T-0082: the COMPLETION RECORD. A second path, made the same way and then
+  # removed, so its absence means "not written". The wrapper below writes the
+  # rule's exit status to it AFTER the rule ends; a rule passes only when the
+  # wrapper ended 0 AND this record exists AND it says 0. A wrapper that was
+  # killed, or ended 0 without a record (the shape a native Windows kill
+  # reporting 0 leaves), is "could not tell", never a pass.
+  RULE_DONE_FILE=$(mktemp 2>/dev/null) || RULE_DONE_FILE=""
+  if [ -z "$RULE_DONE_FILE" ]; then
+    RULE_DONE_FILE=$(mktemp ".crew/.verify-rule-done.XXXXXX" 2>/dev/null) || RULE_DONE_FILE=""
+  fi
+  [ -n "$RULE_DONE_FILE" ] && rm -f "$RULE_DONE_FILE"
+  RULE_WHY=""
+  if [ -n "$RULE_OUT_FILE" ] && [ -n "$RULE_DONE_FILE" ]; then
     # `( ... )`, not a bare `eval "$c"`: `$(...)` (the old form) forks a
     # subshell IMPLICITLY, which is why a rule command calling `exit N`
     # (`.crew/verify.json` rules do this routinely - "run": ["exit 1"]) only
@@ -2049,10 +2083,38 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # capture above already guarantees, independent of anything below),
     # but a rule's own escaped background work is no longer reaped by
     # this gate - see CONFIG.md's limitation entry.
-    ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
+    #
+    # T-0082: the INNER subshell keeps the isolation a rule's own `exit N`
+    # needs; the outer one writes the record once it has ended, whatever it
+    # ended with. Measured: `wait` returns 0 and the record holds 0, 3, 137
+    # or 143 for a rule that passed, exited 3, or was ended by KILL or TERM;
+    # killing the outer wrapper gives `wait` 137 and no record.
+    RULE_IN_FLIGHT="$c"
+    ( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
     RULE_SUBSHELL_PID=$!
     wait "$RULE_SUBSHELL_PID" 2>/dev/null
-    RC=$?
+    RULE_WRAP_RC=$?
+    RULE_IN_FLIGHT=""
+    # Bounded read (8 bytes): the rule can see this path and could point it
+    # at something endless. Exactly 1-3 digits and a newline, or no record.
+    RULE_REC=$(head -c 8 "$RULE_DONE_FILE" 2>/dev/null; printf x)
+    RULE_REC=${RULE_REC%x}
+    rm -f "$RULE_DONE_FILE"
+    RULE_DONE_FILE=""
+    case "$RULE_REC" in
+      [0-9]$'\n'|[0-9][0-9]$'\n'|[0-9][0-9][0-9]$'\n') RULE_REC=$((10#${RULE_REC%$'\n'})) ;;
+      *) RULE_REC="" ;;
+    esac
+    [ -n "$RULE_REC" ] && [ "$RULE_REC" -gt 255 ] && RULE_REC=""
+    # The decision table, in this order, the same in verify-gate.ps1.
+    if [ "$RULE_WRAP_RC" -ne 0 ]; then
+      RULE_WHY="the rule's runner ended with status $RULE_WRAP_RC before it recorded a result"
+    elif [ -z "$RULE_REC" ]; then
+      RULE_WHY="no completion record"
+    elif [ "$RULE_REC" -gt 128 ]; then
+      RULE_WHY="exit status $RULE_REC: ended by signal $((RULE_REC - 128)), or the rule's own status"
+    fi
+    RC=${RULE_REC:-1}
     # Snapshot the size the moment the rule's OWN process exits, then read
     # exactly that many bytes -- never the whole file as it stands when
     # `cat` gets around to it. A backgrounded grandchild that keeps writing
@@ -2106,20 +2168,32 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # return to an unbounded read.
     OUT=$(tail -c "$RULE_OUT_SIZE" "$RULE_OUT_FILE" 2>/dev/null)
     rm -f "$RULE_OUT_FILE"
+    RULE_OUT_FILE=""
   else
     # Neither TMPDIR nor .crew/ is writable: refuse this rule with a named
     # reason instead of running it through the pipe form. A check that
     # cannot capture its own output safely is not a check that ran. The
     # "VERIFY FAILED: $c" header and this message both print below, through
     # the same RC-ne-0 branch every other rule failure goes through.
-    OUT="verify-gate: cannot create an output-capture file (TMPDIR and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever"
+    rm -f "$RULE_OUT_FILE"
+    OUT="verify-gate: cannot create an output-capture file or a completion-record file (TMPDIR and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever"
+    RULE_WHY="$OUT"
     RC=1
   fi
   # Exit 77 is SKIP, the _verify/smoke.sh and GNU automake convention for
   # "skipped, environment absent" -- not a pass, not a fail. It must not
   # fail the turn, and it must not be recorded as verified either: it is
   # listed with the deferred/chronic ones below, via CMD_STATUS.
-  if [ "$RC" -eq 77 ]; then
+  if [ -n "$RULE_WHY" ]; then
+    # Could not tell (T-0082). `VERIFY FAILED` first, so every reader of that
+    # line still sees a failure; then the reason; then the output.
+    echo "VERIFY FAILED: $c" >&2
+    echo "verify-gate: COULD NOT TELL ($RULE_WHY): $c" >&2
+    echo "$OUT" | tail -25 >&2
+    FAILED=1
+    UNKNOWN_N=$((UNKNOWN_N + 1))
+    CMD_STATUS="unknown"
+  elif [ "$RC" -eq 77 ]; then
     echo "verify-gate: SKIP (rc 77, environment absent): $c" >&2
     CMD_STATUS="skip77"
     ANY_SKIPPED=1
@@ -2158,6 +2232,9 @@ done <<< "$CMDS"
 
 echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
 ' "$CMDS" | grep -c .) rule command(s)" >&2
+if [ "$UNKNOWN_N" -gt 0 ]; then
+  echo "verify-gate: $UNKNOWN_N rule command(s) COULD NOT BE JUDGED - counted as FAILED" >&2
+fi
 if [ "$COVERED_N" -gt 0 ]; then
   echo "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run" >&2
 fi
