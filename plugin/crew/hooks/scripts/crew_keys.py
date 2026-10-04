@@ -414,6 +414,11 @@ KEY_META = {
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),
+    "autopilot.maxAutoReplans": _row("Successor plans autopilot may start by rejecting an "
+                                     "out-of-rounds BLOCK review itself; 0 is off, and "
+                                     "anything but a non-negative integer reads as 0, with "
+                                     "a warning.", "branch", None, "1.0.402",
+                                     _S + "crew_autopilot.py", type_="non-negative integer"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "

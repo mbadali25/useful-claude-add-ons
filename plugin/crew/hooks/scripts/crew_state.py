@@ -1130,9 +1130,9 @@ AUTONOMOUS_STOPS = (
 # `approval` and `questions` (T-0010) are `human|self|risk`: what autopilot
 # does at plan approval and at an open question. `risk` acts only on a spec
 # header saying `risk: low`; any other value reads as `human`, and approval
-# needs `scope.allowCliApproval: true` besides (crew_autopilot.approval_policy).
+# needs `scope.allowCliApproval: true`. `maxAutoReplans` (T-0074): 0 off, N replans max.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
-                      "questions": "risk"}
+                      "questions": "risk", "maxAutoReplans": 0}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work

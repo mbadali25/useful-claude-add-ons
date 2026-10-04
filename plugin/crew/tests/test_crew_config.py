@@ -352,7 +352,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # merging main 34d9f267.
     assert "tickets.baseBranch" in declared
     # 132 with both, measured after merging main into T-0013.
-    assert len(declared) == 132
+    # 133 with T-0074's repo-only `autopilot.maxAutoReplans`, measured by
+    # running this test after merging main baf193aa.
+    assert "autopilot.maxAutoReplans" in declared
+    assert len(declared) == 133
 
 
 def test_tickets_base_branch_is_repo_only_and_null_by_default():

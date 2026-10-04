@@ -217,7 +217,8 @@
     "maxPhases": 12,
     "deploy": "none",
     "approval": "risk",
-    "questions": "risk"
+    "questions": "risk",
+    "maxAutoReplans": 0
   },
   "tickets": {
     "baseBranch": null
