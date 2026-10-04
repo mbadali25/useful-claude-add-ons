@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:07: #371 merge review 147c3f5d: 0/0/0 CLEAN (dropped heading was stale T-0061 leftover). Waits CI.
 - 10:07: #351 merge review f542d4f4: 2 FIX (CONFIG 'Measured' para 72/130 should be 73/131; config read/write diagram + codemap crew_config.py line cites stale by 10-14) + 3 NIT (since 1.0.320 placeholder; renders fine - FAILs are layout-check only, container-dependent). Fixer started (1.0.330).
 - 10:05: #344 merge review e96cade3: 0/0/0 CLEAN. Waits CI + turn.
 - 10:05: #342 merge review 41b113c6: 0/0/0 CLEAN. Waits CI + turn.
