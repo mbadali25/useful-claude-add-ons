@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew`: every tool runs the way it was found, no bare-name subprocess (L-1508, PR A)
+### Fixed — `crew` 1.0.340: every tool runs the way it was found, no bare-name subprocess (L-1508, PR A)
 
 - **What changed.** crew ran `git`, `ps` and `xdotool` by bare name. On native
   Windows that reaches CreateProcess, which ignores PATHEXT and tries only
