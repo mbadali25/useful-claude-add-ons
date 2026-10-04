@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 14:21 UTC
+Last updated: 2026-10-04 14:22 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:22: #347 T-0047 round-1 fixes pushed -> d4ec3aa6 (merged main baf193aa, crew 1.0.393; 35 must-block + 8 must-allow rows; 17 mutations red). Round-2 review started. Harness follow-up: 38 mutations into sabotage_cloud.py, r7 entry retarget.
 - 14:21: #365 re-review 9805fcb1: 0/1/1 (_unanswered drops unknown -> split --apply mints while next stops). Sent to builder. CI STARVED: 93 queued runs, mostly from the 91 docs-only handoff drafts (pytest + self-hosted verify-gate receipt); #377 queued 80+ min.
 - 14:21: OWNER DECISIONS: 91 new drafts -> build now in waves of 6 (parents first), land after current queue one-by-one; bundle 21 sabotage/harness tickets into 3-4 harness-only PRs. #356 round-3 5e37f872: 0/0/1 CLEAN (carry NIT at landing: stdout backslashreplace for non-ASCII refusal reasons). Wave planner started -> scratchpad/WAVES.md.
 - 14:18: #366 fixes -> e14b5a45 (one conservative overlap rule, step regex aligned; 1355 tests, 8 mutations). #365 fixes -> 9805fcb1 (policy try/except, _unanswered on --apply, docs; 1627 tests, 32 mutations). Both re-reviews started. NEW: owner opened 91 spec-only cloud-handoff drafts #397-#487 (12:32-12:42 UTC); plan pending owner decision.
