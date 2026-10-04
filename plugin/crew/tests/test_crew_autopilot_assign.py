@@ -348,6 +348,22 @@ def test_assign_refuses_a_fifo_staging_file_without_waiting(tmp_path):
         1, True, []), done.stdout
 
 
+def test_a_staged_file_reads_where_there_is_no_o_nonblock(tmp_path, monkeypatch):
+    """Windows has no O_NONBLOCK, and its os.set_blocking works on pipes only
+    (WinError 87 on a regular file, which refused every assign on Windows CI).
+    With neither available the staged file still reads; set_blocking is never
+    called on a descriptor that was not made non-blocking."""
+    path = tmp_path / "assign-1.md"
+    path.write_text("title: x\n## Ask\nhello\n", encoding="utf-8")
+    monkeypatch.delattr(os, "O_NONBLOCK", raising=False)
+
+    def _windows_set_blocking(_fd, _blocking):
+        raise OSError(22, "The parameter is incorrect")
+    monkeypatch.setattr(os, "set_blocking", _windows_set_blocking, raising=False)
+
+    assert crew_ticket._read_regular(str(path)) == "title: x\n## Ask\nhello\n"  # pylint: disable=protected-access
+
+
 # --- step 3: the approve phase is T-0010's, for an assigned ticket -------------
 
 def _spec_text(ticket, risk):

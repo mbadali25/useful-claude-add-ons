@@ -69,6 +69,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   main `f808e5f0` (crew 1.0.154; #328 shipped 1.0.144, so T-0019's number was
   spent), allocated by the coordinator; L-0611 is 1.0.161. Then `1.0.242 -> 1.0.302`
   after merging main `38adba44` (crew 1.0.242), allocated by the coordinator.
+- Windows: the staged-file read restores blocking mode only where it set `O_NONBLOCK`. Windows has no
+  `O_NONBLOCK` and its `os.set_blocking` works on pipes only, so every `assign` and `mint --direction-file`
+  refused there with `[WinError 87]` (seen on Windows CI). Pinned by
+  `test_a_staged_file_reads_where_there_is_no_o_nonblock`.
 
 ### Added — crew 1.0.248: sabotage entries for L-0516's deadline polls (L-0563)
 

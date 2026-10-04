@@ -1405,12 +1405,15 @@ def _read_regular(path):
     when it is not a regular file. Opened non-blocking and checked on the open
     descriptor, so a FIFO with no writer is refused at once instead of
     hanging the open (review round 2, :1377)."""
-    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    nonblock = getattr(os, "O_NONBLOCK", 0)
+    flags = os.O_RDONLY | nonblock | getattr(os, "O_BINARY", 0)
     fd = os.open(path, flags)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise TicketError(f"{path} is not a regular file")
-        if hasattr(os, "set_blocking"):
+        # Only undo what was done: Windows has no O_NONBLOCK, and its
+        # os.set_blocking works on pipes only (WinError 87 on a file).
+        if nonblock:
             os.set_blocking(fd, True)
         handle = os.fdopen(fd, encoding="utf-8-sig")
     except BaseException:
