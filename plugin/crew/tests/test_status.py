@@ -328,3 +328,57 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 
     assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
         0, True), done.stdout + done.stderr
+
+
+# --- T-0039: the gitignore line ---------------------------------------------------------
+
+def _gitignore_line(lines):
+    found = [line for line in lines if line.startswith("gitignore ")]
+    assert len(found) == 1, lines
+    return found[0]
+
+
+def test_status_gitignore_line_current(tmp_path):
+    root = make_repo(tmp_path)
+    assert subprocess.run([sys.executable, os.path.join(os.path.dirname(SCRIPT), "crew_gitignore.py"),
+                           "apply", "--root", str(root)], capture_output=True, check=False).returncode == 0
+
+    lines = crew_status.collect(str(root))
+
+    assert _gitignore_line(lines) == "gitignore current"
+    assert lines.index("gitignore current") == next(
+        i for i, line in enumerate(lines) if line.startswith("codemap")) + 1
+
+
+def test_status_gitignore_line_missing_names_languages(tmp_path):
+    root = make_repo(tmp_path)
+    (root / "app.py").write_text("", encoding="utf-8")
+    (root / ".gitignore").write_text(".env\n.env.*\n*.pem\n*.key\n*.p12\n*.pfx\nid_rsa\nid_ed25519\n"
+                                     ".DS_Store\nThumbs.db\n[Dd]esktop.ini\n*.swp\n.idea/\n.vscode/*\n",
+                                     encoding="utf-8")
+
+    line = _gitignore_line(crew_status.collect(str(root)))
+
+    assert line == "gitignore 8 missing (python)"
+
+
+def test_status_gitignore_line_owner(tmp_path):
+    root = make_repo(tmp_path)
+    (root / "server.pem").write_text("k", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "server.pem"], check=True)
+
+    line = _gitignore_line(crew_status.collect(str(root)))
+
+    assert line == "gitignore owner: 1 tracked secret-shaped file(s) - server.pem"
+
+
+def test_status_gitignore_line_unknown_when_git_fails(tmp_path, monkeypatch):
+    root = make_repo(tmp_path, git=False)
+
+    lines = crew_status.collect(str(root))
+
+    assert _gitignore_line(lines) == "gitignore unknown (not a git repository)"
+    monkeypatch.setitem(sys.modules, "crew_gitignore", None)  # the import itself fails
+    lines = crew_status.collect(str(make_repo(tmp_path / "second")))
+    assert _gitignore_line(lines) == "gitignore unknown (crew_gitignore.py not importable)"
+    assert len(lines) <= crew_status.MAX_LINES

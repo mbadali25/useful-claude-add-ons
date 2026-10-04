@@ -461,6 +461,10 @@ the first secret exists is the only time it is free.
 .work/
 ```
 
+Language and tool patterns (`__pycache__/`, `node_modules/`, `/<project>/bin/`, ...) never go in
+this block: they are `crew_gitignore.py`'s managed block (`# crew:gitignore:managed`, at the top of
+the file), which Phase 1 applies and `/crew:onboard` keeps current. That script never edits this block.
+
 Everything under `.crew/` not on that list - `config.json` with its machine
 paths and its `pm.authority` trust decision, `STATUS.md`, `metrics.md`, the
 incident state - describes one checkout on one machine. A fresh clone runs

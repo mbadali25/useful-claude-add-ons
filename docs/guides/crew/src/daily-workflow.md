@@ -64,7 +64,10 @@ whichever developer types.
 
 **5–6. Tests and docs.** Coverage lands as part of implementing the plan's
 steps. `/crew:docs` runs next and usually says "none" — most tickets touch no
-document that needs updating.
+document that needs updating. Then `crew_gitignore.py check` asks whether the
+ticket brought a language or manifest whose ignore patterns are missing: it adds
+them only if the spec's Touch covers `.gitignore`, and otherwise the PR body lists
+them and the next `/crew:onboard` adds them.
 
 **6b. The standards self-check.** Before the review, the session answers every
 development standard in the effective set (crew's generic GEN standards, any

@@ -130,7 +130,10 @@ list, a few probes each, kept open while the plan is worked and handed to
 whichever developer types.</p>
 <p><strong>5–6. Tests and docs.</strong> Coverage lands as part of implementing the plan's
 steps. <code>/crew:docs</code> runs next and usually says "none" — most tickets touch no
-document that needs updating.</p>
+document that needs updating. Then <code>crew_gitignore.py check</code> asks whether the
+ticket brought a language or manifest whose ignore patterns are missing: it adds
+them only if the spec's Touch covers <code>.gitignore</code>, and otherwise the PR body lists
+them and the next <code>/crew:onboard</code> adds them.</p>
 <p><strong>6b. The standards self-check.</strong> Before the review, the session answers every
 development standard in the effective set (crew's generic GEN standards, any
 per-language set a changed file matches, and this repository's

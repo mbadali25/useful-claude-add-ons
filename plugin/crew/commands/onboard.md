@@ -200,8 +200,10 @@ repo also has:
 4. `e2e/` specs if this repo has a UI — write them in this session.
 5. `context.autoClear` configured — run `crew_autoclear_setup.py plan-windows-default` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`; the same helper `/crew:init`'s Phase 1 uses, so a repo onboarded standalone gets the identical question). `status: unreadable` (parse failure) means say so and stop, fix by hand first. `status: already-configured` means stop, nothing to ask — a retained pre-1.0 `method: "windows"` is proposed for conversion instead, never already-configured. Otherwise, on native Windows propose `method: "notify"` and write it only on yes; elsewhere describe the tmux path and write nothing. Enabling it at all, and `sendkeys`, each need their own separate explicit yes.
 
-Report which of the five are missing when you finish. A codemap on its own is
-the least useful of the six artifacts.
+6. `.gitignore` right for the languages here — run `crew_gitignore.py apply --root .` (same scripts dir). It adds only inside its `# crew:gitignore:managed` block at the top, never edits a human line or the `.crew` policy block, and applies without asking (owner decision, T-0039). Show its diff and report verbatim. `tracked` lines are named, never untracked; `needs-owner` (exit 3, a tracked secret) goes to the owner; exit 4 is unknown; exit 5 inside a ticket whose Touch lacks `.gitignore` is reported, not worked around — it lands at the next run outside a ticket.
+
+Report which of the six are missing when you finish. A codemap on its own is
+the least useful of the seven artifacts.
 
 ## `--refresh <subsystem>`
 
@@ -248,4 +250,5 @@ consequences before running it, not after:
   stale anchors) instead of repeating that status verbatim.
 
 Report any conflicts and any anchor left stale on purpose exactly as
-`/crew:upgrade` does — surfaced, not resolved. Then run step 6.
+`/crew:upgrade` does — surfaced, not resolved. Then run step 6, and item 6 above (`crew_gitignore.py apply`):
+a ticket that added a language or manifest is when its ignore patterns go missing.

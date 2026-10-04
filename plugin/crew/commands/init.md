@@ -18,6 +18,9 @@ Arguments: $ARGUMENTS
 - `--audit --all-repos DIR` — `qa_audit.py --all-repos DIR`: one line per crew checkout
 - no argument — resume at the first phase not marked `done`
 
+Phase 1 also runs `crew_gitignore.py apply --root .` (phases.md): language ignore patterns, added
+without asking, only inside its managed block of `.gitignore`.
+
 After each phase, if `notify.provider` is configured, send one line:
 `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh phase "Phase N <state>"`
 

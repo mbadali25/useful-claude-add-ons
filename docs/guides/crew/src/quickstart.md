@@ -80,7 +80,10 @@ Init is phased and resumable: it detects the platform, writes the config, and
 asks before each change. Stop after the config phase if you are short on time;
 `/crew:init` picks up where it left off.
 
-Check: `/crew:status` now shows a `config` line naming a schema.
+Check: `/crew:status` now shows a `config` line naming a schema, and a
+`gitignore current` line: init added the ignore patterns for the languages it
+found, inside one `# crew:gitignore:managed` block at the top of `.gitignore`,
+without touching your own lines.
 
 Today `/crew:init` still writes the 0.20 `.crew/config.json`. Run step 4
 straight after it until init writes `.crew/crew.json` itself.

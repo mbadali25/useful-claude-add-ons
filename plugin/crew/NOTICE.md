@@ -161,3 +161,25 @@ attribution obligation is discharged by this notice either way.
 The inconsistency between the two declarations is a separate question about
 what `crew` itself is licensed as, recorded in `TODO.md` rather than resolved
 here, because guessing at it would change the terms this plugin ships under.
+
+---
+
+## `plugin/crew/hooks/scripts/crew_gitignore.py` - the pattern table
+
+Ignore patterns selected from **github/gitignore**.
+
+- **Upstream:** <https://github.com/github/gitignore>
+- **Taken from:** commit `0e5d690153ca3da8a4a1aef2d053406f408f531c` (read 2026-10-04)
+- **Licence:** CC0-1.0 (public domain dedication; no notice is required, it is carried here as provenance)
+
+**What was copied:** individual patterns, not files, from `Python.gitignore`, `Node.gitignore`,
+`VisualStudio.gitignore`, `Terraform.gitignore`, `Rust.gitignore`, `Maven.gitignore`,
+`Gradle.gitignore`, `Composer.gitignore`, `Go.gitignore`, `Global/macOS.gitignore`,
+`Global/Windows.gitignore`, `Global/JetBrains.gitignore`, `Global/VisualStudioCode.gitignore` and
+`Global/Vim.gitignore`. Each row of the table names its template in `source`.
+
+**What crew changed:** build-output directories (`bin/`, `obj/`, `target/`, `build/`, `vendor/`) are
+anchored to each manifest's directory instead of matching anywhere; `.idea/` is ignored whole where
+the JetBrains template lists files; `*.py[codz]` is `*.py[cod]`; ambiguous patterns that repositories
+legitimately commit (`dist/`, Go `vendor/`, `*.tfvars`, `.terraform.lock.hcl`) are left out. The
+secret-key rows (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ed25519`) are crew's own and say so.
