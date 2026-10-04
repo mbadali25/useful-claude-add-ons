@@ -146,7 +146,7 @@ The writers never follow it: `crew_platform` (heal and `platform-sync`),
 keep their own-path behaviour, and the heal path creates nothing in a worktree
 that inherits a config, or in one where git could not tell.
 
-**The shell and PowerShell resolvers (crew 1.0.396, T-0096).** `crew_repo_config_dir` in
+**The shell and PowerShell resolvers (T-0096).** `crew_repo_config_dir` in
 `hooks/scripts/_common.sh` sets `CREW_CFG_DIR` and `CREW_CFG_SOURCE` (`own`, `main`
 or `unknown`) by rules 1-4 above, with no python; `Get-CrewRepoConfigDir`, one
 body copied verbatim into `cloud-guard.ps1`, `promote-gate.ps1` and
