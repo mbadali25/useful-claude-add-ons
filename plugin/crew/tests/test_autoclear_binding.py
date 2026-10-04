@@ -211,6 +211,7 @@ def test_owner_uses_home_claude_when_config_dir_is_unset(tmp_path, monkeypatch):
     _inproc(monkeypatch, box)
     monkeypatch.delenv("CLAUDE_CONFIG_DIR")
     monkeypatch.setenv("HOME", str(box.home))
+    monkeypatch.setenv("USERPROFILE", str(box.home))  # expanduser's source on native Windows
     assert crew_autocycle.claude_config_dir() == os.path.join(str(box.home), ".claude")
     assert crew_autocycle.session_owner(SESSION)["pid"] == O
 
@@ -321,6 +322,26 @@ def test_tmux_own_pane_sends(tmp_path):
     _own_terminal(box)
     result = box.run("sh", "--dry-run")
     assert "would send\n  method: tmux" in result.stdout, result.stderr
+
+
+def test_tmux_pane_pid_is_read_from_the_tmux_the_path_check_found(tmp_path, monkeypatch):
+    """The pane pid comes from the tmux shutil.which accepted, not a bare
+    "tmux": on native Windows CreateProcess tries only tmux.exe while which()
+    honours PATHEXT, so a tmux.cmd passed the check and was never run -- every
+    tmux case there refused with "pane pid unknown" (T-0016 batch 2, Windows
+    CI). Here the only tmux is one PATH cannot reach, so a bare name fails on
+    any OS."""
+    box = Box(tmp_path)
+    _own_terminal(box)
+    _inproc(monkeypatch, box)
+    shim = cf.write_shim(tmp_path / "offpath", "tmux", f"#!/bin/sh\necho {T}\n", f"@echo off\r\necho {T}\r\n")
+    shim = shim + ".cmd" if os.name == "nt" else shim
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.setattr(crew_autocycle.shutil, "which", lambda name, *a, **k: shim if name == "tmux" else None)
+    got = crew_autocycle.resolve_method({"method": "tmux"}, {"TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%7"})
+    assert got.get("ok") and got["pane_pid"] == T, got
 
 
 @needs_bash
