@@ -29,7 +29,8 @@ changed in 0.16.0 and both are silent if unmentioned:
 - **A repo-only key in this file takes effect nowhere.** The global layer is
   filtered to machine-and-person keys before it is merged, so a `tracker` or a
   `graph.obsidian.dir` set here reaches no repository at all. `--show` names
-  each one it finds.
+  each one it finds, and every session start names it in its `Inert settings`
+  line (`crew_config.py --inert` prints that line, or `inert settings: none`).
 - **What survives is a default, not a lock.** Every key here is overridable in
   a repo's own `.crew/config.json`, which is why step 1's `source` column
   exists.

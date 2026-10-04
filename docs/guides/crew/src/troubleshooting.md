@@ -234,6 +234,11 @@ contract itself. This section is what goes wrong with the approval and the audit
   could not name the main checkout; then no default is written either. The shell and PowerShell readers (`verify-gate.sh`,
   `_common.sh`, `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
   `cloud-guard.ps1`, `auto-clear.ps1`) do not inherit yet.
+- **Symptom: which tickets still need my approval?**
+  **Check:** `/crew:status --approvals`. It prints one ready-to-paste `/crew:approve <id>  (<why>)`
+  line per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
+  current or spec-only tickets (`nothing needs approval` when there are none). Approving a ticket
+  it does not list changes nothing.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash
@@ -476,6 +481,19 @@ setting that changes when Claude Code's auto-compact fires.
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
 
+## A setting seems to do nothing
+
+**Symptom:** you set a key in `.crew/config.json` or `~/.claude/crew/config.json` and crew behaves
+as if it were absent.
+
+- **Check:** the `Inert settings (crew <version> does not act on them): ...` line at session
+  start, the `inert` line in `/crew:status`, or `python3 "<crew>/hooks/scripts/crew_config.py"
+  --root . --inert`. Each names `key=value (why)`: a ticket id means the installed crew does not
+  implement it yet; `unknown key` means a typo or a key from another crew version; `global,
+  repo-only` means the machine file may not set it, so it takes effect nowhere.
+- **Fix:** move a repo-only key into the repo's `.crew/config.json`, correct a typo, or wait for
+  (or install) the crew version that brings the ticket. Nothing is refused while a key is inert.
+
 ## Turning things off
 
 Every switch named above, in one place. "Off" for a guard means the `PreToolUse` hook still fires
@@ -484,6 +502,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 
 | Key | Lives in | Values | What "off"/floor means |
 |---|---|---|---|
+| `autopilot.mode` | repo only | `off`/`plan` | `off` (the default): `/crew:autopilot` runs no phase; only the exact string `plan` arms it |
 | `memory.inject` | repo only | bool | `false`: no code-map, handoff or vault text is injected (default `true` since 1.0.0) |
 | `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
