@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:35 UTC
+Last updated: 2026-10-04 10:41 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:41: MERGED #371 at 155fe6d8 (crew 1.0.322; harness PR alone). #360 re-merged -> 2b2da3e8 crew 1.0.323 (version/rules/guide-binary conflicts; guides rebuilt; 614 tests + config-reference pass) -> merge-only review + CI, NEXT TO LAND. #377 review FIX fixed (diagram pages regenerated, 3 container verdicts kept PASS) + merged 155fe6d8 -> e82da750 (1.0.337) -> delta review. SPECS PUSHED (docs only, owner approval pending): T-0016-build 056dd0a0, T-0037-build 06f46cc5, T-0049-build de810f12.
 - 10:35: #351 review b21ad210 (fix delta+merge): 0/0/3 CLEAN. Carry on next #351 push: codemap:282 crew_config.py:339->:340; crew_config.py:381-384 comment says scope_guard 'refuses' but it is reported-not-enforced (reword). MAIN FOLLOW-UP: data-flow-crew-config-ratchet.mmd cites stale.
 - 10:31: #352 merge review 4b8e56cb: 0/0/0 CLEAN. Waits CI + turn.
 - 10:31: #351 land-prep on edb2b8ff done: head b21ad210 (1.0.333), counts 133/75/58, ~75 codemap cites remapped. #351 arrival-claim list: CONFIG.md:686,2773; codemap:291,1478; CHANGELOG:7; diagrams split/read/write:5, lifecycle-implement:10, lifecycle-done:4. Review (fix delta+merge) started. NOTE #360 and #351 both change CONFIG.md counts/tables - second to land recounts.
