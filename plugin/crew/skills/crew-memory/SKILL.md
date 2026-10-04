@@ -115,5 +115,34 @@ its expected shape (or has a duplicate key, nests too deep or is over 1 MiB) is
 
 Any state other than `resolved` or `full-text`: tell the user the state and its
 reason. Do not guess the note, search another vault for it, or treat the pointer
-as the memory. This crew version only reads pointers; writing them arrives in a
-later version.
+as the memory.
+
+### Saving a memory as a pointer
+
+Write the memory as usual first. Then read the vault's own `CLAUDE.md` for its
+folder and tag vocabulary, and run `save` without `--apply`; read the plan it
+prints (vault, note, `create` / `append` / `unchanged`, the pointer line):
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" save --file <memory file> --tag <tag> [--tag ...] [--title <t>] [--note <path>] [--type concept|decision|source|meta|project-index] [--project <p>]
+```
+
+Run it again with `--apply`. The note is written (or a dated `## Update` passage
+appended to the note of the same `memory_id`) and read back first; only then is the
+memory's body replaced by the pointer. The writable vault is the single `role:
+primary` vault (without roles, `default: true`, else the first; with no `vaults`
+block, `memory`), never a `recall` or `ignore` vault, never a substitute. Report a
+`kept-full-text` line to the user verbatim: the memory still holds its full text.
+
+| state | native file | exit |
+|---|---|---|
+| `pointer-written` | body replaced by the pointer | 0 |
+| `already-pointer` | untouched | 0 |
+| `kept-full-text: no vault configured` | untouched | 0 |
+| `kept-full-text: vault unavailable` / `no primary` / `several primaries` / `not a vault` / `config unreadable` | untouched | 1 |
+| `kept-full-text: collision` / `ascii-required` / `outside-vault` / `bad-note-path` | untouched | 1 |
+| `kept-full-text: note write failed` / `note not readable after write` / `pointer write failed` / `the memory file changed during save` | untouched | 1 |
+| `malformed`, `unreadable`, or any `resolve` state of a pointer that does not resolve | untouched | 1 |
+
+If Claude Code later rewrites a pointer memory with full text, `check` shows it as
+`full-text` again; run `save` again.
