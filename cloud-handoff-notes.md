@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:50 UTC
+Last updated: 2026-10-04 12:51 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:51: #393 CI: Linux checks green; Windows jobs QUEUED since 12:43 (GitHub runner queue). Re-check 13:11.
 - 12:50: T-0036 BUILT on #345: T-0036-build 5b1a64ca (1.0.372; stacked on T-0035-build; crew_reference.py lint + refresh 'reference' kind; 25+9 tests; 24 mutations red; flows left to L-0549; 8 codemaps + 3 diagrams stale pre-existing -> land-prep). Harness follow-ups: sabotage_reference.py + 4 sabotage_refresh entries; artifact_verdicts reference kind. First review started.
 - 12:49: #361 FIX+NITs pushed 5473c6c8 (corrupt machine file -> unknown + warning; 5 tests, 4 red first; docs; Tooling-seam trailer for crew_autopilot.py; 1.0.377). Re-review started.
 - 12:49: T-0052 BUILT on #364: T-0052-build e3a572c6 (1.0.374; stacked on T-0037-build; crew_split.py; 74 tests; 10 hand mutations red; harness follow-up sabotage_split.py draft in scratchpad). First review started. Builds STARTED: #365 T-0058 (1.0.379; stacked on T-0052-build [+T-0012-build if needed]), #366 T-0059 (1.0.380; stacked on T-0052-build + T-0011-build).
