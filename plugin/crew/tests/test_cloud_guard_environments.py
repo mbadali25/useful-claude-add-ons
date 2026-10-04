@@ -2957,6 +2957,10 @@ R8_MUST_BLOCK = _normalise([
      'iex ("terraform", "destroy" -join " ")', _o(**_STAGING)),
     ("r8-ps-iex-group-format", "PowerShell",
      'iex ("{0} {1}" -f "terraform","destroy")', _o(**_STAGING)),
+    # No guarded name in the raw text, so the backstop is silent: the
+    # Invoke-Expression reading itself must call the script could-not-tell.
+    ("r8-ps-iex-vars-no-name", "PowerShell",
+     '$a="terra"; $b="form"; iex "$a$b destroy"', _o(**_STAGING)),
     # B2: a splat.
     ("r8-ps-iex-splat", "PowerShell",
      "$p=@{Command='terraform destroy'}; iex @p", _o(**_STAGING)),
@@ -2992,6 +2996,8 @@ R8_MUST_BLOCK = _normalise([
      "terraform workspace select ('-or-'+'create') production", _o(**_STAGING)),
     ("r8-ps-ws-select-group-gc", "PowerShell",
      "terraform workspace select (gc f)", _o(**_STAGING)),
+    ("r8-ps-ws-select-bare-array", "PowerShell",
+     "terraform workspace select -or-create,production", _o(**_STAGING)),
     # B6: terragrunt exec's command, unwrapped like any wrapper's.
     ("r8-tg-exec-env", "Bash", "terragrunt exec -- env terraform destroy",
      _o(**_STAGING)),

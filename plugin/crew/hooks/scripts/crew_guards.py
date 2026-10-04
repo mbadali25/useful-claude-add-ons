@@ -1895,16 +1895,15 @@ def _selects_only(args):
     """`workspace select` creates nothing (review round 8: a quoted name is
     still a select) unless an `-or-create` on it is anything but false --
     bare, `=true`, or made at run time: a bash word with `_HOLE`, a
-    PowerShell variable or splat (`$flag`, `@args`), or a word that only
-    mentions it (`@("-or-create","production")`)."""
+    PowerShell variable or splat (`$flag`, `@args`). A group or an array
+    (`@("-or-create","production")`, `-or-create,production`) is
+    `_ps_backstop`'s."""
     for arg in args:
         if _HOLE in arg or "$" in arg or arg.startswith("@"):
             return False
         name, sep, value = arg.lstrip("-").partition("=")
         if arg.startswith("-") and name == "or-create" and (
                 not sep or value not in _GO_FALSE):
-            return False
-        if "or-create" in arg and name != "or-create":
             return False
     return True
 
@@ -2091,9 +2090,10 @@ def _ps_unplain(cmd, head_name):
     """Why one PowerShell command, on a line whose raw text names a guarded
     tool, is not a plain command the guard reads whole -- or None. The
     structural backstop (review of #347, round 2): a splat; a call by `&`/
-    `.` whose command word is not a plain name; an alias definition; Invoke-Expression given a group or a
-    variable; a group among terraform's own arguments. Each is could not
-    tell, whatever the rest of the reading found."""
+    `.` whose command word is not a plain name; an alias definition;
+    Invoke-Expression given a group or a variable; a group or a bare array
+    (`a,b`) among terraform's own arguments. Each is could not tell,
+    whatever the rest of the reading found."""
     words = [str(w) for w in cmd.words]
     groups, called = getattr(cmd, "groups", set()), getattr(cmd, "called",
                                                             False)
@@ -2114,8 +2114,10 @@ def _ps_unplain(cmd, head_name):
         found = "an alias definition"
     elif head in _PS_EVAL and (later or any("$" in w for w in words)):
         found = "Invoke-Expression given a group or a variable"
-    elif _names_tool(words[start]) and later:
-        found = "a group among its arguments"
+    elif _names_tool(words[start]) and (later or any(
+            "," in w and type(cmd.words[i]).__name__ == "_Bare"
+            for i, w in enumerate(words) if i > start)):
+        found = "a group or an array among its arguments"
     return found
 
 
@@ -2160,7 +2162,8 @@ def ps_eval_script(args):
     `-Command` binds (by name, `-Command:<v>`, or by position), with every
     common parameter and its value set aside (review of #347). `sure` is
     False for a parameter crew does not know, or one PowerShell would call
-    ambiguous, and for a script that is not a literal string."""
+    ambiguous. A script that is not a literal string is `_ps_backstop`'s on
+    a line naming a guarded tool, and the nested reading's elsewhere."""
     script, sure, index = [], True, 0
     while index < len(args):
         arg, index = args[index], index + 1
@@ -2179,8 +2182,7 @@ def ps_eval_script(args):
             index += not colon
         elif kind == "value":
             index += not colon
-    return " ".join(script), sure and not any(
-        "$" in w or "`" in w for w in script)
+    return " ".join(script), sure
 
 
 def _ps_verb_on_line(normal):
@@ -2251,8 +2253,7 @@ def _ps_argv_trigger(words, normal, helpers, depth, copies, cmd=None):
     if head in _PS_EVAL:
         script, sure = ps_eval_script(args)
         if not sure:
-            # A parameter crew does not know, or a script that is not a
-            # literal string (`-Command:$c`, `"$a $b"`): could not tell.
+            # A parameter crew does not know: could not tell.
             named = _ps_verb_on_line(normal)
             return None if named is None else (named, True)
         if not script:

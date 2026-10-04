@@ -39,7 +39,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   definition (`Set-Alias x iex`), Invoke-Expression given a group or a
   variable (`iex ("terraform","destroy" -join " ")`, `iex("terraform plan")`
   included), and a group among terraform's own arguments (`workspace select
-  (gc f)`). A call after an assignment (`$x = iex("...")`, `$x = & "terraform"
+  (gc f)`, or a bare array such as `-or-create,production`). A call after an assignment (`$x = iex("...")`, `$x = & "terraform"
   destroy`) is read as one. `terragrunt exec [--] cmd` is a wrapper: what it
   runs goes back through every rule (`env`/`sudo` before terraform, `aws s3
   rm`, `az group delete`), and an option before the command with no `--` is
