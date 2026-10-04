@@ -321,7 +321,10 @@ set to <code>self</code> (or <code>risk</code>, for a <code>risk: low</code> spe
 <code>crew_autopilot.py approve</code>. It writes what every approval route writes: <code>approval.json</code> (marked
 <code>approved_via: "autopilot"</code>), <code>scope-tickets.json</code> on a ticket's first approval, and, for a
 distinct successor plan under a spent review budget, the review ledger moved
-NEEDS_REPLAN -&gt; IN_REVIEW. Both default off, so out of the box nothing self-approves. The
+NEEDS_REPLAN -&gt; IN_REVIEW. Both default off, so out of the box nothing self-approves. Inside an
+<code>autopilot.sleep.schedule</code> window, <code>autopilot.sleep.approval</code> stands in for <code>autopilot.approval</code>
+(T-0053), and a receipt written asleep stops standing when the window ends if the day value would
+not have approved it: in the morning that ticket waits for <code>/crew:approve &lt;id&gt;</code>. The
 approval is a step you take, not a lock.</p>
 <p><code>crew_ticket.py status --ticket T-0042</code> prints one of three states:</p>
 <ul>

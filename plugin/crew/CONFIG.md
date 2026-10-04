@@ -162,10 +162,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
-leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
-For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
-refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **74**
+leaves. `leaf_paths(default_config())` yields **135**, so **61** are repo-only.
+For all 135, `filter_global` and `is_global_path` (which `plan_global_write`
+refuses on) agree on whether the path is settable. (Measured by running
+`leaf_paths` on T-0053's branch after merging main baf193aa; the repo-only
+`autopilot.sleep.schedule`, `.approval` and `.questions` are the three T-0053
+added. Before it, 72 / 130 / 58, measured with `leaf_paths`
 on T-0061's branch after merging main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
@@ -694,7 +697,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-74 of 132 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
+74 of 135 keys are settable in the machine-global file (generated; 61 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -809,7 +812,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-58 of 132 keys are repo-only (generated; 74 are global-settable, section 10).
+61 of 135 keys are repo-only (generated; 74 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -873,6 +876,9 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
 | `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
 | `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
+| `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -2632,6 +2638,9 @@ driven is a fact about that checkout.
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
+| `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell: no override applies, with a warning. `null` is off. |
+| `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` keeps the day value too, with a warning; it never reads as `human` or as permission. |
+| `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2639,7 +2648,36 @@ adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
 no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
-line, `approval` and `questions` on its second, and all five with `--json`.
+line, the effective `approval` and `questions` on its second, and
+`sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
+questions=<override|->` on its third; `--json` adds `day` (the two day values)
+and `sleep`.
+
+**Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
+every day, `HH:MM-HH:MM` in the machine's local time: start inclusive, end
+exclusive, and a start later than the end crosses midnight (`22:00-07:00` is
+asleep from 22:00 to 06:59). Inside it, a non-null `autopilot.sleep.approval`
+or `autopilot.sleep.questions` replaces the day value, so an unattended run
+keeps going where the day setting would stop. The window is re-resolved from
+the clock on every policy read, never cached, so a run that crosses 07:00 is
+back on the day values at its next decision. Anything that cannot be told — a
+malformed schedule, `autopilot.sleep` that is not an object, a clock or
+resolver that fails — leaves the day values in force, with a warning naming
+the key; a key under `autopilot.sleep` this version does not have
+(`deploy`, `reviewPolicy`, held pings) is named "not available in this crew
+version" and has no effect. An override can lower authority as well as raise
+it. Everything else still binds asleep: `scope.allowCliApproval` exactly
+`true`, autopilot armed, a readable ledger, every stop. While asleep the
+policies' reasons, and `approve`'s line, end with `(asleep <window>; day value
+<day>)`. **A receipt written asleep stops standing when the window ends**
+wherever the day value would not have approved it: `crew_ticket.accepted`
+re-asks the policy, so in the morning the ticket reads unaccepted until the
+owner types `/crew:approve <id>`; the work done overnight stays. In the same
+way a `taken:` line written asleep makes `questions-check` say `valid=0` by
+day when the day policy stops. There is no environment variable or flag that
+moves the clock. Not in this version: manual `sleep` / `wake`, a sleep log, a
+`deploy` override (sleep leaves `deploy_allowed` unchanged), and a
+machine-global `autopilot.sleep`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets

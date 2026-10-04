@@ -122,7 +122,7 @@ def test_values_agree_with_the_writers_enum_values():
 
 
 # `branch` rows whose reader checks a shape rather than a closed value list.
-_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "tickets.baseBranch")
+_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "tickets.baseBranch", "autopilot.sleep.schedule")
 
 
 def test_every_row_has_a_summary_and_a_values_kind():
@@ -188,6 +188,19 @@ def test_autopilot_mode_values_agree_with_the_reader(tmp_path, value):
     got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"mode": value}}))
     assert got["armed"] == (value == "plan")
     assert (value in declared) == (not any("autopilot.mode" in w for w in got["warnings"]))
+
+
+@pytest.mark.parametrize("key", ["approval", "questions"])
+@pytest.mark.parametrize("value", [None, "human", "self", "risk", "Self"])
+def test_sleep_override_values_agree_with_the_reader(tmp_path, key, value):
+    """T-0053: every declared value is read without a warning; one that is
+    not declared warns. The tail of the tuple is POLICIES' own items."""
+    declared = crew_keys.values_of(f"autopilot.sleep.{key}")
+    got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"sleep": {key: value}}}))
+    assert declared[1:] == crew_autopilot.POLICIES
+    assert all(a is b for a, b in zip(declared[1:], crew_autopilot.POLICIES))
+    assert (value in declared) == (
+        not any(f"autopilot.sleep.{key}" in w for w in got["warnings"]))
 
 
 @pytest.mark.parametrize("value, kept", [(1, True), (12, True), (0, False), ("12", False)])

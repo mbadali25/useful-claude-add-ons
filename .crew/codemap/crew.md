@@ -780,6 +780,26 @@ Tests: `plugin/crew/tests/test_crew_autopilot.py`,
 `AUTOPILOT_MUTATIONS`); `.crew/verify.json` rule 28 (`:345-354`; rule 27 at `:300-308` on T-0094's merge of `8ab733d7`, `:298-306` before, until L-0516 inserted rule 10); T-0010's policy rule 29 (`:355-362`; rule 28 at `:310-316`, `:307-313` before),
 T-0021's tracker rule 30, T-0023's routing rule 31 and T-0024's group-approval rule 32 follow it. Confirmed present, **not run** by this note.
 
+**T-0053 (sleep schedule, slice 1; DERIVED at 07db3ce1 on T-0053-build, merged main baf193aa).**
+`plugin/crew/hooks/scripts/crew_sleep.py` is pure and read-only: `parse_schedule` (`:44`) full-matches
+`_SCHEDULE_RE` (`:36`, ASCII `[0-9]` classes), refuses an hour past 23 and a start equal to its end;
+`in_window` (`:60`) is start-inclusive, end-exclusive, crossing midnight when start > end; `resolve`
+(`:81`) answers `off|awake|asleep|unknown` from a block and a naive local datetime, dropping an override
+outside `POLICIES` and naming any key outside `KEYS` "not available in this crew version". The clock is
+`crew_sleep.now` (`:39`) alone - no environment variable or flag. `crew_autopilot._settings_at`
+(`plugin/crew/hooks/scripts/crew_autopilot.py:792`) calls `_sleep_at` (`:838`) on every read (`:827`):
+it asks the raw repo file first because `merge_defaults` drops a non-object `autopilot.sleep` for the
+default, and a raising read or resolve is `unknown`. Asleep, each non-null override replaces the day
+value; the dict gains `day` and `sleep`. `_decision` (`:1050`) carries the note
+` (asleep <window>; day value <day>)` inside `risk["sleep"]` (the `approval_policy` head is a sabotage
+anchor, so its 3-tuple stays), and `_noted` (`:1064`) appends it to `approval_policy` (`:1076`) and
+`question_policy` (`:1123`) reasons; `approve` (`:1183`) prints it; `_sleep_line` (`:1656`) is the
+`settings` CLI's third line. The defaults are `AUTOPILOT_DEFAULTS["sleep"]`
+(`plugin/crew/hooks/scripts/crew_state.py:1134-1135`); the config menu offers the three policies and
+unset (`plugin/crew/hooks/scripts/crew_config_menu.py:82-83`). JUDGEMENT: `deploy_allowed` reads
+`_settings_at` too but only `deploy`, so sleep cannot reach it. Tests
+`plugin/crew/tests/test_crew_autopilot_sleep.py`; no committed mutations yet (L-0651).
+
 **T-0010 (approval and questions policies, DERIVED on T-0010-solo, crew 1.0.50 on T-0077's main).**
 `approval_policy` (`plugin/crew/hooks/scripts/crew_autopilot.py:1034`) refuses a `policy: unknown`
 (an unreadable config or non-object `autopilot` block, review round 4) in its own branch before
@@ -1535,8 +1555,8 @@ then the train is advisory.
   — 4 roles, all tiered, none a specialist.
 - `crew_state.PM_DEFAULTS` (`:1108-1121`) and `crew_state.AUTHORITY_DEFAULT`
   (`:1065`) — the unnamed session's own dispatch authority.
-- `crew_state.AUTOPILOT_DEFAULTS` (`:1097-1098`) — the repo-only `autopilot` block, `deploy`
-  included (T-0072), with T-0010's `approval` and `questions` keys.
+- `crew_state.AUTOPILOT_DEFAULTS` (`:1134-1135` at 07db3ce1) — the repo-only `autopilot` block, `deploy`
+  included (T-0072), with T-0010's `approval` and `questions` keys and T-0053's `sleep` block.
 - `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`)
   — 10 guard names across 4 vocabularies.
 - `.crew/metrics.jsonl` — append-only, one JSON object per line, replacing

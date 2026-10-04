@@ -4,6 +4,41 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` NEXT: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
+
+- **What changed.** `autopilot.sleep` in `.crew/config.json` (repo only, all
+  three keys default `null`): `schedule` is one `HH:MM-HH:MM` window in the
+  machine's local time (start inclusive, end exclusive, may cross midnight),
+  and `approval` / `questions` are the night values of `autopilot.approval` /
+  `autopilot.questions` (`human|self|risk`, or `null` to keep the day value).
+  The new `hooks/scripts/crew_sleep.py` parses the window and resolves
+  `off|awake|asleep|unknown`; `crew_autopilot._settings_at` applies the
+  overrides inside it and re-resolves on every read, so a run that crosses the
+  end of the window is back on the day values at its next decision.
+  `crew_autopilot.py settings` prints a third line,
+  `sleep=<state> schedule=<window|none> approval=<override|-> questions=<override|->`,
+  and `--json` adds `day` and `sleep`. While asleep the policies' reasons and
+  `approve`'s line end with `(asleep <window>; day value <day>)`.
+- **Fail closed.** A schedule outside the grammar, an `autopilot.sleep` that is
+  not an object, a clock or resolver that fails: the day values, with a
+  warning naming the key. An override that is not a policy keeps that key's day
+  value. A key this version does not have (`deploy`, `reviewPolicy`, held
+  pings) is named "not available in this crew version" and has no effect.
+  There is no environment variable or flag that moves the clock.
+- **Unchanged.** `scope.allowCliApproval` exactly `true`, autopilot armed and a
+  readable ledger still gate every self-approval; every stop binds asleep;
+  `deploy_allowed` answers the same asleep and awake; review acceptance is as
+  before. A receipt written asleep stops standing when the window ends if the
+  day value would not have approved it (`crew_ticket.accepted` re-asks the
+  policy), so that ticket waits for `/crew:approve <id>` in the morning.
+- **Not yet.** Manual `sleep` / `wake`, the sleep log and morning summary, the
+  `deploy` override, and the committed sabotage mutations for this slice are
+  L-0652, L-0653, L-0654 and L-0651.
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_sleep.py` (81 cases);
+  `test_crew_config.py` (135 declared leaves), `test_config_menu.py`,
+  `test_crew_keys.py` and `test_crew_autopilot.py` cover the config surface.
+  `.crew/verify.json`'s policy rule maps `crew_sleep.py` and the new file.
+
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 
 - `plugin/crew/tests/sabotage_config.py` gains three mutations against the
