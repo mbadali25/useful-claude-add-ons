@@ -62,7 +62,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**132 keys**: 74 settable in the machine-global file, 58 repo-only.
+**135 keys**: 74 settable in the machine-global file, 61 repo-only.
 
 Columns:
 
@@ -349,6 +349,9 @@ Columns:
 | `autopilot.deploy` | repo | `"none"` | `none` \| `nonprod` \| `all` | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
 | `autopilot.approval` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
 | `autopilot.questions` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
+| `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.366 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |
+| `autopilot.knownFailures` | repo | `[]` | list of check names (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.366 | Required checks whose `fail` does not block a merge, matched by exact name; anything but a list of strings reads as `[]`, with a warning. |
+| `autopilot.ciTimeoutMinutes` | repo | `60` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.366 | Minutes `ship` waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning. |
 
 ### `tickets`
 
@@ -372,14 +375,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 |---|---|---|---|---|---|
 | `guards.deployWorkflow` | new key | both, ratchet | block |  | Whether crew may dispatch a deploy workflow. |
 | `environments.workflows` | new key | repo | {} |  | Deploy workflows per environment. |
-
-### T-0011
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `autopilot.ship` | new key | repo | merge | `pr` \| `merge` | After `/crew:done`, open a PR (`pr`) or also merge it once required checks are green (`merge`). |
-| `autopilot.knownFailures` | new key | repo | [] |  | Required checks that may fail without blocking a merge, matched by exact name. |
-| `autopilot.ciTimeoutMinutes` | new key | repo | 60 |  | How long ship waits for CI; still pending at the timeout stops. |
 
 ### T-0012
 

@@ -139,7 +139,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>132 keys</strong>: 74 settable in the machine-global file, 58 repo-only.</p>
+<p><strong>135 keys</strong>: 74 settable in the machine-global file, 61 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1614,6 +1614,30 @@ the plugin.</p>
 <td>1.0.42</td>
 <td>Who answers a ticket's open questions under autopilot; anything else reads as <code>human</code>.</td>
 </tr>
+<tr>
+<td><code>autopilot.ship</code></td>
+<td>repo</td>
+<td><code>"merge"</code></td>
+<td><code>pr</code> | <code>merge</code></td>
+<td>1.0.366</td>
+<td>After <code>/crew:done</code>: <code>pr</code> pushes and opens the PR; <code>merge</code> also merges it (a merge commit) once the required checks allow. Anything else reads as <code>pr</code>, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.knownFailures</code></td>
+<td>repo</td>
+<td><code>[]</code></td>
+<td>list of check names (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td>1.0.366</td>
+<td>Required checks whose <code>fail</code> does not block a merge, matched by exact name; anything but a list of strings reads as <code>[]</code>, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.ciTimeoutMinutes</code></td>
+<td>repo</td>
+<td><code>60</code></td>
+<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td>1.0.366</td>
+<td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="tickets"><code>Tickets</code></h3>
@@ -1692,45 +1716,6 @@ the plugin.</p>
 <td>{}</td>
 <td></td>
 <td>Deploy workflows per environment.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="t-0011">T-0011</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>autopilot.ship</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>merge</td>
-<td><code>pr</code> | <code>merge</code></td>
-<td>After <code>/crew:done</code>, open a PR (<code>pr</code>) or also merge it once required checks are green (<code>merge</code>).</td>
-</tr>
-<tr>
-<td><code>autopilot.knownFailures</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>[]</td>
-<td></td>
-<td>Required checks that may fail without blocking a merge, matched by exact name.</td>
-</tr>
-<tr>
-<td><code>autopilot.ciTimeoutMinutes</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>60</td>
-<td></td>
-<td>How long ship waits for CI; still pending at the timeout stops.</td>
 </tr>
 </tbody>
 </table>

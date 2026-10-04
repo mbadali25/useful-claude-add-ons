@@ -4190,6 +4190,9 @@ owner-only `via=autopilot` refusal itself): `autopilot.approval|questions: human
 same-family high-risk merge refusal and the known-fixture CI list; **T-0012** `mode: backlog`, goal decomposition,
 `crew_ticket.py mint`, `.work/autopilot/<slug>.json`, per-run ticket/token caps and consuming
 `resume: /crew:autopilot --goal <slug>` (autopilot stops on that line today).
+**T-0011 shipped in crew 1.0.366:** `autopilot.ship: pr|merge`, the same-family high-risk merge
+refusal and `autopilot.knownFailures` (`plugin/crew/hooks/scripts/crew_autopilot.py::ship_decision`). It merges with `gh pr merge <n> --merge
+--match-head-commit <HEAD>`, a merge commit, per D-028, and refuses a base branch with a merge queue.
 
 ### crew 1.1.x: platform-native routing - OPEN, after 1.0 ships (filed 2026-09-24, owner decision)
 Owner request, filed next to the 1.1.0 autopilot item above because both are "1.0 stops short of this on purpose."

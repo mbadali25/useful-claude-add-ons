@@ -254,9 +254,19 @@ What always stops for a person, at any setting:
 
 Plan approval and open questions stop too, unless `autopilot.approval` and
 `autopilot.questions` allow otherwise. Plan approval also needs
-`scope.allowCliApproval: true`; an open question does not. Autopilot never
-merges, pushes, opens a pull request or deploys today. Shipping arrives with
-T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
+`scope.allowCliApproval: true`; an open question does not.
+
+After done, autopilot ships the ticket (since crew 1.0.366). `autopilot.ship`
+set to `pr` pushes the branch and opens a pull request, then stops for a
+person to merge. Set to `merge`, the default, it also merges once every
+required check passes, or fails under a name listed exactly in
+`autopilot.knownFailures`, waiting up to `autopilot.ciTimeoutMinutes`. It
+always merges with a merge commit, never a squash, a rebase or `--admin`, and
+never through a merge queue. A `high`-risk ticket, or one whose spec names no
+risk, never merges unattended when every review was same-family (Claude
+reviewing Claude); it stops with its pull request open. Autopilot never
+deploys today. Goals and backlogs arrive with T-0012, and deploy dispatch
+with T-0045.
 `/crew:autopilot status` prints where a ticket stands, read-only.
 
 A separate autopilot guide with worked examples is planned as T-0054.
@@ -291,7 +301,8 @@ worktree:
   sees the same review budget.
 - **The merge train** (`crew_train.py`, armed per clone) serialises the
   gate-and-land stage for tickets whose Touch lists overlap. Catch-up is
-  always a merge, never a rebase. crew never merges, pushes or opens the PR.
+  always a merge, never a rebase. The train never merges, pushes or opens the
+  PR; only autopilot's ship step does, under `autopilot.ship`.
 - **Check before assuming a diff is yours.** Another session may have
   changed the tree, a branch or the stash (root `CLAUDE.md`, "Lessons").
 
@@ -382,7 +393,6 @@ guide describes them as present.
 | Ticket | What it brings |
 |---|---|
 | T-0009 | A ratcheted guard for deploy workflows, and per-environment deploy workflows |
-| T-0011 | Autopilot ships: opens a PR, or merges once required checks are green |
 | T-0012 | Autopilot goals and backlogs, with per-run caps |
 | T-0017 | A machine opt-in for the automatic wrap-up |
 | T-0019 | `/crew:autopilot assign` |

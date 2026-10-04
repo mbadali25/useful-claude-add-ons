@@ -1131,8 +1131,14 @@ AUTONOMOUS_STOPS = (
 # does at plan approval and at an open question. `risk` acts only on a spec
 # header saying `risk: low`; any other value reads as `human`, and approval
 # needs `scope.allowCliApproval: true` besides (crew_autopilot.approval_policy).
+# T-0011 adds the ship phase after `/crew:done`: `ship` is `pr` (push and open
+# the PR, then stop) or `merge` (also `gh pr merge <n> --merge`, a merge commit,
+# once every required check passes or fails only on a name EXACTLY in
+# `knownFailures`); any other value reads as `pr`, the non-merging direction. A
+# check still pending after `ciTimeoutMinutes` stops; it never merges.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
-                      "questions": "risk"}
+                      "questions": "risk", "ship": "merge", "knownFailures": [],
+                      "ciTimeoutMinutes": 60}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work

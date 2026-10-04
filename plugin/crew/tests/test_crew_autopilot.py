@@ -1237,7 +1237,8 @@ def test_autopilot_defaults_are_the_config_block():
     import crew_config  # pylint: disable=import-outside-toplevel
     assert crew_config.default_config()["autopilot"] == {
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
-        "questions": "risk"}
+        "questions": "risk", "ship": "merge", "knownFailures": [],
+        "ciTimeoutMinutes": 60}
 
 
 # --- step 6: the command -----------------------------------------------------

@@ -162,10 +162,15 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
-leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
-For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **74**
+leaves. `leaf_paths(default_config())` yields **135**, so **61** are repo-only.
+For all 135, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on T-0011's merge of main e9364a70; T-0011 added the three repo-only
+`autopilot.ship`, `autopilot.knownFailures` and `autopilot.ciTimeoutMinutes`.
+This paragraph said 72 / 130 / 58 until then, stale on main since T-0013 added
+`resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers,
+which made main 74 / 132 / 58. Before that, measured with `leaf_paths`
 on T-0061's branch after merging main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
@@ -694,7 +699,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-74 of 132 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
+74 of 135 keys are settable in the machine-global file (generated; 61 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -809,7 +814,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-58 of 132 keys are repo-only (generated; 74 are global-settable, section 10).
+61 of 135 keys are repo-only (generated; 74 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -873,6 +878,9 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
 | `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
 | `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
+| `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
+| `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
+| `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -2632,6 +2640,9 @@ driven is a fact about that checkout.
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
+| `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.366) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
+| `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
+| `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2681,13 +2692,44 @@ only when `autopilot.approval` allows it (a ticket `assign` mints is written by
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger
 is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
-`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
-T-0072's `deploy-allowed` write nothing, and T-0018's `route` and `status` read no policy of their own:
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
+T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside
+the checkout instead: a push, a PR and at most one merge commit), and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
 same under every setting, and at the approve phase it names
 `/crew:approve <id>`; `next` is what names the policy's route. The one policy
 effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
+
+**When `ship: merge` merges.** Every required check (`gh pr checks <n>
+--required`) reads `pass`, or `fail` with its name exactly in `knownFailures`.
+Pending, or no required check reported yet, waits until `ciTimeoutMinutes` and
+then stops; `skipping`, an unknown state, an unlisted failure or checks that
+could not be read stop at once. A `high`-risk ticket - or one whose spec header
+names no risk, which reads as `high` - never merges when every completed review
+round's `model_family` is `claude` or absent: an unrecorded family counts as the
+author's. **Codex, the only cross-family reviewer here, was out until
+2026-10-01; while it is unavailable every review is same-family, so every
+`high`-risk ticket stops at `ship: merge` with its PR open for a person to
+merge.** `ship` refuses a working tree that differs from HEAD (tracked or
+untracked, ignored files aside) before the push and again before the merge: a
+receipt can cover edits a push does not carry. It takes HEAD once, right after
+the push; the PR's head and this checkout's HEAD must still be that commit
+before and after every poll and right before the merge. A merge also needs the
+review receipt to still stand after the wait, on the same ledger bytes the
+review families came from (a ledger replaced after the last poll stops), and a
+base branch with no merge queue (a queue picks its own merge method, which may squash, and keeps
+merging after `ship` stops; a queue state that cannot be read stops too). The
+merge is bound with `--match-head-commit <HEAD>`, so a push after the last read
+is refused by GitHub, not merged; if gh queues the PR anyway, `ship` dequeues
+it once (GraphQL `dequeuePullRequest`, the only mutation it sends) and stops.
+Check names and states are read verbatim - `knownFailures` never matches a
+trimmed or re-cased name - and a `gh pr checks` row that is not exactly five
+tab-separated fields is unreadable: gh prints a check's name and description
+unescaped, so one holding a tab never ships unattended. The settings, the
+risk and the review families are re-read on every poll, and a green that lands
+after `ciTimeoutMinutes` stops like a pending one. Unarmed, a ticket
+`/crew:done` closed reads `closed` and nothing is pushed.
 
 **What arming it does not change.** Review acceptance and brainstorm always
 stop for a person, at every setting — accepting review FINDINGS with any

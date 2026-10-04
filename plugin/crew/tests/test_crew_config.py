@@ -352,7 +352,13 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # merging main 34d9f267.
     assert "tickets.baseBranch" in declared
     # 132 with both, measured after merging main into T-0013.
-    assert len(declared) == 132
+    # 135 with T-0011's ship phase on top: `autopilot.ship`,
+    # `autopilot.knownFailures` (an empty list, so one leaf) and
+    # `autopilot.ciTimeoutMinutes`, measured by running this test after
+    # merging main 155fe6d8 into T-0011-build.
+    assert {"autopilot.ship", "autopilot.knownFailures",
+            "autopilot.ciTimeoutMinutes"} <= declared
+    assert len(declared) == 135
 
 
 def test_tickets_base_branch_is_repo_only_and_null_by_default():

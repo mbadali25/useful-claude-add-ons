@@ -314,9 +314,18 @@ in the repo's <code>.crew/config.json</code>.</p>
 </ul>
 <p>Plan approval and open questions stop too, unless <code>autopilot.approval</code> and
 <code>autopilot.questions</code> allow otherwise. Plan approval also needs
-<code>scope.allowCliApproval: true</code>; an open question does not. Autopilot never
-merges, pushes, opens a pull request or deploys today. Shipping arrives with
-T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
+<code>scope.allowCliApproval: true</code>; an open question does not.</p>
+<p>After done, autopilot ships the ticket (since crew 1.0.366). <code>autopilot.ship</code>
+set to <code>pr</code> pushes the branch and opens a pull request, then stops for a
+person to merge. Set to <code>merge</code>, the default, it also merges once every
+required check passes, or fails under a name listed exactly in
+<code>autopilot.knownFailures</code>, waiting up to <code>autopilot.ciTimeoutMinutes</code>. It
+always merges with a merge commit, never a squash, a rebase or <code>--admin</code>, and
+never through a merge queue. A <code>high</code>-risk ticket, or one whose spec names no
+risk, never merges unattended when every review was same-family (Claude
+reviewing Claude); it stops with its pull request open. Autopilot never
+deploys today. Goals and backlogs arrive with T-0012, and deploy dispatch
+with T-0045.
 <code>/crew:autopilot status</code> prints where a ticket stands, read-only.</p>
 <p>A separate autopilot guide with worked examples is planned as T-0054.</p>
 <h2 id="trackers">Trackers</h2>
@@ -343,7 +352,8 @@ worktree:</p>
   sees the same review budget.</li>
 <li><strong>The merge train</strong> (<code>crew_train.py</code>, armed per clone) serialises the
   gate-and-land stage for tickets whose Touch lists overlap. Catch-up is
-  always a merge, never a rebase. crew never merges, pushes or opens the PR.</li>
+  always a merge, never a rebase. The train never merges, pushes or opens the
+  PR; only autopilot's ship step does, under <code>autopilot.ship</code>.</li>
 <li><strong>Check before assuming a diff is yours.</strong> Another session may have
   changed the tree, a branch or the stash (root <code>CLAUDE.md</code>, "Lessons").</li>
 </ul>
@@ -424,10 +434,6 @@ guide describes them as present.</p>
 <tr>
 <td>T-0009</td>
 <td>A ratcheted guard for deploy workflows, and per-environment deploy workflows</td>
-</tr>
-<tr>
-<td>T-0011</td>
-<td>Autopilot ships: opens a PR, or merges once required checks are green</td>
 </tr>
 <tr>
 <td>T-0012</td>

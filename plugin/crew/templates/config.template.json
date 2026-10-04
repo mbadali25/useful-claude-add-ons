@@ -217,7 +217,10 @@
     "maxPhases": 12,
     "deploy": "none",
     "approval": "risk",
-    "questions": "risk"
+    "questions": "risk",
+    "ship": "merge",
+    "knownFailures": [],
+    "ciTimeoutMinutes": 60
   },
   "tickets": {
     "baseBranch": null
