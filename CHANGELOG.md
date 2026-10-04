@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.165: the sabotage step finishes on Linux, and a skipped mutation never reads as green (L-0608)
+### Fixed - `crew` 1.0.303: the sabotage step finishes on Linux, and a skipped mutation never reads as green (L-0608)
 
 - **Why the step died.** The `cloud guard r1: azureProfile.json opened whatever it is` mutation makes
   the hook read `/dev/zero` unbounded. Its test's `_run_bounded` capped time but not memory, so the
