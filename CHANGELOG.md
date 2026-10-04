@@ -51,7 +51,7 @@ Stacked on T-0052 (#364, which carries T-0037) and T-0011 (#353).
   rule gains `test_crew_autopilot_slices.py`, `test_crew_ticket.py` and
   `test_review_ledger.py`.
 
-### Added — `crew` 1.0.374: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+### Added — `crew` 1.0.387: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
   `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
@@ -75,8 +75,11 @@ Stacked on T-0052 (#364, which carries T-0037) and T-0011 (#353).
   session's current human-turn id (the context hook's `turn.id`, found
   through `CLAUDE_CODE_SESSION_ID`); `confirm`, and `apply` through it,
   passes only when the proposal is unchanged and a different turn id is
-  readable for the same session. No session id, an absent or unreadable turn
-  record, or a check that saw no turn is a refusal; under `/crew:autopilot`
+  readable for the same session, moved by a prompt that is readable, not a
+  harness envelope (task notification, wake, webhook) and not the prompt
+  check ran under (a loop). No session id, an absent or unreadable turn
+  record or prompt, or a check that saw no turn is a refusal; a successful
+  apply spends the check; under `/crew:autopilot`
   the command stops and names T-0058's `/crew:autopilot split <id>`.
 - **Thresholds, with their evidence** (constants, not config):
   `PLAN_STEPS_LOOK = 9`, `ACCEPTANCE_LOOK = 12`, `SUBSYSTEMS_LOOK = 2`,
@@ -94,17 +97,42 @@ Stacked on T-0052 (#364, which carries T-0037) and T-0011 (#353).
   `files` for the prose but `apply` refuses it, because `mint` does. Under
   Obsidian, `mint` now writes the card itself; `/crew:obsidian-sync` is named
   only when a warning names the board. A failed mint records the minted
-  children under `## Minted` in `split.md`, and a re-run after a new check
-  and yes skips them rather than minting duplicates. An unknown evidence key
+  children under a trailing `## Minted` in `split.md`; a re-run after a new
+  check and yes skips a child only when an apply record exists and its
+  direction carries apply's provenance (`origin: split of <parent>`,
+  `split-child: <n>`) and an INDEX row and its direction is exactly what the
+  current proposal's child would get, and adopts a child whose id never
+  reached `split.md` on the same terms; a minted child an edited proposal no
+  longer matches stops the apply, naming it.
+  A `## Minted` section apply did not write is refused, and the proposal
+  hash covers every byte but a valid trailing block. An unknown evidence key
   is refused even beside a known one.
-- **Tests.** `test_crew_split.py` (74 cases): must-block and must-allow for
+- **Accepted limit (owner decision 2026-10-04).** The confirmation gate is
+  not owner-proof against the session itself: a session can schedule its own
+  plain-text "yes" (`send_later`, a routine) and pass it. Documented in the
+  module docstring and the README; the follow-up routes split approval
+  through the `/crew:approve` harness path (`TODO.md`).
+- **Review round 1 (#364).** Three BLOCKs (a `## Minted` heading that hid
+  later edits from the hash, an unverified `## Minted` that let apply skip a
+  child, a turn moved by a task notification passing `confirm`), four FIXes
+  (a readable section yielding nothing, or an unmatched Touch entry, read as
+  0; the sabotage module's follow-up recorded in `TODO.md`; the window
+  between a mint and its record, and a non-UTF-8 spec found after minting)
+  and three NITs, each test-first. **Round 2:** a skipped or adopted child
+  is compared to the current proposal (a swapped child was reused with its
+  old criteria), orphans need the apply record and an INDEX row, and the
+  repeated-prompt refusal says the owner may have typed the same words.
+  **Round 3:** a `cancelled` or `superseded` child is never reused, so
+  cancelling a stale child unblocks the apply, and the refusal names that
+  exit and restoring the child's text.
+- **Tests.** `test_crew_split.py` (100 cases): must-block and must-allow for
   every rule, the confirm gate, `apply` in files and Obsidian mode, and the
   command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
   entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
-  Ten mutations (child bound, substring placement, duplicates, exclusions,
-  `separable-criteria`, `None` as 0, the sdp stop, mint order, parent-status
-  order, the confirm turn check) were run by hand, each red on its named
-  test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
+  Twenty-seven mutations (the first ten: child bound, substring placement,
+  duplicates, exclusions, `separable-criteria`, `None` as 0, the sdp stop,
+  mint order, parent-status order, the confirm turn check; seventeen more for
+  the review rounds' guards) were run by hand, each red on its named test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
   paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
   maps `crew_split.py`, its test, the fixture and `split.md`.
 

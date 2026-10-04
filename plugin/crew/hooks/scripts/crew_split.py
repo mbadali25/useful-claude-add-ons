@@ -14,6 +14,8 @@ The API (stable; T-0058 and T-0059 build on it):
                                         a None measure is "unknown:<name>"
     parent_criteria(spec_text)      -> the Acceptance bullets, or None
     parse_proposal(text)            -> the split.md fields (no judgement)
+    minted_tail(text)               -> (body, {n: id}) for a valid trailing
+                                        ## Minted block, else (text, None)
     check_proposal(criteria, text)  -> (decision, problems)
     tracker_mode(top)               -> files|obsidian|jira|sdp|unknown
     check(top, ticket, ...)         -> (decision, problems); records the pass
@@ -39,14 +41,38 @@ evidence, and "not too big" is a result, not a failure. `split.md` format:
     - <what this child does not do>
     ## Stays on parent             (split only; `- none` when nothing stays)
     - <a parent acceptance criterion, verbatim>
-    ## Minted                      (written by apply; never a placement)
-    - Child 1: T-0061
+    ## Minted                      (apply only: the LAST section, nothing
+    - Child 1: T-0061               but `- Child N: <id>` lines)
+
+A `## Minted` heading anywhere else, or holding anything else, is refused,
+and the proposal hash covers every byte but a valid trailing block. An entry
+is trusted only when an apply record exists (`split-apply.json`, written
+before the first mint), the ticket has an INDEX row, and its direction.md is
+exactly what apply writes for the CURRENT proposal's child (provenance lines
+`origin: split of <parent>`, `split-child: <n>`, then the criteria and
+exclusions); a child minted whose id never reached split.md is adopted on the
+same terms, never minted twice. A minted child an edited proposal no longer
+matches stops apply, naming it, with nothing written.
 
 `confirm` is the code half of `/crew:split`'s confirmation: `check`, when it
 passes, records the proposal's sha256 and the session's current human-turn id
-(the `turn.id` crew_context.py's UserPromptSubmit hook writes); `confirm`
-passes only once a different turn id is readable for the same session and
-the proposal is unchanged. Could not tell is a refusal, never a yes.
+(the `turn.id` crew_context.py's UserPromptSubmit hook writes) with a hash of
+the prompt that set it (`lastPrompt`); `confirm` passes only once a different
+turn id is readable for the same session, the proposal is unchanged, and the
+prompt that moved it is readable, not a harness envelope (a task
+notification, wake or webhook: anything opening with `<`) and not the prompt
+check ran under (a loop). Could not tell is a refusal, never a yes. A
+successful apply spends the check; a failed one drops it.
+
+Accepted limits (owner decision 2026-10-04): the gate is NOT owner-proof
+against the session itself. A session can schedule its own plain-text "yes"
+(send_later, a routine) and that prompt passes the gate, because a scheduled
+prompt delivered as plain text reads as typed. The session is also found
+through `CLAUDE_CODE_SESSION_ID`, an environment variable any process can
+set. The gate stops a session answering its own question in the same turn
+or from a harness envelope, not a session or process that sets out to forge
+the answer; the prose confirmation is what reads it. Follow-up: route split
+approval through the /crew:approve harness path (TODO.md).
 
 CLI (exit 0 ok, 1 refused):
     crew_split.py [measure] --root . --ticket <id> [--stage spec|plan]
@@ -123,11 +149,14 @@ _FIELD_RE = re.compile(r"^(risk|subsystem):[ \t]*(.*?)\s*$", re.IGNORECASE)
 _LABEL_RE = re.compile(r"^(criteria|excludes):\s*$", re.IGNORECASE)
 _STEP_RE = re.compile(r"^###\s+Step\b")
 _STATUS_RE = re.compile(r"(?<![\w-])status:[ \t]*\S+")
-_MINTED_RE = re.compile(r"^-\s+Child\s+(\d+):\s*(\S+)\s*$")
+_MINTED_RE = re.compile(r"^-[ \t]+Child[ \t]+(\d+):[ \t]*(\S+)[ \t]*$")
+_MINTED_HEAD_RE = re.compile(r"(?m)^##[ \t]+Minted\b.*$")
 _ANY_HEADING_RE = re.compile(r"^(#{1,3})\s+(.*?)\s*#*\s*$")
 _PLAN_STEP_RE = re.compile(r"^#{2,3}\s+Step\s+(\d+)\b", re.IGNORECASE)
 _SLICE_RE = re.compile(r"^###\s+Slice\s+(\d+)\s*:?\s*(.*?)\s*$", re.IGNORECASE)
 _SLICE_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?(steps|base):[ \t]*(.*?)\s*$", re.IGNORECASE)
+MINTED_RULE = ("a ## Minted section is written by apply only: the last section, holding "
+               "only `- Child N: <id>` lines")
 
 
 class SplitError(Exception):
@@ -198,12 +227,15 @@ def _acceptance(spec_text):
     body = crew_ticket.sections(spec_text).get("acceptance checks")
     if body is None:
         return None
-    return sum(1 for line in body.splitlines() if re.match(r"^\s*[-*+]\s+\[[ xX]\]", line))
+    count = sum(1 for line in body.splitlines() if re.match(r"^\s*[-*+]\s+\[[ xX]\]", line))
+    return count or None  # a section with no checkbox bullet is unread, not "0 checks"
 
 
 def _subsystems(top, entries):
     """Distinct codemap subsystems whose paths cover a Touch entry (the
-    longest match per entry), or None when there is no codemap to read."""
+    longest match per entry), or None when there is no codemap to read or
+    any entry is covered by none: an unplaced entry may be another
+    subsystem, so the count would read low."""
     if not os.path.isdir(os.path.join(top, ".crew", "codemap")):
         return None
     subs = crew_context.subsystems(top)
@@ -213,9 +245,10 @@ def _subsystems(top, entries):
     for entry in entries:
         literal = re.split(r"[*?\[]", entry, maxsplit=1)[0]
         hits = crew_context.subsystems_for_path(subs, literal)
-        if hits:
-            named.add(hits[0]["name"])
-    return len(named)
+        if not hits:
+            return None
+        named.add(hits[0]["name"])
+    return len(named) or None
 
 
 def measure(top, ticket):
@@ -231,10 +264,13 @@ def measure(top, ticket):
         got["acceptance"] = _acceptance(spec)
         if "touch" in crew_ticket.sections(spec):
             entries, _ = crew_ticket.parse_touch(spec)
-            got["touch"] = len(entries)
-            got["subsystems"] = _subsystems(top, entries)
+            if entries:
+                got["touch"] = len(entries)
+                got["subsystems"] = _subsystems(top, entries)
     if plan is not None:
-        got["plan_steps"] = sum(1 for line in plan.splitlines() if _STEP_RE.match(line))
+        # A plan with no `### Step` heading is one this cannot read, not a
+        # plan of zero steps.
+        got["plan_steps"] = sum(1 for line in plan.splitlines() if _STEP_RE.match(line)) or None
     rate = crew_state.read_metrics(top).get("rate")
     if rate is not None:
         got["findings_rate"] = rate
@@ -304,10 +340,34 @@ def _children(lines):
     return children
 
 
+def minted_tail(text):
+    """`(body, {number: id})` when the text ends in one `## Minted` section
+    holding only `- Child N: <id>` lines (and blank lines), else `(text,
+    None)` -- also None when there is no such section, or a `## Minted`
+    heading sits anywhere but last. `body` is the text before it."""
+    heads = list(_MINTED_HEAD_RE.finditer(text))
+    if len(heads) != 1:
+        return text, None
+    head = heads[0]
+    if not re.fullmatch(r"##[ \t]+Minted[ \t\r]*", head.group(0)):
+        return text, None
+    entries = {}
+    for line in text[head.end():].splitlines():
+        if not line.strip():
+            continue
+        hit = _MINTED_RE.match(line.rstrip("\r"))
+        if not hit or int(hit.group(1)) in entries:
+            return text, None
+        entries[int(hit.group(1))] = hit.group(2)
+    return text[:head.start()], entries
+
+
 def parse_proposal(text):
     """The fields of a `split.md`, with no judgement: `{decision, answered,
     evidence: [(key, value)], children: [...] | None, stays: [...] | None,
-    minted: {number: id}}`. `children`/`stays` are None when the section is
+    minted: {number: id}, minted_ok}`: `minted` only from a valid trailing
+    block (`minted_tail`); `minted_ok` is False when a `## Minted` heading
+    is anywhere else or holds anything else. `children`/`stays` are None when the section is
     absent; `- none` alone under `## Stays on parent` is an empty list."""
     text = (text or "").removeprefix("﻿")
     first = next((line for line in text.splitlines() if line.startswith("# ")), "")
@@ -326,16 +386,13 @@ def parse_proposal(text):
         stays = [b for b in (_bullet(line) for line in blocks["stays on parent"]) if b]
         if [s.casefold() for s in stays] == ["none"]:
             stays = []
-    minted = {}
-    for line in blocks.get("minted", []):
-        hit = _MINTED_RE.match(line.strip())
-        if hit:
-            minted[int(hit.group(1))] = hit.group(2)
+    _, minted = minted_tail(text)
+    minted_ok = minted is not None or not _MINTED_HEAD_RE.search(text)
     return {"decision": found.group(1) if found else None,
             "answered": [a.strip() for a in answered.split(",") if a.strip()],
             "evidence": evidence,
             "children": _children(blocks["children"]) if "children" in blocks else None,
-            "stays": stays, "minted": minted}
+            "stays": stays, "minted": minted or {}, "minted_ok": minted_ok}
 
 
 def _child_problems(child):
@@ -393,6 +450,8 @@ def check_proposal(parent_criteria_list, text):
             problems.append(f"evidence key {key!r} is not one of {', '.join(EVIDENCE_KEYS)}")
     if not any(key in EVIDENCE_KEYS for key in keys):
         problems.append(f"## Evidence names no known evidence key ({', '.join(EVIDENCE_KEYS)})")
+    if not got["minted_ok"]:
+        problems.append(MINTED_RULE)
     if decision in ("not-too-big", "slices") and got["children"] is not None:
         problems.append(f"decision {decision} takes no ## Children section")
     if decision != "split":
@@ -447,16 +506,25 @@ def _proposal_path(top, ticket, proposal=None):
 
 
 def _proposal_sha(data):
-    """sha256 over the proposal up to its `## Minted` section (trailing
-    whitespace dropped), which apply appends to as children return; any
-    other edit changes it."""
-    cut = re.search(rb"(?m)^##[ \t]+Minted\b", data)
-    return hashlib.sha256((data[:cut.start()] if cut else data).rstrip()).hexdigest()
+    """sha256 over the proposal less a valid trailing `## Minted` block
+    (`minted_tail`), which apply appends to as children return; trailing
+    whitespace dropped. Every other byte is hashed, a `## Minted` heading
+    anywhere else included."""
+    text = data.decode("latin-1")  # lossless: every byte maps to one char
+    body, entries = minted_tail(text)
+    kept = body if entries is not None else text
+    return hashlib.sha256(kept.encode("latin-1").rstrip()).hexdigest()
 
 
-def current_turn(top, session=None):
-    """`(turn_id, None)` or `(None, why)`: the hook-written human-turn id for
-    this session. Absent, unreadable, empty or unattributable is a why."""
+def apply_record_path(top, ticket):
+    """`<git-common-dir>/crew/tickets/<id>/split-apply.json`: written by
+    apply before its first mint, so a `## Minted` section with no such
+    record was not written by apply."""
+    return os.path.join(os.path.dirname(check_record_path(top, ticket)), "split-apply.json")
+
+
+def _session_record(top, session):
+    """`(data, None)` or `(None, why)`: the context hook's per-session state."""
     session = session if session is not None else os.environ.get(SESSION_ENV)
     if not session:
         return None, (f"no session id ({SESSION_ENV} is unset), so no turn record can be "
@@ -470,20 +538,58 @@ def current_turn(top, session=None):
         data = json.loads(text) if text is not None else None
     except ValueError:
         data = None
-    turn = data.get("turn") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None, f"the turn record for session {session} could not be read"
+    return data, None
+
+
+def current_turn(top, session=None):
+    """`(turn_id, None)` or `(None, why)`: the hook-written human-turn id for
+    this session. Absent, unreadable, empty or unattributable is a why."""
+    data, why = _session_record(top, session)
+    if why:
+        return None, why
+    turn = data.get("turn")
     ident = turn.get("id") if isinstance(turn, dict) else None
     if not isinstance(ident, str):
-        return None, f"the turn record for session {session} could not be read"
+        return None, "the turn record for this session could not be read"
     if not ident:
-        return None, f"the turn record for session {session} holds no turn id"
+        return None, "the turn record for this session holds no turn id"
     return ident, None
+
+
+def current_prompt(top, session=None):
+    """`(prompt, None)` or `(None, why)`: the first 500 characters of the
+    prompt that last moved the turn id (crew_context's `lastPrompt`)."""
+    data, why = _session_record(top, session)
+    if why:
+        return None, why
+    prompt = data.get("lastPrompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return None, ("the turn record holds no prompt, so whether a human typed the one "
+                      "that moved the turn cannot tell")
+    return prompt, None
+
+
+def _prompt_sha(prompt):
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest() if prompt else None
+
+
+def _machine_prompt(prompt):
+    """True for a prompt the harness, not a person, delivers: a task
+    notification, a wake, a webhook payload, a scheduled or child-session
+    event -- every one an XML-shaped envelope. Any prompt that opens with `<`
+    is treated as one: refusing a typed `<` costs a retype, accepting an
+    envelope is a session answering itself."""
+    return prompt.lstrip().startswith("<")
 
 
 def check(top, ticket, proposal=None, criteria_file=None, session=None):
     """Run `check_proposal` on the ticket's proposal against its parent's
-    criteria (spec.md, or `criteria_file` for a Jira issue). On a pass,
-    record the proposal's sha256 and the current turn id (None when it
-    cannot be read: confirm then refuses) for `confirm`."""
+    criteria (spec.md, or `criteria_file` for a Jira issue). A `## Minted`
+    section with no apply record is refused. On a pass, record the
+    proposal's sha256, the current turn id and a hash of the prompt that
+    moved it (None when unreadable: confirm then refuses)."""
     top = _top(top)
     path = _proposal_path(top, ticket, proposal)
     if criteria_file:
@@ -497,11 +603,17 @@ def check(top, ticket, proposal=None, criteria_file=None, session=None):
             data = handle.read()
     except OSError as exc:
         return None, [f"the proposal {path} could not be read ({exc.strerror or exc})"]
-    decision, problems = check_proposal(criteria, data.decode("utf-8", "replace"))
+    text = data.decode("utf-8", "replace")
+    decision, problems = check_proposal(criteria, text)
+    if parse_proposal(text)["minted"] and not os.path.lexists(apply_record_path(top, ticket)):
+        problems.append(f"## Minted lists children but no apply has run for {ticket} (no "
+                        f"{os.path.basename(apply_record_path(top, ticket))}); {MINTED_RULE}")
     if problems:
         return decision, problems
     turn, _ = current_turn(top, session)
+    prompt, _ = current_prompt(top, session)
     record = {"proposal": path, "proposal_sha256": _proposal_sha(data), "turn": turn,
+              "prompt_sha256": _prompt_sha(prompt),
               "session": session if session is not None else os.environ.get(SESSION_ENV)}
     target = check_record_path(top, ticket)
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -509,28 +621,40 @@ def check(top, ticket, proposal=None, criteria_file=None, session=None):
     return decision, problems
 
 
-def confirm(top, ticket, session=None):
-    """`{"ok", "reason"}`: ok only when a passing check is recorded, the
-    proposal is unchanged since, and this session's current turn id is
-    readable, non-empty and different from the one check saw -- a human
-    prompt has arrived since. Autopilot runs its phases with no prompt in
-    between, so it can never pass this."""
-    top = _top(top)
+def _read_check_record(top, ticket):
+    """`(record, None)` or `(None, why)`."""
     try:
         path = check_record_path(top, ticket)
     except SplitError as exc:
-        return {"ok": False, "reason": str(exc)}
+        return None, str(exc)
     text = _read(path)
     if text is None:
         why = "could not be read" if os.path.lexists(path) else "does not exist"
-        return {"ok": False, "reason": f"no passing check for {ticket} ({path} {why}); run "
-                                       "crew_split.py check first"}
+        return None, (f"no passing check for {ticket} ({path} {why}); run crew_split.py "
+                      "check first")
     try:
         record = json.loads(text)
     except ValueError:
         record = None
     if not isinstance(record, dict) or not record.get("proposal_sha256"):
-        return {"ok": False, "reason": f"the check record {path} could not be read"}
+        return None, f"the check record {path} could not be read"
+    return record, None
+
+
+def confirm(top, ticket, session=None):
+    """`{"ok", "reason"}`: ok only when a passing check is recorded, the
+    proposal is unchanged since, and this session's current turn id is
+    readable, non-empty and different from the one check saw, moved by a
+    prompt that is readable, not a harness envelope (task notification,
+    wake, webhook) and not the prompt check ran under (a loop re-sending
+    it). Autopilot runs its phases with no prompt in between, so it can
+    never pass this. Accepted limit (owner, 2026-10-04): a session can
+    schedule its own plain-text "yes" (send_later, a routine), which reads
+    as typed and passes; the gate is not owner-proof against the session."""
+    top = _top(top)
+    record, why = _read_check_record(top, ticket)
+    if why:
+        return {"ok": False, "reason": why}
     try:
         with open(record.get("proposal") or _proposal_path(top, ticket), "rb") as handle:
             sha = _proposal_sha(handle.read())
@@ -552,13 +676,34 @@ def confirm(top, ticket, session=None):
     if turn == record["turn"]:
         return {"ok": False, "reason": "no human prompt has arrived since check passed; "
                                        "show the proposal and end the turn for the owner's yes"}
+    prompt, why = current_prompt(top, session)
+    if why:
+        return {"ok": False, "reason": why}
+    if _machine_prompt(prompt):
+        return {"ok": False, "reason": "the prompt that moved the turn is not a human-typed "
+                                       "prompt (a task notification, wake or webhook); ask "
+                                       "again and wait for the owner"}
+    if record.get("prompt_sha256") and _prompt_sha(prompt) == record["prompt_sha256"]:
+        return {"ok": False, "reason": "the prompt that moved the turn matches the one check ran "
+                                       "under (only the first 500 characters are compared): a "
+                                       "loop re-sending it, or the owner typed the same words "
+                                       "both times (e.g. 'go' twice); ask again and have the "
+                                       "owner answer in different words"}
     return {"ok": True, "reason": f"a human prompt arrived since check (turn {turn})"}
+
+
+def _drop(path):
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
 
 
 # --- apply -----------------------------------------------------------------------------
 
 def _direction(parent, child):
-    lines = [f"origin: split of {parent}", f"title: {child['title']}",
+    lines = [f"origin: split of {parent}", f"split-child: {child['number']}",
+             f"title: {child['title']}",
              f"risk: {child['risk'].lower()}", f"subsystem: {child['subsystem']}",
              f"parent's pre-split spec: `.work/tickets/{parent}/{PRE_SPLIT}`; "
              f"split proposal: `.work/tickets/{parent}/{PROPOSAL}`", "", "## Ask",
@@ -571,21 +716,116 @@ def _direction(parent, child):
     return "\n".join(lines) + "\n"
 
 
+def _provenance(top, child_id, parent):
+    """The `split-child:` number when `child_id`'s direction.md carries
+    apply's provenance for this parent (its `origin:` and `split-child:`
+    lines), else None."""
+    try:
+        folder = crew_ticket.ticket_dir(top, child_id)
+    except crew_ticket.TicketError:
+        return None
+    lines = (_read(os.path.join(folder, "direction.md")) or "").splitlines()[1:3]
+    if len(lines) < 2 or lines[0] != f"origin: split of {parent}":
+        return None
+    found = re.fullmatch(r"split-child: (\d+)", lines[1])
+    return int(found.group(1)) if found else None
+
+
+def _indexed(top, child_id):
+    """True when .work/INDEX.md holds an OPEN row for `child_id` (mint writes
+    one). A row closed with a T-0037 word (`cancelled`, `superseded`) is the
+    owner's way out of a stale child, so it no longer counts as minted."""
+    text = _read(os.path.join(top, ".work", "INDEX.md")) or ""
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.split("|")]
+        if cells[0] == child_id:
+            return len(cells) > 1 and cells[1] not in crew_tracker.CLOSED_STATUSES
+    return False
+
+
+def _written_for(top, child_id, parent, child):
+    """True when `child_id`'s direction.md is exactly what apply writes for
+    this child of the CURRENT proposal (mint's header plus `_direction`)."""
+    try:
+        folder = crew_ticket.ticket_dir(top, child_id)
+    except crew_ticket.TicketError:
+        return False
+    held = (_read(os.path.join(folder, "direction.md")) or "").replace("\r\n", "\n")
+    return held == f"# {child_id} direction\n{_direction(parent, child)}"
+
+
+def _orphans(top, parent):
+    """`{number: id}` for tickets apply minted for this parent (provenance
+    plus an INDEX row) -- whether or not their ids reached split.md."""
+    tickets = os.path.join(top, ".work", "tickets")
+    try:
+        names = sorted(os.listdir(tickets))
+    except OSError:
+        return {}
+    found = {}
+    for name in names:
+        number = None if name == parent else _provenance(top, name, parent)
+        if number is not None and _indexed(top, name):
+            found.setdefault(number, name)
+    return found
+
+
+def _existing_children(top, ticket, children, minted):
+    """`{number: id}` of children apply already minted, each verified against
+    the CURRENT proposal, or SplitError with nothing written. Trusted only
+    under an apply record: a `## Minted` entry must carry provenance and an
+    INDEX row, an orphan (minted, id never recorded) is found by them, and
+    either must hold exactly the direction this proposal's child would get;
+    a minted child the proposal no longer has, or whose child changed, is a
+    stale child and stops the apply."""
+    record = os.path.lexists(apply_record_path(top, ticket))
+    if minted and not record:
+        raise SplitError(f"{PROPOSAL}'s ## Minted lists children but no apply has run for "
+                         f"{ticket}; {MINTED_RULE}; nothing was written")
+    if not record:
+        return {}
+    live = {}
+    for number, child_id in sorted(minted.items()):
+        if _provenance(top, child_id, ticket) != number:
+            raise SplitError(f"## Minted names {child_id} as Child {number}, but it carries no "
+                             f"provenance (`origin: split of {ticket}`, `split-child: "
+                             f"{number}`); nothing was written")
+        if _indexed(top, child_id):
+            live[number] = child_id  # a cancelled/superseded or row-less entry is minted again
+    found = dict(_orphans(top, ticket))
+    found.update(live)
+    by_number = {child["number"]: child for child in children}
+    for number, child_id in sorted(found.items()):
+        child = by_number.get(number)
+        if child is None or not _written_for(top, child_id, ticket, child):
+            raise SplitError(f"{child_id} was minted as Child {number} for a different proposal "
+                             f"(its direction no longer matches this {PROPOSAL}'s Child "
+                             f"{number}); nothing was written. Either restore Child {number}'s "
+                             f"text in {PROPOSAL}, or cancel the stale ticket with "
+                             f"`crew_tracker.py move --ticket {child_id} --to cancelled`; then "
+                             f"re-run check and ask for a new yes")
+    return found
+
+
 def _record_minted(path, number, ticket):
-    """Append `- Child N: <id>` under `## Minted` (made on first use)."""
+    """Set `- Child N: <id>` in the trailing `## Minted` (made on first use;
+    an entry for N, a cancelled child's, is replaced in place), in the file's
+    own line ending."""
     with open(path, "rb") as handle:
-        data = handle.read()
-    text = data.decode("utf-8")
-    if not re.search(r"(?m)^##[ \t]+Minted\b", text):
-        text = text + ("" if text.endswith("\n") else "\n") + "\n## Minted\n"
-    text = text + ("" if text.endswith("\n") else "\n") + f"- Child {number}: {ticket}\n"
+        text = handle.read().decode("utf-8")
+    eol = "\r\n" if "\r\n" in text else "\n"
+    body, entries = minted_tail(text)
+    if entries is None:
+        body, entries = text, {}
+    entries[number] = ticket
+    lines = "".join(f"- Child {n}: {t}{eol}" for n, t in entries.items())
+    text = f"{body.rstrip()}{eol}{eol}## Minted{eol}{lines}"
     _atomic_write(path, text.encode("utf-8"))
 
 
-def _superseded_spec(data, kids):
+def _superseded_spec(text, kids):
     """The spec with `status: superseded` on its header and `split-into:`
     under it; the rest byte-identical (line endings kept)."""
-    text = data.decode("utf-8")
     first, sep, rest = text.partition("\n")
     eol = "\r\n" if first.endswith("\r") else "\n"
     head = first.rstrip("\r")
@@ -627,25 +867,31 @@ def _write_pre_split(folder, data):
     _atomic_write(pre, data)
 
 
-def _mint_children(top, ticket, children, minted, path):
+def _mint_children(top, ticket, children, existing, path):
+    """Mint each child not in `existing` (`_existing_children`), in order,
+    recording each id in split.md; an existing child is recorded, never
+    minted twice."""
+    minted = dict(parse_proposal(_read(path) or "")["minted"])
     kids, warnings = [], []
     for child in children:
         number = child["number"]
-        if number in minted:
-            kids.append(minted[number])
+        found = existing.get(number)
+        if found:
+            if minted.get(number) != found:
+                minted[number] = found
+                _record_minted(path, number, found)
+            kids.append(found)
             continue
         try:
             got = crew_ticket.mint(top, child["title"], status="ready",
                                    direction=_direction(ticket, child))
         except Exception as exc:  # pylint: disable=broad-except
-            done = [f"Child {c['number']}" for c in children if c["number"] in minted
-                    or c["number"] < number]
-            left = [f"Child {c['number']}" for c in children if c["number"] >= number
-                    and c["number"] not in minted]
+            done = [f"Child {c['number']}" for c in children[:len(kids)]]
+            left = [f"Child {c['number']}" for c in children[len(kids):]]
             raise SplitError(
                 f"mint of Child {number} ({child['title']}) failed: {exc}; minted: "
                 f"{', '.join(done) or 'none'}; not minted: {', '.join(left)}; the parent's "
-                f"status is unchanged. Re-run apply after a new check and yes: minted "
+                f"status is unchanged. Re-run check, ask for a new yes, then apply: minted "
                 f"children (## Minted in {PROPOSAL}) are skipped") from exc
         minted[number] = got["ticket"]
         _record_minted(path, number, got["ticket"])
@@ -654,14 +900,30 @@ def _mint_children(top, ticket, children, minted, path):
     return kids, warnings
 
 
+def _read_strict(path, label):
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError as exc:
+        raise SplitError(f"{label} could not be read ({exc.strerror or exc}); nothing was "
+                         "written") from exc
+    try:
+        return data, data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SplitError(f"{label} is not UTF-8 ({exc}); nothing was written") from exc
+
+
 def apply(top, ticket, via, session=None):
     """Split a files/Obsidian ticket. Refused, with nothing written, in jira,
-    sdp or an unknown mode, on a `via` not in VIAS, on a proposal
-    check_proposal refuses or whose decision is not `split`, on a parent
-    already superseded, and when confirm refuses. Then, in order: write
-    spec.pre-split.md byte-identical to spec.md; mint each child (recording
-    each id in split.md as it returns); and only after every mint returned,
-    mark the parent's spec header and INDEX row `superseded`."""
+    sdp or an unknown mode, on a `via` not in VIAS, on a spec or proposal that
+    is not UTF-8, on a proposal check_proposal refuses or whose decision is
+    not `split`, on a `## Minted` entry apply did not write, on a parent
+    already superseded, and when confirm refuses. Then, in order: record the
+    apply; write spec.pre-split.md byte-identical to spec.md; mint each child
+    (recording each id in split.md as it returns); and only after every mint
+    returned, mark the parent's spec header and INDEX row `superseded`. A
+    success spends the check record; a failure part-way drops it too, so a
+    re-run needs a fresh check and yes."""
     top = _top(top)
     if via not in VIAS:
         raise SplitError(f"via {via} is not one of {'|'.join(VIAS)} (T-0058 adds autopilot's "
@@ -669,30 +931,33 @@ def apply(top, ticket, via, session=None):
     _refuse_mode(top)
     folder = _folder(top, ticket)
     spec_path = os.path.join(folder, "spec.md")
-    try:
-        with open(spec_path, "rb") as handle:
-            spec = handle.read()
-    except OSError as exc:
-        raise SplitError(f"{ticket}'s spec.md could not be read ({exc.strerror or exc}); "
-                         "nothing was written") from exc
-    head = crew_ticket.header_line(spec.decode("utf-8", "replace"))
-    if re.search(rf"(?<![\w-])status:[ \t]*{SUPERSEDED}\b", head):
+    spec, spec_text = _read_strict(spec_path, f"{ticket}'s spec.md")
+    if re.search(rf"(?<![\w-])status:[ \t]*{SUPERSEDED}\b", crew_ticket.header_line(spec_text)):
         raise SplitError(f"{ticket} is already superseded; nothing was written")
     path = os.path.join(folder, PROPOSAL)
-    proposal = _read(path)
-    decision, problems = check_proposal(parent_criteria(spec.decode("utf-8", "replace")),
-                                        proposal)
+    _, proposal = _read_strict(path, PROPOSAL)
+    decision, problems = check_proposal(parent_criteria(spec_text), proposal)
     if problems:
         raise SplitError(f"{PROPOSAL} fails the rulebook: " + "; ".join(problems))
     if decision != "split":
         raise SplitError(f"the decision is {decision}, not split; nothing to apply")
+    got = parse_proposal(proposal)
+    existing = _existing_children(top, ticket, got["children"], got["minted"])
     gate = confirm(top, ticket, session)
     if not gate["ok"]:
         raise SplitError(f"confirm refused: {gate['reason']}; nothing was written")
-    _write_pre_split(folder, spec)
-    got = parse_proposal(proposal)
-    kids, warnings = _mint_children(top, ticket, got["children"], dict(got["minted"]), path)
-    _atomic_write(spec_path, _superseded_spec(spec, kids))
+    check_path, record_path = check_record_path(top, ticket), apply_record_path(top, ticket)
+    if not os.path.lexists(record_path):
+        _atomic_write(record_path, (json.dumps({"parent": ticket}) + "\n").encode("utf-8"))
+    try:
+        _write_pre_split(folder, spec)
+        kids, warnings = _mint_children(top, ticket, got["children"], existing, path)
+    except BaseException:
+        _drop(check_path)
+        raise
+    _atomic_write(spec_path, _superseded_spec(spec_text, kids))
+    _drop(check_path)
+    _drop(record_path)
     report = crew_tracker.move(top, ticket, SUPERSEDED)
     lines = [crew_tracker._line(r) for r in report["results"]]  # pylint: disable=protected-access
     if crew_tracker.exit_code(report) == 1:
@@ -908,7 +1173,7 @@ def main(argv=None):
             print(f"{'ok' if gate['ok'] else 'refused'}: {gate['reason']}")
             return 0 if gate["ok"] else 1
         got = apply(root, args.ticket, args.via or "")
-    except (SplitError, crew_ticket.TicketError, OSError) as exc:
+    except (SplitError, crew_ticket.TicketError, OSError, ValueError) as exc:
         print(f"refused: {exc}")
         return 1
     for kid in got["children"]:

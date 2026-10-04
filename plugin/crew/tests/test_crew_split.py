@@ -435,11 +435,16 @@ def test_tracker_mode_unreadable_is_unknown(tmp_path):
 
 # --- confirm and apply --------------------------------------------------------------
 
-def _turn(root, turn_id, session=SESSION):
+def _turn(root, turn_id, session=SESSION, prompt=True):
+    """The context hook's per-session record after a typed prompt (its
+    `lastPrompt` distinct per turn); `prompt=None` leaves `lastPrompt` out."""
     path = crew_context._session_file(str(root), session)  # pylint: disable=protected-access
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = {"epoch": 0, "seen": {}, "turn": {"id": turn_id, "used": 0}}
+    if prompt is not None:
+        data["lastPrompt"] = f"typed for {turn_id}" if prompt is True else prompt
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps({"epoch": 0, "seen": {}, "turn": {"id": turn_id, "used": 0}}))
+        handle.write(json.dumps(data))
     return path
 
 
@@ -847,6 +852,8 @@ def test_rerun_after_mint_failure_skips_minted_children(tmp_path, monkeypatch):
     with pytest.raises(crew_split.SplitError):
         crew_split.apply(str(root), ticket, "command", session=SESSION)
     _turn(root, "turn-3")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-4")
     got = crew_split.apply(str(root), ticket, "command", session=SESSION)
 
     assert (len(calls), len(got["children"]), len(set(got["children"]))) == (4, 3, 3)
@@ -920,6 +927,469 @@ def test_check_record_holds_sha_and_turn(tmp_path):
 
     assert (record["proposal_sha256"], record["turn"], record["session"]) == (
         hashlib.sha256(path.read_bytes().rstrip()).hexdigest(), "turn-1", SESSION)
+
+
+# --- review round 1 (#364 at e3a572c6) ----------------------------------------------
+
+def _turn_prompt(root, turn_id, prompt, session=SESSION):
+    _turn(root, turn_id, session=session, prompt=prompt)
+
+
+def test_minted_heading_early_does_not_hide_an_edit(tmp_path):
+    """BLOCK 1: a `## Minted` heading before `## Evidence` must not take the
+    rest of the proposal out of the hash (or past check)."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn(root, "turn-1")
+    text = _t0004_proposal().replace("## Evidence", "## Minted\n## Evidence", 1)
+    _staged(root, ticket, text)
+
+    decision, problems = crew_split.check(str(root), ticket, session=SESSION)
+
+    assert problems and any("## Minted" in p for p in problems), (decision, problems)
+
+
+def test_proposal_sha_covers_everything_but_a_trailing_minted_block():
+    base = _t0004_proposal().encode("utf-8")
+    trailing = base + b"\n## Minted\n- Child 1: T-0061\n"
+    tampered = base.replace(b"Excludes:", b"Excludes:\n- tampered", 1) + b"\n## Minted\n"
+    early = base.replace(b"## Evidence", b"## Minted\n## Evidence", 1)
+    sha = crew_split._proposal_sha  # pylint: disable=protected-access
+
+    assert sha(trailing) == sha(base)
+    assert sha(tampered) != sha(base)
+    assert sha(early) != sha(base)
+    assert sha(base + b"\n## Minted\n- Child 1: T-0061\n- tampered\n") != sha(base)
+
+
+def test_preseeded_minted_refused(tmp_path, monkeypatch):
+    """BLOCK 2: a `## Minted` section before any apply (no apply record) is
+    refused by check and by apply -- even naming a folder that carries this
+    split's provenance -- and nothing is minted or superseded."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    before = _spec_bytes(root, ticket)
+    fake = root / ".work" / "tickets" / "T-0050"
+    fake.mkdir()
+    (fake / "direction.md").write_text(f"# T-0050 direction\norigin: split of {ticket}\n"
+                                       "split-child: 1\n", encoding="utf-8")
+    _turn(root, "turn-1")
+    _staged(root, ticket, _t0004_proposal() + "\n## Minted\n- Child 1: T-0050\n")
+    _, problems = crew_split.check(str(root), ticket, session=SESSION)
+    _turn(root, "turn-2")
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    assert any("no apply has run" in p for p in problems), problems
+    with pytest.raises(crew_split.SplitError, match="no apply has run"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert (minted, _spec_bytes(root, ticket), _index_status(root, ticket)) == (
+        [], before, "spec")
+
+
+def test_preseeded_minted_without_provenance_refused(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn(root, "turn-1")
+    _staged(root, ticket, _t0004_proposal() + "\n## Minted\n- Child 1: T-9999\n")
+    crew_split.check(str(root), ticket, session=SESSION)
+    _turn(root, "turn-2")
+
+    with pytest.raises(crew_split.SplitError, match="Minted"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_minted_entry_without_provenance_refused(tmp_path, monkeypatch):
+    """BLOCK 2: after a failed apply, a hand-edited Minted entry naming a
+    ticket that is not this split's child is refused."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(re.sub(r"- Child 1: T-\d+", f"- Child 1: {ticket}", text), encoding="utf-8")
+    _turn(root, "turn-3")
+    crew_split.check(str(root), ticket, session=SESSION)
+    _turn(root, "turn-4")
+
+    with pytest.raises(crew_split.SplitError, match="provenance"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_crash_between_mint_and_record_adopts_orphan(tmp_path, monkeypatch):
+    """FIX 4: a child minted whose id never reached split.md is found by its
+    provenance on re-run, not minted twice."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real_record, calls = crew_split._record_minted, []  # pylint: disable=protected-access
+
+    def crash(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise OSError("killed")
+        return real_record(*args, **kwargs)
+
+    monkeypatch.setattr(crew_split, "_record_minted", crash)
+    with pytest.raises((crew_split.SplitError, OSError)):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_split, "_record_minted", real_record)
+    _turn(root, "turn-3")
+    crew_split.check(str(root), ticket, session=SESSION)
+    _turn(root, "turn-4")
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    children = [n for n in os.listdir(root / ".work" / "tickets") if n != ticket]
+    assert (len(got["children"]), sorted(children)) == (3, sorted(got["children"]))
+
+
+def test_non_utf8_spec_refused_before_any_mint(tmp_path, monkeypatch):
+    """FIX 4: the spec is decoded strictly before the first mint."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    spec = root / ".work" / "tickets" / ticket / "spec.md"
+    spec.write_bytes(spec.read_bytes() + b"\nbad byte \xff\n")
+    _checked(root, ticket)
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    with pytest.raises(crew_split.SplitError, match="UTF-8"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert minted == []
+
+
+@pytest.mark.parametrize("prompt", [
+    "<task-notification><task-id>b1</task-id> done</task-notification>",
+    "<wake reason=\"external-event\"> ci failed </wake>",
+    "<webhook-payload>{}</webhook-payload>",
+])
+def test_confirm_refuses_machine_prompt(tmp_path, prompt):
+    """BLOCK 3: a turn id moved by a task notification, wake or webhook is
+    not a human's yes."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn_prompt(root, "turn-1", "/crew:split T-1")
+    _staged(root, ticket)
+    crew_split.check(str(root), ticket, session=SESSION)
+    _turn_prompt(root, "turn-2", prompt)
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "not a human" in got["reason"]) == (False, True), got
+
+
+def test_confirm_refuses_repeated_prompt(tmp_path):
+    """BLOCK 3: a loop re-sending the prompt check ran under is not a yes."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn_prompt(root, "turn-1", "split T-1 please")
+    _staged(root, ticket)
+    crew_split.check(str(root), ticket, session=SESSION)
+    _turn_prompt(root, "turn-2", "split T-1 please")
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "typed the same words" in got["reason"]) == (False, True), got
+
+
+def test_confirm_refuses_unknown_prompt(tmp_path):
+    """BLOCK 3: a turn record with no lastPrompt cannot tell who moved it."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _turn(root, "turn-3", prompt=None)
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "cannot tell" in got["reason"]) == (False, True), got
+
+
+def test_confirm_allows_typed_yes(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn_prompt(root, "turn-1", "/crew:split T-1")
+    _staged(root, ticket)
+    crew_split.check(str(root), ticket, session=SESSION)
+    _turn_prompt(root, "turn-2", "yes, go")
+
+    assert crew_split.confirm(str(root), ticket, session=SESSION)["ok"] is True
+
+
+def test_acceptance_without_checkboxes_is_none(tmp_path):
+    """FIX 1: a readable section that yields no items is unknown, not 0."""
+    root = make_repo(tmp_path)
+    _ticket(root, "T-0001", "# T-0001 x\n## Acceptance checks\n- one\n- two\n## Touch\n- `a`\n",
+            "# plan\nno steps\n")
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert (got["acceptance"], got["plan_steps"]) == (None, None)
+    assert {"unknown:acceptance-count", "unknown:plan-steps"} <= set(
+        crew_split.triggers(got, "plan"))
+
+
+def test_unmatched_touch_entry_makes_subsystems_none(tmp_path):
+    """FIX 2: a Touch entry no codemap subsystem covers is unknown, not 0."""
+    root = make_repo(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "a.py").write_text("x\n", encoding="utf-8")
+    _codemap(root, {"code": "src/"})
+    _ticket(root, "T-0001", "# T-0001 x\n## Touch\n- `src/a.py`\n- `nowhere/b.py`\n"
+                            "## Acceptance checks\n- [ ] a\n")
+
+    assert crew_split.measure(str(root), "T-0001")["subsystems"] is None
+
+
+def test_check_record_removed_after_apply(tmp_path):
+    """NIT: a successful apply spends the yes."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+
+    crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert not os.path.exists(crew_split.check_record_path(str(root), ticket))
+
+
+def test_failed_mint_invalidates_check(tmp_path, monkeypatch):
+    """NIT: after a failed mint a re-run needs a fresh check and yes."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: (_ for _ in ()).throw(
+        crew_ticket.TicketError("disk full")))
+
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert not os.path.exists(crew_split.check_record_path(str(root), ticket))
+
+
+def test_minted_record_keeps_crlf(tmp_path, monkeypatch):
+    """NIT: a CRLF split.md stays CRLF when apply records a child."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn(root, "turn-1")
+    path = _staged(root, ticket)
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-2")
+
+    crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    data = path.read_bytes()
+    assert b"\n" not in data.replace(b"\r\n", b""), data[-80:]
+
+
+# --- review round 2 (#364 at 687d1edd) ----------------------------------------------
+
+def _fail_second_mint(monkeypatch):
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+    return real
+
+
+def test_minted_child_from_an_edited_proposal_refused(tmp_path, monkeypatch):
+    """BLOCK: after a failed apply, an edited proposal that swaps children
+    must not reuse Child 1's ticket (minted with the OLD criteria)."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    crit = _criteria()
+    swapped = _t0004_proposal(children=[
+        ("autopilot ship policy", "high", crit[7:10]),
+        ("autopilot approval and question policies", "high", crit[4:7]),
+        ("autopilot goal: tickets from a goal file", "med", crit[10:11])])
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    old = path.read_text(encoding="utf-8")
+    path.write_text(swapped + "\n" + old[old.index("## Minted"):], encoding="utf-8")
+    _turn(root, "turn-3")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-4")
+    before = sorted(os.listdir(root / ".work" / "tickets"))
+
+    with pytest.raises(crew_split.SplitError, match="different proposal"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert sorted(os.listdir(root / ".work" / "tickets")) == before
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_stale_orphan_from_an_edited_proposal_refused(tmp_path, monkeypatch):
+    """BLOCK: an orphan (minted, id never recorded) whose direction no longer
+    matches the current Child N is refused, never adopted or duplicated."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real_record = crew_split._record_minted  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_split, "_record_minted",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("killed")))
+    with pytest.raises((crew_split.SplitError, OSError)):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_split, "_record_minted", real_record)
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        "- next/resume, which stays on T-0004", "- next/resume, kept on the parent", 1),
+        encoding="utf-8")
+    _turn(root, "turn-3")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-4")
+    before = sorted(os.listdir(root / ".work" / "tickets"))
+
+    with pytest.raises(crew_split.SplitError, match="different proposal"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert sorted(os.listdir(root / ".work" / "tickets")) == before
+
+
+def test_forged_orphan_without_apply_record_ignored(tmp_path):
+    """FIX 2: a hand-made folder with apply's exact direction and an INDEX
+    row, but no apply record, is never adopted as a child."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    child = (crew_split.parse_proposal(_t0004_proposal())["children"] or [])[0]
+    fake = root / ".work" / "tickets" / "T-0077"
+    fake.mkdir()
+    (fake / "direction.md").write_text(  # exact provenance and direction, and a row
+        "# T-0077 direction\n" + crew_split._direction(ticket, child),  # pylint: disable=protected-access
+        encoding="utf-8")
+    with open(root / ".work" / "INDEX.md", "a", encoding="utf-8") as handle:
+        handle.write("T-0077 | ready | - | r | forged\n")
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert "T-0077" not in got["children"]
+
+
+def test_orphan_without_index_row_not_adopted(tmp_path, monkeypatch):
+    """FIX 2: even with an apply record and a matching direction, a folder
+    with no INDEX row (mint never finished) is not a child."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    proposal = crew_split.parse_proposal(
+        (root / ".work" / "tickets" / ticket / "split.md").read_text(encoding="utf-8"))
+    child = (proposal["children"] or [])[1]
+    fake = root / ".work" / "tickets" / "T-0080"
+    fake.mkdir()
+    (fake / "direction.md").write_text(
+        "# T-0080 direction\n" + crew_split._direction(ticket, child),  # pylint: disable=protected-access
+        encoding="utf-8")
+
+    monkeypatch.undo()
+    _turn(root, "turn-3")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-4")
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert "T-0080" not in got["children"] and len(set(got["children"])) == 3
+
+
+def test_repeated_prompt_reason_names_typed_words():
+    """NIT 1: the refusal says the owner may have typed the same words and
+    that only the first 500 characters are compared."""
+    with open(SCRIPT, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "typed the same words" in text and "first 500 characters" in text
+
+
+# --- review round 3 (#364 at 91ec7d6c) ----------------------------------------------
+
+def _partial_then_swap(root, ticket, monkeypatch, keep_minted):
+    """Apply fails after Child 1 is minted; the owner then swaps the
+    children (Child 1 now takes the ship criteria). Returns Child 1's id."""
+    _checked(root, ticket)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    old = path.read_text(encoding="utf-8")
+    first = re.search(r"- Child 1: (T-\d+)", old).group(1)
+    crit = _criteria()
+    swapped = _t0004_proposal(children=[
+        ("autopilot ship policy", "high", crit[7:10]),
+        ("autopilot approval and question policies", "high", crit[4:7]),
+        ("autopilot goal: tickets from a goal file", "med", crit[10:11])])
+    path.write_text(swapped + ("\n" + old[old.index("## Minted"):] if keep_minted else ""),
+                    encoding="utf-8")
+    return first
+
+
+def _recheck(root, ticket, turn):
+    _turn(root, f"{turn}-a")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, f"{turn}-b")
+
+
+@pytest.mark.parametrize("keep_minted", [False, True])
+def test_stale_child_refusal_names_the_exits_and_cancel_unblocks(tmp_path, monkeypatch,
+                                                                 keep_minted):
+    """FIX 1: a stale child is refused naming how to get out (restore it, or
+    cancel it), and once it is cancelled apply proceeds with a fresh child."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    stale = _partial_then_swap(root, ticket, monkeypatch, keep_minted)
+    _recheck(root, ticket, "t3")
+
+    with pytest.raises(crew_split.SplitError) as raised:
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert "--to cancelled" in str(raised.value) and "restore" in str(raised.value)
+
+    report = crew_tracker.move(str(root), stale, "cancelled")
+    assert crew_tracker.exit_code(report) == 0, report
+    _recheck(root, ticket, "t5")
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert stale not in got["children"] and len(set(got["children"])) == 3
+    assert _index_status(root, ticket) == "superseded"
+    tail = crew_split.minted_tail(
+        (root / ".work" / "tickets" / ticket / "split.md").read_text(encoding="utf-8"))[1]
+    assert tail == dict(enumerate(got["children"], 1))
+
+
+def test_superseded_child_is_not_reused(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    first = re.search(r"- Child 1: (T-\d+)", (root / ".work" / "tickets" / ticket /
+                                              "split.md").read_text(encoding="utf-8")).group(1)
+    assert crew_tracker.exit_code(crew_tracker.move(str(root), first, "superseded")) == 0
+    _recheck(root, ticket, "t3")
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert first not in got["children"]
 
 
 # --- T-0059: the plan's `## PR slices` section (parse_slices) ------------------------
