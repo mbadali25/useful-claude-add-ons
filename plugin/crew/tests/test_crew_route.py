@@ -925,11 +925,13 @@ def test_free_text_with_a_slash_asks(tmp_path, monkeypatch, prompt):
 
 
 @pytest.mark.parametrize("prompt", ["handle the login audit, do not", "take care of the release not",
-                                    "handle the deploy, don't", "work toward zero flakes. not!",
+                                    "handle the deploy, do not", "work toward zero flakes. not!",
                                     "handle the deploy dont", "handle the deploy, never mind",
                                     "handle the deploy nevermind", "take care of the release, no",
                                     "handle the audit nah", "handle the audit, cancel",
-                                    "handle the audit, not now."])
+                                    "handle the audit, not now.", "handle the deploy, cancel that",
+                                    "handle the deploy, scratch that", "take care of the release, forget it",
+                                    "handle the audit, nope", "handle the audit, wait"])
 def test_free_text_ending_in_a_negation_asks(tmp_path, monkeypatch, prompt):
     """N4: "handle the deploy, don't" says the opposite of the command."""
     got = _decide_live(tmp_path, monkeypatch, prompt)
@@ -997,3 +999,47 @@ def test_a_null_stop_reason_renders_not_available_yet(tmp_path, monkeypatch, rea
     line = crew_route.render(_decide_live(tmp_path, monkeypatch, "take care of the login audit"))
 
     assert ("None" in line, "not available yet" in line, "but ;" in line) == (False, True, False)
+
+
+
+# --- T-0057 review round 3 -------------------------------------------------------
+
+@pytest.mark.parametrize("prompt", ["handle --goal ship it", "take care of --first T-12",
+                                    "handle -rf", "handle the audit -- review T-12",
+                                    "work toward -x everything"])
+def test_a_word_starting_with_a_dash_asks(tmp_path, monkeypatch, prompt):
+    """FIX1: a leading `-` reads as a flag to whatever parses the arguments."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], got["command"], "-" in got["reason"]) == ("ask", None, True)
+
+
+@pytest.mark.parametrize("prompt, command", [
+    ("handle the sign-off", "/crew:autopilot assign the sign-off"),
+    ("take care of part-2 of the audit", "/crew:autopilot assign part-2 of the audit"),
+    ("handle the no-op retry", "/crew:autopilot assign the no-op retry"),
+    ("let's handle the login audit", "/crew:autopilot assign the login audit")])
+def test_a_hyphen_inside_a_word_still_routes(tmp_path, monkeypatch, prompt, command):
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], got["command"]) == ("route", command)
+
+
+def test_an_apostrophe_is_outside_the_allowlist(tmp_path, monkeypatch):
+    """N3: `'` could never route (`_SHELL` asks on it), so the allowlist does
+    not name it; the ask says to retype."""
+    got = _decide_live(tmp_path, monkeypatch, "handle the O'Brien ticket")
+
+    assert ("'" in crew_route._PLAIN, got["outcome"], "retype" in got["reason"]) == \
+        (False, "ask", True)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("prompt", ["handle the approval for T-12 & docs",
+                                    "take care of approvals <now>", "handle it & the docs",
+                                    "handle everything | tee x", "handle that \u2014 now"])
+def test_approval_and_nothing_words_are_none_before_the_allowlist(tmp_path, monkeypatch, prompt):
+    """N4: a prompt that names approval or starts with a nothing-word gets no
+    line, even when it also holds a character the allowlist refuses."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], crew_route.render(got)) == ("none", "")

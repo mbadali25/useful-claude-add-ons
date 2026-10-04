@@ -55,11 +55,12 @@ row goes live the day its ticket adds the name to `crew_autopilot.AVAILABLE`.
                                                          on a quote, $, ` or \\
   pick the goal back up                           ask    never picks a slug (T-0056)
 
-Assign, goal and focus pass `_screen` first, an allowlist: any character
-in the prompt other than ASCII letters, digits, space and .,:;_#()'- asks,
-so what routes is exactly what was typed. On that ASCII, a Unicode line
-break, a first token like "it" or "everything", or the stem "approv" (also
-with every non-letter removed) is no match, and a trailing negation asks.
+Assign, goal and focus pass `_screen` first. A Unicode line break, a first
+token like "it" or "everything", or the stem "approv" (also with every
+non-letter removed) is no match. Then an allowlist: any character in the
+prompt other than ASCII letters, digits, space and .,:;_#()- asks, so what
+routes is exactly what was typed; a word starting with `-` or a trailing
+negation asks too.
 `?` is accepted only where a pattern spells it (the two status questions),
 and a router answer naming another subcommand asks.
 
@@ -139,20 +140,21 @@ _PREFIXES = ("please ", "ok ", "now ", "let's ")
 _WS = re.compile(r"\s+")
 _CREW_COMMAND = re.compile(r"^/crew:([a-z][a-z0-9-]*)(?:\s+(.*))?$")
 _APPROVE = re.compile(r"approve", re.IGNORECASE)
-# T-0057: assign, goal and focus prompts pass `_screen`, an allowlist. Any
-# character outside _PLAIN in the raw prompt asks (lookalikes, combining
-# marks, format characters, fullwidth or lookalike slashes, separators, shell
-# metacharacters), so the text that routes is the text the user typed. On that
-# ASCII: no line for a Unicode line break, a first token in _NOTHING, or the
-# stem `approv` (also letters-only); ask on a trailing negation.
-_PLAIN = frozenset(string.ascii_letters + string.digits + " .,:;_#()'-")
+# T-0057: assign, goal and focus prompts pass `_screen`. No line for a Unicode
+# line break, free text naming the stem `approv` (also letters-only) or whose
+# first token is in _NOTHING. Then an allowlist: any character outside _PLAIN
+# in the raw prompt asks (lookalikes, combining marks, format characters,
+# fullwidth or lookalike slashes, separators, quotes, shell metacharacters), so
+# the text that routes is the text the user typed. On that ASCII, a word
+# starting with `-` (a flag) or a trailing negation asks.
+_PLAIN = frozenset(string.ascii_letters + string.digits + " .,:;_#()-")
 _NOTHING = ("it", "this", "that", "them", "these", "those", "everything", "nothing",
             "something", "anything", "whatever")
 _LINE_BREAKS = ("\u2028", "\u2029", "\x85", "\x0b", "\x0c")
 _APPROV = "approv"
 _TOKEN = re.compile(r"[a-z0-9]+")
-_NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|don't|no|nah|cancel|never ?mind"
-                       r"|not now)$")
+_NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|don't|no|nah|nope|wait|cancel"
+                       r"|never ?mind|not now|cancel that|scratch that|forget it)$")
 # The characters `commands/autopilot.md` section 0 refuses in its arguments.
 _SHELL = re.compile(r"['\"$`\\]")
 _ROUTE_SHAPE = ("sub", "stop", "reason")
@@ -220,20 +222,27 @@ def _screen(prompt, topic):
     `topic` is the free text, None for focus."""
     if any(mark in prompt for mark in _LINE_BREAKS):
         return "none", ""
+    if topic is not None:
+        text = topic.casefold()
+        letters = "".join(ch for ch in text if ch.isalpha())
+        tokens = _TOKEN.findall(text)
+        if _APPROV in letters or not tokens or tokens[0] in _NOTHING:
+            return "none", ""
     raw = prompt.strip()
     if raw[-1:] == "!":  # `normalise` drops one, and so may this
         raw = raw[:-1]
+    for prefix in _PREFIXES:  # and one leading prefix (`let's` holds a quote)
+        if raw.casefold().startswith(prefix):
+            raw = raw[len(prefix):]
+            break
     if any(ch not in _PLAIN for ch in raw):
         return "ask", ("the prompt holds a non-ASCII or special character; only letters, "
-                       "digits, space and .,:;_#()'- route. Ask the user to retype it")
+                       "digits, space and .,:;_#()- route. Ask the user to retype it")
     if topic is None:
         return "ok", ""
-    text = topic.casefold()
-    letters = "".join(ch for ch in text if ch.isalpha())
-    tokens = _TOKEN.findall(text)
-    if _APPROV in letters or not tokens or tokens[0] in _NOTHING:
-        return "none", ""
-    if _NEGATION.search(text.rstrip(string.punctuation + " ")):
+    if any(word.startswith("-") for word in topic.split()):
+        return "ask", "a word in the text starts with -, which reads as a flag; ask the user"
+    if _NEGATION.search(topic.casefold().rstrip(string.punctuation + " ")):
         return "ask", "the text ends in a negation; ask the user what they meant"
     return "ok", ""
 
