@@ -22,12 +22,16 @@ GUARD_PS1 = os.path.join(_S, "scope-guard.ps1")
 AUDIT_SH = os.path.join(_S, "completion-audit.sh")
 AUDIT_PS1 = os.path.join(_S, "completion-audit.ps1")
 HOOK_SH = os.path.join(_S, "approval-hook.sh")
+MERGED_MAIN = os.path.join(_S, "merged_main.py")
+# T-0061: the ticket base branch (`tickets.baseBranch`).
+SCOPE_BASE_PY = os.path.join(_S, "scope_base.py")
 
 _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
 _CT = "tests/test_crew_ticket.py::"
 _AH = "tests/test_approval_hook.py::"
 _AD = "tests/test_approval_digest.py::"
+_MM = "tests/test_merged_main.py::"
 
 SCOPE_MUTATIONS = (
     ("the scope guard allows an edit with no approved plan", GUARD,
@@ -349,10 +353,204 @@ SCOPE_MUTATIONS = (
      '    cut = data.find(b"\\n")\n',
      _AD + "test_body_status_line_after_a_non_lf_break_stales_approval"
      "[bare-cr-trailing-space]"),
+    # --- T-0100: paths identical to merged main (merged_main.py, the audit) ----
+    # Each run by hand against the tracked file, restored with `git checkout`.
+    ("MERGED MAIN: a merge older than the ticket start still applies", MERGED_MAIN,
+     "    if before:\n",
+     "    if before and False:\n",
+     _MM + "test_no_merge_past_the_start_changes_nothing"),
+    ("MERGED MAIN: no integration ref falls through to merge-base HEAD HEAD", MERGED_MAIN,
+     '    if not ref:\n        return {"ref": None,',
+     '    ref = ref or "HEAD"\n    if False:\n        return {"ref": None,',
+     _MM + "test_could_not_tell_drops_nothing[no-ref]"),
+    ("MERGED MAIN: HEAD on the integration branch still applies", MERGED_MAIN,
+     '    if branch in (ref, ref.removeprefix("origin/")):\n',
+     "    if False:\n",
+     _MM + "test_head_on_the_integration_branch_never_applies"),
+    ("MERGED MAIN: keep drops nothing", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base))\n",
+     _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[module]"),
+    ("MERGED MAIN: keep drops what differs from merged main instead", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base) - set(since_merged))\n",
+     _CA + "test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged[module]"),
+    ("the audit drops an untracked file after a merge of main", AUDIT,
+     '    since_merged = worktree_changes(top, merged["commit"], _ONLY[1:]) | untracked\n',
+     '    since_merged = worktree_changes(top, merged["commit"], _ONLY[1:])\n',
+     _CA + "test_an_untracked_out_of_touch_file_after_a_merge_of_main_still_blocks"),
+    ("the audit never passes the merged commit on", AUDIT,
+     "        paths = changed_paths(top, base, merged)\n",
+     "        paths = changed_paths(top, base, None)\n",
+     _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[module]"),
+    # --- T-0100 review round 1: every merged-main check gets a mutation --------
+    # Each run by hand in the foreground against the tracked file, restored with
+    # `git checkout --`; the output is in .work/tickets/T-0100/sabotage-r1.txt.
+    ("MERGED MAIN: an ancestry check with no answer applies", MERGED_MAIN,
+     "    if before is None:\n",
+     "    if False:\n",
+     _MM + "test_could_not_tell_drops_nothing[is-ancestor-fails]"),
+    ("MERGED MAIN: a detached HEAD is read as a branch", MERGED_MAIN,
+     '    if not branch:\n        return {"ref": ref, "commit": None,',
+     '    if False:\n        return {"ref": ref, "commit": None,',
+     _MM + "test_could_not_tell_drops_nothing[detached-head]"),
+    ("MERGED MAIN: a merge-base with no answer falls through to HEAD", MERGED_MAIN,
+     "    if not commit:\n",
+     '    commit = commit or "HEAD"\n    if False:\n',
+     _MM + "test_could_not_tell_drops_nothing[merge-base-fails]"),
+    # On T-0061's base branch: a configured `tickets.baseBranch` naming no
+    # commit must stay could-not-tell, never fall back to origin/main.
+    ("MERGED MAIN: a base branch naming no commit falls back to origin/main", MERGED_MAIN,
+     "    ref, problem = scope_base.base_branch(root)\n",
+     '    ref, problem = (scope_base.base_branch(root)[0] or "origin/main"), None\n',
+     _MM + "test_could_not_tell_drops_nothing[base-branch-names-no-commit]"),
+    ("MERGED MAIN: the base branch's problem is not named", MERGED_MAIN,
+     '                "reason": f"{UNKNOWN}: {problem}; nothing dropped"}\n',
+     '                "reason": f"{UNKNOWN}: no integration ref names a commit; nothing dropped"}\n',
+     _MM + "test_could_not_tell_names_t0061s_reason_for_a_configured_base_branch"),
+    ("MERGED MAIN: HEAD at the merged commit reads as no merge", MERGED_MAIN,
+     "    before = _is_ancestor(root, commit, base_sha)\n",
+     "    before = _is_ancestor(root, commit, base_sha) or (\n"
+     '        commit == crew_common.git_out(root, "rev-parse", "HEAD"))\n',
+     _CA + "test_a_fast_forward_to_main_drops_everything_committed_and_keeps_dirty_edits"),
+    ("the audit's verdict leaves out the merged commit and its count", AUDIT,
+     '    if merged["applies"]:\n        return [(f"  merged main {merged',
+     '    if merged["applies"]:\n        return []\n        return [(f"  merged main {merged',
+     _CA + "test_check_names_the_merged_commit_and_what_it_did_not_count"),
+    ("the audit's pass is silent on could-not-tell", AUDIT,
+     '    passed = extra if (merged["applies"] and dropped) or merged["commit"] is None else []\n',
+     '    passed = extra if merged["applies"] and dropped else []\n',
+     _CA + "test_a_passing_check_states_the_merged_main_answer[could-not-tell]"),
+    ("the audit counts a merged-in path taken out of the index", AUDIT,
+     '    return merged_main.keep(paths, since_merged - _as_merged(top, merged["commit"], '
+     "untracked))\n",
+     "    return merged_main.keep(paths, since_merged)\n",
+     _MM + "test_the_bundle_and_the_audit_agree_on_a_merged_in_path_removed_from_the_index"
+     "[identical-to-merged]"),
+    ("the audit drops every untracked merged-in path, edited or not", AUDIT,
+     "    return {p for p, oid in zip(names, hashes)\n",
+     "    return set(names) or {p for p, oid in zip(names, hashes)\n",
+     _MM + "test_the_bundle_and_the_audit_agree_on_a_merged_in_path_removed_from_the_index"
+     "[edited]"),
+    # --- T-0100 successor (round 2): the mode half, and core.fileMode ------------
+    ("the audit judges an untracked merged-in path by its blob id alone", AUDIT,
+     "            if (oid, _disk_mode(top, p, file_mode)) == (entries[p][1], entries[p][0])}\n",
+     "            if oid == entries[p][1]}\n",
+     _CA + "test_an_untracked_merged_in_path_is_judged_by_the_mode_git_add_records"
+     "[module-exec-filemode-true]"),
+    ("the audit reads the execute bit whatever core.fileMode says", AUDIT,
+     "    file_mode = _file_mode(top)\n",
+     "    file_mode = True\n",
+     _CA + "test_an_untracked_merged_in_path_is_judged_by_the_mode_git_add_records"
+     "[module-exec-filemode-false]"),
+    ("MERGED MAIN: keep drops nothing, through the bash audit", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base))\n",
+     _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[sh]"),
+    ("MERGED MAIN: keep drops nothing, through the PowerShell audit", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base))\n",
+     _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[ps1]"),
+    ("MERGED MAIN: keep widened, a ticket edit on top, bash audit", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base) - set(since_merged))\n",
+     _CA + "test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged[sh]"),
+    ("MERGED MAIN: keep widened, a ticket edit on top, PowerShell audit", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base) - set(since_merged))\n",
+     _CA + "test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged[ps1]"),
+    ("MERGED MAIN: keep widened, an edit after the merge, bash audit", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base) - set(since_merged))\n",
+     _CA + "test_an_out_of_touch_edit_after_a_merge_of_main_stays_flagged[sh]"),
+    ("MERGED MAIN: keep widened, an edit after the merge, PowerShell audit", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base) - set(since_merged))\n",
+     _CA + "test_an_out_of_touch_edit_after_a_merge_of_main_stays_flagged[ps1]"),
     # --- T-0097 ------------------------------------------------------------------
     ("PROBE: a silent candidate's null answer is piped into ConvertFrom-Json", AUDIT_PS1,
      "          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }\n",
      "          $probe = $line | ConvertFrom-Json\n",
      "tests/test_ps1_python_probe.py::"
      "test_a_silent_candidate_is_rejected_without_writing_to_stderr"),
+    # T-0061: the ticket base branch. Each entry names the one test that
+    # sees it; the neighbour cases stay green on purpose.
+    (
+        # The key is read and thrown away: every repo measures against
+        # origin/HEAD again, and TSS-510's 492-file bundle comes back.
+        "tickets.baseBranch is ignored",
+        SCOPE_BASE_PY,
+        '    path = crew_common.repo_config_file(root, "config.json")\n',
+        "    return None, None\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_a_branch_cut_from_the_configured_base_records_exact"),
+    ),
+    (
+        # A configured branch that names no commit falls through to the old
+        # chain -- the unknown collapsing into the reassuring answer.
+        "a missing configured branch falls back to origin/HEAD",
+        SCOPE_BASE_PY,
+        '        return None, (f"tickets.baseBranch {value!r} names no commit here "\n',
+        '        _lost = (f"tickets.baseBranch {value!r} names no commit here "\n',
+        ("tests/test_scope_base_branch.py::"
+         "test_could_not_tell_never_falls_back_to_origin_head"),
+    ),
+    (
+        # `--base` answers HEAD and exit 0 on could-not-tell, so review.md
+        # step 1a bundles the working tree alone as if it were the ticket.
+        "--base prints HEAD when it could not tell",
+        SCOPE_BASE_PY,
+        '        sys.stderr.write(f"scope-base: {reason}\\n")\n'
+        "        return 3\n",
+        '        sys.stdout.write("HEAD\\n")\n'
+        "        return 0\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_a_configured_base_that_names_no_commit_could_not_tell"),
+    ),
+    (
+        # The re-derivation loses its fallback-only condition, so a known
+        # start is moved by a config change -- the defect the record exists
+        # to prevent.
+        "an exact record is re-derived",
+        SCOPE_BASE_PY,
+        "    if not _is_fallback_entry(entry):\n"
+        "        return None\n"
+        "    ref, problem = base_branch(root)\n",
+        "    ref, problem = base_branch(root)\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_an_exact_record_is_never_rederived"),
+    ),
+    (
+        # activate sets the pointer and records nothing, so the first
+        # `--record` lands after commits exist and is a fallback again.
+        "activate does not record",
+        TICKET,
+        "        sha, status = scope_base.record(top, ticket)\n",
+        "        sha, status = None, None\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_activate_records_the_scope_base"),
+    ),
+    (
+        # The not-ancestor reason reads like an ordinary fallback again; the
+        # base is still the merge-base, so only the reason's prefix sees it.
+        "the not-ancestor reason loses could-not-tell",
+        SCOPE_BASE_PY,
+        '_REASON_NOT_ANCESTOR = ("could not tell where {ticket} started: start commit "\n',
+        '_REASON_NOT_ANCESTOR = ("start commit "\n',
+        ("tests/test_scope_base_branch.py::"
+         "test_a_not_ancestor_record_says_could_not_tell_and_shows_more"),
+    ),
+    (
+        # QA F1 restored: a base branch that resolves with an empty
+        # merge-base (orphan, shallow) reads as "no base branch", so --base
+        # prints HEAD and --record writes an EXACT entry that is never moved.
+        "an empty merge-base falls to HEAD",
+        SCOPE_BASE_PY,
+        "    if base:\n"
+        "        return ref, base, None\n",
+        "    if True:\n"
+        "        return (ref, base, None) if base else (None, None, None)\n",
+        ("tests/test_scope_base_branch.py::"
+         "test_an_orphan_branch_with_the_key_could_not_tell"),
+    ),
 )

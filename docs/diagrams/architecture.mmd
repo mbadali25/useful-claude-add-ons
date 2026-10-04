@@ -6,13 +6,22 @@
 %% skills/localgpu/templates/mcp.json - it runs `localgpu mcp-init`, which resolves
 %% every path itself. The template file still exists on disk but nothing references
 %% it, so it is no longer an anchor of this diagram.
+%% Note McpInit: plugin/localgpu/cli/localgpu_cli.py:339 cmd_mcp_init() _entry() (:317) resolves all three paths literally
+%%    refuses to write if either path is missing (:361) merges into an existing file; a DIFFERING entry is shown and
+%%    left alone unless --force (:397)
+%% Note OneShot: plugin/localgpu/cli/localgpu_cli.py:224 cmd_prompt() added ac93221d - runs in the CLI's OWN process, spawns
+%%    nothing, exits after one answer *ungrounded: nothing is retrieved first, so the answer cannot be checked
+%%    against sources*
+%% Note Constraint: plugin/localgpu/bootstrap.sh:11,645-716 + embed keep_alive=30s (plugin/localgpu/mcp/ollama.py:26) vs chat
+%%    keep_alive=5m (plugin/localgpu/cli/anthropic_proxy.py:50) -- because ONE Ollama can only keep one 8GB-VRAM
+%%    model resident at a time
 flowchart TB
 
     subgraph TreeA["Tree A - MCP path (per repo, agent-driven setup)"]
         direction TB
         CC1["Claude Code<br/>(main session)"]
         Setup["/localgpu:setup step 6<br/>plugin/localgpu/commands/setup.md:114<br/>*one command - no template, no<br/>placeholder substitution by the agent*"]
-        McpInit["localgpu mcp-init &lt;repo&gt;<br/>plugin/localgpu/cli/localgpu_cli.py:339 cmd_mcp_init()<br/>_entry() (:317) resolves all three paths literally<br/>refuses to write if either path is missing (:361)<br/>merges into an existing file; a DIFFERING entry is<br/>shown and left alone unless --force (:397)"]
+        McpInit["localgpu mcp-init &lt;repo&gt;<br/>cmd_mcp_init() resolves<br/>all three paths literally"]
         MCPJson[".mcp.json<br/>*written to repo root by mcp-init -<br/>gitignored by default (:426),<br/>not checked into THIS repo*"]
         Server["mcp/server.py<br/>plugin/localgpu/mcp/server.py:1 - stdio MCP server,<br/>3 tools: search_code, index_status,<br/>index_refresh"]
 
@@ -37,13 +46,13 @@ flowchart TB
 
     Ollama[["Ollama<br/>http://127.0.0.1:11434<br/>ONE instance, shared by both trees<br/>and by the one-shot CLI below"]]
 
-    OneShot["localgpu prompt (one-shot, no tree)<br/>plugin/localgpu/cli/localgpu_cli.py:224 cmd_prompt()<br/>added ac93221d - runs in the CLI's OWN process,<br/>spawns nothing, exits after one answer<br/>*ungrounded: nothing is retrieved first,<br/>so the answer cannot be checked against sources*"]
+    OneShot["localgpu prompt<br/>(one-shot, no tree)<br/>ungrounded, spawns nothing"]
 
     Server -- "HTTP loopback<br/>ollama.py: embed()" --> Ollama
     ProxyThread -- "HTTP loopback<br/>anthropic_proxy.py: chat, keep_alive=5m<br/>DEFAULT_KEEP_ALIVE (plugin/localgpu/cli/anthropic_proxy.py:50)" --> Ollama
     OneShot -- "HTTP loopback<br/>ollama.py: generate(), keep_alive=30s<br/>(plugin/localgpu/mcp/ollama.py:26) - deliberately<br/>NOT the shell's 5m lease" --> Ollama
 
-    Constraint["OLLAMA_MAX_LOADED_MODELS=1<br/>plugin/localgpu/bootstrap.sh:11,645-716<br/>+ embed keep_alive=30s (plugin/localgpu/mcp/ollama.py:26)<br/>vs chat keep_alive=5m (plugin/localgpu/cli/anthropic_proxy.py:50)<br/>-- because ONE Ollama can only keep<br/>one 8GB-VRAM model resident at a time"]
+    Constraint["OLLAMA_MAX_LOADED_MODELS=1<br/>ONE Ollama keeps one<br/>8GB-VRAM model resident"]
     Ollama -.-> Constraint
 
     style Ollama fill:#4a5568,stroke:#2d3748,color:#fff
