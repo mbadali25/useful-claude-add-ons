@@ -2,7 +2,7 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py
 %% Purpose: The read side: the three config sources (built-in defaults, the machine file, the repo file), how the machine layer is pruned to its template before merging, and how resolve_config() merges them.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
-%% Re-drawn for T-0066 (crew 1.0.328, merging origin/main edb2b8ff, then 155fe6d8 and e9364a70, which left crew_config.py and crew_state.py unchanged): crew_config.py gains a `git` block (forbiddenTrailers,
+%% Re-drawn for T-0066 (crew 1.0.356, merging origin/main edb2b8ff, then 155fe6d8 and e9364a70, which left crew_config.py and crew_state.py unchanged): crew_config.py gains a `git` block (forbiddenTrailers,
 %%    default []) in both default functions. Counts re-executed: 133 / 75 / 58 (T-0013's two resume keys on main
 %%    made it 132 / 74 / 58), 19 global blocks. DEF and TMPL updated. Every crew_config.py and crew_state.py line
 %%    cite re-pointed with grep -n on the merged tree (main's RESUME_DEFAULTS comment moved crew_state below :728

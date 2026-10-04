@@ -353,7 +353,7 @@ KEY_META = {
                                   "repo can add a token and never remove the machine "
                                   "owner's; a value that is not a list of tokens makes "
                                   "the list unknown, never empty (CONFIG.md section 22).",
-                                  "branch", since="1.0.328",
+                                  "branch", since="1.0.356",
                                   source=_S + "crew_trailers.py",
                                   type_="list of trailer tokens (letters, digits and "
                                         "`-`, no `:`)"),
