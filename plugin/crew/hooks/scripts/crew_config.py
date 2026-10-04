@@ -1878,6 +1878,150 @@ def inspect_global(root, path=None):
     }
 
 
+# --- Inert settings (T-0070) -------------------------------------------------
+#
+# A setting the installed crew does not act on is NAMED, never silently
+# ignored. `.crew/config.json` held `autopilot.approval: self` for days before
+# the crew that read it existed, and nothing said so. The rule is one set
+# difference: a resolved leaf that is not a leaf of `default_config()` (outside
+# `platform.*`, machine facts `platform-sync` stamps, and `schema`) is inert.
+# `INERT_PENDING` only adds what that difference cannot see -- a key that IS in
+# the defaults but whose value does nothing yet -- and the effect and ticket
+# text for a known key. Reporting only: nothing here refuses or rewrites.
+
+# A dotted key, or `(key, value)` for a value-level entry, mapped to
+# `(effect, ticket)`. A key-level entry goes dead, and stays harmless, once
+# its key enters `default_config()`; a value-level entry must be deleted by the
+# ticket that makes the value work. The landing ticket deletes its rows.
+INERT_PENDING = {
+    "autopilot.ship": ("would choose how a finished autopilot run ships", "T-0011"),
+    "autopilot.reviewPolicy": ("would choose what autopilot does with review findings",
+                               "T-0029"),
+    "autopilot.maxLanes": ("would cap how many tickets autopilot runs at once", "T-0029"),
+    "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
+                                   "T-0012"),
+    ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
+                                    "only `plan` arms it today", "T-0012"),
+    ("autopilot.deploy", "nonprod"): ("would let autopilot deploy; nothing in this crew "
+                                      "dispatches a deploy yet", "T-0045"),
+    ("autopilot.deploy", "all"): ("would let autopilot deploy; nothing in this crew "
+                                  "dispatches a deploy yet", "T-0045"),
+}
+
+_UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"
+_GLOBAL_IGNORED_EFFECT = ("a global file may not set this, so it takes effect nowhere; "
+                          "set it in the repo's .crew/config.json")
+_INERT_SKIP = ("platform", "schema")
+
+
+def installed_version():
+    """The crew version in this plugin's own `plugin.json`, or None when it
+    cannot be read. Never a guess: the caller says "this crew" instead."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                        os.pardir, ".claude-plugin", "plugin.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            version = json.load(fh).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return version if isinstance(version, str) and version else None
+
+
+def _known_leaf(dotted, known):
+    """True when `dotted` or one of its prefixes is a default leaf -- the
+    prefix case is an open table (`dev.roles`) or a scalar default the user
+    replaced with a block, both of which crew reads as one setting."""
+    parts = dotted.split(".")
+    return any(".".join(parts[:i]) in known for i in range(1, len(parts) + 1))
+
+
+def _expand(dotted, value):
+    """`(path, value)` for every leaf under `value`, which sits at `dotted`."""
+    if isinstance(value, dict) and value:
+        return [(f"{dotted}.{p}", _dig(value, tuple(p.split(".")))) for p in leaf_paths(value)]
+    return [(dotted, value)]
+
+
+def inert_settings(root, path=None):
+    """Every setting the installed crew does not act on, sorted by key.
+
+    Each entry is `{"key", "value", "effect", "ticket", "kind", "layer"}`:
+    `kind` is `pending` (a ticket brings it), `unknown` (no ticket knows it)
+    or `global-ignored` (the global filter drops it); `layer` is the raw
+    layer that supplies the value, `repo` winning over `global`."""
+    real_path = GLOBAL_CONFIG_PATH if path is None else path
+    repo_raw = crew_state.load_config(root)
+    repo_raw = repo_raw if isinstance(repo_raw, dict) else {}
+    global_raw = read_global_config(real_path)
+    global_kept, ignored = filter_global(global_raw)
+    repo_cfg = without_null_shadows(repo_raw, global_kept)
+    merged = crew_state.merge_defaults(default_config(), global_kept)
+    merged = crew_state.merge_defaults(merged, repo_cfg)
+    known = set(leaf_paths(default_config()))
+    entries = {}
+
+    def layer(parts):
+        return "repo" if _dig(repo_raw, parts) is not _MISSING else "global"
+
+    for dotted in leaf_paths(merged):
+        if dotted.split(".")[0] in _INERT_SKIP:
+            continue
+        parts = tuple(dotted.split("."))
+        value = _dig(merged, parts)
+        pending = INERT_PENDING.get(dotted)
+        if not _known_leaf(dotted, known):
+            effect, ticket = pending or (_UNKNOWN_EFFECT, None)
+            kind = "pending" if pending else "unknown"
+        elif isinstance(value, (str, int, float, bool)) \
+                and (dotted, value) in INERT_PENDING:
+            effect, ticket = INERT_PENDING[(dotted, value)]
+            kind = "pending"
+        else:
+            continue
+        entries[(dotted, "inert")] = {"key": dotted, "value": value, "effect": effect,
+                                      "ticket": ticket, "kind": kind, "layer": layer(parts)}
+    for dropped in ignored:
+        if dropped in _INERT_SKIP:
+            continue  # `schema` has its own --check-global finding
+        for dotted, value in _expand(dropped, _dig(global_raw, tuple(dropped.split(".")))):
+            entries[(dotted, "global")] = {"key": dotted, "value": value,
+                                           "effect": _GLOBAL_IGNORED_EFFECT, "ticket": None,
+                                           "kind": "global-ignored", "layer": "global"}
+    return [entries[k] for k in sorted(entries)]
+
+
+def _inert_item(entry):
+    value = entry["value"]
+    shown = value if isinstance(value, str) else json.dumps(value)
+    if entry["kind"] == "global-ignored":
+        why = "global, repo-only"
+    elif entry["ticket"]:
+        why = entry["ticket"] + (", global" if entry["layer"] == "global" else "")
+    else:
+        why = "unknown key"
+    return f"{entry['key']}={shown} ({why})"
+
+
+def inert_items(entries, room):
+    """`key=value (why)` items joined by `, `, cut at an item boundary so the
+    result fits `room` characters, ending `+N more` when anything was cut."""
+    items = [_inert_item(e) for e in entries]
+    for keep in range(len(items), -1, -1):
+        text = ", ".join(items[:keep])
+        if keep < len(items):
+            text += (", " if keep else "") + f"+{len(items) - keep} more"
+        if len(text) <= room:
+            return text
+    return f"+{len(items)} more"
+
+
+def format_inert(entries, version, limit=300):
+    """One line naming every inert setting, at most `limit` characters."""
+    head = (f"Inert settings (crew {version} does not act on them): " if version
+            else "Inert settings (this crew does not act on them): ")
+    return head + inert_items(entries, limit - len(head))
+
+
 # --- What actually backs each role -----------------------------------------
 
 
@@ -3316,6 +3460,8 @@ def main(argv=None):
                         help="findings about the machine-global config")
     parser.add_argument("--check", action="store_true",
                         help="warnings about the repo config (exit 0)")
+    parser.add_argument("--inert", action="store_true",
+                        help="settings this crew does not act on (exit 0)")
     parser.add_argument("--author-stale", action="store_true",
                         help="the caller compared the recorded dispatch "
                              "against the diff's merge-base and found it "
@@ -3445,6 +3591,18 @@ def main(argv=None):
             print(json.dumps(report, indent=2))
         else:
             _print_models(report, args.root)
+        return 0
+
+    if args.inert:
+        entries = inert_settings(args.root, args.global_path)
+        if args.json:
+            print(json.dumps(entries, indent=2))
+        elif not entries:
+            print("inert settings: none")
+        else:
+            print(format_inert(entries, installed_version()))
+            for entry in entries:
+                print(f"- {entry['key']}: {entry['effect']}")
         return 0
 
     if args.check:
