@@ -541,7 +541,7 @@
       "seconds": 2,
       "run": ["python3 -m pytest plugin/crew/tests/test_verify_reach.py -q"],
       "reach": "local",
-      "why": "L-0562 (crew 1.0.223): /crew:verify --stamp-reach. Proposals come from verify_record.scan_reach run from --root as cwd (as the gate does), a null reach is undeclared, --apply moves each stamped rule's timings/record entries to its new rule_key so Stop's runs and prices are unchanged (the test models the gate's pricing), a deferred rule runs only on --set, and the map is edited as text and checked to round-trip. 16 passed in 0.29s, 2026-10-03, 4-CPU container. Eight new mutations (cache move, null reach, cwd, clean tree, empty rule) sabotage-tested by hand, each red, after the seven before. reach: local - every case writes a throwaway map under tmp_path." }
+      "why": "L-0562 (crew 1.0.229): /crew:verify --stamp-reach. Proposals come from verify_record.scan_reach run from --root as cwd (as the gate does), a null reach is undeclared, --apply moves each stamped rule's timings/record entries to its new rule_key so Stop's runs and prices are unchanged (the test models the gate's pricing), a deferred rule runs only on --set, and the map is edited as text and checked to round-trip. 16 passed in 0.29s, 2026-10-03, 4-CPU container. Eight new mutations (cache move, null reach, cwd, clean tree, empty rule) sabotage-tested by hand, each red, after the seven before. reach: local - every case writes a throwaway map under tmp_path." }
   ],
 
   "default": ["bash _verify/smoke.sh"],
