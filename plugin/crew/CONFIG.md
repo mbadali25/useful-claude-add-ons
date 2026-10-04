@@ -144,7 +144,7 @@ the heal path creates nothing there again.
 The writers never follow it: `crew_platform` (heal and `platform-sync`),
 `crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
 keep their own-path behaviour, and the heal path creates nothing in a worktree
-that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
+that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
 routed yet and read only the worktree's own file.
 
 ## 2. The invariant
@@ -689,12 +689,16 @@ turn that one **on** and never off — §17.
 `production.databases` and `production.hosts` are deliberately **not** here:
 they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
 `default_global_config()` except where the generated table prints two.
+`notify.tokenEnv` and `notify.urlEnv` (T-0051) are in both templates and
+honoured from the machine layer only (`crew_notify.GLOBAL_ONLY_KEYS`): each
+names the variable whose value becomes the request URL, so a repo's value is
+ignored with a notice. The table's Layer column says `machine-only`.
 
 The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-74 of 132 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
+76 of 134 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -735,11 +739,13 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `resume.auto` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_resume.py`) | `null` |
 | `resume.typeDelaySeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `2` |
 | `resume.readyTimeoutSeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `15` |
-| `notify.provider` | both | not validated - read by `hooks/scripts/notify.sh` (expects string) | `"none"` |
-| `notify.urlEnv` | both | not validated - read by `hooks/scripts/notify.sh` (expects string or null) | `null` |
-| `notify.tokenEnv` | both | not validated - read by `hooks/scripts/notify.sh` (expects string or null) | `null` |
-| `notify.chatId` | both | not validated - read by `hooks/scripts/notify.sh` (expects string or null) | `null` |
-| `notify.events` | both | not validated - read by `hooks/scripts/notify.sh` (expects list of event names) | `["phase", "gate", "waiting"]` |
+| `notify.provider` | both | telegram, teams, none or null; any other value sends nothing (coerced in `hooks/scripts/crew_notify.py`) | `null` |
+| `notify.urlEnv` | machine-only | not validated - read by `hooks/scripts/crew_notify.py` (expects string or null) | `null` |
+| `notify.tokenEnv` | machine-only | not validated - read by `hooks/scripts/crew_notify.py` (expects string or null) | `null` |
+| `notify.chatId` | both | not validated - read by `hooks/scripts/crew_notify.py` (expects string or null) | `null` |
+| `notify.events` | both | list of event names; an unknown name is dropped with a notice (coerced in `hooks/scripts/crew_notify.py`) | `["blocker", "deploy", "question"]` |
+| `notify.realertHours` | both | number of hours; negative or non-number reads as the default (coerced in `hooks/scripts/crew_notify.py`) | `6` |
+| `notify.questionTypes` | both | list of notification_type strings, or null; a non-list reads as null and a non-string entry is dropped (coerced in `hooks/scripts/crew_notify.py`) | `null` |
 | `shellRoute.mode` | both | `auto` \| `wsl` \| `powershell` \| `gitbash` | `null` (repo), `"auto"` (machine) |
 | `shellRoute.distro` | both | not validated - read by `hooks/scripts/crew_shell.py` (expects string or null) | `null` |
 | `pm.enabled` | both | not validated - read by `hooks/scripts/crew_state.py` (expects boolean) | `true` |
@@ -809,7 +815,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-58 of 132 keys are repo-only (generated; 74 are global-settable, section 10).
+58 of 134 keys are repo-only (generated; 76 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.

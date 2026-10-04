@@ -274,7 +274,7 @@ Six more rows, also off by default. None of them are MCP servers.
   | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |
   | `context-watch.sh` / `.ps1` | `Stop` | Estimates context use and asks for a handoff once per session; instructs a full wrap-up instead of just asking if `context.autoWrapUp` is `true` |
   | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
-  | `notify.sh` / `.ps1` | `Notification` | Sends a one-line outbound message to Teams or Telegram, if configured. Never reads |
+  | `notify.sh` / `.ps1` | `Notification` | Sends a one-line outbound message to Teams or Telegram, if configured, when Claude stopped on a question or permission prompt - never when it is merely idle. Never reads |
 
   A hook cannot be argued out of blocking something - that is the point of it, and it is also why a bootstrap run should not add one to a machine without the box being ticked. The `Stop` gate in particular is a no-op until you build the change-to-check map, so the item finishes by printing the per-repository setup:
 

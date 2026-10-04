@@ -50,15 +50,17 @@
     "vaultPath": null
   },
   "notify": {
-    "provider": "none",
+    "provider": null,
     "urlEnv": null,
     "tokenEnv": null,
     "chatId": null,
     "events": [
-      "phase",
-      "gate",
-      "waiting"
-    ]
+      "blocker",
+      "deploy",
+      "question"
+    ],
+    "realertHours": 6,
+    "questionTypes": null
   },
   "pm": {
     "enabled": true,

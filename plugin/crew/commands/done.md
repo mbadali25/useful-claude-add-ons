@@ -81,8 +81,6 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 
 3. Delete `.work/HANDOFF.md` if present — a stale handoff reads as current to
    the next session, the same rule `/crew:work`'s old step 14 states. <!-- deliberate -->
-4. If `notify.provider` is not `none`:
-   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
 
 ## Landing through the merge train
 
@@ -99,7 +97,3 @@ base has not moved in Touch paths, and HEAD carries checks 1 and 2. On
 printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A
 refusal names `crew_train.py catch-up` (a merge, never a rebase): catch up,
 gate the merged head again, rerun this command.
-
-Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing"
-is the reason nobody trusts a notification channel — the same line `/crew:work`
-opened with. <!-- deliberate -->

@@ -77,6 +77,26 @@ def test_default_global_config_matches_the_committed_template():
     assert actual == expected
 
 
+def test_notify_new_keys_survive_filter_global():
+    """crew_notify.py reads `notify.realertHours` and `notify.questionTypes` from
+    the global layer too (T-0051); a key `filter_global` prunes takes effect
+    nowhere."""
+    kept, ignored = crew_config.filter_global(
+        {"notify": {"realertHours": 2, "questionTypes": ["permission_prompt"]}})
+
+    assert (kept["notify"], ignored) == (
+        {"realertHours": 2, "questionTypes": ["permission_prompt"]}, [])
+
+
+def test_repo_template_notify_provider_is_null():
+    """A repo `"none"` is an explicit opt-out that beats the global provider, so
+    the template /crew:init writes leaves it null and inherits instead."""
+    with open(_TEMPLATE_PATH, encoding="utf-8") as handle:
+        written = json.load(handle)
+
+    assert written["notify"]["provider"] is None
+
+
 def test_the_global_template_is_not_a_copy_of_the_repo_one():
     """`tracker`, `jira.project`, `obsidian.boardDir`, `graph.out` and
     `platform.*` are facts about one checkout. Shipping them globally invites
@@ -352,7 +372,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # merging main 34d9f267.
     assert "tickets.baseBranch" in declared
     # 132 with both, measured after merging main into T-0013.
-    assert len(declared) == 132
+    # 134 with T-0051's `notify.realertHours` and `notify.questionTypes`,
+    # measured by running this test after merging main ce235468.
+    assert {"notify.realertHours", "notify.questionTypes"} <= declared
+    assert len(declared) == 134
 
 
 def test_tickets_base_branch_is_repo_only_and_null_by_default():
@@ -3161,3 +3184,25 @@ def test_config_md_and_setup_template_state_the_kimi_defaults():
     assert "`kimi`" in _config_md_row(text, "qa.provider")
     assert "`kimi`" in _config_md_row(text, "dev.provider")
     assert json.dumps(list(crew_config.QA_PROVIDERS)).replace('","', '", "') in text
+
+
+def test_config_md_global_key_count_is_measured():
+    """CONFIG.md §10 states the global-settable key count, the total, and
+    lists the global keys in a table. Since T-0048 that table and its count
+    line are generated (`config_reference.py`); all three are re-measured here
+    against the code: N is `len(leaf_paths(default_global_config()))`, M every
+    declared leaf, and the table holds exactly the N global keys."""
+    with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    section = text[text.index("## 10. Global-settable keys"):text.index("## 11. ")]
+    match = re.search(r"(\d+) of (\d+) keys are settable in the machine-global file",
+                      section)
+    stated_global, stated_total = int(match.group(1)), int(match.group(2))
+    tabled = [key for line in section.splitlines() if line.startswith("| `")
+              for key in re.findall(r"`([^`]+)`", line.split("|")[1])]
+    global_leaves = crew_config.leaf_paths(crew_config.default_global_config())
+    total = set(crew_config.leaf_paths(crew_config.default_config())) | set(global_leaves)
+
+    assert stated_global == len(global_leaves) == len(tabled)
+    assert stated_total == len(total)
+    assert set(tabled) == set(global_leaves)

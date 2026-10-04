@@ -211,6 +211,14 @@ a handoff skeleton), it is a visible duplicate, so `notify.sh` and
 emitting: one atomic `O_CREAT|O_EXCL` file per generation
 (`plugin/crew/hooks/scripts/event_claim.py:29-38`), so both flavours racing
 for the same event have exactly one winner.
+Since T-0051 the two notify twins are thin wrappers: they keep the claim and
+hand the payload to `plugin/crew/hooks/scripts/crew_notify.py` (`hook`,
+`send`, `config`), which owns the config layering (`resolve_config`, so a
+lane worktree reads the main checkout's config), the `notification_type`
+filter, the subject line, the dedupe and episode records under
+`<git-common-dir>/crew/notify/`, and the Telegram/Teams send. DERIVED:
+`plugin/crew/hooks/scripts/notify.sh` and `plugin/crew/hooks/scripts/notify.ps1`
+name no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
 
 **Context-watch's forced-continuation marker is now session-scoped, not
 repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:59-60` defines
@@ -286,7 +294,11 @@ Re-executed on T-0061's branch after merging main `34d9f267`: 130 / 72 / 58 / 0 
 repo-only `tickets.baseBranch`, read from the resolved repo config (`crew_common.repo_config_file`) by
 `scope_base.read_base_branch` (`plugin/crew/hooks/scripts/scope_base.py`), not through
 `crew_config`; a value naming no commit makes `scope_base.resolve` answer source `unknown`
-with no base (DERIVED). `plugin/crew/tests/test_crew_config.py` asserts 130. T-0004's `CHANGELOG.md` entry
+with no base (DERIVED). `plugin/crew/tests/test_crew_config.py` asserts 130.
+Re-executed on T-0051's merge of main `ce235468`: 134 / 76 / 58 / 0 - T-0013's two
+`resume.*` leaves (both layers, already 132 on main) and T-0051's `notify.realertHours` and
+`notify.questionTypes`, both layers; `plugin/crew/tests/test_crew_config.py` asserts 134.
+T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:703-704` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:692-693` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this

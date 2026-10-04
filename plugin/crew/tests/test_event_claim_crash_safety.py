@@ -43,7 +43,8 @@ CLAIM = [sys.executable, str(SCRIPTS / "event_claim.py")]
 needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 half was NOT run")
 needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the bash half was NOT run")
 
-NOTE = b'{"session_id":"s","hook_event_name":"Notification","message":"waiting"}'
+NOTE = (b'{"session_id":"s","hook_event_name":"Notification","message":"waiting",'
+        b'"notification_type":"permission_prompt","prompt_id":"p-1"}')
 
 
 def _repo(tmp_path):
@@ -531,11 +532,12 @@ def _notify_both(root, url, path=None):
     if path:
         env["PATH"] = path
     payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
-                          "cwd": root, "message": "Claude is waiting on you"}).encode()
+                          "cwd": root, "message": "Claude needs your permission",
+                          "notification_type": "permission_prompt", "prompt_id": "p-1"}).encode()
     codes = []
     for cmd in ([BASH, str(SCRIPTS / "notify.sh")],
                 [PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1")]):
-        done = subprocess.run(cmd + ["waiting", "Claude is waiting on you"], input=payload,
+        done = subprocess.run(cmd + ["hook"], input=payload,
                               cwd=root, env=env, capture_output=True, check=False, timeout=120)
         codes.append(done.returncode)
     return codes
@@ -602,7 +604,7 @@ def test_sh_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
     root = _notify_repo_bad_provider(tmp_path)
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
 
-    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "waiting", "hi"], input=NOTE,
+    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "hook"], input=NOTE,
                           cwd=root, env=env, capture_output=True, check=False, timeout=30)
 
     assert done.returncode == 0, done.stderr
@@ -617,11 +619,12 @@ def test_sh_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
 def test_ps1_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
     root = _notify_repo_bad_provider(tmp_path)
     payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
-                          "cwd": root, "message": "hi"}).encode()
+                          "cwd": root, "message": "hi", "notification_type": "permission_prompt",
+                          "prompt_id": "p-1"}).encode()
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
 
     done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"),
-                           "waiting", "hi"], input=payload, cwd=root, env=env,
+                           "hook"], input=payload, cwd=root, env=env,
                           capture_output=True, check=False, timeout=60)
 
     assert done.returncode == 0, done.stderr
@@ -647,14 +650,15 @@ def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):
     switch, which would prove only the bash half."""
     root = _notify_repo_bad_provider(tmp_path)
     payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
-                          "cwd": root, "message": "hi"}).encode()
+                          "cwd": root, "message": "hi", "notification_type": "permission_prompt",
+                          "prompt_id": "p-1"}).encode()
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
 
     codes, took = [], []
     for cmd in ([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1")],
                 [BASH, str(SCRIPTS / "notify.sh")]):
         began = time.monotonic()
-        done = subprocess.run(cmd + ["waiting", "hi"], input=payload, cwd=root, env=env,
+        done = subprocess.run(cmd + ["hook"], input=payload, cwd=root, env=env,
                               capture_output=True, check=False, timeout=30)
         took.append(time.monotonic() - began)
         codes.append(done.returncode)

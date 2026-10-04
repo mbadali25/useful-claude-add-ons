@@ -536,8 +536,6 @@ fi
 MARKER_JSON=$("$PY" -c 'import json,sys,time; print(json.dumps({"session_id": sys.argv[1], "requested_at": time.time(), "used": int(sys.argv[2]), "budget": int(sys.argv[3]), "source": sys.argv[4], "trusted": sys.argv[5] == "1", "why": sys.argv[6]}))' "$SESSION_ID" "$USED" "$BUDGET" "$SOURCE" "$TRUSTED" "$WHY" 2>/dev/null)
 ( set -o noclobber; printf '%s\n' "$MARKER_JSON" > "$MARKER" ) 2>/dev/null || exit 0
 
-bash "$(dirname "$0")/notify.sh" waiting "context ${PCT_H}% - writing handoff" 2>/dev/null
-
 # Report the absolute numbers, not only the percentage. A budgetTokens that does
 # not match the model in use is otherwise invisible - it just makes the gate
 # fire early forever, and a warning that is always on is one nobody reads.

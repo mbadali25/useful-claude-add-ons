@@ -150,6 +150,19 @@ def test_machine_arms_keys_render_as_machine_arms():
         assert crew_keys.layer_of("context.autoClear." + name) == "machine-only"
 
 
+def test_notify_env_name_keys_render_as_machine_only():
+    """T-0051. `crew_notify.effective_config` honours `notify.tokenEnv` and
+    `notify.urlEnv` from the machine file alone; the layer is derived from the
+    table it enforces with, never restated here."""
+    import crew_notify  # pylint: disable=import-outside-toplevel
+    assert set(crew_notify.GLOBAL_ONLY_KEYS) == {"tokenEnv", "urlEnv"}
+    for name in crew_notify.GLOBAL_ONLY_KEYS:
+        assert crew_keys.layer_of("notify." + name) == "machine-only"
+    assert crew_keys.layer_of("notify.chatId") == "both"
+    assert crew_keys.layer_of("notify.realertHours") == "both"
+    assert crew_keys.layer_of("notify.questionTypes") == "both"
+
+
 def test_layer_follows_is_global_path():
     for key in crew_keys.KEY_META:
         layer = crew_keys.layer_of(key)
