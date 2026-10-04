@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 17:38 UTC
+Last updated: 2026-10-04 17:39 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 17:39: MERGED #403 T-0053 at 4cdf076f -> main a27c5e38, crew 1.0.332 (batch 1 complete). #456 L-0677 round-4 CLEAN at ea18c748 (0/0/2 NIT). #400 L-0680 round-2 CLEAN at 15160c4a (0/0/5 NIT, carries listed in tickets file). Batch 2 land-prep started: #396 1.0.333, #356 1.0.334, #347 1.0.335, #456 1.0.336.
 - 17:38: #421 T-0083 round-4 at 94beefde: 0 BLOCK, 1 FIX (-es strip keeps wrong stem: releases->releas, uses->us matches us-east-1), 3 NIT. Recall for paths/backticks/punctuation confirmed. Decision: plain-s stem 3 with exception list {news} (restores logs/tags/runs/bugs); add -ies->y. Sent to builder.
 - 17:37: #347 T-0047 round-4 review CLEAN at fbc7690c (0/0/0): BL1/BL2/F1/N1 fixed, no bypass of the data-argument deviation or comment stripping; rule 6 3334 passed. Ready for a landing batch.
 - 17:36: #456 L-0677 round-3 fixes pushed at ea18c748: non-absolute cache base -> kept-full-text; lock keyed on casefolded realpath + dev:ino (dev:ino alone breaks across os.replace); 213 tests, 6 sabotages. Round-4 re-review sent to aded203.
