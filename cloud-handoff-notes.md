@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 09:59: #360 delta review 7d442123: 0/0/0 CLEAN. Waits CI + its turn (re-merge after #355).
 - 09:59: #351 land-prep done: head f542d4f4 (1.0.320); leaf count 131 (git.forbiddenTrailers), diagrams moved into split parts, 3 renders FAIL in container (kept main's PASS - unverified). Merge-only review started. NOTE #351/#355/#360 ALL change config leaf counts -> each later one re-merges carefully.
 - 09:58: Snapshot table refreshed; notes now pushed after every action (owner request).
 - 09:57: #360 fixer: head 7d442123 (kind branch + test, docs regen), version 1.0.323 (placeholder). Delta review started.
