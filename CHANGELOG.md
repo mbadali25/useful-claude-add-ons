@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.407: manual `/crew:autopilot sleep` and `wake` (L-0652, T-0053 slice 2)
+### Added — `crew` 1.0.341: manual `/crew:autopilot sleep` and `wake` (L-0652, T-0053 slice 2)
 
 - **What changed.** `/crew:autopilot sleep` (`crew_autopilot.py sleep --root . [--by <text>]`)
   enters sleep mode now and `/crew:autopilot wake` (`crew_autopilot.py wake --root .`) leaves it
