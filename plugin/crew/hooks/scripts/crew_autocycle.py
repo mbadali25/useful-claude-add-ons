@@ -411,10 +411,20 @@ def wrapup_armed(cfg, root, session_id):
 
 def _git_out(root, *args):
     """stdout of `git <args>` in `root`; raises RuntimeError naming the failure."""
+    # Run the git that shutil.which resolves, never a bare "git": on native
+    # Windows a bare name reaches CreateProcess, which tries only git.exe,
+    # while which() -- and bash, and pwsh -- honour PATHEXT (git.cmd). A git
+    # the user's PATH puts first as a .cmd was skipped for a later git.exe,
+    # so the veto judged a different git than every other caller ran: a
+    # failing git read as a clean tree and the clear went ahead (fail-open).
+    # No git found is "could not tell", a refusal like any other.
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError(f"could not run git {args[0]} (git is not on PATH)")
     try:
         # UTF-8 whatever the locale: a -z path is UTF-8 bytes, and Windows'
         # cp1252 default would mangle it or raise.
-        done = subprocess.run(("git", *args), cwd=root, capture_output=True, text=True,
+        done = subprocess.run((git, *args), cwd=root, capture_output=True, text=True,
                               encoding="utf-8", errors="surrogateescape",
                               stdin=subprocess.DEVNULL, timeout=_GIT_TIMEOUT, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
