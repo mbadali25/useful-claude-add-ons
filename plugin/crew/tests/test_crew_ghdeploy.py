@@ -479,6 +479,18 @@ _CONFIGS = {
     "a plain environment beside a github one": (_envs(
         ("legacy", None, ["./deploy.sh legacy"]),
         ("production", _PROD, None), human=("production",)), {"legacy", "production"}),
+    # Round 3, FIX2: PowerShell reads `$p.Value.deploy` case-insensitively, so
+    # a `Deploy` key is a deploy string to the .ps1 and invisible to the .sh.
+    "a Deploy key only the .ps1 reads": ({"environments": {
+        "preview": {"Deploy": "gh workflow run deploy.yml --ref main",
+                    "rollback": "none", "rollbackReason": "fixture"},
+        **_envs(("production", _PROD, None), human=("production",))["environments"]}},
+        {"preview"}),
+    # Round 3, NIT3: promote-gate.sh strips every CR from the command, so
+    # `carriage`'s own command reaches the .sh as `./deploy.sh`, inside x's.
+    "a CR the .sh gate strips": (_envs(
+        ("x", None, ["./deploy.sh x"]), ("carriage", None, ["./deploy.sh\r"]),
+        ("production", _PROD, None), human=("production",)), {"x", "carriage"}),
     "distinct targets": (_envs(
         ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
         ("production", _PROD, None), human=("production",)),
@@ -539,8 +551,17 @@ def _gate(flavour, root, command):
     return found.group(1) if found else "unparsed: " + proc.stderr
 
 
-@pytest.mark.parametrize("flavour", ["sh", "ps1"])
-@pytest.mark.parametrize("label", sorted(_CONFIGS))
+# The .ps1 halves start one pwsh per command, which a 60s Stop cannot afford:
+# they are `slow` (pytest-crew.yml runs that set with pwsh) except one smoke
+# map that keeps the .ps1 flavour in the default rule.
+_PS1_SMOKE = "F4 bracket set in an earlier plain string"
+_BY_FLAVOUR = [pytest.param(label, flavour, id=f"{label}-{flavour}",
+                            marks=() if flavour == "sh" or label == _PS1_SMOKE
+                            else crew_fixtures.SLOW)
+               for label in sorted(_CONFIGS) for flavour in ("sh", "ps1")]
+
+
+@pytest.mark.parametrize("label, flavour", _BY_FLAVOUR)
 def test_every_accepted_dispatch_is_gated_as_its_own_environment(tmp_path, label, flavour):
     """For each environment `check` accepts, both real gates attribute its
     printed dispatch to that environment - blocked or allowed, never another
@@ -572,12 +593,13 @@ def _commands(doc):
                 if crew_ghdeploy.entry_problem(entry, env) is None:
                     out += [crew_ghdeploy.dispatch(entry, env, sha)
                             for sha in crew_ghdeploy.SAMPLE_SHAS]
-        out += [d for d in cfg.get("deploy") or [] if d]
+        for key, value in cfg.items():
+            if key.lower() == "deploy":
+                out += [d for d in ([value] if isinstance(value, str) else value) if d]
     return out
 
 
-@pytest.mark.parametrize("flavour", ["sh", "ps1"])
-@pytest.mark.parametrize("label", sorted(_CONFIGS))
+@pytest.mark.parametrize("label, flavour", _BY_FLAVOUR)
 def test_gate_pick_agrees_with_the_real_gate(tmp_path, label, flavour):
     """The simulation is only as good as its agreement with the real hooks:
     for every command of every map above, `_gate_pick` names the environment
@@ -595,16 +617,59 @@ def test_gate_pick_agrees_with_the_real_gate(tmp_path, label, flavour):
     ("deploy", "[d]eploy", True), ("eploy", "[d]eploy", False),
     ("x", "[a-z]", True), ("5", "[a-z]", False), ("a*b", "a`*b", True),
     ("axb", "a`*b", False), ("ab", "a*", True), ("ba", "a*", False),
+    # Sets as pwsh 7.4 reads them (measured with -like on 2026-10-04): a
+    # backtick escapes inside a set, a leading `]` is literal, `-` makes a
+    # range only between two members, and `!`/`^` do not negate.
+    ("]", "[`]]", True), ("a", "[`]]", False), ("-", "[a`-c]", True),
+    ("b", "[a`-c]", False), ("a", "[a`-c]", True), ("]", "[]]", True),
+    ("a", "[]a]", True), ("]", "[]a]", True), ("b", "[]a]", False),
+    ("b", "[`a-c]", True), ("b", "[a-`c]", True), ("-", "[a-c-e]", True),
+    ("d", "[a-c-e]", False), ("e", "[a-c-e]", True), ("-", "[-a]", True),
+    ("-", "[a-]", True), ("!", "[!a]", True), ("b", "[!a]", False),
+    ("^", "[^a]", True), ("b", "[^a]", False), ("a]", "[a]]", True),
+    ("]", "[a-]]", False), ("*", "[*]", True), ("a", "[*]", False),
+    ("`", "[``]", True), ("B", "[a-c]", True),
 ])
 def test_like_is_powershell_wildcard_matching(text, pattern, hit):
     assert crew_ghdeploy._like(text, pattern) is hit  # pylint: disable=protected-access
 
 
-def test_an_unreadable_wildcard_set_is_refused(tmp_path):
-    doc = _envs(("legacy", None, ["gh workflow run [deploy.yml"]), ("production", _PROD, None))
+@pytest.mark.parametrize("pattern", ["[z-a]", "[`]", "[]", "[a"])
+def test_like_refuses_what_pwsh_cannot_read(pattern):
+    """pwsh 7.4 throws on each of these; `_like` raises ValueError, never re.error."""
+    with pytest.raises(ValueError):
+        crew_ghdeploy._like("a", pattern)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("deploy", ["gh workflow run [deploy.yml", "./deploy.sh [z-a]",
+                                    "./deploy.sh [`]"])
+def test_an_unreadable_wildcard_set_is_refused(tmp_path, deploy):
+    doc = _envs(("legacy", None, [deploy]), ("production", _PROD, None))
     root = _repo(tmp_path, doc)
 
     proc = _check(root, env="production")
 
     assert proc.returncode == 2, proc.stdout
     assert _last(proc) == "result=refused reason=ambiguous-environment"
+
+
+def test_deploy_keys_that_collide_by_case_are_refused(tmp_path):
+    """ConvertFrom-Json refuses an object whose keys differ only in case, so
+    the .ps1 gate could not read this map at all."""
+    doc = _envs(("preview", None, ["./deploy.sh preview"]), ("production", _PROD, None))
+    doc["environments"]["preview"]["Deploy"] = "./deploy.sh other"
+    root = _repo(tmp_path, doc)
+
+    proc = _check(root, env="production")
+
+    assert proc.returncode == 2, proc.stdout
+    assert _last(proc) == "result=refused reason=ambiguous-environment"
+
+
+@pytest.mark.parametrize("command, picked", [
+    ("./deploy.sh\r", "x"), ("./deploy.sh\n\n", "x"), ("\r\n", None)])
+def test_the_sh_simulation_cleans_the_command_as_the_gate_does(command, picked):
+    """promote-gate.sh strips every CR and `$(...)` strips trailing newlines;
+    an empty command then exits 0 before any match."""
+    envs = {"x": {"deploy": ["./deploy.sh x"]}}
+    assert crew_ghdeploy._gate_pick(command, envs, "sh") == picked  # pylint: disable=protected-access

@@ -228,9 +228,17 @@ def dispatch(entry, env, sha):
     return line
 
 
-def _deploys(cfg):
-    """An environment's `deploy` as a list of strings, or None when malformed."""
-    declared = cfg.get("deploy", [])
+def _deploys(cfg, flavour="sh"):
+    """An environment's `deploy` as a list of strings, or None when malformed.
+    The .ps1 reads `$p.Value.deploy`, which matches the key ignoring case; two
+    keys that collide that way are a map ConvertFrom-Json refuses (ValueError)."""
+    if flavour == "ps1":
+        keys = [key for key in cfg if key.lower() == "deploy"]
+        if len(keys) > 1:
+            raise ValueError(f"keys {keys} differ only in case")
+        declared = cfg[keys[0]] if keys else []
+    else:
+        declared = cfg.get("deploy", [])
     if isinstance(declared, str):
         declared = [declared]
     if not isinstance(declared, list) or not all(isinstance(d, str) for d in declared):
@@ -238,10 +246,44 @@ def _deploys(cfg):
     return declared
 
 
+def _like_set(pattern, start):
+    """The `[set]` opening at `start`, as (regex class, index past it), read
+    the way pwsh 7.4 reads it: a `]` first in the set is a member, a backtick
+    makes the next character a plain member, `-` between two members is a
+    range (a backtick-escaped `-` is not), and `!`/`^` are plain members.
+    ValueError where pwsh throws: unclosed, empty, or a reversed range."""
+    members, j = [], start + 1
+    while True:
+        if j >= len(pattern):
+            raise ValueError(f"unclosed wildcard set in {pattern!r}")
+        char = pattern[j]
+        if char == "]" and members:
+            break
+        if char == "`":
+            if j + 1 >= len(pattern):
+                raise ValueError(f"unclosed wildcard set in {pattern!r}")
+            members.append((pattern[j + 1], True))
+            j += 2
+        else:
+            members.append((char, False))
+            j += 1
+    parts, k = [], 0
+    while k < len(members):
+        if k + 2 < len(members) and members[k + 1] == ("-", False):
+            # A reversed range is left to `re`, whose error `_like_regex` turns
+            # into the ValueError pwsh's throw corresponds to.
+            parts.append(re.escape(members[k][0]) + "-" + re.escape(members[k + 2][0]))
+            k += 3
+        else:
+            parts.append(re.escape(members[k][0]))
+            k += 1
+    return "[" + "".join(parts) + "]", j + 1
+
+
 def _like_regex(pattern):
-    """PowerShell's `-like` pattern as a regex: `*`, `?`, `[set]` with ranges,
-    and a backtick escaping the next character. ValueError when PowerShell
-    could not read it (an unclosed or empty `[`)."""
+    """PowerShell's `-like` pattern as a regex: `*`, `?`, `[set]` (see
+    `_like_set`) and a backtick escaping the next character. ValueError when
+    PowerShell could not read it -- never re.error."""
     out, i = [], 0
     while i < len(pattern):
         char = pattern[i]
@@ -255,16 +297,15 @@ def _like_regex(pattern):
             out.append(".")
             i += 1
         elif char == "[":
-            close = pattern.find("]", i + 1)
-            if close <= i + 1:
-                raise ValueError(f"unreadable wildcard set in {pattern!r}")
-            body = pattern[i + 1:close].replace("`", "")
-            out.append("[" + "".join("-" if c == "-" else re.escape(c) for c in body) + "]")
-            i = close + 1
+            regex, i = _like_set(pattern, i)
+            out.append(regex)
         else:
             out.append(re.escape(char))
             i += 1
-    return re.compile("".join(out), re.IGNORECASE | re.DOTALL)
+    try:
+        return re.compile("".join(out), re.IGNORECASE | re.DOTALL)
+    except re.error as exc:
+        raise ValueError(f"unreadable wildcard pattern {pattern!r}: {exc}") from exc
 
 
 def _like(text, pattern):
@@ -274,9 +315,17 @@ def _like(text, pattern):
 
 def _gate_pick(command, envs, flavour):
     """The environment promote-gate.<flavour> gates `command` as, or None.
-    Raises ValueError where the .ps1 could not read a pattern."""
+    Raises ValueError where the .ps1 could not read a pattern or the map.
+    The command is cleaned as each gate cleans it first: the .sh strips every
+    CR and `$(...)` strips trailing newlines; both exit 0 on an empty one."""
+    if flavour == "sh":
+        command = command.replace("\r", "").rstrip("\n")
+        if not command:
+            return None
+    elif not command.strip():
+        return None
     for name, cfg in envs.items():
-        for dep in _deploys(cfg) or []:
+        for dep in _deploys(cfg, flavour) or []:
             if not dep:
                 continue
             if flavour == "sh":
@@ -291,16 +340,24 @@ def _gate_pick(command, envs, flavour):
 def _ambiguity(envs, env, mine):
     """Refuse unless both simulated gates pick `env` for each of its own
     commands and each other environment for each of that one's."""
+    views = {}
     for other, cfg in envs.items():
-        if not isinstance(cfg, dict) or _deploys(cfg) is None:
+        try:
+            views[other] = ([] if not isinstance(cfg, dict) else
+                            [_deploys(cfg, flavour) for flavour in FLAVOURS])
+        except ValueError as exc:
+            raise Refused("ambiguous-environment",
+                          f"promote-gate.ps1 cannot read environment {other!r}: {exc}") from exc
+        if not views[other] or None in views[other]:
             raise CouldNotTell("verify-json-unreadable",
                                f"environment {other!r} is not an object with a `deploy` "
                                "command or list of commands")
     wanted = [(dispatch(e, env, sha), env) for sha in SAMPLE_SHAS
               for e in entries(envs[env])]
-    wanted += [(dep, env) for dep in mine if dep]
-    wanted += [(dep, other) for other, cfg in envs.items() if other != env
-               for dep in _deploys(cfg) if dep]
+    wanted += [(dep, env) for dep in dict.fromkeys(mine + views[env][1]) if dep]
+    # Each other environment's strings as either gate reads them.
+    wanted += [(dep, other) for other in envs if other != env
+               for dep in dict.fromkeys(views[other][0] + views[other][1]) if dep]
     for command, owner in wanted:
         for flavour in FLAVOURS:
             try:

@@ -334,17 +334,18 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 `environments.*` section, not re-derived here.
 
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
-environment's `github` entry out of `.crew/verify.json` (`_environment`, `:318`; `entries`, `:199`),
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:375`; `entries`, `:199`),
 validates each against a closed key set (`KEYS`, `:72`) and value grammar (`VALUE`, `:69`;
 `entry_problem`, `:161`; the ref as a branch name, `_ref_problem`, `:100`), requires `deploy` to be
-exactly the entries' prefixes (`check`, `:352`; `prefix`, `:212`), and simulates both promote-gate
-flavours' first-match environment pick (`_gate_pick`, `:275`: `.sh` substrings, `.ps1` `-like`)
-so every command it or another environment declares is gated as its own environment
-(`_ambiguity`, `:291`). It prints the dispatch for HEAD (`dispatch`, `:220`), runs only
-`git rev-parse HEAD` (`_head`, `:339`) and writes nothing; no hook calls it yet, and promote-gate
-ignores the `github` key. DERIVED from the definitions cited. Its unwired mutations are
-`plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after the anchor;
-the anchor was not moved for it.
+exactly the entries' prefixes (`check`, `:409`; `prefix`, `:212`), and simulates both promote-gate
+flavours' first-match environment pick (`_gate_pick`, `:316`: `.sh` substrings after CR stripping,
+`.ps1` `-like` with sets read as pwsh 7.4 reads them, `_like_set`, `:249`, and the `deploy` key
+matched ignoring case, `_deploys`, `:231`) so every command it or another environment declares is
+gated as its own environment (`_ambiguity`, `:340`). It prints the dispatch for HEAD (`dispatch`,
+`:220`), runs only `git rev-parse HEAD` (`_head`, `:396`) and writes nothing; no hook calls it yet,
+and promote-gate ignores the `github` key. DERIVED from the definitions cited. Its unwired
+mutations are `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after
+the anchor; the anchor was not moved for it.
 
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls

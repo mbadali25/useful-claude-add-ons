@@ -453,8 +453,9 @@ name, never quoted. There is no key for `-R/--repo`, and an unknown key is
 refused. `python3 <crew>/hooks/scripts/crew_ghdeploy.py check --root . --env
 <name>` validates the entries, checks `deploy` lists exactly their prefixes,
 and simulates both gates, which take the first environment whose `deploy`
-string matches the command either way round (`.sh`: plain substrings; `.ps1`:
-`-like`, ignoring case, with `*`, `?` and `[...]` as wildcards). Unless both
+string matches the command either way round (`.sh`: plain substrings, after
+stripping CRs; `.ps1`: `-like`, ignoring case, with `*`, `?` and `[...]` as
+wildcards, reading the `deploy` key ignoring case). Unless both
 pick this environment for each dispatch it prints (two sample shas) and each
 `deploy` string it lists, and pick every other environment for each of that
 one's strings, it refuses with `ambiguous-environment`. Known gap: `-like`

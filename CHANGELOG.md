@@ -18,8 +18,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
   requires `deploy` to list exactly the entries' canonical prefixes so
   promote-gate's existing match fires on the real dispatch, and simulates
-  both gates (`.sh` substrings, `.ps1` `-like` with case folding and `*`, `?`,
-  `[...]` wildcards, first environment in file order): it refuses as
+  both gates (`.sh` substrings after the gate's CR stripping, `.ps1` `-like`
+  with case folding, `*`, `?` and `[...]` sets read as pwsh 7.4 reads them,
+  and a `deploy` key matched ignoring case; first environment in file order;
+  a pattern pwsh cannot read is refused, never a traceback): it refuses as
   `ambiguous-environment` unless each dispatch (two sample shas) and each of
   its `deploy` strings is gated as this environment, and each other
   environment's `deploy` strings as that one. Known gap: `-like`'s
@@ -31,10 +33,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Nothing dispatches, identifies, watches or records a run
   (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
   does not deploy (L-0649).
-- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 161 cases. Multi-
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 207 cases. Multi-
   environment maps feed every command to the real `promote-gate.sh` and
-  `promote-gate.ps1` and assert the simulation names the same environment.
-  The 68
+  `promote-gate.ps1` and assert the simulation names the same environment;
+  the `.ps1` halves but one smoke map are `slow`. The 79
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 
