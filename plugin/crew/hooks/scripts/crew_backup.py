@@ -25,7 +25,8 @@ file is left exactly as it was. A file that does not exist has nothing to lose:
 it, by function:
 
   * `crew_config.write_global_config` and `crew_config.write_repo_config`,
-    through `crew_config_files.update_json(..., backup=...)` -- every
+    inside the `mutate` they hand `crew_config_files.update_json`, under its
+    lock, once the write is planned -- every
     `/crew:config --set` / `--unset` and the menu's Save;
   * `crew_config.apply_rebuild` and `crew_config.apply_restore`;
   * `crew_config.write_profile`, for `profile.json` and its vault copy;

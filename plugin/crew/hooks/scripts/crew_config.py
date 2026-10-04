@@ -3014,30 +3014,10 @@ def _layer_path_refusal(dotted, layer, value):
     return reason
 
 
-class _Unset:
-    """`--unset`'s value (T-0050): remove the leaf from the file. A sentinel,
-    never JSON, so no `--set` value can spell it."""
-
-    def __repr__(self):
-        return "<unset>"
-
-
-UNSET = _Unset()
-
-
 def value_allowed(dotted, layer, value):
     """None when `layer` accepts `value` at the LEAF `dotted`, else why not:
     the layer's path rule, a block emptied or replaced by a scalar, the null
-    rule, then `enum_values` membership. Both planners and the menu use it.
-    `UNSET` (remove the leaf) is judged by the path rule and the shape only:
-    removing a value is never a value outside the key's tuple."""
-    if value is UNSET:
-        reason = (_layer_path_refusal(dotted, layer, None)
-                  if not (layer == "repo" and dotted in REPO_VETO_ONLY)
-                  else _repo_refusal(dotted))
-        if reason is None and _shape(dotted) not in ("leaf", "open"):
-            reason = "not a leaf; --unset removes one key at a time"
-        return None if reason is None else f"{dotted} - {reason}"
+    rule, then `enum_values` membership. Both planners and the menu use it."""
     reason = _layer_path_refusal(dotted, layer, value)
     if reason is not None:
         return f"{dotted} - {reason}"
@@ -3064,6 +3044,28 @@ def value_allowed(dotted, layer, value):
         return (f"{dotted} = {value!r} is not one of its values "
                 f"({_values_text(allowed)})")
     return None
+
+
+class _Unset:
+    """`--unset`'s value (T-0050): remove the leaf from the file. A sentinel,
+    never JSON, so no `--set` value can spell it."""
+
+    def __repr__(self):
+        return "<unset>"
+
+
+UNSET = _Unset()
+
+
+def unset_allowed(dotted, layer):
+    """`value_allowed` for `UNSET` (remove the leaf): the layer's path rule
+    and the shape only -- removing a value is never a value outside the
+    key's tuple, and a repo may always clear its own veto-only key."""
+    reason = (_repo_refusal(dotted) if layer == "repo" and dotted in REPO_VETO_ONLY
+              else _layer_path_refusal(dotted, layer, None))
+    if reason is None and _shape(dotted) not in ("leaf", "open"):
+        reason = "not a leaf; --unset removes one key at a time"
+    return None if reason is None else f"{dotted} - {reason}"
 
 
 def _content_problem(dotted, layer, value):
@@ -3120,7 +3122,8 @@ def merged_problems(merged, touched, label, layer):
 
 def _leaf_problems(updates, layer):
     return [problem for dotted, value in leaf_updates(updates)
-            for problem in [value_allowed(dotted, layer, value)] if problem]
+            for problem in [unset_allowed(dotted, layer) if value is UNSET
+                            else value_allowed(dotted, layer, value)] if problem]
 
 
 def _unchanged(before, value):
@@ -3256,10 +3259,13 @@ def write_global_config(updates, path=None, expect=None):
 
     def _mutate(parsed):
         out["plan"] = _plan_on(parsed, updates, "machine", real_path)
-        return out["plan"][0] if out["plan"][1] else None
+        if not out["plan"][1]:
+            return None
+        crew_backup.backup(real_path)   # T-0050: under the lock, before the replace
+        return out["plan"][0]
     try:
         crew_config_files.update_json(real_path, _mutate, expect=expect,
-                                      create=True, backup=crew_backup.backup)
+                                      create=True)
     except crew_backup.BackupError as exc:
         raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
@@ -3484,11 +3490,13 @@ def write_repo_config(root, updates, global_path=None, expect=None,
                 f"since it was read (digest {machine}, expected {expect_global})"
                 "; the widening marks read it, so nothing written. Re-run")
         out["plan"] = _plan_on(parsed, updates, "repo", real_path, global_cfg)
-        return out["plan"][0] if out["plan"][1] else None
+        if not out["plan"][1]:
+            return None
+        crew_backup.backup(real_path)   # T-0050: under the lock, before the replace
+        return out["plan"][0]
     try:
         with crew_config_files.machine_lock(_global_label(global_path)):
-            crew_config_files.update_json(real_path, _mutate, expect=expect,
-                                          backup=crew_backup.backup)
+            crew_config_files.update_json(real_path, _mutate, expect=expect)
     except crew_backup.BackupError as exc:
         raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
@@ -3519,11 +3527,15 @@ def print_changes(changes):
         after = "(removed)" if change.get("unset") else json.dumps(change["after"])
         print(f"  {change['path']}: {json.dumps(change['before'])} -> {after}"
               + (f"  (null {change['null']})" if change.get("null") else ""))
-        if change["widens"]:
-            granted = change.get("widensTo", change["after"])
+        if change["widens"] and change.get("unset"):
+            granted = change.get("widensTo")
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(granted).strip(chr(34))}`: "
                   + widening_note(change["path"], granted))
+        elif change["widens"]:
+            print(f"  ! {change['path']} widens to "
+                  f"`{json.dumps(change['after']).strip(chr(34))}`: "
+                  + widening_note(change["path"], change["after"]))
         if change.get("heldDownBy"):
             unset = (" (unset there, and unset is the floor)"
                      if change.get("globalValue") is None else "")
