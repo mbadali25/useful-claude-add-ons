@@ -3187,18 +3187,22 @@ def test_config_md_and_setup_template_state_the_kimi_defaults():
 
 
 def test_config_md_global_key_count_is_measured():
-    """CONFIG.md §10 states the global-settable key count twice (heading and
-    "N measured") and how many its table lists. All three are re-measured
-    here: the heading is `len(leaf_paths(default_global_config()))`, and the
-    table count is the backticked keys in the table's first column."""
+    """CONFIG.md §10 states the global-settable key count, the total, and
+    lists the global keys in a table. Since T-0048 that table and its count
+    line are generated (`config_reference.py`); all three are re-measured here
+    against the code: N is `len(leaf_paths(default_global_config()))`, M every
+    declared leaf, and the table holds exactly the N global keys."""
     with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
         text = handle.read()
     section = text[text.index("## 10. Global-settable keys"):text.index("## 11. ")]
-    heading = int(re.search(r"## 10\. Global-settable keys \S+ (\d+)", section).group(1))
-    measured = int(re.search(r"(\d+) measured \(`leaf_paths", section).group(1))
-    listed = int(re.search(r"the table\s+below lists (\d+) of them", section).group(1))
+    match = re.search(r"(\d+) of (\d+) keys are settable in the machine-global file",
+                      section)
+    stated_global, stated_total = int(match.group(1)), int(match.group(2))
     tabled = [key for line in section.splitlines() if line.startswith("| `")
               for key in re.findall(r"`([^`]+)`", line.split("|")[1])]
+    global_leaves = crew_config.leaf_paths(crew_config.default_global_config())
+    total = set(crew_config.leaf_paths(crew_config.default_config())) | set(global_leaves)
 
-    assert (heading, measured, listed) == (
-        len(crew_config.leaf_paths(crew_config.default_global_config())),) * 2 + (len(tabled),)
+    assert stated_global == len(global_leaves) == len(tabled)
+    assert stated_total == len(total)
+    assert set(tabled) == set(global_leaves)
