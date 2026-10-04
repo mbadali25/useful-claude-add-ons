@@ -108,17 +108,26 @@ def _holder(lock_path):
 _DENIED_GRACE = 0.25
 
 
-def _lock_absent(lock_path):
-    """True only when `stat` says the lock file is not there. Present, or a
-    `stat` that itself fails (a delete-pending file answers access denied),
-    is False: could-not-tell waits like a held lock, bounded by the wait."""
+# What `stat` says about a lock file whose create was denied.
+_ABSENT, _PRESENT, _UNKNOWN, _NOT_A_LOCK = "absent", "present", "unknown", "not-a-lock"
+
+
+def _lock_state(lock_path):
+    """`_ABSENT`, `_PRESENT`, `_UNKNOWN` or `_NOT_A_LOCK` for `lock_path`.
+
+    A `stat` denied access is `_UNKNOWN` (a delete-pending file can deny it,
+    and so can a folder without search permission): it waits, but never
+    counts as a lock seen held. Any other `stat` error (NotADirectoryError,
+    ELOOP, ...) is `_NOT_A_LOCK`: nothing to wait for."""
     try:
         os.stat(lock_path)
     except FileNotFoundError:
-        return True
+        return _ABSENT
+    except PermissionError:
+        return _UNKNOWN
     except OSError:
-        return False
-    return False
+        return _NOT_A_LOCK
+    return _PRESENT
 
 
 class Lock:
@@ -135,10 +144,12 @@ class Lock:
         self.path = path + ".lock"
         self.wait = wait
 
-    def _busy(self, wait):
+    def _busy(self, wait, deleting=False):
+        held = (f"{self.path} is held, or still being deleted by another "
+                f"process (holder pid {_holder(self.path)})" if deleting
+                else f"{self.path} is held by pid {_holder(self.path)}")
         return Busy(
-            f"{self.path} is held by pid {_holder(self.path)} "
-            f"(waited {wait:.1f}s); another crew command is "
+            f"{held} (waited {wait:.1f}s); another crew command is "
             "writing this config. If no crew command is running, "
             "a process died holding it -- remove that file by "
             "hand")
@@ -147,6 +158,7 @@ class Lock:
         wait = LOCK_WAIT_SECONDS if self.wait is None else self.wait
         deadline = time.monotonic() + wait
         absent_since = None
+        seen_held = False
         while True:
             try:
                 fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -161,19 +173,28 @@ class Lock:
                 # own, a scanner's, an indexer's), and creating that name
                 # answers ERROR_ACCESS_DENIED, not ERROR_FILE_EXISTS. That
                 # is a held lock, not a refusal: eight concurrent mints lost
-                # one to it on the Windows runner. While the lock file is
-                # there, or `stat` cannot tell, wait as for a held lock. A
-                # denial with no lock file to blame (an unwritable folder)
-                # is the real error once `_DENIED_GRACE` has passed.
+                # one to it on the Windows runner. So a denied create waits
+                # while the lock file is there or `stat` cannot tell. Only a
+                # lock file SEEN present makes the deadline `Busy`; a wait
+                # that never saw one ends in the PermissionError it got,
+                # never in a "held by" with a remove-it-by-hand remedy. With
+                # the file confirmed absent the denial is the real error
+                # (an unwritable folder) once `_DENIED_GRACE` has passed.
                 now = time.monotonic()
-                if _lock_absent(self.path):
+                state = _lock_state(self.path)
+                if state == _NOT_A_LOCK:
+                    raise
+                if state == _ABSENT:
                     absent_since = now if absent_since is None else absent_since
                     if now - absent_since >= _DENIED_GRACE:
                         raise
                 else:
                     absent_since = None
+                    seen_held = seen_held or state == _PRESENT
                 if now >= deadline:
-                    raise self._busy(wait) from exc
+                    if not seen_held:
+                        raise
+                    raise self._busy(wait, deleting=True) from exc
                 time.sleep(0.02)
                 continue
             try:

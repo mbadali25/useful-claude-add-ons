@@ -174,6 +174,8 @@ def test_lock_waits_out_a_delete_pending_name_instead_of_failing(tmp_path, monke
 
 
 def test_lock_denied_past_the_wait_with_the_file_there_is_busy(tmp_path, monkeypatch):
+    """A lock file seen present whose create stays denied is held, or still
+    being deleted: `Busy` at the deadline, saying both."""
     path = str(tmp_path / "config.json")
     lock = _write(path + ".lock", b"4242")
     _denied_while_pending(monkeypatch, lock, 10 ** 6)
@@ -182,44 +184,89 @@ def test_lock_denied_past_the_wait_with_the_file_there_is_busy(tmp_path, monkeyp
         with files.Lock(path, wait=0):
             pass
 
-    assert "4242" in str(caught.value) and isinstance(caught.value.__cause__, PermissionError)
+    assert ("4242" in str(caught.value), "being deleted" in str(caught.value),
+            isinstance(caught.value.__cause__, PermissionError)) == (True, True, True)
+
+
+def _stat_of(monkeypatch, lock, answers):
+    """`os.stat(lock)` answers from `answers` in turn (an exception class to
+    raise, or None for the real stat), repeating the last one."""
+    real, calls = os.stat, []
+
+    def stat(target, *args, **kwargs):
+        if target == lock:
+            answer = answers[min(len(calls), len(answers) - 1)]
+            calls.append(answer)
+            if answer is not None:
+                raise answer(errno.EACCES, "stat failed", target)
+        return real(target, *args, **kwargs)
+
+    monkeypatch.setattr(files.os, "stat", stat)
+    return calls
 
 
 def test_lock_denied_with_no_lock_file_is_the_real_error(tmp_path, monkeypatch):
-    """The neighbouring case: nothing holds the lock and the create is still
-    denied (an unwritable folder). That surfaces as the PermissionError it
-    is, after the short grace, never as Busy and never after the whole wait."""
+    """Nothing holds the lock and the create is still denied (an unwritable
+    folder): retried for the grace, in case the name was just clearing, then
+    the PermissionError it is, never Busy and never after the whole wait."""
     path = str(tmp_path / "config.json")
     lock = path + ".lock"
-    _denied_while_pending(monkeypatch, lock, 10 ** 6)
-    monkeypatch.setattr(files, "_DENIED_GRACE", 0)
+    tried = _denied_while_pending(monkeypatch, lock, 10 ** 6)
+    monkeypatch.setattr(files, "_DENIED_GRACE", 0.05, raising=False)
 
     with pytest.raises(PermissionError):
         with files.Lock(path, wait=3600):
             pass
 
-    assert not os.path.exists(lock)
+    assert (len(tried) >= 2, os.path.exists(lock)) == (True, False), len(tried)
 
 
-def test_lock_a_stat_that_cannot_tell_waits_like_a_held_lock(tmp_path, monkeypatch):
-    """A delete-pending file can deny the `stat` too. Could-not-tell is not
-    absent: it waits (bounded by the wait) rather than raising at once."""
+def test_lock_a_stat_that_cannot_tell_waits_then_is_the_real_error(tmp_path, monkeypatch):
+    """A delete-pending file can deny the `stat` too, and so can a folder
+    without search permission. Could-not-tell waits (it is not absent), but
+    a wait that never SAW a lock file ends in the PermissionError it got:
+    never `Busy`, whose remedy is to remove a file nobody saw."""
     path = str(tmp_path / "config.json")
     lock = path + ".lock"
-    _denied_while_pending(monkeypatch, lock, 10 ** 6)
-    monkeypatch.setattr(files, "_DENIED_GRACE", 0)
-    real_stat = os.stat
+    tried = _denied_while_pending(monkeypatch, lock, 10 ** 6)
+    _stat_of(monkeypatch, lock, [PermissionError])
 
-    def stat(target, *args, **kwargs):
-        if target == lock:
-            raise PermissionError(errno.EACCES, "Permission denied", target)
-        return real_stat(target, *args, **kwargs)
-
-    monkeypatch.setattr(files.os, "stat", stat)
-
-    with pytest.raises(files.Busy):
-        with files.Lock(path, wait=0):
+    with pytest.raises(PermissionError) as caught:
+        with files.Lock(path, wait=0.1):
             pass
+
+    assert (len(tried) >= 2, caught.value.filename) == (True, lock), len(tried)
+
+
+def test_lock_seen_held_then_unreadable_is_busy(tmp_path, monkeypatch):
+    """The neighbour: the lock file was seen present, then its `stat` went
+    unreadable (delete pending). It was held, so the deadline is `Busy`."""
+    path = str(tmp_path / "config.json")
+    lock = _write(path + ".lock", b"4242")
+    _denied_while_pending(monkeypatch, lock, 10 ** 6)
+    calls = _stat_of(monkeypatch, lock, [None, PermissionError])
+
+    with pytest.raises(files.Busy) as caught:
+        with files.Lock(path, wait=0.1):
+            pass
+
+    assert (len(calls) >= 2, "being deleted" in str(caught.value)) == (True, True), calls
+
+
+def test_lock_a_stat_that_is_not_about_a_lock_raises_at_once(tmp_path, monkeypatch):
+    """A `stat` error that is neither absent nor denied (NotADirectoryError:
+    a path component is a file) means there is no lock to wait for: the
+    create's own PermissionError, on the first attempt."""
+    path = str(tmp_path / "config.json")
+    lock = path + ".lock"
+    tried = _denied_while_pending(monkeypatch, lock, 10 ** 6)
+    _stat_of(monkeypatch, lock, [NotADirectoryError])
+
+    with pytest.raises(PermissionError) as caught:
+        with files.Lock(path, wait=0.2):
+            pass
+
+    assert (len(tried), caught.value.filename) == (1, lock)
 
 
 # --- update_json: compare-and-swap inside the lock -----------------------------
