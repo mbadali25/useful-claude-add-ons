@@ -1471,6 +1471,30 @@ then the train is advisory.
   scripts call it, nothing forces a lane through the train; its value is the queue, the land check
   and the merge log for lanes that use it.
 
+## Native-memory vault pointers (T-0084)
+
+Added after this note's anchor; read in full at the T-0084 build head. Read-only: nothing here
+writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, migration L-0678).
+
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:49` - the pointer grammar, one line
+  `vault: <name> | note: <path>`; `:65` `_path_problem` refuses an absolute, drive, backslash,
+  `.`/`..`/empty segment, non-`.md` or control-character path; `:82` `classify` orders
+  pointer, then `malformed` (one `vault:` line that fails), then `full-text`.
+- DERIVED `crew_memory.py:54` `split_body` - the frontmatter is split on its first two `---`
+  lines and never parsed as YAML.
+- DERIVED `crew_memory.py:129` `vault_path` - reads `crew_recall.obsidian_config_path()`
+  (`:131`, honours `CREW_OBSIDIAN_CONFIG`); `role: ignore` is `vault-unknown`; only the name
+  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:124`) and
+  then the Obsidian config's top-level `vaultPath`. A config file that exists and does not parse
+  (`:105` `_json_file`, Obsidian config, repo `.crew/config.json` or the global crew config,
+  `:119-120`) is `no-vault-config` with `config unreadable:`, never "no vaults".
+- DERIVED `crew_memory.py:170` `note_path` - no symlink component below the vault, real path
+  under the vault's real path (`outside-vault`), else `note-missing`.
+- DERIVED `crew_memory.py:232` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+  1 for any other state, 2 for usage or a missing `--file`/`--memory-dir`.
+- JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
+  because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry
@@ -1559,6 +1583,8 @@ then the train is advisory.
 - `crew_context.py` -> `obsidian-vault`'s CLI, via `crew_recall.py` (module
   docstring only, **not read**: "crew does not search vaults itself...
   calls that plugin's read-only contract and nothing else").
+- `crew_memory.py` -> `~/.claude/obsidian/config.json` (via `crew_recall.obsidian_config_path`)
+  and the crew config's `memory.vaultPath`; read-only (T-0084, section above).
 - `crew_autoclear_setup.py` -> `~/.claude/crew/config.json` (the
   machine-global file), the only writer path for `context.autoClear`.
 - `verify-gate.sh` -> `.crew/verify.json` (the rule map) and, per rule, a

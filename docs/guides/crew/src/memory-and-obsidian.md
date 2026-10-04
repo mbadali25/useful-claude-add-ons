@@ -289,6 +289,47 @@ and run the command again. Crew never rewrites a note for you.
 The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in `plugin/crew/README.md`.
 
+## Native memories as vault pointers
+
+Claude Code keeps its own native memory, one Markdown file per fact under
+`~/.claude/projects/<project>/memory/`. Crew can read such a file whose body is
+a single pointer line into your vault, with the frontmatter left as it is:
+
+```
+vault: <name> | note: <vault-relative path, forward slashes, ending .md>
+```
+
+The vault is named, not given as a path, so the same file works on every
+machine the vault syncs to. The name is looked up in that machine's
+`~/.claude/obsidian/config.json` (`vaults.<name>.path`; a vault with role
+`ignore` is not looked up). Only the name `memory` falls back to crew's
+`memory.vaultPath`. `OBSIDIAN_VAULT_PATH` is not used.
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file <memory file>
+python3 plugin/crew/hooks/scripts/crew_memory.py check --memory-dir <memory dir>
+```
+
+`resolve` prints `state:` and, when the note is found, `path:`. `check` prints
+one row per memory file (not `MEMORY.md`) and a count per state. Both read
+only; `--json` gives the same rows as JSON.
+
+| state | meaning | exit |
+|---|---|---|
+| `resolved` | the note exists on this host | 0 |
+| `full-text` | not a pointer; the body is the memory | 0 |
+| `malformed` | a `vault:` line that is not a valid pointer (absolute path, drive, `..`, a second field) | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config file that does not parse | 1 |
+| `vault-unknown` | this machine names no vault of that name, or marks it `ignore` | 1 |
+| `vault-unavailable` | the configured folder is not there (not mounted, not synced) | 1 |
+| `note-missing` | the vault is there, the note is not | 1 |
+| `outside-vault` | the path passes through a symlink inside the vault, or leaves it | 1 |
+| `unreadable` | the memory file cannot be read as UTF-8 | 1 |
+
+An unavailable vault is never replaced by another one that happens to hold a
+note at the same path. This crew version only reads pointers; writing them,
+and converting existing memories, arrive in later versions.
+
 ## Confirming recall reaches your sessions
 
 (written by the context-hook ticket)

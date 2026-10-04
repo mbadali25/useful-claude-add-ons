@@ -144,6 +144,14 @@
       "reach": "local",
       "why": "The command guard was REMOVED in 0.19.52, and test_guard_bypasses.py, test_guard_powershell.py and test_guard_command_spelling.py went with it. This rule named all three plus guard.sh/.ps1 in its paths, so it failed on files that no longer exist - a gate that errors is a gate nobody can read. crew_guards.py itself is KEPT and still live: guards.mergeGate and change.requireForProduction resolve through it, and crew_config and crew_state both call its classifier. So the rule still earns its place, pointed at the module-level suites that survived. reach: local - the 'gh' match is test_guards.py's own fixture constant (_GH_MERGE = \"gh \" + \"pr merge\"), a STRING the guard is tested to block, never itself invoked." },
 
+    { "paths": ["plugin/crew/hooks/scripts/crew_memory.py",
+                "plugin/crew/tests/test_crew_memory.py"],
+      "seconds": 5,
+      "coveredBy": "crew-suite",
+      "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_memory.py -q"],
+      "reach": "local",
+      "why": "T-0084 (crew_memory.py resolve and check, the native-memory vault pointer). 4.7s wall measured on 2026-10-04 through pytest_rule.py on a 4-CPU Linux container (47 tests in 2.4s under xdist, no wallclock test): the grammar accept/refuse tables, one test per degraded state, the no-substitution and unparseable-config cases, symlink containment, check's rows and counts, a tree hash proving nothing is written, and the bash/pwsh parity case (pwsh SKIPPED where absent). Before this rule only ruff and pylint reached these paths. reach: local - every fixture is under tmp_path with HOME, USERPROFILE, CREW_OBSIDIAN_CONFIG and the crew root pointed at it; no real vault or memory directory is read." },
+
     { "paths": ["plugin/crew/hooks/scripts/cloud_guard.py",
                 "plugin/crew/hooks/scripts/crew_guards.py",
                 "plugin/crew/hooks/scripts/cloud-guard.sh",

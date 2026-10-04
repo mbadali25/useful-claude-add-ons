@@ -68,3 +68,42 @@ that cannot rot into irrelevance — only into inaccuracy, which anchors catch.
 Repo-local `.crew/codemap/` is the source of truth; the vault mirrors it. If the
 vault is on the same machine, symlink `.crew/codemap` into the vault rather than
 copying, so there is never a divergence question.
+
+## Native memories as vault pointers
+
+A native memory file (Claude Code's `~/.claude/projects/<project>/memory/<fact>.md`)
+may hold one line in place of its body, with the frontmatter left as it is:
+
+```
+vault: <name> | note: <vault-relative path, forward slashes, ending .md>
+```
+
+The vault is named, never given as an absolute path, so the same file works on
+every machine the vault is synced to. When you meet one, resolve it on this host
+and read the path it prints:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" resolve --file <memory file>
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" check --memory-dir <memory dir>
+```
+
+The name maps to a path through `vaults.<name>.path` in `~/.claude/obsidian/config.json`
+(a `role: ignore` vault is not resolved); only the name `memory` falls back to the
+crew config's `memory.vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured.
+
+| state | meaning | exit |
+|---|---|---|
+| `resolved` | the note exists; `path:` is printed | 0 |
+| `full-text` | not a pointer; the body is the memory | 0 |
+| `malformed` | a `vault:` line that fails the grammar | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that does not parse | 1 |
+| `vault-unknown` | this host names no such vault, or it is `ignore` | 1 |
+| `vault-unavailable` | the configured path is not a directory here | 1 |
+| `note-missing` | the vault is there, the note is not | 1 |
+| `outside-vault` | a symlink below the vault, or the path leaves it | 1 |
+| `unreadable` | the memory file is not readable UTF-8 | 1 |
+
+Any state other than `resolved` or `full-text`: tell the user the state and its
+reason. Do not guess the note, search another vault for it, or treat the pointer
+as the memory. This crew version only reads pointers; writing them arrives in a
+later version.
