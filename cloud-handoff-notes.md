@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:22 UTC
+Last updated: 2026-10-04 12:23 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:23: #353 land-prep onto e9364a70 done: b04bd6b3 (1.0.366; 3 KEY_META rows + tests; CONFIG §10/11 generated 74/135/61; guide ship shipped; reference+guides rebuilt). NOTE re-bump must also change since 1.0.366 in crew_keys.py x3 + guide.md + rebuilt guides. Merge-only review started.
 - 12:22: T-0016 BUILT -> PR #396 (T-0016-build 52a36cf6, crew 1.0.351 placeholder, on 155fe6d8 - needs e9364a70 merge). Full crew suite 9885 passed; 35/35 hand sabotage red; ps1 run under scratch pwsh 7.4.6 (OS=Windows_NT). Harness follow-up: sabotage_autoclear_binding.py. First review (typing-safety focused) started.
 - 12:21: #394 merge review 96080457: 0/0/2 CLEAN (NIT: test_status_vocabulary doesn't cover memory-and-obsidian.md guide lane table - carry at landing).
 - 12:21: #394 land-prep onto e9364a70 done: 96080457 (1.0.367; CONFIG row text moved to crew_keys summaries; memory-and-obsidian guide lane table updated; guides rebuilt). Merge-only review started. NOTE /home/user/pr-t0037 local branch is behind remote.
