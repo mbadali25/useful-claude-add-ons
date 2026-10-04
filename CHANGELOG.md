@@ -13,7 +13,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   its own, not even one a harness reminder supplied (autopilot follows that procedure).
 - New config key `git.forbiddenTrailers` (default `[]`) in both layers, combined by UNION rather
   than precedence, so a cloned repo's `[]` never disarms the machine owner's list; a corrupt layer
-  or malformed value is unknown, never `[]`. Template leaf count 129 -> 130; CONFIG.md §22.
+  or malformed value is unknown, never `[]`. Template leaf count 130 -> 131 (on T-0061's 130); CONFIG.md §22.
 - `crew_trailers.py --check --root . --ticket <id>` reports `trailers: clean (<n> commits)`,
   `trailers: FINDING <sha7> <Token>` per offending commit in
   `git log --first-parent <scope base>..HEAD` (the ticket's own commits, not what a merge of main
