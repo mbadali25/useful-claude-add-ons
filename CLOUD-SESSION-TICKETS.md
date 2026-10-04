@@ -32,10 +32,11 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 | L-1505 | Harness-only: when a deploy command matches several environments (L-1503 union rule), verify-gate.sh records one PROMOTIONS row per matched environment instead of the joined name `staging,prod`, so a later `requires: [prod]` is satisfied. Fails closed until then. Also: verify-gate.sh:192/:207 parse the in-flight marker with `read -r DENV DSHA` (a name with a space splits) and :208 greps $DENV as a regex (`a|b` matches row `apple`, `.` matches any char) - escape the name and parse the marker by its last field (found in #489 round-4 review). | none yet | needs ticket in your tracker |
 | L-1506 | CI: crew Windows default set split into 6 shards instead of 3 (owner request 2026-10-04, rush speed-up) | #491 | MERGED 9c8c0418 (no plugin version; CI-only) |
 | L-1507 | CI: crew Windows slow set split into 3 shards (owner request 2026-10-04, after L-1506) | MERGED 1a5b3dca (#492; CI only) | needs ticket in your tracker |
-| L-1508 | Ticket written (owner request): audit crew hook Python for bare-name `subprocess.run(["tool", ...])` where a check resolves the tool with `shutil.which` (PATHEXT) but the run uses CreateProcess (.exe only) - two Windows bugs today (T-0016 `_tmux_pane_pid`, T-0017 `_git_out`, the latter fail-open). Add a lint/test that flags the pattern. | #493: owner decided scope option 1 (2026-10-04); PR A building (stacked on #356) | needs ticket in your tracker |
-| L-1509 | Follow-up to L-1508: `skills/repo-docs/scripts/git_changelog.py:71` runs a bare `git`; resolve it with shutil.which (own repo-docs bump). Not a guard; low risk. | none yet | needs ticket in your tracker |
+| L-1508 | Ticket written (owner request): audit crew hook Python for bare-name `subprocess.run(["tool", ...])` where a check resolves the tool with `shutil.which` (PATHEXT) but the run uses CreateProcess (.exe only) - two Windows bugs today (T-0016 `_tmux_pane_pid`, T-0017 `_git_out`, the latter fail-open). Add a lint/test that flags the pattern. | #493: owner decided scope option 1 (2026-10-04); PR A built at f1da4e82 (CI green after one shard re-run), in review; PR B (9 harness files) follows | needs ticket in your tracker |
+| L-1509 | Follow-up to L-1508: `skills/repo-docs/scripts/git_changelog.py:71` and `repo_survey.py:140` run a bare `git`; resolve it with shutil.which (own repo-docs bump). Not a guard; low risk. | none yet | needs ticket in your tracker |
+| L-1510 | *Proposed:* `test_crew_ticket_mint.py::test_concurrent_mints_distinct` failed once on Windows CI (#493 shard 4/6): "crew_ticket.TicketError: .work/INDEX.md exists but could not be read" - likely a reader hitting the file during another mint's os.replace (Windows sharing violation). Harness (crew_ticket.py). Root-cause; never skip. | none yet | needs ticket in your tracker |
 
-Next free untracked ID: **L-1510**.
+Next free untracked ID: **L-1511**.
 
 ## Merged this session
 
@@ -54,6 +55,7 @@ Next free untracked ID: **L-1510**.
 | L-1506 | #491 | 9c8c0418 | none (CI workflow only: Windows 3 -> 6 shards) |
 | T-0016 | #396 | f1cace4a | 1.0.333 |
 | L-1507 | #492 | 1a5b3dca | none (CI workflow only: Windows slow set split into 3 shards) |
+| T-0017 | #356 | d64f113e | 1.0.334 |
 
 ## Closed without merging (your instruction)
 
@@ -66,7 +68,6 @@ Next free untracked ID: **L-1510**.
 
 | Ticket | PR | Head | Status | Notes |
 |---|---|---|---|---|
-| T-0017 | #356 | fb5b9169 | landing (batch 2: #396 1.0.333, #356 1.0.334, #347 1.0.335, #456 1.0.336) | Stacked on #396 (T-0016). Carry NIT: stdout backslashreplace for non-ASCII refusal reasons. |
 | T-0059 | #366 | e14b5a45 | ready to land | Stacked on T-0052 (#364). |
 | T-0058 | #365 | 16228584 | ready to land | Stacked on #364/#354. Carry: `_gate_stage` must pick stage like `_phase`; `split_report current=` from `_not_current`. Decision: absent sources read as unmeasured (owner-approved). |
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
