@@ -435,3 +435,5 @@ def test_review_names_the_train_exit():
     assert "Exit 6 (`$REVIEW_STATUS`" in text and "crew_train.py status" in text
     assert "then the merge train with exit 6" in text
     assert "exit 6 above - the merge train" in text
+    assert "A spent budget skips the train" in text
+    assert 'keeps holding it' in text and 'crew_train.py release --ticket "$TICKET"' in text

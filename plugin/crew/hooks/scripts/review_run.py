@@ -136,11 +136,14 @@ asks 1 and 2 in `_receipt_and_gate`, then 3 in `train_gate`; then
      round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
      asks for a self-check, and a refusal at (2), (3) or (4) comes first.
 
-Questions 4 and 5 are not asked when the budget is already spent: the
-reservation refuses that (exit 4) whatever they would say. Question 3 is: a
-spent budget still queues for the train, as the gate round it precedes would.
+Questions 3, 4 and 5 are not asked when the budget is already spent: the
+reservation refuses that (exit 4) whatever they would say, and a ticket that
+cannot gate never takes the train (it would hold it, and every overlapping
+lane would wait on exit 6 behind it, for good). A holder refused after taking
+the train (exit 5 from 4, exit 2 from 5) keeps holding it: the next review
+re-confirms the hold, or `crew_train.py release --ticket <id>` frees it.
 The Claude fallback's second call (`--round N --output`) records the round
-the first call reserved and does not ask again.
+the first call reserved and does not ask again; `--probe` never reaches the train.
 
 Every round's review.json carries `gate` (the state observed at verdict time)
 and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
@@ -691,11 +694,23 @@ def _fmt_elapsed(seconds):
 def preflight(args):
     """None to go on and reserve a round, or the exit code to stop with
     having reserved nothing. See BEFORE ANY ROUND IS RESERVED above:
-    questions 1 and 2 (`_receipt_and_gate`), then 3 (`train_gate`)."""
+    questions 1 and 2 (`_receipt_and_gate`), then 3 (`train_gate`) unless
+    the budget is already spent (`_budget_spent`): then `reserve` refuses it
+    (exit 4) and the train is never taken, so a ticket that cannot gate can
+    never hold the train other lanes wait behind."""
     short = _receipt_and_gate(args)
     if short is not None:
         return short
+    if _budget_spent(args):
+        return None
     return train_gate(args)
+
+
+def _budget_spent(args):
+    """True when the ledger already reads NEEDS_REPLAN or no rounds left."""
+    ledger = review_ledger.status(args.root, args.ticket)
+    return (ledger.get("state") == review_ledger.NEEDS_REPLAN
+            or ledger.get("rounds_left") == 0)
 
 
 def _receipt_and_gate(args):

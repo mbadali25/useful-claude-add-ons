@@ -10,7 +10,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   calls `crew_train.acquire` after the CLEAN-receipt short-circuit and the verify gate and before
   the pre-review checks, the standards self-check and `review_ledger.reserve`. Holding goes on;
   waiting behind an overlapping ticket, `merge <base> first`, a train that cannot be read, or any
-  exception in the step is the new **exit 6**, the reason on stderr and no round reserved. An
+  exception in the step is the new **exit 6**, the reason on stderr and no round reserved. A
+  ticket whose budget is already spent (NEEDS_REPLAN, no rounds left) is refused with exit 4
+  without taking the train, so it can never hold it with every overlapping lane waiting. An
   unarmed clone (state.json proven absent) reviews exactly as before and prints nothing about the
   train. `--probe` keeps its own 5/6/7 and never reaches the train.
 - **The reviewer's brief.** `review_prompt.py` adds `== Catch-up merges (rerere) ==` listing every
@@ -24,12 +26,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Why.** L-0520 shipped the train as advisory: a lane that forgot `acquire` could still spend a
   gate round on a tree another lane was landing over. This is its harness half, split out because
   tooling PRs carry no feature work (owner 2026-09-30, T-0087).
-- **Tests.** `test_review_run_train.py` (5: unarmed unchanged, overlapping round refused with the
+- **Tests.** `test_review_run_train.py` (11; the first 5: unarmed unchanged, overlapping round refused with the
   ledger byte-identical then reserved after release, unreadable train, crash refuses, receipt and
   verify gate answer first), six new `test_review_prompt.py` cases, `test_lifecycle_commands.py::
   test_review_names_the_train_exit`, and `test_crew_train.py`'s import test back to equality.
-  `sabotage_train.py` (registered in `sabotage.py`): S1-S15 for `crew_train.py`, R1-R3 for the gate
-  round and P1-P5 for the brief, all 23 RED.
+  `sabotage_train.py` (registered in `sabotage.py`): S1-S15 for `crew_train.py`, R1-R6 for the gate
+  round (R4 budget first, R5/R6 the train before the pre-review checks and the self-check) and
+  P1-P5 for the brief, all 26 RED. Six more `test_review_run_train.py` cases: a spent budget
+  never acquires (real ledger and patched), the train answers before the pre-review checks and
+  the self-check, the Claude second call and `--probe` never ask it.
 - **Not here.** S16-S19 (L-0520's PYTHON-set rows) and S20-S33 (L-0558's) were drafted
   machine-local and did not reach this branch; `crew_train.py`'s docstring still says neither
   caller imports it (a feature path, so not edited in a tooling PR). Both are in `TODO.md`.

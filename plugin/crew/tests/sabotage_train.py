@@ -7,7 +7,7 @@ appended to it there. Run `sabotage.py`, not this file.
 Each one is a way two overlapping lanes could both reach gate+land, a land
 could go ahead on a verdict for a different tree, or a replayed resolution
 could reach the reviewer unseen. S1-S12 are L-0520's acceptance rows; S13-S15
-cover its GEN-01/02/07 hardening. R1-R3 and P1-P5 are L-0526's: the gate
+cover its GEN-01/02/07 hardening. R1-R6 and P1-P5 are L-0526's: the gate
 round's refusals (R) and the reviewer's catch-up block (P). S16-S19 (L-0520's
 PYTHON-set fixes) are not here: their draft was machine-local and did not
 reach this branch.
@@ -102,6 +102,18 @@ TRAIN_MUTATIONS = (
      "    if code != crew_train.EXIT_OK:\n",
      "    if False:\n",
      _R + "test_second_overlapping_gate_round_is_refused_unspent"),
+    ("R4 a spent budget still takes the train", RUN,
+     "    if _budget_spent(args):\n        return None\n    return train_gate(args)\n",
+     "    return train_gate(args)\n",
+     _R + "test_a_spent_budget_is_refused_without_taking_the_train"),
+    ("R5 the train is taken after the pre-review checks", RUN,
+     "    return train_gate(args)\n",
+     "    return prereview_gate(args) or train_gate(args)\n",
+     _R + "test_the_train_answers_before_the_pre_review_checks"),
+    ("R6 the train is taken after the standards self-check", RUN,
+     "    return train_gate(args)\n",
+     "    return standards_gate(args) or train_gate(args)\n",
+     _R + "test_the_train_answers_before_the_standards_self_check"),
     ("P1 the reviewer's brief drops the catch-up block", PROMPT,
      "                  _catch_up_block(root, ticket),\n",
      "",

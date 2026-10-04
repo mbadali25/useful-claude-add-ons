@@ -8,6 +8,7 @@ and the round reaches `review_ledger.reserve` -- the step every must-block
 case proves was never reached, by snapshotting the ledger directory under the
 throwaway repository's git-common-dir. Everything lives under tmp_path.
 """
+import json
 import os
 import pathlib
 import subprocess
@@ -158,3 +159,122 @@ def test_train_crash_refuses_never_reserves(lanes, tmp_path, monkeypatch, capsys
     assert code == 6
     assert "fixture crash" in capsys.readouterr().err
     assert _ledger_snapshot(lanes["repo"]) == before
+
+
+# --- L-0526 review round 1: budget first, and the train before the later gates ---------------
+
+def _entries(repo):
+    state, where, why = crew_train.load(str(repo))
+    assert where == "ok", why
+    return {(e["ticket"], e["state"]) for e in state["entries"]}
+
+
+def _spend_budget(lanes, tmp_path):
+    """T-1 reserves both rounds while holding the train, then releases it."""
+    for number in (1, 2):
+        done = _run(lanes["T-1"], "T-1", tmp_path)
+        assert done.returncode == 0 and f"ROUND={number}" in done.stdout, done.stderr
+    assert review_ledger.status(str(lanes["T-1"]), "T-1").get("rounds_left") == 0
+    assert _train(lanes["T-1"], "release", "--ticket", "T-1") == 0
+
+
+def test_a_spent_budget_is_refused_without_taking_the_train(lanes, tmp_path):
+    assert _train(lanes["repo"], "arm") == 0
+    _spend_budget(lanes, tmp_path)
+
+    spent = _run(lanes["T-1"], "T-1", tmp_path)
+
+    assert spent.returncode == review_run.EXIT_REFUSED == 4, spent.stderr
+    assert "train" not in spent.stderr
+    assert ("T-1", "holding") not in _entries(lanes["repo"])
+    other = _run(lanes["T-2"], "T-2", tmp_path)
+    assert other.returncode == 0 and "ROUND=1" in other.stdout, other.stderr
+
+
+def test_a_needs_replan_ticket_never_calls_acquire(lanes, tmp_path, monkeypatch, capsys):
+    assert _train(lanes["repo"], "arm") == 0
+    called = []
+    monkeypatch.setattr(crew_train, "acquire", lambda *a, **k: called.append(a) or (0, []))
+    monkeypatch.setattr(review_ledger, "status",
+                        lambda root, ticket: {"state": review_ledger.NEEDS_REPLAN})
+    monkeypatch.setattr(review_ledger, "reserve",
+                        lambda *a, **k: (False, None, "refused: NEEDS_REPLAN"))
+    scratch = tmp_path / "s-replan"
+    scratch.mkdir()
+    code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
+                            str(scratch), "--provider", "claude", "--reserve-only"])
+
+    assert code == 4 and called == []
+    assert "train" not in capsys.readouterr().err
+
+
+def _approve(top, ticket):
+    path = pathlib.Path(crew_train.crew_ticket.approval_path(str(top), ticket))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"ticket": ticket, "approved_by": "fixture"}), encoding="utf-8")
+
+
+def test_the_train_answers_before_the_pre_review_checks(lanes, tmp_path):
+    """T-2 has no bundle, so the pre-review checks would refuse it (exit 5,
+    COULD NOT CHECK); waiting for the train is said first."""
+    assert _train(lanes["repo"], "arm") == 0
+    assert _run(lanes["T-1"], "T-1", tmp_path).returncode == 0
+    scratch = tmp_path / "s-nobundle"
+    scratch.mkdir()
+
+    done = subprocess.run(
+        [sys.executable, _RUN, "--root", str(lanes["T-2"]), "--ticket", "T-2", "--scratch",
+         str(scratch), "--provider", "claude", "--reserve-only"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
+
+    assert done.returncode == 6, done.stderr
+    assert "waiting behind T-1" in done.stderr and "pre-review" not in done.stderr
+
+
+def test_the_train_answers_before_the_standards_self_check(lanes, tmp_path):
+    """T-2 is approved with no self-check, so the standards gate would refuse
+    it (exit 2); waiting for the train is said first."""
+    assert _train(lanes["repo"], "arm") == 0
+    assert _run(lanes["T-1"], "T-1", tmp_path).returncode == 0
+    _approve(lanes["T-2"], "T-2")
+
+    done = _run(lanes["T-2"], "T-2", tmp_path)
+
+    assert done.returncode == 6, done.stderr
+    assert "waiting behind T-1" in done.stderr and "self-check:" not in done.stderr
+    assert _train(lanes["T-1"], "release", "--ticket", "T-1") == 0
+    assert _run(lanes["T-2"], "T-2", tmp_path).returncode == review_run.EXIT_USAGE
+
+
+def test_the_claude_second_call_records_without_asking_the_train(lanes, tmp_path):
+    assert _train(lanes["repo"], "arm") == 0
+    assert _run(lanes["T-1"], "T-1", tmp_path).returncode == 0
+    assert _train(lanes["T-1"], "release", "--ticket", "T-1") == 0
+    assert _run(lanes["T-2"], "T-2", tmp_path).returncode == 0
+    scratch = tmp_path / "scratch-T-1"
+    (scratch / "out.txt").write_text("CLEAN\n", encoding="utf-8")
+
+    done = subprocess.run(
+        [sys.executable, _RUN, "--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
+         str(scratch), "--provider", "claude", "--round", "1", "--output",
+         str(scratch / "out.txt"), "--exit-code", "0"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
+
+    assert done.returncode != review_run.EXIT_TRAIN, done.stderr
+    assert "train" not in done.stderr
+
+
+def test_the_probe_never_reaches_the_train(lanes, tmp_path, monkeypatch, capsys):
+    assert _train(lanes["repo"], "arm") == 0
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("the probe asked the train")
+    monkeypatch.setattr(crew_train, "load", boom)
+    monkeypatch.setattr(crew_train, "acquire", boom)
+    monkeypatch.setattr(review_run, "probe", lambda args: (review_run.PROBE_OK, "fixture"))
+    scratch = tmp_path / "s-probe"
+    scratch.mkdir()
+    code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
+                            str(scratch), "--provider", "codex", "--probe"])
+
+    assert code == 0 and "PROBE=ok" in capsys.readouterr().out
