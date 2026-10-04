@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:05 UTC
+Last updated: 2026-10-04 12:06 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:06: L-0509 BUILT (non-harness half only) on #341: L-0509-build f7f052a2 (crew 1.0.347; crew_common.locate_ticket resolver; ~90 tests; 20/20 hand sabotage red; merged e9364a70). HARNESS follow-ups needed (crew_ticket ticket_dir/check_ticket/resolve_active/read_contract/mint, scope_guard own-files, approval_hook._is_folder, review_prompt/run/ledger/checks, sabotage_scope/tracker rows, test_crew_ticket allowlists). First review started with the key question: safe to land this half before the harness half (split-brain)?
 - 12:05: #344 land-prep onto e9364a70 done: f6a74770 (1.0.362, localgpu 0.1.21, BUDGETS 23,301; embeds fresh). Merge-only review started.
 - 12:05: #346 re-review 7983d85a: 0/0/1 CLEAN (NIT: confirm T-0039 CHANGELOG heading carries the version). PR title+body rewritten (sabotage AC deferred per T-0087; known limits). Still draft - mark ready at landing.
 - 12:03: #346 T-0039 fixes pushed 7983d85a (FIX1 exit-4 on any error; FIX2 codemaps reverted to main's anchors + T-0039 section derived at 13a019e7; FIX3 .env templates; NITs; merged e9364a70; 1.0.358). Re-review started. PR body needs: sabotage AC deferred to harness PR (T-0087).
