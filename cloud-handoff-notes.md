@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 18:58 UTC
+Last updated: 2026-10-04 19:01 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 19:01: #356 Windows fail-open root cause: crew_autocycle._git_out ran bare 'git' (CreateProcess .exe only) while tests/stub used git.cmd via PATHEXT -> veto judged the real git -> clean -> clear sent. Fix 9a34b335 (coordinator reviewed: runs which('git'), unresolvable = refuse; 2 new tests red without fix). New heads: #356 01fa9021, #347 aa75b561, #456 70b02f6e. Minted L-1508 (audit bare-name subprocess pattern).
 - 18:58: Owner: also split the Windows slow job. Minted L-1507; builder spawned (slow set -> 3 shards, fan-in checker generalised fail-closed, suite cases + sabotage).
 - 18:54: MERGED #396 T-0016 at d666a056 -> main f1cace4a, crew 1.0.333 (Windows fix worked). #356/#347/#456 still red on Windows: test_wrapup.py::test_git_failing_refuses_the_clear[ps1] - ps1 auto-clear sends when git fails (fail-open). Builder spawned to fix on #356 and re-chain.
 - 18:42: MERGED #491 L-1506 at 004c5cdc -> main 9c8c0418 (CI only). First 6-shard run: shards 5.5-8.6 min (was 11-16), decide->gate 14.3 min incl ~6 min queue behind batch-2 reruns. crew-windows-slow (11 min) is now the long pole.
