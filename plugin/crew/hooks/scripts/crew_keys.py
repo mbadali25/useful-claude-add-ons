@@ -47,6 +47,9 @@ KINDS = ("tuple", "ratchet", "branch", "type", "open-table", "prose", "unvalidat
 # Built once, so `values_of("qa.provider")` is the same object every call and
 # its tail holds `QA_PROVIDERS`' own items.
 QA_PROVIDER_VALUES = ("auto",) + crew_state.QA_PROVIDERS
+# T-0053: a sleep override is a policy or null ("not overridden"); its tail
+# holds `crew_autopilot.POLICIES`' own items.
+SLEEP_OVERRIDE_VALUES = (None,) + crew_autopilot.POLICIES
 
 
 def _union_in_order(table):
@@ -424,6 +427,20 @@ KEY_META = {
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),
+    "autopilot.sleep.schedule": _row("A nightly window, `HH:MM-HH:MM` in machine local time "
+                                     "(may cross midnight); inside it the two sleep "
+                                     "overrides apply. Anything else is could not tell: "
+                                     "only a stricter override applies.", "branch",
+                                     since="1.0.394", source=_S + "crew_sleep.py",
+                                     type_="HH:MM-HH:MM or null"),
+    "autopilot.sleep.approval": _row("`autopilot.approval` inside the sleep window; null "
+                                     "keeps the day value, and so does anything else, with "
+                                     "a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                     "1.0.394", _S + "crew_sleep.py"),
+    "autopilot.sleep.questions": _row("`autopilot.questions` inside the sleep window; null "
+                                      "keeps the day value, and so does anything else, "
+                                      "with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                      "1.0.394", _S + "crew_sleep.py"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
