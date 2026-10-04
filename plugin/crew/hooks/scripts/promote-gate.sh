@@ -118,7 +118,7 @@ RUN_CWD=$(crew_strip_cr "$RUN_CWD")
 # environment - which is precisely what could not be determined here. There is
 # nothing to record and nothing to stand down.
 ENVNAMES=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" "$PY" - "$CMD" <<'PY'
-import json, os, shutil, subprocess, sys
+import json, os, shutil, subprocess, sys, unicodedata
 
 # THE RULE (L-1503), shared word for word with promote-gate.ps1 so both
 # flavours choose the same environment for the same command:
@@ -135,6 +135,8 @@ import json, os, shutil, subprocess, sys
 #     An EXACT duplicate key is refused the same way: both parsers keep the
 #     last, so `"requireHuman": true, "requireHuman": false` read as gated
 #     and applied as not gated;
+#   - an environment name that is empty, holds a control character or holds
+#     `,` (the union's join character) refuses the map (bad_name);
 #   - in the working map, `"deploy": null` and a `requireHuman` that is a list
 #     or an object are malformed and refuse the map; `"deploy": []` and
 #     `[""]` declare nothing;
@@ -208,10 +210,28 @@ def deploy_of(cfg):
     return get_ci(cfg, "deploy", [])
 
 
+def bad_name(name):
+    """A name the gate cannot carry (#489 F1): empty, holding a control
+    character (Unicode Cc, what .NET's Char.IsControl tests), or holding `,`,
+    the union's join character. Matched names travel one per line to the
+    shell, so `"a\nb"` became the lax environments `a` and `b`.
+    promote-gate.ps1's Assert-EnvironmentName applies the same test."""
+    return (not name or "," in name
+            or any(unicodedata.category(c) == "Cc" for c in name))
+
+
 def matching(envs, strict):
     """Every environment whose declared deploy matches `cmd`. `strict` is the
     working map's reading, which refuses a malformed entry; the COMMITTED map
-    below is read leniently, as it always was."""
+    below is read leniently, as it always was - except for a bad name, which
+    refuses either map (3 committed, 4 working)."""
+    for name in envs:
+        if bad_name(name):
+            shown = "".join("?" if unicodedata.category(c) == "Cc" else c for c in name)
+            unreadable(f"{'.crew/verify.json' if strict else 'the committed .crew/verify.json'} "
+                       f"has the environment name `{shown}`, which is empty, holds a "
+                       "control character or holds a comma - a name the gate cannot "
+                       "report or record", 4 if strict else 3)
     hits = []
     for name, cfg in envs.items():
         if not isinstance(cfg, dict):

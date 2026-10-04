@@ -97,7 +97,13 @@ function Deny-UnreadableMap([string]$Why) {
 # this walks the text itself: strings are skipped as units (a brace inside a
 # value is not structure), and a key's escapes are decoded so `"a"` and
 # `"\u0061"` are one key, as they are to python's json. Only called on text
-# ConvertFrom-Json has already parsed, so it need not judge validity.
+# ConvertFrom-Json has already parsed, so it need not judge validity - except
+# for what pwsh 7's ConvertFrom-Json reads and python's json refuses (#489
+# N2): outside a string, a `/` (a comment) or a `'` (a single-quoted string),
+# and in a key position anything but `"` or `}` (an unquoted key). Those
+# return a refusal too, so both flavours refuse the same maps. A TRAILING
+# COMMA is the one such form still read here and refused by the .sh (see
+# the note at the parse below). Returns the predicate for "the map ...".
 function Find-DuplicateJsonKey([string]$Json) {
   $stack = New-Object System.Collections.Stack
   $i = 0
@@ -131,14 +137,22 @@ function Find-DuplicateJsonKey([string]$Json) {
           $seen = $top.Seen
           if ($seen.ContainsKey($key)) {
             $first = $seen[$key]
-            if ($first -ceq $key) { return "the duplicate key ``$key``" }
-            return "keys with different casing (``$first`` and ``$key``)"
+            if ($first -ceq $key) { return "contains the duplicate key ``$key``, so which value is policy cannot be told" }
+            return "contains keys with different casing (``$first`` and ``$key``), so which value is policy cannot be told"
           }
           $seen[$key] = $key
           $top.ExpectKey = $false
         }
       }
       continue
+    }
+    if ($ch -ceq '/') { return "contains a comment, which is not JSON (promote-gate.sh's parser refuses it)" }
+    if ($ch -ceq "'") { return "contains a single-quoted string, which is not JSON (promote-gate.sh's parser refuses it)" }
+    if ($stack.Count -gt 0 -and $ch -cne '}' -and " `t`r`n".IndexOf($ch) -lt 0) {
+      $top = $stack.Peek()
+      if ($top -is [hashtable] -and $top.ExpectKey) {
+        return "contains an unquoted key, which is not JSON (promote-gate.sh's parser refuses it)"
+      }
     }
     if ($ch -eq '{') {
       $stack.Push(@{ ExpectKey = $true; Seen = (New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)) })
@@ -153,6 +167,20 @@ function Find-DuplicateJsonKey([string]$Json) {
     $i++
   }
   return $null
+}
+
+# An environment name the gate cannot carry refuses the map (#489 F1): empty,
+# holding a control character, or holding `,`, which joins a union's names in
+# messages and the in-flight marker. The .sh split matched names on newlines,
+# so `"a\nb"` became the lax environments `a` and `b`. promote-gate.sh
+# applies the same test.
+function Assert-EnvironmentName([string]$Name, [string]$Where) {
+  $bad = ($Name.Length -eq 0) -or $Name.Contains(',')
+  foreach ($c in $Name.ToCharArray()) { if ([char]::IsControl($c)) { $bad = $true } }
+  if ($bad) {
+    $shown = ($Name -replace "[\x00-\x1f\x7f-\x9f]", '?')
+    Deny-UnreadableMap "$Where has the environment name ``$shown``, which is empty, holds a control character or holds a comma - a name the gate cannot report or record."
+  }
 }
 
 function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
@@ -186,8 +214,9 @@ function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
 # ACCEPTS a trailing comma, which python's json rejects. So the stray comma
 # that motivated this block is caught by promote-gate.sh and parses cleanly
 # here. That asymmetry is safe in the direction that matters - this flavour
-# still runs every check below on a map it could read - and closing it would
-# mean shipping a second JSON parser.
+# still runs every check below on a map it could read. Comments and
+# single-quoted or unquoted keys, which ConvertFrom-Json also reads, ARE
+# refused here, by Find-DuplicateJsonKey's scan (L-1503).
 # A dirty map is matched against the committed one too. A committed map that
 # cannot be read or has no readable environments is could-not-tell: with the
 # working map dirty, "matched nothing" would be a guess.
@@ -198,12 +227,13 @@ if ($mapDirty -and $headMap) {
   try { $committed = ($blob -join "`n") | ConvertFrom-Json -ErrorAction Stop }
   catch { Deny-UnreadableMap "the committed .crew/verify.json does not parse: $($_.Exception.Message)" }
   $dup = Find-DuplicateJsonKey ($blob -join "`n")
-  if ($dup) { Deny-UnreadableMap "the committed .crew/verify.json contains $dup, so which value is policy cannot be told." }
+  if ($dup) { Deny-UnreadableMap "the committed .crew/verify.json $dup." }
   $committedEnvs = $committed.PSObject.Properties['environments']
   if (-not $committedEnvs -or $committedEnvs.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "the committed .crew/verify.json holds no object of environments."
   }
   $hits = @()
+  foreach ($p in $committedEnvs.Value.PSObject.Properties) { Assert-EnvironmentName $p.Name "the committed .crew/verify.json" }
   foreach ($p in $committedEnvs.Value.PSObject.Properties) {
     $declared = @($p.Value.deploy) | Where-Object { $_ -is [string] -and $_ }
     foreach ($dep in $declared) {
@@ -222,7 +252,7 @@ try {
   Deny-UnreadableMap ".crew/verify.json could not be read or parsed, so no pre-deploy check ran. $($_.Exception.Message)"
 }
 $dup = Find-DuplicateJsonKey $vmText
-if ($dup) { Deny-UnreadableMap ".crew/verify.json contains $dup, so which value is policy cannot be told." }
+if ($dup) { Deny-UnreadableMap ".crew/verify.json $dup." }
 # The same absent/malformed split, one level in. `environments` ABSENT gates
 # nothing, exactly like the bash flavour's `.get("environments", {})`.
 # `environments` PRESENT and not an object is corruption: the property
@@ -241,6 +271,7 @@ if ($envProperty -and $envProperty.Value -isnot [System.Management.Automation.PS
 # second match is found and refused as ambiguous rather than shadowed.
 $hits = @()
 if ($envNames.Count -eq 0) {
+foreach ($p in $vm.environments.PSObject.Properties) { Assert-EnvironmentName $p.Name ".crew/verify.json" }
 foreach ($p in $vm.environments.PSObject.Properties) {
   if ($p.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json is not an object."
