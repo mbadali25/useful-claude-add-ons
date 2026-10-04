@@ -635,7 +635,7 @@ Read in full on `T-0016-build` after review round 1 and the merge of main ce2354
 - JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
   sabotage anchors); `prove_target` is the stricter proof and the one that decides.
 
-### Auto wrap-up before the clear (T-0017, crew 1.0.334)
+### Auto wrap-up before the clear (T-0017, crew 1.0.390)
 
 Read in full on `T-0017-build` (stacked on `T-0016-build` d7eb9fbd) before its version commit; line
 citations taken with `grep -n` there.
