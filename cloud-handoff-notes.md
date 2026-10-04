@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:15 UTC
+Last updated: 2026-10-04 12:17 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:17: #392 CI 136eaade: all finished checks green; Windows default 1-3 still running; verify-gate not yet listed. Re-check 12:23.
 - 12:15: #342 merge review 904ca36f: 0/0/0 CLEAN (on e9364a70).
 - 12:15: #357 merge review af805254: 0/0/0 CLEAN (on e9364a70).
 - 12:14: #341 L-0509 re-review 7dddc79d: 0/0/1 CLEAN, land this half (harness half = TODO.md follow-up (a)-(g), its own PRs).
