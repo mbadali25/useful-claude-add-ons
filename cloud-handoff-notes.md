@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 22:13 UTC
+Last updated: 2026-10-04 22:17 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 22:17: Owner answered 8 blocking questions (all recommended options): L-0674 not built (#404 closed); T-0029/T-0030 + 8 dependents deferred; T-0073 superseded; L-0635 adds missing tests in-PR; L-0639 owns depends-on parser in crew_ticket_state; L-0640 superseded-by in spec line 2; L-0550 no header words; L-0551 one status line. Batch 4 reordered: #394 T-0037 before #364.
 - 22:13: BATCH 3 COMPLETE: MERGED #493 L-1508 -> 0bf91c95 (1.0.340), #427 L-0652 -> bbd1d0ee (1.0.341), #489 L-1503 -> main a31ac3bb (1.0.342). 22 PRs merged this session. Next: batch 4.
 - 22:11: #400 L-0680 round-4 CLEAN at 897f3faf (16 escape values x2 flavours, nothing outside the lane). Batch 4 candidate with -LiteralPath + CHANGELOG carries.
 - 22:09: #400 round-3 fixes at 897f3faf, CI green: ps1 converts \->/ before containment off Windows (PowerShell cmdlets treat \ as separator on POSIX), display-only conversion on Windows; 3 must-not-write tests. N1 deliberate flavour difference. Merged main 8c0843ca. Focused round-4 check sent to a9a5cd1.
