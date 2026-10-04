@@ -1,0 +1,67 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py
+%% Purpose: The read side: the three config sources (built-in defaults, the machine file, the repo file), how the machine layer is pruned to its template before merging, and how resolve_config() merges them.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%% Note DEF: default_config() plugin/crew/hooks/scripts/crew_config.py:245 <b>135 leaves</b> (executed, T-0011's
+%%    merge of main 155fe6d8) composed from crew_state's PM_DEFAULTS :1108, QA_DEFAULTS :1160, DEV_DEFAULTS :1170,
+%%    WORKTREE_DEFAULTS :1198, CONTEXT_DEFAULTS :735, RESUME_DEFAULTS :698, AUTOPILOT_DEFAULTS :1139 -
+%%    repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS
+%%    :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and
+%%    crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 /
+%%    CHANGE_BLOCK :203
+%% Note GLB: ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:753
+%%    <i>never raises</i> - absent, malformed or non-object all return {}, because this is reached from a
+%%    SessionStart hook
+%% Note REPO: .crew/config.json - schema 7 crew_state.load_config()
+%%    plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the
+%%    TwoFiles section below
+%% Note TMPL: default_global_config() plugin/crew/hooks/scripts/crew_config.py:422 <b>74 leaves</b> (executed,
+%%    T-0011's merge of main 155fe6d8) across <b>18 blocks</b>: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves),
+%%    notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs,
+%%    bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, route,
+%%    shellRoute - the single definition both rules below are enforced against
+%% Note PRUNE: _prune() plugin/crew/hooks/scripts/crew_config.py:685 keeps only keys present in the template.
+%%    Descends structurally, so naming a block grants only the leaves under it.
+%% Note FILT: filter_global() plugin/crew/hooks/scripts/crew_config.py:711 returns (kept, ignored)
+%% Note NULLS: without_null_shadows() plugin/crew/hooks/scripts/crew_config.py:662 drops a repo <i>null</i>
+%%    ONLY where the global layer supplies a real value.
+%% Note M1: merge_defaults(default_config(), global) call: crew_config.py:822 def: plugin/crew/hooks/scripts/crew_state.py:1348
+%% Note OUT: resolved config <i>repo beats global beats default</i> this is ONLY .crew/config.json's
+%%    precedence - autoClear's own read path bypasses it, below
+flowchart TB
+
+    subgraph Sources["Three sources, lowest precedence first"]
+        direction TB
+        DEF["<b>default_config()</b><br/>crew_config.py:244<br/>135 leaves, repo template"]
+        GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
+        REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
+    end
+
+    subgraph Gate["The global layer is filtered BEFORE it is merged"]
+        direction TB
+        TMPL["<b>default_global_config()</b><br/>crew_config.py:405<br/>74 leaves across 18 blocks"]
+        PRUNE["<b>_prune()</b><br/>keeps only keys present<br/>in the template"]
+        FILT["<b>filter_global()</b><br/>returns (kept, ignored)"]
+    end
+
+    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:806 - the single resolver"]
+        direction TB
+        NULLS["<b>without_null_shadows()</b><br/>drops a repo <i>null</i> only where<br/>the global layer supplies a value"]
+        M1["<b>merge_defaults</b><br/>(default_config(), global)"]
+        M2["merge_defaults(that, repo)<br/>call: crew_config.py:823"]
+        SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:824-827"}
+        OUT(["<b>resolved config</b><br/><i>repo beats global beats default</i>"])
+    end
+
+    DEF --> M1
+    GLB --> FILT
+    TMPL -.->|"the shape to prune to"| PRUNE
+    PRUNE --> FILT
+    FILT -->|kept| M1
+    FILT -.->|"ignored - named, never silent"| IGN>"keys a global file may not set"]
+    REPO --> NULLS
+    NULLS --> M2
+    M1 --> M2
+    M2 --> SCHEMA
+    SCHEMA -->|"in repo file: use it"| OUT
+    SCHEMA -->|"absent: pop it entirely"| OUT

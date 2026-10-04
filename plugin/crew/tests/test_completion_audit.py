@@ -9,6 +9,7 @@ by the shell never reaches PreToolUse.
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -18,6 +19,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import completion_audit
 import crew_fixtures
 import crew_ticket
+import merged_main_fixtures
 from review_fixtures import git
 from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, PWSH, SCRIPTS, make_repo, make_ticket,
                             needs_pwsh, ready, run_hook, stop)
@@ -614,3 +616,189 @@ def test_the_provably_off_readers_are_byte_for_byte_twins():
         _sh_function("completion-audit", "_scope_provably_off")
     assert _ps_function("scope-guard", "Test-ScopeProvablyOff") == \
         _ps_function("completion-audit", "Test-ScopeProvablyOff")
+
+
+# --- merged main (T-0100) --------------------------------------------------------------
+# The ticket branch is cut from origin/main, commits in Touch, then merges main after
+# main changed five out-of-Touch paths. Those paths are byte-identical to the merged
+# commit and are not the ticket's; every edit the ticket makes on top of them still is.
+
+_MAIN_OUT_OF_TOUCH = (("write", "other/keep.py", "x = 1\nmain_line = 2\n"),
+                      ("write", "other/new.py", "added = 'by main'\n"),
+                      ("delete", "secret/x.py"),
+                      ("rename", "other/r_old.py", "other/r_new.py"))
+_MERGED_IN = ("other/keep.py", "other/new.py", "other/r_new.py", "other/r_old.py",
+              "secret/x.py")
+
+
+def _merged_repo(tmp_path, ticket_commits=True, main_edits=_MAIN_OUT_OF_TOUCH):
+    """`(clone, merged commit)`: `make_repo`'s layout as the upstream, a clone on
+    `T-1` with its base recorded, main advanced (out-of-Touch paths by default)
+    and merged."""
+    upstream = make_repo(tmp_path, mode="block", name="upstream")
+    merged_main_fixtures.write(upstream, "other/r_old.py", "renamed = 'by main'\n")
+    git(upstream, "add", "-A")
+    git(upstream, "commit", "-qm", "a file main renames")
+    root = merged_main_fixtures.clone(upstream, tmp_path)
+    (root / ".crew").mkdir()
+    shutil.copy(upstream / ".crew" / "config.json", root / ".crew" / "config.json")
+    ready(root)
+    if ticket_commits:
+        merged_main_fixtures.ticket_commit(root, "src/app.py", "x = 2, the ticket's\n")
+    merged_main_fixtures.advance_main(upstream, *main_edits)
+    return root, merged_main_fixtures.merge_main(root)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_paths_identical_to_merged_main_are_not_out_of_scope(flavour, tmp_path):
+    root, _ = _merged_repo(tmp_path)
+
+    code, out, err = _audit(flavour, root, stop(root))
+
+    assert (code, out, err) == (0, "", "")
+
+
+def test_check_names_the_merged_commit_and_what_it_did_not_count(tmp_path):
+    root, merged = _merged_repo(tmp_path)
+
+    done = _check(root)
+
+    assert (done.returncode, done.stdout.splitlines()) == (0, [
+        "completion audit: every change is inside T-1's spec ## Touch",
+        f"  merged main {merged[:12]} (origin/main): 5 path(s) identical to it not counted"])
+
+
+_MAIN_IN_TOUCH = (("write", "src/by_main.py", "added = 'by main, inside Touch'\n"),)
+
+
+@pytest.mark.parametrize("detach,line", [
+    (True, "  merged main: could not tell - HEAD is detached, so which commits since the "
+           "start are origin/main's cannot be told; every changed path counted"),
+    (False, "  merged main {merged} (origin/main): 1 path(s) identical to it not counted"),
+], ids=["could-not-tell", "applies"])
+def test_a_passing_check_states_the_merged_main_answer(tmp_path, detach, line):
+    """A pass is not silent about merged main either: could-not-tell is said on
+    the pass line's verdict too (review round 1), as the applying count is."""
+    root, merged = _merged_repo(tmp_path, main_edits=_MAIN_IN_TOUCH)
+    if detach:
+        git(root, "checkout", "-q", "--detach")
+
+    done = _check(root)
+
+    assert (done.returncode, done.stdout.splitlines()) == (0, [
+        "completion audit: every change is inside T-1's spec ## Touch",
+        line.format(merged=merged[:12])])
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged(flavour, tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    merged_main_fixtures.ticket_commit(root, "other/keep.py",
+                                       "x = 1\nmain_line = 2\nticket_line = 3\n")
+
+    code, _, err = _audit(flavour, root, stop(root))
+
+    assert (code, "other/keep.py" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_an_out_of_touch_edit_after_a_merge_of_main_stays_flagged(flavour, tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    merged_main_fixtures.ticket_commit(root, "other/after.py", "after = 'the merge'\n")
+
+    code, _, err = _audit(flavour, root, stop(root))
+
+    assert (code, "other/after.py" in err, "other/new.py" in err) == (2, True, False)
+
+
+def test_an_untracked_out_of_touch_file_after_a_merge_of_main_still_blocks(tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    merged_main_fixtures.write(root, "other/untracked.py", "u = 'never added'\n")
+
+    code, _, err = _audit("module", root, stop(root))
+
+    assert (code, "other/untracked.py" in err) == (2, True)
+
+
+def test_could_not_tell_counts_every_path_and_says_so(tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    git(root, "checkout", "-q", "--detach")
+
+    code, _, err = _audit("module", root, stop(root))
+
+    assert (code, "merged main: could not tell" in err,
+            [p for p in _MERGED_IN if p not in err], len(err.splitlines()) <= 6) == (
+                2, True, [], True)
+
+
+def test_a_fast_forward_to_main_drops_everything_committed_and_keeps_dirty_edits(tmp_path):
+    root, merged = _merged_repo(tmp_path, ticket_commits=False)
+    merged_main_fixtures.write(root, "other/keep.py", "x = 1\nmain_line = 2\ndirty = 3\n")
+
+    code, _, err = _audit("module", root, stop(root))
+
+    assert (git(root, "rev-parse", "HEAD") == merged, code, "other/keep.py" in err,
+            [p for p in _MERGED_IN[1:] if p in err]) == (True, 2, True, [])
+
+
+# The mode `git add` records for a path the index has no entry for: the execute bit only
+# when core.fileMode is not false (measured, git 2.53: 100644 under false, 100755 under
+# true). The review bundle's `add -A` records exactly that, so the audit judges by it too.
+_GIT_ADD_MODES = [(True, "true", True), (True, "false", False),
+                  (False, "true", False), (False, "false", False)]
+_GIT_ADD_IDS = ["exec-filemode-true", "exec-filemode-false",
+                "noexec-filemode-true", "noexec-filemode-false"]
+_NO_EXEC_BIT = pytest.mark.skipif(os.name == "nt", reason="NTFS carries no execute bit "
+                                  "git can see, so every file reads 100644 there")
+
+
+def _untracked_merged_in(tmp_path, main_exec=False):
+    """`_merged_repo` with main's added `other/new.py` (100755 when `main_exec`) taken
+    out of the index by `git rm --cached`, its content left identical on disk."""
+    root, _ = _merged_repo(tmp_path)
+    if main_exec:
+        upstream = tmp_path / "upstream"
+        git(upstream, "update-index", "--chmod=+x", "other/new.py")
+        git(upstream, "commit", "-qm", "main makes other/new.py executable")
+        merged_main_fixtures.merge_main(root)
+    git(root, "rm", "-q", "--cached", "other/new.py")
+    return root
+
+
+def _set_modes(root, exec_bit, file_mode):
+    git(root, "config", "core.fileMode", file_mode)
+    path = root / "other" / "new.py"
+    mode = path.stat().st_mode
+    path.chmod(mode | 0o111 if exec_bit else mode & ~0o111)
+
+
+@_NO_EXEC_BIT
+@pytest.mark.parametrize("exec_bit,file_mode,counted", _GIT_ADD_MODES, ids=_GIT_ADD_IDS)
+@pytest.mark.parametrize("flavour", ["module"])
+def test_an_untracked_merged_in_path_is_judged_by_the_mode_git_add_records(
+        flavour, tmp_path, exec_bit, file_mode, counted):
+    """Main added `other/new.py` 100644. Identical bytes on disk are main's file only when
+    `git add` would record 100644 too: an execute bit it would record is the ticket's."""
+    root = _untracked_merged_in(tmp_path)
+    _set_modes(root, exec_bit, file_mode)
+
+    done = _check(root)
+
+    assert (flavour, done.returncode, "other/new.py" in done.stdout,
+            "5 path(s) identical to it not counted" in done.stdout) == (
+                "module", int(counted), counted, not counted)
+
+
+@_NO_EXEC_BIT
+@pytest.mark.parametrize("file_mode", ["true", "false"])
+def test_an_untracked_merged_in_executable_is_counted_when_git_add_records_it_644(
+        tmp_path, file_mode):
+    """The mirror: main added it 100755 and the disk copy has no execute bit. `git add`
+    records 100644 under either core.fileMode (false never records 100755 for a path
+    the index lacks), so it differs from main's entry and is counted."""
+    root = _untracked_merged_in(tmp_path, main_exec=True)
+    _set_modes(root, False, file_mode)
+
+    done = _check(root)
+
+    assert (done.returncode, "other/new.py" in done.stdout) == (1, True)

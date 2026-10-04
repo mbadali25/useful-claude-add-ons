@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:223` states the identical three numbers (4
 agents, 36 commands, 31 skills) in its `crew` entry's description, and `:224`
-the version, 1.0.162 (L-0601's number, allocated by the coordinator after main reached 1.0.154 with L-0510 #318, #328, #329 and #330; 1.0.141 and 1.0.155-1.0.161 not used by it); before that 1.0.140 (L-0574's claim, allocated by the coordinator 2026-10-03, set last after L-0574 merged main `2a2d6e07` (L-0592 #325, 1.0.139), whose crew is 1.0.139; L-0574 held 1.0.136 after merging main `ffeb0e2f` (L-0598 #321, 1.0.135) and `6ac3b1b3`, whose crew was 1.0.135; L-0574 had earlier merged main `e0c70fc9` (L-0555 #310 1.0.132, #317 1.0.134, L-0597 #316), whose crew was 1.0.134; L-0574 was 1.0.131 after merging main `0487fc39` (L-0599 #315, L-0575 1.0.129), whose crew was 1.0.129; L-0574 had earlier merged main `7ba4f9ea` (L-0593 #312, L-0572 #309, #295), whose crew was 1.0.126; that 1.0.126 is L-0572's bump after merging main `d2ec37d3` (W-0120 #307/#308, 1.0.119), past 1.0.120-1.0.125, held or burned by other lanes; before that 1.0.119 (L-0578's bump after merging main `ffd11270` (L-0557 #300, 1.0.114), past 1.0.115-1.0.118, held or burned by other lanes; before that 1.0.114 (L-0557's re-set at `6053b65d` after merging main `2906dcbd` (L-0516 #298, 1.0.110) at `2f3fb34c`, past 1.0.111 (W-0117-land), 1.0.112 (L-0510) and 1.0.113 (T-0504); L-0557 was 1.0.111 at `c43a9ce3` after merging main `ddcbf90d` (W-0115 #299, 1.0.106) at `0597e5c6`, past 1.0.107 (T-0504), 1.0.108 (L-0510), 1.0.109 (T-0501) and 1.0.110 (L-0516); L-0557 was 1.0.105 at `773ce841` after merging main `05a679bf` (L-0558 #293, 1.0.102) at `2169bd11`, unchanged by the merge of main `cacf7ff0` (L-0513 #301, no plugin version) at `a9608aa5`, skipping 1.0.103 (L-0510) and 1.0.104 (L-0516); these two citations read `:217`/`:218` before this pass, which on this tree are another entry's description and version; L-0557 was 1.0.101 at `90186613` after merging main `52489039` at `327e6ec1`: past main's 1.0.98 (T-0040 #290), skipping 1.0.100 (L-0516) and L-0558's 1.0.95 (#293); L-0557 was 1.0.99 at `4fc11923`, after merging main `44d3dbc6` (T-0110 #297, 1.0.97); L-0557 was 1.0.96 at `97ace923` and `550c39cd`, when main was 1.0.92 (T-0505 #296); before T-0505 main was 1.0.89 (W-0116 #292); L-0557 was 1.0.95 at `d9ccfd5a` and 1.0.89 at `b1d8a4e8`; main's 1.0.86 before W-0116 is L-0520 PR 1's re-set at `14b52c91` after merging main `bd4b2f30`, past main's 1.0.85 and skipping 1.0.84, which T-0505 targets; 1.0.84 on L-0520's branch at `e60d88f2`; main's 1.0.85 is T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.184 (T-0061-build's number, allocated by the coordinator after main reached 1.0.162 with L-0601 #327; 1.0.163-1.0.183 not used by it); before that 1.0.162 (L-0601's number, allocated by the coordinator after main reached 1.0.154 with L-0510 #318, #328, #329 and #330; 1.0.141 and 1.0.155-1.0.161 not used by it); before that 1.0.140 (L-0574's claim, allocated by the coordinator 2026-10-03, set last after L-0574 merged main `2a2d6e07` (L-0592 #325, 1.0.139), whose crew is 1.0.139; L-0574 held 1.0.136 after merging main `ffeb0e2f` (L-0598 #321, 1.0.135) and `6ac3b1b3`, whose crew was 1.0.135; L-0574 had earlier merged main `e0c70fc9` (L-0555 #310 1.0.132, #317 1.0.134, L-0597 #316), whose crew was 1.0.134; L-0574 was 1.0.131 after merging main `0487fc39` (L-0599 #315, L-0575 1.0.129), whose crew was 1.0.129; L-0574 had earlier merged main `7ba4f9ea` (L-0593 #312, L-0572 #309, #295), whose crew was 1.0.126; that 1.0.126 is L-0572's bump after merging main `d2ec37d3` (W-0120 #307/#308, 1.0.119), past 1.0.120-1.0.125, held or burned by other lanes; before that 1.0.119 (L-0578's bump after merging main `ffd11270` (L-0557 #300, 1.0.114), past 1.0.115-1.0.118, held or burned by other lanes; before that 1.0.114 (L-0557's re-set at `6053b65d` after merging main `2906dcbd` (L-0516 #298, 1.0.110) at `2f3fb34c`, past 1.0.111 (W-0117-land), 1.0.112 (L-0510) and 1.0.113 (T-0504); L-0557 was 1.0.111 at `c43a9ce3` after merging main `ddcbf90d` (W-0115 #299, 1.0.106) at `0597e5c6`, past 1.0.107 (T-0504), 1.0.108 (L-0510), 1.0.109 (T-0501) and 1.0.110 (L-0516); L-0557 was 1.0.105 at `773ce841` after merging main `05a679bf` (L-0558 #293, 1.0.102) at `2169bd11`, unchanged by the merge of main `cacf7ff0` (L-0513 #301, no plugin version) at `a9608aa5`, skipping 1.0.103 (L-0510) and 1.0.104 (L-0516); these two citations read `:217`/`:218` before this pass, which on this tree are another entry's description and version; L-0557 was 1.0.101 at `90186613` after merging main `52489039` at `327e6ec1`: past main's 1.0.98 (T-0040 #290), skipping 1.0.100 (L-0516) and L-0558's 1.0.95 (#293); L-0557 was 1.0.99 at `4fc11923`, after merging main `44d3dbc6` (T-0110 #297, 1.0.97); L-0557 was 1.0.96 at `97ace923` and `550c39cd`, when main was 1.0.92 (T-0505 #296); before T-0505 main was 1.0.89 (W-0116 #292); L-0557 was 1.0.95 at `d9ccfd5a` and 1.0.89 at `b1d8a4e8`; main's 1.0.86 before W-0116 is L-0520 PR 1's re-set at `14b52c91` after merging main `bd4b2f30`, past main's 1.0.85 and skipping 1.0.84, which T-0505 targets; 1.0.84 on L-0520's branch at `e60d88f2`; main's 1.0.85 is T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -282,10 +282,16 @@ Re-executed on T-0040's branch (off `6387ab49`): 125 / 70 / 55 / 0 - T-0040 adde
 (`plugin/crew/hooks/scripts/crew_config.py:339` and `:596`).
 Re-executed on T-0040-land's merge of main `844bfc36`: 129 / 72 / 57 / 0 - T-0028's two and
 T-0040's two, all in both layers. `plugin/crew/tests/test_crew_config.py:347` asserts 129.
-Re-executed on T-0011's merge of main `7846261c` (at `d616cc1f`): 132 / 72 / 60 / 0 - T-0011's
-`autopilot.ship`, `autopilot.knownFailures` (an empty list, one leaf) and
-`autopilot.ciTimeoutMinutes`, repo-only through the `autopilot` block;
-`plugin/crew/tests/test_crew_config.py:352` asserts 132. T-0004's `CHANGELOG.md` entry
+Re-executed on T-0061's branch after merging main `34d9f267`: 130 / 72 / 58 / 0 - T-0061's
+repo-only `tickets.baseBranch`, read from the resolved repo config (`crew_common.repo_config_file`) by
+`scope_base.read_base_branch` (`plugin/crew/hooks/scripts/scope_base.py`), not through
+`crew_config`; a value naming no commit makes `scope_base.resolve` answer source `unknown`
+with no base (DERIVED). `plugin/crew/tests/test_crew_config.py` asserts 130.
+Re-executed on T-0011's merge of main `155fe6d8`: 135 / 74 / 61 / 0 - main's 132 / 74 / 58
+(T-0013's `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds`, in both layers, on
+T-0061's 130) plus T-0011's `autopilot.ship`, `autopilot.knownFailures` (an empty list, one leaf)
+and `autopilot.ciTimeoutMinutes`, repo-only through the `autopilot` block;
+`plugin/crew/tests/test_crew_config.py:361` asserts 135. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:703-704` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:692-693` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
@@ -702,25 +708,25 @@ open questions; plan approval and open questions wait for a person unless T-0010
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
 
-**Ship (T-0011, crew 1.0.233).** DERIVED at `d616cc1f`, T-0011's merge of main `7846261c`; the
-line numbers in this paragraph are that commit's, not the anchor's. After `/crew:done`
+**Ship (T-0011, crew 1.0.233).** DERIVED on T-0011's merge of main `155fe6d8` (re-derived
+with `grep -n`); the line numbers in this paragraph are that commit's, not the anchor's. After `/crew:done`
 (spec header `status: done`, or INDEX `done` with that header), armed, `_phase` hands off to
-`_ship_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:581`): unarmed is `closed` without
-asking gh; a detached HEAD, an unreadable `read_pr` (`:415`), a PR closed unmerged, a working tree
-that differs from HEAD (`_clean_tree` `:521`, `git status --porcelain --untracked-files=all`) or
+`_ship_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:610`): unarmed is `closed` without
+asking gh; a detached HEAD, an unreadable `read_pr` (`:416`), a PR closed unmerged, a working tree
+that differs from HEAD (`_clean_tree` `:522`, `git status --porcelain --untracked-files=all`) or
 a receipt that no longer stands stops at `ship`; MERGED is `closed` only when the PR's
-`headRefOid` and local HEAD are the same full SHA (`_merged_phase`, `:591` at `4d73e543`; a later
-commit or an unreadable head stops at `ship`), and OPEN under `autopilot.ship: pr` is `closed`. `ship` (`:718`) refuses the default branch and a dirty tree before
+`headRefOid` and local HEAD are the same full SHA (`_merged_phase`, `:591`; a later
+commit or an unreadable head stops at `ship`), and OPEN under `autopilot.ship: pr` is `closed`. `ship` (`:747`) refuses the default branch and a dirty tree before
 `git push -u origin <branch>`, takes HEAD once right after the push, opens the PR when none, and
-under `merge` polls in `_wait_for_ci` (`:645`): `_head_stop` (`:629`) holds local HEAD and the
-PR's `headRefOid` to the pushed commit before and after each `read_checks` (`:436`; a row that
-is not exactly `_CHECK_FIELDS` (`:346`) = 5 tab-separated fields is unreadable, measured from gh
-v2.46.0's source), and `_ship_gate` (`:556`) re-reads the settings, the spec's risk, the review
-families and `_ledger_hash` (`:537`) every poll into `ship_decision` (`:285`, the pure rule;
-`SAME_FAMILY` `:271`). `_pre_merge_stop` (`:685`) re-checks the receipt, the ledger hash, both
-heads, the tree and `read_merge_queue` (`:475`), then the ledger hash and local HEAD once more;
-the merge is `merge_argv` (`:359`), `gh pr merge <n> --merge --match-head-commit <head>`. A merge
-call that leaves the PR not MERGED with a queue on (or unreadable) runs `_dequeue` (`:496`), the
+under `merge` polls in `_wait_for_ci` (`:674`): `_head_stop` (`:658`) holds local HEAD and the
+PR's `headRefOid` to the pushed commit before and after each `read_checks` (`:437`; a row that
+is not exactly `_CHECK_FIELDS` (`:347`) = 5 tab-separated fields is unreadable, measured from gh
+v2.46.0's source), and `_ship_gate` (`:557`) re-reads the settings, the spec's risk, the review
+families and `_ledger_hash` (`:538`) every poll into `ship_decision` (`:286`, the pure rule;
+`SAME_FAMILY` `:272`). `_pre_merge_stop` (`:714`) re-checks the receipt, the ledger hash, both
+heads, the tree and `read_merge_queue` (`:476`), then the ledger hash and local HEAD once more;
+the merge is `merge_argv` (`:360`), `gh pr merge <n> --merge --match-head-commit <head>`. A merge
+call that leaves the PR not MERGED with a queue on (or unreadable) runs `_dequeue` (`:497`), the
 one GraphQL mutation, and stops. Tests: `plugin/crew/tests/test_crew_autopilot_ship.py`; no
 `SHIP_MUTATIONS` in `sabotage_autopilot.py` on this branch (a harness-only follow-up, T-0087).
 
@@ -1371,7 +1377,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `EXIT_USAGE` (`review_run.py:724`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:714`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:272`, defined at `crew_standards.py:664`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:306`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
@@ -1617,6 +1623,53 @@ then the train is advisory.
   key or anything but a list of non-blank strings as
   `excluded: not recorded by this manifest (unknown)` (T-0099)
   (`plugin/crew/hooks/scripts/review_prompt.py:111`).
+- DERIVED (T-0100, crew 1.0.202): `merged_main.resolve`
+  (`plugin/crew/hooks/scripts/merged_main.py:67`) names the latest merged
+  integration commit, `git merge-base HEAD <ref>` with `<ref>` from T-0061's
+  `scope_base.base_branch` (`tickets.baseBranch`, else origin/HEAD's target,
+  origin/main, main); it never applies when HEAD's branch is `<ref>` or when
+  that commit is an ancestor of the ticket start, and returns `commit None`
+  with a reason starting `could not tell` for no ref, a configured base branch
+  naming no commit (T-0061's own reason), a detached HEAD or a git error.
+  `merged_main.keep` (`plugin/crew/hooks/scripts/merged_main.py:106`) is the one drop rule: a
+  path stays when it differs from the start AND from the merged commit.
+  `review_patch._ticket_base_tree`
+  (`plugin/crew/hooks/scripts/review_patch.py:271`) builds the synthetic base
+  tree (the start's tree with each dropped path set to its working-state
+  entry, and each kept path main changed since the fork -- the merge-base of
+  the start and the merged commit, `plugin/crew/hooks/scripts/review_patch.py:296`
+  -- set to the merged commit's entry, so main's lines are context; one second
+  temporary index) that `compute` diffs from
+  (`plugin/crew/hooks/scripts/review_patch.py:424`); the manifest carries
+  `merged_main` (with `dropped` and `diffed_from_merged`) and `bundle_base_tree`
+  (`plugin/crew/hooks/scripts/review_patch.py:462`). `merged_main.fork` is
+  that merge-base; when git gives no answer it is null with a `fork_reason`
+  (`plugin/crew/hooks/scripts/review_patch.py:302`), every path main also
+  changed stays diffed from the start, and `_merged_field`
+  (`plugin/crew/hooks/scripts/review_patch.py:558`) prints
+  `diffed-from-merged=could-not-tell`. The completion audit
+  applies the same rule in `changed_paths(top, base, merged)`
+  (`plugin/crew/hooks/scripts/completion_audit.py:173`), where `_as_merged`
+  (`plugin/crew/hooks/scripts/completion_audit.py:194`) keeps an untracked
+  path whose disk bytes and mode are the merged commit's entry out of the
+  since-merged set, as the bundle's `add -A` drops it; the mode is the one
+  `git add` records, `_disk_mode`
+  (`plugin/crew/hooks/scripts/completion_audit.py:231`): the execute bit only
+  when `core.fileMode`, read once by `_file_mode`
+  (`plugin/crew/hooks/scripts/completion_audit.py:224`), is not false; called from `audit`
+  (`plugin/crew/hooks/scripts/completion_audit.py:279`), which prints its
+  `merged main` line from `_merged_lines`
+  (`plugin/crew/hooks/scripts/completion_audit.py:316`) on a failure, on an
+  applying pass, and on a could-not-tell pass
+  (`plugin/crew/hooks/scripts/completion_audit.py:287`); `changed_paths`
+  without `merged` is unchanged for `crew_refresh_check`. The prompt's
+  `merged main:` line is `_merged_main_line`
+  (`plugin/crew/hooks/scripts/review_prompt.py:123`), which appends
+  `_fork_clause` (`plugin/crew/hooks/scripts/review_prompt.py:143`) on a null
+  fork, and the receipt check's note `_merged_note`
+  (`plugin/crew/hooks/scripts/review_ledger.py:834`), which adds
+  `; fork: could not tell` there (`plugin/crew/hooks/scripts/review_ledger.py:848`).
+  `merged_main.py` is in `HARNESS` (`scripts/check-tooling-pr.py`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:149`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
@@ -1624,8 +1677,8 @@ then the train is advisory.
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:199`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:108`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:98`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:258`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:99`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:292`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:540`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:542`). `parse` and
@@ -1672,7 +1725,7 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/review_patch.py:126`, `:123`, `:124`) and
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:178`) and `crew_status._verify_line`
+  (`plugin/crew/hooks/scripts/review_prompt.py:212`) and `crew_status._verify_line`
   (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one

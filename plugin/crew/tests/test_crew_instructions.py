@@ -7,11 +7,15 @@ asserted to come from the same table as the Claude registration.
 import json
 import os
 import re
+import shutil
 import stat
+import subprocess
+import sys
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_context
 import crew_instructions as ci
 from context_fixtures import make_repo
 from crew_common import read_text
@@ -627,6 +631,333 @@ def test_agents_check_fails_on_a_hand_written_agents_md(tmp_path):
     (root / "AGENTS.md").write_text("# mine\n", encoding="utf-8")
 
     assert ci.main(["agents", "--root", str(root), "--check"]) == 1
+
+
+def _verify_json(root, rules=(), default=()):
+    (root / ".crew" / "verify.json").write_text(json.dumps(
+        {"version": 1, "rules": list(rules), "default": list(default)}), encoding="utf-8")
+
+
+def _cmd_rule(*commands):
+    return {"paths": ["**"], "seconds": 1, "reach": "local", "why": "t", "run": list(commands)}
+
+
+def test_agents_md_says_claude_code_does_not_load_it_without_an_import(tmp_path):
+    root = _big_repo(tmp_path)
+    (root / "CLAUDE.md").write_text("# repo\n", encoding="utf-8")
+
+    ci.agents(str(root))
+
+    text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "Claude Code does not load it" in text and "reads it through" not in text
+
+
+def test_agents_md_says_claude_code_reads_it_when_claude_md_imports_it(tmp_path):
+    root = _big_repo(tmp_path)
+    (root / "CLAUDE.md").write_text("# repo\n@AGENTS.md\n", encoding="utf-8")
+
+    ci.agents(str(root))
+
+    text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "reads it through `@AGENTS.md`" in text and "does not load it" not in text
+
+
+def test_the_smoke_harness_is_the_first_verify_command_and_listed_once(tmp_path):
+    root = _big_repo(tmp_path)
+    (root / "_verify").mkdir()
+    (root / "_verify" / "smoke.sh").write_text("exit 0\n", encoding="utf-8")
+    _verify_json(root, [_cmd_rule("make test", "bash _verify/smoke.sh")])
+
+    ci.agents(str(root))
+
+    lines = (root / "AGENTS.md").read_text(encoding="utf-8").splitlines()
+    commands = [ln for ln in lines if ln.startswith("- `") and ln.endswith("`")]
+    assert commands[:2] == ["- `bash _verify/smoke.sh`", "- `make test`"]
+    assert sum("_verify/smoke.sh" in ln for ln in lines) == 1
+
+
+def test_verify_commands_past_six_are_counted_not_dropped_silently(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [_cmd_rule(*[f"check {i}" for i in range(9)])])
+
+    ci.agents(str(root))
+
+    text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "`check 5`" in text and "`check 6`" not in text
+    assert "...and 3 more in `.crew/verify.json`." in text
+
+
+def test_a_plugin_root_command_comes_with_how_to_run_it_outside_claude_code(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [ci.agents_rule()])
+
+    ci.agents(str(root))
+
+    assert "`$CLAUDE_PLUGIN_ROOT` is the crew plugin's install directory" in \
+        (root / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_the_title_survives_a_clone_under_another_directory_name(tmp_path):
+    """The drift rule runs --check in every clone, worktree and CI checkout;
+    the directory name differs there and must not read as drift."""
+    root = _big_repo(tmp_path)
+    ci.agents(str(root))
+    moved = tmp_path / "some-other-checkout"
+    root.rename(moved)
+
+    problems, written = ci.agents(str(moved), check=True)
+
+    assert (problems, written) == ([], [])
+    assert (moved / "AGENTS.md").read_text(encoding="utf-8").startswith(
+        "# repo - instructions for every agent")
+
+
+def test_a_map_without_the_drift_rule_gets_a_note_that_is_not_drift(tmp_path, capsys):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [_cmd_rule("make test")])
+    ci.agents(str(root))
+
+    assert ci.main(["agents", "--root", str(root), "--check"]) == 0
+    assert "has no AGENTS.md drift rule" in capsys.readouterr().out
+
+
+def test_a_map_with_the_drift_rule_gets_no_note(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [ci.agents_rule()])
+
+    problems, written = ci.agents(str(root))
+
+    assert (problems, written) == ([], ["AGENTS.md"])
+
+
+def test_stale_with_the_rule_missing_still_fails_the_check(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [_cmd_rule("make test")])
+    ci.agents(str(root))
+    _verify_json(root, [_cmd_rule("make test", "make lint")])
+
+    assert ci.main(["agents", "--root", str(root), "--check"]) == 1
+
+
+def test_agents_rule_prints_the_rule(capsys):
+    assert ci.main(["agents-rule"]) == 0
+    rule = json.loads(capsys.readouterr().out)
+    assert rule["reach"] == "local" and rule["seconds"] >= 1
+    assert "agents --check" in rule["run"][0] and "AGENTS.md" in rule["paths"]
+
+
+@pytest.mark.skipif(sys.platform.startswith("win") or not shutil.which("bash"),
+                    reason="POSIX bash with python3 on PATH; Git Bash ships without python3")
+@pytest.mark.parametrize("plugin_root, want", [(None, 77), ("crew", 0), ("crew-stale", 1)])
+def test_the_rule_command_skips_without_a_plugin_root_and_checks_with_one(
+        tmp_path, plugin_root, want):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [ci.agents_rule()])
+    ci.agents(str(root))
+    if plugin_root == "crew-stale":
+        _verify_json(root, [ci.agents_rule(), _cmd_rule("make lint")])
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PLUGIN_ROOT"}
+    if plugin_root:
+        env["CLAUDE_PLUGIN_ROOT"] = context._ROOT  # pylint: disable=protected-access
+
+    done = subprocess.run(["bash", "-c", ci.AGENTS_RULE_COMMAND], cwd=str(root), env=env,
+                          capture_output=True, text=True, check=False, timeout=60)
+
+    assert done.returncode == want, done.stdout + done.stderr
+
+
+def test_where_things_are_follows_git_not_the_disk(tmp_path):
+    """A file a note cites that exists here but is not tracked (gitignored,
+    or not yet added) must not change AGENTS.md: a clone would not have it,
+    and the committed file would read as stale there."""
+    root = _big_repo(tmp_path)
+    ci.agents(str(root))
+    before = (root / "AGENTS.md").read_text(encoding="utf-8")
+    note = root / ".crew" / "codemap" / "sub000.md"
+    (root / "build" / "gen").mkdir(parents=True)
+    for i in range(6):  # cited often enough that, on disk, it would lead the note's scope
+        (root / "build" / "gen" / f"out{i}.py").write_text("x\n", encoding="utf-8")
+    note.write_text(note.read_text(encoding="utf-8") + "".join(
+        f"\n- `build/gen/out{i}.py:1` generated\n" for i in range(6)), encoding="utf-8")
+    assert "build/gen" in str(crew_context.subsystems(str(root))[0]["paths"])  # disk would
+    ci.agents(str(root))
+    with_untracked = (root / "AGENTS.md").read_text(encoding="utf-8")
+    shutil.rmtree(root / "build")
+
+    problems, _ = ci.agents(str(root), check=True)
+
+    assert "build" not in with_untracked
+    assert with_untracked == before and problems == []
+
+
+@pytest.mark.parametrize("source", ["CLAUDE.md", ".crew/verify.json",
+                                    ".crew/codemap/sub000.md", "_verify/smoke.sh"])
+def test_every_input_that_changes_agents_md_is_in_the_rule_s_paths(tmp_path, source):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [ci.agents_rule()])
+    ci.agents(str(root))
+    before = (root / "AGENTS.md").read_text(encoding="utf-8")
+    path = root / source
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if source == ".crew/verify.json":
+        _verify_json(root, [ci.agents_rule(), _cmd_rule("make lint")])
+    elif source == "CLAUDE.md":
+        path.write_text("# repo\n@AGENTS.md\n", encoding="utf-8")
+    elif source.endswith("smoke.sh"):
+        path.write_text("exit 0\n", encoding="utf-8")
+    else:
+        path.unlink()
+
+    ci.agents(str(root))
+
+    assert (root / "AGENTS.md").read_text(encoding="utf-8") != before
+    assert any(crew_context.glob_match(source, g) for g in ci.agents_rule()["paths"])
+
+
+def test_seven_commands_show_six_and_count_one(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [_cmd_rule(*[f"check {i}" for i in range(7)])])
+
+    ci.agents(str(root))
+
+    text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "...and 1 more in `.crew/verify.json`." in text
+    assert "Exit 77 is SKIP, not a pass." in text
+
+
+def test_the_plugin_root_line_is_only_for_commands_that_are_shown(tmp_path):
+    root = _big_repo(tmp_path)
+    hidden = 'python3 "$CLAUDE_PLUGIN_ROOT/x.py"'
+    _verify_json(root, [_cmd_rule(*[f"check {i}" for i in range(6)], hidden)])
+
+    ci.agents(str(root))
+
+    assert "CLAUDE_PLUGIN_ROOT" not in (root / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_the_write_path_reports_the_missing_rule_note(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [_cmd_rule("make test")])
+
+    problems, written = ci.agents(str(root))
+
+    assert written == ["AGENTS.md"] and len(problems) == 1
+    assert problems[0].startswith(ci.NOTE)
+
+
+def test_a_rule_with_its_flags_in_another_order_still_counts(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [_cmd_rule('python3 "$X/crew_instructions.py" agents --root . --check')])
+
+    problems, _ = ci.agents(str(root))
+
+    assert problems == []
+
+
+def test_a_mention_of_the_import_in_prose_is_not_the_import(tmp_path):
+    root = _big_repo(tmp_path)
+    (root / "CLAUDE.md").write_text("# repo\nDo not add @AGENTS.md here.\n", encoding="utf-8")
+
+    ci.agents(str(root))
+
+    assert "Claude Code does not load it" in (root / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_a_forged_title_cannot_make_the_file_grow(tmp_path):
+    root = _big_repo(tmp_path)
+    ci.agents(str(root))
+    path = root / "AGENTS.md"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(f"# x {ci.KEEP_START}{ci.TITLE_TAIL}\n" + text.split("\n", 1)[1],
+                    encoding="utf-8")
+    ci.agents(str(root))
+    once = path.read_text(encoding="utf-8")
+
+    ci.agents(str(root))
+
+    assert path.read_text(encoding="utf-8") == once
+    assert once.startswith("# repo - instructions for every agent")
+
+
+@pytest.mark.parametrize("value", [None, 5, "x"])
+def test_a_map_whose_rules_or_default_is_not_a_list_does_not_crash(tmp_path, value):
+    root = _big_repo(tmp_path)
+    (root / ".crew" / "verify.json").write_text(json.dumps({"rules": value, "default": value}),
+                                                encoding="utf-8")
+
+    problems, written = ci.agents(str(root))
+
+    assert written == ["AGENTS.md"] and problems[0].startswith(ci.NOTE)
+
+
+def test_a_stale_check_says_how_to_regenerate(tmp_path):
+    root = _big_repo(tmp_path)
+    ci.agents(str(root))
+    _verify_json(root, [_cmd_rule("make lint")])
+
+    problems, _ = ci.agents(str(root), check=True)
+
+    assert problems[0].startswith("stale: AGENTS.md - regenerate: ")
+    assert "crew_instructions.py\" agents --root ." in problems[0]
+
+
+def test_tracked_files_scope_a_note_to_their_directory(tmp_path):
+    """The positive half of the git-judged scopes: three tracked files in one
+    directory scope the note to `dir/**`, with no note about falling back."""
+    root = make_repo(tmp_path)
+
+    problems, _ = ci.agents(str(root))
+
+    text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "`alpha` (`src/alpha/**`)" in text and "`beta` (`src/beta/**`)" in text
+    assert not any("git ls-files failed" in p for p in problems)
+
+
+def test_a_cited_tracked_directory_counts_as_existing(tmp_path):
+    root = make_repo(tmp_path)
+    note = root / ".crew" / "codemap" / "alpha.md"
+    body = note.read_text(encoding="utf-8")
+    note.write_text(body.replace("src/alpha/core.py:1", "src/alpha").replace(
+        "src/alpha/util.py:1", "src/alpha").replace("src/alpha/io.py:1", "src/alpha"),
+        encoding="utf-8")
+
+    ci.agents(str(root))
+
+    assert "`alpha` (`src/alpha/**`)" in (root / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_a_blank_title_falls_back_to_the_directory_name(tmp_path):
+    root = _big_repo(tmp_path)
+    ci.agents(str(root))
+    path = root / "AGENTS.md"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(f"# {ci.TITLE_TAIL}\n" + text.split("\n", 1)[1], encoding="utf-8")
+
+    ci.agents(str(root))
+
+    assert path.read_text(encoding="utf-8").startswith("# repo - instructions for every agent")
+
+
+def test_outside_a_git_work_tree_the_disk_decides_and_says_so(tmp_path):
+    # A copy without `.git`, not an rmtree of it: git's object files are
+    # read-only, and on Windows that rmtree fails with WinError 5.
+    repo = make_repo(tmp_path)
+    root = tmp_path / "no-git"
+    shutil.copytree(repo, root, ignore=shutil.ignore_patterns(".git"))
+
+    problems, _ = ci.agents(str(root))
+
+    assert "`alpha` (`src/alpha/**`)" in (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert any(p.startswith(ci.NOTE) and "git ls-files failed" in p for p in problems)
+
+
+def test_a_look_alike_flag_is_not_the_drift_check(tmp_path):
+    root = _big_repo(tmp_path)
+    _verify_json(root, [_cmd_rule('python3 "$X/crew_instructions.py" agents --check-not-real')])
+
+    problems, _ = ci.agents(str(root))
+
+    assert any("has no AGENTS.md drift rule" in p for p in problems)
 
 
 def _hand_codex(root):

@@ -1,0 +1,65 @@
+%% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
+%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py
+%% Purpose: What --check (CI strategy A) verifies: stale sources, damaged or unverifiable SVGs and unrendered fences, and which of them exit 1.
+%% Part of process-bitbucket-svg.mmd (the overview, which keeps the provenance history).
+%% Every bare :NNN is a line in skills/mermaid-svg-bitbucket/scripts/render_mermaid.py; other files are cited in full.
+%% The sentence this diagram was drawn to make visible, and what it bought (renumbered,
+%% substance unchanged since 1.2.2):
+%%   Until manifest version 2, --check verified the INPUTS, not the output. `current`
+%%   was  have["hash"] == want and svg.exists()  :515 - the hash covering
+%%   RENDER_VERSION, the config fingerprint, the background colour and the normalised
+%%   source, and nothing at all about the SVG's CONTENT. A committed SVG that had been
+%%   truncated, hand-edited or corrupted after rendering passed --check as long as the
+%%   file was still there and the source had not moved.
+%%   MEASURED before the fix rather than argued: a real truncated mmdc render and a
+%%   zero-byte file both printed "All 1 diagram(s) up to date." and exited 0. The
+%%   committed regression for that is
+%%   skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py:92
+%%   (test_damaged_svg_is_reported_and_fails) and :198
+%%   (test_damaged_and_unverified_are_both_reported).
+%% Now: render records svgHash :548-549 and --check compares it :528. A manifest
+%%   predating version 2 has no hash to compare, so it gets a structural check :532-536
+%%   and is reported UNVERIFIED rather than counted as up to date.
+%% UNVERIFIED exits 1 :595, naming render --force as the one-time fix :591-594, and
+%%   stays distinct in the text from DAMAGED :565-568. Both failures are reported in
+%%   one pass :560-594 before the single exit - stale, damaged and unverified sections
+%%   print together - because returning on the first category found is how the
+%%   unverified count used to vanish whenever anything else was wrong.
+%%   postprocess()'s foreignObject refusal is still a RENDER-time gate only; it never
+%%   runs in CI strategy A, which is the recommended one and needs neither Node nor
+%%   Chromium precisely because it does not render.
+%% Note C5: compare it :528 - a mismatch is DAMAGED :529-530. no svgHash (pre-v2 manifest) ? structural check
+%%    svg_structure_ok() :100-117 at :532-534: non-empty, has &lt;svg, ends &lt;/svg&gt;
+%% Note C6: under either manifest version - tests/test_check_reads_the_svg.py:92 and :198 prove it by damaging a genuine
+%%    mmdc render
+%% Note C8: in its own docstring :103-106: a well-formed SVG with WRONG CONTENTS passes it. Passing is therefore the
+%%    absence of evidence, not evidence - which is the entire argument for UNVERIFIED exiting 1 rather than 0.
+%% Note C2: before any other file is examined. Asymmetric on purpose or not, the effect is that one fence hides the rest -
+%%    and this is the one early return the 1.2.2 fix did NOT remove.
+%% Note C7: exit 1 :595 - 'Diagrams that could not be content-verified:' :569-573 plus a summary line :574-576 ('N
+%%    diagram(s) verified; N stale, N damaged, N unverified'). Was exit 0 until 1.2.2. The caveat was in the output
+%%    while the exit code - the only part CI reads - still said pass. Names render --force as the one-time fix
+%%    :591-594, and stays distinct from DAMAGED :565-568: no claim the SVG is wrong, only that nothing can say it is
+%%    right
+flowchart TB
+
+    subgraph Verify["--check - CI strategy A. Bare Python, no Node, no Chromium"]
+        direction TB
+        C1["collects <b>every</b> stale .mmd into a list :518-520<br/>and prints them all :561-564"]
+        C5["<b>then opens the SVG.</b><br/>svgHash recorded ? :526<br/>DAMAGED or structural check"]
+        C6["a real truncated render and<br/>a zero-byte file both<br/>exit 1 now"]
+        C8>"<b>svg_structure_ok is honest<br/>about its ceiling</b>"]
+        C2["but returns 1 on the <b>FIRST</b><br/>Markdown file still holding<br/>an unrendered fence :492-496"]
+        C3(["exit 1 :595 - 'Run scripts/render_mermaid.py<br/>and commit the result.' :577-578"])
+        C4(["exit 0 :596-597 - 'All N diagram(s) up to date.'<br/>the <b>only</b> green state: every SVG compared<br/>against a recorded hash and matched"])
+        C7(["exit 1 :595 - UNVERIFIED<br/>'Diagrams that could not<br/>be content-verified:'"])
+        C1 --- C2
+        C1 --- C5
+        C5 --- C6
+        C5 --- C8
+    end
+
+    C1 --> C4
+    C5 --> C7
+    C5 --> C3
+    C2 --> C3

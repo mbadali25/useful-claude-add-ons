@@ -394,6 +394,10 @@ def default_config():
         # and `ciTimeoutMinutes` ride in the same block, validated by
         # `crew_autopilot.settings` (a bad `ship` reads as `pr`).
         "autopilot": copy.deepcopy(crew_state.AUTOPILOT_DEFAULTS),
+        # The branch ticket branches are cut from (T-0061). `null` means
+        # origin/HEAD's target, then origin/main, then main. REPO ONLY, read
+        # from the resolved repo config by `scope_base.read_base_branch`.
+        "tickets": {"baseBranch": None},
         # Plain-text lifecycle routing (T-0023). `false` by default: only the
         # JSON value `true` arms the one context line `crew_route.decide`
         # adds (crew_route.settings). In BOTH layers: which way a person

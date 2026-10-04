@@ -592,6 +592,36 @@ def read_verify_health(root):
     return result
 
 
+# --- QA audit freshness (L-0618) --------------------------------------------
+#
+# qa_audit.py --stamp records the HEAD it judged. Fires when there is no stamp
+# (every repo set up before the audit hears it once) or the paths it reads
+# moved since. `changedSince` is None when git cannot answer, and that fires:
+# UNKNOWN NEVER RESOLVES TO HEALTHY, as above.
+QA_AUDIT_STAMP = os.path.join(".crew", ".qa-audit-at")
+QA_AUDIT_PATHS = (".crew/verify.json", "_verify", ".github/workflows",
+                  "bitbucket-pipelines.yml", ".gitlab-ci.yml", "azure-pipelines.yml",
+                  ".gitignore")
+
+
+def read_qa_audit(root):
+    """Whether the QA audit has been stamped, and whether the paths it reads
+    changed after the stamped commit. Never raises."""
+    result = {"stampPresent": False, "stampSha": None, "changedSince": None}
+    lines = (read_text(os.path.join(root, QA_AUDIT_STAMP)) or "").splitlines()
+    sha = lines[0].strip() if lines else ""
+    if not sha:
+        return result
+    result["stampPresent"] = True
+    result["stampSha"] = sha
+    if git_out(root, "cat-file", "-e", f"{sha}^{{commit}}") is None:
+        return result
+    changed = git_out(root, "diff", "--name-only", f"{sha}..HEAD", "--", *QA_AUDIT_PATHS)
+    if changed is not None:
+        result["changedSince"] = bool(changed)
+    return result
+
+
 # --- Handoff staleness ------------------------------------------------------
 #
 # read_work() above only asks whether a handoff exists -- enough to warn once
@@ -695,7 +725,12 @@ AUTOCLEAR_DEFAULTS = {
 # rather than false so the /crew:init template, which writes every key, does
 # not veto a machine opt-in. `context.autoResume` is a different, retired key
 # and stays unread.
-RESUME_DEFAULTS = {"auto": None}
+#
+# T-0013: how auto-resume TYPES, read from the MACHINE file only
+# (`crew_autocycle.resume_typing`); a repo copy is declared but never read.
+# `typeDelaySeconds` precedes the tmux ready probe (Windows' only wait; the spike
+# saw input ready 0.134 s after SessionStart); `readyTimeoutSeconds` caps the probe.
+RESUME_DEFAULTS = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
 
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
 # declared but never granted machine-wide. `unsafeFocus: true` accepts that
@@ -1020,6 +1055,8 @@ TRIGGERS = (
     "verifyMarkerStale",
     "verifyRulesUnpriced",
     "verifyReachUndeclared",
+    # Same family (L-0618): can the checks the gate runs fail at all.
+    "qaAuditStale",
     # Above `knowledgeBehind` on purpose, and it is the whole point of keeping
     # them separate. A map that cannot be re-verified is a worse finding than
     # one that merely needs re-checking, and it has a different fix. Sorting
@@ -2961,6 +2998,8 @@ def evaluate_triggers(state):
     schema = int_or(state.get("schema", 1), 1)
     incident = dict_or_empty(state.get("incident"))
     verify = dict_or_empty(state.get("verify"))
+    # Absent means "not measured" (only collect() measures it), as `verify`.
+    qa_audit = dict_or_empty(state.get("qaAudit"))
     # All three gated on `mapPresent`: a repo that never adopted
     # `.crew/verify.json` (the gate falls back to `_verify/smoke.sh`) has
     # nothing to price, declare reach on, or hold a per-rule record for --
@@ -3001,6 +3040,10 @@ def evaluate_triggers(state):
         "verifyReachUndeclared": verify_map_present and (
             verify.get("undeclaredReachRules") is None
             or (verify.get("undeclaredReachRules") or 0) > 0
+        ),
+        "qaAuditStale": bool(qa_audit) and (
+            not qa_audit.get("stampPresent")
+            or qa_audit.get("changedSince") is not False
         ),
         "knowledgeBehind": bool(knowledge.get("behind")),
         "knowledgeUnverifiable": bool(knowledge.get("unresolvable")),
@@ -3122,6 +3165,7 @@ def collect(root, cfg_override=None):
         "incident": crew_incident.read_state(root, cfg),
         "autoClear": read_auto_clear(cfg),
         "verify": read_verify_health(root),
+        "qaAudit": read_qa_audit(root),
     }
     # A directory with no crew has no findings. evaluate_triggers would
     # otherwise report graphStale for every plain git repo on the machine,
