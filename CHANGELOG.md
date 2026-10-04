@@ -30,7 +30,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   one naming the main checkout's file), or one naming a directory, is the default
   `.work/HANDOFF.md`, with a warning, so a lane never writes or prints the main checkout's
   note; context-watch's message says so too. The path is printed with forward slashes on
-  every OS. PowerShell, which cannot resolve a
+  every OS. The `.ps1` hooks read a backslash as a separator on every OS, as PowerShell's file
+  cmdlets do, so `..\main\...` cannot slip past the check on Linux; bash reads it as python
+  does (a filename character off Windows). PowerShell, which cannot resolve a
   link as `realpath` does, treats any link on the way as leaving.
 - `auto-clear.ps1` lists `wrapUp` among `context.autoClear`'s known keys, so it no longer logs
   that recognised key as unrecognised.

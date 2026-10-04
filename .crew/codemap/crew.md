@@ -4039,7 +4039,9 @@ to that branch's content commits. This section does not move the file's `anchor:
   `plugin/crew/hooks/scripts/context-watch.ps1:78`), stricter on links. An inherited absolute or
   `..` value, or one naming a directory, is the lane's `.work/HANDOFF.md`, with a warning, and
   the path is printed with forward slashes on every OS (a Windows pre-flight read `.work\HANDOFF.md`);
-  context-watch's message, both flavours, says the configured path leaves the checkout. Held by
+  context-watch's message, both flavours, says the configured path leaves the checkout. The `.ps1`
+  copies turn `\` into `/` before the check off Windows, since PowerShell's file cmdlets read it as
+  a separator there too (review round 3). Held by
   `plugin/crew/tests/test_worktree_config_shell.py:745` and its two siblings.
 - **JUDGEMENT.** Still own-file only: the harness readers `verify-gate.*`, `scope-guard.*`,
   `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR).
