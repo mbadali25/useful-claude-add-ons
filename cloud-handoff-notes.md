@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:06: #345 re-review 0350da69: 0/0/4 CLEAN (NITs: assigned-unquoted over-blocks *_name/*_header keys; remaining known-gap misses; title-first doc refused by design). Lands after #344.
 - 13:06: #340 L-0526 review 9cf6d93d: 0/2/3 (FIX1 spent-budget ticket can hold the train forever -> check budget before train; FIX2 ordering vs prereview/standards unpinned). Sent to builder (1.0.385). Train-only sabotage PASS 23/23 by reviewer.
 - 13:05: #364 round-1 fixes pushed 687d1edd (minted_tail; apply record + provenance; confirm refuses '<'/missing/same lastPrompt; None for zero counts; crash recovery; 92 tests; 22 mutations red; 1.0.382). API additive (minted_tail, current_prompt, apply_record_path, MINTED_RULE; split-child line; prompt_sha256). Re-review started. #365/#366 stacked builds must merge updated T-0052-build.
 - 13:04: #345 fixes pushed 0350da69 (17 secret kinds + must-allow; anchor echo suppressed; header at doc head only; abs/.. anchors refused; 42 hand mutations red; 1.0.381). Re-review started.
