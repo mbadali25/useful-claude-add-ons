@@ -832,3 +832,134 @@ def test_an_autopilot_ask_that_is_not_about_a_ticket_never_says_which_ticket(
 
     assert (got["outcome"], "which ticket" in line, line.endswith("before running anything.")) \
         == ("ask", False, True)
+
+
+# --- T-0057 review round 1: one structural rule for free text ------------------
+# Every case runs with every subcommand available, so a miss would be a route.
+
+def _decide_live(tmp_path, monkeypatch, prompt):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    make_ticket(root, "T-12", activate=False)
+    _all_available(monkeypatch)
+    return crew_route.decide(str(root), prompt)
+
+
+@pytest.mark.parametrize("prompt", [
+    "handle the approval for T-12", "handle approving T-12", "take care of approvals",
+    "work toward approval of T-12", "handle approv T-12", "handle a p p r o v e T-12",
+    "handle \u0430pprove T-12", "handle the \u0430pproval for T-12",
+    "handle \uff41\uff50\uff50\uff52\uff4f\uff56\uff45 T-12", "take care of \uff21PPROVALS",
+    "handle the a\u200bpproval for T-12", "handle the audit then /crew:\u0430pprove T-12"])
+def test_free_text_naming_approval_never_routes(tmp_path, monkeypatch, prompt):
+    """B1: the stem, a letters-only collapse, and lookalikes (NFKC folds the
+    fullwidth ones; a Cyrillic letter asks before anything else is read)."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"] != "route", got["command"],
+            "approv" in crew_route.render(got).casefold()) == (True, None, False)
+
+
+@pytest.mark.parametrize("prompt", [
+    "handle it,", "handle it for me", "take care of that;", "handle this one", "handle them all",
+    "handle i\u200bt", "handle \u200bit for me", "handle th\u00adis one",
+    "handle everything else", "make it so it works", "take care of nothing much",
+    "work toward something better"])
+def test_free_text_that_starts_with_a_nothing_word_is_none(tmp_path, monkeypatch, prompt):
+    """F1: the FIRST token, after format characters are stripped, not only a
+    whole-topic pronoun."""
+    assert _decide_live(tmp_path, monkeypatch, prompt)["outcome"] == "none"
+
+
+@pytest.mark.parametrize("prompt, answer", [
+    ("take care of the login audit", {"sub": "status", "stop": False, "reason": ""}),
+    ("take care of the login audit", {"sub": None, "stop": False, "reason": ""}),
+    ("take care of the login audit", {"sub": 5, "stop": False, "reason": ""}),
+    ("take care of the login audit", {"sub": ["assign"], "stop": False, "reason": ""}),
+    ("focus on T-1", {"sub": "run", "stop": False, "reason": ""}),
+    ("work toward zero flaky tests", {"sub": "assign", "stop": True, "reason": "x"}),
+    ("pick the goal back up", {"sub": "goal", "stop": False, "reason": ""}),
+    ("pick the goal back up", {"sub": None, "stop": True, "reason": "x"}),
+])
+def test_a_router_answering_another_subcommand_asks(tmp_path, monkeypatch, prompt, answer):
+    """F2: `sub` must be a string naming the subcommand asked about (`run`
+    for `--goal`); only the empty string is none."""
+    monkeypatch.setattr(crew_autopilot, "route", lambda _top, _first: dict(answer))
+
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], got["command"], "could not be read" in got["reason"]) == \
+        ("ask", None, True)
+
+
+def test_an_empty_sub_is_none_for_every_new_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(crew_autopilot, "route",
+                        lambda _top, _first: {"sub": "", "stop": True, "reason": "unknown"})
+
+    got = [_decide_live(tmp_path / str(n), monkeypatch, p)["outcome"]
+           for n, p in enumerate(_NEW_ROWS)]
+
+    assert got == ["none"] * len(_NEW_ROWS)
+
+
+@pytest.mark.parametrize("prompt", ["focus on T-\u0661", "implement T-\u0661", "review t-\uff11",
+                                    "autopilot status T-\u0967"])
+def test_a_ticket_id_is_ascii_digits_only(prompt):
+    """N1: `\\d` is any Unicode digit; an id is [0-9]."""
+    assert crew_route.match(prompt) is None
+
+
+@pytest.mark.parametrize("prompt", ["handle the audit\u2028and the docs",
+                                    "take care of the audit\u2029then the docs",
+                                    "work toward zero\x85flaky tests", "focus on T-1\u2029",
+                                    "handle the audit\x0band the docs"])
+def test_a_unicode_line_break_never_routes(tmp_path, monkeypatch, prompt):
+    """N2: U+2028, U+2029, U+0085 (and VT/FF) break a line as surely as \\n."""
+    assert _decide_live(tmp_path, monkeypatch, prompt)["outcome"] == "none"
+
+
+@pytest.mark.parametrize("prompt", ["handle the docs/build failure", "take care of /tmp cleanup",
+                                    "work toward green ci/cd", "handle the audit then /crew:x"])
+def test_free_text_with_a_slash_asks(tmp_path, monkeypatch, prompt):
+    """N3: a `/` anywhere in the text could be a command; ask."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], got["command"], "/" in got["reason"]) == ("ask", None, True)
+
+
+@pytest.mark.parametrize("prompt", ["handle the login audit, do not", "take care of the release not",
+                                    "handle the deploy, don\u2019t", "work toward zero flakes. not!",
+                                    "handle the deploy dont"])
+def test_free_text_ending_in_a_negation_asks(tmp_path, monkeypatch, prompt):
+    """N4: "handle the deploy, don't" says the opposite of the command."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], got["command"], "negation" in got["reason"]) == ("ask", None, True)
+
+
+@pytest.mark.parametrize("prompt", ["handle the l\u043egin audit", "handle the \u0131ssue",
+                                    "make \u0131t so the docs build", "focu\u017f on T-1",
+                                    "focus on \u212a-1", "work toward z\u00e9ro flaky tests"])
+def test_a_non_ascii_letter_asks(tmp_path, monkeypatch, prompt):
+    """(b): after NFKC and casefold, any non-ASCII letter left in an assign,
+    goal or focus prompt asks: Cyrillic, dotless i, long s, Kelvin sign."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], got["command"], "non-ASCII" in got["reason"]) == ("ask", None, True)
+
+
+def test_nfkc_folds_a_fullwidth_letter_before_routing(tmp_path, monkeypatch):
+    got = _decide_live(tmp_path, monkeypatch, "handle the \uff4cogin audit")
+
+    assert (got["outcome"], got["command"]) == ("route", "/crew:autopilot assign the \uff4cogin audit")
+
+
+@pytest.mark.parametrize("reason", [None, "", "   "])
+def test_a_null_stop_reason_renders_not_available_yet(tmp_path, monkeypatch, reason):
+    """N5: never "but None;"."""
+    monkeypatch.setattr(crew_autopilot, "route",
+                        lambda _top, first: {"sub": first, "stop": True, "reason": reason})
+
+    line = crew_route.render(_decide_live(tmp_path, monkeypatch, "take care of the login audit"))
+
+    assert ("None" in line, "not available yet" in line, "but ;" in line) == (False, True, False)

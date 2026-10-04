@@ -55,9 +55,12 @@ row goes live the day its ticket adds the name to `crew_autopilot.AVAILABLE`.
                                                          on a quote, $, ` or \\
   pick the goal back up                           ask    never picks a slug (T-0056)
 
-A bare pronoun as the text ("handle it"), or text naming approve, never
-matches, and `?` is accepted only where a pattern spells it (the two status
-questions).
+Assign, goal and focus pass `_screen` first: one structural rule on the text
+folded with NFKC and casefold, format characters removed. A Unicode line
+break, a first token like "it" or "everything", or the stem "approv" (also
+with every non-letter removed) is no match; a non-ASCII letter, a `/` or a
+trailing negation asks. `?` is accepted only where a pattern spells it (the
+two status questions), and a router answer naming another subcommand asks.
 
 `crew_ticket.resolve_active`'s own INDEX fallback takes the FIRST open line,
 so it is never the answer here: `crew_autopilot.open_index_tickets` (T-0004)
@@ -70,7 +73,9 @@ import argparse
 import json
 import os
 import re
+import string
 import sys
+import unicodedata
 
 import crew_autopilot
 import crew_common
@@ -92,7 +97,7 @@ MAX_LINE_CHARS = 1400
 FIELD_CHARS = {"intent": 32, "ticket": 64, "source": 80, "phase": 48, "command": 200,
                "reason": 480, "candidate": 48}
 
-_ID = r"(?P<id>[a-z][a-z0-9]*-\d+)"
+_ID = r"(?P<id>[a-z][a-z0-9]*-[0-9]+)"
 _REF = rf"(?:it|this|{_ID})"
 # T-0057: an autopilot row's free text. No `?`: a question is never a command.
 _TEXT = r"(?P<topic>[^?]+)"
@@ -133,9 +138,19 @@ _PREFIXES = ("please ", "ok ", "now ", "let's ")
 _WS = re.compile(r"\s+")
 _CREW_COMMAND = re.compile(r"^/crew:([a-z][a-z0-9-]*)(?:\s+(.*))?$")
 _APPROVE = re.compile(r"approve", re.IGNORECASE)
-# T-0057: an `autopilot-text` capture that is only one of these, or names
-# approve, is no match.
-_PRONOUNS = ("it", "this", "that", "them", "these", "those", "everything")
+# T-0057: free text (assign, goal) and focus pass one structural check, `_screen`,
+# on the prompt folded by `_fold` (NFKC, casefold, format characters gone).
+# None (no line): a Unicode line break; text whose first token is one of
+# _NOTHING; text naming the stem `approv`, also with every non-letter removed.
+# Ask: a non-ASCII letter (lookalikes) in the folded text or the raw fixed
+# words, a `/`, or a
+# trailing negation. Never a list of bad phrases.
+_NOTHING = ("it", "this", "that", "them", "these", "those", "everything", "nothing",
+            "something", "anything", "whatever")
+_LINE_BREAKS = ("\u2028", "\u2029", "\x85", "\x0b", "\x0c")
+_APPROV = "approv"
+_TOKEN = re.compile(r"[a-z0-9]+")
+_NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|don't|don\u2019t)$")
 # The characters `commands/autopilot.md` section 0 refuses in its arguments.
 _SHELL = re.compile(r"['\"$`\\]")
 _ROUTE_SHAPE = ("sub", "stop", "reason")
@@ -187,12 +202,47 @@ def match(prompt):
             groups = found.groupdict()
             ticket = groups.get("id")
             topic = (groups.get("topic") or "").strip() or None
-            if rule == "autopilot-text" and ((topic or "").casefold() in _PRONOUNS
-                                             or _APPROVE.search(topic or "")):
-                continue
+            refuse = ""
+            if rule in ("autopilot-text", "autopilot-ticket"):
+                verdict, refuse = _screen(prompt, text, topic if rule == "autopilot-text" else None)
+                if verdict == "none":
+                    continue
             return {"intent": intent, "command": command, "rule": rule,
-                    "ticket_arg": ticket.upper() if ticket else None, "topic": topic}
+                    "ticket_arg": ticket.upper() if ticket else None, "topic": topic,
+                    "refuse": refuse}
     return None
+
+
+def _fold(text):
+    """NFKC, casefolded, with every format (Cf) character removed."""
+    folded = unicodedata.normalize("NFKC", text).casefold()
+    return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+
+
+def _screen(prompt, text, topic):
+    """("none" | "ask" | "ok", reason) for an assign, goal or focus match.
+    `topic` is the free text, None for focus."""
+    if any(mark in prompt for mark in _LINE_BREAKS):
+        return "none", ""
+    if topic is not None:
+        folded = _fold(topic)
+        letters = "".join(ch for ch in folded if ch.isalpha())
+        tokens = _TOKEN.findall(folded.rstrip(string.punctuation + " \u2019"))
+        if _APPROV in folded or _APPROV in letters or not tokens or tokens[0] in _NOTHING:
+            return "none", ""
+    # The fixed words and the id are read raw (NFKC would turn a Kelvin sign
+    # into the K of an id); the free text after folding.
+    rest = text.replace(topic, "", 1) if topic else text
+    if any(ch.isalpha() and not ch.isascii() for ch in rest + _fold(topic or "")):
+        return "ask", ("the prompt holds a non-ASCII letter, which routing never reads as a "
+                       "command word (a lookalike can hide one); ask the user to retype it")
+    if topic is None:
+        return "ok", ""
+    if "/" in topic:
+        return "ask", "the text holds a / and could name a command; ask the user to type it"
+    if _NEGATION.search(_fold(topic).rstrip(string.punctuation + " ")):
+        return "ask", "the text ends in a negation; ask the user what they meant"
+    return "ok", ""
 
 
 def command_for(found, ticket):
@@ -261,10 +311,12 @@ def _gate(top, found):
     the decision: ask when it cannot be read, none when the router does not
     know the name, an `unavailable` ask when it stops."""
     sub = found["command"].split()[-1]
+    expected = "run" if sub == "--goal" else sub
     try:
         got = crew_autopilot.route(top, sub)
         if not isinstance(got, dict) or any(key not in got for key in _ROUTE_SHAPE) \
-                or not isinstance(got["stop"], bool):
+                or not isinstance(got["stop"], bool) or not isinstance(got["sub"], str) \
+                or got["sub"] not in ("", expected):
             raise TypeError(f"route answered {got!r:.80}")
     except Exception as exc:  # pylint: disable=broad-except
         why = f"whether /crew:autopilot {sub} is available could not be read " \
@@ -273,7 +325,9 @@ def _gate(top, found):
     if not got["sub"]:
         return _answer("none", None)
     if got["stop"]:
-        return _answer("ask", found, reason=str(got["reason"]), unavailable=True)
+        said = got["reason"] if isinstance(got["reason"], str) and got["reason"].strip() \
+            else f"/crew:autopilot {sub} is not available yet"
+        return _answer("ask", found, reason=said, unavailable=True)
     return None
 
 
@@ -285,6 +339,8 @@ def _autopilot(found, top):
     if found["rule"] == "autopilot-resume":
         return _answer("ask", found, reason="routing does not pick a goal; the user types "
                                             "/crew:autopilot run --goal <slug>")
+    if found.get("refuse"):
+        return _answer("ask", found, reason=found["refuse"])
     if found["rule"] == "autopilot-text":
         if _SHELL.search(found["topic"]):
             return _answer("ask", found, reason="autopilot's router refuses those characters "
