@@ -62,6 +62,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   `malformed`, not `full-text` (`_BARE`'s name is optional).
   `test_a_first_line_of_only_vault_colon_is_malformed` (three bodies) was red before; the
   `crew-memory` skill, the memory guide (rebuilt HTML, DOCX, PDF) and the code map say so.
+- **Windows CI.** Two tests assumed POSIX: the `MEMORY.md`/`memory.md` case now probes the
+  filesystem for case folding (one file there, the index, so only `upper.MD` is listed), and the
+  mode-000 note test mocks the open whenever a probe can still read the file (root, or Windows,
+  where chmod sets only the read-only bit) instead of only when euid is 0.
 
 ### Fixed — `crew` 1.0.330: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
 

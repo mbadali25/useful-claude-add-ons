@@ -728,23 +728,41 @@ def test_bom_memory_and_bom_config(host, capsys):
     assert (code, state_of(out)) == (0, "resolved"), out
 
 
+def _case_insensitive(folder):
+    """Whether `folder`'s filesystem folds case (Windows, default macOS):
+    probed by creating a file and looking it up under another case, never
+    guessed from the platform."""
+    probe = folder / "CaseProbe.tmp"
+    probe.write_bytes(b"")
+    try:
+        return (folder / "caseprobe.tmp").exists()
+    finally:
+        probe.unlink()
+
+
 def test_memory_md_is_skipped_exactly_and_md_suffix_any_case(host, capsys):
     """N2: only `MEMORY.md` itself is the index; `memory.md` is a memory file,
-    and a `.MD` suffix is still a memory file."""
+    and a `.MD` suffix is still a memory file. On a case-insensitive
+    filesystem `memory.md` and `MEMORY.md` are one file, listed under the
+    name it was created with (`MEMORY.md`), so it is the index and skipped:
+    only `upper.MD` is a row there."""
     host.memory("- index\n", name="MEMORY.md", frontmatter="")
     host.memory("prose\n", name="memory.md")
     host.memory("prose\n", name="upper.MD")
+    folded = _case_insensitive(host.mem)
     code, out = run(["check", "--memory-dir", str(host.mem), "--root", str(host.root),
                      "--json"], capsys)
     data = json.loads(out)
     assert code == 0
-    assert sorted(r["file"] for r in data["rows"]) == ["memory.md", "upper.MD"]
+    assert sorted(r["file"] for r in data["rows"]) == (
+        ["upper.MD"] if folded else ["memory.md", "upper.MD"])
 
 
 # --- review round 2 (da00137e): three structural rules ---------------------
-# Real files throughout. Mocked, because the suite runs as root and root opens
-# a mode-000 file: only `test_note_with_mode_000_is_unreadable`, and only when
-# euid is 0 (it chmods the real file too, so a non-root run is real).
+# Real files throughout. Mocked only in `test_note_with_mode_000_is_unreadable`,
+# and only when a probe shows chmod 000 did not make the file unreadable (root
+# opens it; Windows chmod sets only the read-only bit). It chmods the real file
+# either way, so a run where chmod denies is real.
 
 def _dangling(link):
     try:
@@ -848,15 +866,25 @@ def test_reason_text_is_right_per_name(host, capsys):
     assert "memory.vaultPath" in reason_of(out), out
 
 
+def _still_readable(path):
+    """Whether `path` can still be opened for reading: probed, not guessed."""
+    try:
+        with open(str(path), "rb"):
+            return True
+    except OSError:
+        return False
+
+
 def test_note_with_mode_000_is_unreadable(host, capsys, monkeypatch):
-    """Rule 3: a resolved note must open. MOCKED when euid is 0 (root opens a
-    mode-000 file); the file is chmod-ed 000 for real either way."""
+    """Rule 3: a resolved note must open. MOCKED when a probe can still read
+    the mode-000 file (root, or Windows, where chmod sets only the read-only
+    bit); the file is chmod-ed 000 for real either way."""
     vault = host.vault("work")
     host.obsidian({"vaults": {"work": {"path": str(vault)}}})
     note = vault / "notes" / "fact.md"
     os.chmod(str(note), 0)
     try:
-        if hasattr(os, "geteuid") and os.geteuid() == 0:
+        if _still_readable(note):
             real_open = os.open
             target = os.path.realpath(str(note))
 

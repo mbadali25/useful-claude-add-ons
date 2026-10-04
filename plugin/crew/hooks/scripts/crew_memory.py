@@ -392,7 +392,10 @@ def resolve_file(path, root):
 
 def _listed(name):
     """A memory file `check` lists: `*.md` (suffix in any case) other than
-    the index `MEMORY.md`, whatever it is."""
+    the index `MEMORY.md`, whatever it is. The name is compared exactly as
+    the folder lists it: on a case-insensitive filesystem (Windows, default
+    macOS) `memory.md` and `MEMORY.md` are one file, the index, so skipping
+    it there is right."""
     return name != "MEMORY.md" and name.lower().endswith(".md")
 
 
