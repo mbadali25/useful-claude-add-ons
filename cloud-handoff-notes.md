@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 22:58: #394 T-0037 land-prepped at 29f23518 (merge main 3ccd527e; old Windows red = mint race fixed by L-1510; carry: vocab test covers memory-and-obsidian lane table; crew 1.0.343 version-only commit last because check-marketplace refused content-without-bump; all CI green incl. 6+3+gate Windows). Note main 3ccd527e itself is Windows-red: test_auto_cycle detached-sender sanity flake.
 - 22:58: MERGED #400 L-0680 -> 2aa06aca (crew 1.0.343), #421 T-0083 -> main cab38cfa (obsidian-vault 0.5.0). 25 merged this session.
 - 22:41: Owner confirmed usage fine; full pace. Also spawned: #407 T-0045 rework (gate simulation must match L-1503 union rule + [!-[] FIX) and L-1508 PR B (9 harness files, harness-only, lands alone). Running: L-1512, #394, #407, L-1508 PR B; #400/#421 CI.
 - 22:40: Owner: usage not a concern, continue standard plan. Coordinator land-prepped #400 L-0680 -> 49b188d0 (crew 1.0.343; merge conflicts verify.json/CHANGELOG/rules/guide only, resolved both-sides; 199 tests pass) and #421 T-0083 -> 442f9415 (obsidian-vault 0.5.0, merges #400; INDEX/CHANGELOG/guides only; memory_ops 0 failed). Spawned L-1512 builder and #394 Windows-fix + catch-up builder.
