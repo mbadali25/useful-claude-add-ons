@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:02: #377 re-review a8c9a39d: 0/0/1 CLEAN (needs #392 catch-up at its turn). #395 T-0049 review a972a0af: 1 BLOCK (no-/proc: own claim reads live -> autopilot stops itself; dead holder's orphan heartbeat beats forever, never stale) + 3 FIX (transient PermissionError kills heartbeat; stuck .lock keeps loop alive; log-after-effect) + 4 NIT -> sent to builder (test-first; re-version 1.0.360). #351 merge review on ad9bc03a running.
 - 12:02: #351 land-prep onto e9364a70 done: ad9bc03a (1.0.356; KEY_META row git.forbiddenTrailers kind branch layer both + test; CONFIG §10 now generated; counts 75/133/58; reference+guide regenerated; diagram header NIT done). Merge-only review started.
 - 12:01: #377 FIX pushed a8c9a39d (troubleshooting.md follows LANDING_ORDER, guide rebuilt, new docs-vs-LANDING_ORDER test; 1.0.359). Re-review started.
 - 12:00: #352 re-review 171b07be: 0/0/0 CLEAN (on e9364a70; needs a #392 catch-up merge + re-bump at its turn).
