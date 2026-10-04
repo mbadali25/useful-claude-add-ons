@@ -4,6 +4,12 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **L-0526 follow-ups (the gate round takes the train).** (a) `crew_train.py`'s module docstring
+  still says neither caller imports it "in this release"
+  (`plugin/crew/hooks/scripts/crew_train.py:9-12`); since L-0526 both do. A feature path, so not
+  edited in L-0526's tooling PR. (b) Sabotage rows S16-S19 (L-0520's PYTHON-set fixes) and
+  S20-S33 (L-0558's round-2 fixes, CHANGELOG 1.0.102) were drafted machine-local and never reached
+  the repo; `plugin/crew/tests/sabotage_train.py` holds S1-S15, R1-R3 and P1-P5 only.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and

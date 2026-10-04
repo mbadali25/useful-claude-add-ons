@@ -96,6 +96,14 @@ Codex is launched. `--allow-unverified` does not override a new finding. A linte
 or could not parse a changed file, reads `COULD NOT CHECK`, never a pass. It refuses too, unless
 `--allow-unverified` is given, and `review.json` records that override as `prereview.overridden`.
 
+Once the clone's merge train is armed (`crew_train.py arm`), the gate round takes it before any of
+that linting (L-0526): after the CLEAN receipt and the verify gate, `review_run.py` calls
+`crew_train.acquire`, and a ticket that is waiting behind an overlapping one, must merge its base
+first, or meets a train it cannot read is refused with exit 6, nothing spent and Codex not
+launched. An unarmed clone never asks. The prompt also carries a `== Catch-up merges (rerere) ==`
+block listing every file a catch-up merge replayed from an earlier rerere resolution, so Codex
+reviews each as a change; a merge log it cannot read is written there as `UNREADABLE`.
+
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits

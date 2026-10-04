@@ -182,8 +182,10 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```
   Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`.
 
-- **Symptom: `crew_train.py acquire` exits 1, `waiting behind <ticket>`.** The clone's merge train
-  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+- **Symptom: `crew_train.py acquire` exits 1, or `/crew:review` stops with exit 6 and
+  `review-run: train: waiting behind <ticket>`.** The clone's merge train is armed (L-0520; the
+  gate round takes it since L-0526, and no round was spent) and an overlapping ticket holds it,
+  or queued first on the same base.
   **Check:**
   ```bash
   python3 "<crew>/hooks/scripts/crew_train.py" --root . status
@@ -191,7 +193,7 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   Each waiting entry lists the ticket it is behind and every colliding pair (`<mine> x <theirs>`);
   `touch: undeclared: <why>` means that ticket's spec has no usable `## Touch`, which overlaps
   everything.
-  **Fix:** wait for the holder to land and release, then acquire again before reviewing; fix an
+  **Fix:** wait for the holder to land and release, then review again; fix an
   undeclared Touch in the spec. `merge <base> first` means the base moved in this ticket's Touch:
   run `crew_train.py catch-up --ticket <id>` and review the merged head. `could not tell` (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.

@@ -30,7 +30,7 @@ PATH is not being able to review: a logged-out or rate-limited Codex resolves
 on PATH and fails at the first call (T-0088).
 
 STANDARDS SELF-CHECK (T-0085). Also before reservation, and AFTER `preflight`
-(question 3 below), for every provider
+and `prereview_gate` (questions 1-4 below), for every provider
 (`claude --reserve-only` included): a ticket with an approval receipt must
 have `.work/tickets/<id>/selfcheck.md` complete and stamped for exactly this
 manifest's `bundle_sha256` and the effective standards digest
@@ -97,8 +97,9 @@ review.json carries `failure_class`, and `refunded` / `refund_refused` as the
 ledger recorded them; a `review:` line says whether the round was refunded. A
 refunded round still exits 3.
 
-BEFORE ANY ROUND IS RESERVED, four questions, in this order (`preflight`,
-then `prereview_gate`, then `standards_gate`):
+BEFORE ANY ROUND IS RESERVED, five questions, in this order (`preflight`
+asks 1 and 2 in `_receipt_and_gate`, then 3 in `train_gate`; then
+`prereview_gate`, then `standards_gate`):
 
   1. Does a CLEAN receipt already cover this exact bundle
      (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
@@ -112,7 +113,16 @@ then `prereview_gate`, then `standards_gate`):
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
-  3. Then (`prereview_gate`, L-0574): does the bundle add a linter finding
+  3. Once the clone's merge train is armed (`train_gate`, L-0526;
+     `crew_train.py arm`): does this ticket hold the train? `crew_train.
+     acquire` is asked; holding goes on. Waiting behind an overlapping
+     ticket, `merge <base> first`, a train that could not be read, or any
+     exception in the step is exit 6 with the reason on stderr and no round
+     spent -- never a reservation on a tree another lane is landing over.
+     An unarmed clone (state.json proven absent) is not asked and prints
+     nothing. The train is taken BEFORE the pre-review checks, so they lint
+     the tree that has the base merged in.
+  4. Then (`prereview_gate`, L-0574): does the bundle add a linter finding
      its own base did not have (`review_checks.py`, configured under
      `preReview` in `.crew/verify.json`)? A NEW finding is exit 5, no round
      spent, and `--allow-unverified` does not override it. A check that could
@@ -121,13 +131,16 @@ then `prereview_gate`, then `standards_gate`):
      exit 5 too, unless `--allow-unverified`, which review.json records as
      `prereview.overridden`. Only an active incident stands both down, and
      logs a `prereview-checks` skip. No `preReview` key proceeds and says so.
-  4. Only then (`standards_gate`, T-0085): is the standards self-check
+  5. Only then (`standards_gate`, T-0085): is the standards self-check
      complete and stamped for this bundle? Missing or stale is exit 2, no
      round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
-     asks for a self-check, and a refusal at (2) or (3) comes first.
+     asks for a self-check, and a refusal at (2), (3) or (4) comes first.
 
-Questions 3 and 4 are not asked when the budget is already spent: the
-reservation refuses that (exit 4) whatever they would say.
+Questions 4 and 5 are not asked when the budget is already spent: the
+reservation refuses that (exit 4) whatever they would say. Question 3 is: a
+spent budget still queues for the train, as the gate round it precedes would.
+The Claude fallback's second call (`--round N --output`) records the round
+the first call reserved and does not ask again.
 
 Every round's review.json carries `gate` (the state observed at verdict time)
 and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
@@ -137,9 +150,13 @@ the `review:` summary line prints both. It also carries `prereview`: the
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
 (NEEDS_REPLAN); 5 not run, verify gate not green or a pre-review check new or
-could not check (no round spent); 2 usage or setup error, or the standards
-self-check missing or stale -- not run, no round spent. Exit 5 is decided
-before exit 2 (self-check) is asked for.
+could not check (no round spent); 6 not run, the merge train is armed and
+this ticket does not hold it (waiting, `merge <base> first`, or the train
+could not be read; no round spent); 2 usage or setup error, or the standards
+self-check missing or stale -- not run, no round spent. The verify gate's
+exit 5 is decided before exit 6, exit 6 before the pre-review checks' exit 5,
+and all of them before exit 2 (self-check) is asked for. (`--probe` keeps its
+own 5/6/7: it reserves nothing and never reaches the train.)
 """
 import argparse
 import datetime
@@ -154,6 +171,7 @@ import crew_common
 import crew_incident
 import crew_standards
 import crew_state
+import crew_train
 import review_checks
 import review_gate
 import review_ledger
@@ -166,6 +184,7 @@ import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
 EXIT_UNVERIFIED = 5
+EXIT_TRAIN = 6
 DEFAULT_TIMEOUT = 1800
 # Bound on the follow-up `communicate()` after a kill, below. Not the same
 # knob as --timeout: this one exists so a descendant that escaped the kill
@@ -671,7 +690,16 @@ def _fmt_elapsed(seconds):
 
 def preflight(args):
     """None to go on and reserve a round, or the exit code to stop with
-    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above."""
+    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above:
+    questions 1 and 2 (`_receipt_and_gate`), then 3 (`train_gate`)."""
+    short = _receipt_and_gate(args)
+    if short is not None:
+        return short
+    return train_gate(args)
+
+
+def _receipt_and_gate(args):
+    """Questions 1 and 2: None to go on, or the exit code to stop with."""
     ok, message = review_ledger.check_receipt(args.root, args.ticket)
     data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
     if ok and (data.get("receipt") or {}).get("kind") == "clean":
@@ -693,6 +721,32 @@ def preflight(args):
             "--allow-unverified reviews it anyway and records that it did.\n")
         return EXIT_UNVERIFIED
     _err(f"review-run: gate {state}: {reason}\n")
+    return None
+
+
+def train_gate(args):
+    """None to go on; EXIT_TRAIN to refuse with nothing spent. See question 3
+    above. An unarmed clone returns None and prints nothing; anything this
+    step cannot vouch for -- including an exception -- refuses."""
+    try:
+        _state, where, why = crew_train.load(args.root)
+        if where == "absent":
+            return None
+        if where != "ok":
+            _err(f"review-run: train: could not tell ({why}); no round reserved\n")
+            return EXIT_TRAIN
+        code, lines = crew_train.acquire(args.root, args.ticket)
+    except Exception as exc:  # noqa: BLE001 - boundary  pylint: disable=broad-exception-caught
+        # Boundary: an escaped exception would exit 1, which reads as FINDINGS.
+        _err(f"review-run: train: could not tell ({type(exc).__name__}: {exc}); "
+             "no round reserved\n")
+        return EXIT_TRAIN
+    for line in lines:
+        _err(f"review-run: train: {line}\n")
+    if code != crew_train.EXIT_OK:
+        _err("review-run: train: no round reserved; the gate round runs once this ticket "
+             "holds the train (crew_train.py status)\n")
+        return EXIT_TRAIN
     return None
 
 
