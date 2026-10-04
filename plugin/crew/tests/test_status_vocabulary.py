@@ -3,8 +3,8 @@
 `needs-owner`, `cancelled` and `superseded` are rows in crew_tracker's table.
 Every other reader keeps its own list -- crew_state's closed words (the
 session brief, `resolve_active`, approval precheck), autopilot's INDEX and
-header lists, the Obsidian lane table copied into `obsidian-sync.md` and the
-README -- so each list is held to crew_tracker's here, and a word added in one
+header lists, the Obsidian lane table copied into `obsidian-sync.md`, the
+README and the memory-and-obsidian guide -- so each list is held to crew_tracker's here, and a word added in one
 place and forgotten in another fails by name instead of reopening a ticket.
 """
 import os
@@ -79,3 +79,10 @@ def test_readme_ticket_statuses_table_lists_every_tracker_status():
     words = _table_words(_read("README.md"), "### Ticket statuses")
 
     assert sorted(set(crew_tracker.LANE_FOR_STATUS) - words) == []
+
+
+def test_memory_and_obsidian_guide_lane_table_lists_every_tracker_status():
+    """The guide's lane table is a third copy of LANE_FOR_STATUS, read by people setting up the board."""
+    guide = _read(os.pardir, os.pardir, "docs", "guides", "crew", "src", "memory-and-obsidian.md")
+
+    assert sorted(set(crew_tracker.LANE_FOR_STATUS) - _table_words(guide, "| Ticket status |")) == []

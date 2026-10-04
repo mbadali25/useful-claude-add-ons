@@ -54,13 +54,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Tests.** `test_status_vocabulary.py` (new) holds `CLOSED_STATUSES` to
   `crew_state._TABLE_DONE_WORDS`, `_DONE_RE`, `crew_autopilot.INDEX_DONE` and
   `HEADER_CLOSED`, keeps it and `needs-owner` out of `STATUS_VALUES`, and
-  checks the `obsidian-sync.md` and README tables list every
-  `LANE_FOR_STATUS` key. Must-block and must-allow cases in
+  checks the `obsidian-sync.md`, README and memory-and-obsidian guide
+  tables list every `LANE_FOR_STATUS` key. Must-block and must-allow cases in
   `test_crew_tracker.py`, `test_crew_state.py`, `test_crew_ticket.py`,
   `test_approval_digest.py`, `test_crew_autopilot.py`,
   `test_crew_autopilot_status.py` and `test_status.py`. A new
-  `.crew/verify.json` rule maps the four scripts, `obsidian-sync.md` and the
-  README to the vocabulary, precheck and approval suites.
+  `.crew/verify.json` rule maps the four scripts, `obsidian-sync.md`, the
+  README and the guide source to the vocabulary, precheck and approval suites.
 - **Two PRs (owner rule T-0087).** This is PR A, the feature: it changes no
   `HARNESS` path. Its 19 sabotage mutations were run by hand, each red on its
   named test, and are registered in `sabotage_*.py` by PR B
