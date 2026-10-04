@@ -21,7 +21,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   only lock `mint` holds, so nothing can deadlock. A lock held past the wait, or
   one that cannot be created, refuses before anything is claimed; an INDEX that
   stays unreadable still refuses as before (could not tell is never "no ids
-  taken").
+  taken"). Not covered: `crew_tracker.py create` and `crew_tracker.py move`
+  run on their own (as `/crew:brainstorm` and `/crew:fix` do) write INDEX
+  without taking the INDEX lock, so a mint's scan can still overlap their
+  replace; that is follow-up ticket L-1511.
 - **Tests.** The race is now deterministic on every OS: INDEX opens raise the
   Windows sharing violation while a concurrent mint holds the lock across its
   replace (`test_mint_never_reads_index_while_another_mint_replaces_it`), plus a

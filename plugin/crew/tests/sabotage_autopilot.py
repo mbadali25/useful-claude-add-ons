@@ -1130,10 +1130,11 @@ ASSIGN_MUTATIONS = (
      "            text = crew_common.read_text(index)\n    except (crew_config_files.Busy, OSError):\n"
      "        text = crew_common.read_text(index)\n    except crew_config_files.Busy as exc:\n",
      _M + "test_mint_index_lock_failure_during_the_id_scan_claims_nothing[busy]"),
-    ("L-1510: a scan lock that cannot be created falls back to an unlocked read", TICKET,
-     "            text = crew_common.read_text(index)\n    except crew_config_files.Busy as exc:\n",
-     "            text = crew_common.read_text(index)\n    except (crew_config_files.Busy, OSError):\n"
-     "        text = crew_common.read_text(index)\n    except crew_config_files.Busy as exc:\n",
+    ("L-1510: a scan lock that cannot be created escapes as a raw OSError", TICKET,
+     "    except OSError as exc:\n"
+     "        raise TicketError(f\".work/INDEX.md's lock could not be taken ({exc}); which ids are \"\n"
+     "                          \"taken cannot be told\") from exc\n",
+     "",
      _M + "test_mint_index_lock_failure_during_the_id_scan_claims_nothing[oserror]"),
 )
 
