@@ -71,10 +71,10 @@ To run everything with no budget:
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --all
 
-(or `-All` on the PowerShell flavour). Give every rule a measured `seconds`
-when you write the map -- step 6 already times them. A rule with no `seconds`
-is UNKNOWN cost, not free: it always runs and the gate says its cost is
-unstated, which is the honest default but a poor one to leave in place.
+(or `-All` on the PowerShell flavour). In a PR's CI job pass `--ci`/`-Ci`:
+the same map over tracked files, Stop's reach filter, rc 77 or an empty run
+fails, no marker is written; crew-setup ships the workflow. Give every rule
+a measured `seconds` (step 6 times them); none is UNKNOWN cost and always runs.
 
 With `--sync`: run
 `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/map-audit.sh` and reconcile.
