@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.228: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.230: QA standards for repositories crew sets up (L-0618)
 
 - E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
   `n`, `false` are no), a live credential's reach must name a known or declared environment
