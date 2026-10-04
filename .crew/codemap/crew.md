@@ -1196,26 +1196,36 @@ Obsidian vault). A CLI the commands call, not a hook.
 
 ## The split rulebook (T-0052)
 
-- DERIVED (T-0052; measured on this tree, anchors not moved):
+- DERIVED (T-0052, after review round 3; measured on this tree, anchors not moved):
   `plugin/crew/hooks/scripts/crew_split.py` holds `/crew:split`'s judgement as code; its module docstring is the
   API T-0058 and T-0059 build on. The thresholds are constants, each with its
-  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:80`),
-  `ACCEPTANCE_LOOK` (`:84`), `SUBSYSTEMS_LOOK` (`:87`), `CHILDREN_MIN,
-  CHILDREN_MAX` (`:90`); `EVIDENCE_KEYS` (`:92`), `VIAS` (`:100`, `command`
-  only; T-0058 appends `autopilot`), `SDP_STOP` (`:101`). `measure`
-  (`:208`) returns None, never 0, for a measure it cannot read, and
-  `triggers` (`:232`) reports it as `unknown:<name>`. `check_proposal`
-  (`:361`) over `parse_proposal` (`:294`) is the placement rule (every parent
-  criterion exactly once, whitespace-collapsed equality). `tracker_mode`
-  (`:406`) reads `crew_tracker.resolve`. `check` (`:469`) records the
-  proposal's sha256 (`_proposal_sha`, `:436`, cut at `## Minted`) and the
-  current turn (`current_turn`, `:444`, which reads the context hook's
-  per-session state through `crew_context._session_file`,
-  `plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1072`, keyed
-  by `CLAUDE_CODE_SESSION_ID`, `plugin/crew/hooks/scripts/crew_split.py:102`); `confirm` (`:499`) passes only on a
-  different turn for the same session and an unchanged proposal. `apply`
-  (`:644`) refuses through `_refuse_mode` (`:585`), then writes
-  `spec.pre-split.md`, mints through `_mint_children` (`:617`, calling
+  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:106`),
+  `ACCEPTANCE_LOOK` (`:110`), `SUBSYSTEMS_LOOK` (`:113`), `CHILDREN_MIN,
+  CHILDREN_MAX` (`:116`); `EVIDENCE_KEYS` (`:118`), `VIAS` (`:126`, `command`
+  only; T-0058 appends `autopilot`), `SDP_STOP` (`:127`). `measure`
+  (`:241`) returns None, never 0, for a measure it cannot read or a readable
+  section that yields nothing, and `triggers` (`:268`) reports it as
+  `unknown:<name>`. `check_proposal` (`:418`) over `parse_proposal` (`:352`)
+  is the placement rule (every parent criterion exactly once,
+  whitespace-collapsed equality); `minted_tail` (`:330`) accepts `## Minted`
+  only as a trailing block of `- Child N: <id>` lines, and `_proposal_sha`
+  (`:495`) hashes everything else. `tracker_mode` (`:465`) reads
+  `crew_tracker.resolve`. `check` (`:574`) records the proposal's sha256, the
+  current turn (`current_turn`, `:533`) and a hash of the prompt that set it
+  (`current_prompt`, `:548`), both read from the context hook's per-session
+  state through `crew_context._session_file`
+  (`plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1071-1072`),
+  keyed by `CLAUDE_CODE_SESSION_ID` (`plugin/crew/hooks/scripts/crew_split.py:128`); `confirm` (`:631`) passes
+  only on a different turn for the same session, an unchanged proposal, and a
+  readable prompt that is neither a `<`-envelope nor check's own (owner
+  decision 2026-10-04: a self-scheduled plain-text "yes" passes; a documented
+  limit). `apply` (`:903`) refuses through `_refuse_mode` (`:825`) and
+  `_existing_children` (`:760`: under an apply record, `apply_record_path`
+  `:506`, each `## Minted` entry and each orphan, `_orphans` `:744`, needs
+  provenance, `_provenance` `:706`, an open INDEX row, `_indexed` `:721` (a
+  `cancelled`/`superseded` child is never reused), and a direction equal to
+  the current proposal's child, `_written_for` `:733`), then writes
+  `spec.pre-split.md`, mints through `_mint_children` (`:857`, calling
   `crew_ticket.mint`, `plugin/crew/hooks/scripts/crew_ticket.py:1355`,
   unedited: it takes no risk, so the child's `risk:` rides in its direction
   body), and only then sets the parent `superseded`.
@@ -1227,8 +1237,8 @@ Obsidian vault). A CLI the commands call, not a hook.
   `plugin/crew/tests/split_fixtures/t0004_spec_pre_split.md` (reconstructed;
   see the test's docstring); its own `.crew/verify.json` rule (the last one).
   JUDGEMENT: no `sabotage_split.py` yet - `plugin/crew/tests/sabotage*.py` is
-  HARNESS, so its ten mutations were run by hand and are registered by a
-  separate tooling PR.
+  HARNESS, so its mutations were run by hand and a separate tooling PR
+  registers them (`TODO.md`).
 
 ## Autopilot's size check and `/crew:autopilot split` (T-0058)
 
@@ -1240,23 +1250,26 @@ Obsidian vault). A CLI the commands call, not a hook.
   `crew_split.measure`, `triggers`, `absent_sources`) and `_decision_state`
   (`:595`: `check_proposal` plus the `answered:` rule), and T-0059's
   `parse_slices` through `_slice_problems` (`:612`, `SLICES_ARRIVE` `:574`).
-  `split_report` (`:668`) and `_split_main` (`:690`) are the `split`
+  `split_report` (`:670`) and `_split_main` (`:692`) are the `split`
   subcommand; `split` joins the router at `:289-290` (appended under the
   `SUBCOMMANDS` line, which a sabotage anchor pins) and `WAITING` at
-  `:2113-2115`. T-0012's rule is slug-free as `_split_rule` (`:1920`), which
-  `split_policy` (`:1886`) and `crew_split.ticket_split_policy`
-  (`plugin/crew/hooks/scripts/crew_split.py:592`) both call. `VIAS` gains
-  `autopilot` (`plugin/crew/hooks/scripts/crew_split.py:110`, `JIRA_STOP`
-  `:112`); `apply` asks the policy for it (`:744`) and skips `confirm`;
-  `check` records `policy_at_check` for the report only (`:533-537`).
-  `absent_sources` (`:244`) is what the gate names `unmeasured`.
+  `:2115-2117`. T-0012's rule is slug-free as `_split_rule` (`:1922`), which
+  `split_policy` (`:1888`) and `crew_split.ticket_split_policy`
+  (`plugin/crew/hooks/scripts/crew_split.py:736`) both call. `VIAS` gains
+  `autopilot` (`plugin/crew/hooks/scripts/crew_split.py:136`, `JIRA_STOP`
+  `:138`); `apply` asks the policy for it (`:1007`) and skips only `confirm`, keeping T-0052's existing-children
+  verification;
+  `check` records `policy_at_check` for the report only (`:644-649`).
+  `absent_sources` (`:280`) is what the gate names `unmeasured`.
 - Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
   block at the end of `plugin/crew/tests/test_crew_split.py`, on the
   `crew_split` rule in `.crew/verify.json`.
   JUDGEMENT: a source the repository lacks (no codemap, no review recorded)
   not stopping the run is this ticket's reading of the spec's "unreadable
   measure"; a stop on every run of a repo without metrics would be the
-  "check that always fires" the plan's risk names.
+  "check that always fires" the plan's risk names. Owner-approved 2026-10-04;
+  a source that is there but unmeasurable (no `- [ ]` acceptance bullet, no
+  `### Step`, a Touch entry outside every codemap subsystem) still stops.
 
 ## The artifact refresh check (T-0008, crew 1.0.36)
 

@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.379: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
+### Added — `crew` 1.0.391: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 
 - **What changed.** `crew_autopilot.next_phase` runs T-0052's split rulebook
   (`crew_split.measure` and `triggers`) once the spec validates and once the
@@ -31,31 +31,42 @@ All notable changes to this repository are documented here. Format follows [Keep
   in **Jira mode whatever `autopilot.approval` says** (autopilot never
   creates a Jira issue; the owner runs `/crew:split <KEY>`), in SDP mode and
   in an unknown tracker mode, and `apply --via autopilot` asks it at apply
-  time, never from a record; `--via command` needs no policy and keeps
-  T-0052's human-turn confirmation.
+  time, never from a record. It skips only the human-turn confirmation:
+  every other check of T-0052's `apply` still runs, the existing-children
+  verification (`split-apply.json`, provenance lines, an open INDEX row, a
+  direction matching the current proposal) included, and `apply` now makes
+  the record folder itself, since autopilot may apply with no `check`
+  before it. `--via command` needs no policy and keeps T-0052's
+  confirmation.
 - **Unknown measures.** A measure whose source is there and cannot be read
   stops as `split-check-unknown`. A source the repository does not have at
   all (no `.crew/codemap/`; no review recorded in `.crew/metrics.md`) is
   named `unmeasured: <name> (<why>)` on the split-check reason and the
   `split` output and does not stop (`crew_split.absent_sources`): the spec's
   "unreadable measure" read so that a repo without metrics is not stopped on
-  every ticket. T-0052's `measure` is unchanged and still reports both as
-  `None`.
+  every ticket; **owner-approved 2026-10-04**. A source that is there but
+  cannot be measured still stops, including T-0052's zero-count `None`s: an
+  Acceptance section with no `- [ ]` bullet, a plan with no `### Step`, a
+  Touch entry no codemap subsystem covers (the stop names the fix).
+  T-0052's `measure` is unchanged. The shared test fixture
+  (`scope_fixtures.SPEC`/`PLAN`) now writes `- [ ] tests pass` and
+  `### Step 1`, the shapes `/crew:spec` and `/crew:plan` write.
 - **Why.** The owner's 2026-09-26 direction (T-0052): autopilot looks at a
   ticket's size after spec and after plan through the same rulebook as
   `/crew:split`, and a split it applies goes through the approval policy,
   with Jira always the owner's yes.
-- **Tests.** `test_crew_autopilot_split.py` (35 cases: every gate outcome,
+- **Tests.** `test_crew_autopilot_split.py` (36 cases: every gate outcome,
   the subcommand, the router, the prose) and the T-0058 block in
   `test_crew_split.py` (policy must-block and must-allow, apply via
   autopilot in files and Obsidian mode). `test_crew_route.py`'s subcommand
   tuple and `test_lifecycle_commands.py`'s exact-CLI list gain `split`.
-  Fourteen T-0058 mutations and T-0052's ten were hand-run, each red on its
+  Seventeen T-0058 mutations and T-0052's ten were hand-run on the tree
+  merged with T-0052 at 1b0de3cb, each red on its
   named test; `sabotage_split.py` is a HARNESS path, so registering them is
   a separate tooling PR. `autopilot.md` stays inside its 110 lines by
   joining lines in place.
 
-### Added — `crew` 1.0.374: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+### Added — `crew` 1.0.387: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
   `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
@@ -79,8 +90,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   session's current human-turn id (the context hook's `turn.id`, found
   through `CLAUDE_CODE_SESSION_ID`); `confirm`, and `apply` through it,
   passes only when the proposal is unchanged and a different turn id is
-  readable for the same session. No session id, an absent or unreadable turn
-  record, or a check that saw no turn is a refusal; under `/crew:autopilot`
+  readable for the same session, moved by a prompt that is readable, not a
+  harness envelope (task notification, wake, webhook) and not the prompt
+  check ran under (a loop). No session id, an absent or unreadable turn
+  record or prompt, or a check that saw no turn is a refusal; a successful
+  apply spends the check; under `/crew:autopilot`
   the command stops and names T-0058's `/crew:autopilot split <id>`.
 - **Thresholds, with their evidence** (constants, not config):
   `PLAN_STEPS_LOOK = 9`, `ACCEPTANCE_LOOK = 12`, `SUBSYSTEMS_LOOK = 2`,
@@ -98,17 +112,42 @@ All notable changes to this repository are documented here. Format follows [Keep
   `files` for the prose but `apply` refuses it, because `mint` does. Under
   Obsidian, `mint` now writes the card itself; `/crew:obsidian-sync` is named
   only when a warning names the board. A failed mint records the minted
-  children under `## Minted` in `split.md`, and a re-run after a new check
-  and yes skips them rather than minting duplicates. An unknown evidence key
+  children under a trailing `## Minted` in `split.md`; a re-run after a new
+  check and yes skips a child only when an apply record exists and its
+  direction carries apply's provenance (`origin: split of <parent>`,
+  `split-child: <n>`) and an INDEX row and its direction is exactly what the
+  current proposal's child would get, and adopts a child whose id never
+  reached `split.md` on the same terms; a minted child an edited proposal no
+  longer matches stops the apply, naming it.
+  A `## Minted` section apply did not write is refused, and the proposal
+  hash covers every byte but a valid trailing block. An unknown evidence key
   is refused even beside a known one.
-- **Tests.** `test_crew_split.py` (74 cases): must-block and must-allow for
+- **Accepted limit (owner decision 2026-10-04).** The confirmation gate is
+  not owner-proof against the session itself: a session can schedule its own
+  plain-text "yes" (`send_later`, a routine) and pass it. Documented in the
+  module docstring and the README; the follow-up routes split approval
+  through the `/crew:approve` harness path (`TODO.md`).
+- **Review round 1 (#364).** Three BLOCKs (a `## Minted` heading that hid
+  later edits from the hash, an unverified `## Minted` that let apply skip a
+  child, a turn moved by a task notification passing `confirm`), four FIXes
+  (a readable section yielding nothing, or an unmatched Touch entry, read as
+  0; the sabotage module's follow-up recorded in `TODO.md`; the window
+  between a mint and its record, and a non-UTF-8 spec found after minting)
+  and three NITs, each test-first. **Round 2:** a skipped or adopted child
+  is compared to the current proposal (a swapped child was reused with its
+  old criteria), orphans need the apply record and an INDEX row, and the
+  repeated-prompt refusal says the owner may have typed the same words.
+  **Round 3:** a `cancelled` or `superseded` child is never reused, so
+  cancelling a stale child unblocks the apply, and the refusal names that
+  exit and restoring the child's text.
+- **Tests.** `test_crew_split.py` (100 cases): must-block and must-allow for
   every rule, the confirm gate, `apply` in files and Obsidian mode, and the
   command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
   entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
-  Ten mutations (child bound, substring placement, duplicates, exclusions,
-  `separable-criteria`, `None` as 0, the sdp stop, mint order, parent-status
-  order, the confirm turn check) were run by hand, each red on its named
-  test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
+  Twenty-seven mutations (the first ten: child bound, substring placement,
+  duplicates, exclusions, `separable-criteria`, `None` as 0, the sdp stop,
+  mint order, parent-status order, the confirm turn check; seventeen more for
+  the review rounds' guards) were run by hand, each red on its named test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
   paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
   maps `crew_split.py`, its test, the fixture and `split.md`.
 

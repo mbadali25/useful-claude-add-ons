@@ -640,7 +640,9 @@ def _split_gate(top, ticket, stage, answer, policy=True):
     if size["unknown"]:
         return answer("split-check-unknown", True, f"the size check after {stage} could not "
                       f"read {', '.join(size['unknown'])} (its source is there): could not "
-                      "tell is not \"small\" - a person fixes the source or decides",
+                      "tell is not \"small\" - a person fixes the source (Acceptance checks as "
+                      "`- [ ]` bullets, `### Step` plan headings, every Touch entry under a "
+                      "codemap subsystem, a readable .crew/metrics.md)",
                       look)
     if not size["fired"]:
         return None

@@ -42,7 +42,7 @@ def _criteria(count):
 
 def _spec(ticket, count, risk="high"):
     body = SPEC.format(ticket=ticket, touch="- `src/**`").replace(
-        "- tests pass\n", "".join(f"- [ ] {c}\n" for c in _criteria(count)))
+        "- [ ] tests pass\n", "".join(f"- [ ] {c}\n" for c in _criteria(count)))
     first, rest = body.split("\n", 1)
     return f"{first} title          status: spec   risk: {risk}\n{rest}"
 
@@ -189,6 +189,18 @@ def test_unknown_measure_stops(tmp_path):
 
     assert (got["phase"], got["stop"], "subsystems" in got["reason"]) == (
         "split-check-unknown", True, True), got
+
+
+def test_plain_bullet_acceptance_stops_unknown(tmp_path):
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=1)
+    spec = root / ".work" / "tickets" / ticket / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("- [ ] ", "- "), encoding="utf-8")
+
+    got = _next(root, ticket)
+
+    assert (got["phase"], got["stop"], "acceptance-count" in got["reason"],
+            "`- [ ]`" in got["reason"]) == ("split-check-unknown", True, True, True), got
 
 
 def test_unreadable_metrics_stops(tmp_path):
