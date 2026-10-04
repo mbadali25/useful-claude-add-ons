@@ -196,8 +196,8 @@ METRICS_WINDOW = 10
 
 _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 
-# Markers that mean a ticket line is finished.
-#
+# Markers that mean a ticket line is finished. T-0037 added `cancelled` and
+# `superseded` here and to `_TABLE_DONE_WORDS` (crew_tracker.CLOSED_STATUSES).
 # Position is NOT the discriminator, which an earlier version of this got wrong.
 # Anchoring a bare keyword to the start of the line still misreads open work:
 # `- Merged conflicts remain in T-8` and `- Complete the T-5 setup` both lead
@@ -217,7 +217,7 @@ _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 # fails loudly rather than silently reading finished tickets as open.
 _DONE_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])?\s*"
-    r"(?:\[x\]|~~|(?:done|closed|merged|shipped|complete[d]?)\s*:)",
+    r"(?:\[x\]|~~|(?:done|closed|merged|shipped|complete[d]?|cancelled|superseded)\s*:)",
     re.IGNORECASE,
 )
 
@@ -236,7 +236,7 @@ _DONE_RE = re.compile(
 # never the row text as a whole, which is what keeps a `done` sitting in the
 # TITLE cell of an open row from closing it.
 _TABLE_DONE_WORDS = frozenset({
-    "done", "closed", "merged", "shipped", "complete", "completed",
+    "done", "closed", "merged", "shipped", "complete", "completed", "cancelled", "superseded",
 })
 
 

@@ -67,7 +67,8 @@ No output, a traceback or a non-zero exit is a stop.
   named and commit it. Then `LAST=<c>`, `N+=1`, again.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
 - any other `stop=1` - print the phase, the reason and the command the human types (may be
-  empty), then **stop** - never run it yourself.
+  empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer
+  to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
 
 The policy (T-0010; `next`'s reason names it; `human` always stops) is the only writer here:
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>`

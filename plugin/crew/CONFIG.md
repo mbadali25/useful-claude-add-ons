@@ -806,11 +806,11 @@ repository or one checkout.
 | `obsidian.vaultPath` | path or `null` | `null` | `crew_tracker.py` (falls back to `memory.vaultPath`; must hold `.obsidian/`) |
 | `obsidian.boardDir` | path or `null` | `null` | `crew_tracker.py` (relative, no `..`) |
 | `obsidian.board` | filename | `"Board.md"` | `crew_tracker.py` (a bare file name) |
-| `obsidian.columns.backlog` | string | `"Backlog"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.backlog` | string | `"Backlog"` | `crew_tracker.py` (`LANE_FOR_STATUS`: `direction`, `ready`, `needs-owner`) |
 | `obsidian.columns.ready` | string | `"Ready"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
 | `obsidian.columns.inProgress` | string | `"In Progress"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
 | `obsidian.columns.review` | string | `"Review"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
-| `obsidian.columns.done` | string | `"Done"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.done` | string | `"Done"` | `crew_tracker.py` (`LANE_FOR_STATUS`: `done`, `cancelled`, `superseded`, each checked) |
 | `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
 | `verify.stopBudgetSeconds` | integer | `60` | `hooks/scripts/verify-gate.sh`, `verify-gate.ps1` |
 | `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |

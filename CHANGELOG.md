@@ -4,6 +4,67 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.322: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
+
+- **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
+  gains three rows beside `STATUS_ORDER`: `OWNER_STATUSES = ("needs-owner",)`
+  (open, waiting on the owner, Obsidian Backlog lane) and
+  `CLOSED_STATUSES = ("cancelled", "superseded")` (closed, Done lane,
+  checked). `move --to` any of them is accepted; any move out of `done`,
+  `cancelled` or `superseded` needs `--reopen` and is otherwise refused with
+  nothing written, and `needs-owner` moves to and from any open word without
+  it. The closed words close a ticket in every reader: `crew_state`'s table
+  and prose readers (the session brief, `crew_ticket.resolve_active`'s INDEX
+  fallback, and approval precheck through `_index_closed`, with
+  `crew_ticket.py` unedited), autopilot's `INDEX_DONE` and a new
+  `HEADER_CLOSED` (`done`, `cancelled`, `superseded`; a header `merged` still
+  does not close), and `/crew:status`, which lists them on no line. A closed
+  reason quotes the spec's `split-into: <ids>` (T-0052) or `superseded-by:
+  <id>` line. Autopilot stops an INDEX `needs-owner` row as phase
+  `needs-owner`, waiting on `owner`, naming the ticket's unanswered
+  `## Open questions` or saying none is recorded - never as "cannot tell
+  whether direction is approved". `/crew:status` prints
+  `owner    <ids> (needs-owner)`. The README gains a "Ticket statuses" table;
+  `obsidian-sync.md`, `status.md`, `autopilot.md` and CONFIG.md's
+  `obsidian.columns.backlog`/`.done` rows name the words.
+- **Why.** Nothing on main knew these words: a `cancelled` INDEX row read as
+  OPEN, so the session brief could name a cancelled ticket as the current
+  one, autopilot stopped on it as "cannot tell whether direction is
+  approved", and `move --to cancelled` refused with "maps to no lane".
+  T-0052, T-0058 and T-0059 (#364, #365, #366) cite this vocabulary, and
+  T-0039 and T-0040 name `needs-owner`.
+- **Approval is unchanged.** `crew_ticket.STATUS_VALUES` keeps its seven
+  values and `approval_digest` is untouched, so a blocking hook accepts
+  nothing new. `in-progress` and every other `STATUS_VALUES` word keep an
+  approval (T-0059's non-final slice); a header edit to `cancelled` or
+  `superseded` stales it on purpose, and `needs-owner` (never a header word)
+  stales it like any unknown word. Tests pin both and the tuple's literal
+  value.
+- **Trackers.** Jira and SDP push none of the three (`_PUSH_AT` stays
+  `in-progress`, `done`): the line says "nothing to push" and exits 0, and
+  the owner closes a cancelled Jira or SDP item by hand. No `obsidian.columns`
+  key is added, so a cancelled card sits checked in Done. No new command: a
+  ticket is cancelled with `crew_tracker.py move --to cancelled`.
+- **Owner approval.** The owner approved (2026-10-04) every `OWNER CHECK:`
+  choice in T-0037's reconstructed spec as written: `needs-owner` is never a
+  spec header word; `STATUS_VALUES` is unchanged; the Obsidian closed words go
+  to the `done` lane, checked; Jira/SDP push nothing; no separate needs-owner
+  queue (a non-ticket item is minted `ready`, then moved); two PRs.
+- **Tests.** `test_status_vocabulary.py` (new) holds `CLOSED_STATUSES` to
+  `crew_state._TABLE_DONE_WORDS`, `_DONE_RE`, `crew_autopilot.INDEX_DONE` and
+  `HEADER_CLOSED`, keeps it and `needs-owner` out of `STATUS_VALUES`, and
+  checks the `obsidian-sync.md` and README tables list every
+  `LANE_FOR_STATUS` key. Must-block and must-allow cases in
+  `test_crew_tracker.py`, `test_crew_state.py`, `test_crew_ticket.py`,
+  `test_approval_digest.py`, `test_crew_autopilot.py`,
+  `test_crew_autopilot_status.py` and `test_status.py`. A new
+  `.crew/verify.json` rule maps the four scripts, `obsidian-sync.md` and the
+  README to the vocabulary, precheck and approval suites.
+- **Two PRs (owner rule T-0087).** This is PR A, the feature: it changes no
+  `HARNESS` path. Its 19 sabotage mutations were run by hand, each red on its
+  named test, and are registered in `sabotage_*.py` by PR B
+  (`T-0037-sabotage`), a tooling PR that lands alone after this one.
+
 ### Changed — `crew` 1.0.322: the review bundle and the completion audit account for merged main (T-0100)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
