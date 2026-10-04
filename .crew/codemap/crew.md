@@ -1549,10 +1549,10 @@ then the train is advisory.
   calls `review_metrics.record` right after `review_ledger.record` accepts the round and before
   review.json (`plugin/crew/hooks/scripts/review_run.py`, grep `review_metrics.record`), one row
   per round into the MAIN checkout's file (`crew_common._main_checkout`), nothing when git cannot
-  name it. Readers resolve the same file since L-0582: DERIVED (at `62889e15`)
+  name it. Readers resolve the same file since L-0582: DERIVED (at the commit adding this text)
   `crew_common.metrics_crew_dir` (`plugin/crew/hooks/scripts/crew_common.py:164`) returns the
   main checkout's `.crew/` from a linked worktree, `root`'s own otherwise, and `(None, problem)`
-  when git cannot tell; `crew_state.read_metrics` (`plugin/crew/hooks/scripts/crew_state.py:319`)
+  when git cannot tell; `crew_state.read_metrics` (`plugin/crew/hooks/scripts/crew_state.py:313`)
   turns a problem into the verdict `could not tell: <why>` with `rate` None, `crew_standards.metric`
   (`plugin/crew/hooks/scripts/crew_standards.py:840`) exits 1 before any read or `--record`
   write, and `crew_status._metrics_line` (`plugin/crew/hooks/scripts/crew_status.py:184`) prints
@@ -3712,4 +3712,4 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
 
-**L-0582 (2026-10-04, on `62889e15`, the merge of origin/main `ce235468`; crew 1.0.384 placeholder).** Only the `.crew/metrics.md` writers bullet was re-derived, at `62889e15`, by reading the four cited functions. The anchor stays `42effe14`: the rest of this map was not re-verified against the files main changed since, so moving it would claim a check nobody ran.
+**L-0582 (2026-10-04, on `62889e15`, the merge of origin/main `ce235468`; crew 1.0.384 placeholder).** Only the `.crew/metrics.md` writers bullet was re-derived, at the commit adding this note, by reading the four cited functions. The anchor stays `42effe14`: the rest of this map was not re-verified against the files main changed since, so moving it would claim a check nobody ran.
