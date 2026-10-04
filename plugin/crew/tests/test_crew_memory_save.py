@@ -17,6 +17,7 @@ from `crew_memory.today`, which the tests replace.
 import hashlib
 import json
 import os
+import pathlib
 import subprocess
 import sys
 
@@ -57,6 +58,14 @@ class Host:
         monkeypatch.setenv("HOME", str(self.home))
         monkeypatch.setenv("USERPROFILE", str(self.home))
         monkeypatch.setenv("CREW_OBSIDIAN_CONFIG", str(self.config))
+        # The save's kernel lock files live in a per-user cache, outside `base`
+        # so a tree hash of the fixture never sees them: conftest's per-test
+        # XDG_CACHE_HOME (which a pwsh spawn must use, L-0557), also given as
+        # LOCALAPPDATA, the Windows base.
+        self.cache = pathlib.Path(os.environ.get("XDG_CACHE_HOME")
+                                  or base.parent / f"{base.name}-cache")
+        monkeypatch.setenv("XDG_CACHE_HOME", str(self.cache))
+        monkeypatch.setenv("LOCALAPPDATA", str(self.cache))
         monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
         monkeypatch.setattr(crew_memory, "today", lambda: DAY1)
 
@@ -91,7 +100,8 @@ class Host:
     def env(self):
         env = dict(os.environ)
         env.update(HOME=str(self.home), USERPROFILE=str(self.home),
-                   CREW_OBSIDIAN_CONFIG=str(self.config), PYTHONIOENCODING="utf-8")
+                   CREW_OBSIDIAN_CONFIG=str(self.config), PYTHONIOENCODING="utf-8",
+                   XDG_CACHE_HOME=str(self.cache), LOCALAPPDATA=str(self.cache))
         env.pop("OBSIDIAN_VAULT_PATH", None)
         return env
 
@@ -678,7 +688,18 @@ def _keeps_every_byte(native, body, note_path):
 
 
 def _locks(base):
-    return [p for p in tree(base) if p.endswith(".crew-save.lock")]
+    """Lock files beside the vault or memory files: there must never be one."""
+    return [p for p in tree(base) if p.endswith(".lock")]
+
+
+def _held(path):
+    """Whether some save holds the lock for `path` right now: a fresh take,
+    through a new open file, is refused."""
+    handle = crew_memory._take_lock(path)  # pylint: disable=protected-access
+    if handle is None:
+        return True
+    crew_memory._release([handle])  # pylint: disable=protected-access
+    return False
 
 
 def test_native_edit_while_the_pointer_temp_is_written_is_kept(host, capsys, monkeypatch):
@@ -740,7 +761,7 @@ def test_two_saves_appending_to_one_note_keep_every_byte(host, capsys, monkeypat
     _keeps_every_byte(one, "text ONE", note)
     _keeps_every_byte(two, "text TWO", note)
     assert "base" in note.read_text(encoding="utf-8")
-    assert results["one"]["state"].startswith("kept-full-text: another save is in progress")
+    assert results["one"]["state"].startswith("kept-full-text: another save is running now")
     assert not _locks(host.base)
 
 
@@ -761,35 +782,29 @@ def test_a_plan_made_before_another_save_is_refused(host, capsys):
 
 @pytest.mark.parametrize("which", ["note", "native"])
 def test_a_held_lock_refuses_and_writes_nothing(host, capsys, which):
+    """A save holding either lock right now: the second save writes nothing
+    and says another save is running now."""
     vault = host.work()
     mem = host.memory()
-    folder = vault / "memories" / "repo" if which == "note" else host.mem
-    folder.mkdir(parents=True, exist_ok=True)
-    name = "Example fact.md" if which == "note" else "fact.md"
-    (folder / f".{name}.crew-save.lock").write_text("held\n", encoding="utf-8")
-    out = kept(host, mem, capsys, 1, "another save is in progress")
-    assert "crew-save.lock" in out
-
-
-def test_a_stale_lock_is_cleared_after_the_ttl(host, capsys):
-    vault = host.work()
-    mem = host.memory()
-    lock = host.mem / ".fact.md.crew-save.lock"
-    lock.write_text("stale\n", encoding="utf-8")
-    old = os.stat(lock).st_mtime - crew_memory.LOCK_TTL - 60
-    os.utime(lock, (old, old))
-    code, out = save(host, mem, capsys)
-    assert code == 0, out
-    assert (vault / NOTE).is_file()
-    assert not _locks(host.base)
+    target = str(vault / NOTE) if which == "note" else str(mem)
+    held = crew_memory._take_lock(target)  # pylint: disable=protected-access
+    assert held is not None
+    try:
+        out = kept(host, mem, capsys, 1, "another save is running now")
+    finally:
+        crew_memory._release([held])  # pylint: disable=protected-access
+    assert crew_memory._lock_path(target) in out  # pylint: disable=protected-access
+    assert save(host, mem, capsys)[0] == 0
 
 
 def test_locks_are_released_after_a_failed_save(host, capsys, monkeypatch):
-    host.work()
+    vault = host.work()
+    mem = host.memory()
     monkeypatch.setattr(crew_memory, "resolve_pointer",
                         lambda *_a: ("note-missing", "simulated", None))
-    assert save(host, host.memory(), capsys)[0] == 1
+    assert save(host, mem, capsys)[0] == 1
     assert not _locks(host.base)
+    assert not _held(str(vault / NOTE)) and not _held(str(mem))
 
 
 def test_no_hard_links_never_replaces_over_a_note(host, capsys, monkeypatch):
@@ -856,15 +871,44 @@ def test_an_append_keeps_every_existing_byte_bom_and_crlf_included(host, capsys)
 
 
 def test_memory_md_is_refused(host, capsys):
-    """FIX5: the index is not a memory, in any case."""
+    """FIX5 / round-2 NIT 1: the index is refused as the documented
+    kept-full-text line, exit 1, in text and in --json."""
     host.work()
-    for name in ("MEMORY.md", "memory.MD"):
-        mem = host.memory(name=name)
-        before = tree(host.base)
-        assert save(host, mem, capsys)[0] == 2
-        assert tree(host.base) == before
-        row = crew_memory.plan_save(str(mem), str(host.root), ["memory"])
-        assert row["state"].startswith("kept-full-text: ") and "index" in row["state"]
+    mem = host.memory(name="MEMORY.md")
+    out = kept(host, mem, capsys, 1, "kept-full-text: MEMORY.md is the index")
+    assert "Traceback" not in out
+    code, out = save(host, mem, capsys, "--json")
+    assert code == 1
+    row = json.loads(out)
+    assert row["state"].startswith("kept-full-text: MEMORY.md is the index")
+    assert row["reason"].startswith("MEMORY.md is the index")
+    row = crew_memory.plan_save(str(mem), str(host.root), ["memory"])
+    assert row["state"].startswith("kept-full-text: ") and "index" in row["state"]
+
+
+def _case_sensitive(folder):
+    probe = folder / "case-probe.tmp"
+    probe.write_text("x", encoding="utf-8")
+    try:
+        return not (folder / "CASE-PROBE.TMP").exists()
+    finally:
+        probe.unlink()
+
+
+def test_a_lower_case_memory_md_is_the_index_only_where_case_folds(host, capsys):
+    """Round-2 NIT 5: on a case-sensitive file system a real `memory.md` is
+    an ordinary memory, never the index; where case folds (macOS default,
+    Windows) it IS the index file and is refused."""
+    vault = host.work()
+    mem = host.memory(name="memory.md")
+    if _case_sensitive(host.mem):
+        code, out = save(host, mem, capsys, "--title", "Example fact")
+        assert code == 0, out
+        assert (vault / NOTE).is_file()
+        index = host.memory(name="MEMORY.md")
+        kept(host, index, capsys, 1, "MEMORY.md is the index")
+    else:
+        kept(host, mem, capsys, 1, "MEMORY.md is the index")
 
 
 def test_the_note_folder_is_fsynced_before_the_pointer(host, capsys, monkeypatch):
@@ -960,3 +1004,160 @@ def test_memory_id_is_json_decoded_when_compared(host, capsys, monkeypatch):
     assert code == 0, out
     assert "action: append" in out
     assert (vault / NOTE).read_text(encoding="utf-8").endswith("\n\nnewer\n")
+
+
+# --- review round 2: kernel locks in the user cache, lock errors --------------------
+#
+# A save's two locks are `flock` (POSIX) / `msvcrt.locking` (Windows) locks on
+# files in a per-user cache, named by the sha256 of the guarded file's real
+# path. The OS drops them when the holder exits or is killed, so there is no
+# stale lock to judge and no takeover to race.
+
+def _lock_dir(host):
+    return host.cache / "crew" / "memory-locks"
+
+
+def test_lock_files_live_in_the_user_cache_never_beside_the_files(host, capsys):
+    vault = host.work()
+    mem = host.memory()
+    assert save(host, mem, capsys)[0] == 0
+    want = {hashlib.sha256(os.fsencode(os.path.normcase(os.path.realpath(p)))).hexdigest()
+            + ".lock" for p in (str(vault / NOTE), str(mem))}
+    assert set(os.listdir(_lock_dir(host))) == want
+    assert sorted(os.listdir(host.mem)) == ["fact.md"]
+    assert sorted(os.listdir(vault / "memories" / "repo")) == ["Example fact.md"]
+    assert not _locks(host.base)
+
+
+def test_a_user_file_with_the_old_lock_name_is_never_touched(host, capsys):
+    """Round 1 removed any `.<name>.crew-save.lock` older than its TTL, a
+    real user file included. Nothing beside the files is a lock now."""
+    host.work()
+    mem = host.memory()
+    user = host.mem / ".fact.md.crew-save.lock"
+    user.write_text("user data\n", encoding="utf-8")
+    os.utime(user, (1_000_000_000, 1_000_000_000))
+    assert save(host, mem, capsys)[0] == 0
+    assert user.read_text(encoding="utf-8") == "user data\n"
+
+
+def test_the_forced_takeover_race_leaves_one_holder(host, monkeypatch):
+    """Reviewer q4: saver B runs its whole take in the middle of saver A's.
+    Exactly one of them may hold the lock."""
+    vault = host.work()
+    note = str(vault / NOTE)
+    real = crew_memory._os_try_lock  # pylint: disable=protected-access
+    got = {}
+
+    def try_lock(handle):
+        if "b" not in got:
+            got["b"] = None
+            got["b"] = crew_memory._take_lock(note)  # pylint: disable=protected-access
+        return real(handle)
+
+    monkeypatch.setattr(crew_memory, "_os_try_lock", try_lock)
+    got["a"] = crew_memory._take_lock(note)  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_memory, "_os_try_lock", real)
+    holders = [h for h in (got["a"], got["b"]) if h is not None]
+    try:
+        assert len(holders) == 1, got
+    finally:
+        crew_memory._release(holders)  # pylint: disable=protected-access
+
+
+_CHILD = r"""
+import sys, time
+sys.path.insert(0, sys.argv[1])
+import crew_memory
+real = crew_memory._write_temp
+def temp(directory, data, *rest):
+    print("inside", flush=True)
+    time.sleep(120)
+    return real(directory, data, *rest)
+crew_memory._write_temp = temp
+sys.exit(crew_memory.main(sys.argv[2:]))
+"""
+
+
+def test_a_save_killed_while_holding_the_lock_does_not_block_the_next(host, capsys):
+    """A real save in another process holds both locks inside its note
+    write: this save is refused while it runs. Killed (SIGKILL on POSIX,
+    TerminateProcess on Windows), it leaves nothing that blocks the next."""
+    vault = host.work()
+    mem = host.memory()
+    original = mem.read_bytes()
+    child = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, "-c", _CHILD, os.path.dirname(SCRIPT), "save", "--file", str(mem),
+         "--root", str(host.root), "--tag", "memory", "--apply"],
+        stdout=subprocess.PIPE, env=host.env())
+    try:
+        assert child.stdout.readline().strip() == b"inside"
+        out = kept(host, mem, capsys, 1, "another save is running now")
+        assert crew_memory._lock_path(str(vault / NOTE)) in out  # pylint: disable=protected-access
+    finally:
+        child.kill()
+        child.wait(30)
+        child.stdout.close()
+    assert mem.read_bytes() == original
+    code, out = save(host, mem, capsys)
+    assert code == 0, out
+    assert mem.read_text(encoding="utf-8").endswith(POINTER + "\n")
+
+
+@pytest.mark.parametrize("which", ["note", "native"])
+def test_a_lock_that_cannot_be_opened_keeps_full_text(host, capsys, monkeypatch, which):
+    """FIX 1: any OSError taking a lock (the cache unwritable, a full disk, a
+    read-only file system) is a clean kept-full-text, exit 1, and every lock
+    already taken is released - the note's, when the memory's fails."""
+    vault = host.work()
+    mem = host.memory()
+    target = str(vault / NOTE) if which == "note" else str(mem)
+    lock = crew_memory._lock_path(target)  # pylint: disable=protected-access
+    real = os.open
+
+    def refuse(path, *rest, **kwargs):
+        if os.fspath(path) == lock:
+            raise PermissionError(13, "Permission denied", path)
+        return real(path, *rest, **kwargs)
+
+    monkeypatch.setattr(crew_memory.os, "open", refuse)
+    out = kept(host, mem, capsys, 1, "kept-full-text: lock failed")
+    assert "Permission denied" in out
+    code, out = save(host, mem, capsys, "--json")
+    assert code == 1
+    row = json.loads(out)
+    assert row["state"].startswith("kept-full-text: lock failed")
+    assert row["reason"].startswith("lock failed")
+    monkeypatch.setattr(crew_memory.os, "open", real)
+    assert not _held(str(vault / NOTE)) and not _held(str(mem))
+    assert save(host, mem, capsys)[0] == 0
+
+
+def _no_permissions():
+    return os.name == "nt" or os.geteuid() == 0
+
+
+@pytest.mark.skipif(_no_permissions(), reason="needs POSIX modes and a non-root user")
+@pytest.mark.parametrize("folder", ["memory", "note", "cache"])
+def test_an_unwritable_folder_keeps_full_text_and_blocks_nothing(host, capsys, folder):
+    """FIX 1, with real modes: the memory folder, the note folder or the lock
+    cache at 0555 gives a kept-full-text line, never a traceback, and the
+    next save once the folder is writable again is not blocked."""
+    vault = host.work()
+    mem = host.memory()
+    original = mem.read_bytes()
+    path = {"memory": host.mem, "note": vault / "memories" / "repo",
+            "cache": _lock_dir(host)}[folder]
+    path.mkdir(parents=True, exist_ok=True)
+    os.chmod(path, 0o555)
+    try:
+        code, out = save(host, mem, capsys)
+    finally:
+        os.chmod(path, 0o755)
+    reason = {"memory": "pointer write failed", "note": "note write failed",
+              "cache": "lock failed"}[folder]
+    assert code == 1, out
+    assert state_line(out).startswith(f"state: kept-full-text: {reason}"), out
+    assert mem.read_bytes() == original
+    code, out = save(host, mem, capsys)
+    assert code == 0, out

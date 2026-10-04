@@ -61,14 +61,25 @@ Exit 0 for `resolved` / `full-text`, 1 for every other state, 2 for usage.
 import argparse
 import datetime
 import errno
+import hashlib
 import json
 import os
 import re
 import stat
 import sys
 import tempfile
-import time
 import unicodedata
+
+# One of these exists on any platform crew runs on; the other is None. Module
+# globals, as in crew_endpoints, so a test can reach either primitive.
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:  # POSIX
+    msvcrt = None
 
 import crew_common
 import crew_config
@@ -452,12 +463,11 @@ _NAME_LINE = re.compile(r"name:[ \t]*(.+?)[ \t]*")
 _MEMORY_ID = re.compile(r"memory_id:[ \t]*(.+?)[ \t]*")
 _UPDATED = re.compile(r"^updated:[^\r\n]*", re.MULTILINE)
 _UPDATE_HEAD = re.compile(r"^## Update \d{4}-\d{2}-\d{2}[ \t]*$", re.MULTILINE)
-# A save holds two lock files, `.<name>.crew-save.lock` beside the note and
-# beside the native memory, for its whole write sequence. A lock older than
-# this many seconds is taken to be left by a save that died, and is removed;
-# a real save finishes in well under a second.
-LOCK_TTL = 600
-BUSY = "another save is in progress"
+# A save holds two kernel locks for its whole write sequence, one for the
+# note and one for the native memory (`_take_lock`). The kernel grants each to
+# one open file at a time and drops it when the holder exits or is killed, so
+# a refusal means another save is running at this moment.
+BUSY = "another save is running now"
 
 
 def today():
@@ -610,11 +620,28 @@ def _kept(reason, code=1):
     return {"state": f"kept-full-text: {reason}", "reason": reason, "exit": code}
 
 
+def _is_index(path):
+    """Whether `path` is the folder's `MEMORY.md`: by exact name, or - for a
+    name that differs only in case - when it is the same file as `MEMORY.md`,
+    which is so only where the file system folds case (macOS by default,
+    Windows). A real `memory.md` on a case-sensitive file system is a memory."""
+    name = os.path.basename(path)
+    if name == "MEMORY.md":
+        return True
+    if name.lower() != "memory.md":
+        return False
+    index = os.path.join(os.path.dirname(os.path.abspath(path)), "MEMORY.md")
+    try:
+        return os.path.samefile(path, index)
+    except OSError:
+        return False
+
+
 def plan_save(path, root, tags, title=None, note=None, kind="concept", project=None):
     """The whole save, decided and computed before anything is opened for
     write. `state` is `pending` when writes are due (with the note text and
     the new native bytes), else the final state; `exit` is its exit code."""
-    if os.path.basename(path).lower() == "memory.md":
+    if _is_index(path):
         return _kept("MEMORY.md is the index, not a memory; it is never saved")
     try:
         if stat.S_ISLNK(os.lstat(path).st_mode):
@@ -743,51 +770,128 @@ def _fsync_dir(directory):
         os.close(handle)
 
 
+# The save's locks (review round 2). Each is an OS advisory lock - `flock` on
+# POSIX, `msvcrt.locking` on byte 0 on Windows - on a file in a per-user cache
+# (`_lock_dir`), named by the sha256 of the guarded file's real path. The
+# kernel drops it when its holder closes the file, exits or is killed, so there
+# is no TTL, no stale lock to judge and no takeover for two saves to race; no
+# lock file is ever placed in a (synced) vault or the memory folder, and a
+# user's own file can never be mistaken for one. crew never deletes, renames
+# or reads a lock file; deleting one while a save holds it would let a second
+# save lock a fresh file, which is why they sit in crew's own cache folder.
+# What this excludes: saves by the same user on the same machine. It does not
+# stop a save on another machine syncing the same vault, nor an edit by Claude
+# Code, Obsidian or anything else that never takes the lock - the re-compare
+# before each rename is what covers those, up to the rename itself.
+_POSIX_BUSY = frozenset({errno.EWOULDBLOCK, errno.EAGAIN})
+_WINDOWS_BUSY = frozenset({errno.EACCES, errno.EDEADLK})
+
+
+def _posix_try_lock(handle):
+    """One non-blocking try for an exclusive `flock`: True when granted,
+    False when another open file holds it; any other OSError is raised.
+    `flock`, not `fcntl` record locks, so two threads exclude each other."""
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        if exc.errno in _POSIX_BUSY:
+            return False
+        raise
+    return True
+
+
+def _windows_try_lock(handle):
+    """One non-blocking try for an exclusive lock on byte 0 (`LK_NBLCK`, not
+    the CRT's ten-second retrying `LK_LOCK`): True when granted, False when
+    another handle holds it; any other OSError is raised."""
+    os.lseek(handle, 0, os.SEEK_SET)
+    try:
+        msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+    except OSError as exc:
+        if exc.errno in _WINDOWS_BUSY:
+            return False
+        raise
+    return True
+
+
+def _os_unlock(handle):
+    if os.name == "nt":
+        os.lseek(handle, 0, os.SEEK_SET)
+        msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+_os_try_lock = _windows_try_lock if os.name == "nt" else _posix_try_lock
+
+
+def _lock_dir():
+    """`%LOCALAPPDATA%\\crew\\memory-locks` on Windows; on POSIX
+    `$XDG_CACHE_HOME/crew/memory-locks`, `~/.cache/...` when that is unset or
+    not absolute (the XDG rule)."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.join(
+            os.path.expanduser("~"), "AppData", "Local")
+    else:
+        base = os.environ.get("XDG_CACHE_HOME", "")
+        if not os.path.isabs(base):
+            base = os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(base, "crew", "memory-locks")
+
+
 def _lock_path(path):
-    return os.path.join(os.path.dirname(os.path.abspath(path)),
-                        f".{os.path.basename(path)}.crew-save.lock")
+    key = os.fsencode(os.path.normcase(os.path.realpath(path)))
+    return os.path.join(_lock_dir(), hashlib.sha256(key).hexdigest() + ".lock")
 
 
 def _take_lock(path):
-    """The lock file's path, or None when another save holds it. A lock
-    older than LOCK_TTL is removed once and taken again."""
+    """An open descriptor holding the kernel lock for `path`, or None when
+    another save holds it now. One try, never a wait. Raises OSError when the
+    lock cannot be taken at all (cache unwritable, disk full, read-only file
+    system, a file system that cannot lock)."""
     lock = _lock_path(path)
-    for _ in range(2):
-        try:
-            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        except FileExistsError:
-            try:
-                if time.time() - os.stat(lock).st_mtime > LOCK_TTL:
-                    os.unlink(lock)
-                    continue
-            except FileNotFoundError:
-                continue
-            return None
-        with os.fdopen(handle, "w", encoding="ascii") as out:
-            out.write(f"pid {os.getpid()} at {int(time.time())}\n")
-        return lock
-    return None
+    os.makedirs(os.path.dirname(lock), mode=0o700, exist_ok=True)
+    handle = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o600)
+    try:
+        granted = _os_try_lock(handle)
+    except BaseException:
+        os.close(handle)
+        raise
+    if not granted:
+        os.close(handle)
+        return None
+    return handle
 
 
 def _release(locks):
-    for lock in reversed(locks):
+    """Unlock and close each held descriptor, the last taken first. Closing
+    alone releases a `flock`; the explicit unlock is for Windows."""
+    for handle in reversed(locks):
         try:
-            os.unlink(lock)
-        except FileNotFoundError:
+            _os_unlock(handle)
+        except OSError:
+            pass
+        try:
+            os.close(handle)
+        except OSError:
             pass
 
 
 def _locked(plan):
     """`(locks, problem)`: the note's lock, then the native file's - always
-    in that order, so two saves cannot deadlock. On a refusal no lock is
-    left held."""
+    in that order, so two saves cannot deadlock. On a refusal or a lock
+    error no lock is left held."""
     held = []
     for path in (plan["note_path"], plan["file"]):
-        lock = _take_lock(path)
-        if lock is None:
+        try:
+            handle = _take_lock(path)
+        except OSError as exc:
             _release(held)
-            return None, f"{BUSY} ({_lock_path(path)} exists)"
-        held.append(lock)
+            return None, f"lock failed: cannot take the save lock {_lock_path(path)}: {exc}"
+        if handle is None:
+            _release(held)
+            return None, f"{BUSY} (it holds {_lock_path(path)})"
+        held.append(handle)
     return held, None
 
 
@@ -870,24 +974,11 @@ def _now_pointer(plan):
 
 
 def apply_save(plan):
-    """Note first, read back, then the pointer, all under two lock files
-    (`_locked`). Returns the final row."""
+    """Note first, read back, then the pointer, all under the save's two
+    kernel locks (`_locked`). Returns the final row."""
     row = {k: plan[k] for k in ("file", "vault", "note", "pointer", "action")}
-    folder, made = os.path.dirname(plan["note_path"]), []
-    while not os.path.lexists(folder) and _inside(folder, plan["vault_path"]):
-        made.append(folder)
-        folder = os.path.dirname(folder)
-    try:
-        os.makedirs(os.path.dirname(plan["note_path"]), exist_ok=True)
-    except OSError as exc:
-        return dict(row, **_kept(f"note write failed: {exc}"))
     locks, problem = _locked(plan)
     if problem:
-        for path in made:  # the folders this save made for its lock, deepest first
-            try:
-                os.rmdir(path)
-            except OSError:
-                break
         return dict(row, **_kept(problem))
     try:
         return dict(row, **_apply_locked(plan))
@@ -939,9 +1030,6 @@ def _row_text(row):
 def _save_cli(args, root):
     if not os.path.isfile(args.file):
         print(f"crew_memory: no such file: {args.file}", file=sys.stderr)
-        return 2
-    if os.path.basename(args.file).lower() == "memory.md":
-        print("crew_memory save: MEMORY.md is the index, not a memory", file=sys.stderr)
         return 2
     plan = plan_save(args.file, root, args.tag, args.title, args.note, args.type, args.project)
     if plan["state"] == "usage":
