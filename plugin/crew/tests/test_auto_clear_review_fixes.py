@@ -119,6 +119,7 @@ def test_sendkeys_declines_when_the_window_owner_cannot_be_determined(tmp_path):
 
     root, session = _ps1_repo(tmp_path)
     env = _windows_stub(tmp_path, [{"id": 1, "pid": 999999, "title": "Claude - a tab"}])
+    env.update(crew_fixtures.bind_session(root.parent / "home", session))  # T-0016
 
     dry = _run_ps1(root, session, env, "-DryRun")
     result = _run_ps1(root, session, env)

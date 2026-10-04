@@ -59,6 +59,510 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
   and #407 adopts this rule, the union included (not a block on several matches).
 
+### Fixed — `crew` 1.0.337: the verify gate passes a rule only on a completion record; the sabotage harness bounds each entry (T-0082 + T-0080, harness PR H2a)
+
+- **T-0082, what changed.** `verify-gate.sh` and `verify-gate.ps1` run each rule
+  inside a wrapper that writes the rule's exit status to a temp completion
+  record after the rule ends. A rule passes only when the wrapper ended 0 and
+  the record exists and says 0. One decision table, the same order in both
+  flavours: no bash / no temp file, the wrapper never started (`.ps1`), the
+  wrapper ended non-zero, a record missing / empty / not 1-3 digits / above
+  255, or a record above 128 is FAILED as **could not tell** - `VERIFY FAILED:
+  <cmd>` then `verify-gate: COULD NOT TELL (<reason>): <cmd>`, status
+  `unknown` in the command log (the record sync leaves the rule's entry as it
+  was, the tree-pass cache never stores it), a `COULD NOT BE JUDGED - counted
+  as FAILED` summary line, exit 2, neither marker advancing. 77 is still SKIP,
+  any other non-zero still a plain failure. `.ps1` resets `$rc` to `$null`
+  every rule and catches a bash that cannot start: before, that rule
+  inherited the previous rule's 0 and passed without running (reproduced on
+  Linux pwsh). A signalled `.sh` gate names the command in flight and removes
+  the rule's temp files; it still exits 128+N.
+- **T-0082, why.** A Windows run saw a rule hang, the runner killed, and no
+  `VERIFY FAILED` line for it: the gate decided pass from the absence of a
+  failure line, an unknown collapsing into the safe-looking value.
+  `test_verify_gate_rule_completion.py` (45 cases with `--run-slow`, sh and ps1) and 14 sabotage
+  entries; its own `.crew/verify.json` rule (16s; the [ps1] halves are `slow`
+  apart from a smoke set of three). Not here: a per-rule deadline (L-0674, held)
+  and the CI receipt's parser (L-0673).
+- **T-0080, what changed.** `tests/sabotage.py` runs each entry through the new
+  `tests/sabotage_bound.py`: its own process group, an `RLIMIT_DATA` cap every
+  spawned process inherits (Linux; default 4096 MiB, `CREW_SABOTAGE_MEM_MB`, 0 =
+  none) and a wall-clock limit (default 600 s, `CREW_SABOTAGE_TIMEOUT_S`). A
+  timeout stops the whole group and reads `RED BUT UNPROVEN -- timed out`; an
+  unreadable limit refuses the run (exit 2). The run prints a `bound:` line
+  first, `memory cap absent` off Linux. `sabotage.py` shrank 3400 -> 3381
+  lines (the exit-code classification moved to `sabotage_bound.verdict`).
+  `RLIMIT_DATA`, not the spec's `RLIMIT_AS`: under a 4 GiB address-space cap
+  1121 unmutated crew tests failed (pwsh 7.4.6 dies under any `RLIMIT_AS` tried
+  up to 30 GiB); the spec's fallback, taken. Under `ulimit -d 4194304` the crew
+  suite (`-n 4 --run-slow`, not wallclock) gives 11608 passed, 294 skipped - the
+  same as without it.
+- **Review round 1 (H2a, 0 BLOCK / 6 FIX).** The record is `<dir>/rc` in a
+  fresh private directory per rule run (`mktemp -d`, 0700; `.ps1`: `New-Item`
+  then mode 0700), removed whole - on a signalled `.sh` gate too, so a wrapper
+  it left running cannot write a late record (a killed `.ps1` gate has no
+  trap, so its orphan can leave the fresh directory behind: litter, never a
+  pass); `.ps1`'s `.crew/` fallbacks are absolute
+  from the repo root (a gate started from a subdirectory never found them);
+  the record must read exactly `0|[1-9][0-9]{0,2}`; 193-255 is reported as
+  "above 128 and not a signal number". `sabotage_bound` KILLs the entry's
+  process group on every path (a same-group child left behind by a passing
+  test no longer survives; `setsid` escapes, documented) and reports the cap
+  `absent` below Linux 4.7 or on an unreadable release; `RLIMIT_DATA` never
+  covers `MAP_SHARED` or tmpfs. CI fixes: the killed-child case no longer
+  uses `timeout -s KILL` (newer coreutils report 124), and two Linux-only
+  mechanisms skip on Windows.
+- **Review round 2 (0 BLOCK / 1 FIX).** The killed/unknown must-block tests
+  no longer skip on native Windows for want of a `/proc` in Python: the two
+  that find the wrapper's pid probe `/proc/$BASHPID/stat` and `mkfifo` inside
+  the rule's own bash and skip only when that bash lacks them. They now run on
+  Windows CI and hold there; an MSYS bash.exe killed by SIGKILL reports 2304
+  (`9 << 8`) to pwsh, still "could not tell". The sh gate reads the record
+  with the `read` builtin delimited by NUL (no `od`: not on every rule's
+  PATH), so `0<NUL><LF>` is no record (it read as 0).
+  The standalone runners in `sabotage_event_claim.py`, `sabotage_autocycle.py`
+  and `sabotage_resume.py` use the per-entry bound too.
+- **T-0080, why.** The azureProfile cloud-guard entry reads /dev/zero without
+  bound: measured 5.9 GiB at a 6 GiB wrapper cap before, 3.7 GiB peak and
+  `RED (good)` under the new default with no wrapper. The plan-dev-zero entry
+  blamed in the report is constant memory (58 MiB). 17 + 5 new tests, five
+  sabotage entries for the bound itself.
+
+### Added — `crew` 1.0.336: `crew_memory.py save`, the vault note first and then the pointer (L-0677)
+
+- `crew_memory.py save --file <memory> --tag <tag> [--tag ...] [--title] [--note] [--type]
+  [--project] [--root] [--apply] [--json]` turns a native memory holding its full text into a
+  pointer. Dry run by default (prints vault, note, `create` / `append` / `unchanged` and the
+  pointer line; writes nothing; exit 1). The vault is the single writable one: the `role:
+  primary` entry (without roles `default: true`, else the first; with no `vaults` block the name
+  `memory`), resolved through the read side's `vault_path` and required to hold `.obsidian/`.
+  Never a `recall` or `ignore` vault, never a substitute for a primary that is not there.
+- Note: `memories/<project>/<title>.md` by default, the six-key frontmatter (`title` the file
+  name stem, JSON-quoted; `type: concept` by default) plus `project` and `memory_id`. An existing
+  note of the same `memory_id` gains `## Update <date>` and a bumped `updated:` (`unchanged` when
+  the body is already its last passage); any other existing note is a `collision`.
+- Order and crash safety: the full note text and new native bytes are computed first; the note
+  goes through a fsynced temp file and `os.link` (create, never over a file; where hard links
+  are refused, an `O_EXCL` create, never `os.replace`) or `os.replace` (append); its folder is
+  fsynced; it is read back and the pointer resolved; only then is the native body replaced
+  (frontmatter bytes kept, mode kept) through a temp file and `os.replace`. Every refusal and
+  every failure prints `kept-full-text: <reason>` and leaves the memory byte-identical; a
+  dangling pointer is never written. `MEMORY.md` is not edited: as `--file` it is
+  `kept-full-text: MEMORY.md is the index`, exit 1, in text and `--json` (review round 2; it was
+  a usage error on stderr, exit 2). A `memory.md` is the index only where the file system folds
+  case and it is the same file; on Linux it is an ordinary memory. No hook, no config key.
+- Concurrency (review round 2): a save holds kernel locks, note first, for its whole write
+  sequence, one non-blocking try each: `flock(LOCK_EX|LOCK_NB)` on POSIX, `msvcrt.locking
+  (LK_NBLCK)` on Windows, on files named by the sha256 of each guarded file's real path in
+  `$XDG_CACHE_HOME` or `~/.cache` (`%LOCALAPPDATA%` on Windows) under `crew/memory-locks`. The OS
+  drops a lock when its save exits or is killed, so there is no TTL, no stale-lock takeover for
+  two saves to race (round 1's `.<name>.crew-save.lock` files could be taken over by two saves at
+  once, and released by a save that did not own them), no lock file in a synced vault, and no
+  user file is ever mistaken for a lock. A held lock is `kept-full-text: another save is running
+  now`; any other error taking one (unwritable cache, full disk, read-only file system) is
+  `kept-full-text: lock failed`, exit 1, with every lock already taken released - round 1
+  crashed with a traceback there and left the note's lock behind. Review round 3: no absolute
+  cache folder (HOME unset on a uid with no passwd entry leaves `~` as `~`) is `lock failed: no
+  cache folder`, never a lock folder relative to the working directory; a file is locked under
+  its case-folded real path and its `dev:ino`, so a symlinked folder, `..`, a case variant on a
+  case-folding volume and a hard link all meet one lock, and the path key holds across the
+  `os.replace` that gives the file a new inode. It excludes saves by the same
+  user on the same machine only: not a save on another machine syncing the vault, nor Claude
+  Code or Obsidian, which never take it. The memory and an existing note are re-compared right
+  before each `os.replace`. Not guaranteed: an edit by a program that is not `save` in the instant
+  between that last compare and the rename (a rename cannot compare-and-swap). A second save of
+  the same memory that finds it already a resolving pointer reports `already-pointer`.
+- Edge cases (review round 1): an existing note that is not strict UTF-8 is refused; an append
+  keeps every existing byte (BOM, CRLF), changing only the `updated:` value; a symlinked memory
+  file is refused; a note path segment starting `.` is `bad-note-path`; `memory_id` is
+  JSON-decoded when compared; a new note is mode 0644 less the umask, an appended one keeps its
+  mode. The skill says what to do on Git Bash without `python3`.
+- Checked with the real `claude` CLI 2.1.289 (auto-memory on): a one-line pointer body survived
+  three new sessions byte-identical (a session updating that memory rewrote only its
+  frontmatter). The `crew-memory` skill, README section 14 and the memory guide carry the save
+  procedure and its state table.
+- **Tests.** `plugin/crew/tests/test_crew_memory_save.py`, 74 cases (54, then 20 from review
+  round 1, each red on `e7c8b073` except three guards of new code paths); the crew_memory
+  verify rule runs both files. Reviewer races A (an edit while the pointer temp is written) and
+  B (two saves appending to one note, on real threads) now keep every byte. Each failure ordering (note write, link, read-back, pointer temp write,
+  pointer replace, native changed meanwhile) has a test. Sabotaged by hand, each turned a named
+  test red: pointer before note, no read-back, no `memory_id` collision check, no symlink check,
+  falling back to a recall vault, no changed-meanwhile check, no ASCII rule, no temp cleanup, no
+  path grammar, no `.obsidian/` check, rewriting an unchanged note; and from round 1: no locks,
+  no re-compare before the pointer rename, the `os.replace` fallback when `os.link` fails, a
+  lossy UTF-8 decode, the BOM dropped, `MEMORY.md` allowed (plan and CLI, separately), no
+  folder fsync, no new-note mode, a symlinked memory followed, no `already-pointer` on a double
+  save, `.` segments allowed, no JSON decode of `memory_id`, a stale lock never cleared, locks
+  not released.
+
+### Fixed — `crew` 1.0.335: round-8 terraform guard spellings, and three ordinary lines no longer refused (T-0047)
+
+- **What changed.** The cloud guard's terraform rule closes the four
+  spellings T-0005's review round 8 found it allowed: `xargs -rn 1 -Iplan
+  terraform plan` (the `-I` replace string is now found wherever getopt finds
+  it), `parallel --timeout 60 terraform destroy ::: -auto-approve` and
+  `parallel --delay 1 tofu workspace delete ::: production` (`xargs` and
+  `parallel` are read with complete option tables, and an option neither
+  table knows makes a terraform line could-not-tell, naming the wrapper and
+  the option), PowerShell `Invoke-Expression -Command:"terraform destroy"`
+  (the colon-bound value is read), and PowerShell `env`/`sudo`/`timeout`
+  in front of terraform (PowerShell now strips the same listed wrappers as
+  bash, through the same `_unwrap`). `aws-vault exec` and `unbuffer` are
+  listed wrappers now; `strace`, `systemd-run`, `git bisect run`, `rg --pre`
+  and `docker run` stay in "What the guard does not catch".
+- **First review of #347.** Also caught now, each measured allowed first:
+  `xargs --max-lines terraform destroy` (GNU xargs's `--max-lines` takes a
+  value only attached, as `-l`); an `Invoke-Expression` whose script is not a
+  literal string (`-Command:$c`, `"$a $b"`, `($c)`) or that carries a
+  parameter crew does not know, with the common parameters (`-ErrorAction`,
+  `-OutVariable`, `-Verbose`, ...) read as PowerShell binds them; a call with
+  no space before `(` (`iex("...")`, `terraform('destroy')`) and `.'terraform'`;
+  a `workspace select` that `xargs`/`parallel` may append `-or-create` to, or
+  whose PowerShell arguments are a variable or splat; `sem` (`parallel
+  --semaphore`) as a listed wrapper; and terragrunt's `apply-all`,
+  `destroy-all`, `stack run apply|destroy`, `graph apply|destroy` and `exec --
+  terraform destroy`.
+- **Second review of #347: a structural backstop.** On a PowerShell line
+  whose raw text names terraform, tofu or terragrunt, a command the guard
+  does not read whole is could-not-tell whatever else it found: a splat, a
+  call by `&`/`.` whose command word is not a plain name (`&'terraform'destroy`,
+  `& (gcm terraform) destroy`), a command word a group makes, an alias
+  definition (`Set-Alias x iex`), Invoke-Expression given a group or a
+  variable (`iex ("terraform","destroy" -join " ")`, `iex("terraform plan")`
+  included), and a group among terraform's own arguments (`workspace select
+  (gc f)`, or a bare array such as `-or-create,production`). A call after an assignment (`$x = iex("...")`, `$x = & "terraform"
+  destroy`) is read as one. `terragrunt exec [--] cmd` is a wrapper: what it
+  runs goes back through every rule (`env`/`sudo` before terraform, `aws s3
+  rm`, `az group delete`), and an option before the command with no `--` is
+  could-not-tell. `terragrunt stack [opts] run apply|destroy` and `terragrunt
+  backend delete` are judged.
+- **Third review of #347: every mention accounted for.** The PowerShell shape
+  list is replaced by one rule: each mention of terraform, tofu or
+  terragrunt in a PowerShell line (any case, a word or a path's last part,
+  `.exe` and backtick spellings included, comments dropped) must be the
+  command word of a command the guard judged, a literal script given to
+  `Invoke-Expression`, or -- when nothing on the line can run a value made at
+  run time -- a literal argument of a plainly named command or a string that
+  is only printed or assigned. Anything else is could-not-tell: `return` or
+  `throw` before the tool, a launcher given a run-time scriptblock or
+  variable (`icm ([scriptblock]::Create($c))`, `Start-Process $t destroy`),
+  `[Diagnostics.Process]::Start("terraform","destroy")`, a function named
+  after the tool. Decision: a literal argument of ANY plainly named
+  non-launcher command is data, not only `Write-Output`/`Write-Host`/`echo`,
+  because T-0005's documented direct-use scope already allows `git commit -m
+  "terraform destroy"`, `Select-String terraform` and `rg terraform`.
+  `terragrunt graph run apply|destroy` is judged.
+- **No longer refused.** `terragrunt --non-interactive plan -out="p.tfplan"`
+  (terragrunt's boolean options take no value), `terraform workspace select
+  "staging"` (read-only unless an `-or-create` on it is anything but false),
+  and PowerShell string expressions such as `Write-Output ("terraform" + "
+  destroy")` (a quoted first word with no `&`/`.` is printed, not run).
+  Not BREAKING: these become allows only on read-only lines, and every other
+  change refuses more.
+- **Docs.** CONFIG.md's literal-word paragraph no longer says a quoted
+  commit message or `terraform plan 2>$null` is refused; CONFIG.md, the crew
+  README and the crew-cloud skill list `aws-vault exec` and `unbuffer` as
+  caught, with `sem`.
+- **Tests.** `R8_MUST_BLOCK` and `R8_MUST_ALLOW` in
+  `test_cloud_guard_environments.py`, each with bash and pwsh samples, and
+  `test_round8_unknown_option_is_could_not_tell`; 79 of them failed before
+  the fix, and the 35 rows the first review added were all allowed before
+theirs, and so were the second review's 30. Each fix was sabotaged (21 + 17
+  + the second review's, every one RED) through
+  `sabotage.py`'s own `run_test`; the entries are not committed, because
+  `plugin/crew/tests/sabotage*.py` is review harness (T-0087) and lands in
+  its own PR.
+- **Not verified.** Native Windows (the pwsh cases ran on Linux pwsh 7.4.6).
+  GNU `parallel`, `aws-vault`, `unbuffer` and `terragrunt` are not installed
+  where this was built: their option sets come from upstream source and
+  documentation, cited above each table.
+
+### Added — `crew` 1.0.334: auto wrap-up before auto-clear (T-0017)
+
+- **What changed.** A new machine opt-in, `context.autoClear.wrapUp` (default
+  `null`, off): only the machine file's exact `true` arms it, a repo `false`
+  vetoes it, a repo `true` alone does nothing, and it acts only where
+  `context.autoClear.enabled` is armed and in scope. Armed, context-watch's
+  high-context warning becomes one wrap-up procedure (both flavours, the same
+  text, from `crew_autocycle.py wrapup-message`): start no new step; run the
+  step's `Test:` command (the active ticket's plan step, or the checks for the
+  tracked diff); commit only if it passes, otherwise leave the tree and write
+  `resume: none` with the reason under **Verify first**; run
+  `/crew:handoff --wrap-up`; end the turn. Auto-clear then also requires, after
+  the handoff checks and before the method, T-0016's binding and the sent-marker
+  claim: the handoff's `head:` is HEAD, its `branch:` is the checkout, no
+  tracked file is modified (untracked files and the handoff itself do not
+  count; paths are compared from the repository top via `git status -z` and
+  `--show-toplevel`, so a crew root in a subdirectory, or an absolute
+  handoffPath, exempts only its own handoff, and the source of a rename onto
+  the handoff always counts), and its `resume:` line parses under T-0006's grammar or is
+  `resume: none`. `--force` / `-Force` (testing by hand only, never passed by
+  a hook) skips this check with the handoff checks. git failing, `crew_resume` missing, or (native Windows) no
+  python refuses. A refusal is logged, shown as a `systemMessage`
+  (`crew wrap-up: not clearing - <reason>`), and fed back to the model once at
+  the next ordinary Stop (`.crew/.wrapup-escalated-<session>`, cleared at
+  SessionStart and on re-arm); a `stop_hook_active` Stop never blocks.
+- **One path.** `/crew:handoff --wrap-up` is the only wrap-up procedure, and
+  `/crew:autopilot`'s context-watch step now runs it.
+- **Unchanged.** With `wrapUp` unarmed every output is byte-identical;
+  `context.autoWrapUp` keeps its meaning (the warning's wording, default
+  `true`) - the crew-context skill's "off by default" is corrected. No hook
+  commits; crew checks the commit, not that the test passed.
+- **Windows.** `context-watch.ps1` and `auto-clear.ps1` now carry the shared
+  `Resolve-CrewPython` (added to `test_ps1_python_probe.py`'s carriers); it is
+  probed only when the machine file arms the wrap-up.
+- **Tests.** `plugin/crew/tests/test_wrapup.py` (103 cases with pwsh, both
+  flavours: arming, the check's must-allow and must-block cases, unarmed
+  byte-identity, the procedure and its parity, escalation once and never on
+  `stop_hook_active`, the refusal before the claim, `handoff.md` and
+  `autopilot.md`); `test_crew_config.py` (137 leaves after the merge of main, a repo writer refuses
+  `wrapUp: true`) and `test_crew_keys.py` (the key moves from `COMING` to
+  `KEY_META`). 22 hand sabotages (python, bash, PowerShell) each turned their
+  named test red; the `sabotage*.py` entries are a separate tooling PR.
+- **Built on T-0016** (stacked on its branch): its session-record fixtures,
+  and its order (the wrap-up check runs before the binding).
+- **Non-ASCII reasons.** `crew_autocycle.py`'s CLI writes stdout with
+  `errors="backslashreplace"`, so a refusal reason naming a non-ASCII branch
+  or path prints escaped on a cp1252 console instead of crashing the print
+  (`test_check_cli_prints_a_non_ascii_reason_on_a_cp1252_console`).
+
+### Fixed — `crew` 1.0.333: auto-clear and resume typing bind to the session's own terminal (T-0016)
+
+- **What changed.** Both senders (`crew_autocycle.py` for `auto-clear.sh`, and
+  the same rules natively in `auto-clear.ps1`) bind the session to its OWN
+  process before anything is typed: the nearest ancestor of the hook named by
+  a Claude Code session record, `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`,
+  whose `sessionId` is the payload's and whose `procStart` matches that
+  process's start time where one can be read. It is classified `terminal`
+  (kind `interactive`, entrypoint `cli`, a controlling tty on POSIX),
+  `headless` (an `sdk*` entrypoint, a non-interactive kind, or `tty_nr` 0) or
+  `unknown` (everything else). The pane or window is then proven by walking
+  up from that process, refusing when the walk passes through another Claude
+  Code process or live session record, when the chain could not be read to
+  the end, when an X11 window's owner also hosts another tty or session (or
+  the scan fails), when a console window's owner is also above another live
+  session, and when a title-only or pid-less window is chosen while another
+  session is live. The binding runs after the handoff checks and the method
+  and before the sent-marker claim (T-0017's order).
+- **What each session gets.** Headless, whatever the method: the new method
+  `notify-headless` types nothing and prints one `systemMessage` naming the
+  handoff and its `resume:` line and saying the process that started the
+  session must start a new one; claimed once per session like `notify`, and
+  logged in full. Unknown: `notify` unchanged, `auto` falls back to plain
+  `notify` (logged with the reason), an explicit typing method refuses
+  ("could not identify this session's process" / "could not tell whether
+  this session has a terminal of its own"); it never says "no terminal".
+  T-0013's resume typing takes the same binding for a typing method. With
+  `context.autoClear.enabled` off nothing changed: silent, no record read.
+- **Why.** Every target check was anchored on the hook, so a `claude -p` child
+  started from a session's Bash tool inherited `$TMUX`, found its parent's
+  pane pid among its own ancestors, and typed `/clear` into the parent's pane
+  at its wrap-up (or the resume command at its SessionStart).
+- **Measured.** `plugin/crew/docs/session-record-spike.md` (Claude Code 2.1.289,
+  Linux): `-p` records entrypoint `sdk-cli` with or without a pty, kind is
+  `interactive` for every case, `sessionId` follows `/clear`, a killed session
+  leaves its record behind. Windows' entrypoint and macOS are unmeasured: on
+  Windows an entrypoint outside `cli` is unknown and `procStart` is unchecked;
+  macOS reads `ps` and leaves `procStart` unchecked.
+- **Tests.** `test_autoclear_binding.py` (111 cases, both flavours on the same
+  fixtures), and `crew_fixtures.write_session_record` / `proc_stub` /
+  `bind_session`, which T-0017 builds on. `CREW_AUTOCLEAR_PROC_STUB` replaces
+  the whole process table in tests, so no case reads the real tree;
+  conftest clears an ambient `CLAUDE_CONFIG_DIR`. The existing must-fire
+  helpers in `test_auto_cycle.py`, `test_auto_clear.py`,
+  `test_auto_clear_review_fixes.py` and `test_resume_typing.py` bind their
+  session (and the three spawn tests use `CREW_AUTOCLEAR_INHIBIT=spawn`); no
+  assertion changed. 49 hand sabotages (python, bash and PowerShell) each
+  turned their named test red; the `sabotage*.py` entries
+  are a separate tooling PR.
+- **Review round 1.** tmux now also requires every process from the session
+  up to the pane to be on the session's tty (or none), so an interactive
+  child on its own pty under its parent's pane is refused even when the
+  parent's record is in another config dir and its name is not `claude`; a
+  version-named process (`2.1.289`, a native install) ends the walk like
+  `claude`; a live process whose record cannot be read means no other session
+  can be ruled out; the PowerShell walk tells an exited parent (the top) from
+  an unreadable one (refuse). The process and window stubs are read only
+  while `CREW_AUTOCLEAR_INHIBIT` is set, and `CREW_AUTOCLEAR_INHIBIT=spawn`
+  spawns the bash sender but stops it before any keystroke.
+- **Owner decisions.** Approved 2026-10-04 as the spec recommended: macOS via
+  `ps` with `procStart` unchecked; `windowTitle`'s global fallback kept but
+  refused while another live session record exists or the window's pid is
+  ≤ 1; resume typing in scope; no `allowHeadless`-style escape hatch; the
+  entrypoint allowlist is `{"cli"}` plus a tty.
+- **Windows CI fix.** The pane pid is read from the `tmux` that
+  `shutil.which` accepted, not a bare `tmux`: on native Windows CreateProcess
+  tries only `tmux.exe` while `which` honours PATHEXT, so a `tmux.cmd` passed
+  the check, was never run, and every Git Bash tmux case refused with "pane
+  pid unknown". `test_tmux_pane_pid_is_read_from_the_tmux_the_path_check_found`
+  pins it on any OS; the `~/.claude` owner test sets `USERPROFILE` too, which
+  is where `expanduser` looks on Windows.
+
+### Added — `crew` 1.0.332: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
+
+- **What changed.** `autopilot.sleep` in `.crew/config.json` (repo only, all
+  three keys default `null`): `schedule` is one `HH:MM-HH:MM` window in the
+  machine's local time (start inclusive, end exclusive, may cross midnight),
+  and `approval` / `questions` are the night values of `autopilot.approval` /
+  `autopilot.questions` (`human|self|risk`, or `null` to keep the day value).
+  The new `hooks/scripts/crew_sleep.py` parses the window and resolves
+  `off|awake|asleep|unknown`; `crew_autopilot._settings_at` applies the
+  overrides inside it and re-resolves on every read, so a run that crosses the
+  end of the window is back on the day values at its next decision.
+  `crew_autopilot.py settings` prints a third line,
+  `sleep=<state> schedule=<window|none> approval=<override|-> questions=<override|->`,
+  and `--json` adds `day` and `sleep`. While asleep the reason of a policy a
+  night override set, and `approve`'s line, end with
+  `(asleep <window>; day value <day>)`; `approve`'s receipt, line and
+  `crew_ticket.approve` re-check use one decision.
+- **Fail closed.** A schedule outside the grammar, an `autopilot.sleep` that is
+  not an object, a clock or resolver that fails: `unknown`, with a warning
+  naming the key, and per key the stricter of the day value and a valid night
+  override (`human` over `risk` over `self`) — never a looser value, and never
+  a tightening dropped. Each override is read on its own and rendered bounded;
+  one that cannot be read counts as `human`, and a non-object
+  `autopilot.sleep` reads `human` for both keys. An override that is not a policy (`"Human"`,
+  `"always"`, `true`) counts as `human` too, asleep and under unknown (landing decision; it used
+  to keep the day value). A key this version does not have (`deploy`, `reviewPolicy`, held
+  pings) is named "not available in this crew version" and has no effect.
+  There is no environment variable or flag that moves the clock.
+- **Unchanged.** `scope.allowCliApproval` exactly `true`, autopilot armed and a
+  readable ledger still gate every self-approval; every stop binds asleep;
+  `deploy_allowed` answers the same asleep and awake; review acceptance is as
+  before. A receipt written asleep stops standing when the window ends if the
+  day value would not have approved it (`crew_ticket.accepted` re-asks the
+  policy), so that ticket waits for `/crew:approve <id>` in the morning.
+- **Not yet.** Manual `sleep` / `wake`, the sleep log and morning summary, the
+  `deploy` override, and the committed sabotage mutations for this slice are
+  L-0652, L-0653, L-0654 and L-0651.
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_sleep.py` (117 cases; the landing decision's
+  must-block cases asleep and unknown were red before it);
+  `test_crew_config.py` (136 declared leaves after main's `git.forbiddenTrailers`), `test_config_menu.py`,
+  `test_crew_keys.py` and `test_crew_autopilot.py` cover the config surface.
+  `.crew/verify.json`'s policy rule maps `crew_sleep.py` and the new file.
+
+### Added — `crew` 1.0.331: native memories as vault pointers, read side (T-0084)
+
+- `plugin/crew/hooks/scripts/crew_memory.py` (new): a native Claude Code memory file may hold one
+  line in place of its body, `vault: <name> | note: <vault-relative path>`. `resolve --file`
+  maps it to the note's real path on this host; `check --memory-dir` reports every memory file
+  (not `MEMORY.md`) with a count per state. The vault name is looked up in the machine's
+  `~/.claude/obsidian/config.json` (`CREW_OBSIDIAN_CONFIG`), `role: ignore` is not resolved, and
+  only the name `memory` falls back to `memory.vaultPath`, then - only when the Obsidian config
+  has no `vaults` block, as obsidian-vault's `list_vaults` reads it - the legacy top-level
+  `vaultPath`.
+- Three structural rules (review round 2): a config file is absent only when `os.lstat` raises
+  FileNotFoundError; both configs pass one schema check before any resolution (the Obsidian
+  config's `vaults` an object of objects with a string `path` and `vaultPath` a string; crew's
+  `memory` an object and `memory.vaultPath` a string or null), else `config unreadable`, naming
+  the field (also a duplicate key, nesting past the recursion limit, or a file over 1 MiB); and
+  files are opened, non-blocking and fstat-checked, not only statted. A bad crew config stops
+  `memory`, and any name when there is no Obsidian config. A pointer attempt is the first
+  non-blank line that, with Cf removed and stripped, starts `vault` and `:` in any case or
+  spacing, when `note:` (`note` starting a word) or `|` is on that line, or the next non-blank
+  line starts with `|` or `note:` (a pointer wrapped before its `|`), or the line is a bare vault
+  name alone - a later table or `Note:` line does not count; it must be the whole body and match exactly,
+  and a malformed reason ends "if this is prose, reword the first line". With neither, a `Vault:`
+  line is prose and the memory stays `full-text`.
+- Every failure is a named state with exit 1: `malformed` (absolute, backslash, `:` in any
+  segment, `.`/`..` or empty segment, not `.md`, a Cc, Cf, Zl or Zp character, a second field, and a
+  `vault:` line that is indented or not lower case), `no-vault-config` (including a config file
+  that exists but cannot be reached, read or parsed, or whose `vaults` block or entry has the
+  wrong shape - never read as "no vaults"; only FileNotFoundError is absent), `vault-unknown`,
+  `vault-unavailable` (not absolute, not there, or not listable; never replaced by another
+  vault), `note-missing`, `outside-vault` (a symlink below the vault, or a real path that leaves
+  it) and `unreadable` (the memory file, or a folder or note below the vault that cannot be
+  examined, a directory or FIFO at the note path, or a note that does not open). `check` lists a dangling `*.md` link, a FIFO, a device
+  or a directory as `unreadable` without opening it, and exits 2 on a folder it cannot list. The frontmatter is split on its `---` lines and never parsed; CRLF, LF and a lone
+  CR all end a line. Read-only; no hook, no config key.
+- The `crew-memory` skill gains "Native memories as vault pointers"; README section 14 and the
+  memory guide describe it. Writing pointers (L-0677) and migration (L-0678) are later versions;
+  `OBSIDIAN_VAULT_PATH` is not honoured.
+- **Tests.** `plugin/crew/tests/test_crew_memory.py`, 121 cases on real fixture files (permission
+  denial is simulated, since a root test run cannot be denied: the round-1 EACCES cases and the
+  mode-000 note when euid is 0; the FIFO cases use real FIFOs in a subprocess with a timeout); bash and pwsh are separate
+  cases that each skip on their own. A new `.crew/verify.json` rule runs it. Sabotaged by hand
+  (dropping the `..` check, the symlink check, the `:` check, the Cc/Cf check or the `ignore`
+  rule; substituting another vault; reading a broken or wrong-shaped config as empty; reading
+  EACCES as absent; case-sensitive or CR-blind classification; dropping dangling links from
+  `check`; reporting an unreadable component as `note-missing`; not listing the vault; the
+  legacy `vaultPath` beside a `vaults` block; a traceback on an unlistable folder; reading a
+  malformed pointer as full text; `stat` for `lstat`; each schema check off; null refused; the
+  note not opened; `check` opening non-regular files; a blocking open; no fstat check; Cf kept in
+  the probe; no whitespace before the colon; a pointer followed by prose; Zl/Zp allowed; the
+  `note:`/`|` mark dropped or halved; duplicate keys allowed; no size cap; RecursionError
+  uncaught; a non-regular note read as missing; the mark looked for on the first line only; no
+  bare-name rule; every `vault:` line an attempt; no prose hint; the mark searched over the whole
+  body; no word boundary before `note`; a mark anywhere on line 2): each turned a named test red.
+- **Landing NIT.** A first line that is only `vault` + optional whitespace + `:`, nothing
+  after the colon, is a pointer attempt: `vault:\nwork | note: notes/fact.md` reads as
+  `malformed`, not `full-text` (`_BARE`'s name is optional).
+  `test_a_first_line_of_only_vault_colon_is_malformed` (three bodies) was red before; the
+  `crew-memory` skill, the memory guide (rebuilt HTML, DOCX, PDF) and the code map say so.
+- **Windows CI.** Two tests assumed POSIX: the `MEMORY.md`/`memory.md` case now probes the
+  filesystem for case folding (one file there, the index, so only `upper.MD` is listed), and the
+  mode-000 note test mocks the open whenever a probe can still read the file (root, or Windows,
+  where chmod sets only the read-only bit) instead of only when euid is 0.
+
+### Fixed — `crew` 1.0.330: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
+
+- **What changed.** `_common.sh` gains `crew_repo_config_dir` (and
+  `crew_repo_config_file`), and the `.ps1` hooks that need it carry one copied
+  body, `Get-CrewRepoConfigDir`: the shell twins of
+  `crew_common.repo_config_dir` (T-0088), with no python. Own `config.json` or
+  `crew.json` wins whole; a linked worktree with neither reads the main
+  checkout's; `unknown` (git cannot name it) inherits nothing. Routed through
+  them: the `emergency.standDown` read (`crew_incident_active` for every bash
+  gate, `promote-gate.ps1`), both cloud-guard no-python fallbacks, where
+  `unknown` now counts as armed, and `auto-clear.ps1`'s repo veto. The bash
+  fallback also counts a missing resolver (`_common.sh` failed to source) as
+  armed, and the PowerShell resolver pins UTF-8 around its git call so a
+  non-ASCII path does not read `unknown` on an OEM-code-page console.
+- **Why.** `.crew/*` is gitignored, so a lane has no config of its own. The
+  cloud guard's fallback took an absent file as proof of off: in a lane whose
+  main checkout says `cloudGuard: block`, a session with no usable python ran
+  commands unjudged while the Python guard would have blocked them. The
+  stand-down read and `auto-clear.ps1` disagreed with their Python halves the
+  same way.
+- **Behaviour change.** Inheritance can loosen as well as tighten: an
+  inherited `cloudGuard: off` applies in a lane. A lane whose git cannot name
+  its main checkout, with no usable python, refuses Bash until one of them
+  works, even when no config layer arms the guard (`unknown` is armed).
+- **Not yet covered.** The session hooks (`notify`, `handoff-read`,
+  `handoff-write`, `context-watch`), the verify gate, the scope and completion
+  wrappers and `review_gate.py` still read the lane's own file (L-0680, L-0681).
+  Until then `verify-gate.ps1` reads the lane's own `emergency.standDown` while
+  the bash gate and `crew_incident.py` read the inherited one.
+- **Tests.** `plugin/crew/tests/test_worktree_config_shell.py`: both resolvers
+  against the Python one on ten cases, the copies byte-identical, must-block
+  and must-allow cases for the cloud-guard fallback in both flavours, the
+  stand-down and the auto-clear veto. Sabotaged by hand (the mutations go to
+  the sabotage suite with L-0681).
+
+### Fixed — `crew` 1.0.329: refresh admission refuses an artifact removed from the index (L-0688)
+
+- **What changed.** `crew_refresh_check._on_disk` refuses an artifact whose
+  base copy exists and which the index no longer holds while the file stays
+  on disk (`git rm --cached`): `artifact_verdicts` returns `False` with
+  "removed from the index, so the commit deletes it". The `--cached` raw diff
+  prints `:100644 000000 ... D` for it, which the mode check skipped. A new
+  artifact with no base copy, untracked or staged, is judged as before. The
+  module docstring stops naming L-0540 as pending: `completion_audit.audit`
+  is the caller and its docstring states what it admits.
+- **Why.** T-0094 review round 8 (BLOCK, accepted 2026-09-30): the verdict
+  called a re-anchor what the commit records as a deletion. No hook calls
+  `artifact_verdicts` yet; this lands before L-0540 wires it into the
+  completion audit.
+- **Tests.** `test_refresh_admission.py` gains the refusal for a map, a
+  diagram source and a graph file (red on main) and two must-allow cases (a
+  new untracked rendered file, a new staged one). The permanent sabotage
+  entry lands with L-0540; the refusal was hand-run red here.
+- **Review NIT.** A conflicted merge's unmerged artifact prints the same
+  `:100644 000000 ... U` modes in the `--cached` pass; it is still refused,
+  now as "unmerged in the index (resolve the conflict first)" rather than as
+  a deletion. `test_an_artifact_unmerged_in_the_index_is_refused_as_unmerged`
+  (a map and a diagram, each from a real merge conflict) was red before.
+
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
