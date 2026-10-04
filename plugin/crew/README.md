@@ -352,6 +352,11 @@ The skill will:
 3. Create `.crew/`, `.work/`, `_verify/`, `docs/adr/`, and a `CLAUDE.md` if none exists
 4. Tell you plainly that the setup is not yet usable
 
+Once `/crew:verify` has built `.crew/verify.json` (Phase 5), setup offers one more,
+opt-in output: `.github/workflows/crew-verify.yml`, a pull-request job that runs
+`verify-gate.sh --ci` with crew fetched, outside the workspace, at the commit you installed (never a
+branch). Network and host rules are named there but not run.
+
 <!-- crew-ignore-policy:list -->
 **Commit the part that is about the code, not the part that is about your box.**
 The policy `/crew:init` writes is `.crew/*` ignored plus a named un-ignore list —

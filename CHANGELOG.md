@@ -4,6 +4,45 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — crew 1.0.233: crew-setup ships `crew-verify.yml`, the verify gate as a pull-request workflow
+
+- `plugin/crew/skills/crew-setup/templates/github/crew-verify.yml`: a GitHub Actions workflow for the
+  consumer repo. It runs on `pull_request` and `workflow_dispatch`, with `permissions: contents: read`,
+  no secrets, cancel-superseded `concurrency` and a 30-minute timeout. It checks the repo out
+  (`actions/checkout@v4`, `persist-credentials: false`), then fetches crew with plain git, no
+  credentials, at a pinned commit (`CREW_SHA: __CREW_SHA__`, never a branch) into `$RUNNER_TEMP/crew`,
+  OUTSIDE the workspace. A recursive map command (`pytest`, `ruff .`, `eslint .`) therefore never
+  collects crew's files, which a checkout inside the workspace could not avoid, since
+  `actions/checkout` cannot write outside it. It sets up Python 3.12 (`actions/setup-python@v5`),
+  leaves a marked step for the repo's own check tools (with a `fetch-depth: 0` hint), and runs
+  `bash "$RUNNER_TEMP/crew/plugin/crew/hooks/scripts/verify-gate.sh" --ci < /dev/null` on
+  `ubuntu-latest`. The header also says: Ubuntu only (Windows would need `verify-gate.ps1 -Ci`);
+  actions are pinned by major tag, an accepted trade; and a PR can edit its own map AND this workflow
+  file, which only CODEOWNERS review or a ruleset on `.github/workflows/` prevents.
+- crew-setup `SKILL.md` §3 lists it in the Create tree as opt-in, and says how to install it: copy the
+  template, then resolve the SHA through five checks in order. (a) The marketplace checkout is its
+  own git top level, never a parent repo's. (b) Its `origin` is `mbadali25/useful-claude-add-ons`.
+  (c) `HEAD` is 40 hex characters. (d) The commit is on a remote branch. (e) The commit's crew is
+  a gate that has `--ci` (checked by grepping that commit's `verify-gate.sh`, not by version). If any check fails, ask the user; never write a branch.
+  `phases.md` Phase 5 offers the workflow once the map exists. `commands/verify.md` and the crew
+  README mention `--ci` and the workflow.
+- `plugin/crew/tests/test_crew_verify_workflow.py` covers the template's shape: triggers,
+  permissions, the checkout and setup-python versions, Python 3.12, credentials, no secrets, the
+  pinned SHA and the `$RUNNER_TEMP` paths. It runs the fetch script, parsed from the YAML with the
+  URL pointed at this repository, and checks the commit and the gate it leaves. It runs the gate
+  command from a fixture repo with crew in a `RUNNER_TEMP` outside it, `"unmapped": "fail"` and a
+  recursive map rule that fails on crew's files: exit 0. With crew inside the workspace (the old
+  layout) the same command exits 2.
+- Install step 0 checks that the map runs unattended before the workflow is offered. `--ci` excludes
+  every rule with no `reach` that the scanner cannot clear, so a map of `bash _verify/cases/*.sh`
+  rules exits 2 on every PR with "zero commands to run". This was measured on a real consumer map:
+  16 rules, 15 excluded for reach, and one with an empty `run`. The step runs
+  `/crew:verify --stamp-reach` as a dry run, has the user declare each wrapper rule's reach, writes
+  the result with `--apply --set N=...`, commits the stamped map, and offers the workflow only once a local `--ci` run executes commands.
+- The job only reports until it is made a required status check (branch protection or a ruleset on
+  the default branch). Setup cannot set that, and its install steps now tell the user so.
+- A feature PR: no harness path changes (T-0087).
+
 ### Added — crew 1.0.232: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
 
 - **Scope is the whole map, over tracked files:** every file `git ls-files` lists (staged deletions
