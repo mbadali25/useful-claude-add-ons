@@ -20,15 +20,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   map alike: every CR and trailing newline is stripped from the command, and a whitespace-only
   command deploys nothing; a declared command matches when either contains the other, literally,
   ignoring case; the `deploy` key is read ignoring case, and keys differing only by case refuse the
-  map; more than one matching environment blocks as ambiguous, naming each (`.sh` status 5,
+  map; `requires`, `rollback`, `rollbackReason`, `requireHuman` and `environments` are read
+  ignoring case too (the `.sh` read them case-sensitively, so `"RequireHuman": true` required a
+  human on PowerShell and nobody on bash); `"deploy": null` refuses the map in both (the `.ps1`
+  skipped the environment); more than one matching environment blocks as ambiguous, naming each (`.sh` status 5,
   `Deny-AmbiguousDeploy`); a comparison that throws blocks instead of skipping the environment.
   Before, a `deploy` that matched several environments silently took the first; it now blocks.
-- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 69 cases (45 by default; the
-  pwsh-heavy rest are `slow`): must-block, must-allow, and a sh/ps1 agreement table over nine maps
+- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 77 cases (49 by default; the
+  pwsh-heavy rest are `slow`): must-block, must-allow, and a sh/ps1 agreement table over 13 maps
   run through both real gates. Sabotage, each confirmed red then restored: `-like` back in the
   `.ps1` (23 red), the `.ps1` exception swallowed (1), first-match instead of ambiguity in the `.sh`
   (8) and in the `.ps1` (8), the `.sh` reading only a lower-case `deploy` key (2), the `.sh`
-  accepting case-twin keys (1).
+  accepting case-twin keys (2), the `.sh` verdict reading per-environment keys case-sensitively
+  again (3), the `.sh` reading only a lower-case `environments` (1), the `.ps1` skipping a null
+  `deploy` again (2).
 - Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
   and #407 adapts it to this rule.
 

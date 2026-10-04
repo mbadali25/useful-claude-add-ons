@@ -2574,8 +2574,12 @@ working map and, when that is dirty, the committed map alike (L-1503):
 - a declared command matches when either one contains the other - a plain
   substring test, ignoring case (on Windows `./Deploy.ps1` and `./deploy.ps1`
   are one file). `*`, `?` and `[...]` are literal text, never wildcards
-- the `deploy` key is read ignoring case; a map with two keys that differ
+- every key the gates read - `environments`, `deploy`, `requires`,
+  `rollback`, `rollbackReason`, `requireHuman` - is read ignoring case
+  (`"RequireHuman": true` requires a human); a map with two keys that differ
   only by case (`deploy` and `Deploy`) is refused and the command blocks
+- a `deploy` that is not a command or a list of commands - `null` included -
+  refuses the map and the command blocks
 - if more than one environment matches, the command blocks as ambiguous and
   every matching environment is named - there is no first-match pick
 - if the comparison itself fails, the command blocks rather than skipping
