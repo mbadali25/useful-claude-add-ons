@@ -546,6 +546,14 @@
       "why": "pytest_rule.py runs the crew rules above that call it: `-n auto -m \"not wallclock\"` then `-m wallclock` serially, the way pytest-crew.yml runs the suite, or one serial run without xdist. Its exit code is what the gate reads, so the suite pins every combination: exit 5 from one half is not a failure, from both it is, and a half killed by a signal is a failure (max() of the codes would have read 0). 1.6s here. reach: local - a unit suite with the pytest calls stubbed."
     },
     {
+      "paths": ["plugin/crew/hooks/scripts/crew_trailers.py", "plugin/crew/tests/test_crew_trailers.py"],
+      "seconds": 2,
+      "coveredBy": "crew-suite",
+      "run": ["python3 -m pytest plugin/crew/tests/test_crew_trailers.py -q"],
+      "reach": "local",
+      "why": "T-0066's git.forbiddenTrailers: the two-layer UNION (a repo [] never disarms the global list), a corrupt layer or malformed value as unknown rather than [], the textual commit check over every must-block and must-allow command, and the /crew:done --check report (clean / FINDING / unknown, exit 0/1/2) over real git repos in tmp_path. 1.3s wall (51 passed, one more for the linked-worktree read) measured 2026-10-03 on the Linux cloud container (4 CPUs; one 47s run under a load average of 6.8 from other jobs is not the price). The scope-guard wiring, its suite and the sabotage entries touch harness paths and land in their own change, which extends this rule."
+    },
+    {
       "paths": [
         "plugin/crew/hooks/scripts/crew_keys.py",
         "plugin/crew/hooks/scripts/crew_config.py",
@@ -604,7 +612,8 @@
       "seconds": 2,
       "run": ["python3 -m pytest plugin/crew/tests/test_verify_reach.py -q"],
       "reach": "local",
-      "why": "L-0562 (crew 1.0.229): /crew:verify --stamp-reach. Proposals come from verify_record.scan_reach run from --root as cwd (as the gate does), a null reach is undeclared, --apply moves each stamped rule's timings/record entries to its new rule_key so Stop's runs and prices are unchanged (the test models the gate's pricing), a deferred rule runs only on --set, and the map is edited as text and checked to round-trip. 16 passed in 0.29s, 2026-10-03, 4-CPU container. Eight new mutations (cache move, null reach, cwd, clean tree, empty rule) sabotage-tested by hand, each red, after the seven before. reach: local - every case writes a throwaway map under tmp_path." }
+      "why": "L-0562 (crew 1.0.229): /crew:verify --stamp-reach. Proposals come from verify_record.scan_reach run from --root as cwd (as the gate does), a null reach is undeclared, --apply moves each stamped rule's timings/record entries to its new rule_key so Stop's runs and prices are unchanged (the test models the gate's pricing), a deferred rule runs only on --set, and the map is edited as text and checked to round-trip. 16 passed in 0.29s, 2026-10-03, 4-CPU container. Eight new mutations (cache move, null reach, cwd, clean tree, empty rule) sabotage-tested by hand, each red, after the seven before. reach: local - every case writes a throwaway map under tmp_path." },
+    {"paths": ["plugin/crew/hooks/scripts/_common.sh", "plugin/crew/hooks/scripts/cloud-guard.sh", "plugin/crew/hooks/scripts/cloud-guard.ps1", "plugin/crew/hooks/scripts/promote-gate.ps1", "plugin/crew/hooks/scripts/auto-clear.ps1", "plugin/crew/tests/test_worktree_config_shell.py"], "seconds": 13, "coveredBy": "crew-suite", "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_worktree_config_shell.py -q"], "reach": "local", "why": "T-0096: the shell and PowerShell config resolvers (crew_repo_config_dir in _common.sh, Get-CrewRepoConfigDir copied into cloud-guard.ps1, promote-gate.ps1 and auto-clear.ps1) agree with crew_common.repo_config_dir on ten cases, the PowerShell copies are byte-identical, and the readers they route (incident stand-down, both cloud-guard no-python fallbacks, auto-clear.ps1's repo veto) read the main checkout's config in a lane. The cloud-guard fallback is a guard: must-block (inherited block; unknown is armed) and must-allow (lane's own off; no layer arms it) cases, sabotage-tested by hand (bash and PowerShell: .git-a-file read as own, unknown not armed, main preferred over own), each red. 41 passed in 9.71s (12.5s wall) with pwsh 7.4.6 on PATH, 2026-10-04, 4-CPU container, idle; after review round 1 (a missing resolver is armed; UTF-8 pinned around the PowerShell git call, a Latin-1 console and a lane under José) 43 passed in 24.6s (33s wall) on the same container at load average 23 from other lanes, so the 13s price is the idle figure plus the two cases; without pwsh the .ps1 cases skip. reach: local - every case builds throwaway repositories and lanes under tmp_path."}
   ],
 
   "default": ["bash _verify/smoke.sh"],

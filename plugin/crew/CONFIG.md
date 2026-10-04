@@ -144,8 +144,28 @@ the heal path creates nothing there again.
 The writers never follow it: `crew_platform` (heal and `platform-sync`),
 `crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
 keep their own-path behaviour, and the heal path creates nothing in a worktree
-that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
-routed yet and read only the worktree's own file.
+that inherits a config, or in one where git could not tell.
+
+**The shell and PowerShell resolvers (crew 1.0.330, T-0096).** `crew_repo_config_dir` in
+`hooks/scripts/_common.sh` sets `CREW_CFG_DIR` and `CREW_CFG_SOURCE` (`own`, `main`
+or `unknown`) by rules 1-4 above, with no python; `Get-CrewRepoConfigDir`, one
+body copied verbatim into `cloud-guard.ps1`, `promote-gate.ps1` and
+`auto-clear.ps1`, is its PowerShell twin. `tests/test_worktree_config_shell.py`
+holds both to `crew_common.repo_config_dir` case by case and the copies
+byte-identical. Windows PowerShell 5.1 cannot resolve a symlink the way
+`realpath` does, so on every PowerShell (7 as well) a symlink, a junction, or an
+ancestor `Get-Item` cannot read (likely a UNC share's root) in either path the
+PowerShell resolver compares reads `unknown`, never `main`. It pins
+`[Console]::OutputEncoding` to UTF-8 around its git call, so a non-ASCII path
+survives a console on the OEM code page. In the cloud guard's bash fallback a
+missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
+`crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
+in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
+veto. Still own-file only: the session hooks (`notify`, `handoff-read`,
+`handoff-write`, `context-watch`), the verify gate, the scope and completion
+wrappers, and `review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
+lane's own `emergency.standDown` while the bash verify gate and
+`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 
@@ -162,11 +182,17 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
-leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
-For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **75**
+leaves. `leaf_paths(default_config())` yields **133**, so **58** are repo-only.
+For all 133, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on T-0061's branch after merging main 34d9f267; the repo-only
+on T-0066's branch after merging main e9364a70, which changed no config key;
+`git.forbiddenTrailers` is the
+key T-0066 added to both layers, and the generated tables in §10 and §11 state
+the same 75 / 133 / 58. 74 / 132 / 58 on main after T-0013 added
+`resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers, while
+this paragraph still said 72 / 130. 72 / 130 / 58 on T-0061's branch after merging
+main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
 `autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
@@ -694,7 +720,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-74 of 132 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
+75 of 133 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -774,6 +800,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `change.sdpTemplate` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change Management Request"` |
 | `change.jiraIssueType` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change"` |
 | `change.category` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
+| `git.forbiddenTrailers` | both | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `hooks/scripts/crew_trailers.py`) | `[]` |
 | `route.enabled` | both | `false` \| `true` (checked in `hooks/scripts/crew_route.py`) | `false` |
 <!-- generated:config-keys-global end -->
 
@@ -809,7 +836,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-58 of 132 keys are repo-only (generated; 74 are global-settable, section 10).
+58 of 133 keys are repo-only (generated; 75 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -1186,7 +1213,7 @@ line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin; a
 `handoff-author.json` that could not be read; no record of which session wrote
-this handoff; the handoff changed since its author session wrote it; the
+this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
 identified; a `<git-common-dir>/crew/resume-state.json` that cannot be read,
 is not the shape `record_run` writes, or whose directory cannot be searched
@@ -1231,7 +1258,10 @@ while the directory is still writable, an old `manual` record lives for up to
 (the `precompact-*.json` sweep can fail with no key to mark). Two sessions
 writing the handoff in the same instant can attribute it to the wrong one;
 the record hashes the bytes it reads under a lock, which narrows the window
-but does not close it.
+but does not close it. And when `crew_resume.py` can neither unlink nor blank
+a stale `handoff-author.json` nor write its `.stuck` marker while `os.access`
+still reports it writable (EIO, ENOSPC, an immutable attribute, a Windows file
+held open), the stale author record is trusted.
 
 **Unchanged, and reported to the owner:** a malformed repo file still vetoes
 nothing. It is the same class as round 4's FIX (an unreadable veto reads as no
@@ -2797,3 +2827,59 @@ to `/crew:approve`, a `continue` whose next step is approval asks instead, and
 `--harness codex` no line is emitted, because the Skill tool it names does not
 exist there. With `memory.inject: false` the hook emits nothing, route line
 included.
+
+---
+
+## 22. `git.forbiddenTrailers` — commit trailers the owner forbids
+
+`git.forbiddenTrailers` (T-0066, since 1.0.328) is a list of commit trailer
+tokens, such as `["Co-Authored-By"]`, that the owner does not want on any commit
+crew's sessions make. crew takes no side on attribution: the owner's own
+instructions (CLAUDE.md, memory) decide, crew never adds a trailer, and a
+harness reminder asking for one does not override them. This key states the
+owner's answer mechanically. The list is the switch: `[]`, the default in both
+layers, means nothing is forbidden.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `git.forbiddenTrailers` | `[]` | `crew_trailers.forbidden` | A value that is not a list of tokens (letters, digits and `-`, no `:`), a `git` that is not an object, or a config file `crew_config.layer_state` calls corrupt is **unknown**, never `[]`: `/crew:done` prints `trailers: unknown - <why>`. |
+
+**Union, not precedence.** Both layers are read raw and their lists are
+combined, case-insensitively and without duplicates. A repo can add a token and
+can never remove the machine owner's: a cloned repo carrying `[]` must not
+silently disarm the owner, which ordinary precedence would let it do (the same
+reason §15's ratchet exists). The repo layer is the `.crew/config.json` in force:
+a linked worktree with none of its own reads the main checkout's, and when that
+cannot be told, the list is unknown.
+
+**What reads it.** `/crew:done` runs
+`crew_trailers.py --check --root . --ticket <id>` over the ticket's own commits
+(`git log --first-parent <scope base>..HEAD`) and prints
+`trailers: clean (<n> commits)`, one `trailers: FINDING <sha7> <Token>` per
+offending commit, or `trailers: unknown - <why>` (no base, git failed, config
+unreadable, or any unexpected error, printed as `<Type>: <message>`), exiting
+0 / 1 / 2. `--first-parent` is a deliberate refinement of the spec's literal
+`<scope base>..HEAD`: a ticket branch merges origin/main, and the plain range
+would then report every commit that merge brought in (other people's, many
+carrying the trailer). Following first parents keeps the ticket's own commits,
+including a merge commit made on the ticket branch, and leaves out what it
+merged in. The limit: a ticket commit that reaches HEAD only as a merge's second
+parent (a side branch merged in with `--no-ff`) is not read; crew never makes
+that shape, so check such a branch by hand. It is a report: it never refuses done and crew never rewrites the
+commits, because a rewrite is the owner's decision and stales the review
+receipt. A line derived from a fallback scope base says so.
+
+**The textual rule.** A message matches when it contains
+`<Token>` followed by optional spaces and `:` or `=`, case-insensitively (git
+treats trailer keys that way). So prose saying "no Co-Authored-By trailers"
+passes, and prose "Co-Authored-By: lines" is matched — conservative on purpose.
+
+**Refusing at commit time** is the scope guard's half of T-0066. It touches
+review/gate harness paths (`HARNESS` in `scripts/check-tooling-pr.py`), so it
+lands in its own change; until then this key is reported, not enforced.
+
+**Setting it machine-wide:**
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_config.py --set 'git.forbiddenTrailers=["Co-Authored-By"]' --apply
+```

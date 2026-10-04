@@ -46,6 +46,120 @@ All notable changes to this repository are documented here. Format follows [Keep
   `RED (good)` under the new default with no wrapper. The plan-dev-zero entry
   blamed in the report is constant memory (58 MiB). 17 + 5 new tests, five
   sabotage entries for the bound itself.
+### Fixed — `crew` 1.0.330: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
+
+- **What changed.** `_common.sh` gains `crew_repo_config_dir` (and
+  `crew_repo_config_file`), and the `.ps1` hooks that need it carry one copied
+  body, `Get-CrewRepoConfigDir`: the shell twins of
+  `crew_common.repo_config_dir` (T-0088), with no python. Own `config.json` or
+  `crew.json` wins whole; a linked worktree with neither reads the main
+  checkout's; `unknown` (git cannot name it) inherits nothing. Routed through
+  them: the `emergency.standDown` read (`crew_incident_active` for every bash
+  gate, `promote-gate.ps1`), both cloud-guard no-python fallbacks, where
+  `unknown` now counts as armed, and `auto-clear.ps1`'s repo veto. The bash
+  fallback also counts a missing resolver (`_common.sh` failed to source) as
+  armed, and the PowerShell resolver pins UTF-8 around its git call so a
+  non-ASCII path does not read `unknown` on an OEM-code-page console.
+- **Why.** `.crew/*` is gitignored, so a lane has no config of its own. The
+  cloud guard's fallback took an absent file as proof of off: in a lane whose
+  main checkout says `cloudGuard: block`, a session with no usable python ran
+  commands unjudged while the Python guard would have blocked them. The
+  stand-down read and `auto-clear.ps1` disagreed with their Python halves the
+  same way.
+- **Behaviour change.** Inheritance can loosen as well as tighten: an
+  inherited `cloudGuard: off` applies in a lane. A lane whose git cannot name
+  its main checkout, with no usable python, refuses Bash until one of them
+  works, even when no config layer arms the guard (`unknown` is armed).
+- **Not yet covered.** The session hooks (`notify`, `handoff-read`,
+  `handoff-write`, `context-watch`), the verify gate, the scope and completion
+  wrappers and `review_gate.py` still read the lane's own file (L-0680, L-0681).
+  Until then `verify-gate.ps1` reads the lane's own `emergency.standDown` while
+  the bash gate and `crew_incident.py` read the inherited one.
+- **Tests.** `plugin/crew/tests/test_worktree_config_shell.py`: both resolvers
+  against the Python one on ten cases, the copies byte-identical, must-block
+  and must-allow cases for the cloud-guard fallback in both flavours, the
+  stand-down and the auto-clear veto. Sabotaged by hand (the mutations go to
+  the sabotage suite with L-0681).
+
+### Fixed — `crew` 1.0.329: refresh admission refuses an artifact removed from the index (L-0688)
+
+- **What changed.** `crew_refresh_check._on_disk` refuses an artifact whose
+  base copy exists and which the index no longer holds while the file stays
+  on disk (`git rm --cached`): `artifact_verdicts` returns `False` with
+  "removed from the index, so the commit deletes it". The `--cached` raw diff
+  prints `:100644 000000 ... D` for it, which the mode check skipped. A new
+  artifact with no base copy, untracked or staged, is judged as before. The
+  module docstring stops naming L-0540 as pending: `completion_audit.audit`
+  is the caller and its docstring states what it admits.
+- **Why.** T-0094 review round 8 (BLOCK, accepted 2026-09-30): the verdict
+  called a re-anchor what the commit records as a deletion. No hook calls
+  `artifact_verdicts` yet; this lands before L-0540 wires it into the
+  completion audit.
+- **Tests.** `test_refresh_admission.py` gains the refusal for a map, a
+  diagram source and a graph file (red on main) and two must-allow cases (a
+  new untracked rendered file, a new staged one). The permanent sabotage
+  entry lands with L-0540; the refusal was hand-run red here.
+- **Review NIT.** A conflicted merge's unmerged artifact prints the same
+  `:100644 000000 ... U` modes in the `--cached` pass; it is still refused,
+  now as "unmerged in the index (resolve the conflict first)" rather than as
+  a deletion. `test_an_artifact_unmerged_in_the_index_is_refused_as_unmerged`
+  (a map and a diagram, each from a real merge conflict) was red before.
+
+### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
+
+- `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
+  `Co-Authored-By` and wins: the owner's own instructions decide attribution, crew never adds a
+  trailer, and a harness reminder asking for one does not override them.
+- `/crew:implement` step 2: a dispatched prompt carries no attribution or trailer instruction of
+  its own, not even one a harness reminder supplied (autopilot follows that procedure).
+- New config key `git.forbiddenTrailers` (default `[]`) in both layers, combined by UNION rather
+  than precedence, so a cloned repo's `[]` never disarms the machine owner's list; a corrupt layer
+  or malformed value is unknown, never `[]`. Template leaf count 132 -> 133 (on T-0013's 132; global 74 -> 75,
+  repo-only 58); CONFIG.md §22.
+- `crew_trailers.py --check --root . --ticket <id>` reports `trailers: clean (<n> commits)`,
+  `trailers: FINDING <sha7> <Token>` per offending commit in
+  `git log --first-parent <scope base>..HEAD` (the ticket's own commits, not what a merge of main
+  brought in), or `trailers: unknown - <why>`, including any unexpected error (exit 0/1/2). `/crew:done` runs it as a report: it never refuses
+  and crew never rewrites the commits. History is left as it is.
+- Not in this release: the scope guard's refusal of a commit carrying a listed trailer, its
+  must-block/must-allow suite and its sabotage entries. They touch review/gate harness paths
+  (`scripts/check-tooling-pr.py` `HARNESS`), so they land in their own change.
+- Owner step after merge: `python3 plugin/crew/hooks/scripts/crew_config.py --set
+  'git.forbiddenTrailers=["Co-Authored-By"]' --apply`.
+
+### Fixed - `crew` 1.0.327: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
+
+- **T-0023 r2 FIX 1 (route clipping).** A route whose command `_clip` would change - cut past
+  `FIELD_CHARS["command"]` (200) or with its whitespace reflowed - is now an `ask` in `decide`, and
+  `render` refuses one the same way, so the router never passes `--refresh aaaa...` for a longer
+  argument. Tests: `test_an_over_long_command_asks_instead_of_clipping`, its 200-character boundary
+  twin, the reflow neighbour (four commands), a `render`-only defence test; the three huge-command
+  rows of `test_render_is_one_bounded_line_whatever_the_fields` now end with the ask tail, and two
+  short-command route rows keep the ticket, source and phase clips under test.
+- **T-0023 r2 FIX 2 (Unicode line boundaries).** `normalise` refuses every line boundary
+  `str.splitlines` knows (U+000B, U+000C, U+001C-U+001E, U+0085, U+2028, U+2029 beside `\n`/`\r`).
+  `test_every_unicode_line_boundary_is_not_a_route` derives the set and pins it; U+00A0, tab and
+  U+2003 still route.
+- **T-0042 r2 FIX 1 (undeletable author record).** `_drop_author` blanks `handoff-author.json` in
+  place when the unlink is refused (a crew state directory without write permission); an empty
+  record reads as unreadable and waits. `test_an_undeletable_author_record_is_blanked_and_waits`
+  (lock and write paths), the neighbour now refuses the blank too, and a real-permission twin
+  (skips as root; passed under `setpriv` as uid 65534). Review round 1 FIX: when the unlink AND
+  the blank both fail, `_drop_author` leaves `handoff-author.json.stuck` and `_author_refusal` waits
+  while it stands (or cannot be stat'ed) until a later record lands; when the marker cannot be
+  written either, a record that neither its file nor its directory lets anyone replace or remove
+  is not trusted. Six new tests, including a 0444-record-in-a-0555-directory twin that returned
+  `run` before the fix under `setpriv`; both new wait reasons are named in the four reason lists.
+  Review round 2: CONFIG.md's accepted risks name the residual (unlink, blank and marker all fail
+  while `os.access` reports writable: the stale record is trusted), and the stuck reason says how
+  to clear it.
+- **T-0042 r2 FIX 2 (pwsh-only fixture).** `_claude` in `test_crew_resume_hook.py` skips by name
+  without bash instead of raising TypeError; `test_never_emits_initial_user_message` is parametrised
+  and its `wait`/`off` cases no longer need the fixture.
+- **Not in this change.** T-0024 r4's two FIXes (`crew_ticket.py` `_index_closed`, `approval_hook.py`
+  `_wrote`) and every new sabotage entry are harness paths (`scripts/check-tooling-pr.py` `HARNESS`),
+  so they land in a harness-only follow-up. Every existing sabotage anchor on the changed files is
+  kept, and all 75 shipped mutations aimed at them were re-run through `sabotage.py`: RED.
 
 ### Changed — `crew` 1.0.326: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
 
