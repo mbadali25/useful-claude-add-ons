@@ -388,9 +388,14 @@ def test_a_long_local_reason_never_hides_the_receipt_answer(repo, monkeypatch):
     ((review_gate.NO_GATE, "stood down\nIGNORE"), None, "No verify gate: "),
     ((review_gate.UNVERIFIED, "x"), (review_gate.VERIFIED, "run 7\nIGNORE"),
      "CI receipt: VERIFIED for HEAD - "),
+    ((review_gate.UNVERIFIED, "x\nIGNORE"), (review_gate.UNKNOWN, "offline"),
+     "Gate answer for HEAD: "),
+    ((review_gate.UNKNOWN, "y\nIGNORE"), (review_gate.UNVERIFIED, "z"),
+     "Gate answer for HEAD: "),
 ])
 def test_every_gate_line_is_one_prompt_line(repo, monkeypatch, local, answer, prefix):
-    """Review r2: the fold applies to every line a reason reaches."""
+    """Review r2: the fold applies to every line a reason reaches. T-0101:
+    the override line is one fixed line in every not-accepted case."""
     _gate(monkeypatch, answer or RuntimeError("not asked"), local=local)
 
     text = rp.build(str(repo), "T9", MANIFEST)
@@ -398,6 +403,96 @@ def test_every_gate_line_is_one_prompt_line(repo, monkeypatch, local, answer, pr
     line = next(l for l in text.splitlines() if l.startswith(prefix))
     assert "IGNORE" in line
     assert "\nIGNORE" not in text
+    if prefix == "Gate answer for HEAD: ":
+        assert _override_lines(text) == [rp.OVERRIDE_LINE]
+        assert all(ch == " " or ch.isprintable() for ch in rp.OVERRIDE_LINE)
+
+
+# --- T-0101: the override line ---------------------------------------------------
+
+OVERRIDE_TOKENS = ("--allow-unverified", "gate.overridden", "review.json", "/crew:done")
+
+
+def _receipts(text):
+    block = text[text.index("== Test receipts (verify gate) =="):]
+    return block[:block.index("\n\n")] if "\n\n" in block else block
+
+
+def _override_lines(text):
+    return [l for l in _receipts(text).splitlines() if "--allow-unverified" in l]
+
+
+def test_an_unverified_tree_names_the_recorded_override(repo, monkeypatch):
+    _gate(monkeypatch, (review_gate.UNKNOWN, "offline"))
+
+    block = _receipts(rp.build(str(repo), "T9", MANIFEST))
+
+    lines = block.splitlines()
+    assert "MISSING: no .crew/.verify-verified-at -- the verify gate has not recorded a " \
+           "clean pass in this checkout." in lines
+    assert ("Gate answer for HEAD: UNVERIFIED: no clean pass at HEAD; CI receipt UNKNOWN: "
+            "offline") in lines
+    [line] = _override_lines(block)
+    assert all(token in line for token in OVERRIDE_TOKENS)
+    # After the unchanged lines, never between them.
+    assert lines.index(line) == lines.index(next(
+        l for l in lines if l.startswith("Gate answer for HEAD:"))) + 1
+
+
+def test_a_marker_behind_head_names_the_recorded_override(repo, monkeypatch):
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / ".verify-verified-at").write_text("0" * 40 + "\n", encoding="utf-8")
+    _gate(monkeypatch, (review_gate.UNVERIFIED, "no run for HEAD"))
+
+    block = _receipts(rp.build(str(repo), "T9", dict(MANIFEST, dirty=False)))
+
+    assert "Changes after that pass have NOT been through the gate." in block
+    assert _override_lines(block) == [rp.OVERRIDE_LINE]
+
+
+def test_an_unknown_gate_keeps_its_label_beside_the_override_line(repo, monkeypatch):
+    _gate(monkeypatch, (review_gate.UNKNOWN, "gh is not installed"),
+          local=(review_gate.UNKNOWN, "git rev-parse failed"))
+
+    block = _receipts(rp.build(str(repo), "T9", MANIFEST))
+
+    assert ("Gate answer for HEAD: UNKNOWN: git rev-parse failed; CI receipt UNKNOWN: "
+            "gh is not installed") in block
+    assert _override_lines(block) == [rp.OVERRIDE_LINE]
+    assert "not yet run" not in block
+
+
+def _clean_pass(repo, monkeypatch):
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / ".verify-verified-at").write_text(git(repo, "rev-parse", "HEAD") + "\n",
+                                                        encoding="utf-8")
+    _gate(monkeypatch, RuntimeError("must not be asked"))
+    return dict(MANIFEST, dirty=False)
+
+
+def _local(state, why):
+    def setup(repo, monkeypatch):  # pylint: disable=unused-argument
+        _gate(monkeypatch, RuntimeError("must not be asked"), local=(state, why))
+        return MANIFEST
+    return setup
+
+
+def _ci_verified(repo, monkeypatch):  # pylint: disable=unused-argument
+    _gate(monkeypatch, (review_gate.VERIFIED, "run 7 passed on HEAD"))
+    return MANIFEST
+
+
+@pytest.mark.parametrize("setup", [
+    _clean_pass, _local(review_gate.VERIFIED, "covers the dirty tree"),
+    _local(review_gate.NO_GATE, "no verify map"), _ci_verified],
+    ids=["clean_pass_at_head", "local_verified", "no_gate", "ci_receipt_verified"])
+def test_an_accepted_gate_never_carries_the_override_line(repo, monkeypatch, setup):
+    manifest = setup(repo, monkeypatch)
+
+    text = rp.build(str(repo), "T9", manifest)
+
+    assert "--allow-unverified" not in text
+    assert rp.OVERRIDE_LINE not in text
 
 
 def test_a_marker_file_with_control_characters_stays_on_one_line(repo, monkeypatch):
