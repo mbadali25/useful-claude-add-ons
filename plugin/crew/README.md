@@ -1040,7 +1040,7 @@ lane whose git cannot name its main checkout, with no usable python, refuses Bas
 until one works. Inheritance can loosen as well as tighten: an inherited
 `cloudGuard: off` applies in a lane. The session hooks (`notify`,
 `handoff-read`, `handoff-write`, `context-watch`, both flavours) read the
-resolved file too (crew 1.0.404, L-0680): a lane notifies with the main
+resolved file too (crew 1.0.343, L-0680): a lane notifies with the main
 checkout's `notify` settings, so several lanes ping the same channel unless one
 writes its own config, and an inherited `context.handoffPath`,
 `keepTranscripts` or threshold applies in the lane while the handoff path

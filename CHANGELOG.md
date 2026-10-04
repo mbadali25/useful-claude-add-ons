@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.404: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
+### Changed — `crew` 1.0.343: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
 
 - **What changed.** `notify`, `handoff-read`, `handoff-write` and `context-watch`, in both
   flavours, read the repo config through T-0096's resolver (`crew_repo_config_dir` in
