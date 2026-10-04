@@ -14,13 +14,14 @@ Cygwin delivers a signal by reading the target's Windows pid and signal-pipe
 handle out of shared memory (`sig_send`), and how that one landed on the
 hook's own bash.exe is MODELLED, not observed on a Windows host.
 
-The fix takes every signal off the normal path: the watchdog is a process
-substitution blocked in the builtin `read -t` on a pipe the probe holds, so
-the probe's exit closes it and the watchdog returns on EOF and exits by
-itself. Only a timeout (read's status above 128) still kills. These cases
-drive each copy of the probe -- `crew_py_strict`, its byte copy in
-role-write-guard.sh, and `crew_py` -- with `kill` shadowed by a function that
-records every target still alive when it is signalled.
+The fix makes no kill call on the normal path: the watchdog is a process
+substitution blocked in the builtin `read -t` on a pipe the probe holds, and
+the probe writes `done` there once its candidate has exited. That line is the
+only thing that stands the watchdog down; a timeout, EOF without it, or an
+error kills -- the same on bash 3.2 (whose timed-out `read -t` returns 1) and
+on 4.x/5.x. These cases drive each copy of the probe -- `crew_py_strict`, its
+byte copy in role-write-guard.sh, and `crew_py` -- with `kill` shadowed by a
+function that records every call, and every target still alive.
 """
 import os
 import pathlib
@@ -45,18 +46,30 @@ PROBES = [
     pytest.param(_COMMON_SH, "crew_py() {", "crew_py", id="crew_py"),
 ]
 
-# `kill` as a function: the probe's subshells inherit it. Every target after
-# the signal (and an optional `--`) that `kill -0` still reaches is logged
-# LIVE before the real builtin runs, so the probe behaves exactly as before.
+# `kill` as a function: the probe's subshells inherit it. EVERY call is
+# logged (CALL), and each target after the signal (and an optional `--`)
+# that `kill -0` still reaches is logged LIVE, before the real builtin runs.
 KILL_SPY = r'''
 kill() {
   local a first=1
+  printf 'CALL %s\n' "$*" >> "$PROBE_LOG"
   for a in "$@"; do
     if [ "$first" = 1 ]; then first=0; continue; fi
     [ "$a" = "--" ] && continue
     builtin kill -0 -- "$a" 2>/dev/null && printf 'LIVE %s\n' "$a" >> "$PROBE_LOG"
   done
   builtin kill "$@"
+}
+'''
+
+# bash 3.2 (macOS) returns 1 from a timed-out `read -t`, the same status as
+# EOF; 4.0 and later return above 128. This makes any bash answer the 3.2 way.
+READ_AS_BASH_32 = r'''
+read() {
+  builtin read "$@"
+  local s=$?
+  [ "$s" -gt 128 ] && return 1
+  return "$s"
 }
 '''
 
@@ -70,7 +83,7 @@ def _function_raw_source(path, header):
     return src[start:end + 3]
 
 
-def _drive(tmp_path, path, header, fn, candidate_body):
+def _drive(tmp_path, path, header, fn, candidate_body, prelude=""):
     """Run `fn` with ONE candidate on PATH, a `python3` whose body is
     `candidate_body`; return (stdout, log text)."""
     bindir = tmp_path / "bin"
@@ -82,7 +95,7 @@ def _drive(tmp_path, path, header, fn, candidate_body):
     log.write_text("", encoding="utf-8")
     driver = tmp_path / "driver.sh"
     driver.write_text(
-        KILL_SPY + _function_raw_source(path, header) + "\n"
+        KILL_SPY + prelude + _function_raw_source(path, header) + "\n"
         f'r=$({fn}); printf "RESULT:%s\\n" "$r"\n',
         encoding="utf-8", newline="\n")
     base = None
@@ -103,41 +116,65 @@ def _drive(tmp_path, path, header, fn, candidate_body):
 
 @needs_bash
 @pytest.mark.parametrize("path,header,fn", PROBES)
-def test_a_candidate_that_answers_at_once_draws_no_signal_to_anything_live(
+def test_a_candidate_that_answers_at_once_makes_no_kill_call(
         tmp_path, path, header, fn):
-    """The path every hook takes: the candidate answers and exits. Nothing
-    the probe started is signalled while alive -- the old cleanup SIGKILLed
-    its still-sleeping watchdog's group here, on every call."""
+    """The path every hook takes: the candidate answers and exits. The probe
+    calls kill not once -- the old cleanup SIGKILLed its still-sleeping
+    watchdog's group here, on every call, and the first fix still signalled
+    the reaped candidate's (usually empty) group."""
     out, log = _drive(tmp_path, path, header, fn,
                       'echo "$0"\n')
     assert "RESULT:" in out and "RESULT:\n" not in out, out
-    assert "LIVE" not in log, (
-        f"{fn} signalled a live process although its candidate had already "
-        f"exited:\n{log}")
+    assert log == "", (
+        f"{fn} called kill although its candidate had already exited:\n{log}")
 
 
 @needs_bash
 @pytest.mark.parametrize("path,header,fn", PROBES)
-def test_a_candidate_that_fails_at_once_draws_no_signal_either(
+def test_a_candidate_that_fails_at_once_makes_no_kill_call_either(
         tmp_path, path, header, fn):
     """A broken candidate (the WindowsApps stub's shape: no output, exit 9009)
-    is the other common case, and the same: no signal to anything live."""
+    is the other common case, and the same: no kill call at all."""
     _out, log = _drive(tmp_path, path, header, fn, "exit 9\n")
-    assert "LIVE" not in log, log
+    assert log == "", log
+
+
+_POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason=(
+    "needs a PATH with no interpreter behind the stub, built from /usr/bin "
+    "symlinks; the two cases above run on Windows"))
+
+
+def _assert_hung_candidate_killed(out, log, fn):
+    assert "LIVE" in log, (
+        f"{fn}'s watchdog never killed the hung candidate; the probe only "
+        f"returned because its deadline ran out:\n{log}")
+    if fn != "crew_py":
+        # crew_py falls back to the first PATH match when nothing runs.
+        assert "RESULT:\n" in out, out
 
 
 @needs_bash
-@pytest.mark.skipif(os.name == "nt", reason=(
-    "needs a PATH with no interpreter behind the stub, built from /usr/bin "
-    "symlinks; the two cases above run on Windows"))
-@pytest.mark.parametrize("path,header,fn", PROBES[:2])
+@_POSIX_ONLY
+@pytest.mark.parametrize("path,header,fn", PROBES)
 def test_a_hung_candidate_is_still_killed_and_reported_as_no_python(
         tmp_path, path, header, fn):
     """Must-block half: the timeout path keeps its kill. A candidate that
     never answers is SIGKILLed by the watchdog -- the one live target the
     log may name -- and the strict probe reports no python, never the stub."""
     out, log = _drive(tmp_path, path, header, fn, "exec sleep 60\n")
-    assert "RESULT:\n" in out, out
-    assert "LIVE" in log, (
-        "the watchdog never killed the hung candidate; the probe only "
-        f"returned because its deadline ran out:\n{log}")
+    _assert_hung_candidate_killed(out, log, fn)
+
+
+@needs_bash
+@_POSIX_ONLY
+@pytest.mark.parametrize("path,header,fn", PROBES)
+def test_a_hung_candidate_is_killed_where_read_t_times_out_with_status_1(
+        tmp_path, path, header, fn):
+    """bash 3.2, macOS's /bin/bash, answers a timed-out `read -t` with 1 --
+    the status EOF also gives. A watchdog that read "above 128" as the only
+    timeout never killed there, and the probe hung until the hook's own
+    timeout: the non-blocking fail-open L-1512 removes. The clean exit is a
+    line the probe writes, so anything else -- timeout, EOF, error -- kills."""
+    out, log = _drive(tmp_path, path, header, fn, "exec sleep 60\n",
+                      prelude=READ_AS_BASH_32)
+    _assert_hung_candidate_killed(out, log, fn)

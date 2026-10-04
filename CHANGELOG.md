@@ -18,22 +18,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   still alive. How Cygwin's delivery landed that on the hook's own bash.exe is modelled, not
   observed on a Windows host. A hook killed that way is a PreToolUse status other than 0 or 2, so
   the agent would have run the command unjudged.
-- The probe (`crew_py_strict`, its byte copy in `role-write-guard.sh`, and `crew_py`) now sends no
-  signal on the normal path: its watchdog is the builtin `read -t` in a process substitution, on a
-  pipe the probe holds, so it returns on EOF when the probe exits and leaves by itself. Only a
-  timeout still kills, as before. No `sleep` process is forked per probe any more, so the bound
-  holds on a host without `sleep` too.
+- The probe (`crew_py_strict`, its byte copy in `role-write-guard.sh`, and `crew_py`) makes no kill
+  call on the normal path. Its watchdog is the builtin `read -t` in a process substitution, on a pipe
+  the probe holds, and the probe writes `done` there once its candidate has exited: that line alone
+  stands the watchdog down, and a timeout, EOF without it, or an error kills, as before. Positive
+  because bash 3.2 (macOS) answers a timed-out `read -t` with 1, the status EOF gives, so a watchdog
+  deciding on the status (review round 1) never killed a hung candidate there. Nothing is signalled
+  after a clean exit, not even the reaped candidate's group: a child it left behind is no longer
+  killed (under MSYS a native one never was), and one holding stdout is bounded by the hook's own
+  timeout. No `sleep` process is forked per probe, so the bound holds on a host without `sleep`.
 - `test_cloud_guard.py`'s `run_hook` read a killed hook's empty stdout as `allow`. A hook ended by a
   signal (`-N` on POSIX, `N << 8` from Git Bash on Windows) is now `could not tell`, and the failure
   names the signal instead of a bare `assert 2304 == 0`.
-- Tests: `test_python_probe_signals.py` drives each probe copy with `kill` shadowed by a spy - an
-  answering or failing candidate signals nothing live, a hung one is still killed and is no python.
-  In `test_cloud_guard.py`, a `BASH_ENV` that turns every kill at a live target into `kill -9 $$`
-  reproduces the Windows failure on Linux (red before the fix: the hook died with no output), and
-  one that kills the hook outright must read as could-not-tell. Sabotaged: the old probe turns five
-  cases red, dropping the signal decode turns the could-not-tell case red, and a watchdog that never
-  kills hangs the hung-candidate case. The `obsidian-vault` plugin carries the same probe in three
-  hooks and is not changed here.
+- Tests: `test_python_probe_signals.py` drives each probe copy with `kill` shadowed by a spy that
+  logs every call - an answering or failing candidate makes no kill call; a hung one is still killed
+  and is no python, also with `read` answering a timeout the bash 3.2 way. In `test_cloud_guard.py`,
+  a `BASH_ENV` that turns every kill at a live target into `kill -9 $$` reproduces the Windows
+  failure on Linux (red before the fix: the hook died with no output), and one that kills the hook
+  outright must read as could-not-tell. Sabotaged: main's `_common.sh` turns five cases red (the
+  four `crew_py_strict`/`crew_py` clean-path cases and the `BASH_ENV` one); a group kill after the
+  clean exit turns four red; deciding on `read`'s status turns the two bash-3.2 cases of those
+  functions red; dropping the signal decode turns the could-not-tell case red. The `obsidian-vault`
+  plugin carries the same probe in three hooks and is not changed here (L-1516).
 
 ### Changed — `obsidian-vault` 0.5.0: vault recall relevance (T-0083)
 

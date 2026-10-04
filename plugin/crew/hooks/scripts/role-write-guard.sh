@@ -87,14 +87,20 @@ _resolve_role_write_python() {
     # Bash, so a watchdog kills at 3s instead; `wait` returns the moment the
     # candidate exits, so a working interpreter costs no added latency.
     # `set -m` puts the candidate in its own process group, which the kill
-    # takes whole -- on a timeout, and after a normal exit too, for any child
-    # it left behind. Under MSYS a native child is outside that group, so
-    # `taskkill /T` takes the Windows tree when /proc exposes its winpid
-    # (MODELLED, not observed on a Windows host).
+    # takes whole on a timeout. Under MSYS a native child is outside that
+    # group, so `taskkill /T` takes the Windows tree when /proc exposes its
+    # winpid (MODELLED, not observed on a Windows host).
     # The watchdog is the builtin `read -t` in a process substitution, on a
-    # pipe whose only writer is fd 3 of this subshell: the subshell's exit
-    # closes it, `read` returns on EOF, and the watchdog exits by itself.
-    # Only a timeout (status above 128) kills. L-1512: the previous `sleep`
+    # pipe whose only writer is fd 3 of this subshell, which writes `done`
+    # once the candidate has exited. That line alone stands the watchdog
+    # down; a timeout, EOF without it, or an error kills -- bash 3.2 answers
+    # a timed-out `read -t` with 1, as EOF does, so the status cannot decide.
+    # No kill runs after a clean exit, not even at the reaped candidate's
+    # group: a child it left behind is not killed (under MSYS a native one
+    # never was), and one holding stdout is bounded by the hook's own
+    # timeout, not by this probe. `trap '' PIPE`: a watchdog that already
+    # timed out is gone, and writing to it must not signal this subshell.
+    # L-1512: the previous `sleep`
     # watchdog was SIGKILLed, group and all, on EVERY call, while still
     # alive; on Windows CI a SIGKILL sent there ended the hook's own bash.exe
     # (exit 2304, `9 << 8`, empty stderr), which PreToolUse reads as
@@ -108,8 +114,9 @@ _resolve_role_write_python() {
       set +m
       exec 3> >(
         {
-          read -r -t "$_crew_py_strict_probe_timeout" _
-          [ "$?" -gt 128 ] || exit 0
+          line=
+          read -r -t "$_crew_py_strict_probe_timeout" line
+          [ "$line" = done ] && exit 0
           if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
             MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
           fi
@@ -118,7 +125,8 @@ _resolve_role_write_python() {
       )
       wait "$pid"
       status=$?
-      kill -9 -- "-$pid" 2>/dev/null
+      trap '' PIPE
+      echo done >&3 2>/dev/null
       exit "$status"
     ) || continue
     # A trailing CR must not survive into the `-x` test below: a real native
