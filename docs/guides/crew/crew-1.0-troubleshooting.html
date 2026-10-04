@@ -266,7 +266,8 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 <p>A round's outcome is <code>CLEAN</code>, <code>FINDINGS</code> or <code>INCOMPLETE</code>. A completed round 2 — either <code>FINDINGS</code>
   or <code>INCOMPLETE</code> — leaves the ticket state <code>REVIEWED</code>, so its <code>FINDINGS</code> can still be accepted. A
   <strong>third</strong> reservation attempt is refused outright and the state becomes <code>NEEDS_REPLAN</code>; that
-  refusal, and an explicit <code>--reject</code>, are the only two ways into <code>NEEDS_REPLAN</code>.
+  refusal, an explicit <code>--reject</code>, and <code>--reject --supersede-accepted</code> on an <code>ACCEPTED</code> ticket are
+  the only ways into <code>NEEDS_REPLAN</code>.
   <strong>Fix:</strong> a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: <code>review: auto-accept: eligible</code>, then
   <code>--auto-accept --follow-up &lt;id&gt;</code> writes an <code>auto-accepted</code> receipt and its FIX/NIT lines go
   verbatim into one follow-up ticket. A <code>review: auto-accept: refused - &lt;reason&gt;</code> line names what
@@ -334,7 +335,27 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
 </code></pre>
-<p>Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>.</p>
+<p>Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>. An <code>ACCEPTED</code> ticket whose
+  head proved unshippable takes the explicit flag, the owner's call:</p>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt; \
+  --supersede-accepted
+</code></pre>
+<p>It moves the ticket to <code>NEEDS_REPLAN</code>, keeps the old receipt in the <code>superseded</code> list with who
+  and when, and clears it; only an approved successor plan continues. It refuses, changing nothing,
+  on any other state, a name starting <code>auto:</code>, or a receipt or round it cannot read. <code>--by</code> is a
+  recorded name, not a check of who is calling.</p>
+<ul>
+<li><strong>Symptom: the receipt names the wrong accepter</strong> (a peer ran <code>--accept --by</code> under its own name
+  for a decision the owner made).</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --correct-acceptance \
+  --by &lt;who&gt; --reason &quot;&lt;why, one line&gt;&quot;
+</code></pre>
+<p>Rewrites <code>accepted_by</code> on an <code>owner-accepted</code> receipt and appends <code>{round, was, now, reason, at}</code>
+  to <code>acceptance_corrections</code> (shown by <code>--status</code>). Nothing else changes, so <code>--check-receipt</code>
+  answers the same. Refuses a <code>clean</code> or <code>auto-accepted</code> receipt, a name starting <code>auto:</code>, the
+  name already recorded, and an empty or multi-line <code>--by</code> or <code>--reason</code>. A wrong correction is
+  fixed by another one; rows are never removed.</p>
 <ul>
 <li><strong>Symptom: <code>crew_train.py acquire</code> exits 1, <code>waiting behind &lt;ticket&gt;</code>.</strong> The clone's merge train
   is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.

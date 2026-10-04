@@ -720,6 +720,25 @@ not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal; a findin
 and prints `auto_accept_line` (`:523`). JUDGEMENT: autopilot never calls `auto_accept`; the
 command prose (`plugin/crew/commands/autopilot.md:86`) runs it inside the review phase.
 
+**Supersede and correct (H1 bundle: T-0109, T-0098).** DERIVED on branch `T-0098-build`,
+2026-10-04, at the line numbers the H1 content commit leaves; re-check against the anchor above
+before trusting them. `reject` (`plugin/crew/hooks/scripts/review_ledger.py:864`) takes
+`supersede_accepted`: without it an ACCEPTED or NEEDS_REPLAN ticket still refuses, and the
+ACCEPTED refusal names the flag; with it an `auto:` name refuses before the lock and `_supersede`
+(`:830`) takes ONLY an ACCEPTED ledger whose receipt kind is in `SUPERSEDABLE` (`:165`; clean,
+owner-accepted, auto-accepted), whose round is an int and the latest completed round, and whose
+`superseded` is absent or a list of objects (`_is_dict_list` `:826`); it appends `{receipt, by,
+at}` to `superseded`, writes `rejected` with the kind, clears `receipt` and sets NEEDS_REPLAN, never
+rebuilding the bundle. `correct_acceptance` (`:909`) rewrites `accepted_by` on an `owner-accepted`
+receipt only and appends `{round, was, now, reason, at}` to top-level `acceptance_corrections`;
+`_one_line_arg` (`:894`) refuses an empty, multi-line or non-UTF-8 `--by` / `--reason`. It never
+reads the ledger state or calls `_current_hash`. `summary` (`:1071`) adds `rejected`, `superseded`
+and `acceptance_corrections`; `main` (`:1106`) adds `--correct-acceptance` to the action group and
+`--reason` / `--supersede-accepted` with usage errors for the wrong verb. Tests:
+`plugin/crew/tests/test_review_reject_accepted.py`, `plugin/crew/tests/test_review_correct_acceptance.py`;
+fourteen mutations in `plugin/crew/tests/sabotage_review.py`. JUDGEMENT: neither verb authenticates
+a caller; both only take a receipt away or rename its accepter, never mint one.
+
 T-0018 (crew 1.0.43) added the router and `status`. `route_args` (`:1328`)
 takes the command's `$ARGUMENTS` whole - Claude Code 2.1.283 substitutes
 `$0` with the first argument and leaves an out-of-range `$N` literal, so a
@@ -1356,6 +1375,13 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
   manifest)`, the recurring-findings classes keyed to the manifest's changed files (every class
   under `UNKNOWN:` when the file lists are unusable), then the web tests.
+- **Override line (T-0101).** DERIVED on branch `T-0098-build`, 2026-10-04. In the
+  not-accepted branch of `_receipts_block` (`plugin/crew/hooks/scripts/review_prompt.py:250`),
+  after the unchanged `Gate answer for HEAD` line, `out.append(OVERRIDE_LINE)` (`:292`, constant
+  `:215`) says a round on such a tree is reserved only under `--allow-unverified`, recorded as
+  `gate.overridden`, and that `/crew:done` still needs a clean gate. Never printed on a clean
+  pass at HEAD, a local VERIFIED, NO_GATE or a CI receipt VERIFIED. Two mutations in
+  `plugin/crew/tests/sabotage_review.py`.
 - **Loop and metric.** `proposals` (`:724`) exclusive-creates
   `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped, and
   refuses an out.txt the parser calls INCOMPLETE, writing nothing; `metric_summary` (`:795`)

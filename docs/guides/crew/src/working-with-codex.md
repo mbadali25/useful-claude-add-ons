@@ -95,6 +95,10 @@ and at the bundle, and a finding the bundle adds refuses the round (exit 5, noth
 Codex is launched. `--allow-unverified` does not override a new finding. A linter that could not run,
 or could not parse a changed file, reads `COULD NOT CHECK`, never a pass. It refuses too, unless
 `--allow-unverified` is given, and `review.json` records that override as `prereview.overridden`.
+When the verify gate has not passed the tree, the prompt's test receipts keep their `MISSING` and
+`Gate answer for HEAD` lines and add one line saying such a round runs only under
+`--allow-unverified`, recorded as `gate.overridden` in `review.json`, that `/crew:done` still needs
+a clean gate, and that the missing pass alone is that recorded override, not a defect (T-0101).
 
 ## When Codex hits a usage limit
 

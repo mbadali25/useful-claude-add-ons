@@ -116,7 +116,8 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   A round's outcome is `CLEAN`, `FINDINGS` or `INCOMPLETE`. A completed round 2 — either `FINDINGS`
   or `INCOMPLETE` — leaves the ticket state `REVIEWED`, so its `FINDINGS` can still be accepted. A
   **third** reservation attempt is refused outright and the state becomes `NEEDS_REPLAN`; that
-  refusal, and an explicit `--reject`, are the only two ways into `NEEDS_REPLAN`.
+  refusal, an explicit `--reject`, and `--reject --supersede-accepted` on an `ACCEPTED` ticket are
+  the only ways into `NEEDS_REPLAN`.
   **Fix:** a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: `review: auto-accept: eligible`, then
   `--auto-accept --follow-up <id>` writes an `auto-accepted` receipt and its FIX/NIT lines go
   verbatim into one follow-up ticket. A `review: auto-accept: refused - <reason>` line names what
@@ -180,7 +181,28 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```bash
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who>
   ```
-  Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`.
+  Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`. An `ACCEPTED` ticket whose
+  head proved unshippable takes the explicit flag, the owner's call:
+  ```bash
+  python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who> \
+    --supersede-accepted
+  ```
+  It moves the ticket to `NEEDS_REPLAN`, keeps the old receipt in the `superseded` list with who
+  and when, and clears it; only an approved successor plan continues. It refuses, changing nothing,
+  on any other state, a name starting `auto:`, or a receipt or round it cannot read. `--by` is a
+  recorded name, not a check of who is calling.
+
+- **Symptom: the receipt names the wrong accepter** (a peer ran `--accept --by` under its own name
+  for a decision the owner made).
+  ```bash
+  python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --correct-acceptance \
+    --by <who> --reason "<why, one line>"
+  ```
+  Rewrites `accepted_by` on an `owner-accepted` receipt and appends `{round, was, now, reason, at}`
+  to `acceptance_corrections` (shown by `--status`). Nothing else changes, so `--check-receipt`
+  answers the same. Refuses a `clean` or `auto-accepted` receipt, a name starting `auto:`, the
+  name already recorded, and an empty or multi-line `--by` or `--reason`. A wrong correction is
+  fixed by another one; rows are never removed.
 
 - **Symptom: `crew_train.py acquire` exits 1, `waiting behind <ticket>`.** The clone's merge train
   is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
