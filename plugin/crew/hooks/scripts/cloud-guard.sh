@@ -31,10 +31,15 @@ INPUT=$(cat)
 # Whether a config layer arms the guard, read WITHOUT python -- only consulted
 # when python could not run at all. Crude on purpose: any `cloudGuard` value
 # other than "off", in the repo config or the machine-global one, counts as
-# armed, so a value this cannot parse fails closed rather than open.
+# armed, so a value this cannot parse fails closed rather than open. The repo
+# file is the resolved one (crew_repo_config_dir, T-0096): a lane with no config
+# of its own reads the main checkout's, and when git cannot tell which that is
+# (`unknown`) the guard counts as armed -- an absent own file is no proof of off.
 _cloud_guard_armed() {
   root="${CLAUDE_PROJECT_DIR:-.}"
-  for cfg in "$root/.crew/config.json" "$HOME/.claude/crew/config.json"; do
+  crew_repo_config_dir "$root"
+  [ "$CREW_CFG_SOURCE" = unknown ] && return 0
+  for cfg in "$CREW_CFG_DIR/config.json" "$HOME/.claude/crew/config.json"; do
     [ -f "$cfg" ] || continue
     value=$(grep -o '"cloudGuard"[[:space:]]*:[[:space:]]*[^,}]*' "$cfg" 2>/dev/null \
             | head -n 1 | sed -E 's/.*:[[:space:]]*//' | tr -d '"[:space:]\r')
