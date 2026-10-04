@@ -169,7 +169,8 @@ KEY_META = {
                               _S + "crew_tracker.py", "path or null"),
     "obsidian.board": _unv("Board file name.", FIRST, _S + "crew_tracker.py",
                            "file name"),
-    "obsidian.columns.backlog": _unv("Board column for backlog tickets.", FIRST,
+    "obsidian.columns.backlog": _unv("Board column for backlog tickets "
+                                     "(`direction`, `ready`, `needs-owner`).", FIRST,
                                      _S + "crew_tracker.py", "string"),
     "obsidian.columns.ready": _unv("Board column for ready tickets.", FIRST,
                                    _S + "crew_tracker.py", "string"),
@@ -177,7 +178,8 @@ KEY_META = {
                                         _S + "crew_tracker.py", "string"),
     "obsidian.columns.review": _unv("Board column for tickets in review.", FIRST,
                                     _S + "crew_tracker.py", "string"),
-    "obsidian.columns.done": _unv("Board column for done tickets.", FIRST,
+    "obsidian.columns.done": _unv("Board column for closed tickets "
+                                  "(`done`, `cancelled`, `superseded`; each checked).", FIRST,
                                   _S + "crew_tracker.py", "string"),
     # --- memory
     "memory.mode": _unv("Where memory lives (`repo`, or a vault).", FIRST,

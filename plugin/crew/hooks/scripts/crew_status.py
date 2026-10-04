@@ -110,16 +110,25 @@ def _ticket_lines(root):
         return ["tickets  none (.work/tickets/ absent)"]
     dirs = sorted(n for n in names if os.path.isdir(os.path.join(folder, n)))
     files = [n for n in names if n.endswith(".md")]
-    open_ids = []
+    open_ids, owner_ids = [], []
     for line in (read_text(os.path.join(root, ".work", "INDEX.md")) or "").splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) > 1 and cells[1].lower() in ("open", "in-progress", "in progress", "review"):
             open_ids.append(cells[0])
+        elif len(cells) > 1 and cells[1].lower() == "needs-owner":
+            # T-0037: open, but waiting on the owner -- its own line. The
+            # closed words (cancelled, superseded) appear on neither.
+            owner_ids.append(cells[0])
     lines = [f"tickets  {len(dirs)} ticket dir(s), {len(files)} legacy file(s)"]
     if open_ids:
-        shown = ", ".join(open_ids[:5]) + (f" (+{len(open_ids) - 5})" if len(open_ids) > 5 else "")
-        lines.append(f"open     {shown}")
+        lines.append(f"open     {_first_five(open_ids)}")
+    if owner_ids:
+        lines.append(f"owner    {_first_five(owner_ids)} (needs-owner)")
     return lines
+
+
+def _first_five(ids):
+    return ", ".join(ids[:5]) + (f" (+{len(ids) - 5})" if len(ids) > 5 else "")
 
 
 def _review_lines(root):
