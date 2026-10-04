@@ -162,10 +162,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **68**
-leaves. `leaf_paths(default_config())` yields **123**, so **55** are repo-only.
-For all 123, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (122 / 67 / 55 on T-0072's branch, which added the repo-only
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
+leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
+For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on T-0061's branch after merging main 34d9f267; the repo-only
+`tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
+until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
 `autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
 both layers; 121 / 67 / 54 before either.
 66 / 119 before crew 1.0.42 merged T-0005, which added
@@ -674,12 +677,13 @@ them:
 
 ---
 
-## 10. Global-settable keys — 68
+## 10. Global-settable keys — 72
 
-68 measured (`leaf_paths(default_global_config())`, crew 1.0.46); the table
-below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+72 measured (`leaf_paths(default_global_config())`, crew 1.0.207); the table
+below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
-global-settable and not tabled here.
+global-settable and not tabled here; `shellRoute.mode` and `shellRoute.distro`
+are tabled in §11 with both layers' defaults.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -782,7 +786,7 @@ that role — `/crew:review` resolves `review`'s model that way
 
 ---
 
-## 11. Repo-only keys — all 41
+## 11. Repo-only keys — 58 leaves
 
 Refused in the global file by `plan_global_write`, and pruned out of it by
 `filter_global` if some other tool wrote one. Each is a fact about one
@@ -842,6 +846,7 @@ repository or one checkout.
 | `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
 | `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
 | `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
+| `tickets.baseBranch` | string or `null` | `null` | `scope_base.base_branch` — the branch ticket branches are cut from; read by `crew_ticket.py activate`, `/crew:implement`, `/crew:review`, the completion audit, the refresh check, `scope_report` and `webtest_guard`, all through `scope_base` |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -850,6 +855,20 @@ case `null_shadows` is deliberately narrow to protect (§1).
 machine facts into the repo config. That is why it is repo-only despite
 describing a machine: the value records what *this checkout* resolved, and a
 global override would make every repo on the box report the first one's answer.
+
+`tickets.baseBranch` (T-0061) names the branch ticket branches are cut from,
+for a repository that integrates on `development` rather than `main`. `null`
+keeps the old default: `origin/HEAD`'s target, then `origin/main`, then `main`.
+A value is tried as given when it contains `/`, then as `origin/<value>`, then
+as `<value>`, and the first that names a commit is the base branch. When none
+does, or `.crew/config.json` does not parse, the scope base is **could not
+tell**: `scope_base.py --record` writes nothing and exits 1, `--base` and
+`--changed` print nothing and exit 3, and the completion audit fails. It never
+falls back to `origin/HEAD`. The key is read from the resolved repo config
+(`crew_common.repo_config_file`), like `scope.mode`: a worktree with no
+`.crew/` of its own reads the main checkout's. The rows above omit
+`scope.*`, `cloud.*`, `environments.nonProd` and `production.*`, which have
+their own sections; the 58 is `leaf_paths`, not a row count.
 
 `shellRoute.*` (T-0040) is a preference, not a detected fact, so it is not in
 `platform.*`: platform-sync rewrites `platform.shell` every SessionStart. It is
@@ -1104,7 +1123,7 @@ command may be resumed (`crew_resume.py::decide`). **Nothing starts on its
 own yet**: the 2026-09-25 spike (Claude Code 2.1.282) proved an interactive
 session drops SessionStart `initialUserMessage`, so the context hook names
 the exact command and the reason it did not start, and the human presses
-Enter or types it. T-0013 is the typing fallback.
+Enter or types it. T-0013 is the typing fallback (§14b).
 
 | Where | Value | Effect |
 |---|---|---|
@@ -1200,6 +1219,61 @@ never overwrites: of two senders holding the same `run`, only the first may type
 If the opt-in cannot even be confirmed (the module or the machine file cannot
 be read), the answer is `off`, so an unarmed machine sees exactly the
 pre-T-0006 output.
+
+## 14b. Typing the resume command (T-0013)
+
+Where the terminal can be driven, an armed machine TYPES the command
+`decide` rendered into its own session. On the SessionStart after `/clear`
+or a manual `/compact`, before its per-event claim, the context hook runs
+its own flavour's sender in resume mode (`auto-clear.sh --resume`,
+`auto-clear.ps1 -Resume`) and names what happened in the context:
+`Auto-resume: typing /crew:done T-0001 into this session in 2s (method
+tmux); ...`, or T-0006's line plus `Auto-resume was not typed: <reason>.`
+
+Consent is `resume.auto` (§14a); `context.autoClear.enabled` is not needed.
+The rest of `context.autoClear` is read as the machine's description of its
+terminal, exactly as for `/clear`: `method`, `windowTitle`, `onlyRepos`,
+`onlySessions`. No new hook is registered.
+
+| Key (machine file only) | Default | Effect |
+|---|---|---|
+| `resume.typeDelaySeconds` | `2` | wait before the tmux ready probe starts; the only wait on Windows |
+| `resume.readyTimeoutSeconds` | `15` | how long the tmux probe waits for an idle, empty input line before it types nothing |
+
+Both are read from `~/.claude/crew/config.json` only
+(`crew_autocycle.resume_typing`); a repo copy is declared, because every
+global key is a repo key, but never read. A fractional number is cut to its
+whole part (`7.5` is `7`); any other value that is not a whole number, or is
+negative, is the default.
+
+Order, first refusal wins, and each is logged to `.crew/.autoclear.log`
+(off is silent: not armed, or outside `onlyRepos`/`onlySessions`):
+`decide` did not return `run`; no usable method, `$TMUX` unset, or a pane
+that is not an ancestor of the hook; `wtype`; `xdotool` (no probe can see an
+X11 input line); `sendkeys` on the bash flavour or `tmux` on the PowerShell
+one; `auto` on native Windows is `notify`, which types, claims and records
+nothing. Then the per-handoff marker
+`<git-common-dir>/crew/resume-typed-<handoff sha256[:16]>` is claimed with
+`O_EXCL`/`CreateNew` (taken: refuse), then `crew_resume.py record` runs
+(failed: refuse, nothing typed), then the detached sender starts. tmux:
+sleep `typeDelaySeconds`, poll `capture-pane -p -e` every 250 ms up to
+`readyTimeoutSeconds` for the `❯` line between two rule lines holding only
+whitespace once dim runs (the placeholder) and escapes are removed, with no
+`esc to interrupt` on screen; a non-empty line refuses at once; then
+`CREW_AUTOCLEAR_INHIBIT`; then the text, 0.5 s, and Enter (text and Enter
+in one read, over ~60 characters, are taken as a paste). sendkeys: the
+existing child, with the delay, the focus check, the tab recheck, the
+inhibit check, then `SendWait`.
+
+**The default and its limit.** The T-0013 spike (Claude Code 2.1.282, tmux,
+77 `/clear` and 66 `/compact` runs) saw the input ready 0.134 s after
+SessionStart at worst; ceil(2 x 0.134) is below the floor of 2. A delay is a
+guess, not a proof. tmux has a probe; Windows has none, so on a loaded
+machine a key can still land before the input box is ready: the focus and
+tab rechecks catch a wrong window, not an unready box. On `/compact` the
+probe waits for every SessionStart hook to finish, so `readyTimeoutSeconds`
+must exceed the slowest one on the machine. Whether SendWait's per-character
+input hits the same paste rule was not measured.
 
 ## 15. `install.policy`
 
@@ -2397,13 +2471,23 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
     declare, so a deferred command named there is excluded from the
     fallback exactly like an undeclared rule would be, never reintroduced
     through it.
+- `/crew:verify --stamp-reach` (`hooks/scripts/verify_reach.py`, L-0562)
+  declares `reach` on undeclared rules from this same classification:
+  `local` where the gate already runs the rule, `network` where it defers
+  it for a remote verb. Syntax- and wrapper-deferred rules are left for a
+  person (`--set N=...`). `reach` is hashed into the rule key, so it also
+  moves each stamped rule's timings-cache and record entries to the new key;
+  applying it changes neither what Stop runs nor what it costs in the
+  checkout that ran it. The caches are machine-local and gitignored, so
+  another checkout or worktree that pulls the stamped map prices those
+  rules afresh: run `/crew:verify --all` once there.
 - A rule declaring `"requiresCleanTree": true` is recorded as
   `"clean_tree_required"` and is never run on Stop either, for the same
   reason: the working tree is dirty by definition during ordinary work, so a
   rule that refuses on a dirty tree is a permanent red there and a real
   check only under `--all` against a clean checkout.
 - A rule declaring `"coveredBy": "<id>"` (L-0572) names another rule's
-  `"id"` as running a superset of its checks. Under `--all` only, its
+  `"id"` as running a superset of its checks. Under `--all` or `--ci` only, its
   commands run last and are recorded as `covered` - clean, but never cached
   as a timing - when every command of that rule exited 0 earlier in the same
   run, a whole-tree snapshot taken before the first command still matches,
@@ -2426,6 +2510,51 @@ in root `CLAUDE.md`), so an automatic `--price` would dirty a committed file
 on every Stop. `verify-gate.sh --price [path] [--force]` /
 `verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]` is reachable only
 by typing the flag; the Stop hook (`hooks.json`) never passes it.
+
+**`--ci` / `-Ci` is the gate as a pull request's CI job (crew 1.0.232), and
+it is not a spelling of `--all`.** Its scope is the whole map with no budget
+and no fingerprint skip, over TRACKED files only (`git ls-files`, staged
+deletions and renames included): a CI workspace's untracked files (a crew
+checkout, a `.venv`, build output) are not the change and do not trip
+`"unmapped": "fail"`. Its reach filter is Stop's: a `"reach_declared"` rule,
+an undeclared one `scan_reach` will not clear, and an `always`/`default`
+command it will not clear are named and not run, because a CI runner has
+none of the credentials or network paths they were written against. One
+`verify-gate --ci:` line counts them; they do not fail the run, and they run
+only under `--all`. A `"requiresCleanTree"` rule RUNS, because a CI checkout
+is the clean tree it was sent to. A failing command, a command exiting 77
+(`a skip is not a pass in CI`) and any deferral exit 2.
+
+Under `--ci`, every path that would end having checked nothing exits 2 with
+a named `verify-gate --ci:` reason, where Stop exits 0: `verifyGate: false`,
+no map and no `_verify/smoke.sh`, a project directory the gate cannot enter,
+no tracked files (not a git work tree, or git refused the checkout), zero
+commands to run (every matched rule reach-excluded, nothing matched and
+`always`/`default` added nothing, or every command blank), a lock held by
+another gate run, and the `.ps1` run off Windows (use the `.sh` there). The
+Stop-only stand-downs do not apply: `--ci` reads no stdin (so a
+`stop_hook_active` payload cannot end it), the emergency lane does not stand
+it down (an `.crew/incident.json` is named and the rules run), and the
+`.deploy-in-flight` check is skipped without touching the marker.
+
+`--ci` never writes `.crew/.verify-verified-at` or the fingerprint, even on a
+full pass, and the pass line says why. It still writes the gate's other
+machine-local files: the per-rule record (synced with `all` false), and the
+timings and tree-pass caches as on any run. Arguments are checked strictly
+in every mode: the `.sh` accepts only `--all` and `--ci` (in any position)
+and `--price` (first only), so `-ci`, `--CI` or `--ci=1` is a usage error rather than a
+Stop run in CI; the `.ps1` refuses an argument PowerShell's binder would
+have passed through (`-Bogus`, `--ci=1`, a bare word). `--ci` with `--all`
+or `--price` (`-Ci` with `-All` or `-Price`) is a usage error too. Run it from the job's checkout:
+`bash <crew>/hooks/scripts/verify-gate.sh --ci`.
+
+**The map comes from the PR head, so a PR can weaken its own gate.** `--ci`
+reads `.crew/verify.json` from the checkout it is verifying: a PR that drops
+a rule, narrows its `paths` or declares it `network` changes what its own
+job checks. (`verifyGate: false` cannot do it: `--ci` fails on that.) With no
+map, a passing `_verify/smoke.sh` passes, unscoped and unfiltered as on Stop.
+Review a `.crew/verify.json` change as code, and do not treat a green `--ci`
+job as evidence about a map the same PR rewrote.
 
 **Environment pinning is unconditional, not a config key either.** Every rule
 command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`, `AWS_DEFAULT_REGION`,
@@ -2464,7 +2593,9 @@ gate reaching in afterward to kill what a rule left running.
 `/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
 lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
-Its block is **repo only**: absent from `default_global_config()`, so
+`crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
+L-0611) mints one ticket from a staged direction, with no key of its own, and
+that ticket is approved under `autopilot.approval` like any other. Its block is **repo only**: absent from `default_global_config()`, so
 `filter_global` prunes it from the machine file. Whether one checkout may be
 driven is a fact about that checkout.
 
@@ -2517,7 +2648,8 @@ owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
 group's hashes.
 
 **The one writer.** `crew_autopilot.py` is read-only except `approve`, and
-only when `autopilot.approval` allows it. `approve` writes exactly what
+only when `autopilot.approval` allows it (a ticket `assign` mints is written by
+`crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger

@@ -211,8 +211,10 @@ Notable rules, re-read directly:
   / `done.md`, since T-0008's review round 3 `scope_guard.py`,
   `completion_audit.py`, `crew_freshness.py` and `scope_base.py` with
   `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`,
-  and since T-0094 `crew_instructions.py` and `plugin/crew/tests/refresh_fixtures.py`
-  → `python3 -m pytest` over six test files, priced 58s since T-0094 review
+  since T-0061 `test_scope_base_branch.py` (also on the `crew_ticket.py` rule),
+  since T-0094 `crew_instructions.py` and `plugin/crew/tests/refresh_fixtures.py`,
+  and since T-0100 `merged_main.py`, `merged_main_fixtures.py` and `test_merged_main.py`
+  → `python3 -m pytest` over eight test files, priced 58s since T-0094 review
   round 2 (its `why`, `:287`, records 46.4s, 379 passed, at load 2.2-2.5 on
   the merge of `8ab733d7`, x1.25; it was 65s after review round 1 with
   `test_refresh_admission.py` in it, 31.8s before T-0094 — claims read, not

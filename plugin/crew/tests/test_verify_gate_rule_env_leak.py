@@ -122,7 +122,11 @@ _SOURCED_RE = re.compile(r'^\s*\.\s+"\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)/([\w
 # after prepending the python3 shim dir (verify-gate.sh, "PATH=\"$SHIM_DIR:$PATH\"").
 # The per-rule pinned vars (`export "$VAR=$VAL"`: ENV, AWS_PROFILE, ...) are
 # never assigned as `NAME=` in the script, so they are not in the derived set.
-_DELIBERATELY_EXPORTED = frozenset({"PATH"})
+# CLAUDE_PLUGIN_ROOT is exported when the caller left it unset or empty, so a
+# rule can call a crew script under `/crew:verify --all` as under Stop
+# (crew 1.0.164, test_verify_gate_plugin_root.py). GATE_PLUGIN_ROOT, the value
+# it is copied from, stays a plain shell variable and is still watched here.
+_DELIBERATELY_EXPORTED = frozenset({"PATH", "CLAUDE_PLUGIN_ROOT"})
 
 
 def _sh_gate_variable_names():
