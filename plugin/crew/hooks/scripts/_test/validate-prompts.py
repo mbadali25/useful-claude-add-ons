@@ -103,6 +103,25 @@ SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKIL
 # on it -- see CHANGELOG.md's 1.0.9 entry and README's model-tiers section.
 MODEL_TIER = {"reviewer": "opus", "explorer": "opus"}
 
+# T-0041: crew verifies before it states. The rule is a phrase every agent and
+# the always-loaded best-practices skill carries, so a prompt rewrite that drops
+# it fails here instead of shipping a role that fills gaps with likely values.
+RULE_PHRASE = "Verify before you state"
+NOT_VERIFIED = "**Not verified"
+# Checked by DEFAULT: every agents/*.md, so a new agent nobody listed still
+# needs the rule. `reviewer` is the one exemption, by name: it is review
+# harness (`HARNESS` in scripts/check-tooling-pr.py), which lands alone
+# (T-0087), so its share of T-0041 is a harness follow-up. Remove it from
+# RULE_EXEMPT in that follow-up's commit.
+RULE_EXEMPT = {"reviewer": "review harness (T-0087); its rule edit lands as a harness follow-up"}
+RULE_FILES = sorted(glob.glob("agents/*.md")) + ["skills/crew-best-practices/SKILL.md"]
+# Agents whose report is free-form prose end with a **Not verified** section.
+# Not `reviewer`: its output is the machine contract review_verdict.py parses
+# (READ| / SEVERITY|file:line|... / CLEAN), so an extra section would be an
+# unparseable line and spend the round as INCOMPLETE.
+NOT_VERIFIED_AGENTS = ("explorer", "researcher", "security")
+NOT_VERIFIED_COMMANDS = ("done.md", "debug.md")
+
 KNOWN_TOOLS = {
     "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",
     "Agent", "Task", "Skill", "WebSearch", "WebFetch", "ToolSearch", "NotebookEdit",
@@ -313,11 +332,53 @@ def check_skills():
     return total
 
 
+def _text(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError as exc:
+        bad(f"{path}: could not read it ({exc.strerror}), so the verification "
+            "rule could not be checked")
+        return None
+
+
+def check_verification_rule():
+    """T-0041: the rule, and a **Not verified** report section, are present."""
+    print("=== VERIFICATION RULE ===")
+    for path in RULE_FILES:
+        name = os.path.basename(path)[:-3]
+        if path.startswith("agents/") and name in RULE_EXEMPT:
+            # Printed, not just counted: an exemption nobody sees is never removed.
+            print(f"   {path}: exempt from '{RULE_PHRASE}' - {RULE_EXEMPT[name]}")
+            ok(f"{path}: exempt by name")
+            continue
+        text = _text(path)
+        if text is None:
+            continue
+        if RULE_PHRASE in text:
+            ok(f"{path}: carries '{RULE_PHRASE}'")
+        else:
+            bad(f"{path}: missing '{RULE_PHRASE}' - every agent and "
+                "crew-best-practices carry the verify-before-you-state rule (T-0041)")
+    reports = [f"agents/{a}.md" for a in NOT_VERIFIED_AGENTS]
+    reports += [f"commands/{c}" for c in NOT_VERIFIED_COMMANDS]
+    for path in reports:
+        text = _text(path)
+        if text is None:
+            continue
+        if NOT_VERIFIED in text:
+            ok(f"{path}: report has a Not verified section")
+        else:
+            bad(f"{path}: report has no '{NOT_VERIFIED}' section - say what was "
+                "not verified instead of omitting it (T-0041)")
+
+
 def main():
     """Run every check and report."""
     check_commands()
     check_agents()
     description_chars = check_skills()
+    check_verification_rule()
 
     print()
     print(f"PASS: {len(PASSED)} checks")

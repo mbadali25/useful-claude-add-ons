@@ -83,6 +83,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
    the next session, the same rule `/crew:work`'s old step 14 states. <!-- deliberate -->
 4. If `notify.provider` is not `none`:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
+5. Report: each of the four checks and its result, then **Not verified:** every
+   verify rule that exited 77 (a missing tool, not a pass), any suite that did not
+   run on this OS, `drift-detection.sh` (skipped by default), and anything checked
+   only by reading. Write "Nothing" only when that is true.
 
 ## Landing through the merge train
 

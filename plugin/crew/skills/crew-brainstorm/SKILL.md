@@ -38,7 +38,9 @@ assumed. Ask, don't guess; write it back, don't paraphrase silently.
    sharpens goes back to the human.
 4. **Propose 2-3 approaches, recommendation first.** Trade-offs, then your
    pick and why. Lead with the recommendation, not a neutral list the human
-   has to rank themselves.
+   has to rank themselves. Before any option that changes something already
+   decided, look the decision up (`CHANGELOG.md`, `docs/adr/`, a ticket's
+   `direction.md`) and cite it, or say you searched and found none.
 5. **YAGNI ruthlessly.** Strip features that don't serve the stated outcome
    from every approach, including the recommended one.
 6. **Write it back.** Once the shape is settled, write the direction (the
