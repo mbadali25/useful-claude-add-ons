@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:42 UTC
+Last updated: 2026-10-03 00:36 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:36: Container restarted ~23:55; worktrees and scratchpad survived. #372 CI on 11d5194e went ALL GREEN, but main had moved to 5cbe3d01 (#381, #382 from session ccr-05486a34; crew 1.0.169; verify.md and AGENTS.md generation). Re-merged #372 (versions, CHANGELOG, BUDGETS conflicts; verify.md auto-merged, 226 lines within allowance) -> crew 1.0.229; gates pass; 100 tests pass. Needs a merge-only review and CI again. Next free: 1.0.230.
 - 23:42: #337 round-8 re-review on 0df0cb2b: CLEAN (0 BLOCK, 0 FIX). Then re-merged main (#380) -> 55cb1c47, crew 1.0.228; gates pass, qa+state tests 387 passed; needs CI + merge-only review. MERGE OF #337 HELD for owner OK on review scope (unlisted words in 'by' name = documented limit). Next free: 1.0.229.
 - 23:40: #337 round-7 FIX pushed (0df0cb2b, crew 1.0.227): name words split on apostrophes. Round-8 Sonnet re-review started.
 - 23:38: #337 round 7: PASS 0 BLOCK, 1 FIX (apostrophe glued to a listed refusal form, e.g. "by Ann Revoked'", passes). All round-6 items + boundary attacks confirmed; doc list == code list (82). Sent to fixer, target 1.0.227. Next free: 1.0.228.
