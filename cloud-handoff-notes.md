@@ -64,6 +64,7 @@ Last updated: 2026-10-04 04:01 UTC
 
 ## Log (newest first)
 
+- 04:01: #343 T-0068 (harness, lands alone) built -> 514ca132 (1.0.300 placeholder; list in crew_ticket.py not crew_common.py to stay harness-only; 69 tests, 26 sabotages red incl ps1 via scratch pwsh 7.4.6). Sonnet adversarial review started. Builder started: T-0065 #349 (1.0.309).
 - 04:01: #369 T-0044 built -> ce400de3 (1.0.305 placeholder; 87+9 tests, 22/23 hand sabotages red (1 equivalent mutation); follow-up sabotage_unattended.py). Sonnet security review started. Builder started: T-0041 #348 (1.0.308).
 - 03:56: #379 merge-only review on a88e9b07: CLEAN (0/0/0; ASSIGN 34/34 + SCOPE sabotage red, 7 pwsh-only green w/o pwsh). Waits on CI.
 - 03:56: #361 r1 on e6c5fa6a: 0 BLOCK, 2 FIX (approval=null widening warning blank; --restore of corrupt stamp writes it saying nothing to change), 4 NIT. Fixer started (1.0.307 placeholder) incl. 2 safety NITs.
