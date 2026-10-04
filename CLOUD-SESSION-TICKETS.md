@@ -173,7 +173,7 @@ Held for your go: L-0674 (#404).
 | T-0071 | #464 | not started (spec only) | T-0021 accepted-findings follow-up: repo-id case folding merges repos (PRIORITY), file://  |
 | T-0080 | #475 | bundled into H2a #399 | sabotage harness bounds memory: two cloud_guard entries read without bound and OOM-killed  |
 | T-0081 | #478 | not started (spec only) | crew_tracker vault walk checks every component's identity, not just the vault's, on Window |
-| T-0083 | #421 | not started (spec only) | vault recall relevance: prefer this repo's project and concept/decision notes, skip archiv |
+| T-0083 | #421 | in review: round 3 at 5c1d20ba had 0 BLOCK, 2 FIX (plural + joined-word over-matching); fixing | vault recall relevance: prefer this repo's project and concept/decision notes, skip archiv |
 | T-0093 | #477 | not started (spec only) | CLAUDE.md truncation paragraph: build_gallery.py:206 re-run can raise OverlayInvalid if a  |
 | T-0101 | #422 | bundled into H1 #418 | review prompt's receipts block says 'not yet run (gate follows review)' instead of MISSING |
 | T-0102 | #441 | not started (spec only) | how to use Linux tools on a Windows system, and SSM's limits (no oversized payloads trunca |
