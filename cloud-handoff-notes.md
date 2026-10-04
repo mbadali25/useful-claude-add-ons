@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:34 UTC
+Last updated: 2026-10-04 12:35 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:35: #396 T-0016 review 52a36cf6: 1 BLOCK (tmux branch can type into PARENT's pane when parent record is in another config dir and comm != claude; xdotool's tty rule would catch it) + FIX1 PROC_STUB/WINDOW_STUB ungated in prod (gate on CREW_AUTOCLEAR_INHIBIT) + FIX2 ps1 Get-CrewChain unreadable parent -> Complete + FIX3 other_sessions skips live pid with unreadable record. Sent to builder (test-first; merge main; 1.0.376). T-0017 (#356) build is stacked on it.
 - 12:34: #395 re-review cba14d38: 0/1/3 (round-1 all closed). FIX: Windows trusts CLAUDE_PID unchecked (repo env can forge; dead holder live forever) -> sent to builder (Toolhelp32 parent walk + creation time; else no pid). NITs: doc ~2xTTL bound; log-broken refusal names recovery; OverflowError in _PROBE_ERRORS. Re-version 1.0.375.
 - 12:32: #348 merge review 4708d96b: 0/0/0 CLEAN (on ce235468). #395 fix round pushed cba14d38 (1.0.360; identity order, no-/proc + Windows probes, self-stopping beat loop, log-first; 23 tests, 21 mutations red) -> re-review started. Container: installed mmdc 12.0.0 (npm -g) + PUPPETEER_EXECUTABLE_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome in ~/.bashrc so diagram renders work here.
 - 12:31: #348 land-prep onto ce235468 done: 4708d96b (1.0.370; validate-prompts glob NIT fixed; diagram README/index NIT not fixed - mmdc absent). Merge-only review started.
