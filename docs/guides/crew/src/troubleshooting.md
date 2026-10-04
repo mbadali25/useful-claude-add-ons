@@ -193,7 +193,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   everything.
   **Fix:** wait for the holder to land and release, then acquire again before reviewing; fix an
   undeclared Touch in the spec. `merge <base> first` means the base moved in this ticket's Touch:
-  run `crew_train.py catch-up --ticket <id>` and review the merged head. `could not tell` (exit 3)
+  run `crew_train.py catch-up --ticket <id>` (resolve any conflict), bump the version one past
+  the base's, refresh the artifacts, commit, gate the merged head, review it again if
+  `review_ledger.py --check-receipt` reads stale, then acquire again. `could not tell` (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.
 
 - **Symptom: a lane holds the train and its session died.** `status` prints `stale?:` beside it
@@ -210,8 +212,10 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   paths this ticket touches after it was gated, so the verdict covers a different tree.
   **Fix:** `crew_train.py catch-up --ticket <id>` (a merge; conflicts and rerere-replayed files
   are listed and left unstaged for you to inspect, `git add` and commit; a version file is never
-  replayed and comes back conflicted), gate the merged head again (`/crew:review`),
-  then `check-land` again. `merge-tree: HEAD conflicts with <base>` is the same fix with a
+  replayed and comes back conflicted), then bump the version one past the base's, refresh the
+  artifacts, commit, gate the merged head, review it again (`/crew:review`) if
+  `review_ledger.py --check-receipt` reads stale, then `check-land` again, so the tree the gate
+  passed is the tree that lands. `merge-tree: HEAD conflicts with <base>` is the same fix with a
   conflict to resolve first.
 
 ## Scope: approval and the completion audit

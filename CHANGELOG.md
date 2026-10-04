@@ -14,7 +14,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   red on the old text.
 - `/crew:done`, `/crew:implement` step 6, the README's train section and the daily-workflow guide
   (rebuilt HTML, DOCX, PDF) say the same, and that a re-anchor after review changes only the
-  `anchor:` sha, its provenance going in the ticket's `notes.md`.
+  `anchor:` sha, its provenance going in the ticket's `notes.md`. The troubleshooting guide's two
+  catch-up fixes (`acquire`'s `merge <base> first`, `check-land`'s base-moved refusal) state the
+  same order (rebuilt HTML, DOCX, PDF); `test_guides_state_landing_order_after_every_catch_up`
+  holds both guides to it and was red on the old troubleshooting text.
 
 ### Added — `crew` 1.0.323: the full crew 1.0 guide and a generated configuration reference (T-0048)
 

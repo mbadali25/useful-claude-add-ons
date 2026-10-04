@@ -921,6 +921,30 @@ def test_done_quotes_the_plugin_root():
     assert 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py"' in section
 
 
+
+_LANDING_STEPS = ("bump the version one past the base", "refresh the artifacts", "commit",
+                  "gate the merged head", "review it again", "--check-receipt` reads", "stale",
+                  " again")
+
+
+@pytest.mark.parametrize("doc, marker, count", [
+    ("daily-workflow.md", "land in this order: `crew_train.py catch-up`", 1),
+    ("troubleshooting.md", "`crew_train.py catch-up --ticket <id>`", 2),
+])
+def test_guides_state_landing_order_after_every_catch_up(doc, marker, count):
+    # Each catch-up fix in the guides names LANDING_ORDER's steps, in its order.
+    guides = os.path.join(context._ROOT, "..", "..", "docs", "guides", "crew", "src")  # pylint: disable=protected-access
+    with open(os.path.join(guides, doc), encoding="utf-8") as fh:
+        text = " ".join(fh.read().split())
+    starts = [i for i in range(len(text)) if text.startswith(marker, i)]
+    assert len(starts) == count, (doc, len(starts))
+    for start in starts:
+        window, pos = text[start:start + 700], 0
+        for step in _LANDING_STEPS:
+            found = window.find(step, pos)
+            assert found >= 0, f"{doc}: catch-up at {start} lacks {step!r} in order: {window[:300]}"
+            pos = found + len(step)
+
 # --- structure -----------------------------------------------------------------------
 
 def test_only_the_review_path_imports_the_train():
