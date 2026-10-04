@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:13 UTC
+Last updated: 2026-10-04 15:14 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:14: #352 land-prep -> e50a37af (merged main f3f319d1, crew 1.0.327; docx/pdf rebuilt; 392+55 tests + gates pass). Merge-only review + CI next; subscribed.
 - 15:13: #398 T-0096 review 968cf3a4: 0/2/6. FIX1: PR CREATES cloud-guard.sh fail-open in main checkout when _common.sh missing (was rc2, now rc0). FIX2: PS resolver reads unknown for non-ASCII paths under OEM console encoding. NITs N1/N3 -> TODO follow-ups (could-not-tell treated as absent for stand-down/veto across all flavours). Sent to builder.
 - 15:12: H1 #418 review 24cb235c: 0 BLOCK / 3 FIX (supersede --by skips one-line check -> write then crash; vacuous bool-round test; codemap anchor) / 6 NIT. Reviewer AGREES T-0109 Q3 does not loosen the gate (only widening: non-auto caller can push round-1 ACCEPTED to NEEDS_REPLAN; blocks work, never grants). Sent to builder.
 - 15:10: #352 T-0069 land-prep started (merge main f3f319d1, crew 1.0.327). Then merge-only review + CI + merge.
