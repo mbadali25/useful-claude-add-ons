@@ -679,7 +679,7 @@ if (-not $handoffRel) { $handoffRel = ".work/HANDOFF.md" }
 # explicit JSON `null`, are still the ordinary, silent default path.
 $_crewAutoClearKnownKeys = @('method', 'windowTitle', 'command', 'delaySeconds',
                              'minHandoffLines', 'enabled', 'onlyRepos', 'onlySessions',
-                             'unsafeFocus')
+                             'unsafeFocus', 'wrapUp')  # crew_autocycle's known keys
 foreach ($layer in @(@{Label = 'repo'; Node = $repoAuto}, @{Label = 'machine'; Node = $globalAuto})) {
   if ($null -eq $layer.Node) { continue }
   foreach ($prop in $layer.Node.PSObject.Properties.Name) {

@@ -706,8 +706,8 @@ line. Nothing starts on its own - the command is named, never sent as
 record for 600 s and never one it could not have replaced
 (`_compact_was_manual`, `:721`). A record a later PreCompact could neither remove nor empty
 is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:630`, `_mark_stuck` `:638`;
-the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:52-53`,
-`plugin/crew/hooks/scripts/handoff-write.ps1:330-331`), and a compact is not manual while that
+the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:64-65`,
+`plugin/crew/hooks/scripts/handoff-write.ps1:430-431`), and a compact is not manual while that
 marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out with the records.
 
 A handoff resumes only in the session that wrote it (T-0042). On an armed machine every
@@ -4070,13 +4070,13 @@ commit. This section does not move the file's `anchor:`.
   python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:367`) prints a
   resolved path. The PowerShell twin `Get-CrewRepoConfigDir` is one body copied into
   `plugin/crew/hooks/scripts/cloud-guard.ps1:192`, `plugin/crew/hooks/scripts/promote-gate.ps1:142`
-  and `plugin/crew/hooks/scripts/auto-clear.ps1:126`.
+  and `plugin/crew/hooks/scripts/auto-clear.ps1:132`.
 - **DERIVED.** Routed readers: `crew_incident_active`'s `standDown` read
-  (`plugin/crew/hooks/scripts/_common.sh:399`), `_cloud_guard_armed`
+  (`plugin/crew/hooks/scripts/_common.sh:436`), `_cloud_guard_armed`
   (`plugin/crew/hooks/scripts/cloud-guard.sh:40-53`, a missing resolver armed at `:42`, `unknown` at `:44`),
   `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:248-249`),
   promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:201`)
-  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:197`).
+  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:374`).
   `.crew/incident.json`, markers and logs stay in the worktree's own `.crew/`.
 - **DERIVED.** Held by `plugin/crew/tests/test_worktree_config_shell.py`: parity with the
   Python resolver on ten cases per flavour, the copies byte-identical, the cloud-guard
@@ -4087,3 +4087,48 @@ commit. This section does not move the file's `anchor:`.
   `verify-gate.ps1`'s inline `Test-CrewIncidentActive` reads the lane's own
   `standDown` while the bash gate (through `_common.sh`) and `crew_incident.py` read
   the inherited one.
+
+## The session hooks read the resolved repo config (L-0680, slice 1)
+
+Added 2026-10-04 on `L-0680-build`, stacked on `T-0096-build`; the citations are
+to that branch's content commits. This section does not move the file's `anchor:`.
+
+- **DERIVED.** Each `.sh` hook calls `crew_repo_config_dir .` after its `cd` and reads
+  `$CREW_CFG_DIR/config.json`: `plugin/crew/hooks/scripts/notify.sh:11`,
+  `plugin/crew/hooks/scripts/handoff-read.sh:49`, `plugin/crew/hooks/scripts/handoff-write.sh:16`,
+  `plugin/crew/hooks/scripts/context-watch.sh:180` (after the `.crew/` directory gate, which
+  stays). Python is handed the path as an argument; context-watch's no-python awk pass reads the
+  same file.
+- **DERIVED.** Each `.ps1` hook carries a verbatim `Get-CrewRepoConfigDir` (now seven copies, held
+  equal by `PS_COPIES`, `plugin/crew/tests/test_worktree_config_shell.py:45`) and routes through
+  it: `plugin/crew/hooks/scripts/notify.ps1:345`, `plugin/crew/hooks/scripts/handoff-read.ps1:320`,
+  `plugin/crew/hooks/scripts/handoff-write.ps1:388`, `plugin/crew/hooks/scripts/context-watch.ps1:434`.
+  `notify.ps1` run with `&` from `context-watch.ps1` gets its own script scope, so its copy only
+  shadows the caller's identical one.
+- **DERIVED.** handoff-write keeps the literal own-or-unknown gate in its non-`main` branch
+  (`plugin/crew/hooks/scripts/handoff-write.sh:23`, `plugin/crew/hooks/scripts/handoff-write.ps1:396`):
+  there the resolved directory is the own `.crew/`, and `plugin/crew/tests/sabotage_resume.py`
+  (a harness path) anchors on that text. `handoff-write.ps1:484` accepts an Int64 or
+  BigInteger `keepTranscripts` (PowerShell 7's `ConvertFrom-Json`), clamped to Int32.MaxValue as
+  bash's one-liner clamps it; both flavours take an integer only (review rounds 1-2).
+- **DERIVED.** context-watch's messages name the file in force: `CFG_SHOWN`
+  (`plugin/crew/hooks/scripts/context-watch.sh:182`) and `$cfgShown`
+  (`plugin/crew/hooks/scripts/context-watch.ps1:436`) are `.crew/config.json` for an own file and
+  the main checkout's full path when inherited.
+- **DERIVED.** `test_no_session_hook_names_the_own_config_path`
+  (`plugin/crew/tests/test_worktree_config_shell.py:892`) fails on any executable line in the
+  eight scripts naming `.crew/config.json` or `.crew/crew.json` beyond `OWN_PATH_ALLOWED` (`:869`).
+- **DERIVED.** The handoff path stays inside the checkout (review round 1, B1): bash through
+  `crew_handoff_path` (`plugin/crew/hooks/scripts/_common.sh:381`), which calls
+  `crew_state.handoff_path`, and context-watch's own read (`plugin/crew/hooks/scripts/context-watch.sh:354`);
+  PowerShell through `Get-CrewHandoffPath`, three byte-identical copies
+  (`plugin/crew/hooks/scripts/handoff-read.ps1:235`, `plugin/crew/hooks/scripts/handoff-write.ps1:335`,
+  `plugin/crew/hooks/scripts/context-watch.ps1:78`), stricter on links. An inherited absolute or
+  `..` value, or one naming a directory, is the lane's `.work/HANDOFF.md`, with a warning, and
+  the path is printed with forward slashes on every OS (a Windows pre-flight read `.work\HANDOFF.md`);
+  context-watch's message, both flavours, says the configured path leaves the checkout. The `.ps1`
+  copies turn `\` into `/` before the check off Windows, since PowerShell's file cmdlets read it as
+  a separator there too (review round 3). Held by
+  `plugin/crew/tests/test_worktree_config_shell.py:745` and its two siblings.
+- **JUDGEMENT.** Still own-file only: the harness readers `verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR).
