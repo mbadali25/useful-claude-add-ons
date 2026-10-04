@@ -347,6 +347,16 @@ KEY_META = {
                                      "0.19.30", "commands/promote.md", "boolean"),
     "github.mergeGate.branch": _unv("Branch the GitHub merge gate protects.", "0.19.30",
                                     "commands/promote.md", "string or null"),
+    # --- git
+    "git.forbiddenTrailers": _row("Commit trailer tokens the owner forbids, reported by "
+                                  "`/crew:done`. The two layers combine by union, so a "
+                                  "repo can add a token and never remove the machine "
+                                  "owner's; a value that is not a list of tokens makes "
+                                  "the list unknown, never empty (CONFIG.md section 22).",
+                                  "branch", since="1.0.328",
+                                  source=_S + "crew_trailers.py",
+                                  type_="list of trailer tokens (letters, digits and "
+                                        "`-`, no `:`)"),
     # --- install and guards (ratcheted: the tiers live in crew_guards)
     "install.policy": _rat("Whether crew may install a missing prerequisite.", "0.19.18"),
     "guards.terraformApply": _rat("`terraform apply` and friends.", "0.19.30"),

@@ -201,6 +201,15 @@ def author_path(root):
     return os.path.join(state_dir(root), AUTHOR_FILE)
 
 
+def author_stuck_path(root):
+    """The marker `record_author` leaves when a write failed and the previous
+    author record could be neither removed nor blanked: that record may vouch
+    for a note its session no longer wrote last, so `_author_refusal` waits
+    while the marker stands. Not a `precompact-*` name, so the PreCompact
+    prune never removes it; only an author write that lands does (T-0069)."""
+    return author_path(root) + ".stuck"
+
+
 def _worktree_key(root):
     top = git_out(root, "rev-parse", "--show-toplevel")
     return os.path.normcase(os.path.realpath(top or root))
@@ -276,16 +285,19 @@ def record_author(root, session_id, handoff_path):
     The note is read ONCE, under the lock, through the same reader `decide`'s
     caller uses, so the recorded sha is the sha `decide` computes. A note that
     cannot be read, or a write that fails, leaves NO entry for this worktree
-    (the previous one is removed where possible): a missing entry waits,
-    while a stale one would vouch for a note its session never saw. An author
+    (the previous file is removed, or else blanked, where possible): a
+    missing entry or an empty file waits, while a stale one would vouch for a
+    note its session never saw. An author
     file that cannot be read is replaced -- it holds no history, only the
     latest writer per worktree, and a lost entry for another worktree only
     makes that worktree wait.
 
-    A lock that cannot be taken drops the whole file, unlocked: this session
+    A lock that cannot be taken drops the whole file -- removed, or blanked
+    in place where the directory refuses the removal -- unlocked: this session
     did write the note, and the entry already there -- possibly another
     session's for the same text -- must not keep vouching for it (review
-    round 1, T-0042). Unlinking races no reader into a torn file; the
+    round 1, T-0042). Unlinking races no reader into a torn file, and a
+    reader that meets the blanked file reads it as unreadable and waits; the
     residual race is a holder that read identical text before this write
     and replaces the file after the drop, which content cannot tell apart."""
     path = author_path(root)
@@ -322,6 +334,13 @@ def record_author(root, session_id, handoff_path):
             # REMOVE this worktree's entry failed too (review round 1, T-0042).
             dropped = "" if _drop_author(path) else ", and the previous record may still stand"
             return False, f"handoff-author.json was not written: {exc.__class__.__name__}{dropped}"
+        # The file is current again: a stuck marker from an earlier failure no
+        # longer describes it. One that cannot be removed keeps every resume
+        # waiting, which is the safe side.
+        try:
+            os.unlink(author_stuck_path(root))
+        except OSError:
+            pass
         if entry is None:
             return False, "the handoff could not be read, or no session id was given"
         return True, ""
@@ -331,9 +350,53 @@ def record_author(root, session_id, handoff_path):
 
 def _drop_author(path):
     """A failed write must not leave the previous entry vouching for the new
-    note. Removing the whole file is the only step left that needs no write
-    of it; an author file that is gone makes every worktree wait. True when
-    nothing is left at `path`, False when the old file may still be there."""
+    note. Removing the whole file is tried first: it needs no write of the
+    file, only of its directory, and an author file that is gone makes every
+    worktree wait. When the directory refuses that, the file is blanked in
+    place (`_blank`), which needs a writable file but not a writable
+    directory; an empty author file reads as unreadable and waits too
+    (T-0069, T-0042 review round 2). True when no record is left vouching,
+    False when the old file may still be there -- and then the stuck marker
+    is left beside it (`_mark_author_stuck`), so `_author_refusal` still
+    waits rather than trust it."""
+    if _unlink_author(path):
+        return True
+    if _blank(path):
+        return True
+    _mark_author_stuck(path)
+    return False
+
+
+def _mark_author_stuck(author):
+    """Leave `<author>.stuck` (`author_stuck_path`) for `_author_refusal`.
+    Best effort. A marker that cannot be written either -- the usual case,
+    the same read-only directory -- leaves `_author_refusal`'s
+    replaceability check as the refusal: a record that neither its file nor
+    its directory lets anyone replace or remove can have outlived a later
+    write, so it is not trusted (`_FROZEN_AUTHOR`). True when written.
+
+    Accepted residual (CONFIG.md, "Accepted risks"): when the unlink, the
+    blank and this marker write all fail while `os.access` still reports
+    the file or its directory writable -- EIO, ENOSPC, an immutable
+    attribute, a Windows file held open -- nothing marks the record, and
+    the stale author record is trusted."""
+    path = author + ".stuck"
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"at": int(time.time())}))
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def _unlink_author(path):
+    """True when nothing is left at `path`, False when the unlink was refused."""
     try:
         os.unlink(path)
     except FileNotFoundError:
@@ -404,6 +467,12 @@ def _entry(state, key):
 
 
 _UNREADABLE_AUTHOR = "handoff-author.json could not be read (or its directory cannot be searched)"
+_STUCK_AUTHOR = ("a later handoff write could not replace or remove handoff-author.json "
+                 "(handoff-author.json.stuck), so its record may vouch for a note its session "
+                 "did not write last; it clears when a later author record lands, or "
+                 "delete handoff-author.json.stuck by hand")
+_FROZEN_AUTHOR = ("handoff-author.json can be neither replaced nor removed (the file and its "
+                  "directory are read-only), so its record may have outlived a later handoff write")
 _OTHER_SESSION = "the handoff was written by another session"
 
 
@@ -418,6 +487,14 @@ def _author_refusal(root, payload, sha):
         return _UNREADABLE_AUTHOR
     if not entry:
         return "no record of which session wrote this handoff"
+    # A record a later write could not invalidate is never trusted: the
+    # marker says so when it could be written, and when it could not, a
+    # record nobody can replace or remove is as good as marked (T-0069).
+    if _absent(author_stuck_path(root)) is not True:
+        return _STUCK_AUTHOR
+    path = author_path(root)
+    if not (os.access(path, os.W_OK) or os.access(os.path.dirname(path), os.W_OK)):
+        return _FROZEN_AUTHOR
     if entry.get("sha256") != sha:
         return "the handoff changed since its author session wrote it"
     if payload.get("source") == "compact":
