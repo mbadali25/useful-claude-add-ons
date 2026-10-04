@@ -6,19 +6,28 @@
 %% Verified against source on 2026-09-06; see comments for path:line.
 %% Step 6 redrawn at ac93221d: it became [SCRIPT]. skills/localgpu/templates/mcp.json is
 %% no longer referenced by anything, so it left this diagram's anchor list.
+%% Note S1: prints resolved path, flags WSL cross-filesystem case
+%% Note S2: runs 'ollama --version' and 'curl .../api/tags' as tool calls; stops if either fails
+%% Note S3: runs 'ollama pull ...' x2, skipped on --no-pull (bootstrap step 4 covers this too)
+%% Note S4: invokes bootstrap.sh or bootstrap.ps1 for the platform
+%% Note S6: runs 'localgpu mcp-init &lt;repo&gt;' (plugin/localgpu/cli/localgpu_cli.py:339) -- resolves the 3 paths
+%%    itself, verifies them, merges into repo-root .mcp.json, gitignores it -- no template, no hand-substitution
+%% Note S7: reports what changed, points at /localgpu:index, runs /localgpu:doctor
+%% Note B6: proving GPU residency, not CPU offload bootstrap.sh header comment
+%% Note Note: where the target already exists (plugin/localgpu/bootstrap.sh:1-4 header, setup.md throughout)
 flowchart TB
 
     Start(["user runs<br/>/localgpu:setup"])
 
     subgraph SetupFlow["/localgpu:setup - commands/setup.md - 7 steps"]
         direction TB
-        S1["Step 1: resolve LOCALGPU_HOME<br/>[AGENT] prints resolved path,<br/>flags WSL cross-filesystem case<br/>setup.md Step 1"]
-        S2["Step 2: check Ollama installed + serving<br/>[AGENT] runs 'ollama --version' and<br/>'curl .../api/tags' as tool calls;<br/>stops if either fails<br/>setup.md Step 2"]
-        S3["Step 3: pull the two models<br/>[AGENT] runs 'ollama pull ...' x2,<br/>skipped on --no-pull<br/>(bootstrap step 4 covers this too)<br/>setup.md Step 3"]
-        S4["Step 4: build the environment<br/>[SCRIPT] invokes bootstrap.sh or<br/>bootstrap.ps1 for the platform<br/>setup.md Step 4"]
+        S1["Step 1: resolve LOCALGPU_HOME<br/>[AGENT]<br/>setup.md Step 1"]
+        S2["Step 2: check Ollama<br/>installed + serving<br/>[AGENT] setup.md Step 2"]
+        S3["Step 3: pull the two models<br/>[AGENT] setup.md Step 3"]
+        S4["Step 4: build the environment<br/>[SCRIPT] setup.md Step 4"]
         S5["Step 5: write repo config<br/>[AGENT] writes<br/>&lt;repo&gt;/.localgpu/config.json;<br/>asks whether it is gitignored<br/>setup.md Step 5"]
-        S6["Step 6: register the MCP server<br/>[SCRIPT] runs 'localgpu mcp-init &lt;repo&gt;'<br/>(plugin/localgpu/cli/localgpu_cli.py:339)<br/>-- resolves the 3 paths itself, verifies them,<br/>merges into repo-root .mcp.json, gitignores it<br/>-- no template, no hand-substitution<br/>setup.md Step 6"]
-        S7["Step 7: hand off, do not index<br/>[AGENT] reports what changed,<br/>points at /localgpu:index,<br/>runs /localgpu:doctor<br/>setup.md Step 7"]
+        S6["Step 6: register the MCP server<br/>[SCRIPT] 'localgpu mcp-init'<br/>setup.md Step 6"]
+        S7["Step 7: hand off, do not index<br/>[AGENT] setup.md Step 7"]
 
         S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
     end
@@ -32,7 +41,7 @@ flowchart TB
         B3["3. venv + numpy<br/>(+ mcp/requirements.txt,<br/>editable console script)<br/>[SCRIPT]"]
         B4["4. both models pulled<br/>(idempotent - checks<br/>/api/tags first)<br/>[SCRIPT]"]
         B5["5. VRAM discipline:<br/>export OLLAMA_MAX_LOADED_MODELS=1<br/>plugin/localgpu/bootstrap.sh:645-716<br/>[SCRIPT]"]
-        B6["6. VERIFY: real embed request,<br/>then 'ollama ps' proving GPU<br/>residency, not CPU offload<br/>bootstrap.sh header comment<br/>[SCRIPT]"]
+        B6["6. VERIFY: real embed request,<br/>then 'ollama ps'<br/>[SCRIPT]"]
 
         B1 --> B2 --> B3 --> B4 --> B5 --> B6
     end
@@ -40,7 +49,7 @@ flowchart TB
     S4 -- "bash bootstrap.sh (Linux/macOS/WSL)<br/>OR pwsh -File bootstrap.ps1 (Windows)<br/>setup.md Step 4" --> B1
     B6 -- "returns control" --> S5
 
-    Note["Every step in both flows detects before<br/>it acts - re-running either is a no-op<br/>where the target already exists<br/>(plugin/localgpu/bootstrap.sh:1-4 header, setup.md throughout)"]
+    Note["Every step in both flows<br/>detects before it acts -<br/>re-running either is a no-op"]
 
     style S4 fill:#5a4a1a,stroke:#b7861a,color:#fff
     style S6 fill:#5a4a1a,stroke:#b7861a,color:#fff

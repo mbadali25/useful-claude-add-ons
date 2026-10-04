@@ -147,7 +147,12 @@ With `resume.auto: true` in `~/.claude/crew/config.json` (machine only; a repo
 does nothing), the injected handoff on `clear` or a manual `/compact` also
 names the next command from the `resume:` line — `Auto-resume: ready to run
 /crew:done T-0001.`, saying it did not start from the hook, so press Enter or
-type it (T-0013 types it) — or says `Auto-resume did not start: <reason>.`
+type it — or says `Auto-resume did not start: <reason>.` Where the terminal
+can be driven (tmux, or `method: sendkeys` on Windows) crew types it instead
+(T-0013): `Auto-resume: typing /crew:done T-0001 into this session in 2s
+(method tmux)`, after `resume.typeDelaySeconds` and, in tmux, a probe for an
+idle, empty input line; once per handoff, the run recorded first. A refused
+typing keeps the line and adds `Auto-resume was not typed: <reason>.`
 The reasons: compact was not a manual /compact; no handoff note, or it was
 archived as stale, or is stale and could not be archived; the handoff is the
 automatic PreCompact skeleton; no resume line, `resume: none`, or a refused

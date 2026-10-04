@@ -1,0 +1,27 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/role-write-guard.sh
+%% Purpose: What role-write-guard.sh does when it cannot find python: it cannot read guards.roleWrites, so it always blocks a restricted role.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%%  6. role-write-guard.sh's no-python fallback (:301-346) is a NEW, narrower
+%%     contract, not the old policy-reading fallback (removed): without a
+%%     working python it cannot evaluate guards.roleWrites at all, so it only
+%%     tells a restricted role from an unrestricted one and fails CLOSED for
+%%     the restricted side - "off"/"report" and pm's own path allowances
+%%     require python to take effect; a restricted role's write is ALWAYS
+%%     blocked with no python on PATH.
+%% Note NP1: _resolve_role_write_python() plugin/crew/hooks/scripts/role-write-guard.sh:44- fails to find a
+%%    usable interpreter
+%% Note NP2: _role_write_fallback_decision() :326-346. Cannot evaluate guards.roleWrites (off/report/pm's own
+%%    path allowances) at all - only tells a restricted role from an unrestricted one via the deny-list mirror
+%% Note NP3: Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback
+%%    could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says
+%%    :339-345
+flowchart LR
+
+    subgraph NoPython["role-write-guard.sh's no-python fallback - a NARROWER contract than the old one"]
+        direction TB
+        NP1["<b>_resolve_role_write_python()</b><br/>finds no usable interpreter"]
+        NP2["<b>_role_write_fallback_decision()</b><br/>cannot evaluate<br/>guards.roleWrites at all"]
+        NP3["Unrestricted role: allowed.<br/>Restricted or unreadable role:<br/>ALWAYS BLOCKED (exit 2)"]
+        NP1 --> NP2 --> NP3
+    end

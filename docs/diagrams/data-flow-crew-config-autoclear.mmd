@@ -1,0 +1,51 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_config.py
+%% Purpose: context.autoClear: how its settings are read straight from both raw files (not through resolve_config), and how its writer refuses a malformed machine file before handing off to the shared writer.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%%  3. context.autoClear.enabled/onlyRepos/onlySessions are now MACHINE-GLOBAL
+%%     ONLY, and the enforcement is NOT in crew_config.resolve_config at all -
+%%     it lives in crew_autocycle.settings() (crew_autocycle.py:139-180),
+%%     which reads both raw layers itself and computes
+%%     `machine.get("enabled") is True and repo.get("enabled") is not False`
+%%     (:175) - a repo may turn auto-clear OFF (`enabled: false`) and never ON.
+%%     onlyRepos/onlySessions are read from the machine layer ONLY (:177-178);
+%%     a repo's own copy of either is never consulted, though it IS a
+%%     global-settable leaf (see the Split section) and so is visible to
+%%     `/crew:config --show` under crew_config.py:1623-1624's
+%%     AUTOCLEAR_MACHINE_ONLY_KEYS reporting rule.
+%%  4. crew_autoclear_setup.py is the ONLY writer of `context.autoClear.*`
+%%     into the global file, and it does NOT reimplement the write: it calls
+%%     crew_config.write_global_config() (:2820, pre-existing sibling-then-
+%%     rename with fsync, unchanged since 0.16.7 - NOT new at this anchor).
+%%     What IS new is `_require_global_readable` (:107-114), called BEFORE
+%%     every write, which raises `GlobalConfigUnreadable` when the global
+%%     file exists but is not valid JSON/an object - so a malformed global
+%%     file is refused rather than silently replaced with only the two keys
+%%     this flow proposes (`_global_file_problem`, :69-104, is deliberately
+%%     NOT crew_config.read_global_config, whose {} collapse is correct for a
+%%     read and wrong for a write per its own docstring).
+%% Note ACREAD: crew_autocycle.settings(root) plugin/crew/hooks/scripts/crew_autocycle.py:139-184 reads BOTH
+%%    raw config files directly - this is NOT resolve_config, and never goes through it. enabled =
+%%    machine.enabled is True AND repo.enabled is not False :175 - a repo may turn auto-clear OFF and never
+%%    ON. onlyRepos/onlySessions read from the MACHINE layer only :177-178 - a repo's own copy is never
+%%    consulted even though it is a settable leaf
+%% Note ACWRITE: crew_autoclear_setup.py write_autoclear_method() / write_autoclear_enabled() :239-269, both
+%%    call _require_global_readable() :107-114 FIRST
+%% Note ACCHECK: _global_file_problem() :69-104 - absent is fine (None); unreadable / not JSON / not an object
+%%    is a named reason
+%% Note ACRAISE: GlobalConfigUnreadable refuses to write over a malformed global file rather than replacing it
+%% Note ACGO: crew_config.write_global_config() (the SAME atomic writer the Write subgraph above uses - not a
+%%    second mechanism)
+flowchart TB
+
+    subgraph AutoClear["NEW at this anchor: context.autoClear's global-only keys and their writer"]
+        direction TB
+        ACREAD["<b>crew_autocycle.settings(root)</b><br/>reads BOTH raw files directly,<br/>NOT resolve_config"]
+        ACWRITE["<b>crew_autoclear_setup.py</b><br/>write_autoclear_method() /<br/>write_autoclear_enabled()"]
+        ACCHECK{"global file<br/>readable?"}
+        ACRAISE>"<b>GlobalConfigUnreadable</b><br/>refuses to write over<br/>a malformed global file"]
+        ACGO["<b>crew_config.</b><br/><b>write_global_config()</b><br/>the SAME atomic writer"]
+    end
+    ACWRITE --> ACCHECK
+    ACCHECK -->|malformed| ACRAISE
+    ACCHECK -->|ok or absent| ACGO
