@@ -341,9 +341,9 @@ elif [ "$PATCH_STATUS" -ne 0 ]; then
   exit "$PATCH_STATUS"
 fi
 
-# The ticket contract: bundle parts + READ acks, spec sections (Intent,
-# Exclusions, Evidence, Unknowns, Acceptance checks), plan, test receipts, the
-# standards checklist (never the author's self-check answers), web tests.
+# The ticket contract: bundle parts + READ acks, spec sections (Intent, Exclusions,
+# Evidence, Unknowns, Acceptance checks), plan, test receipts (or a CI receipt the gate accepted),
+# the standards checklist (never the self-check answers), the recurring-findings checklist, web tests.
 # Anything absent is written as MISSING, never left out.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_prompt.py --root . \
   --ticket "$TICKET" --manifest "$MANIFEST" --out "$SCRATCH/contract.txt"

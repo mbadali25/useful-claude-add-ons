@@ -4,6 +4,7 @@ already records (the code map, `.crew/verify.json`) and from one hook table.
 
     python3 crew_instructions.py rules  [--root R] [--check]
     python3 crew_instructions.py agents [--root R] [--check]
+    python3 crew_instructions.py agents-rule      # the verify.json rule that runs agents --check
     python3 crew_instructions.py codex  [--root R] [--check] [--plugin-root P] [--force]
     python3 crew_instructions.py codex-probe [--root R]
     python3 crew_instructions.py claude-hooks     # the hooks.json entries, for registration
@@ -81,6 +82,7 @@ GENERATOR_VERSION = "1"
 RULES_MAX_LINES = 30
 AGENTS_MAX_LINES = 80
 MARKER = "crew:generated"
+NOTE = "note: "  # reported, never drift
 KEEP_START, KEEP_END = "<!-- crew:keep:start -->", "<!-- crew:keep:end -->"
 SCRIPT = "crew-context"
 VAULT_MATCHER = "mcp__.*(obsidian|vault|basic[-_]memory).*"
@@ -233,14 +235,77 @@ def _verify_commands(root):
     except ValueError:
         data = {}
     commands = []
-    for rule in data.get("rules", []) if isinstance(data, dict) else []:
+    rules = data.get("rules") if isinstance(data, dict) else None
+    for rule in rules if isinstance(rules, list) else []:
         for command in (rule.get("run") or []) if isinstance(rule, dict) else []:
             if isinstance(command, str) and command not in commands:
                 commands.append(command)
-    for command in data.get("default", []) if isinstance(data, dict) else []:
+    default = data.get("default") if isinstance(data, dict) else None
+    for command in default if isinstance(default, list) else []:
         if isinstance(command, str) and command not in commands:
             commands.append(command)
     return commands
+
+
+# The gate rule that keeps AGENTS.md current. `( eval )` runs it in a subshell,
+# so `exit 77` (SKIP, never a pass) leaves only the rule when the variable is
+# absent - the gate itself exports it from crew 1.0.164 on.
+AGENTS_RULE_COMMAND = ('[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] || exit 77; python3 '
+                       '"$CLAUDE_PLUGIN_ROOT/hooks/scripts/crew_instructions.py" agents --check --root .')
+# Every input render_agents reads.
+AGENTS_SOURCES = ["AGENTS.md", "CLAUDE.md", ".crew/verify.json", ".crew/codemap/**",
+                  "_verify/smoke.sh"]
+SMOKE = "_verify/smoke.sh"
+TITLE_TAIL = " - instructions for every agent"
+
+
+# `crew_instructions.py agents ... --check`, flags in any order, as a command.
+_AGENTS_CHECK_RE = re.compile(r"crew_instructions\.py[\"']?\s+agents(?=\s)(?=[^;&|]*\s--check(?![\w-]))")
+
+
+def agents_rule():
+    """The `.crew/verify.json` rule for AGENTS.md drift, for `/crew:verify` to add."""
+    return {"paths": list(AGENTS_SOURCES), "seconds": 1, "reach": "local",
+            "why": "AGENTS.md is generated from these files; --check fails when it no longer "
+                   "matches them. Regenerate: python3 "
+                   "\"$CLAUDE_PLUGIN_ROOT/hooks/scripts/crew_instructions.py\" agents --root .",
+            "run": [AGENTS_RULE_COMMAND]}
+
+
+def _has_agents_rule(root):
+    text = read_text(os.path.join(root, ".crew", "verify.json"))
+    try:
+        data = json.loads(text) if text else None
+    except ValueError:
+        return True  # unreadable: the gate reports that; do not pile a second note on it
+    if not isinstance(data, dict):
+        return data is None
+    rules = data.get("rules")
+    return any(_AGENTS_CHECK_RE.search(c)
+               for rule in (rules if isinstance(rules, list) else []) if isinstance(rule, dict)
+               for c in (rule.get("run") or []) if isinstance(c, str))
+
+
+def _tracked(root):
+    """Git-tracked paths, or None outside a work tree (the disk then decides)."""
+    try:
+        done = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True,
+                              check=False, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return {p.decode("utf-8", "replace") for p in done.stdout.split(b"\0") if p}
+
+
+def _title(root, existing):
+    """The repo's name, kept from the existing file: the checkout directory's
+    name differs across clones, worktrees and CI, and must not read as drift."""
+    first = (existing or "").split("\n", 1)[0]
+    name = first[2:-len(TITLE_TAIL)] if first.endswith(TITLE_TAIL) else ""
+    if first.startswith("# ") and name.strip() and not any(c in name for c in "<>|`"):
+        return name.strip()
+    return os.path.basename(os.path.abspath(root))
 
 
 def _kept_block(existing):
@@ -249,14 +314,21 @@ def _kept_block(existing):
     return "- (repo-owned hard rules go here; this block survives regeneration)"
 
 
-def render_agents(root, existing=None):
+_ASK_GIT = object()
+
+
+def render_agents(root, existing=None, tracked=_ASK_GIT):
     kept = _kept_block(existing)
     covers = crew_context.index_covers(root)
-    subs = crew_context.subsystems(root)
-    name = os.path.basename(os.path.abspath(root))
-    top = [f"# {name} - instructions for every agent",
+    subs = crew_context.subsystems(root, _tracked(root) if tracked is _ASK_GIT else tracked)
+    imported = re.search(r"^@AGENTS\.md\s*$", read_text(os.path.join(root, "CLAUDE.md")) or "",
+                         re.MULTILINE) is not None
+    top = [f"# {_title(root, existing)}{TITLE_TAIL}",
            "",
-           "Read natively by Codex; Claude Code reads it through `@AGENTS.md` in CLAUDE.md.",
+           ("Read natively by Codex; Claude Code reads it through `@AGENTS.md` in CLAUDE.md."
+            if imported else
+            "For Codex and any agent that reads AGENTS.md. Claude Code does not load it "
+            "(CLAUDE.md has no `@AGENTS.md` import) and follows CLAUDE.md."),
            "",
            "## Work loop",
            "- One session owns a ticket: brainstorm, spec, plan, implement, tests, docs, review, done.",
@@ -266,9 +338,21 @@ def render_agents(root, existing=None):
            "- Quote failing checks verbatim, and say which checks you did not run.",
            "- Vault recall arrives labelled `[vault:<name>] <note>`: a lead to verify, not a fact."]
     verify = _verify_commands(root)
+    if os.path.isfile(os.path.join(root, SMOKE)):
+        verify = [f"bash {SMOKE}"] + [c for c in verify if c != f"bash {SMOKE}"]
     mid = []
     if verify:
-        mid += ["", "## Verify"] + [f"- `{c}`" for c in verify[:6]]
+        shown = verify[:6]
+        mid += ["", "## Verify",
+                "- `.crew/verify.json` maps changed paths to commands: run every one whose rule's "
+                "`paths` match your change. Exit 77 is SKIP, not a pass."]
+        mid += [f"- `{c}`" for c in shown]
+        if len(verify) > len(shown):
+            mid.append(f"- ...and {len(verify) - len(shown)} more in `.crew/verify.json`.")
+        if any("CLAUDE_PLUGIN_ROOT" in c for c in shown):
+            mid.append("- `$CLAUDE_PLUGIN_ROOT` is the crew plugin's install directory (the one "
+                       "holding `hooks/scripts/`): set it outside Claude Code, or say those "
+                       "commands did not run.")
     mid += ["", "## Hard rules", KEEP_START] + kept.splitlines() + [KEEP_END]
     where = []
     if subs:
@@ -292,16 +376,25 @@ def agents(root, check=False):
     existing = read_text(path)
     if existing is not None and MARKER not in existing:
         return [_hand_written("AGENTS.md", check)], []
-    text = render_agents(root, existing)
+    tracked = _tracked(root)
+    text = render_agents(root, existing, tracked)
     if len(text.splitlines()) > AGENTS_MAX_LINES:
         return [f"AGENTS.md would be {len(text.splitlines())} lines (budget {AGENTS_MAX_LINES}): "
                 "shorten the crew:keep block"], []
+    note = [] if _has_agents_rule(root) else [
+        f"{NOTE}.crew/verify.json has no AGENTS.md drift rule - add the one "
+        "`crew_instructions.py agents-rule` prints"]
+    if tracked is None:
+        note.append(f"{NOTE}git ls-files failed here, so the code-map scopes were judged from the "
+                    "disk and may differ in another clone")
     if existing == text:
-        return [], []
+        return note, []
     if check:
-        return [("stale: " if existing is not None else "missing: ") + "AGENTS.md"], []
+        drift = (("stale: " if existing is not None else "missing: ") + "AGENTS.md - regenerate: "
+                 "python3 \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/crew_instructions.py\" agents --root .")
+        return [drift] + note, []
     _write(path, text)
-    return [], ["AGENTS.md"]
+    return note, ["AGENTS.md"]
 
 
 # --------------------------------------------------------------------------
@@ -821,7 +914,8 @@ def codex_probe(root, plugin_root):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Generate crew's instruction surface.")
-    parser.add_argument("what", choices=("rules", "agents", "codex", "codex-probe", "claude-hooks"))
+    parser.add_argument("what", choices=("rules", "agents", "agents-rule", "codex", "codex-probe",
+                                         "claude-hooks"))
     parser.add_argument("--root", default="")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--plugin-root", default="")
@@ -832,6 +926,9 @@ def main(argv=None):
     plugin_root = args.plugin_root or default_plugin_root()
     if args.what == "claude-hooks":
         print(json.dumps(claude_hooks(), indent=2))
+        return 0
+    if args.what == "agents-rule":
+        print(json.dumps(agents_rule(), indent=2))
         return 0
     if args.what == "codex-probe":
         print("\n".join(codex_probe(root, plugin_root)))
@@ -850,6 +947,7 @@ def main(argv=None):
     for item in problems:
         print(item)
     drift = [p for p in problems if not p.startswith("hand-written, left alone")]
+    drift = [p for p in drift if not p.startswith(NOTE)]  # a note is reported, never drift
     if not drift and not written:
         print(f"{args.what}: up to date")
     return 1 if drift else 0
