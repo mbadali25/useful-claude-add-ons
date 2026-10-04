@@ -235,11 +235,17 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
 - Query terms are the words of three or more characters that are not common
   English stop words (`what`, `the`, `for`, `this`, `with`, ...), first 12
   kept. A query of stop words only has no terms and returns nothing, exit 0.
-  Terms match whole words: `port` is not found in `support` or `report`.
+  Terms match whole words: `port` is not found in `support` or `report`. A
+  joined word counts as its parts too (split on `-`, `.`, `_`): `context`
+  finds `crew-context.sh`, `recall` finds `vault_recall.py`, and a joined query
+  word (`vault_recall`) is searched as its parts. A term also matches its
+  plural or singular by a trailing `s` or `es` (`bridge` / `bridges`).
 - `wiki/sessions/archive/` (in any letter case) is never read, and a
   symlinked note whose real path is inside it is skipped too.
   `--include-excluded` reads it. A symlinked note that resolves outside the
-  vault is always skipped. The vault's `.obsidian/app.json` `userIgnoreFilters`
+  vault, or into `.trash`, `.git`, `node_modules` or another dot folder, is
+  always skipped. A hard link cannot be told from an ordinary file, so a hard
+  link into the archive is read; Windows junctions have not been tested. The vault's `.obsidian/app.json` `userIgnoreFilters`
   are not read: their format has not yet been checked against a real vault.
 - Relevance floor: a note is returned only when it holds enough distinct query
   terms - 1 for a query of one or two terms, 2 for three to five, 3 for six or
@@ -288,7 +294,7 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
 top, `project` lists the names asked for, `need` is the floor applied,
 `below_floor` counts notes that scored but missed it, `excluded_dirs` counts
 folders pruned unread and `skipped_links` counts symlinked notes skipped
-(into the archive, or out of the vault).
+(into the archive, a skipped folder, or out of the vault).
 
 `path` is vault-relative with forward slashes. `line` is the text to inject.
 `truncated` is true when the budget, the timeout or the file cap cut anything.

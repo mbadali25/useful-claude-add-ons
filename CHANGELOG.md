@@ -9,9 +9,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Behaviour change: default recall results.** `vault_ops.py recall` (the CLI crew's context hook
   calls on every prompt) returns fewer, more relevant notes for every caller, with no crew change:
   - it never reads `wiki/sessions/archive/` (any letter case), nor a symlinked note whose real
-    path is inside it; a symlinked note that resolves outside the vault is always skipped;
+    path is inside it; a symlinked note that resolves outside the vault or into `.trash`,
+    `.git`, `node_modules` or another dot folder is always skipped (hard links cannot be
+    detected; Windows junctions are untested);
   - stop words and words under three characters are not query terms; a stop-word-only query
-    returns nothing, exit 0; terms match whole words only (`port` no longer matches `support`);
+    returns nothing, exit 0; terms match whole words only (`port` no longer matches `support`),
+    where a joined word (`crew-context.sh`, `vault_recall.py`) also counts as its parts, a
+    joined query word is searched as its parts, and a trailing `s`/`es` plural matches;
   - a note must hold 1 distinct term for a query of one or two terms, 2 for three to five, 3 for
     six or more;
   - inside a vault the order is project, note kind (`wiki/concepts/` and `wiki/decisions/`, then
