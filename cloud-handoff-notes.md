@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 18:14 UTC
+Last updated: 2026-10-04 18:18 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 18:18: Batch 2 CI RED: all Windows shards on #396/#356/#347 heads. Shard 1: 6 fails in test_autoclear_binding.py under Git Bash ('tmux pane %7 could not be confirmed ... pane pid unknown'). #396's own old head d7eb9fbd was also red on Windows -> T-0016's bug (was review-clean but never Windows-green). Builder spawned: root-cause, fix on #396, re-chain #356/#347/#456. Batch 2 merge on hold.
 - 18:14: #427 L-0652 round-2 review CLEAN at 20a4168c (0/0/3 NIT). Cap change cannot loosen (72 attacks). Carries at landing: backstop test, hang guard on fstat FIFO test, CHANGELOG:42 wording.
 - 18:14: #489 L-1503 round-3 at 7670dbc3: 0 BLOCK, 1 FIX (sh splits env names on newline -> 'a\nb' requireHuman env allowed as a,b: fail-open), 4 NIT. Union rule + dup-key scanner held (600-doc fuzz). Builder: refuse empty/control-char/comma env names in both gates.
 - 18:13: Batch 2 merge review: #396/#356/#347 clean; #456 1 FIX (codemap cites _invisible :102, is :106). Fixed by coordinator: revert version, cite fix, regenerate rules, 1.0.336 last -> #456 head f831386e (an intermediate push 7c9d89d6 had stale rules; superseded). Carried to #400: ps1 known-keys list lacks wrapUp.
