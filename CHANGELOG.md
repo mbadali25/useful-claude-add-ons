@@ -63,6 +63,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
   and #407 adopts this rule, the union included (not a block on several matches).
 
+### Fixed — `crew` 1.0.338: mint never reads INDEX.md mid-replace (L-1510)
+
+- **What broke.** On the Windows runner, `test_concurrent_mints_distinct` and
+  `test_index_rows_intact_after_concurrent_mints` failed now and then with
+  `crew_ticket.TicketError: .work/INDEX.md exists but could not be read; which
+  ids are taken cannot be told`. `mint`'s id scan (`_mint_taken`) read INDEX
+  with no lock while another mint's tracker `create` was `os.replace`ing it;
+  Windows refuses that open (a sharing violation, PermissionError), the read
+  answered None, and the mint refused. POSIX renames are atomic for readers, so
+  Linux and macOS never saw it.
+- **Fix.** The scan now reads INDEX under the same INDEX lock every mint's
+  `create` and `move` already hold, so the read can never overlap their
+  replace. Lock order: the scan takes the INDEX lock and releases it before the
+  folder claim, and `_mint_claim` takes it again; it is never nested and is the
+  only lock `mint` holds, so nothing can deadlock. A lock held past the wait, or
+  one that cannot be created, refuses before anything is claimed; an INDEX that
+  stays unreadable still refuses as before (could not tell is never "no ids
+  taken"). Not covered: `crew_tracker.py create` and `crew_tracker.py move`
+  run on their own (as `/crew:brainstorm` and `/crew:fix` do) write INDEX
+  without taking the INDEX lock, so a mint's scan can still overlap their
+  replace; that is follow-up ticket L-1511.
+- **Tests.** The race is now deterministic on every OS: INDEX opens raise the
+  Windows sharing violation while a concurrent mint holds the lock across its
+  replace (`test_mint_never_reads_index_while_another_mint_replaces_it`), plus a
+  persistently unreadable INDEX and a scan lock that is Busy or cannot be
+  created. `sabotage_autopilot.py` adds four L-1510 mutations, each red on its
+  test. Harness-only change (T-0087): `crew_ticket.py` is a HARNESS path.
+
 ### Fixed — `crew` 1.0.337: the verify gate passes a rule only on a completion record; the sabotage harness bounds each entry (T-0082 + T-0080, harness PR H2a)
 
 - **T-0082, what changed.** `verify-gate.sh` and `verify-gate.ps1` run each rule
