@@ -527,6 +527,24 @@ def incident_line(root, cfg):
     return None
 
 
+def inert_line(root):
+    """One SessionStart line naming every setting this crew does not act on,
+    else None (T-0070). Like the incident banner it is not memory, so it is
+    emitted with `memory.inject` off too. `crew_config` is imported here, not
+    at the top: no other event pays for it. Never raises -- a broken config
+    reader gives None and one `inert-check-failed` log record, so it can
+    neither silence SessionStart nor pass for "nothing is inert" unrecorded."""
+    try:
+        import crew_config  # pylint: disable=import-outside-toplevel
+        entries = crew_config.inert_settings(root)
+        return crew_config.format_inert(entries, crew_config.installed_version()) if entries else None
+    except Exception as exc:  # pylint: disable=broad-except
+        append_log(root, {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                          "event": "SessionStart", "chars": 0, "inert": "inert-check-failed",
+                          "reason": f"{exc.__class__.__name__}: {exc}"[:200]})
+        return None
+
+
 # --------------------------------------------------------------------------
 # assembling an emission
 
@@ -907,6 +925,9 @@ def build(root, payload, cfg, state, harness):
         banner = incident_line(root, cfg)
         if banner:
             items.append({"id": "", "text": banner, "source": {"kind": "incident"}})
+        inert = inert_line(root)
+        if inert:
+            items.append({"id": "", "text": inert, "source": {"kind": "inert"}})
         if subs:
             behind = [s["name"] for s in subs if anchor_state(root, s, head) in ("behind", "unresolvable")]
             line = (f"Code map: {len(subs)} subsystems in .crew/codemap/; a slice arrives when you name "
@@ -1022,9 +1043,12 @@ def run(payload, raw, harness="claude"):
     # same flag (`inject_enabled`) and stops printing the handoff when it is
     # on, so a session gets the handoff from one emitter, never both.
     if not _inject_on(cfg):
-        # Nothing but the incident banner, which is not memory (incident_line).
-        banner = incident_line(root, cfg) if payload.get("hook_event_name") == "SessionStart" else None
-        return banner if banner and claim(root, raw, harness) else ""
+        # Nothing but the incident banner and the inert-settings line, neither
+        # of which is memory (incident_line, inert_line).
+        if payload.get("hook_event_name") != "SessionStart":
+            return ""
+        lines = [line for line in (incident_line(root, cfg), inert_line(root)) if line]
+        return "\n".join(lines) if lines and claim(root, raw, harness) else ""
     if not claim(root, raw, harness):
         return ""
     session = payload.get("session_id") or "nosession-" + time.strftime("%Y%m%d")
