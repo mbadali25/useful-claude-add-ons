@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 13:44 UTC
+Last updated: 2026-10-04 13:45 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:45: #396 T-0016 re-review d7eb9fbd: 0/0/3 CLEAN (BLOCK + 3 FIX closed; INHIBIT=spawn can't reach a keystroke; NIT1 shared-tty parent/child with comm node/python3 still types - document in CONFIG §14 at landing; NIT3 Windows/macOS/live -p unverified). #356 T-0017 (stacked on d7eb9fbd) review running.
 - 13:44: #363 T-0060 review 9b664d51: 0/3/5 (FIX1 holds() why with abs paths sent to chat; FIX2 dedupe key suppresses new episodes; FIX3 document spec deviations/deferrals). Sent to builder (1.0.389).
 - 13:43: #338 L-0582 review face2d55: 0/1/3 (FIX: separate-git-dir / bare-repo worktree silently uses own .crew -> could-not-tell). Sent to builder (1.0.388).
 - 13:43: #364 r3 91ec7d6c: 0/2/0 (FIX1 stale-child refusal deadlocks even after cancel -> ignore cancelled/superseded; FIX2 docs must say session can self-schedule 'yes' + TODO follow-up for /crew:approve routing). Sent to builder (1.0.387).
