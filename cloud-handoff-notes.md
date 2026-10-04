@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:22 UTC
+Last updated: 2026-10-04 16:31 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:31: WAVE2 #421 T-0083 built -> 61198189 (vault_recall relevance: archive/userIgnoreFilters excluded, stop words, term floor, project ranking; obsidian-vault 0.4.17 placeholder, spec says 0.5.0; 71 suite tests; 7 sabotages). Review started. Unverified: userIgnoreFilters format vs real vault.
 - 16:22: #407 round-4 6cada04c: 0 BLOCK / 1 low FIX ([!-[] range accepted by check but throws in pwsh) / 3 NIT -> ready to land; carry the low FIX at land-prep. L-1503 WIDER: any literal [set] in a deploy string (e.g. jq .items[0]) makes ps1 gate never match itself -> no gate. Started L-1503 build (new branch L-1503-build, draft PR, 1.0.408).
 - 16:21: CI analysis: Linux tests on self-hosted run ~3.5 min but queued up to 80 min today (91-draft flood + verify-gate receipts + builder pushes); Windows shards are GitHub-hosted, ~14 min run each = the long pole per landing. Decision: builder/fixer pushes to drafts use [skip ci] on the head commit; CI only on land-prep pushes. BUILD.md updated.
 - 16:18: OWNER DECISIONS: (1) land in stacked batches of 3-4 (each PR own merge commit; CI on every head in parallel); (2) no merge-only review agent for version/CHANGELOG-only catch-ups - coordinator checks remerge-diff. Batch 1: #405 (1.0.329), #398 (1.0.330), #450 (1.0.331), #403 (1.0.332). LANDPREP.md updated.
