@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:17: Land-prep onto e9364a70 started: #353 (1.0.366; add KEY_META rows for its 3 autopilot keys), #394 (1.0.367; fresh worktree pr-394b).
 - 12:17: #392 CI 136eaade: all finished checks green; Windows default 1-3 still running; verify-gate not yet listed. Re-check 12:23.
 - 12:15: #342 merge review 904ca36f: 0/0/0 CLEAN (on e9364a70).
 - 12:15: #357 merge review af805254: 0/0/0 CLEAN (on e9364a70).
