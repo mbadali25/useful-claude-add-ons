@@ -85,6 +85,7 @@ from sabotage_qa import QA_AUDIT_MUTATIONS
 from sabotage_standards import STANDARDS_MUTATIONS
 from sabotage_shell import SHELL_MUTATIONS
 from sabotage_prereview import PREREVIEW_MUTATIONS
+from sabotage_recurring import RECURRING_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -132,8 +133,9 @@ GUIDE_HTML = os.path.join(
     ROOT, "docs", "guides", "crew", "archive",
     "crew-progress-report-2026-09-20.html")
 # What each schema migration does. test_upgrade.py checks the entry for the
-# CURRENT hop exists, so the mutation below deletes exactly that entry.
-UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
+# CURRENT hop exists, so the mutation below deletes it, in whichever doc ships it.
+UPGRADE_DOC = next((p for p in (os.path.join(CREW, "skills", "crew-setup", "upgrade-report.md"),)
+                    if os.path.isfile(p)), os.path.join(CREW, "commands", "upgrade.md"))  # T-0038 moves it
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
 REVIEW_VERDICT = os.path.join(CREW, "hooks", "scripts", "review_verdict.py")
@@ -818,8 +820,8 @@ MUTATIONS = (
         UPGRADE_DOC,
         "- **Schema 6 \u2192 7**",
         "- **The change-request migration**",
-        "tests/test_upgrade.py::"
-        "test_upgrade_md_documents_the_current_migration",
+        "tests/test_upgrade.py::" + ("test_upgrade_report_documents_the_current_migration"
+            if UPGRADE_DOC.endswith("upgrade-report.md") else "test_upgrade_md_documents_the_current_migration"),
     ),
     (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"
@@ -2947,9 +2949,9 @@ MUTATIONS = (
         # green; only the provenance case sees "kept" without its caveat.
         "a re-record upgrades a fallback entry to a known start",
         SCOPE_BASE,
-        '        if _is_fallback_entry(entry):\n'
+        '        elif _is_fallback_entry(entry):\n'
         '            return entry["base"], "kept-fallback"\n',
-        '        if _is_fallback_entry(entry):\n'
+        '        elif _is_fallback_entry(entry):\n'
         '            return entry["base"], "kept"\n',
         ("tests/test_scope_base.py::"
          "test_re_recording_a_fallback_entry_keeps_saying_fallback"),
@@ -2960,8 +2962,8 @@ MUTATIONS = (
         # The fixture deletes origin/HEAD so only this candidate can answer.
         "the fallback never tries origin/main",
         SCOPE_BASE,
-        '    candidates = [sym, "origin/main", "main"]\n',
-        '    candidates = [sym, "main"]\n',
+        '    for ref in (sym, "origin/main", "main"):\n',
+        '    for ref in (sym, "main"):\n',
         ("tests/test_scope_base.py::"
          "test_the_fallback_uses_the_remote_default_when_there_is_no_local_main"),
     ),
@@ -3065,7 +3067,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
               + LIMIT_WORKTREE_MUTATIONS
               + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS
-              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS)
+              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS
+              + RECURRING_MUTATIONS)
 
 # pytest's own exit codes (documented, not this file's invention): 0 all
 # passed; 1 at least one test FAILED (a real assertion, or an error raised

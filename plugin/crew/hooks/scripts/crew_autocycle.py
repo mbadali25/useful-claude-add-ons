@@ -51,6 +51,10 @@ host, which is why a scratch repo could not be tested safely beside live ones.
 CLI (used by auto-clear.sh): `plan --root R --session S [--force]` prints one
 value per line -- status (off|refuse|send), reason, method, target, label,
 command, delay, key. Never raises; an internal error is a refusal.
+`resume-plan --root R --session S --source clear|compact [--flavour sh|ps1]`
+is T-0013's: the same eight lines with the rendered resume prompt as the
+command, then timeout, marker and decision, then ".". `probe` reads a
+`tmux capture-pane -p -e` on stdin and prints ready|busy|nonempty|noprompt.
 """
 
 import argparse
@@ -563,6 +567,129 @@ def plan(root, session_id, force=False, global_path=None, env=None):
     return out
 
 
+# --------------------------------------------------------------------------
+# T-0013: auto-resume TYPES the resume command into its own session.
+#
+# Consent is T-0006's `resume.auto` (machine only, repo veto), so
+# `context.autoClear.enabled` is NOT required here; the rest of the autoClear
+# block -- method, windowTitle, onlyRepos, onlySessions -- is this machine's
+# description of its terminal and is read exactly as `settings` reads it.
+
+# Printed one per line by `resume-plan`, then a lone "." so a run of empty
+# trailing fields survives the shell's `$(...)`, which strips trailing newlines.
+RESUME_PLAN_FIELDS = ("status", "reason", "method", "target", "label", "command", "delay", "key",
+                      "timeout", "marker", "decision")
+
+
+def resume_typing(global_path=None):
+    """(typeDelaySeconds, readyTimeoutSeconds) from the MACHINE file only. A
+    value that is absent, not a whole number, or negative is the default:
+    a negative sleep would kill the sender after the marker was claimed."""
+    import crew_state  # pylint: disable=import-outside-toplevel
+    block = _block(_load(global_path or global_config_path()), "resume")
+    out = []
+    for key in ("typeDelaySeconds", "readyTimeoutSeconds"):
+        default = crew_state.RESUME_DEFAULTS[key]
+        value, _ok = _num_checked(block.get(key), default)
+        out.append(value if value >= 0 else default)
+    return out[0], out[1]
+
+
+def resume_plan(root, session_id, source, global_path=None, env=None, flavour="sh", plugin_root=None):
+    """Everything auto-clear's resume mode needs, decided in one place.
+
+    `plan`'s eight fields (so the senders read them unchanged), then the
+    probe timeout, the per-handoff marker path and the decision JSON that
+    `crew_resume.py record` takes. Order, first failure wins: T-0006's
+    `decide` (off -> off; any other non-run -> refuse with its reason, after
+    the narrowing below so an un-narrowed session stays silent), `in_scope`
+    (off), then the method -- `resolve_method` for the sh flavour; the ps1
+    flavour resolves `sendkeys` natively, so its plan stops before that."""
+    out = dict.fromkeys(RESUME_PLAN_FIELDS, "")
+    out["status"] = "refuse"
+    try:
+        import crew_context  # pylint: disable=import-outside-toplevel
+        import crew_resume  # pylint: disable=import-outside-toplevel
+    except Exception:  # pylint: disable=broad-except
+        out["reason"] = "crew_resume could not be imported, so nothing was decided"
+        return out
+    crew_cfg = crew_context.load_crew_config(root)
+    rel, text = crew_context._handoff(root, crew_cfg)  # pylint: disable=protected-access
+    payload = {"hook_event_name": "SessionStart", "source": source, "session_id": session_id}
+    decision = crew_resume.decide(
+        root, payload, text, plugin_root or crew_resume._plugin_root(),  # pylint: disable=protected-access
+        global_path, stale=crew_resume._is_stale(root, crew_cfg, rel, text))  # pylint: disable=protected-access
+    if decision.get("action") == "off":
+        out["status"] = "off"
+        return out
+    cfg = settings(root, global_path)
+    narrowed_in = in_scope(cfg, root, session_id)
+    if not narrowed_in:
+        out["status"] = "off"
+        return out
+    if decision.get("action") != "run":
+        out["reason"] = f"auto-resume is waiting: {decision.get('reason') or 'unknown'}"
+        return out
+    delay, timeout = resume_typing(global_path)
+    key = str(decision.get("handoff_sha256") or "")[:16]
+    out.update(command=decision["prompt"], delay=str(delay), timeout=str(timeout), key=key,
+               marker=os.path.join(crew_resume.state_dir(root), f"resume-typed-{key}"),
+               decision=json.dumps(decision, sort_keys=True))
+    try:
+        # Where the senders claim the marker; record_run writes beside it.
+        os.makedirs(os.path.dirname(out["marker"]), exist_ok=True)
+    except OSError:
+        pass
+    if flavour == "ps1":
+        out.update(status="send", method=cfg["method"])
+        return out
+    got = resolve_method(cfg, env)
+    if not got["ok"]:
+        out["reason"] = got["reason"]
+        return out
+    if got["method"] == "xdotool":
+        out["reason"] = ("auto-resume types through tmux (which has a ready probe) or sendkeys only; "
+                         "xdotool cannot see whether the input line is ready")
+        return out
+    if got["method"] == "notify":
+        out["delay"] = "0"
+    out.update(status="send", method=got["method"], target=got["target"], label=got["label"])
+    return out
+
+
+_DIM_RUN = re.compile(r"\x1b\[2m.*?\x1b\[0m")
+_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_PROMPT_GLYPH = "❯"
+_RULE = "───"
+
+
+def _plain(line):
+    return _ESCAPE.sub("", _DIM_RUN.sub("", line))
+
+
+def probe_input_line(capture):
+    """ready | busy | nonempty | noprompt, for a `tmux capture-pane -p -e`.
+
+    Pinned against Claude Code 2.1.282 by the T-0013 spike: the input line
+    starts with U+276F and sits between two rule lines (U+2500). Ready is
+    that line holding nothing but whitespace (NBSP included) once dim runs
+    -- the placeholder -- and every other escape are removed, with no
+    `esc to interrupt` anywhere (the busy /compact frame looks empty). The
+    LAST such line counts. A glyph this does not know is `noprompt`, which
+    the sender treats as not ready: it types nothing."""
+    lines = [_plain(line) for line in (capture or "").splitlines()]
+    if any("esc to interrupt" in line for line in lines):
+        return "busy"
+    for index in range(len(lines) - 2, 0, -1):
+        line = lines[index].lstrip()
+        if not line.startswith(_PROMPT_GLYPH):
+            continue
+        if not (lines[index - 1].lstrip().startswith(_RULE) and lines[index + 1].lstrip().startswith(_RULE)):
+            continue
+        return "ready" if not line[len(_PROMPT_GLYPH):].strip() else "nonempty"
+    return "noprompt"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="crew_autocycle.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -572,9 +699,27 @@ def main(argv=None):
     p_plan.add_argument("--force", action="store_true")
     p_key = sub.add_parser("key")
     p_key.add_argument("session", nargs="?", default="")
+    p_resume = sub.add_parser("resume-plan")
+    p_resume.add_argument("--root", default=".")
+    p_resume.add_argument("--session", default="")
+    p_resume.add_argument("--source", default="")
+    p_resume.add_argument("--flavour", default="sh", choices=("sh", "ps1"))
+    sub.add_parser("probe")
     args = parser.parse_args(argv)
     if args.cmd == "key":
         print(session_key(args.session))
+        return 0
+    if args.cmd == "probe":
+        print(probe_input_line(sys.stdin.buffer.read().decode("utf-8", "replace")))
+        return 0
+    if args.cmd == "resume-plan":
+        try:
+            result = resume_plan(os.path.abspath(args.root), args.session, args.source, flavour=args.flavour)
+        except Exception as exc:  # pylint: disable=broad-except
+            result = {"status": "refuse", "reason": f"internal error: {exc.__class__.__name__}"}
+        for field in RESUME_PLAN_FIELDS:
+            print(" ".join(str(result.get(field, "")).splitlines()))
+        print(".")
         return 0
     try:
         result = plan(os.path.abspath(args.root), args.session, args.force)

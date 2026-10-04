@@ -1590,6 +1590,91 @@ def check_command_backtick_spans(fail):
         fail(h)
 
 
+VERIFYING_DOC = "VERIFYING.md"
+
+
+def verifying_doc_paths(text: str) -> tuple[list[tuple[int, str]], int | None]:
+    """(line, path) for every repository path VERIFYING.md names, and the line
+    of a fence that never closes (None when every fence closes): everything
+    after a forgotten closer would otherwise go unchecked.
+
+    A path is a token inside a backtick span or a fenced block, or a relative
+    link target, that contains a `/` and is not absolute (`/dev/null`,
+    `/crew:verify`), and holds nothing but path characters (so a URL, a
+    `<placeholder>`, a glob or a `$VAR` is skipped), plus a bare root doc named
+    like `AGENTS.md`. Every such token is checked: filtering on "its first
+    segment exists" would wave through the likeliest typo, a misspelt
+    top-level directory. Known limits: reference-style links, HTML `href`,
+    spans that wrap across lines and fences inside a blockquote are not read;
+    any `Name.md` token is taken as a root doc, so a bare `SKILL.md` must exist
+    at the root; and `scripts/...` is read as `scripts`.
+    """
+    found: list[tuple[int, str]] = []
+
+    def take(line: int, token: str) -> None:
+        token = token.strip("\"'(),;:").rstrip(".")
+        if re.fullmatch(r"[A-Z][A-Za-z_-]*\.md", token):  # a root doc: `AGENTS.md`
+            found.append((line, token))
+            return
+        if "/" not in token or token.startswith(("/", "-")):
+            return
+        if not re.fullmatch(r"[A-Za-z0-9_.\-/]+", token):
+            return
+        found.append((line, token.rstrip("/")))
+
+    fence = None  # the opening run (```` or ~~~), so only a matching one closes it
+    opened = None
+    for number, line in enumerate(text.splitlines(), 1):
+        # A backtick fence's info string holds no backtick (CommonMark), so
+        # a line opening with an inline ```span``` is not a fence.
+        opener = re.match(r"\s*(?:[-*+]\s+|\d+[.)]\s+)?(`{3,}(?!.*`)|~{3,})", line)
+        if opener and fence is None:
+            fence, opened = opener.group(1), number
+            continue
+        if fence is not None:
+            if re.fullmatch(r"\s*" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}\s*", line):
+                fence = None
+                continue
+            for token in line.split("#", 1)[0].split():
+                take(number, token)
+            continue
+        for span in re.findall(r"`([^`\n]+)`", line):
+            for token in span.split():
+                take(number, token)
+        for target in re.findall(r"\]\(([^)\s]+)", line):
+            take(number, target.split("#", 1)[0])
+    return found, (opened if fence is not None else None)
+
+
+def check_verifying_doc(fail):
+    """Every repository path VERIFYING.md names exists.
+
+    The page tells people and agents which commands prove a change. A command
+    naming a script that was renamed or removed is worse than no page: it
+    fails the first time someone follows it, and they stop trusting the rest.
+    """
+    path = os.path.join(ROOT, VERIFYING_DOC)
+    if not os.path.isfile(path):
+        # Required because something links to it; a root nothing points at
+        # (every other suite's fixture) has no page to keep honest. Deleting
+        # the page together with both links is therefore silent, by design.
+        linking = [doc for doc in ("README.md", "AGENTS.md")
+                   if os.path.isfile(os.path.join(ROOT, doc))
+                   and VERIFYING_DOC in read(os.path.join(ROOT, doc))]
+        if linking:
+            fail(f"{VERIFYING_DOC}: missing - {' and '.join(linking)} link to it")
+        return
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    found, unclosed = verifying_doc_paths(text)
+    if unclosed is not None:
+        fail(f"{VERIFYING_DOC}:{unclosed}: a fence opens here and never closes, so nothing "
+             "after it is checked")
+    for line, rel in found:
+        if not os.path.exists(os.path.join(ROOT, rel)):
+            fail(f"{VERIFYING_DOC}:{line}: names `{rel}`, which does not exist")
+
+
 def check_hook_commands(entries, fail):
     r"""Every shell-form hook command survives the shell that will actually run it.
 
@@ -1661,6 +1746,7 @@ def main() -> int:
     check_description_claims(entries, fail)
     check_catalog_claims(entries, fail)
     check_crew_ignore_policy(fail)
+    check_verifying_doc(fail)
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))
     plugins = len(entries) - skills
