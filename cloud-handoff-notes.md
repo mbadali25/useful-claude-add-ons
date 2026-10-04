@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 23:26 UTC
+Last updated: 2026-10-04 23:27 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 23:27: #497 L-1512 opened at c56ffc72, CI green: python probe's kill -9 of a live watchdog killed the hook itself on Windows (2304) - a guard-bypass risk; watchdog now read -t on a pipe, killed hook reads as could-not-tell in tests. Review spawned. Minted L-1516 (same probe in obsidian-vault hooks).
 - 23:26: L-1512 PR #497 head c56ffc72 crew 1.0.412 - probe watchdog now read -t on a pipe (no SIGKILL on normal path), run_hook reads signal death as could-not-tell; all CI incl. 10 Windows jobs green
 - 23:25: MERGED #394 T-0037 -> main 189c3b80, crew 1.0.344 (26 merged). #416 Windows pre-flight GREEN. Batch 5 = ONE batch PR (#364, #366, #416, #420 -> crew 1.0.345) builder spawned. #407 re-review: 1 FIX (stricter-gate rule: empty key, .NET-only case twins, DateTime deploy) + 3 NIT -> back to builder.
 - 23:16: #407 T-0045 reworked at 25734d19, CI all green: gate simulation now mirrors L-1503 (union, refusals, literal match), 35x95 agreement table vs real sh+ps1 gates, [!-[] literal, _head via require_tool. Substantial change -> fresh adversarial re-review spawned before batch 5.
