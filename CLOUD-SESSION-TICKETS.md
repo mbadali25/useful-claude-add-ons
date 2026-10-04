@@ -64,6 +64,9 @@ Next free untracked ID: **L-1514**.
 | T-0082, T-0080 (H2a harness bundle) | #399 | 17934e60 | 1.0.337 (#475 closed) |
 | L-1510 | #494 | 8c0843ca | 1.0.338 |
 | T-0074 | #481 | a92dc59a | 1.0.339 (slice 1 of 3) |
+| L-1508 (PR A) | #493 | 0bf91c95 | 1.0.340 |
+| L-0652 | #427 | bbd1d0ee | 1.0.341 |
+| L-1503 | #489 | a31ac3bb | 1.0.342 |
 
 ## Closed without merging (your instruction)
 
