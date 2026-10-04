@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 02:24: #339 r2 on 8855e68f: CLEAN (0 BLOCK, 0 FIX; ps1 STILL GREEN ruled NIT - no skip mechanism in sabotage.py, harness follow-up). Queued right after #375 (needs re-merge once #375 lands). Follow-up ticket: sabotage.py needs a 'requires pwsh' skip state.
 - 02:24: #376 r1: PASS, 1 FIX (review_verdict.py docstring overclaim) + 2 NIT (review.md:485 harness follow-up; sabotage_review entry). Land-prep agent started: fix, merge main (26 generated/version conflicts), crew 1.0.245. Next free: 1.0.246.
 - 02:23: #339 r1: PASS code (5/6 sabotage RED; ps1 entry STILL GREEN w/o pwsh = pre-existing trait), FIX version + ticket docs. Done by hand: merged main (clean), CHANGELOG entry, removed docs/tickets/L-0563, crew 1.0.244 -> 8855e68f pushed; gates green; r2 review started. Next free: 1.0.245.
 - 02:22: Triage B: #336 T-0009 REVIEW (complete, owner-waived tooling rule for sabotage_cloud.py; verify-gate red = that waiver); #333 L-0605 REVIEW (harness-only, ADR 0005); #331 L-0608 REVIEW (harness, real sabotage.py conflict; coordinate with #336); #348 T-0041, #349 T-0065 BUILD; #324 L-0590 WIP (draft, owner collecting timings); #274 T-0104, #275 T-0500 WIP (owner-marked, 1381 behind) - leave. Running now: reviews #339 #376 #377, fixer #379.
