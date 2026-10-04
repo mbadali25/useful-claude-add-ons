@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 09:51 UTC
+Last updated: 2026-10-04 09:53 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -58,6 +58,7 @@ Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #37
 
 ## Log (newest first)
 
+- 09:53: #360 land-prep done: merged main c9263465, added KEY_META row tickets.baseBranch (main's T-0061), regen config ref (130 keys), BUDGETS re-measured, version 1.0.322, head aedd225b. Merge-only review started.
 - 09:51: #371 fixer: Windows autocrlf fixture fix (clone -c core.autocrlf=false) + version 1.0.319, head 3bca38dd; sabotage red; awaiting CI + delta review.
 - 09:49: #344 r1 on eb7fd11f: 0 BLOCK, 2 FIX (unreadable README with markers skipped silently; no README adopted so gate inert - decision: adopt embeds in this PR, bump localgpu) + 2 NIT; plan steps 1 nested, 4 audit allowance, 6 migration missing -> split tickets/follow-ups. Fixer started (1.0.325).
 - 09:48: #342 r1 on eb57cc07: 0 BLOCK, 3 FIX (global deploy called repo-only vs owner decision; --approvals reads missing/corrupt INDEX as nothing pending; inert key/value printed raw incl. into SessionStart context) + 1 NIT -> fixer (1.0.324).
