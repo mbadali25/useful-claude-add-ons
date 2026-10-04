@@ -1275,7 +1275,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   hook-script edit (its `why` says so first). Confirmed
   present, **not run and not read** by this note.
 
-**The secrets-denylist gate on the graph (T-0064, crew 1.0.234).** DERIVED at `687759ce`
+**The secrets-denylist gate on the graph (T-0064, crew 1.0.236).** DERIVED at `687759ce`
 (T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167). `_graph`
 (`plugin/crew/hooks/scripts/crew_refresh_check.py:1252`) calls `_graph_ignore_refusal` (`:1230`,
 called at `:1260`) after its "no code changed" return and before the graphify-missing check.

@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.234: a graph build never reads a secrets-denylisted file (T-0064)
+### Added — `crew` 1.0.236: a graph build never reads a secrets-denylisted file (T-0064)
 
 - graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore`
   does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked
