@@ -328,8 +328,8 @@ def stamp(root):
     if not os.path.isdir(os.path.join(root, ".crew")):
         return None
     try:
-        sha = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True,
-                             text=True, timeout=30, check=False).stdout.strip()
+        sha = subprocess.run([qa_audit_env.require_tool("git"), "-C", root, "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=30, check=False).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
     if not re.fullmatch(r"[0-9a-f]{7,64}", sha):

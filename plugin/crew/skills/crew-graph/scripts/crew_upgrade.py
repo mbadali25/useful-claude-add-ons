@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     os.pardir, os.pardir, os.pardir, "hooks", "scripts",
 ))
+import crew_common  # pylint: disable=wrong-import-position
 import crew_state  # pylint: disable=wrong-import-position
 
 # Not a second copy of the PM defaults. crew_state owns them because the hook
@@ -924,7 +925,7 @@ def _read_config_strict(root):
 def _head(root):
     try:
         done = subprocess.run(
-            ("git", "rev-parse", "--short=7", "HEAD"), cwd=root,
+            (crew_common.require_tool("git"), "rev-parse", "--short=7", "HEAD"), cwd=root,
             capture_output=True, text=True, timeout=10, check=False,
             stdin=subprocess.DEVNULL,
         )

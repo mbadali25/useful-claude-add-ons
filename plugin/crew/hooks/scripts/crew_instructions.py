@@ -75,6 +75,7 @@ try:
 except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
     _tomllib = None
 
+import crew_common
 import crew_context
 from crew_common import read_text
 
@@ -289,8 +290,8 @@ def _has_agents_rule(root):
 def _tracked(root):
     """Git-tracked paths, or None outside a work tree (the disk then decides)."""
     try:
-        done = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True,
-                              check=False, timeout=30)
+        done = subprocess.run([crew_common.require_tool("git"), "-C", root, "ls-files", "-z"],
+                              capture_output=True, check=False, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:

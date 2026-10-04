@@ -844,8 +844,11 @@ def _process_table():
                     out[int(name)] = found
         return out or None
     try:
-        lines = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,tty=,comm="], capture_output=True,
-                               text=True, timeout=10, check=False).stdout.splitlines()
+        # The ps which() resolves (L-1508): reachable on native Windows, where
+        # there is no /proc, and a ps that does not resolve is an unread table.
+        lines = subprocess.run([crew_common.require_tool("ps"), "-A", "-o", "pid=,ppid=,tty=,comm="],
+                               capture_output=True, text=True, timeout=10,
+                               check=False).stdout.splitlines()
     except (OSError, subprocess.SubprocessError):
         return None
     out = {}
@@ -990,7 +993,8 @@ def _window_result(found, me):
 
 def _xdotool(*args):
     try:
-        return subprocess.run(["xdotool", *args], capture_output=True, text=True,
+        # list_windows() found it with which(); run that one (L-1508).
+        return subprocess.run([crew_common.require_tool("xdotool"), *args], capture_output=True, text=True,
                               timeout=5, check=False).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -1010,7 +1014,7 @@ def list_windows():
         except (OSError, ValueError):
             return None, "the window stub is unreadable"
         return [w for w in data if isinstance(w, dict)], ""
-    if not shutil.which("xdotool"):
+    if not crew_common.resolve_tool("xdotool"):
         return None, "xdotool is not on PATH"
     windows = []
     for wid in _xdotool("search", "--onlyvisible", "--name", ".").split():
