@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.337: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
+### Changed — `crew` 1.0.355: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
 
 - `crew_train.py check-land`'s two catch-up refusals (merge-tree conflict, base moved in Touch)
   now print one order (`LANDING_ORDER`): catch up, resolve, bump the version one past the base,
