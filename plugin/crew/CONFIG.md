@@ -1196,6 +1196,15 @@ macOS (no `/proc`), parent and tty come from `ps -o ppid=,tty=,comm=` and
 `procStart` is unchecked, so a pid reused within a record's life is not
 caught there.
 
+**A shared tty proves nothing.** The tty rule tells two sessions apart only
+when they sit on different ttys. A process on the session's own tty (its
+shell, or a parent session started in the same terminal) counts as the
+session's own, and xdotool's shared-window scan reads it the same way. A
+parent session on the same tty is caught only by its live record or its
+process name (`claude`, or a version number); one in another config dir
+under an unrecognised name (`node`) is not seen. Two sessions on one tty
+share one terminal, so a keystroke reaches whichever of them is reading it.
+
 ### What the widening costs
 
 `windowTitle` narrows SendKeys down to one window when owner-pid resolution
