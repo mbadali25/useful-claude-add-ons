@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 01:02 UTC
+Last updated: 2026-10-03 01:04 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 01:04: #362 r2 review on 2be1ea4c: PASS (0 BLOCK), telegram_base held vs 27 hostile URLs; 2 FIX (repo urlEnv can divert ping text; urllib follows redirects with token in path) + 2 NIT. Fixer started; target 1.0.238. Next free: 1.0.239.
 - 01:02: #367 r3 review on 47b66400: PASS (0 BLOCK), 3 FIX (status/refresh-check print hostile names raw -> terminal injection; reason strings unescaped + non-UTF-8 crash exits 1 not 2; unknown-with-! branch untested). Fixer started; target 1.0.237. Next free: 1.0.238.
 - 00:59: #367 r2 fixes pushed 47b66400 (crew 1.0.236; _plain allow-list, never override user ! line - exit 1 naming it, dangling symlink test, CRLF by majority; troubleshooting guide rebuilt). Sonnet re-review r3 started.
 - 00:53: #337 merge-only review on d9e75c15: CLEAN (0 BLOCK, 0 FIX). Waiting on CI, then merge (owner approved).
