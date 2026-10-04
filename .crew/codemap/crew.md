@@ -924,7 +924,7 @@ absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:228`). `measure
 times 50 forks and 200 writes per side, each shell reading its own clock (`$EPOCHREALTIME`, a
 pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing is an error,
 never zero. `status_line` (`:923`) reads config and the cache only, and
-`plugin/crew/hooks/scripts/crew_status.py:226` calls it and appends it after the `verify` line. Tests:
+`plugin/crew/hooks/scripts/crew_status.py:251` calls it and appends it after the `verify` line (the `agents` line, T-0065, follows it). Tests:
 `plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
 `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) shipped with T-0040 up to
 its landing bump, then split out to follow-up ticket W-0115 per rule 36
@@ -1148,7 +1148,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
-  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:67`).
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:71`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 87 mutations (by `len()` at `8cabe586`; 81 before T-0077) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
@@ -1466,6 +1466,38 @@ then the train is advisory.
   scripts call it, nothing forces a lane through the train; its value is the queue, the land check
   and the merge log for lanes that use it.
 
+## TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)
+
+- DERIVED: `verify_agents.check` (`plugin/crew/hooks/scripts/verify_agents.py:225`) resolves every
+  agent a `.crew/verify.json` rule names (`named`, `:85`) against `installed` (`:173`): crew's
+  `ROLE_TIERS` and `agents/`, user and project agents, and each plugin in
+  `installed_plugins.json` that `plugin_enabled` (`:150`) finds enabled, narrowest settings scope
+  first. A source that will not parse makes the names it could have supplied `unknown`, never
+  installed; `main` (`:272`) exits 0 ok, 1 missing, 2 unknown. `crew_status._agents_line`
+  (`plugin/crew/hooks/scripts/crew_status.py:171`) is the `agents` status line, appended after the
+  shell line (`:256`). Tests: `plugin/crew/tests/test_verify_agents.py`,
+  `plugin/crew/tests/test_status.py`.
+- DERIVED: `provider_probe.probe` (`plugin/crew/hooks/scripts/provider_probe.py:47`) builds its
+  call with `review_run.command_for` (`:52`) and runs it with `review_run.launch(cmd, root, ...)`
+  (`:53`), so `--skip-git-repo-check`, `-C <root>` and cwd=root hold from any directory. Tests:
+  `plugin/crew/tests/test_provider_probe.py`. No hook, `/crew:status` or `/crew:review` runs it.
+- DERIVED: `crew_upgrade._write_upgrade_report`
+  (`plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:1307`) puts the new report on top of
+  `UPGRADE.md` and the earlier bytes below `UPGRADE_HISTORY_MARKER` (`:1154`), via a pid-named
+  sibling and `os.replace`; `_carried_conflicts` stops at the marker (`:1191`). Tests:
+  `plugin/crew/tests/test_upgrade.py` (`test_force_keeps_earlier_upgrade_reports` and neighbours).
+- DERIVED: temp hygiene. The auto-clear sender's first command unlinks it
+  (`plugin/crew/hooks/scripts/auto-clear.sh:196`; the last-line `rm` at `:215` is the Git Bash
+  fallback). `plugin/crew/hooks/scripts/_test/run-tests.sh:39-41` keeps every fixture on
+  `_CREW_TEST_TMP` behind one EXIT trap. `plugin/crew/tests/conftest.py:111`
+  (`_isolated_tmpdir`) gives every test its own `TMPDIR`/`TEMP`/`TMP` and `tempfile.tempdir`, and
+  `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1282`). Tests:
+  `plugin/crew/tests/test_tmp_hygiene.py`.
+- JUDGEMENT: `verify-gate.sh`'s `CHANGED_FILE` (`plugin/crew/hooks/scripts/verify-gate.sh:910`)
+  and `RULE_OUT_FILE` (`:2012`, `:2014`) are still removed only on the straight-line path, so a gate
+  killed mid-rule leaks them. verify-gate.sh is a harness path (`scripts/check-tooling-pr.py`),
+  so registering them with the gate's cleanup registry is T-0065's harness follow-up, landing alone.
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry
@@ -1634,7 +1666,7 @@ then the train is advisory.
   (`_boundary`, `:288`), `_charged` (`:302`) is spent minus refunded, and
   `reserve` tests `_charged` against `BUDGET`. `summary` (`:923`, `load = _load` at
   `:920`) is the dict `status` returns and the one `crew_status._review_lines`
-  renders (`plugin/crew/hooks/scripts/crew_status.py:140`). Autopilot sends a
+  renders (`plugin/crew/hooks/scripts/crew_status.py:144`). Autopilot sends a
   refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:532`,
   `_toward_review` `:548`), and `next_phase`'s no-progress stop (`:597`) lets that
   rerun through even when `/crew:review` was the command just run (review round 1).
@@ -1647,7 +1679,7 @@ then the train is advisory.
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:178`) and `crew_status._verify_line`
-  (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
+  (`plugin/crew/hooks/scripts/crew_status.py:159`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one
   Codex stream), built and machine-locally replayed by
@@ -3649,3 +3681,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
+
+**T-0065 citations, 2026-10-04 (T-0065-build at `cd25d088`, on a merge of origin/main `f7ab26b9`); anchor NOT moved.** The section "TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)" and the four `crew_status.py` citations corrected for its five added lines (`:226` -> `:251`, `:140` -> `:144`, `:155` -> `:159`, `:67` -> `:71`) were read at `cd25d088`. The file's `anchor:` stays `42effe14`: main changed many files this map cites after that commit, and none of those claims was re-derived for this note, so moving the anchor would claim a check that was not made.

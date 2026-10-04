@@ -29,8 +29,8 @@ Build `.crew/verify.json` — the map from changed paths to the checks they requ
    `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" agents --root .`. Unless it
    printed `hand-written, left alone` or a rule already runs `agents --check`, add the rule that the
    same script's `agents-rule` prints to `rules`, then run the `agents` command again.
-8. Report: rules created, paths left unmapped, and every pairing that failed
-   step 4.
+8. Report: rules created, paths left unmapped, every pairing that failed step 4, and every agent a rule names
+   that is not installed here: `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify_agents.py" --root . --check`.
 
 If the repo has no meaningful tests, do not fabricate a map. Say so, and hand off
 to a smoke-harness ticket (`/crew:brainstorm`) — a map pointing at checks that cannot fail is worse than

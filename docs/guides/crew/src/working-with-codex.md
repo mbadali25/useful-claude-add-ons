@@ -54,6 +54,18 @@ codex exec --json --sandbox read-only "<review prompt>"   # the reviewer (review
 codex exec --sandbox workspace-write "<task>"              # only if you choose Codex to implement
 ```
 
+To check that Codex answers before you rely on it, run the probe from anywhere:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/provider_probe.py" codex --root <repo>
+```
+
+It makes one real call with the reviewer's own command line (`review_run.command_for`, which adds
+`--skip-git-repo-check` and `-C <repo>`) and runs it with the repo root as its working directory, so
+it does not hit "Not inside a trusted directory" the way a `codex exec` typed in a `/tmp` export
+does. `codex: ok` is exit 0; `codex: FAILED - <reason>` (a failed call, an incomplete event stream,
+or a 120 s timeout) is exit 1; `codex: not installed` is exit 2.
+
 If you want named `review`/`work` profiles for convenience, they are a **user-level** concept, not
 a project one: `codex exec --help` (codex-cli 0.155.1) documents `--profile NAME` as layering
 `$CODEX_HOME/NAME.config.toml` on top of the base user config -- a file under `$CODEX_HOME`, never

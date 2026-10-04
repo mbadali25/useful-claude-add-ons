@@ -151,6 +151,11 @@ does not**. `.gitignore` ignores `.crew/*` with a named un-ignore list —
 the box that wrote it. On any other machine a rule can ask for an agent that does
 not exist, quietly reviewing less while nothing about the output looks different. `/crew:review` therefore lists every agent a matched rule asked for
 and could not find, and treats it exactly like a specialist that was skipped.
+It need not wait for a review: `hooks/scripts/verify_agents.py --root . --check`
+lists every named agent this machine cannot resolve (exit 1), or `unknown`
+(exit 2) when a plugin registry or settings file will not parse, never
+"installed". `/crew:status` shows the same check as its `agents` line, and
+`/crew:verify` step 8 reports it.
 
 (This paragraph has now been wrong in both directions. It first said
 `.crew/verify.json` "is committed and shared" when nothing tracked it; that was
