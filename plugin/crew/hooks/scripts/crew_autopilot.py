@@ -1,7 +1,7 @@
 """`/crew:autopilot`'s reader: which ticket, which phase, and every stop.
 
     python3 crew_autopilot.py next --root . --ticket <id> [--phases-run N]
-                                   [--last-command CMD] [--json]
+                                   [--last-command CMD] [--runner R] [--json]
     python3 crew_autopilot.py resume --root . [--ticket <id>] [--json]
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
@@ -81,6 +81,13 @@ force says `take`. Exit 0 valid, 1 not.
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+`next --runner <r>` (T-0049) then asks `crew_inflight.holds` who drives the
+ticket, after the table and before the checks below: `live`, `stale` or
+`unknown` stops as `in-flight` (stale and unknown with the owner's clear
+command as the command), `elsewhere` as `handover-elsewhere`; `free` and
+`mine` change nothing. An import error or a raise is `in-flight`, never a pass.
+Without `--runner` nothing reads the marker.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -195,6 +202,10 @@ FIXED_STOPS = (
                           "approved"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
+    ("in-flight", "with --runner: another runner holds the ticket here, or its marker is "
+                  "stale or cannot be read (T-0049)"),
+    ("handover-elsewhere", "with --runner: a fresh holder drives the ticket from another "
+                           "worktree (T-0049)"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
 )
@@ -565,8 +576,32 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
+def _inflight(root, ticket, runner, result):
+    """`result` turned into the in-flight stop, or None when `holds` says the
+    ticket is free or this runner's (T-0049). Anything else stops."""
+    try:
+        answer = importlib.import_module("crew_inflight").holds(root, ticket, runner=runner)
+        state = answer["state"]
+    except Exception as exc:  # pylint: disable=broad-except
+        return dict(result, phase="in-flight", stop=True, command="", reason=(
+            f"in-flight: unknown - crew_inflight could not tell who holds {ticket}: "
+            f"{_failure(exc)}"))
+    if state in ("free", "mine"):
+        return None
+    who = (f"{answer.get('runner') or 'a runner'} holds {ticket} since "
+           f"{answer.get('since') or '?'} in {answer.get('worktree') or '?'}")
+    if state == "elsewhere":
+        return dict(result, phase="handover-elsewhere", stop=True, command="", reason=(
+            f"handover-elsewhere: {who} - drive it from {answer.get('worktree') or '?'}"))
+    clear = answer.get("clear") or ""
+    reason = f"in-flight: {state} - {who}"
+    reason += f": {answer['why']}" if answer.get("why") else ""
+    reason += f" - the owner clears it: {clear}" if clear else ""
+    return dict(result, phase="in-flight", stop=True, command=clear, reason=reason)
+
+
 def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
-               policy=True):
+               policy=True, runner=None):
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
     `stop` phase's `command` is what the HUMAN types, never run by autopilot.
     `max_phases` and `last_command` are the session's count and the command it
@@ -576,12 +611,16 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
-    `policy=False` is `status`'s: see `_phase`."""
+    `policy=False` is `status`'s: see `_phase`. `runner` (T-0049) adds the
+    in-flight check: see `_inflight`."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
     rerun = result.pop("refunded_rerun", False)
     if result["stop"]:
         return result
+    held = _inflight(root, ticket, runner, result) if runner else None
+    if held:
+        return held
     active, where, broken = crew_ticket.resolve_active(
         crew_ticket.toplevel(root) or os.path.abspath(root))
     if broken or active != ticket:
@@ -1659,6 +1698,15 @@ def _cli_deploy(args):
                              "root": None}), report
 
 
+def _runner_ok(runner):
+    """False only for a runner crew_inflight names as unknown; an import
+    failure is True here and the in-flight stop in next_phase."""
+    try:
+        return runner in importlib.import_module("crew_inflight").RUNNERS
+    except Exception:  # pylint: disable=broad-except
+        return True
+
+
 def main(argv):
     # `next` quotes the ledger's auto-accept refusal, which can quote reviewer
     # text: write UTF-8 whatever the console code page (review_ledger.utf8_stdio).
@@ -1680,6 +1728,9 @@ def main(argv):
     given.add_argument("--first", default=None)
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
+    # No `choices`: crew_inflight.RUNNERS is checked lazily, so an import
+    # error is the in-flight stop rather than a usage error.
+    sub.choices["next"].add_argument("--runner", default="")
     deploy = sub.add_parser("deploy-allowed")
     deploy.add_argument("--json", action="store_true")
     deploy.add_argument("--root", default=".")
@@ -1702,6 +1753,9 @@ def main(argv):
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check"):
         return _policy_main(args)
+    if args.action == "next" and args.runner and not _runner_ok(args.runner):
+        sys.stderr.write("crew_autopilot.py next: --runner is not one of crew_inflight.RUNNERS\n")
+        return 2
     if args.action == "status":
         try:
             result = status(args.root, args.ticket or None)
@@ -1750,7 +1804,7 @@ def main(argv):
         try:
             result = next_phase(args.root, args.ticket, args.phases_run,
                                 args.last_command or None,
-                                settings(args.root)["maxPhases"])
+                                settings(args.root)["maxPhases"], runner=args.runner or None)
         except Exception as exc:  # pylint: disable=broad-except
             # A crash cannot tell the phase: it is a stop, never no answer.
             result = {"ticket": args.ticket, "phase": "invalid", "stop": True,

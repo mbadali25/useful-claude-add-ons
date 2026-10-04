@@ -61,6 +61,79 @@ All notable changes to this repository are documented here. Format follows [Keep
   red on its named test) is a harness-only follow-up, since `sabotage*.py` is in `check-tooling-pr.py`'s
   `HARNESS`. The pwsh parity cases skip without pwsh and were not run.
 
+### Added — `crew` 1.0.375: in-flight markers, one runner drives a ticket at a time (T-0049)
+
+- **What changed.** A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one
+  marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by
+  every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a
+  token, the holder, worktree, branch, `since` and `heartbeat_at`. The holder is
+  `CLAUDE_CODE_SESSION_ID` plus the long-lived Claude Code process (`CLAUDE_PID`
+  only when it is an ancestor of the claiming command that started before it -
+  the chain is walked with /proc, `ps` or a Windows process snapshot, and a hint
+  that cannot be checked is never trusted - else the nearest `claude`
+  ancestor; a Claude Code session where neither is found records no pid, and
+  the session id decides alone only when neither side has a pid; a lane's
+  script records its own shell), with that
+  process's start time, pid namespace, boot id and host. `holds(root, ticket)`
+  answers `free`, `mine`, `live`, `stale`, `elsewhere` or `unknown` and writes
+  nothing; anything it cannot read, parse, probe or trust is `unknown`, never
+  `free`. The pid is measured with `/proc` on Linux, `kill -0` plus `ps` on other
+  POSIX systems, and the exit code and creation time on Windows. `claim`
+  publishes with `os.link` (one of six racing claimers wins) and starts one
+  detached heartbeat keyed by the token, rewriting `heartbeat_at` every 600 s
+  against a 30-minute TTL. The heartbeat stops by itself once its holder has
+  gone more than the TTL without being confirmed alive, so where the pid cannot
+  be measured the TTL still decides. `release` is the holder's; `clear --by
+  --reason` is the owner's and refuses anything but stale or unknown. All three
+  write their event first and do nothing if it cannot be written. Nothing clears
+  a marker by age. `crew_autopilot.py next --runner autopilot` stops as
+  `in-flight` on live, stale and unknown (stale and unknown carry the clear
+  command) and as `handover-elsewhere` on a fresh holder in another worktree;
+  free and mine change nothing, and without `--runner` `next` is unchanged.
+  `/crew:autopilot` claims after resume/activate, passes `--runner autopilot`,
+  and releases at every stop (autopilot.md stays at 109 lines).
+  `crew_state.AUTONOMOUS_STOPS` gains `clear-inflight`. `/crew:status` prints
+  one `in-flight:` line per marker (at most five).
+- **Why.** An autopilot session, a workflow lane and a person's session could
+  all drive one ticket and nothing recorded who was driving it, so two could
+  double-drive it, and a lane that died left nothing to say so. T-0060's stall
+  ping (#363) reads `holds()` and this TTL; it was blocked on this ticket.
+- **Owner decisions.** The owner approved (2026-10-04) every `OWNER CHECK:`
+  choice in the reconstructed spec as written: TTL 1800 s with no config key;
+  never clear by age; the owner's `clear` command; `elsewhere` is a fresh
+  holder in another worktree and stops as `handover-elsewhere`; runner names
+  `autopilot`/`lane`/`session`; autopilot.md net 0 lines, never raising
+  `AUTOPILOT_MAX_LINES`; the holder identity fields; and the tooling-PR split
+  for `sabotage_inflight.py` while `sabotage*.py` is harness.
+- **Review round 1.** Without /proc the holder was the per-call tool shell (a
+  later Bash call read `live` against itself) and a dead holder was never
+  measured, so its heartbeat beat forever: fixed by the identity and probe above
+  and the heartbeat's TTL bound. A transient `os.replace` refusal (Windows) now
+  skips one beat instead of ending the heartbeat; marker, token and holder are
+  checked before the lock, so a leftover lock never keeps a dead holder's loop
+  alive; events are written before the effect.
+- **Measured.** A child started with `start_new_session=True` from a Claude
+  Code Bash tool call outlived the call: reparented to pid 1, it beat every
+  second for 128 s across five later calls (Claude Code 2.1.42, Linux cloud
+  container, no pid namespace or bubblewrap). The no-/proc paths are tested by
+  hiding /proc (and `ps`) from the CLI on Linux. Not measured: Windows, macOS,
+  or a sandboxed (bubblewrap) Linux session. Where the holder cannot be
+  measured, a dead holder reads stale within 2 x TTL + one heartbeat (4200 s,
+  70 minutes: the last beat lands at most 2400 s after the last confirmation,
+  then the TTL), and a live run there longer than that reads stale too,
+  stopping autopilot, never double-driving. The Windows process snapshot,
+  exit-code probe and creation-time check are tested only through mocked
+  seams; real Windows is unverified.
+- **Review round 2.** `CLAUDE_PID` is no longer trusted where the ancestor
+  chain cannot be walked (Windows now walks it with CreateToolhelp32Snapshot,
+  and a failed walk means no pid, so the session id and the TTL decide); a
+  hint must also have started before the claimer. A marker pid outside
+  1..2^32 reads unknown, and an overflowing pid probes as unmeasured. A broken
+  `events.jsonl` refusal names the file to fix or move aside before retrying.
+- **Sabotage.** 24 mutations, each RED on its named test by hand (the table is
+  in the PR). `sabotage_inflight.py` and its `sabotage.py` registration land in
+  a separate harness-only PR (T-0087 rule).
+
 ### Fixed — `crew` 1.0.324: a concurrent mint no longer dies on a delete-pending lock name (Windows)
 
 - **What changed.** `crew_config_files.Lock` waits on a `PermissionError`

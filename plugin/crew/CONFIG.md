@@ -332,7 +332,7 @@ What each tier grants, quoted verbatim from `_WIDENING_NOTES`
 ### The stop-list, at every tier
 
 `crew_state.AUTONOMOUS_STOPS` (dumped by execution) is the machine-readable form
-of that last sentence. Four entries, id and description verbatim:
+of that last sentence. Five entries, id and description verbatim:
 
 | id | needs an explicit yes |
 |---|---|
@@ -340,6 +340,7 @@ of that last sentence. Four entries, id and description verbatim:
 | `delete-map` | deleting a codemap file or a diagram |
 | `rewrite-metrics` | rewriting `.crew/metrics.md` |
 | `git-destruction` | destroying git history or tracked work - force-push, branch delete, history rewrite, or `rm` of a tracked file |
+| `clear-inflight` | clearing another runner's in-flight marker (T-0049) |
 
 Since 1.0.41 the list also binds `/crew:autopilot` (§20): `commands/autopilot.md`
 names every id, and `test_crew_autopilot.py::test_command_names_every_autonomous_stop`

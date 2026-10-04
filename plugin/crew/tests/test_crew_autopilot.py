@@ -1446,3 +1446,189 @@ def test_module_defines_each_function_once():
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
 
     assert sorted({n for n in names if names.count(n) > 1}) == []
+
+
+# --- T-0049: next --runner reads the in-flight marker ---------------------------------
+
+def _holds(monkeypatch, state, **extra):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    answer = {"state": state, "ticket": T, "runner": "lane", "since": "2026-10-04T10:00:00+00:00",
+              "heartbeat_at": "2026-10-04T10:05:00+00:00", "worktree": "/w/other",
+              "why": "because", "clear": crew_inflight.clear_command(T)
+              if state in ("stale", "unknown") else ""}
+    answer.update(extra)
+    seen = []
+    monkeypatch.setattr(crew_inflight, "holds",
+                        lambda root, ticket, runner=None: seen.append(runner) or answer)
+    return seen
+
+
+@pytest.mark.parametrize("state", ["live", "stale", "unknown"])
+def test_next_runner_live_stops_in_flight(tmp_path, monkeypatch, state):
+    root = _approved(tmp_path)
+    seen = _holds(monkeypatch, state)
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], got["stop"], seen) == ("in-flight", True, ["autopilot"])
+    for part in ("lane", T, "2026-10-04T10:00:00+00:00", state):
+        assert part in got["reason"], (part, got["reason"])
+
+
+@pytest.mark.parametrize("state", ["stale", "unknown"])
+def test_next_runner_stale_names_clear(tmp_path, monkeypatch, state):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    root = _approved(tmp_path)
+    _holds(monkeypatch, state)
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["command"], crew_inflight.clear_command(T) in got["reason"]) == (
+        crew_inflight.clear_command(T), True)
+
+
+def test_next_runner_live_has_no_clear(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _holds(monkeypatch, "live")
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["command"], "clear" in got["reason"]) == ("", False)
+
+
+def test_next_runner_unknown_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _holds(monkeypatch, "something-new")
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], got["stop"]) == ("in-flight", True)
+
+
+def test_next_runner_elsewhere_stops_handover(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _holds(monkeypatch, "elsewhere")
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], got["stop"], "drive it from /w/other" in got["reason"]) == (
+        "handover-elsewhere", True, True)
+
+
+def test_next_runner_import_error_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    monkeypatch.setitem(sys.modules, "crew_inflight", None)
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], got["stop"], "crew_inflight" in got["reason"]) == (
+        "in-flight", True, True)
+
+
+def test_next_runner_holds_raising_stops(tmp_path, monkeypatch):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    root = _approved(tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("marker exploded")
+    monkeypatch.setattr(crew_inflight, "holds", boom)
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], got["stop"], "marker exploded" in got["reason"]) == (
+        "in-flight", True, True)
+
+
+@pytest.mark.parametrize("state", ["free", "mine"])
+def test_next_runner_free_and_mine_match_plain_next(tmp_path, monkeypatch, state):
+    root = _approved(tmp_path)
+    plain = _next(root)
+    _holds(monkeypatch, state)
+
+    assert _next(root, runner="autopilot") == plain
+
+
+def test_next_runner_real_marker_free_mine_then_stale(tmp_path, monkeypatch):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    root = _approved(tmp_path)
+    plain = _next(root)
+    monkeypatch.setattr(crew_inflight, "_holder_pid", os.getpid)
+    assert _next(root, runner="autopilot") == plain
+    crew_inflight.claim(str(root), T, "autopilot", session="s", spawn=lambda *a: None)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s")
+    assert _next(root, runner="autopilot") == plain
+    path = os.path.join(crew_inflight.inflight_dir(str(root)), f"{T}.json")
+    with open(path, encoding="utf-8") as handle:
+        marker = json.load(handle)
+    marker["heartbeat_at"] = "2020-01-01T00:00:00+00:00"
+    _write(path, json.dumps(marker))
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], got["stop"], got["command"]) == (
+        "in-flight", True, crew_inflight.clear_command(T))
+
+
+def test_next_without_runner_is_unchanged(tmp_path, monkeypatch):
+    """Without --runner nothing imports or reads crew_inflight."""
+    root = _approved(tmp_path)
+    plain = _next(root)
+    monkeypatch.setitem(sys.modules, "crew_inflight", None)
+
+    assert _next(root) == plain
+
+
+def test_next_runner_stop_phase_is_returned_first(tmp_path, monkeypatch):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    seen = _holds(monkeypatch, "live")
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], seen) == ("approve", [])
+
+
+def test_next_runner_writes_nothing(tmp_path):
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    root = _approved(tmp_path)
+    folder = crew_inflight.inflight_dir(str(root))
+    os.makedirs(folder)
+    _write(os.path.join(folder, f"{T}.json"), "{bad")
+    before = _snapshot(root)
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["phase"], _snapshot(root) == before) == ("in-flight", True)
+
+
+def test_cli_next_runner(tmp_path):
+    root = _approved(tmp_path)
+    args = [sys.executable, "-B", _SCRIPT, "next", "--root", str(root), "--ticket", T]
+
+    def run(*extra):
+        return subprocess.run(args + list(extra), capture_output=True, text=True, check=False,
+                              timeout=60, stdin=subprocess.DEVNULL)
+
+    plain, free, bad = run(), run("--runner", "autopilot"), run("--runner", "robot")
+
+    assert (free.returncode, free.stdout) == (0, plain.stdout)
+    assert (bad.returncode, bad.stdout) == (2, "")
+
+
+def test_fixed_stops_name_the_inflight_phases():
+    slugs = [slug for slug, _text in crew_autopilot.FIXED_STOPS]
+    assert {"in-flight", "handover-elsewhere"} <= set(slugs)
+    assert ("clear-inflight", "clearing another runner's in-flight marker") in \
+        crew_state.AUTONOMOUS_STOPS
+
+
+def test_command_claims_passes_runner_and_releases():
+    text = " ".join(_command_text().split())
+    claim = text.index("crew_inflight.py claim --root . --ticket <ticket> --runner autopilot")
+    assert (text.index("resume --root . --ticket <ticket>") < claim
+            < text.index("crew_ticket.py activate") < text.index("Then `claim`")
+            < text.index("## 3. The loop"),
+            '--last-command "LAST" --runner autopilot' in text,
+            "`refused:`" in text,
+            "crew_inflight.py release --root . --ticket <ticket>" in text) == (
+        True, True, True, True)
