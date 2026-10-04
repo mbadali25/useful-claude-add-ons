@@ -162,10 +162,15 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
-leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
-For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **74**
+leaves. `leaf_paths(default_config())` yields **135**, so **61** are repo-only.
+For all 135, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on T-0011's merge of main 155fe6d8; T-0011 added the three repo-only
+`autopilot.ship`, `autopilot.knownFailures` and `autopilot.ciTimeoutMinutes`.
+This paragraph said 72 / 130 / 58 until then, stale on main since T-0013 added
+`resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers,
+which made main 74 / 132 / 58. Before that, measured with `leaf_paths`
 on T-0061's branch after merging main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
@@ -677,13 +682,15 @@ them:
 
 ---
 
-## 10. Global-settable keys — 72
+## 10. Global-settable keys — 74
 
-72 measured (`leaf_paths(default_global_config())`, crew 1.0.207); the table
+74 measured (`leaf_paths(default_global_config())`, on T-0011's merge of main
+155fe6d8; 72 at crew 1.0.207, before T-0013's two `resume.*` keys); the table
 below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
 global-settable and not tabled here; `shellRoute.mode` and `shellRoute.distro`
-are tabled in §11 with both layers' defaults.
+are tabled in §11 with both layers' defaults; `resume.typeDelaySeconds` and
+`resume.readyTimeoutSeconds` (T-0013) are tabled in §14b.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -786,7 +793,7 @@ that role — `/crew:review` resolves `review`'s model that way
 
 ---
 
-## 11. Repo-only keys — 58 leaves
+## 11. Repo-only keys — 61 leaves
 
 Refused in the global file by `plan_global_write`, and pruned out of it by
 `filter_global` if some other tool wrote one. Each is a fact about one

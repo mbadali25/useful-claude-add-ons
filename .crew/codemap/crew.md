@@ -286,7 +286,7 @@ Re-executed on T-0061's branch after merging main `34d9f267`: 130 / 72 / 58 / 0 
 repo-only `tickets.baseBranch`, read from the resolved repo config (`crew_common.repo_config_file`) by
 `scope_base.read_base_branch` (`plugin/crew/hooks/scripts/scope_base.py`), not through
 `crew_config`; a value naming no commit makes `scope_base.resolve` answer source `unknown`
-with no base (DERIVED). `plugin/crew/tests/test_crew_config.py` asserts 130.
+with no base (DERIVED). `plugin/crew/tests/test_crew_config.py` asserted 130 then (history; it asserts 135 now, below).
 Re-executed on T-0011's merge of main `155fe6d8`: 135 / 74 / 61 / 0 - main's 132 / 74 / 58
 (T-0013's `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds`, in both layers, on
 T-0061's 130) plus T-0011's `autopilot.ship`, `autopilot.knownFailures` (an empty list, one leaf)
