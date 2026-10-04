@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:12 UTC
+Last updated: 2026-10-04 03:24 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,12 @@ Last updated: 2026-10-04 03:12 UTC
 
 ## Log (newest first)
 
+- 03:24: #378 local suites on merged tree: 582 passed, tooling-pr 17/17; merge-only Sonnet review of 9b701365 started. Owner 03:2x: 'merge when ready' (standing).
+- 03:22: #331 r2 on 4a368125: CLEAN (0/0/0; full crew suite 8834 passed). Harness clean set: #331, #333, #336 (needs split at landing).
+- 03:22: #378 merged main + re-bumped -> 9b701365 crew 1.0.247 pushed (CI early signal; will re-merge after #339). #333 r2 on 5b8be69d: CLEAN (0/0/0). Next free: 1.0.248.
+- 03:21: #339 merge-only review r2 on 6da2a486: CLEAN (0/0/0); CI running. #378 pre-merged main locally (not pushed): im1 relabel moved into main's split process-crew-lifecycle-implement.mmd; re-bump waits for #339 to land. Suites running.
+- 03:20: MERGED #385 (35cfcfcf: verify.json maps the handoff docs; notes). #339 re-merged main -> 6da2a486 (no plugin change, crew stays 1.0.246); merge-only review + CI next. Notes continue on a new PR from ccr-b039f2bb-6jks7g.
+- 03:13: #377 r1 (Sonnet) on 05be104b: CLEAN (0 BLOCK, 0 FIX, 2 NIT: implement.md reflow, LANDING_ORDER literal duplicated in test).
 - 03:12: #339 CI verify-gate red: every row PASS but 'UNMAPPED CHANGES: cloud-handoff-notes.md, pending-tickets.md' (#374 added them without a verify.json rule -> gate exit 2 on EVERY PR). Fix dc9c2154 on #385 (docs rule maps both). #385 now lands FIRST; then #339 re-merges main.
 - 03:09: #333 FIX pushed 5b8be69d (terminate OSError -> CouldNotCheck, must-block/allow tests, sabotage entry; 1.0.304 placeholder). Sonnet re-review r2 started.
 - 03:06: #331 FIX pushed 4a368125 (pwsh-simulated label test + typo must-block, sabotage red; 1.0.303 placeholder). Sonnet re-review r2 started.
