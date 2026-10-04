@@ -61,7 +61,7 @@ Next free untracked ID: **L-1504**.
 | T-0045 | #407 | 3e2afb49 | fixing | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
 | T-0053 | #403 | 610deaea | ready to land | Slice 1. Decisions taken for you: unknown = strictest per key; non-object block = human; carry: a typo night value (not a policy) reads strictest. |
 | T-0047 | #347 | 877ef4b8 | in review | PowerShell fail-closed backstop added. |
-| T-0074 | #481 | b573d4c9 | fixing | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. F1 (typed reject name skips policy checks) being fixed. Q7 open. |
+| T-0074 | #481 | 858c5336 | ready to land | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. Review clean. Carry: daily-workflow.md:189 cap-limit wording. Q7 open. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
 | T-0084 | #450 | 5080f05c | ready to land | Review clean (round 6). Carry: treat a bare `vault:` first line as a pointer attempt. Decisions taken for you: near-miss pointers = malformed; legacy `vaultPath` ignored when a `vaults` block exists. |
 | T-0082, T-0080 | #399 (H2a bundle) | ed58c3d9 | building | Harness-only. #475 (T-0080) closes at landing. |
