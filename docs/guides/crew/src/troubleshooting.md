@@ -235,9 +235,13 @@ contract itself. This section is what goes wrong with the approval and the audit
   those, never merged with the main checkout's - delete them to inherit. `/crew:status` names
   that case: `... the main checkout's (<path>) is not read ...`. A lane made before 1.0.69 almost
   always has one, a default that crew's SessionStart heal wrote there. `(unknown)` means git
-  could not name the main checkout; then no default is written either. The shell and PowerShell readers (`verify-gate.sh`,
-  `_common.sh`, `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
-  `cloud-guard.ps1`, `auto-clear.ps1`) do not inherit yet.
+  could not name the main checkout; then no default is written either. Of the shell and
+  PowerShell readers (T-0096), the incident stand-down read (`_common.sh`,
+  `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
+  the cloud guard's fallback `unknown` counts as armed. The session hooks (`notify`, the handoff
+  scripts, `context-watch`), the verify gate, the scope and completion wrappers and
+  `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
+  `emergency.standDown` while the bash gate reads the inherited one.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash
@@ -250,6 +254,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   (written by `crew_ticket.py approve` directly, for tests/CI) is accepted only when
   `.crew/config.json` sets `scope.allowCliApproval: true`, and an `autopilot` receipt (from
   `crew_autopilot.py approve`) only while that is true and `autopilot.approval` still allows it.
+  That includes a receipt written inside an `autopilot.sleep.schedule` window under
+  `autopilot.sleep.approval`: once the window ends, the day value decides, and it may not allow it.
   **Fix:** re-approve. The user types `/crew:approve <id>` again — the only other route is
   `/crew:autopilot` under an opted-in `autopilot.approval`; `scope_guard.py` refuses a Write/Edit
   under `<git-common-dir>/crew/` in every mode but `off`, so a session cannot forge or refresh its

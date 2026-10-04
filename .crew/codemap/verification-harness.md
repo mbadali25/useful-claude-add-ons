@@ -2367,3 +2367,12 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5479ac05` -> `174b6613` on 2026-10-04 (T-0047).** Rule 6's `seconds` (29 -> 47) and `why` were re-timed; its account above says so. `sabotage.py:67` still imports `CLOUD_GUARD_MUTATIONS` (`grep -n`). Other paths this map cites that differ from `5479ac05` came in with origin/main and were not re-derived here.
 
 **Re-anchored to `51b2222b` on 2026-10-03 (T-0066, crew 1.0.185: `git.forbiddenTrailers` and the `/crew:done` trailer report; `51b2222b` merges origin/main `4f6ef540`, crew 1.0.162, into `T-0066-build`).** Main's maps were taken at the merge and T-0066's edits re-applied on them. T-0066 changes, among the paths these maps cite: `.crew/verify.json` (one rule appended, `:539-546`), `plugin/crew/CONFIG.md` (section 10/11 headings, one section 10 row, new section 22), `plugin/crew/commands/done.md` (a report section after check 4, `:68-79`), `plugin/crew/commands/implement.md` (step 2 `:46-52`; still 120 lines), `plugin/crew/hooks/scripts/crew_config.py` (the `git` block, +6 after main's `:380` and +4 after its `:595`), `plugin/crew/skills/crew-setup/SKILL.md`, the two templates, `plugin/crew/tests/test_crew_config.py`, the new `crew_trailers.py` and its suite, and release bookkeeping (`CHANGELOG.md`, `TODO.md` +11 at `:241`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, both version files). Body `path:N` citations into those files were re-mapped by a difflib line diff from main `4f6ef540` to the merged tree; a bare `:N` was re-mapped only where T-0066's earlier pass (`f7fd2e78`) had read the sentence and applied it. History notes were not re-mapped. No other claim was re-derived and no suite was executed for this note.
+
+## T-0096's verify rule (added 2026-10-04 on `T-0096-build`)
+
+- **DERIVED.** `.crew/verify.json:622` (the last rule): `_common.sh`, both
+  `cloud-guard` flavours, `promote-gate.ps1`, `auto-clear.ps1` and
+  `plugin/crew/tests/test_worktree_config_shell.py` map to that test file through
+  `pytest_rule.py`, priced 13s (41 passed in 12.5s with pwsh on PATH on an idle 4-CPU container; 43 after review round 1). It is
+  appended, so no earlier rule number moves. This section does not move the file's
+  `anchor:`.

@@ -3022,6 +3022,7 @@ REPO_REFUSED.update({
 # Keys whose readers ARM only from the machine file. A repo may veto them
 # (`false`) or clear its own veto (`null`), never arm them.
 REPO_VETO_ONLY = {"context.autoClear.enabled", "resume.auto"}
+REPO_VETO_ONLY.add("context.autoClear.wrapUp")  # T-0017: the same rule as `enabled`
 
 
 def is_repo_veto(value):

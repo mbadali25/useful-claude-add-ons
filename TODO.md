@@ -4,6 +4,41 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
+  chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
+  being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run
+  (`plugin/crew/tests/test_wrapup.py` drives the hooks with fixtures only). (b) Harness follow-up, its
+  own harness-only tooling PR (T-0087, no feature work beside it): the 23 hand sabotages of
+  T-0017's PR (the 22 of its first round plus "a rename source onto the handoff is not counted",
+  red on `test_check_counts_the_source_of_a_rename_onto_the_handoff`) as `plugin/crew/tests/sabotage_wrapup.py` (drafted outside the repo as the build
+  session's `sabotage_t0017.py`: label, target, find, replace, named test), registered in
+  `plugin/crew/tests/sabotage.py`, with `test_every_wrapup_sabotage_anchor_is_present_exactly_once`. (c) Real Windows: the python
+  resolution `context-watch.ps1` and `auto-clear.ps1` now carry (`Resolve-CrewPython`) ran only under
+  Linux pwsh with `OS=Windows_NT`.
+
+- **T-0016 follow-ups (auto-clear binds to the session's own terminal).** (a) Measure the session
+  record on native Windows and macOS (`entrypoint`, `kind`, `procStart`'s format, the record path):
+  until then Windows' allowlist is the Linux `{"cli"}` and `procStart` is unchecked there and on macOS
+  (`plugin/crew/docs/session-record-spike.md`, "Not measured"). (b) A live end-to-end run: a `claude -p`
+  child in a parent's tmux pane with auto-clear armed, and an interactive `script -qc claude` child
+  (its record was not captured by the spike). (c) Harness follow-up, its own tooling PR (T-0087): the
+  49 hand sabotages of T-0016's PR as `plugin/crew/tests/sabotage_autoclear_binding.py`, registered in
+  `sabotage.py`, with an anchor-present-once test. (d) The sh flavour still runs the hook-anchored
+  checks (`crew_autocycle.py`'s `pane_pid not in ancestors()`, `resolve_target(ancestors(), ...)`)
+  before the owner proof because their lines are sabotage anchors; once (c) lands they can be folded
+  into `prove_target`.
+
+- **T-0096 follow-ups (review of #398, NITs deferred on purpose).** (1) The stand-down and the
+  auto-clear veto treat a could-not-tell resolver (`unknown`) as an absent file in every flavour:
+  `crew_incident_active` (`plugin/crew/hooks/scripts/_common.sh`), promote-gate.ps1's
+  `Test-CrewIncidentActive`, `auto-clear.ps1`'s `$repoCfg`, and their Python halves
+  (`crew_incident.py`, `crew_autocycle.py`) through `crew_common.repo_config_file`. Decide
+  fail-closed across Python and shell together, not one flavour at a time. (2) A `.crew/` that
+  cannot be searched (no execute permission, a broken mount) makes its files look absent, so it
+  reads as `own` with nothing or falls through to `main`, in all three resolvers:
+  `crew_common.repo_config_dir` (`os.path.lexists`), `_common.sh`'s `crew_repo_config_dir`
+  (`-e`/`-L`) and `Get-CrewRepoConfigDir` (`Get-Item -ErrorAction SilentlyContinue`). Decide
+  whether that is `unknown`, in all three at once.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
