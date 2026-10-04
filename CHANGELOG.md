@@ -4,6 +4,40 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.317: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
+
+- **What changed.** `crew_config.inert_settings(root)` names every setting the
+  installed crew does not act on: a resolved key outside `default_config()`
+  (not `platform.*` or `schema`; keys under an open table such as `dev.roles`
+  count as known), a value in the small `INERT_PENDING` table, and every path
+  the global filter drops. It appears as one `Inert settings (crew <version>
+  does not act on them): key=value (why), ...` line at SessionStart (300
+  characters, `+N more`, emitted with `memory.inject` off too), an `inert` line
+  in `/crew:status`, a `warning: inert:` line per `autopilot.*` key from
+  `crew_autopilot.py settings`, and `crew_config.py --inert`. It never refuses
+  anything. `/crew:status --approvals` prints one `/crew:approve <id>  (<why>)`
+  line per open ticket whose spec and plan validate and whose approval is
+  missing, stale or unaccepted, and leaves merged, current and spec-only
+  tickets out (`nothing needs approval` when there are none).
+- **Why.** `.crew/config.json` held `autopilot.approval: self` for days before
+  the crew that read it existed, and nothing said so; 13 of 25 approvals typed
+  on 2026-09-27 changed nothing. T-0010 has since landed `approval` and
+  `questions`, so they are quiet now. Still named: `autopilot.ship` (T-0011),
+  `reviewPolicy` and `maxLanes` (T-0029), `maxTicketsPerRun` and `mode:
+  backlog` (T-0012), and a `deploy` other than `none` (T-0045). A repo-only key
+  in `~/.claude/crew/config.json` (an `autopilot`, `scope` or `emergency`
+  block) is named `(global, repo-only)` instead of being dropped silently.
+- **Not in this change.** The machine-global autopilot preferences (the spec's
+  Step 2 allow-list) are left to T-0050 (#361), which reworks the same global
+  layer with `PERSONAL_KEYS` and decides `autopilot.deploy` differently; only
+  the reporting half landed here. The `pending_approvals` reader lives in
+  `crew_status.py`, not `crew_ticket.py`, to keep this branch off the harness.
+- **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
+  ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
+  and `approval_hook.py`), the bare `/crew:approve` listing what is pending,
+  and the sabotage registrations for this change's tests in
+  `sabotage_autopilot.py` and `sabotage_context.py`.
+
 ### Added — `crew` 1.0.252: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
