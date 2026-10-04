@@ -30,8 +30,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | L-1504 | Harness-only: approval hook / scope guard accept only the owner's typed `/crew:autopilot sleep`, then unlock loosening in manual sleep (L-0652 ships tighten-only until then). Owner decision 2026-10-04. | none yet | needs ticket in your tracker |
 | L-1505 | Harness-only: when a deploy command matches several environments (L-1503 union rule), verify-gate.sh records one PROMOTIONS row per matched environment instead of the joined name `staging,prod`, so a later `requires: [prod]` is satisfied. Fails closed until then. | none yet | needs ticket in your tracker |
+| L-1506 | CI: crew Windows default set split into 6 shards instead of 3 (owner request 2026-10-04, rush speed-up) | #491 | open, CI running |
 
-Next free untracked ID: **L-1506**.
+Next free untracked ID: **L-1507**.
 
 ## Merged this session
 
