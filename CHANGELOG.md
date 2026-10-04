@@ -4,6 +4,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.254: the upgrade-doc sabotage entry follows whichever doc this tree ships (tooling)
+
+- `plugin/crew/tests/sabotage.py`: `UPGRADE_DOC` is crew-setup's `upgrade-report.md` when that file exists,
+  else `commands/upgrade.md`, and the entry's target test follows it. T-0038 (#370) moves the per-hop
+  migration text into `upgrade-report.md` and leaves `upgrade.md` a removal stub; with this, the harness
+  edit lands alone first (CLAUDE.md, T-0087) and both trees keep the anchor exact. No behaviour change.
+
 ### Added — `crew` 1.0.252: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
