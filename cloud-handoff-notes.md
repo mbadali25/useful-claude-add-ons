@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 21:41 UTC
+Last updated: 2026-10-04 21:51 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 21:51: Batch 3 land-prepped: #481 5fba02f6 1.0.339 (real conflicts with T-0053 sleep work), #493 874c00e5 1.0.340, #427 26b6fc93 1.0.341 (real conflicts: four-writer prose/test, test name kept for harness sabotage anchors), #489 00612550 1.0.342. Merge-resolution review spawned; CI running.
 - 21:41: #400 round-3 at 0fe83674: 0 BLOCK, 1 FIX (ps1 Get-CrewHandoffPath converts \ to / AFTER containment -> on POSIX pwsh '..\main\...' escapes the lane; real Windows unaffected), 2 NIT. Sent back to builder: convert only when DirectorySeparatorChar is '\'.
 - 21:32: #400 L-0680 at 0fe83674, CI all green (6+3 Windows). Windows causes: backslash handoff path, hidden .git file in test, Git Bash /c/ path in test. N1-N5 + wrapUp known key + stale cites carried. Behaviour changes -> round-3 review sent to a9a5cd1; candidate for batch 4.
 - 21:32: MERGED #494 L-1510 at e15a652f -> main 8c0843ca, crew 1.0.338 (coordinator reviewed land-prep delta: sabotage entry 4 now distinct; merge conflict CHANGELOG only). 18 merged. Batch 3 land-prep spawned: #481 1.0.339, #493 1.0.340, #427 1.0.341, #489 1.0.342 (all Windows-green on own heads).
