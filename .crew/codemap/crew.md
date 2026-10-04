@@ -1476,22 +1476,28 @@ then the train is advisory.
 Added after this note's anchor; read in full at the T-0084 build head. Read-only: nothing here
 writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, migration L-0678).
 
-- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:49` - the pointer grammar, one line
-  `vault: <name> | note: <path>`; `:65` `_path_problem` refuses an absolute, drive, backslash,
-  `.`/`..`/empty segment, non-`.md` or control-character path; `:82` `classify` orders
-  pointer, then `malformed` (one `vault:` line that fails), then `full-text`.
-- DERIVED `crew_memory.py:54` `split_body` - the frontmatter is split on its first two `---`
-  lines and never parsed as YAML.
-- DERIVED `crew_memory.py:129` `vault_path` - reads `crew_recall.obsidian_config_path()`
-  (`:131`, honours `CREW_OBSIDIAN_CONFIG`); `role: ignore` is `vault-unknown`; only the name
-  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:124`) and
-  then the Obsidian config's top-level `vaultPath`. A config file that exists and does not parse
-  (`:105` `_json_file`, Obsidian config, repo `.crew/config.json` or the global crew config,
-  `:119-120`) is `no-vault-config` with `config unreadable:`, never "no vaults".
-- DERIVED `crew_memory.py:170` `note_path` - no symlink component below the vault, real path
-  under the vault's real path (`outside-vault`), else `note-missing`.
-- DERIVED `crew_memory.py:232` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
-  1 for any other state, 2 for usage or a missing `--file`/`--memory-dir`.
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:59` - the pointer grammar, one line
+  `vault: <name> | note: <path>`; `:82` `_path_problem` refuses an absolute, backslash, `:`
+  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf-character path (`:64`
+  `_invisible`); `:101` `classify` orders pointer, then `malformed` (one line that, stripped
+  and case-folded, starts `vault:` and fails), then `full-text`.
+- DERIVED `crew_memory.py:70` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
+  is split on its first two `---` lines and never parsed as YAML.
+- DERIVED `crew_memory.py:174` `vault_path` - reads `crew_recall.obsidian_config_path()`
+  (`:176`, honours `CREW_OBSIDIAN_CONFIG`); a `vaults` block or entry of the wrong shape is
+  `no-vault-config`; `role: ignore` is `vault-unknown`; only the name `memory` falls back to
+  `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:150`) and then, only with no
+  `vaults` block, the Obsidian config's top-level `vaultPath`. `:126` `_json_file` treats only
+  FileNotFoundError as absent; a config (Obsidian, repo `.crew/config.json` or the global crew
+  config, `:145-146`) that cannot be reached, read or parsed is `no-vault-config` with
+  `config unreadable:`, never "no vaults". `:155` `_vault_dir` stats and lists the vault.
+- DERIVED `crew_memory.py:221` `note_path` - `os.lstat` per component: a link is
+  `outside-vault`, a missing component `note-missing`, any other OSError `unreadable`; the real
+  path must stay under the vault's real path.
+- DERIVED `crew_memory.py:271` `_listed` - `check` lists `*.md` (suffix in any case) but the
+  exact name `MEMORY.md`, regular files and links (a dangling link reads `unreadable`).
+- DERIVED `crew_memory.py:301` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+  1 for any other state, 2 for usage, a missing `--file`/`--memory-dir` or an unlistable folder.
 - JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
   because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
 

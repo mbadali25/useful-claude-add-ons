@@ -11,20 +11,32 @@ All notable changes to this repository are documented here. Format follows [Keep
   maps it to the note's real path on this host; `check --memory-dir` reports every memory file
   (not `MEMORY.md`) with a count per state. The vault name is looked up in the machine's
   `~/.claude/obsidian/config.json` (`CREW_OBSIDIAN_CONFIG`), `role: ignore` is not resolved, and
-  only the name `memory` falls back to `memory.vaultPath`, then the legacy top-level `vaultPath`.
-- Every failure is a named state with exit 1: `malformed` (absolute, drive, backslash, `.`/`..`
-  or empty segment, not `.md`, control character, a second field), `no-vault-config` (including
-  a config file that exists and does not parse - never read as "no vaults"),
-  `vault-unknown`, `vault-unavailable` (never replaced by another vault), `note-missing`,
-  `outside-vault` (a symlink below the vault, or a real path that leaves it) and `unreadable`.
-  The frontmatter is split on its `---` lines and never parsed. Read-only; no hook, no config key.
+  only the name `memory` falls back to `memory.vaultPath`, then - only when the Obsidian config
+  has no `vaults` block, as obsidian-vault's `list_vaults` reads it - the legacy top-level
+  `vaultPath`.
+- Every failure is a named state with exit 1: `malformed` (absolute, backslash, `:` in any
+  segment, `.`/`..` or empty segment, not `.md`, a Cc or Cf character, a second field, and a
+  `vault:` line that is indented or not lower case), `no-vault-config` (including a config file
+  that exists but cannot be reached, read or parsed, or whose `vaults` block or entry has the
+  wrong shape - never read as "no vaults"; only FileNotFoundError is absent), `vault-unknown`,
+  `vault-unavailable` (not absolute, not there, or not listable; never replaced by another
+  vault), `note-missing`, `outside-vault` (a symlink below the vault, or a real path that leaves
+  it) and `unreadable` (the memory file, or a folder or note below the vault that cannot be
+  examined). `check` lists a dangling `*.md` link as `unreadable` and exits 2 on a folder it
+  cannot list. The frontmatter is split on its `---` lines and never parsed; CRLF, LF and a lone
+  CR all end a line. Read-only; no hook, no config key.
 - The `crew-memory` skill gains "Native memories as vault pointers"; README section 14 and the
   memory guide describe it. Writing pointers (L-0677) and migration (L-0678) are later versions;
   `OBSIDIAN_VAULT_PATH` is not honoured.
-- **Tests.** `plugin/crew/tests/test_crew_memory.py`, 47 cases on fixtures only; a new
-  `.crew/verify.json` rule runs it. Sabotaged by hand (dropping the `..` check, the symlink check,
-  the drive check or the `ignore` rule; substituting another vault; reading a broken config as
-  empty; reading a malformed pointer as full text): each turned a named test red.
+- **Tests.** `plugin/crew/tests/test_crew_memory.py`, 74 cases on fixtures only (permission
+  denial is simulated, since a root test run cannot be denied); bash and pwsh are separate
+  cases that each skip on their own. A new `.crew/verify.json` rule runs it. Sabotaged by hand
+  (dropping the `..` check, the symlink check, the `:` check, the Cc/Cf check or the `ignore`
+  rule; substituting another vault; reading a broken or wrong-shaped config as empty; reading
+  EACCES as absent; case-sensitive or CR-blind classification; dropping dangling links from
+  `check`; reporting an unreadable component as `note-missing`; not listing the vault; the
+  legacy `vaultPath` beside a `vaults` block; a traceback on an unlistable folder; reading a
+  malformed pointer as full text): each turned a named test red.
 
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 

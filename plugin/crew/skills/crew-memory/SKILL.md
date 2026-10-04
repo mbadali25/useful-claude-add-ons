@@ -88,20 +88,22 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" check --memory-dir 
 ```
 
 The name maps to a path through `vaults.<name>.path` in `~/.claude/obsidian/config.json`
-(a `role: ignore` vault is not resolved); only the name `memory` falls back to the
-crew config's `memory.vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured.
+(a `role: ignore` vault is not resolved). Only the name `memory` falls back: to the
+crew config's `memory.vaultPath`, then, only when that file has no `vaults` block, to
+its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured. The pointer
+line is exact: an indented or `Vault:` line is `malformed`, not prose.
 
 | state | meaning | exit |
 |---|---|---|
 | `resolved` | the note exists; `path:` is printed | 0 |
 | `full-text` | not a pointer; the body is the memory | 0 |
-| `malformed` | a `vault:` line that fails the grammar | 1 |
-| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that does not parse | 1 |
+| `malformed` | a `vault:` line (any case, any indent) that fails the grammar | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that cannot be read, does not parse or has a wrong-shaped `vaults` | 1 |
 | `vault-unknown` | this host names no such vault, or it is `ignore` | 1 |
-| `vault-unavailable` | the configured path is not a directory here | 1 |
+| `vault-unavailable` | the configured path is not an absolute, listable directory here | 1 |
 | `note-missing` | the vault is there, the note is not | 1 |
 | `outside-vault` | a symlink below the vault, or the path leaves it | 1 |
-| `unreadable` | the memory file is not readable UTF-8 | 1 |
+| `unreadable` | the memory file is not readable UTF-8, or a folder or note below the vault cannot be read | 1 |
 
 Any state other than `resolved` or `full-text`: tell the user the state and its
 reason. Do not guess the note, search another vault for it, or treat the pointer

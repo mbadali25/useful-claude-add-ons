@@ -351,8 +351,10 @@ a single pointer line into your vault, with the frontmatter left as it is:</p>
 <p>The vault is named, not given as a path, so the same file works on every
 machine the vault syncs to. The name is looked up in that machine's
 <code>~/.claude/obsidian/config.json</code> (<code>vaults.&lt;name&gt;.path</code>; a vault with role
-<code>ignore</code> is not looked up). Only the name <code>memory</code> falls back to crew's
-<code>memory.vaultPath</code>. <code>OBSIDIAN_VAULT_PATH</code> is not used.</p>
+<code>ignore</code> is not looked up). Only the name <code>memory</code> falls back: to crew's
+<code>memory.vaultPath</code>, then, only when the Obsidian config has no <code>vaults</code> block,
+to its legacy top-level <code>vaultPath</code>. <code>OBSIDIAN_VAULT_PATH</code> is not used. The
+line is exact: an indented or <code>Vault:</code> line is <code>malformed</code>, not prose.</p>
 <pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file &lt;memory file&gt;
 python3 plugin/crew/hooks/scripts/crew_memory.py check --memory-dir &lt;memory dir&gt;
 </code></pre>
@@ -380,12 +382,12 @@ only; <code>--json</code> gives the same rows as JSON.</p>
 </tr>
 <tr>
 <td><code>malformed</code></td>
-<td>a <code>vault:</code> line that is not a valid pointer (absolute path, drive, <code>..</code>, a second field)</td>
+<td>a <code>vault:</code> line, in any case or indent, that is not a valid pointer (absolute path, <code>:</code>, <code>..</code>, a second field, an invisible character)</td>
 <td>1</td>
 </tr>
 <tr>
 <td><code>no-vault-config</code></td>
-<td>no Obsidian config and no <code>memory.vaultPath</code>, or a config file that does not parse</td>
+<td>no Obsidian config and no <code>memory.vaultPath</code>, or a config file that cannot be read, does not parse or has a <code>vaults</code> block of the wrong shape</td>
 <td>1</td>
 </tr>
 <tr>
@@ -410,7 +412,7 @@ only; <code>--json</code> gives the same rows as JSON.</p>
 </tr>
 <tr>
 <td><code>unreadable</code></td>
-<td>the memory file cannot be read as UTF-8</td>
+<td>the memory file cannot be read as UTF-8, or a folder or note inside the vault cannot be read</td>
 <td>1</td>
 </tr>
 </tbody>
