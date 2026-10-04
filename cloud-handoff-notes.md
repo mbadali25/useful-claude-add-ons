@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:00: #450 fixes pushed -> da00137e (B1+F1-F7+6 NITs; 74 tests, 23 red-before; 13 new sabotages). Round-2 review started.
 - 15:00: H1 #418 built -> 24cb235c (ledger supersede-accepted + correct-acceptance + prompt override line; 86 tests, 17 sabotage RED; tooling-pr OK 4 harness paths; 1.0.400). Review started. Owner-confirm item: T-0109 Q3 (name + refuse auto:, no owner auth) - builder says posture unchanged vs --reserve.
 - 14:57: WAVE1 #403 T-0053 built -> d7a51dd6 (crew_sleep.py, night settings in _settings_at; 81 tests, 15 mutations red; 1.0.394; crew_keys since re-bump at landing). Review started. All 6 wave-1 builds done.
 - 14:57: WAVE1 #398 T-0096 built -> 968cf3a4 (bash+PS worktree config resolvers, readers routed, unknown=armed in no-python fallback; 41 tests, 6 sabotages red; 1.0.396). Review started. PRE-EXISTING fail-open: cloud-guard.sh exits 0 if _common.sh fails to source -> needs follow-up ticket.
