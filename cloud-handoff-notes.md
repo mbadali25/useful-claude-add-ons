@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 22:58 UTC
+Last updated: 2026-10-04 23:00 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 23:00: #394 T-0037 land-prepped (builder: Windows red was the L-1510 mint race, fixed on main; carry done) then coordinator re-merged main cab38cfa (verify.json/CHANGELOG/rules only) -> 628f1360, crew 1.0.344, 310 tests pass. FINDING: check-marketplace version-drift refuses any PR whose plugin content changed without a bump, so one-bump-per-batch is not workable without changing the checker; asking owner. Minted L-1515 (main Windows flake test_auto_cycle detached sender).
 - 22:58: #394 T-0037 land-prepped at 29f23518 (merge main 3ccd527e; old Windows red = mint race fixed by L-1510; carry: vocab test covers memory-and-obsidian lane table; crew 1.0.343 version-only commit last because check-marketplace refused content-without-bump; all CI green incl. 6+3+gate Windows). Note main 3ccd527e itself is Windows-red: test_auto_cycle detached-sender sanity flake.
 - 22:58: MERGED #400 L-0680 -> 2aa06aca (crew 1.0.343), #421 T-0083 -> main cab38cfa (obsidian-vault 0.5.0). 25 merged this session.
 - 22:41: Owner confirmed usage fine; full pace. Also spawned: #407 T-0045 rework (gate simulation must match L-1503 union rule + [!-[] FIX) and L-1508 PR B (9 harness files, harness-only, lands alone). Running: L-1512, #394, #407, L-1508 PR B; #400/#421 CI.
