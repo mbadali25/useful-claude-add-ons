@@ -111,6 +111,67 @@ def test_resolver_git_unanswering_is_could_not_tell(tmp_path, monkeypatch):
     assert (crew_dir, bool(problem)) == (None, True)
 
 
+def _separate_git_dir_lane(tmp_path):
+    """A main checkout made with `git init --separate-git-dir` (its common dir
+    is `sep.git`, not `.git`) and a linked worktree of it holding a decoy."""
+    main = tmp_path / "main"
+    git(tmp_path, "init", "-q", "--separate-git-dir", str(tmp_path / "sep.git"), str(main))
+    git(main, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i")
+    _rows(main / ".crew", MAIN_ROWS)
+    wt = tmp_path / "wt"
+    git(main, "worktree", "add", "-q", "-b", "wt", str(wt))
+    _rows(wt / ".crew", DECOY_ROWS)
+    return wt
+
+
+def _bare_repo_lane(tmp_path):
+    """A linked worktree of a bare repository (no main checkout at all),
+    holding a decoy."""
+    seed = make_repo(tmp_path, mode=None, name="seed")
+    bare = tmp_path / "bare.git"
+    git(tmp_path, "clone", "-q", "--bare", str(seed), str(bare))
+    wt = tmp_path / "wt"
+    git(bare, "worktree", "add", "-q", "-b", "wt", str(wt))
+    _rows(wt / ".crew", DECOY_ROWS)
+    return wt
+
+
+LAYOUTS = {"separate-git-dir": _separate_git_dir_lane, "bare": _bare_repo_lane}
+
+
+@pytest.mark.parametrize("layout", sorted(LAYOUTS))
+def test_resolver_linked_worktree_without_a_dot_git_common_dir_is_could_not_tell(tmp_path, layout):
+    wt = LAYOUTS[layout](tmp_path)
+
+    crew_dir, problem = crew_common.metrics_crew_dir(str(wt))
+
+    assert (crew_dir, bool(problem), crew_common.metrics_md_path(str(wt))[0]) == (
+        None, True, None), problem
+
+
+@pytest.mark.parametrize("layout", sorted(LAYOUTS))
+def test_callers_never_read_the_decoy_without_a_dot_git_common_dir(tmp_path, layout):
+    wt = LAYOUTS[layout](tmp_path)
+    decoy = (wt / ".crew" / "metrics.md").read_bytes()
+
+    health = crew_state.read_metrics(str(wt))
+    code, _lines = cs.metric(str(wt), record=True, today="2026-10-02")
+    line = crew_status._metrics_line(str(wt))  # pylint: disable=protected-access
+
+    assert (health["verdict"].startswith("could not tell: "), health["rate"], code,
+            line.startswith("metrics  could not tell ("),
+            (wt / ".crew" / "metrics.md").read_bytes() == decoy) == (
+        True, None, 1, True, True), (health, line)
+
+
+def test_repo_config_resolution_is_unchanged_without_a_dot_git_common_dir(tmp_path):
+    """The metrics could-not-tell does not leak into T-0088's config reader:
+    such a worktree still reads its own config, as before."""
+    wt = _separate_git_dir_lane(tmp_path)
+
+    assert crew_common._main_checkout(str(wt)) == (None, "")  # pylint: disable=protected-access
+
+
 def test_metrics_md_path_joins_the_resolved_dir(tmp_path):
     main, wt = _lane(tmp_path)
 

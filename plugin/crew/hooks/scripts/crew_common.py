@@ -172,10 +172,31 @@ def metrics_crew_dir(root):
     `crew_dir` is then None. Callers must say so and must not fall back to the
     worktree's own `.crew/`.
     """
-    main_root, problem = _main_checkout(root)
+    main_root, problem = _metrics_main(root)
     if problem:
         return None, problem
     return os.path.join(main_root or root, ".crew"), ""
+
+
+def _metrics_main(root):
+    """(main_root, problem) for the metrics file. As `_main_checkout`, except
+    that a linked worktree whose common dir is not named `.git` (a main made
+    with `git init --separate-git-dir`, or a worktree of a bare repository) is
+    could-not-tell, not "own": its main checkout, if any, is not where git
+    says, and `git worktree list` names the common dir there, not the
+    checkout. The repo config keeps `_main_checkout`'s answer (T-0088)."""
+    main_root, problem = _main_checkout(root)
+    if problem or main_root is not None or not os.path.isfile(os.path.join(root, ".git")):
+        return main_root, problem
+    lines = (git_out(root, "rev-parse", "--git-dir", "--git-common-dir") or "").splitlines()
+    if len(lines) != 2:
+        return None, "this looks like a linked worktree, but git could not name its main checkout"
+    real_git, real_common = (os.path.normcase(os.path.realpath(os.path.join(root, p)))
+                             for p in lines)
+    if real_git == real_common:
+        return None, ""
+    return None, (f"a linked worktree whose git common dir ({lines[1]}) is not a checkout's "
+                  "`.git`, so its main checkout cannot be named")
 
 
 def metrics_md_path(root):
@@ -192,7 +213,7 @@ def stranded_metrics_copies(root):
     that exist, in that order; () for a main checkout, a plain directory, or
     when git could not tell. Not read and not counted - named, so a stranded
     copy is visible rather than silently ignored."""
-    main_root, problem = _main_checkout(root)
+    main_root, problem = _metrics_main(root)
     if problem or main_root is None:
         return ()
     own = os.path.join(root, ".crew")
