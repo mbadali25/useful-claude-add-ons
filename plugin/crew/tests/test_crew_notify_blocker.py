@@ -398,3 +398,122 @@ def test_stop_cli_reads_stdin_and_exits_0(tmp_path):
 
     assert [(run.returncode, run.stdout.decode().strip()) for run in runs] == [
         (0, "counted"), (0, "cleared"), (0, "counted")]
+
+
+# --- review round 1 (FIX 1): no local detail reaches the chat ------------------------------
+
+@pytest.mark.parametrize("why,category", [
+    ("marker unreadable: [Errno 13] Permission denied: '/home/alice/repo/.git/crew/inflight/T-0042"
+     ".json'", "marker unreadable"),
+    ("marker is not valid JSON: Expecting value: line 1 column 1 (char 0)", "marker unreadable"),
+    ("lock /home/alice/repo/.git/crew/inflight/T-0042.json.lock held for over 5s; if no "
+     "crew_inflight.py is running, a process died holding it", "lock held"),
+    ("inflight directory: [Errno 5] Input/output error: '/home/alice/x'", "could not read state"),
+    ("/home/alice/repo/.git/crew/inflight is not a directory", "could not read state"),
+    ("git cannot name <git-common-dir>", "could not read state"),
+    ("could not tell: OSError(13, 'Permission denied')", "could not read state"),
+    ("heartbeat in the future by 130s", "heartbeat in the future"),
+])
+def test_lane_unknown_sends_a_category_never_a_path(tmp_path, telegram, monkeypatch, why,
+                                                   category):
+    root = _blocker_repo(tmp_path)
+    _holds(monkeypatch, {"state": "unknown", "why": why})
+
+    crew_notify.run_stop(str(root), TICKET, "in-flight", "in-flight: unknown")
+
+    line = _text(telegram)
+    reason = line.split(f"{TICKET} (implement) ", 1)[1].split(" -> ")[0]
+    assert (reason, "/home" in line, "alice" in line, "Errno" in line, "(" in reason) == (
+        f"lane state unknown: {category} (detail: /crew:status)", False, False, False, True)
+
+
+def test_lane_exception_text_never_reaches_the_chat(tmp_path, telegram, monkeypatch):
+    root = _blocker_repo(tmp_path)
+    _holds(monkeypatch, error=RuntimeError("/home/alice/secret-path exploded"))
+
+    crew_notify.run_stop(str(root), TICKET, "in-flight", "in-flight: unknown")
+
+    line = _text(telegram)
+    assert ("alice" in line, "RuntimeError" in line,
+            "lane state unknown: could not read state" in line) == (False, False, True)
+
+
+# --- review round 1 (FIX 2): a new episode is not deduped as the old one -------------------
+
+def _plan(root, text):
+    path = root / ".work" / "tickets" / TICKET / "plan.md"
+    path.write_text(text, encoding="utf-8")
+
+
+def test_approval_same_plan_is_deduped_new_plan_sends(tmp_path, telegram):
+    """approve -> replan -> approve again inside realertHours: the second plan
+    is a new episode, so it pings; the same plan seen twice does not."""
+    root = _blocker_repo(tmp_path)
+    _plan(root, "# plan v1\n")
+    words = [crew_notify.run_stop(str(root), TICKET, "approve", "no receipt") for _ in range(2)]
+    _plan(root, "# plan v2 - the successor\n")
+    words.append(crew_notify.run_stop(str(root), TICKET, "approve", "no receipt"))
+
+    assert (words, len(telegram.requests), _text(telegram, 0) == _text(telegram, 1)) == (
+        ["sent", "deduped", "sent"], 2, True)
+
+
+def test_rounds_same_round_is_deduped_a_later_round_sends(tmp_path, telegram, monkeypatch):
+    """A second out-of-rounds (a successor plan spent too) is a new episode."""
+    root = _blocker_repo(tmp_path)
+    states = []
+
+    def status(_root, ticket):
+        return states[-1] | {"ticket": ticket}
+
+    monkeypatch.setattr(review_ledger, "status", status)
+    words = []
+    for number in (2, 2, 4):
+        states.append({"rounds_spent": 2, "budget": 2, "successors": [],
+                       "rounds": [{"round": number, "status": "completed",
+                                   "counts": {"BLOCK": 1}}]})
+        words.append(crew_notify.rounds_check(str(root), TICKET))
+
+    assert (words, len(telegram.requests)) == (["sent", "deduped", "sent"], 2)
+
+
+def test_gate_new_refusal_streak_after_a_pass_sends_again(tmp_path, telegram):
+    root = _blocker_repo(tmp_path)
+    steps = ((True, "p-1"), (True, "p-2"), (False, "p-3"), (True, "p-4"), (True, "p-5"))
+
+    words = [crew_notify.stop_outcome(str(root), "verify", refused, _stop_payload(prompt))
+             for refused, prompt in steps]
+
+    assert (words, len(telegram.requests)) == (
+        ["counted", "sent", "cleared", "counted", "sent"], 2)
+
+
+# --- review round 1 (NITs) ---------------------------------------------------------------
+
+@pytest.mark.parametrize("ticket", ["../etc", "T 1", "", "a/b"])
+def test_run_stop_bad_ticket_sends_nothing(tmp_path, telegram, ticket):
+    root = _blocker_repo(tmp_path)
+
+    assert (crew_notify.run_stop(str(root), ticket, "approve", "r"), telegram.requests) == (
+        "failed:usage", [])
+
+
+def test_run_stop_logs_the_reason_to_stderr_only(tmp_path, telegram, capsys):
+    root = _blocker_repo(tmp_path)
+
+    crew_notify.run_stop(str(root), TICKET, "approve", "receipt stale: plan.md changed")
+
+    assert ("receipt stale: plan.md changed" in capsys.readouterr().err,
+            "receipt stale" in _text(telegram)) == (True, False)
+
+
+def test_stops_json_prunes_old_keys(tmp_path, telegram, monkeypatch):
+    root = _blocker_repo(tmp_path)
+    crew_notify.stop_outcome(str(root), "verify", True, _stop_payload("p-1", session="old"))
+    later = crew_notify.time.time() + crew_notify.PRUNE_SECONDS + 60
+    monkeypatch.setattr(crew_notify.time, "time", lambda: later)
+
+    crew_notify.stop_outcome(str(root), "verify", True, _stop_payload("p-2", session="new"))
+    stops = json.loads((_state(root) / "stops.json").read_text(encoding="utf-8"))
+
+    assert sorted(stops) == [f"verify|new|{TICKET}"]

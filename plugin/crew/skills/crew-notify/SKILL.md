@@ -123,7 +123,7 @@ null `tokenEnv` / `chatId` - read-only, never the provider. Its example chat id
 |---|---|---|---|
 | `deploy` | Every `/crew:promote` result | `Promotion passed` / `Deploy FAILED` / `Promotion outcome unknown` | all but a pass |
 | `question` | Claude Code stopped and is waiting on you (the `Notification` hook) | `Question` / `Needs permission` | yes |
-| `blocker` | Work stopped and only you can move it (T-0060): the four reasons below | `Approval waiting` / `Review out of rounds` / `Lane stalled` / `Lane state unknown` / `Stop gate refused` (`Blocked` with no kind) | yes |
+| `blocker` | Work stopped and only you can move it (T-0060): the four reasons below | `Approval waiting` / `Review out of rounds` / `Lane stalled` / `Lane state unknown` / `Stop gate refused` (not wired yet) (`Blocked` with no kind) | yes |
 
 **Blocker reasons.** Each has its own subject, so the line says what happened
 before the repo and branch:
@@ -136,17 +136,21 @@ before the repo and branch:
 - `Lane stalled` - autopilot's in-flight check reads another runner's marker
   as `stale` (a dead pid, or no heartbeat inside T-0049's TTL), naming the
   runner, `since`, and the owner's `clear` command. `Lane state unknown` when
-  `holds()` answers `unknown` or cannot run (`-> /crew:status`). A `live`
+  `holds()` answers `unknown` or cannot run: the chat gets a fixed category
+  (`marker unreadable`, `lock held`, `heartbeat in the future`, `could not read
+  state`), never a path or an error text; `/crew:status` prints the detail. A `live`
   holder, or one driving the ticket from another checkout (`elsewhere`), is
   work in progress and sends nothing. No timer: it fires only when autopilot
   checks, and needs T-0049's in-flight markers.
-- `Stop gate refused` - the verify gate or the completion audit refuses the
+- `Stop gate refused` (not wired yet) - the verify gate or the completion audit refuses the
   same ticket at Stop twice in a row (one Stop seen by both Windows flavours
   counts once; a pass in between resets it). `crew_notify.py stop` records
   it; the two gates' calls to it land in a harness-only change.
 
 Autopilot's report runs `crew_notify.py run-stop` once at every stop; the
-decision of which stop pings is that tested code, not prose.
+decision of which stop pings is that tested code, not prose. A new episode is
+not deduped as the old one: approval is keyed on the plan's hash, out-of-rounds
+on the round number, and a refusal streak on its first refusal.
 
 **Question types.** `permission_prompt`, `worker_permission_prompt`,
 `elicitation_dialog`, `elicitation_url_dialog` and `agent_needs_input`, or the

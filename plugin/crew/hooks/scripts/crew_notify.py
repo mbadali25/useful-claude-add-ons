@@ -622,7 +622,7 @@ def _outcome(outcome, reason):
     return "fail" if failed else "pass"
 
 
-def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
+def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=None):
     """Everything after the filters: credentials, line, episode, dedupe, transport."""
     provider = cfg.get("provider")
     if provider == "telegram":
@@ -660,7 +660,10 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
         if isinstance(seen, dict) and seen.get("key") == episode[1]:
             _say("same waiting episode as the last ping (no reply since); nothing sent")
             return "episode"
-    material = "|".join([event, ticket or "", reason] + (list(episode) if episode else []))
+    # `dedupe` is episode material that is never shown (a plan hash, a round
+    # number): a NEW blocker episode with the same words is not the old one.
+    material = "|".join([event, ticket or "", reason] + (list(episode) if episode else [])
+                        + ([str(dedupe)] if dedupe else []))
     fingerprint = hashlib.sha256(material.encode("utf-8")).hexdigest()
     window = float(cfg.get("realertHours", REALERT_HOURS)) * 3600
 
@@ -729,7 +732,7 @@ def _filter(cfg, event):
 
 
 def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None,
-         episode=None, cfg=None):
+         episode=None, cfg=None, dedupe=None):
     """Send one message. Returns `sent`, `deduped`, `episode`, `off`, `filtered`,
     `missing-credentials` or `failed:<why>`; never raises."""
     try:
@@ -747,7 +750,7 @@ def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None
             kind = kind if kind in KINDS else None
         elif kind not in ("ask", "permission"):
             kind = "ask"
-        return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode)
+        return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe)
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"failed ({exc.__class__.__name__})")
         return "failed:error"
@@ -812,6 +815,7 @@ def rounds_check(root, ticket):
         rounds = (ledger.get("rounds") or [])[after if isinstance(after, int) else 0:]
         done = [r for r in rounds if isinstance(r, dict) and r.get("status") == "completed"]
         counts = done[-1].get("counts") if done else None
+        number = done[-1].get("round") if done else None
         block = counts.get("BLOCK") if isinstance(counts, dict) else None
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"review ledger unreadable ({exc.__class__.__name__}); no rounds ping")
@@ -821,13 +825,23 @@ def rounds_check(root, ticket):
     if isinstance(block, bool) or not isinstance(block, int) or block < 1:
         return "filtered"
     return send(root, "blocker", f"out of review rounds, {block} BLOCK open", ticket=ticket,
-                unblock=f"/crew:plan {ticket}", kind="rounds")
+                unblock=f"/crew:plan {ticket}", kind="rounds", dedupe=f"round:{number}")
 
 
-def _stable(why):
-    """`why` with its durations normalised, so the same state seen a minute later
-    is the same message (and the dedupe holds)."""
-    return re.sub(r"\d+(?:\.\d+)?s\b", "<n>s", _one_line(why))
+# What a `holds()` "unknown" may say in the chat: a fixed category, never its
+# `why`, which carries absolute paths and exception text (the home directory, the
+# user name). The detail is local: `/crew:status` prints it.
+_UNKNOWN_CATEGORIES = (("heartbeat in the future", "heartbeat in the future"),
+                       ("lock ", "lock held"), ("marker", "marker unreadable"))
+
+
+def _category(why):
+    """The fixed category for an unknown holder's `why`."""
+    text = _one_line(why)
+    for needle, category in _UNKNOWN_CATEGORIES:
+        if text.startswith(needle):
+            return category
+    return "could not read state"
 
 
 def _lane(root, ticket):
@@ -838,16 +852,28 @@ def _lane(root, ticket):
         answer = crew_inflight.holds(root, ticket, runner="autopilot")
         state = answer.get("state") if isinstance(answer, dict) else None
     except Exception as exc:  # pylint: disable=broad-except
-        answer, state = {"why": f"crew_inflight failed ({exc.__class__.__name__})"}, "unknown"
+        _say(f"crew_inflight failed ({exc.__class__.__name__}); lane state unknown")
+        answer, state = {}, "unknown"
     if state in ("live", "mine", "free", "elsewhere"):
         return "filtered"
     if state == "stale":
         return send(root, "blocker", f"lane stalled: {answer.get('runner') or 'a runner'} since "
                     f"{answer.get('since') or '?'}", ticket=ticket,
                     unblock=answer.get("clear") or "/crew:status", kind="lane")
-    why = _stable(answer.get("why") or f"holds() answered {state!r}")
-    return send(root, "blocker", f"lane state unknown: {why}", ticket=ticket,
-                unblock="/crew:status", kind="lane-unknown")
+    category = _category(answer.get("why") or "")
+    return send(root, "blocker", f"lane state unknown: {category} (detail: /crew:status)",
+                ticket=ticket, unblock="/crew:status", kind="lane-unknown")
+
+
+def _plan_digest(root, ticket):
+    """The approval episode: the sha256 of the ticket's `plan.md`, so a successor
+    plan (or an edit that staled the receipt) waiting again is a new ping."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        with open(os.path.join(top, ".work", "tickets", ticket, "plan.md"), "rb") as handle:
+            return "plan:" + hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return "plan:none"
 
 
 def run_stop(root, ticket, phase, reason):
@@ -856,10 +882,17 @@ def run_stop(root, ticket, phase, reason):
     `accept-review` or `replan` stop with the budget spent and a BLOCK open is
     `Review out of rounds`. Every other phase is `filtered`. Never raises."""
     try:
-        _ = reason  # carried for the log line; the message is this module's own
+        try:
+            crew_ticket.check_ticket(ticket)
+        except Exception:  # pylint: disable=broad-except
+            _say(f"run-stop: {ticket!r} is not a ticket id; nothing sent")
+            return "failed:usage"
+        # Logged locally, never sent: the message is this module's own words.
+        _say(f"run-stop {ticket} {phase or '-'}: {_one_line(reason)[:MAX_REASON]}")
         if phase == "approve":
             return send(root, "blocker", "plan waiting on approval", ticket=ticket,
-                        unblock=f"/crew:approve {ticket}", kind="approval")
+                        unblock=f"/crew:approve {ticket}", kind="approval",
+                        dedupe=_plan_digest(root, ticket))
         if phase == "in-flight":
             return _lane(root, ticket)
         if phase in ROUNDS_PHASES:
@@ -909,22 +942,26 @@ def stop_outcome(root, gate, refused, payload_bytes):
             if not lock.held:
                 _say("stops lock busy; this verdict is not counted")
                 return "busy"
-            stops = _read_json(path)
+            now = time.time()
+            stops = {name: entry for name, entry in _read_json(path).items()
+                     if isinstance(entry, dict) and isinstance(entry.get("at"), (int, float))
+                     and isinstance(entry.get("ids"), list) and now - entry["at"] < PRUNE_SECONDS}
             if not refused:
-                if key in stops:
-                    del stops[key]
-                    _write_json(path, stops)
+                stops.pop(key, None)
+                _write_json(path, stops)
                 return "cleared"
-            seen = stops.get(key) if isinstance(stops.get(key), list) else []
+            seen = stops[key]["ids"] if key in stops else []
             if ident in seen:
                 return "twin"
             seen = (seen + [ident])[-10:]
-            stops[key] = seen
+            stops[key] = {"ids": seen, "at": now}
             _write_json(path, stops)
         if len(seen) < 2:
             return "counted"
+        # The streak's first refusal names the episode: after a pass, a new
+        # streak of two pings again inside realertHours.
         return send(root, "blocker", f"{gate} gate refused twice", ticket=ticket,
-                    unblock="/crew:status", kind="gate")
+                    unblock="/crew:status", kind="gate", dedupe=seen[0])
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"stop failed ({exc.__class__.__name__})")
         return "failed:error"

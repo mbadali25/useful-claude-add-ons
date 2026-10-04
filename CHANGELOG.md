@@ -31,7 +31,23 @@ All notable changes to this repository are documented here. Format follows [Keep
   `completion_audit.py` calling `stop`, and `review_ledger.record` calling `rounds_check` after a
   manual `/crew:review`, are in `scripts/check-tooling-pr.py`'s `HARNESS`; until they land the Stop
   gate reason never fires and the out-of-rounds reason fires only at an autopilot stop. The sabotage
-  rows for `sabotage_notify.py` are the same follow-up; the 13 mutations were run by hand, each red.
+  rows for `sabotage_notify.py` are the same follow-up; the mutations were run by hand, each red.
+- **No local detail in the chat; new episodes ping.** `Lane state unknown` carries a fixed
+  category (`marker unreadable`, `lock held`, `heartbeat in the future`, `could not read state`),
+  never `holds()`'s `why`, which holds absolute paths and exception text; `/crew:status` prints the
+  detail. The dedupe key gains episode material that is never shown: the plan's sha256 for
+  approval (approve, replan, approve again pings twice), the round number for out-of-rounds, and a
+  refusal streak's first refusal for the Stop gate. `run-stop` refuses a bad `--ticket`
+  (`failed:usage`) and logs `--reason` to stderr only; `stops.json` entries are pruned after 7 days
+  like `sent.json`'s.
+- **Deliberate deviations from the spec.** (1) A send under the legacy `review` name sends
+  nothing, where the spec said `Blocked`: review.md still pings every round, CLEAN ones included,
+  until its harness-only removal. (2) Deferred to a harness-only follow-up (T-0087 rule):
+  `review_ledger.record` calling `rounds_check` (acceptance 2: met for autopilot stops only),
+  `verify-gate.sh`/`.ps1` and `completion_audit.py` calling `stop` (acceptance 5: the counter and
+  CLI ship, the gates do not call them), the `sabotage_notify.py` rows (acceptance 6: run by hand,
+  20 mutations, each red) and `docs/diagrams/process-crew-lifecycle.mmd` (its Stop hooks node
+  changes only with the gates). Each is a `TODO.md` entry.
 - **Tests.** `plugin/crew/tests/test_crew_notify_blocker.py` (new), the blocker cases in
   `test_crew_notify.py`, the retired legacy send in `test_crew_notify_hooks.py`,
   `test_autopilot_report_calls_run_stop`, and `EXPECTED_CLI["autopilot.md"]`. `.crew/verify.json`'s
