@@ -2104,16 +2104,23 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     RULE_WRAP_RC=$?
     RULE_IN_FLIGHT=""
     # Bounded read (8 bytes): the rule can see this path and could point it
-    # at something endless. Exactly 1-3 digits and a newline, or no record.
-    RULE_REC=$(head -c 8 "$RULE_DONE_FILE" 2>/dev/null; printf x)
-    RULE_REC=${RULE_REC%x}
+    # at something endless. Read ONCE, as hex bytes: command substitution
+    # drops a NUL, so `0<NUL><LF>` would read as `0` (review round 2); every
+    # byte is matched here, the same as verify-gate.ps1's byte read.
+    RULE_REC_HEX=$(head -c 8 "$RULE_DONE_FILE" 2>/dev/null | od -An -v -tx1 | tr -d ' \n\r')
     rm -rf -- "$RULE_DONE_DIR"
     RULE_DONE_DIR=""
     RULE_DONE_FILE=""
-    # Exactly `0|[1-9][0-9]{0,2}` and a newline (review N4): no leading zero.
-    case "$RULE_REC" in
-      0$'\n'|[1-9]$'\n'|[1-9][0-9]$'\n'|[1-9][0-9][0-9]$'\n') RULE_REC=${RULE_REC%$'\n'} ;;
-      *) RULE_REC="" ;;
+    # Exactly `0|[1-9][0-9]{0,2}` and a newline (review N4): no leading zero,
+    # nothing else. ASCII digits are 30-39, the newline 0a.
+    RULE_REC=""
+    case "$RULE_REC_HEX" in
+      300a|3[1-9]0a|3[1-9]3[0-9]0a|3[1-9]3[0-9]3[0-9]0a)
+        RULE_REC_HEX=${RULE_REC_HEX%0a}
+        while [ -n "$RULE_REC_HEX" ]; do
+          RULE_REC="$RULE_REC${RULE_REC_HEX:1:1}"
+          RULE_REC_HEX=${RULE_REC_HEX:2}
+        done ;;
     esac
     [ -n "$RULE_REC" ] && [ "$RULE_REC" -gt 255 ] && RULE_REC=""
     # The decision table, in this order, the same in verify-gate.ps1.

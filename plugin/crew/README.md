@@ -2983,7 +2983,8 @@ first says `memory cap absent`, and only the timeout applies; the same below Lin
 files written to a tmpfs - those are bounded by the timeout alone. When an entry
 returns, on every path, its whole process group is KILLed, so a test that
 backgrounds a process leaves nothing running; a process that calls `setsid`
-leaves the group and is out of reach.
+leaves the group and is out of reach. The standalone runners `tests/sabotage_event_claim.py`,
+`sabotage_autocycle.py` and `sabotage_resume.py` run under the same bound.
 
 `run-tests.sh` printed `RESULT: 177 passed, 0 failed` at `61af85cb`. It covers
 what the guard must block and must allow, the promotion gate, the emergency lane

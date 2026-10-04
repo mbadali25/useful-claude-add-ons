@@ -2037,8 +2037,11 @@ foreach ($ident in $cmds) {
     # directory per rule run (review F4), the record at `<dir>/rc`: never a
     # delete-then-recreate name in a shared temp dir. New-Item refuses a name
     # that already exists, so the directory is ours; off Windows it is then
-    # narrowed to 0700. Removed whole after the rule, so a wrapper left
-    # running that writes late finds nowhere to write.
+    # narrowed to 0700. Removed whole after the rule. Unlike the .sh twin,
+    # a gate that is itself killed mid-rule has no trap to remove it, so the
+    # orphaned wrapper can still write `<dir>/rc` (and the output file) after
+    # the gate is gone: litter, never a pass - each run uses a fresh random
+    # directory and nothing reads an old one.
     $ruleDoneDir = $null
     foreach ($doneBase in @([System.IO.Path]::GetTempPath(), $crewDir)) {
       try {

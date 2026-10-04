@@ -38,6 +38,14 @@ limits: a process that calls setsid (or setpgid) leaves the group and is out
 of reach; a harness killed by SIGKILL cannot stop its child. Any other exit
 the harness sees (its signal handler's SystemExit, Ctrl-C) stops the group
 before it unwinds, because the group is outside the caller's own.
+
+`run` waits for EOF on the child's output pipes, not only for the child: a
+test that backgrounds a process holding them (`bash -c 'sleep 300 & exit 0'`)
+reads as TIMED_OUT (unproven, a suite failure) rather than its real exit 0.
+That fails safe - it can never read as RED - and is left as it is.
+
+`sabotage_event_claim.py`, `sabotage_autocycle.py` and `sabotage_resume.py`,
+which carry their own standalone runners, use this bound too.
 """
 import os
 import platform

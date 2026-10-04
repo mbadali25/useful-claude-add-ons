@@ -44,8 +44,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   same as without it.
 - **Review round 1 (H2a, 0 BLOCK / 6 FIX).** The record is `<dir>/rc` in a
   fresh private directory per rule run (`mktemp -d`, 0700; `.ps1`: `New-Item`
-  then mode 0700), removed whole, so a wrapper left running by a signalled
-  gate cannot write a late record; `.ps1`'s `.crew/` fallbacks are absolute
+  then mode 0700), removed whole - on a signalled `.sh` gate too, so a wrapper
+  it left running cannot write a late record (a killed `.ps1` gate has no
+  trap, so its orphan can leave the fresh directory behind: litter, never a
+  pass); `.ps1`'s `.crew/` fallbacks are absolute
   from the repo root (a gate started from a subdirectory never found them);
   the record must read exactly `0|[1-9][0-9]{0,2}`; 193-255 is reported as
   "above 128 and not a signal number". `sabotage_bound` KILLs the entry's
@@ -55,6 +57,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   covers `MAP_SHARED` or tmpfs. CI fixes: the killed-child case no longer
   uses `timeout -s KILL` (newer coreutils report 124), and two Linux-only
   mechanisms skip on Windows.
+- **Review round 2 (0 BLOCK / 1 FIX).** The killed/unknown must-block tests
+  no longer skip on native Windows for want of a `/proc` in Python: the two
+  that find the wrapper's pid probe `/proc/$BASHPID/stat` and `mkfifo` inside
+  the rule's own bash and skip only when that bash lacks them. The sh gate
+  reads the record as hex bytes, so `0<NUL><LF>` is no record (it read as 0).
+  The standalone runners in `sabotage_event_claim.py`, `sabotage_autocycle.py`
+  and `sabotage_resume.py` use the per-entry bound too.
 - **T-0080, why.** The azureProfile cloud-guard entry reads /dev/zero without
   bound: measured 5.9 GiB at a 6 GiB wrapper cap before, 3.7 GiB peak and
   `RED (good)` under the new default with no wrapper. The plan-dev-zero entry

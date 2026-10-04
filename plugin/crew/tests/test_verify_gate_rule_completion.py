@@ -52,7 +52,27 @@ _FLAVOURS = [
     _SMOKE_FLAVOURS[0],
     pytest.param("ps1", marks=[_NEEDS_PS1, pytest.mark.slow]),
 ]
-_NOT_POSIX_PROC = not os.path.isdir("/proc/self")
+
+
+def _bash_can(script):
+    """Whether the bash the gate runs rules under can do `script` - asked of
+    THAT bash, not of this Python: native Windows Python has no /proc, while
+    Git Bash's MSYS runtime has its own /proc/<pid>/stat and mkfifo."""
+    if _BASH is None:
+        return False
+    try:
+        return subprocess.run([_BASH, "-c", script], capture_output=True, check=False,
+                              stdin=subprocess.DEVNULL, timeout=30).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+_BASH_PROC = _bash_can('read -r _ _ _ ppid _ < /proc/$BASHPID/stat && [ "$ppid" -gt 0 ]')
+_NO_BASH_PROC = pytest.mark.skipif(
+    not _BASH_PROC, reason=f"the rule's bash ({_BASH}) cannot read /proc/$BASHPID/stat, "
+                           "which finds the wrapper's pid")
+_BASH_FIFO = _bash_can('d=$(mktemp -d) || exit 1; mkfifo "$d/f" && [ -p "$d/f" ]; r=$?; '
+                       'rm -rf "$d"; exit $r')
 
 _TELL = "verify-gate: COULD NOT TELL ("
 
@@ -160,7 +180,6 @@ def test_a_rule_with_its_own_exit_or_trap_passes(flavour, tmp_path):
 
 # --- must block --------------------------------------------------------------
 
-@pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
 @pytest.mark.parametrize("flavour", _SMOKE_FLAVOURS)
 def test_a_rule_killed_mid_run_could_not_tell(flavour, tmp_path):
     cmd = "echo started; kill -KILL $BASHPID; echo never"
@@ -175,12 +194,14 @@ def test_a_rule_killed_mid_run_could_not_tell(flavour, tmp_path):
     assert _marker(root) is None
 
 
-@pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 @pytest.mark.parametrize("how", [
-    "wrapper-killed",
+    pytest.param("wrapper-killed", marks=_NO_BASH_PROC),
+    # Wrapper 0 and no record on Windows is covered by
+    # test_unreadable_record_could_not_tell[empty], which needs no symlink.
     pytest.param("record-vanished", marks=pytest.mark.skipif(
-        sys.platform.startswith("win"), reason="MSYS `ln -s` copies instead of linking")),
+        sys.platform.startswith("win"),
+        reason="MSYS `ln -s` copies /dev/null instead of linking to it")),
 ])
 def test_no_completion_record_could_not_tell(flavour, how, tmp_path):
     """`wrapper-killed`: the rule ends its wrapper before the record exists.
@@ -204,10 +225,11 @@ def test_no_completion_record_could_not_tell(flavour, how, tmp_path):
     assert _marker(root) is None
 
 
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs mkfifo")
+@pytest.mark.skipif(not _BASH_FIFO, reason=f"the rule's bash ({_BASH}) cannot make a FIFO "
+                                              "with mkfifo")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-@pytest.mark.parametrize("value", ["", "abc\\n", "256\\n", "007\\n", "0\\n0\\n"],
-                         ids=["empty", "text", "256", "leading-zero", "two-lines"])
+@pytest.mark.parametrize("value", ["", "abc\\n", "256\\n", "007\\n", "0\\n0\\n", "0\\0\\n"],
+                         ids=["empty", "text", "256", "leading-zero", "two-lines", "nul"])
 def test_unreadable_record_could_not_tell(flavour, value, tmp_path):
     """The record path is a shell variable the rule can see. The rule points
     it at a FIFO and leaves a background job that outlives it: the job drains
@@ -247,9 +269,8 @@ def test_ps1_launch_failure_does_not_inherit_the_previous_status(tmp_path):
     assert _marker(root) is None
 
 
-@pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-@pytest.mark.parametrize("where", ["rule-child", "wrapper"])
+@pytest.mark.parametrize("where", ["rule-child", pytest.param("wrapper", marks=_NO_BASH_PROC)])
 def test_a_rule_timed_out_from_outside_is_failed(flavour, where, tmp_path):
     if where == "rule-child":
         # A timer outside the child KILLs it; the rule exits with the child's
@@ -269,7 +290,6 @@ def test_a_rule_timed_out_from_outside_is_failed(flavour, where, tmp_path):
     assert f"{_TELL}{reason}): {cmd}" in res.stderr
 
 
-@pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_unknown_never_advances_the_marker(flavour, tmp_path):
     log = (tmp_path / "later.log").as_posix()
@@ -285,7 +305,6 @@ def test_unknown_never_advances_the_marker(flavour, tmp_path):
             in res.stderr)
 
 
-@pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_unknown_status_is_never_recorded_clean(flavour, tmp_path):
     """Same command text both runs, so the same record key: first it SKIPs (a
@@ -383,7 +402,6 @@ def _leftovers(root, tmpdir):
     return crew + temp
 
 
-@pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_no_record_file_is_left_behind(flavour, tmp_path):
     """Pass, fail and unknown: neither temp file is left in the temp dir or in

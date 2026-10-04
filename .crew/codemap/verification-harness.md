@@ -393,15 +393,15 @@ measurements, except where a command was actually re-run above.
 
 - **The sabotage runner bounds each entry (T-0080, H2a).** DERIVED at the H2a
   branch head. `plugin/crew/tests/sabotage.py:3098-3099` - `run_test` keeps its
-  signature and hands pytest to `plugin/crew/tests/sabotage_bound.py:156`
+  signature and hands pytest to `plugin/crew/tests/sabotage_bound.py:164`
   (`run`): own session/process group, `RLIMIT_DATA` set before exec on Linux
   (not `RLIMIT_AS`: pwsh 7.4.6 dies under any address-space cap tried up to
   30 GiB, which failed 1121 unmutated crew tests under a 4 GiB one)
   (default 4096 MiB, `CREW_SABOTAGE_MEM_MB`, 0 = none), wall-clock limit
   (default 600 s, `CREW_SABOTAGE_TIMEOUT_S`), a timeout stopping the whole
-  group and returning `TIMED_OUT` (`:58`). `sabotage.py:3345-3349` reads the
+  group and returning `TIMED_OUT` (`:66`). `sabotage.py:3345-3349` reads the
   limits once (an unreadable value refuses the run, exit 2) and prints the
-  `bound:` line; `:3372` classifies through `sabotage_bound.verdict` (`:117`),
+  `bound:` line; `:3372` classifies through `sabotage_bound.verdict` (`:125`),
   which now holds the pytest exit-code reasoning (finding 13) that used to sit
   in `sabotage.py` - 3400 -> 3381 lines. Measured: the azureProfile entry
   (`sabotage_cloud.py`) peaked at 3.7 GiB under the cap where it reached the
@@ -409,7 +409,9 @@ measurements, except where a command was actually re-run above.
   (58 MiB). The entry's process group is KILLed when `run` returns, on every
   path (review F5; `setsid` escapes it, documented), and the cap reads
   `absent` below Linux 4.7 or on an unreadable release (F6); `RLIMIT_DATA`
-  never covers `MAP_SHARED` or tmpfs. Rule 11 runs `test_sabotage_bound.py`;
+  never covers `MAP_SHARED` or tmpfs. The standalone runners in
+  `sabotage_event_claim.py`, `sabotage_autocycle.py` and `sabotage_resume.py`
+  use the same bound. Rule 11 runs `test_sabotage_bound.py`;
   seven sabotage entries for the bound at `sabotage_tooling.py:1057` onward.
 
 ## `verify-gate.sh` / `verify-gate.ps1` — the rule runner
@@ -482,15 +484,16 @@ that changed shape or are newly documented here:
   so absence means "not written"; `:2101` is the wrapper
   `( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) ... &` - the inner
   subshell keeps a rule's own `exit N` isolated, the outer writes the record
-  once the rule has ended. `:2108` reads it bounded (`head -c 8`; the rule can
-  see the path) and accepts exactly `0|[1-9][0-9]{0,2}` and a newline, then
+  once the rule has ended. `:2110` reads it once, bounded (`head -c 8`; the
+  rule can see the path), as hex bytes (`od`, so a NUL is not dropped), and
+  accepts exactly `0|[1-9][0-9]{0,2}` and a newline, then
   removes the directory whole (a wrapper a signalled gate left running finds
-  nowhere to write). `:2120` starts the decision table: wrapper status not 0,
+  nowhere to write; a killed `.ps1` gate has no trap and can leave it). `:2127` starts the decision table: wrapper status not 0,
   then record missing / malformed / above 255, then 193-255 ("not a signal
   number"), then 129-192 (signal N-128) - each an `unknown` with its reason -
-  then 77 skip, 0 pass, else fail. `:2204` prints `VERIFY FAILED` then
+  then 77 skip, 0 pass, else fail. `:2211` prints `VERIFY FAILED` then
   `verify-gate: COULD NOT TELL (<reason>)`, sets `FAILED` and logs status
-  `unknown`; `:2253` the `COULD NOT BE JUDGED` summary line. `:796-802` the
+  `unknown`; `:2260` the `COULD NOT BE JUDGED` summary line. `:796-802` the
   TERM/INT/HUP traps name the command in flight (`RULE_IN_FLIGHT`, cleared at
   `:2105` the moment `wait` returns), printed from the trap because the
   cleanup dispatcher discards stderr; `:1849` registers the rule's temp file

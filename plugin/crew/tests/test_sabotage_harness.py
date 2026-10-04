@@ -477,3 +477,52 @@ def test_run_test_hands_pytest_to_the_bounded_runner(monkeypatch):
     assert seen["cwd"] == sabotage.CREW
     assert seen["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
     assert (seen["mem"], seen["timeout"]) == (1234, 56)
+
+
+# --- review round 2 N7: the three standalone runners are bounded too --------
+
+_STANDALONE = ("sabotage_event_claim", "sabotage_autocycle", "sabotage_resume")
+
+
+@pytest.mark.parametrize("name", _STANDALONE)
+def test_a_standalone_runner_hands_pytest_to_the_bounded_runner(name, monkeypatch):
+    module = __import__(name)
+    seen = {}
+
+    def _bounded(argv, cwd, env, mem_mib, timeout_s):
+        seen.update(argv=argv, cwd=cwd, env=env, mem=mem_mib, timeout=timeout_s)
+        return 1, ""
+
+    monkeypatch.setenv("CREW_SABOTAGE_MEM_MB", "1234")
+    monkeypatch.setenv("CREW_SABOTAGE_TIMEOUT_S", "56")
+    monkeypatch.setattr(sabotage.sabotage_bound, "run", _bounded)
+
+    result = module.run_test("tests/test_x.py::test_y")
+
+    assert (result[0] if isinstance(result, tuple) else result) == 1
+    assert "tests/test_x.py::test_y" in seen["argv"]
+    assert seen["cwd"] == module.CREW
+    assert (seen["mem"], seen["timeout"]) == (1234, 56)
+
+
+@pytest.mark.parametrize("name", _STANDALONE)
+def test_a_standalone_runner_refuses_an_unreadable_limit_before_any_mutation(
+        name, monkeypatch, capsys, tmp_path):
+    module = __import__(name)
+    monkeypatch.setenv("CREW_SABOTAGE_TIMEOUT_S", "soon")
+
+    def _never(*_args):
+        raise AssertionError("a refused run must not run a test")
+
+    monkeypatch.setattr(module, "run_test", _never)
+    real_open = open
+
+    def _no_write(path, *args, **kwargs):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        assert "w" not in mode, f"a refused run must not write {path}"
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", _no_write)
+
+    assert module.main(["--scratch", str(tmp_path)]) == 2
+    assert "CREW_SABOTAGE_TIMEOUT_S" in capsys.readouterr().out
