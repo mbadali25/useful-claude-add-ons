@@ -28,7 +28,7 @@
     "reason": "raised: L-0618 adds step 5c, the QA audit re-run as a report on every upgrade, so a repo set up before an audit item existed is judged by it"
   },
   "plugin/crew/commands/verify.md": {
-    "lines": 211,
-    "reason": "T8: to trim"
+    "lines": 226,
+    "reason": "raised: L-0618/L-0562 adds the --stamp-reach section, the one-step fix for a Stop gate that defers undeclared rules (D10), and corrects the reach citation to CONFIG.md \u00a719"
   }
 }
