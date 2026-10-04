@@ -149,7 +149,7 @@ def test_git_failure_is_unknown_exit_4(tmp_path, monkeypatch, case, capsys):
         def slow(cmd, *a, **k):
             if "ls-files" in cmd:
                 raise subprocess.TimeoutExpired(cmd, k.get("timeout"))
-            return real(cmd, *a, **k)
+            return real(cmd, *a, **k)  # pylint: disable=subprocess-run-check
         monkeypatch.setattr(cg.subprocess, "run", slow)
     if case == "undecodable":
         (root / ".gitignore").write_bytes(b"\xff\xfe__pycache__/\n\x80\n")
@@ -175,7 +175,7 @@ def test_check_ignore_status_other_than_0_or_1_is_unknown(tmp_path, monkeypatch)
     def broken(cmd, *a, **k):
         if "check-ignore" in cmd:
             return subprocess.CompletedProcess(cmd, 128, "", "fatal: boom")
-        return real(cmd, *a, **k)
+        return real(cmd, *a, **k)  # pylint: disable=subprocess-run-check
     monkeypatch.setattr(cg.subprocess, "run", broken)
 
     result = cg.measure(str(root))
