@@ -58,17 +58,26 @@ function Deny-UnreadableMap([string]$Why) {
 #     IsNullOrWhiteSpace exit above);
 #   - a declared command matches when either one contains the other,
 #     literally, ignoring case (OrdinalIgnoreCase; the .sh folds each
-#     character's simple upper case, which is what that compares);
+#     character's simple upper case, which agrees on ASCII and all but 29 BMP
+#     characters - its fold() names them);
 #   - every key the gate reads (`environments`, `deploy`, `requires`,
 #     `rollback`, `rollbackReason`, `requireHuman`) is read ignoring case
 #     (PowerShell property access does), and a map holding two keys that
 #     differ only by case is refused (ConvertFrom-Json throws; the .sh refuses
-#     it the same way, and now reads those keys ignoring case too);
-#   - `"deploy": null` in the working map is malformed and refuses the map,
-#     in both flavours (this one used to skip the environment);
-#   - more than one matching environment is ambiguous and blocks, naming them
-#     all (Deny-AmbiguousDeploy). The first-match pick made qa `target=Prod`
-#     and production `target=prod` resolve differently per flavour.
+#     it the same way, and now reads those keys ignoring case too). An EXACT
+#     duplicate key is refused too (Find-DuplicateJsonKey): ConvertFrom-Json
+#     keeps the last, so `"requireHuman": true, "requireHuman": false` read as
+#     gated and applied as not gated;
+#   - in the working map, `"deploy": null` and a `requireHuman` that is a list
+#     or an object are malformed and refuse the map; `"deploy": []` and
+#     `[""]` declare nothing;
+#   - when more than one environment matches, ALL of them apply: their names
+#     are joined (`staging,prod`) for every message and the in-flight marker,
+#     and every one's `requires`, `rollback` and `requireHuman` is checked -
+#     the union of their requirements. First-match made qa `target=Prod` and
+#     production `target=prod` resolve differently per flavour and gated
+#     prod's command as staging; blocking as ambiguous locked `git push` out
+#     of a map with `git push staging main` and `git push prod main`.
 # Case is ignored because on Windows `./Deploy.ps1` and `./deploy.ps1` are
 # one file: a case-sensitive gate fails open there.
 #
@@ -82,11 +91,68 @@ function Deny-UnreadableMap([string]$Why) {
 # string has no IndexOf, for one): that environment cannot be ruled out, and
 # skipping it is the bug. Like the .sh's traceback path this is above the
 # emergency lane - which environment is the very thing not known.
-function Deny-AmbiguousDeploy([string[]]$Names, [string]$Where) {
-  [Console]::Error.WriteLine("PROMOTION BLOCKED: the command matches more than one environment in ${Where}: $($Names -join ', ').")
-  [Console]::Error.WriteLine("  This is NOT a pass. Each environment has its own pre-deploy gate, and")
-  [Console]::Error.WriteLine("  crew will not guess which one applies. Make the deploy commands distinct.")
-  exit 2
+# The first key in $Json that repeats within one object - exactly, or ignoring
+# case - or $null. ConvertFrom-Json cannot report an exact duplicate (it keeps
+# the last), and Windows PowerShell 5.1's may not refuse case twins at all, so
+# this walks the text itself: strings are skipped as units (a brace inside a
+# value is not structure), and a key's escapes are decoded so `"a"` and
+# `"\u0061"` are one key, as they are to python's json. Only called on text
+# ConvertFrom-Json has already parsed, so it need not judge validity.
+function Find-DuplicateJsonKey([string]$Json) {
+  $stack = New-Object System.Collections.Stack
+  $i = 0
+  $n = $Json.Length
+  while ($i -lt $n) {
+    $ch = $Json[$i]
+    if ($ch -ceq '"') {
+      $sb = New-Object System.Text.StringBuilder
+      $i++
+      while ($i -lt $n -and $Json[$i] -cne '"') {
+        if ($Json[$i] -ceq '\' -and $i + 1 -lt $n) {
+          $e = [string]$Json[$i + 1]
+          if ($e -ceq 'u') {
+            [void]$sb.Append([char][Convert]::ToInt32($Json.Substring($i + 2, 4), 16)); $i += 6
+          } else {
+            if ($e -ceq 'n') { [void]$sb.Append("`n") }
+            elseif ($e -ceq 't') { [void]$sb.Append("`t") }
+            elseif ($e -ceq 'r') { [void]$sb.Append("`r") }
+            elseif ($e -ceq 'b') { [void]$sb.Append([char]8) }
+            elseif ($e -ceq 'f') { [void]$sb.Append([char]12) }
+            else { [void]$sb.Append($e) }
+            $i += 2
+          }
+        } else { [void]$sb.Append($Json[$i]); $i++ }
+      }
+      $i++
+      if ($stack.Count -gt 0) {
+        $top = $stack.Peek()
+        if ($top -is [hashtable] -and $top.ExpectKey) {
+          $key = $sb.ToString()
+          $seen = $top.Seen
+          if ($seen.ContainsKey($key)) {
+            $first = $seen[$key]
+            if ($first -ceq $key) { return "the duplicate key ``$key``" }
+            return "keys with different casing (``$first`` and ``$key``)"
+          }
+          $seen[$key] = $key
+          $top.ExpectKey = $false
+        }
+      }
+      continue
+    }
+    if ($ch -eq '{') {
+      $stack.Push(@{ ExpectKey = $true; Seen = (New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)) })
+    } elseif ($ch -eq '[') {
+      $stack.Push('array')
+    } elseif ($ch -eq '}' -or $ch -eq ']') {
+      if ($stack.Count -gt 0) { [void]$stack.Pop() }
+    } elseif ($ch -eq ',' -and $stack.Count -gt 0) {
+      $top = $stack.Peek()
+      if ($top -is [hashtable]) { $top.ExpectKey = $true }
+    }
+    $i++
+  }
+  return $null
 }
 
 function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
@@ -125,12 +191,14 @@ function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
 # A dirty map is matched against the committed one too. A committed map that
 # cannot be read or has no readable environments is could-not-tell: with the
 # working map dirty, "matched nothing" would be a guess.
-$envName = $null
+$envNames = @()
 if ($mapDirty -and $headMap) {
   $blob = (git cat-file blob $headMap 2>$null)
   if ($LASTEXITCODE -ne 0) { Deny-UnreadableMap "the committed .crew/verify.json could not be read (git cat-file exited $LASTEXITCODE)." }
   try { $committed = ($blob -join "`n") | ConvertFrom-Json -ErrorAction Stop }
   catch { Deny-UnreadableMap "the committed .crew/verify.json does not parse: $($_.Exception.Message)" }
+  $dup = Find-DuplicateJsonKey ($blob -join "`n")
+  if ($dup) { Deny-UnreadableMap "the committed .crew/verify.json contains $dup, so which value is policy cannot be told." }
   $committedEnvs = $committed.PSObject.Properties['environments']
   if (-not $committedEnvs -or $committedEnvs.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "the committed .crew/verify.json holds no object of environments."
@@ -142,17 +210,19 @@ if ($mapDirty -and $headMap) {
       if (Test-DeployMatch $cmd $dep $p.Name) { $hits += $p.Name; break }
     }
   }
-  if ($hits.Count -gt 1) { Deny-AmbiguousDeploy $hits "the committed .crew/verify.json" }
-  if ($hits.Count -eq 1) { $envName = $hits[0] }
-  if (-not $envName -and -not $mapPresent) { exit 0 }
+  $envNames = $hits
+  if ($envNames.Count -eq 0 -and -not $mapPresent) { exit 0 }
 }
 
 if ($mapPresent) {
 try {
-  $vm = Get-Content .crew/verify.json -Raw -ErrorAction Stop | ConvertFrom-Json
+  $vmText = Get-Content .crew/verify.json -Raw -ErrorAction Stop
+  $vm = $vmText | ConvertFrom-Json
 } catch {
   Deny-UnreadableMap ".crew/verify.json could not be read or parsed, so no pre-deploy check ran. $($_.Exception.Message)"
 }
+$dup = Find-DuplicateJsonKey $vmText
+if ($dup) { Deny-UnreadableMap ".crew/verify.json contains $dup, so which value is policy cannot be told." }
 # The same absent/malformed split, one level in. `environments` ABSENT gates
 # nothing, exactly like the bash flavour's `.get("environments", {})`.
 # `environments` PRESENT and not an object is corruption: the property
@@ -162,7 +232,7 @@ if ($vm -isnot [System.Management.Automation.PSCustomObject]) {
   Deny-UnreadableMap ".crew/verify.json does not hold a JSON object."
 }
 $envProperty = $vm.PSObject.Properties['environments']
-if (-not $envProperty -and -not $envName) { exit 0 }
+if (-not $envProperty -and $envNames.Count -eq 0) { exit 0 }
 if ($envProperty -and $envProperty.Value -isnot [System.Management.Automation.PSCustomObject]) {
   Deny-UnreadableMap "``environments`` in .crew/verify.json is not an object, so no environment can be read out of it."
 }
@@ -170,13 +240,22 @@ if ($envProperty -and $envProperty.Value -isnot [System.Management.Automation.PS
 # Which environment does this command deploy to? Every one is checked, so a
 # second match is found and refused as ambiguous rather than shadowed.
 $hits = @()
-if (-not $envName) {
+if ($envNames.Count -eq 0) {
 foreach ($p in $vm.environments.PSObject.Properties) {
   if ($p.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json is not an object."
   }
+  $rhProp = $p.Value.PSObject.Properties['requireHuman']
+  if ($rhProp -and ($rhProp.Value -is [array] -or $rhProp.Value -is [System.Management.Automation.PSCustomObject])) {
+    Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``requireHuman`` that is a list or an object, not true or false."
+  }
+  # A plain assignment, not `$declared = if (...) { $deployProp.Value }`: an
+  # if-expression's output is pipeline output, which unrolls `[]` to $null, so
+  # `"deploy": []` read as null and refused the map - every PowerShell command
+  # in the repo blocked (#489 B1).
   $deployProp = $p.Value.PSObject.Properties['deploy']
-  $declared = if ($deployProp) { $deployProp.Value } else { $null }
+  $declared = $null
+  if ($deployProp) { $declared = $deployProp.Value }
   if ($deployProp -and $null -eq $declared) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``deploy`` that is not a command or a list of commands (it is null)."
   }
@@ -194,11 +273,15 @@ foreach ($p in $vm.environments.PSObject.Properties) {
     }
   }
 }
-if ($hits.Count -gt 1) { Deny-AmbiguousDeploy $hits ".crew/verify.json" }
-if ($hits.Count -eq 1) { $envName = $hits[0] }
+$envNames = $hits
 }
 }
-if (-not $envName) { exit 0 }
+if ($envNames.Count -eq 0) { exit 0 }
+# Several matching environments are named together, `staging,prod`, in every
+# message, skip row and the in-flight marker (`,`: verify-gate.sh greps the
+# marker's name as an ERE, where `+` is a quantifier); their requirements are
+# checked one by one below.
+$envName = $envNames -join ','
 
 # --- Emergency lane -------------------------------------------------------
 #
@@ -246,7 +329,6 @@ function Write-CrewIncidentSkip([string]$Gate, [string]$Detail) {
 # far more when it names the precondition that was unmet.
 $incident = Test-CrewIncidentActive
 
-$cfg = $vm.environments.$envName
 $problems = New-Object System.Collections.Generic.List[string]
 $sha = $null
 
@@ -498,54 +580,64 @@ function Test-Promoted([string]$name, [string]$sha) {
   }
   return $false
 }
-foreach ($up in $cfg.requires) {
-  if (-not (Test-Promoted $up $sha)) {
-    $problems.Add("'$up' has no all-pass row for sha $sha in .work/PROMOTIONS.md. Run /crew:promote $up first, and let it record the result.")
+# The union rule: every matched environment's requirements, each in its own
+# terms (its upstreams, its runbook, its approval marker). With several, each
+# reason names the environment it comes from.
+foreach ($e in $envNames) {
+  $cfg = $vm.environments.$e
+  $before = $problems.Count
+  foreach ($up in $cfg.requires) {
+    if (-not (Test-Promoted $up $sha)) {
+      $problems.Add("'$up' has no all-pass row for sha $sha in .work/PROMOTIONS.md. Run /crew:promote $up first, and let it record the result.")
+    }
   }
-}
 
-# rollback runbook: required for every gated environment. Fail CLOSED - an
-# absent key used to mean "no rollback needed"; now it blocks the deploy. The
-# only way to opt out is rollback: "none" plus a rollbackReason.
-if (-not ($cfg.PSObject.Properties.Name -contains 'rollback')) {
-  $problems.Add("'$envName' has no 'rollback' key in .crew/verify.json. Add rollback: `"<path to a runbook>`", or rollback: `"none`" plus a rollbackReason string explaining why $envName does not need one. Fix: edit the '$envName' block in .crew/verify.json.")
-} elseif ($cfg.rollback -eq 'none') {
-  $reason = "$($cfg.rollbackReason)".Trim()
-  if (-not $reason) {
-    $problems.Add("'$envName' sets rollback: `"none`" but has no rollbackReason. State why $envName does not need a rollback plan. Fix: add a rollbackReason string next to rollback in .crew/verify.json.")
-  }
-} elseif (-not $cfg.rollback) {
-  $problems.Add("'$envName' has an invalid rollback value. Fix: set rollback to a runbook path, or to the literal string `"none`" plus a rollbackReason.")
-} elseif (-not (Test-Path $cfg.rollback)) {
-  $problems.Add("the rollback runbook '$($cfg.rollback)' does not exist. No verified rollback, no deploy.")
-} else {
-  $txt = Get-Content $cfg.rollback -Raw
-  $m = [regex]::Match($txt, 'last[ _-]?verified\s*[:=]\s*(\d{4}-\d{2}-\d{2})', 'IgnoreCase')
-  if (-not $m.Success) {
-    $problems.Add("'$($cfg.rollback)' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
+  # rollback runbook: required for every gated environment. Fail CLOSED - an
+  # absent key used to mean "no rollback needed"; now it blocks the deploy. The
+  # only way to opt out is rollback: "none" plus a rollbackReason.
+  if (-not ($cfg.PSObject.Properties.Name -contains 'rollback')) {
+    $problems.Add("'$e' has no 'rollback' key in .crew/verify.json. Add rollback: `"<path to a runbook>`", or rollback: `"none`" plus a rollbackReason string explaining why $e does not need one. Fix: edit the '$e' block in .crew/verify.json.")
+  } elseif ($cfg.rollback -eq 'none') {
+    $reason = "$($cfg.rollbackReason)".Trim()
+    if (-not $reason) {
+      $problems.Add("'$e' sets rollback: `"none`" but has no rollbackReason. State why $e does not need a rollback plan. Fix: add a rollbackReason string next to rollback in .crew/verify.json.")
+    }
+  } elseif (-not $cfg.rollback) {
+    $problems.Add("'$e' has an invalid rollback value. Fix: set rollback to a runbook path, or to the literal string `"none`" plus a rollbackReason.")
+  } elseif (-not (Test-Path $cfg.rollback)) {
+    $problems.Add("the rollback runbook '$($cfg.rollback)' does not exist. No verified rollback, no deploy.")
   } else {
-    # A date-SHAPED string is not a date: the regex accepts `2026-99-99`, which
-    # ParseExact throws on. Unhandled, that error left the deploy ALLOWED with
-    # the in-flight marker written - the same fail-open as the bash twin, and
-    # the reason both flavours are fixed in one change rather than one now and
-    # the other when somebody next reads it.
-    $verified = $null
-    try {
-      $verified = [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd', $null)
-    } catch {
-      $problems.Add("'$($cfg.rollback)' has 'last verified: $($m.Groups[1].Value)', which is date-shaped but not a real date. An unparseable verification date is not a verification.") | Out-Null
-    }
-    $age = if ($verified) { (Get-Date).Date - $verified } else { $null }
-    if ($age -and $age.Days -gt 90) {
-      $problems.Add("'$($cfg.rollback)' was last verified $($age.Days) days ago (ceiling is 90). Re-run it against a real environment first.")
+    $txt = Get-Content $cfg.rollback -Raw
+    $m = [regex]::Match($txt, 'last[ _-]?verified\s*[:=]\s*(\d{4}-\d{2}-\d{2})', 'IgnoreCase')
+    if (-not $m.Success) {
+      $problems.Add("'$($cfg.rollback)' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
+    } else {
+      # A date-SHAPED string is not a date: the regex accepts `2026-99-99`, which
+      # ParseExact throws on. Unhandled, that error left the deploy ALLOWED with
+      # the in-flight marker written - the same fail-open as the bash twin, and
+      # the reason both flavours are fixed in one change rather than one now and
+      # the other when somebody next reads it.
+      $verified = $null
+      try {
+        $verified = [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd', $null)
+      } catch {
+        $problems.Add("'$($cfg.rollback)' has 'last verified: $($m.Groups[1].Value)', which is date-shaped but not a real date. An unparseable verification date is not a verification.") | Out-Null
+      }
+      $age = if ($verified) { (Get-Date).Date - $verified } else { $null }
+      if ($age -and $age.Days -gt 90) {
+        $problems.Add("'$($cfg.rollback)' was last verified $($age.Days) days ago (ceiling is 90). Re-run it against a real environment first.")
+      }
     }
   }
-}
 
-if ($cfg.requireHuman) {
-  $marker = ".crew/.approved-$envName-$sha"
-  if (-not (Test-Path $marker)) {
-    $problems.Add("this environment requires explicit human approval. Show the sha, the diff summary and the last promotion, get a yes, then create the marker: New-Item -ItemType File $marker")
+  if ($cfg.requireHuman) {
+    $marker = ".crew/.approved-$e-$sha"
+    if (-not (Test-Path $marker)) {
+      $problems.Add("this environment requires explicit human approval. Show the sha, the diff summary and the last promotion, get a yes, then create the marker: New-Item -ItemType File $marker")
+    }
+  }
+  if ($envNames.Count -gt 1) {
+    for ($k = $before; $k -lt $problems.Count; $k++) { $problems[$k] = "[$e] " + $problems[$k] }
   }
 }
 

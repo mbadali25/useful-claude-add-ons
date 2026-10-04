@@ -80,7 +80,7 @@ PROMOTE_TREE_MUTATIONS = (
      '  elif false; then\n',
      _T + "test_skip_worktree_does_not_hide_an_uncommitted_map_edit[sh]"),
     ("promote-gate.sh stops matching a dirty map against the committed one", SH,
-     '    pick(matching(committed_envs, strict=False), "the committed .crew/verify.json")\n',
+     '    pick(matching(committed_envs, strict=False))\n',
      '    pass\n',
      _T + "test_an_uncommitted_rename_of_the_deploy_command_still_blocks[sh]"),
     ("promote-gate.sh reads an uncommitted map deletion as the opt-out", SH,

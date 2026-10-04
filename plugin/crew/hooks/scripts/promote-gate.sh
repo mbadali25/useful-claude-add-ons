@@ -102,9 +102,8 @@ RUN_CWD=$(crew_strip_cr "$RUN_CWD")
 # same reasoning at its own `ConvertFrom-Json`; this is the port.
 #
 # The EXIT STATUS carries the distinction, and the ONLY thing this step writes
-# to stdout is an environment name: 3 unreadable, 4 malformed, 5 ambiguous
-# (more than one environment matches, L-1503), 0 for a name or
-# for nothing matching. Every reason goes to STDERR, unredirected, which is both
+# to stdout is environment names, one per line: 3 unreadable, 4 malformed, 0
+# for the names (several when several match, L-1503) or for nothing matching. Every reason goes to STDERR, unredirected, which is both
 # how the reader sees it and what keeps the status check load-bearing - a reason
 # printed to stdout would land in ENVNAME, be read as the name of an environment
 # nobody declared, and block for an unrelated reason further down while this
@@ -118,7 +117,7 @@ RUN_CWD=$(crew_strip_cr "$RUN_CWD")
 # unmet precondition into a recorded skip, and every skip row names the
 # environment - which is precisely what could not be determined here. There is
 # nothing to record and nothing to stand down.
-ENVNAME=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" "$PY" - "$CMD" <<'PY'
+ENVNAMES=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" "$PY" - "$CMD" <<'PY'
 import json, os, shutil, subprocess, sys
 
 # THE RULE (L-1503), shared word for word with promote-gate.ps1 so both
@@ -132,20 +131,34 @@ import json, os, shutil, subprocess, sys
 #     ignoring case, as PowerShell property access does, and a map holding two
 #     keys that differ only by case is refused - ConvertFrom-Json refuses it,
 #     and which one is policy cannot be told. Read case-sensitively here,
-#     `"RequireHuman": true` demanded a human on PowerShell and nobody on bash;
-#   - `"deploy": null` in the working map is malformed and refuses the map,
-#     in both flavours;
-#   - more than one matching environment is ambiguous: status 5, every name
-#     on stderr. The first-match pick made qa `target=Prod` and production
-#     `target=prod` resolve differently per flavour (#489 FIX1).
+#     `"RequireHuman": true` demanded a human on PowerShell and nobody on bash.
+#     An EXACT duplicate key is refused the same way: both parsers keep the
+#     last, so `"requireHuman": true, "requireHuman": false` read as gated
+#     and applied as not gated;
+#   - in the working map, `"deploy": null` and a `requireHuman` that is a list
+#     or an object are malformed and refuse the map; `"deploy": []` and
+#     `[""]` declare nothing;
+#   - when more than one environment matches, ALL of them apply: every name is
+#     printed, and below every one's `requires`, `rollback` and `requireHuman`
+#     is checked - the union of their requirements. First-match made qa
+#     `target=Prod` and production `target=prod` resolve differently per
+#     flavour (#489 FIX1) and gated prod's command as staging; blocking it as
+#     ambiguous locked `git push` out of a map with `git push staging main`
+#     and `git push prod main` for good (#489 F1).
 # Case is ignored because on Windows `./Deploy.ps1` and `./deploy.ps1` are
 # one file: a case-sensitive gate fails open there.
 
 
 def fold(text):
-    """Per-character simple upper case: what .NET's OrdinalIgnoreCase
-    compares. `str.upper()` alone maps `ss`-style expansions (`\u00df` -> `SS`)
-    that .NET does not, so a character whose upper case is longer is kept."""
+    """Per-character simple upper case from Python's Unicode database: a
+    character whose upper case is longer than one character (`\u00df` -> `SS`)
+    is kept. This is NOT exactly .NET's OrdinalIgnoreCase, which the .ps1
+    uses: they agree on ASCII and almost all of the BMP, and differ on 29 BMP
+    characters (#489 N1) - Python folds dotless i (U+0131) and long s
+    (U+017F) onto I and S, .NET does not; .NET folds the Greek letters with
+    iota subscript onto their title-case pairs, Python keeps them. A deploy
+    command differing from the one run only in those characters is matched by
+    one flavour and not the other."""
     return "".join(c.upper() if len(c.upper()) == 1 else c for c in text)
 
 
@@ -173,10 +186,14 @@ class CaseTwins(ValueError):
 def no_case_twins(pairs):
     seen = {}
     for key, _ in pairs:
-        first = seen.setdefault(fold(key), key)
-        if first != key:
+        if fold(key) in seen:
+            first = seen[fold(key)]
+            if first == key:
+                raise CaseTwins(f"it contains the duplicate key `{key}`, so which "
+                                "value is policy cannot be told")
             raise CaseTwins(f"it contains keys with different casing (`{first}` "
                             f"and `{key}`), so which one is policy cannot be told")
+        seen[fold(key)] = key
     return dict(pairs)
 
 
@@ -202,6 +219,10 @@ def matching(envs, strict):
                 unreadable(f"environment `{name}` in .crew/verify.json is a "
                            f"{type(cfg).__name__}, not an object", 4)
             continue
+        if strict and isinstance(get_ci(cfg, "requireHuman", None), (list, dict)):
+            unreadable(f"environment `{name}` in .crew/verify.json has a "
+                       "`requireHuman` that is a list or an object, not true or "
+                       "false", 4)
         declared = deploy_of(cfg)
         if isinstance(declared, str):
             # ONE command, not a list of them: iterating a bare string walked
@@ -223,17 +244,11 @@ def matching(envs, strict):
     return hits
 
 
-def pick(hits, where):
-    if len(hits) > 1:
-        unreadable(f"the command {_AMBIG} in {where}: {', '.join(hits)}. "
-                   "Crew will not guess which one's pre-deploy gate applies; "
-                   "make each environment's `deploy` distinct.", 5)
+def pick(hits):
+    """Every matching environment applies (the union rule above)."""
     if hits:
-        print(hits[0])
+        print("\n".join(hits))
         sys.exit(0)
-
-
-_AMBIG = "matches more than one environment"
 
 
 # A dirty map is matched against the committed one too (T-0505). A committed
@@ -261,7 +276,7 @@ if os.environ.get("CREW_MAP_DIRTY") and os.environ.get("CREW_HEAD_MAP"):
     committed_envs = get_ci(committed, "environments", {}) if isinstance(committed, dict) else None
     if not isinstance(committed_envs, dict):
         unreadable("the committed .crew/verify.json holds no object of environments", 3)
-    pick(matching(committed_envs, strict=False), "the committed .crew/verify.json")
+    pick(matching(committed_envs, strict=False))
     if not os.path.exists(".crew/verify.json"):
         sys.exit(0)
 
@@ -283,19 +298,13 @@ if not isinstance(envs, dict):
     unreadable(f"`environments` in .crew/verify.json is a "
                f"{type(envs).__name__}, not an object, so no environment can "
                "be read out of it", 4)
-pick(matching(envs, strict=True), ".crew/verify.json")
+pick(matching(envs, strict=True))
 PY
 )
 ENV_STATUS=$?
 
 # Immediately after the substitution, like VERDICT_STATUS below: `set -uo
 # pipefail` is on and `-e` is not, so anything between the two lines eats $?.
-if [ "$ENV_STATUS" -eq 5 ]; then
-  echo "PROMOTION BLOCKED: this command matches more than one environment's deploy (named above)." >&2
-  echo "  This is NOT a pass. Each environment has its own pre-deploy gate, and" >&2
-  echo "  crew will not guess which one applies. Make the deploy commands distinct." >&2
-  exit 2
-fi
 if [ "$ENV_STATUS" -ne 0 ]; then
   echo "PROMOTION BLOCKED: .crew/verify.json could not be read as a deployment map (exit $ENV_STATUS)." >&2
   echo "  The reason is printed above this line, on stderr, by the check itself" >&2
@@ -305,7 +314,16 @@ if [ "$ENV_STATUS" -ne 0 ]; then
   echo "  JSON, or delete .crew/verify.json if this repo should not be gated." >&2
   exit 2
 fi
-[ -z "$ENVNAME" ] && exit 0
+[ -z "$ENVNAMES" ] && exit 0
+# Several matching environments are named together, `staging,prod`, in every
+# message, skip row and the in-flight marker; their requirements are checked
+# one by one below. (`,`, not `+`: verify-gate.sh greps the marker's name as
+# an ERE, where `+` is a quantifier.)
+ENVLIST=()
+while IFS= read -r line; do ENVLIST+=("$line"); done <<ENVS
+$ENVNAMES
+ENVS
+ENVNAME=$(IFS=,; printf '%s' "${ENVLIST[*]}")
 
 # Emergency lane: an open incident turns every block into a recorded skip.
 # Deliberately here rather than at the top of the script, so the checks still
@@ -462,9 +480,9 @@ for H in ${HEXES[@]+"${HEXES[@]}"}; do
 done
 
 # 1-3, read from the map
-VERDICT=$("$PY" - "$ENVNAME" "$SHA" <<'PY' 2>/dev/null
+VERDICT=$("$PY" - "$SHA" "${ENVLIST[@]}" <<'PY' 2>/dev/null
 import json, sys, os, re, datetime
-env, sha = sys.argv[1], sys.argv[2]
+sha, envs = sys.argv[1], sys.argv[2:]
 
 
 # Keys read ignoring case, case twins refused: the matcher's rule above (and
@@ -475,16 +493,16 @@ def fold(text):
 
 
 def no_case_twins(pairs):
-    seen = {}
+    seen = set()
     for key, _ in pairs:
-        if seen.setdefault(fold(key), key) != key:
-            raise ValueError(f"keys `{seen[fold(key)]}` and `{key}` differ only by case")
+        if fold(key) in seen:
+            raise ValueError(f"duplicate or case-differing key `{key}`")
+        seen.add(fold(key))
     return {fold(k): v for k, v in pairs}
 
 
 with open(".crew/verify.json", encoding="utf-8-sig") as fh:
     doc = json.load(fh, object_pairs_hook=no_case_twins)
-cfg = doc.get("ENVIRONMENTS", {}).get(fold(env), {})
 out = []
 
 rows = ""
@@ -503,59 +521,67 @@ def passed(name, sha):
             return all(c.lower() == "pass" for c in cells[3:6])
     return False
 
-for upstream in cfg.get("REQUIRES", []):
-    if not passed(upstream, sha):
-        out.append(f"'{upstream}' has no all-pass row for sha {sha} in .work/PROMOTIONS.md. "
-                   f"Run /crew:promote {upstream} first, and let it record the result.")
+# The union rule: every matched environment's requirements, each in its own
+# terms (its upstreams, its runbook, its approval marker). With several, each
+# reason names the environment it comes from.
+for env in envs:
+    cfg = doc.get("ENVIRONMENTS", {}).get(fold(env), {})
+    before = len(out)
+    for upstream in cfg.get("REQUIRES", []):
+        if not passed(upstream, sha):
+            out.append(f"'{upstream}' has no all-pass row for sha {sha} in .work/PROMOTIONS.md. "
+                       f"Run /crew:promote {upstream} first, and let it record the result.")
 
-# Fail CLOSED: an absent "rollback" key used to mean "no rollback needed".
-# It now means "nobody said". The only way to deploy with no rollback plan is
-# an explicit rollback: "none" plus a rollbackReason explaining why.
-if "ROLLBACK" not in cfg:
-    out.append(f"'{env}' has no 'rollback' key in .crew/verify.json. Add rollback: "
-               f"\"<path to a runbook>\", or rollback: \"none\" plus a rollbackReason "
-               f"string explaining why {env} does not need one. Fix: edit the "
-               f"'{env}' block in .crew/verify.json.")
-else:
-    rb = cfg.get("ROLLBACK")
-    if rb == "none":
-        reason = str(cfg.get("ROLLBACKREASON") or "").strip()
-        if not reason:
-            out.append(f"'{env}' sets rollback: \"none\" but has no rollbackReason. "
-                       f"State why {env} does not need a rollback plan. Fix: add a "
-                       f"rollbackReason string next to rollback in .crew/verify.json.")
-    elif not rb:
-        out.append(f"'{env}' has rollback: {rb!r}, which is not a valid runbook path. "
-                   f"Fix: set rollback to a runbook path, or to the literal string "
-                   f"\"none\" plus a rollbackReason.")
-    elif not os.path.exists(rb):
-        out.append(f"the rollback runbook '{rb}' does not exist. No verified rollback, no deploy.")
+    # Fail CLOSED: an absent "rollback" key used to mean "no rollback needed".
+    # It now means "nobody said". The only way to deploy with no rollback plan is
+    # an explicit rollback: "none" plus a rollbackReason explaining why.
+    if "ROLLBACK" not in cfg:
+        out.append(f"'{env}' has no 'rollback' key in .crew/verify.json. Add rollback: "
+                   f"\"<path to a runbook>\", or rollback: \"none\" plus a rollbackReason "
+                   f"string explaining why {env} does not need one. Fix: edit the "
+                   f"'{env}' block in .crew/verify.json.")
     else:
-        txt = open(rb, encoding="utf-8", errors="replace").read()
-        m = re.search(r"last[ _-]?verified\s*[:=]\s*(\d{4}-\d{2}-\d{2})", txt, re.I)
-        if not m:
-            out.append(f"'{rb}' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
+        rb = cfg.get("ROLLBACK")
+        if rb == "none":
+            reason = str(cfg.get("ROLLBACKREASON") or "").strip()
+            if not reason:
+                out.append(f"'{env}' sets rollback: \"none\" but has no rollbackReason. "
+                           f"State why {env} does not need a rollback plan. Fix: add a "
+                           f"rollbackReason string next to rollback in .crew/verify.json.")
+        elif not rb:
+            out.append(f"'{env}' has rollback: {rb!r}, which is not a valid runbook path. "
+                       f"Fix: set rollback to a runbook path, or to the literal string "
+                       f"\"none\" plus a rollbackReason.")
+        elif not os.path.exists(rb):
+            out.append(f"the rollback runbook '{rb}' does not exist. No verified rollback, no deploy.")
         else:
-            # A date-SHAPED string is not a date. The regex accepts \d{4}-\d{2}
-            # -\d{2}, so `2026-99-99` reaches fromisoformat and raises - which
-            # used to take the whole check down and, because the caller read an
-            # empty VERDICT as "nothing wrong", ALLOWED the deploy. Name it as
-            # its own unmet precondition instead: the reader needs to know the
-            # date is junk, not that a python traceback happened.
-            try:
-                verified = datetime.date.fromisoformat(m.group(1))
-            except ValueError:
-                out.append(f"'{rb}' has 'last verified: {m.group(1)}', which is date-shaped but not a real date. An unparseable verification date is not a verification.")
+            txt = open(rb, encoding="utf-8", errors="replace").read()
+            m = re.search(r"last[ _-]?verified\s*[:=]\s*(\d{4}-\d{2}-\d{2})", txt, re.I)
+            if not m:
+                out.append(f"'{rb}' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
             else:
-                age = (datetime.date.today() - verified).days
-                if age > 90:
-                    out.append(f"'{rb}' was last verified {age} days ago (ceiling is 90). Re-run it against a real environment first.")
+                # A date-SHAPED string is not a date. The regex accepts \d{4}-\d{2}
+                # -\d{2}, so `2026-99-99` reaches fromisoformat and raises - which
+                # used to take the whole check down and, because the caller read an
+                # empty VERDICT as "nothing wrong", ALLOWED the deploy. Name it as
+                # its own unmet precondition instead: the reader needs to know the
+                # date is junk, not that a python traceback happened.
+                try:
+                    verified = datetime.date.fromisoformat(m.group(1))
+                except ValueError:
+                    out.append(f"'{rb}' has 'last verified: {m.group(1)}', which is date-shaped but not a real date. An unparseable verification date is not a verification.")
+                else:
+                    age = (datetime.date.today() - verified).days
+                    if age > 90:
+                        out.append(f"'{rb}' was last verified {age} days ago (ceiling is 90). Re-run it against a real environment first.")
 
-if cfg.get("REQUIREHUMAN"):
-    marker = f".crew/.approved-{env}-{sha}"
-    if not os.path.exists(marker):
-        out.append(f"this environment requires explicit human approval. Show the sha, the diff summary and the "
-                   f"last promotion, get a yes, then: touch {marker}")
+    if cfg.get("REQUIREHUMAN"):
+        marker = f".crew/.approved-{env}-{sha}"
+        if not os.path.exists(marker):
+            out.append(f"this environment requires explicit human approval. Show the sha, the diff summary and the "
+                       f"last promotion, get a yes, then: touch {marker}")
+    if len(envs) > 1:
+        out[before:] = [f"[{env}] {r}" for r in out[before:]]
 
 print("\x1e".join(out))
 PY
