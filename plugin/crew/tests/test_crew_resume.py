@@ -1498,8 +1498,9 @@ def test_an_author_record_that_cannot_be_dropped_or_blanked_is_marked_stuck_and_
     got = fx.decide(source="compact", session="s1", bound=False)
 
     assert (ok, "may still stand" in reason, os.path.exists(marker), got["action"],
-            "could not replace or remove" in got["reason"]) == \
-        (False, True, True, "wait", True), (reason, got)
+            "could not replace or remove" in got["reason"],
+            "delete handoff-author.json.stuck by hand" in got["reason"]) == \
+        (False, True, True, "wait", True, True), (reason, got)
 
 
 def test_an_unwritable_stuck_marker_still_waits_on_a_record_nobody_can_replace(fx, monkeypatch):
@@ -1634,6 +1635,22 @@ _REASON_PHRASES = ("internal error", "automatic PreCompact skeleton", "written b
                    "changed since its author session wrote it", "handoff-author.json",
                    "could not replace or remove", "neither replaced nor removed",
                    "resume-state.json", "cannot be searched")
+
+
+def test_the_author_record_residual_is_named_as_an_accepted_risk():
+    """T-0069 review round 2 FIX: the case no refusal covers -- unlink,
+    blank and marker all fail while `os.access` says writable -- is named in
+    CONFIG.md's accepted risks and in `_mark_author_stuck`'s docstring."""
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    with open(os.path.join(repo, "plugin/crew/CONFIG.md"), encoding="utf-8") as handle:
+        config = " ".join(handle.read().split())
+    risks = config[config.index("**Accepted risks.**"):]
+    risks = risks[:risks.index("**Unchanged")]
+    doc = " ".join((crew_resume._mark_author_stuck.__doc__ or "").split())  # pylint: disable=protected-access
+
+    assert [all(w in text for w in ("os.access", "EIO", "ENOSPC", "immutable", "held open",
+                                    "stale author record is trusted"))
+            for text in (risks, doc)] == [True, True]
 
 
 def test_every_wait_reason_is_named_in_the_docs():

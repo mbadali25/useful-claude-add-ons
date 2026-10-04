@@ -373,7 +373,13 @@ def _mark_author_stuck(author):
     the same read-only directory -- leaves `_author_refusal`'s
     replaceability check as the refusal: a record that neither its file nor
     its directory lets anyone replace or remove can have outlived a later
-    write, so it is not trusted (`_FROZEN_AUTHOR`). True when written."""
+    write, so it is not trusted (`_FROZEN_AUTHOR`). True when written.
+
+    Accepted residual (CONFIG.md, "Accepted risks"): when the unlink, the
+    blank and this marker write all fail while `os.access` still reports
+    the file or its directory writable -- EIO, ENOSPC, an immutable
+    attribute, a Windows file held open -- nothing marks the record, and
+    the stale author record is trusted."""
     path = author + ".stuck"
     tmp = f"{path}.{os.getpid()}.tmp"
     try:
@@ -463,7 +469,8 @@ def _entry(state, key):
 _UNREADABLE_AUTHOR = "handoff-author.json could not be read (or its directory cannot be searched)"
 _STUCK_AUTHOR = ("a later handoff write could not replace or remove handoff-author.json "
                  "(handoff-author.json.stuck), so its record may vouch for a note its session "
-                 "did not write last")
+                 "did not write last; it clears when a later author record lands, or "
+                 "delete handoff-author.json.stuck by hand")
 _FROZEN_AUTHOR = ("handoff-author.json can be neither replaced nor removed (the file and its "
                   "directory are read-only), so its record may have outlived a later handoff write")
 _OTHER_SESSION = "the handoff was written by another session"

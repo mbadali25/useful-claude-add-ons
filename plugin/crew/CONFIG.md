@@ -1186,7 +1186,10 @@ while the directory is still writable, an old `manual` record lives for up to
 (the `precompact-*.json` sweep can fail with no key to mark). Two sessions
 writing the handoff in the same instant can attribute it to the wrong one;
 the record hashes the bytes it reads under a lock, which narrows the window
-but does not close it.
+but does not close it. And when `crew_resume.py` can neither unlink nor blank
+a stale `handoff-author.json` nor write its `.stuck` marker while `os.access`
+still reports it writable (EIO, ENOSPC, an immutable attribute, a Windows file
+held open), the stale author record is trusted.
 
 **Unchanged, and reported to the owner:** a malformed repo file still vetoes
 nothing. It is the same class as round 4's FIX (an unreadable veto reads as no
