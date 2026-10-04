@@ -207,6 +207,19 @@ def test_unbalanced_markers_refused(tmp_path):
         assert crew_diagrams.outside_markers(before) is None
 
 
+def test_a_marker_quoted_in_prose_is_not_a_marker(tmp_path):
+    """crew's own README documents the markers in backticks; that prose is
+    neither a section nor a malformed one."""
+    prose = (f"# x\n\nThe section sits between `{BEGIN}` and `{END}`.\n"
+             f"    {BEGIN} indented in a code block\n")
+    root = _tree(tmp_path, readme=prose)
+    assert crew_diagrams.outside_markers(prose) == prose.rstrip()
+    assert _embed(root) == 0
+    text = _read(root, "plugin/x/README.md")
+    assert text.startswith(prose) and text.count(BEGIN) == 3
+    assert _check(root) == 0
+
+
 def test_check_detects_drift(tmp_path, capsys):
     root = _tree(tmp_path)
     assert _embed(root) == 0
