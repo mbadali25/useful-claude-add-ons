@@ -29,7 +29,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --record $1
 ```
 
 HEAD now, or `kept` if `crew_ticket.py activate` recorded it; never moved. Exit 1 is "could not tell" (no commit
-yet, or `tickets.baseBranch` names nothing): stop and fix that. Changed-file lists below diff from this. Then
+yet, or `tickets.baseBranch` names nothing): stop. Changed-file lists below diff from this, not from the verify gate's own marker. Then
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to in-progress`
 (add `--reopen` on a successor plan, whose ticket is already `review`):
 print its lines verbatim; on its exit 3 run the command it printed; on its exit 1 tell
