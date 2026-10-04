@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:28 UTC
+Last updated: 2026-10-04 12:30 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:30: OWNER: start builds on all unbuilt PRs where possible. STARTED: #340 L-0526 harness-only (1.0.371), #345 T-0036 stacked on T-0035-build/#344 (1.0.372), #356 T-0017 stacked on T-0016-build/#396 (1.0.373), #364 T-0052 stacked on T-0037-build/#394 (1.0.374). WAITING: #363 T-0060 (needs #395 fixed + #362 land-prep), #365 T-0058 + #366 T-0059 (need T-0052 build). Not builds: #338 L-0582 WIP port, #324 owner WIP. BUILD.md gained a stacked-builds section.
 - 12:28: Started: build #347 T-0047 (1.0.368; blocking guard, must-block/allow + sabotage; harness check), land-prep #361 T-0050 (1.0.369; old base 38adba44, heavy conflicts expected), land-prep #348 T-0041 (1.0.370). Running also: #395 fix, #396 review. Placeholders in use up to 1.0.370.
 - 12:27: #393 review 81a7b991: 0/0/0 CLEAN. Waits CI (check-in 12:50).
 - 12:27: #393 land-prep: merged main ce235468, crew 1.0.325 last -> 81a7b991; PR retargeted to main. check-tooling-pr 'OK - 1 harness path'; tooling-pr suite 17/17; 3 mutations hand-run RED; anchors test 17 passed. Review started.
