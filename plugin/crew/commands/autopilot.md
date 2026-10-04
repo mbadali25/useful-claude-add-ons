@@ -51,7 +51,7 @@ open. Print the `source`, every `fell through:` and any `disagreement:` line (di
 `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
 active one. `activate=1` (no pointer is set): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>`
-so the scope guard judges edits by it. Never pick from `## Next action`.
+so the scope guard judges edits by it; it also records the scope base (print its stderr). Never pick from `## Next action`.
 
 ## 3. The loop - keep `N` (phases run, from 0) and `LAST` (last command, empty)
 

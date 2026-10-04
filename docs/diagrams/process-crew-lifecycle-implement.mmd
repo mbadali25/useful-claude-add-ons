@@ -1,0 +1,50 @@
+%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Anchors: plugin/crew/commands/implement.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_standards.py
+%% Purpose: /crew:implement from the approval check to handing over to /crew:review: the plan steps under the scope guard, the refresh-artifacts loop and the required standards self-check.
+%% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
+%% Arrow-shaped nodes ("next:" / "back:" / "again:") stand for a node drawn in the named part.
+%% T-0061 (#378, merged with main 38adba44+): im1 relabelled - `crew_ticket.py activate` now records the scope
+%% base at branch cut, so /crew:implement step 1 may report `kept`, and a `tickets.baseBranch` naming no commit
+%% exits 1 "could not tell". Cites :28, :33 re-read on the merged tree.
+%% --
+%% Every node cites the command file's own line; files are named repo-relative
+%% here and by basename in the nodes (all under plugin/crew/commands/ unless
+%% named otherwise):
+%%   plugin/crew/commands/implement.md:14-17 refuses unless `crew_ticket.py validate`
+%%     reports the plan approved; :31 scope_base --record, then crew_tracker.py
+%%     move --to in-progress (:36, `--reopen` on a successor plan :37); :41 steps
+%%     in order, test first; :59 changed-file list; :69 verify; :89-112 step 6:
+%%     tests, then docs, then crew_refresh_check.py (:96) and the commands its
+%%     lines name, committed, until `fresh` or a `stop`; then spec.md header
+%%     `status: review`, which keeps the approval (:107-109), and crew_tracker.py
+%%     move --to review (:110-111); then /crew:review last (:112). :114-118
+%%     step 7: done is /crew:done's.
+%%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
+%%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
+%% --
+%% Note im0: crew_ticket.py validate
+%% Note im2: recurring-findings checklist for the Touch paths, then steps in order;
+%%    hooks.json:31 (PreToolUse, Touch)
+%% Note sc1: crew_standards.py init, answer every row, crew_standards.py stamp until exit 0
+%% Note im4: spec.md header 'status: review' (keeps the approval), crew_tracker.py move --to
+%%    review (Review lane: review outstanding)
+flowchart TB
+    subgraph implement["/crew:implement"]
+        im0{"plan approved?<br/>implement.md:17-23"}
+        im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
+        im0 -- yes --> im1["scope_base --record (kept if activate<br/>recorded; exit 1 could not tell), then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
+        im1 --> im2["steps in order, test first,<br/>scope-guard on every write<br/>:38-42"]
+        im2 --> im3a["changed-file list, verify<br/>:57, :67"]
+        im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
+        im3 --> rf1{"crew_refresh_check.py<br/>:93"}
+        rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
+        rf2 --> rf1
+        rf1 -- "stop" --> rfx([report the reason, stop])
+        rf1 -- fresh --> sc1["required standards self-check<br/>:105-109"]
+        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:110-112"]
+        im4 --> im5["then /crew:review last<br/>:113"]
+    end
+
+    im5 --> to_pf0>"next: review part<br/>preflight first"]
+
+    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
