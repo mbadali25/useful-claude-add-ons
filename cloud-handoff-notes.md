@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 09:59 UTC
+Last updated: 2026-10-04 10:00 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:00: #342 conflicted with main -> land-prep started (1.0.328) carrying NIT1 fix + test.
 - 09:59: #342 r2 c6b33f3f: 0 BLOCK 0 FIX 2 NIT CLEAN (NIT1: _inert_warnings list-comp outside try -> settings() can raise if completion_audit import fails; carry into land-prep push. NIT2: dangling INDEX symlink wording). Post-#361 merge check: 789 pass.
 - 09:59: #360 delta review 7d442123: 0/0/0 CLEAN. Waits CI + its turn (re-merge after #355).
 - 09:59: #351 land-prep done: head f542d4f4 (1.0.320); leaf count 131 (git.forbiddenTrailers), diagrams moved into split parts, 3 renders FAIL in container (kept main's PASS - unverified). Merge-only review started. NOTE #351/#355/#360 ALL change config leaf counts -> each later one re-merges carefully.
