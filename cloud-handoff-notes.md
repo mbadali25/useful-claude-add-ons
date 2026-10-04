@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 14:53 UTC
+Last updated: 2026-10-04 14:55 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:55: #416 T-0057 review 767966c2: 1 BLOCK (approval/approving/lookalikes route once rows go live) / 2 FIX (pronoun guard exact-match; gate ignores sub type/value) / 7 NIT. Sent to builder with structural pre-check (NFKC+casefold, non-ASCII letters ask, stem approv).
 - 14:53: CI hygiene: note.sh commits now carry [skip ci] (notes-branch pushes were queuing full CI on #391); cancelled 6 notes-branch runs. #377 down to 2 checks (test 3.12 running, crew-shell-matrix queued).
 - 14:53: #407 T-0045 review 155ac5bd: 1 BLOCK (two-env map: production dispatch gated as staging via substring first-match -> requireHuman skipped) / 3 FIX (case-sensitivity vs ps1 -like, leading @ ref splats in pwsh, tag rule overclaimed) / 6 NIT. Sent to builder. Possible follow-up: promote-gate substring first-match itself.
 - 14:52: #450 T-0084 review e5c17322: 1 BLOCK (non-dict vaults.memory falls back to another vault) / 7 FIX (EACCES read as absent, near-pointer -> full-text, ':' in later segments, dangling md skipped, unreadable vault -> note-missing, stale vaultPath fallback, one-shell test pass) / 9 NIT. Sent to builder; F2+F6 owner-decisions taken per recommendation (fail closed; match obsidian_common).
