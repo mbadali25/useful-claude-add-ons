@@ -601,7 +601,7 @@ and gets nothing created.
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
 
-### Which terminal: the session's own process (T-0016, crew 1.0.351)
+### Which terminal: the session's own process (T-0016, crew 1.0.376)
 
 Read in full on `T-0016-build` after review round 1 and the merge of main ce235468; line citations taken with `grep -n` there.
 

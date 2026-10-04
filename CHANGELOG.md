@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.351: auto-clear and resume typing bind to the session's own terminal (T-0016)
+### Fixed — `crew` 1.0.376: auto-clear and resume typing bind to the session's own terminal (T-0016)
 
 - **What changed.** Both senders (`crew_autocycle.py` for `auto-clear.sh`, and
   the same rules natively in `auto-clear.ps1`) bind the session to its OWN
