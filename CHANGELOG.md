@@ -35,9 +35,10 @@ review bundle and staled the accepted receipt with no round left.
 - **One re-review after the upgrade, in such a repository.** A receipt accepted over a tree that
   held a non-ignored bookkeeping file reads stale once the rebuilt bundle drops that file. Accepted
   as risk (spec, Unknowns).
-- Must-block and must-allow tests for each consumer; 29 new sabotage mutations in
+- Must-block and must-allow tests for each consumer; 26 new sabotage mutations in
   `sabotage_refresh.py`, `sabotage_review.py` and `sabotage_scope.py` (4 of them `.ps1` ones, joined
-  where pwsh exists), each red on its named test. `.crew/verify.json` gains a rule for
+  where pwsh exists), each red on its named test, and three earlier ones re-anchored on the new
+  exclusion lines. `.crew/verify.json` gains a rule for
   `review_patch.py` / `review_ledger.py`, and rules 4 and 12 run the new suites.
 - A harness change under T-0087, so it lands alone. The list lives in `crew_ticket.py` and the
   classifier in `completion_audit.py` (both harness) rather than the plan's `crew_common.py` and
