@@ -3157,9 +3157,8 @@ def test_config_md_and_setup_template_state_the_kimi_defaults():
 # A key the installed crew does not act on is named in one line. The rule is a
 # set difference against `default_config()` (the function the drift test above
 # pins to the template), plus `INERT_PENDING`'s value-level entries, plus every
-# path the global filter drops. `autopilot.approval: self` was the incident: it
-# sat inert for days with nothing saying so. T-0010 has since landed it, so it
-# is now a must-stay-quiet case and `autopilot.ship` carries the must-warn role.
+# path the global filter drops. `autopilot.approval: self` (the incident) landed in
+# T-0010, so it is must-stay-quiet now and `autopilot.ship` carries must-warn.
 
 _INERT_CASES = [
     ("autopilot.ship", "merge", "T-0011"),
