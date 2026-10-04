@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.383: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
+### Added — `crew` 1.0.389: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
 
 - **`blocker` sends.** It moves from `RESERVED` to `EVENTS` in `plugin/crew/hooks/scripts/crew_notify.py`,
   loud, with one subject per kind from the one `SUBJECTS` table: `Approval waiting`, `Review out of
