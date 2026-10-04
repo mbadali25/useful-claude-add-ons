@@ -37,9 +37,10 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 | L-1510 | `test_crew_ticket_mint.py::test_concurrent_mints_distinct` failed once on Windows CI (#493 shard 4/6): "crew_ticket.TicketError: .work/INDEX.md exists but could not be read" - ALSO RED ON MAIN (run 37221280492, a27c5e38). Cause: `_mint_taken` (crew_ticket.py:1079-1083) reads INDEX without the INDEX lock while another minter's tracker create does os.replace; Windows sharing violation -> read_text None -> mint refuses. Fix: retry on PermissionError or read under the lock. Harness (crew_ticket.py). Root-cause; never skip. | MERGED 8c0843ca (#494, crew 1.0.338) | needs ticket in your tracker |
 | L-1511 | Follow-up to L-1510: `crew_tracker.py create` and `move` (or `_atomic_update` on INDEX) take `.work/INDEX.md.lock`, the same lock mint uses. Every unlocked `move` (implement.md:33,112, done.md:82, spec.md:46, review.md, plan.md) replaces INDEX while parallel lanes mint; on Windows mint then refuses (never a wrong id). Not harness. | none yet | needs ticket in your tracker |
 | L-1512 | Windows CI: cloud-guard bash tests intermittently exit 2304 (MSYS bash SIGKILLed) - `test_cloud_guard.py::test_must_block_bash[aws-s3-rm-recursive]` (#493 slow 1/3) and `test_identity_bash[aws-read-known-profile-other-cloud-pinned-ok]` (#356 slow). Likely a per-test timeout killing a slow Git Bash under load. Root-cause; never skip. | none yet | needs ticket in your tracker |
+| L-1514 | read-cloudhead skill on main: "read Cloudhead" resumes the cloud session from this notes branch | #495 MERGED | needs ticket in your tracker |
 | L-1513 | Harness (L-0671 family): sabotage entry "approve writes beside the receipt" (sabotage_autopilot.py) inserts 4-space code after crew_autopilot.py:1668, landing inside T-0053's try/finally -> SyntaxError (RED BUT UNPROVEN, exit 4). Broken on main since T-0053. Re-anchor. Also: no test ties argparse choices to the usage block (a new subcommand missing from usage escapes the writer check). | none yet | needs ticket in your tracker |
 
-Next free untracked ID: **L-1514**.
+Next free untracked ID: **L-1515**.
 
 ## Merged this session
 

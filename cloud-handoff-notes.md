@@ -6,13 +6,13 @@ Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at th
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
 ### State
-- **main = a31ac3bb, crew 1.0.342.** 22 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
+- **main = a31ac3bb + #495 (read-cloudhead skill, docs-only), crew 1.0.342.** 23 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
 - Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
 
 ### Owner rules in force (all sessions)
 - Merge only with 0 BLOCK + 0 FIX on the current head, CI green on that head, in order. Merge commits only; never squash/rebase/force-push. Commits carry only `Claude-Session: <url>`; never Co-Authored-By. No `[skip ci]` (withdrawn: the permission system treats it as a CI bypass).
 - Harness paths (`HARNESS` in scripts/check-tooling-pr.py) land ALONE (T-0087). Docs-only PRs need no gates.
-- PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets L-15xx ids (next free: **L-1514**).
+- PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets L-15xx ids (next free: **L-1515**).
 - **Batches of 5-6** (raised 2026-10-04 evening).
 - **Version: ONE bump per batch** during cloud sessions (2026-10-04 late): only the last PR of a batch carries the version-only commit. See `procedures/LANDPREP.md` "Version rule".
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
