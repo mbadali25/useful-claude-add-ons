@@ -7,7 +7,7 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 |---|---|
 | [Architecture](#architecture) | PASS |
 | [Data flow crew config autoclear](#data-flow-crew-config-autoclear) | PASS |
-| [Data flow crew config menu](#data-flow-crew-config-menu) | PASS |
+| [Data flow crew config menu](#data-flow-crew-config-menu) | FAIL |
 | [Data flow crew config no python](#data-flow-crew-config-no-python) | PASS |
 | [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | PASS |
 | [Data flow crew config read](#data-flow-crew-config-read) | PASS |
@@ -33,8 +33,8 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew lifecycle approve](#process-crew-lifecycle-approve) | PASS |
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
-| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | PASS |
-| [Process crew lifecycle review](#process-crew-lifecycle-review) | PASS |
+| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | FAIL |
+| [Process crew lifecycle review](#process-crew-lifecycle-review) | FAIL |
 | [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | PASS |
 | [Process crew lifecycle](#process-crew-lifecycle) | PASS |
 | [Process qa audit](#process-qa-audit) | PASS |
@@ -182,7 +182,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-menu.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config_menu.py`, `plugin/crew/hooks/scripts/crew_config_files.py`, `plugin/crew/hooks/scripts/crew_config.py`
-- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
+- **Readability:** FAIL: 2 crossing(s)
 
 ## Data flow crew config no python
 
@@ -1126,7 +1126,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-implement.mmd`
 - **Drawn from:** `plugin/crew/commands/implement.md`, `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
+- **Readability:** FAIL: 1 label overlap(s)
 
 ## Process crew lifecycle review
 
@@ -1176,7 +1176,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-review.mmd`
 - **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
+- **Readability:** FAIL: 1 label overlap(s)
 
 ## Process crew lifecycle spec plan
 

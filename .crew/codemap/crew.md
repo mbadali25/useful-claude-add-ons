@@ -1186,9 +1186,9 @@ changed paths reach still current (module docstring, `:1-8`)? It narrows
 artifact reads `fresh`/`stale`/`unknown` (`:207-209`) with the refresh command
 to run, documents read `not measured`, and a scope base that hides or may
 hide the change - a fallback, or (since review round 3) a recorded base with
-a commit behind it naming the ticket (`_named_behind`, `:1273`) - makes the
+a commit behind it naming the ticket (`_named_behind`, `:1286`) - makes the
 whole answer `unknown`, and every artifact measured against that base with it
-(`_unconfirmed`, `:1290`; `ticket_freshness`, `:1312`). It is a CLI the
+(`_unconfirmed`, `:1303`; `ticket_freshness`, `:1325`). It is a CLI the
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
@@ -1207,17 +1207,17 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `_outside_refresh_artifacts` (`plugin/crew/hooks/scripts/completion_audit.py:177-187`)
   drops every refresh-artifact path when the approval is current and none
   otherwise. JUDGEMENT: T-0094 (crew 1.0.78) ships the narrower judgement,
-  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1019`), and
+  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1032`), and
   the owner split its wiring into the audit off to L-0540 on 2026-09-30 (a
   harness change lands alone, `scripts/check-tooling-pr.py`), so until L-0540
   lands nothing in the hooks calls it. It answers True / False / None per
   changed artifact. A `True` needs a changed path to reach the artifact
   through its BASE copy's citations (reach = every path changed since the base,
   release bookkeeping dropped except `ADMISSION_BOOKKEEPING`, a plugin
-  manifest, `:264` and `:1037-1046` in `crew_refresh_check.py`; the graph's code
+  manifest, `:264` and `:1050-1059` in `crew_refresh_check.py`; the graph's code
   test reads the whole reach) and a re-anchor or regeneration shape: a map's
   `anchor:` moved forward from the base copy's anchor to a commit behind HEAD
-  (`_map_verdict` `:851`, `_sha_moved` `:557`, `_moved_from` `:615`: an
+  (`_map_verdict` `:864`, `_sha_moved` `:557`, `_moved_from` `:615`: an
   unchanged anchor text never moved, an anchor added to a base copy with none
   did not move either (review round 3), a base anchor git cannot resolve is
   could-not-tell, a base anchor `cat-file` cannot find counts as moved only
@@ -1225,16 +1225,16 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   carries that prefix - an ambiguous short anchor is could-not-tell -, one on HEAD's history must be behind the new one), INDEX rows
   of admitted maps only, deleted lines included, read from `git diff -U0
   <base> -- INDEX.md` so a changed terminator or a BOM counts
-  (`_index_verdict` `:888`, `_diff_lines` `:865`, since review round 3), a
-  diagram's provenance sha moved the same way (`_diagram_verdict` `:912`), a
+  (`_index_verdict` `:901`, `_diff_lines` `:878`, since review round 3), a
+  diagram's provenance sha moved the same way (`_diagram_verdict` `:925`), a
   rendered file beside an admitted same-stem source, its extension compared
-  case-folded (`_rendered_verdict` `:1078`, review round 4), a rule
+  case-folded (`_rendered_verdict` `:1091`, review round 4), a rule
   whose bytes equal `crew_instructions.expected_rules`, or whose blob git would
-  store does (`_rule_verdict` `:931`, `_stored_blob` `:971`: a CRLF checkout
+  store does (`_rule_verdict` `:944`, `_stored_blob` `:984`: a CRLF checkout
   under `core.autocrlf` passes, a CRLF or BOM rewrite does not, since review
   round 3; a rule file that exists but cannot be read is could-not-tell before
   any comparison, in `_on_disk`, since review round 2), the graph after a code
-  change (`_graph_verdict` `:1100`). `None` (`COULD_NOT_TELL`, `:491`) never
+  change (`_graph_verdict` `:1113`). `None` (`COULD_NOT_TELL`, `:491`) never
   admits. Since review round 5 whether the config, a rule or a map exists is
   `_present` (`:340`), lstat's errno rather than `os.path.lexists`: only
   ENOENT or ENOTDIR is absent, and a directory the hook user cannot search is
@@ -1242,9 +1242,13 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   every kind that reads or admits a working-tree file first asks `_on_disk`
   (`:786`): a deleted file, a symlink at the path or along its dirs, a git mode
   different from the base copy's (`git diff --raw`, which is why INDEX.md's
-  own mode branch is gone) or a 120000/160000 stage entry is refused; and the
+  own mode branch is gone) or a 120000/160000 stage entry is refused (since
+  L-0688 also a file the base holds and the index does not, `git rm --cached`
+  with the file left on disk: the `--cached` pass's `:100644 000000 ... D`
+  record, `:841-850`, where a conflicted merge's `U` record with the same
+  modes is refused as unmerged instead); and the
   kind comes from the most specific artifact dir holding the path (`_claims`
-  `:983`, `_kind` `:992`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
+  `:996`, `_kind` `:1005`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
   judges the bytes `_read_regular` (`:719`) read once through a descriptor opened with
   `O_NOFOLLOW` at every component, before any git call (on Windows, which has no `O_NOFOLLOW`,
   W-0116 adds `_FINAL_PATH` (`:716`): the read is refused unless `GetFinalPathNameByHandleW` on
@@ -1552,8 +1556,8 @@ instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1312` — `ticket_freshness`,
-  the library entry point; `main()` at `:1412`; `artifact_verdicts` at `:1019`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1325` — `ticket_freshness`,
+  the library entry point; `main()` at `:1425`; `artifact_verdicts` at `:1032`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:568` — `next_phase`, read-only;
   `main()` at `:1662` is the `next` / `resume` / `settings` / `stops` /
