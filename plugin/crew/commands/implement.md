@@ -17,9 +17,10 @@ carries the per-step TDD discipline and the ledger this file only summarises.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py validate --ticket $1
 ```
 
-**This command refuses to edit anything unless that call reports the plan approved.** No approval, a stale
-one (the plan changed since) or no plan: stop, say which, and point at `/crew:plan $1` or
-`/crew:plan $1 --approve`. The receipt, not your read of the plan, is what the completion audit checks later.
+**This command refuses to edit anything unless that call reports the plan
+approved.** No approval, a stale one (the plan changed since) or no plan: stop, say which, and point at
+`/crew:plan $1` or `/crew:plan $1 --approve`. The receipt, not your read of the plan, is what the completion
+audit checks later.
 
 ## 1. Record where this ticket starts
 
@@ -99,9 +100,8 @@ forward, to HEAD or behind it; INDEX rows of those maps) or a regeneration (`cre
 rules`, the graph after a code change); anything else there needs Touch, and the audit names the reason.
 A `stop` ends the loop, on an artifact line (a missing tool, git unable to diff) or on the top line (a
 base that hides or may hide the change, an unreadable config): report it. Documents read `not measured`,
-never a pass. Commit the refresh before `/crew:review $1` builds its bundle. Then `crew_gitignore.py check --root .`
-(same dir): on exit 1 run `apply` only if Touch covers `.gitignore`, else the PR body lists the `missing` lines as
-"applied at the next /crew:onboard"; exit 3 (a tracked secret) goes to the owner; exit 4 is unknown, never current.
+never a pass. Commit the refresh before `/crew:review $1` builds its bundle. Then `crew_gitignore.py check --root .`:
+on 1 `apply` only if Touch covers `.gitignore`, else list `missing` in the PR body; 3 goes to the owner; 4 is unknown.
 Then the **required self-check** (`crew-standards` skill): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
 every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
