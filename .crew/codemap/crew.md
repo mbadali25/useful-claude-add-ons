@@ -823,25 +823,25 @@ registered at `plugin/crew/tests/sabotage.py:77` and `:3065`; `.crew/verify.json
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 
 DERIVED at `eba11657`, re-read after review round 1; every `crew_route.py` line below re-read
-at `0589588c` (T-0057 review round 2). `plugin/crew/hooks/scripts/crew_route.py`
-(509 lines) decides whether a short plain-text prompt names a lifecycle command. The table
-is `PHRASES` (`:110`): brainstorm, spec, plan, implement, review, done,
-continue, status, then T-0057's five autopilot rows - no approve row. `match` (`:193`) matches the WHOLE prompt
-after `normalise` (`:173`) refuses a line break, more than `MAX_PROMPT_CHARS`
-(`:87`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:137`) phrases
+at `9c013fb1` (T-0057 review round 3). `plugin/crew/hooks/scripts/crew_route.py`
+(513 lines) decides whether a short plain-text prompt names a lifecycle command. The table
+is `PHRASES` (`:111`): brainstorm, spec, plan, implement, review, done,
+continue, status, then T-0057's five autopilot rows - no approve row. `match` (`:194`) matches the WHOLE prompt
+after `normalise` (`:174`) refuses a line break, more than `MAX_PROMPT_CHARS`
+(`:88`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:138`) phrases
 ("do it", "yes", bare "done"...) return None whatever a row says. `decide`
-(`:352`) returns `route`, `ask` or `none`; `_resolve` (`:261`) takes an
+(`:356`) returns `route`, `ask` or `none`; `_resolve` (`:269`) takes an
 explicit id only with a `.work/tickets/<id>/` folder, then
 `crew_ticket.resolve_active`'s `active-ticket` source, then
 `crew_autopilot.open_index_tickets` with exactly one ticket - never
 `resolve_active`'s own first-open-line INDEX answer. `continue` goes through
-`_continue` (`:282`) to `crew_autopilot.next_phase`; a stop, an exception, or
-a command naming approve is an `ask`. `render` (`:397`) clips every
+`_continue` (`:290`) to `crew_autopilot.next_phase`; a stop, an exception, or
+a command naming approve is an `ask`. `render` (`:401`) clips every
 variable-length field it reads to its own `FIELD_CHARS` cap with `_clip`
-(`:373`), so the line is at most `MAX_LINE_CHARS` (`:96`, 1400) and always
+(`:377`), so the line is at most `MAX_LINE_CHARS` (`:97`, 1400) and always
 fits the UserPromptSubmit budget (`crew_context.TURN_CHARS`, 2000) as the
 first item: `fit` keeps whole items or none, and before review round 1 a long
-open question dropped the ask entirely. `settings` (`:446`) reads
+open question dropped the ask entirely. `settings` (`:450`) reads
 `crew_config.resolve_config` and arms only on `is True`. The one consumer is
 `crew_context.route_item` (`plugin/crew/hooks/scripts/crew_context.py:839`),
 called first in the UserPromptSubmit branch (`:937`): Claude harness only,
@@ -857,30 +857,30 @@ T-0010's policy rule 29 (`:355-362`) sits after T-0072's autopilot rule 28 (`:34
 2026-09-29, T-0094: this sentence numbered them 31, 32, 29 and 28 at `bbd9a66d`, one too high;
 `json.load` puts T-0023's routing rule at index 30, and at 31 since L-0516's rule 10.)
 
-**Autopilot rows (T-0057, crew 1.0.399).** DERIVED at `0589588c` (review round 2). Five rows
-follow `status` in `PHRASES` (`plugin/crew/hooks/scripts/crew_route.py:126`): `autopilot-status`,
+**Autopilot rows (T-0057, crew 1.0.399).** DERIVED at `9c013fb1` (review round 3). Five rows
+follow `status` in `PHRASES` (`plugin/crew/hooks/scripts/crew_route.py:127`): `autopilot-status`,
 `assign`, `goal`, `goal-resume`, `focus`, with rules `autopilot`, `autopilot-text`,
-`autopilot-resume`, `autopilot-ticket`. `decide` (`:352`) hands them to `_autopilot` (`:327`),
-which first runs `_gate` (`:302`): `crew_autopilot.route(top, <command's last word>)` inside a
+`autopilot-resume`, `autopilot-ticket`. `decide` (`:356`) hands them to `_autopilot` (`:335`),
+which first runs `_gate` (`:310`): `crew_autopilot.route(top, <command's last word>)` inside a
 `try`; a raise, an answer that is not a dict with `sub`, `stop` (a bool) and `reason`, or a `sub`
 that is not a string naming the subcommand asked about (`run` for `--goal`) is an `ask`; an empty
 `sub` is `none`; a `stop` is an ask with `unavailable: True` carrying the router's reason, or "not
 available yet" when it gives none. So whether a subcommand has landed is read from
 `crew_autopilot.AVAILABLE` (`plugin/crew/hooks/scripts/crew_autopilot.py:225`) at decide time and
-never copied into the table. Before that, `match` (`crew_route.py:193`) passes assign, goal and
-focus through `_screen` (`:218`), an allowlist: a character of the raw prompt outside `_PLAIN`
-(`:148`, ASCII letters, digits, space and `.,:;_#()'-`) is carried as `refuse` and asked after
-the gate, so the routed text is the typed text. On that ASCII, `_LINE_BREAKS` (`:151`), a first
-token in `_NOTHING` (`:149`) or the stem `_APPROV` (`:152`, letters-only) is no match, and
-`_NEGATION` (`:154`) is a refusal. Then `autopilot-resume` always asks (no goal slug; T-0056),
-`autopilot-text` asks when `_SHELL` (`:157`) finds a quote and otherwise routes `<command>
-<text>`, and an id goes through `_resolve`. `_TEXT` (`:104`) excludes `?`; `_ID` (`:101`) is
-ASCII letters (`(?-i:...)`, since IGNORECASE folds a long s or Kelvin sign into `[a-z]`) and
-`[0-9]` digits, for every row. `render` (`:397`) gives an `unavailable` ask its own line
-(`:427`, "answer the prompt as written", never "which ticket"; `_TICKETED` at `:160` limits
-"which ticket" to ticket intents) and ends a `goal` route with `GOAL_UNDO` (`:161`, `:417`).
-JUDGEMENT: the sabotage mutations for these branches are L-0661 (harness, its own PR); `wave`,
-`split`, `sleep`, `wake` rows are L-0662.
+never copied into the table. Before that, `match` (`crew_route.py:194`) passes assign, goal and
+focus through `_screen` (`:219`). In order: `_LINE_BREAKS` (`:154`), the stem `_APPROV` (`:155`,
+letters-only) or a first token in `_NOTHING` (`:152`) is no match; then the allowlist, a
+character of the raw prompt (after the one prefix `normalise` drops) outside `_PLAIN` (`:151`,
+ASCII letters, digits, space and `.,:;_#()-`; no quote, so autopilot.md's refused characters
+never route), is carried as `refuse` and asked after the gate; then a word starting with `-` or
+`_NEGATION` (`:157`) is a refusal too. The routed text is the typed text. `autopilot-resume`
+always asks (no goal slug; T-0056), `autopilot-text` routes `<command> <text>`, and an id goes
+through `_resolve`. `_TEXT` (`:105`) excludes `?`; `_ID` (`:102`) is ASCII letters (`(?-i:...)`,
+since IGNORECASE folds a long s or Kelvin sign into `[a-z]`) and `[0-9]` digits, for every row.
+`render` (`:401`) gives an `unavailable` ask its own line (`:431`, "answer the prompt as
+written", never "which ticket"; `_TICKETED` at `:161` limits "which ticket" to ticket intents)
+and ends a `goal` route with `GOAL_UNDO` (`:162`, `:421`). JUDGEMENT: the sabotage mutations for
+these branches are L-0661 (harness, its own PR); `wave`, `split`, `sleep`, `wake` rows are L-0662.
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4), and again at `d7c7c75c` on T-0010-solo's merge of `6387ab49`, where T-0010's code above it moved every line (re-read by `grep -n` per symbol).
 `crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:957`) is the policy
