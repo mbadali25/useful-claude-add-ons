@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:05: #344 merge review e96cade3: 0/0/0 CLEAN. Waits CI + turn.
 - 10:05: #342 merge review 41b113c6: 0/0/0 CLEAN. Waits CI + turn.
 - 10:05: #371 land-prep done: head 147c3f5d (1.0.326), still harness-only, autocrlf suites green; dropped an empty CHANGELOG heading (to verify). Merge-only review started.
 - 10:04: #368 merge review d48fa7a5: 1 FIX ('since crew 1.0.213' stale in troubleshooting.md + codemap headings) + 1 NIT (done.mmd header cites) -> fixer (1.0.329). LANDING STEP: when re-bumping #368 and #351, also re-point their 'since crew X' text (#368 troubleshooting.md+codemap, regen guide; #351 CONFIG.md s22). #344 merge-only review started on e96cade3.
