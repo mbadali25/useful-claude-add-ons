@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 01:09: #362 r2 fixes pushed 0920f1eb (crew 1.0.238; urlEnv global-only, _NoRedirect for all sends, short chatId masked). Sonnet r3 started.
 - 01:09: #367 r3 fixes pushed 00910e28 (crew 1.0.237; shown()/listed() used by status + refresh-check + reasons, backslashreplace stdout, crash -> exit 2, ! + unjudgeable test). Sonnet r4 started.
 - 01:05: Check-in 2 (01:05): #337 CI 20 ok/2 running; #375 conflicted (expected - re-merged after #337 lands); #374 behind (merges last). #372/#373 merged. Re-armed check-in 3 (+4h).
 - 01:04: #362 r2 review on 2be1ea4c: PASS (0 BLOCK), telegram_base held vs 27 hostile URLs; 2 FIX (repo urlEnv can divert ping text; urllib follows redirects with token in path) + 2 NIT. Fixer started; target 1.0.238. Next free: 1.0.239.
