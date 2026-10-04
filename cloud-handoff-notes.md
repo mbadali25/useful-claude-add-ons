@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:04: #368 merge review d48fa7a5: 1 FIX ('since crew 1.0.213' stale in troubleshooting.md + codemap headings) + 1 NIT (done.mmd header cites) -> fixer (1.0.329). LANDING STEP: when re-bumping #368 and #351, also re-point their 'since crew X' text (#368 troubleshooting.md+codemap, regen guide; #351 CONFIG.md s22). #344 merge-only review started on e96cade3.
 - 10:04: #344 land-prep done: head e96cade3 (1.0.327, localgpu 0.1.21 restored after taking main's version files), embed re-run no-op, check fresh. Merge-only review next.
 - 10:03: #342 land-prep done: head 41b113c6 (1.0.328), NIT1 fixed + test (red/green/sabotage). Merge review started.
 - 10:00: #342 conflicted with main -> land-prep started (1.0.328) carrying NIT1 fix + test.
