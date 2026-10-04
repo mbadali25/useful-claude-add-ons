@@ -35,8 +35,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   writes the template plus the profile, a dry run until `--apply`; an unreadable profile copy
   with no readable other is exit 3 (could not tell), none at all needs `--no-profile`.
 - `--explain --all` prints every key with its layer, marks `repo-only`, `held down by <layer>`,
-  and the `shadow:` and `profile drift:` findings. CONFIG.md §10, §11 re-measured (77 / 52), new
-  §20a and §20b; README, `commands/config.md` and `global-config.md` updated.
+  and the `shadow:` and `profile drift:` findings. CONFIG.md §2 re-measured (79 global of 132,
+  53 repo-only), new §20a and §20b; README, `commands/config.md` and `global-config.md` updated.
+- The generated settings reference: `crew_keys.layer_of` names the personal keys
+  `both, stricter wins` (from `crew_guards.PERSONAL_KEYS`), so CONFIG.md §10/§11 and
+  `docs/guides/crew/src/configuration-reference.md` move them to the machine-settable table; the
+  reference's hand-written part and the crew guide describe personal defaults, backups and the
+  rebuild as shipped. `crew_keys.COMING` keeps T-0050's `scope.allowCliApproval` row (the harness
+  follow-up below).
 - Tests: `test_crew_config_personal.py` (55), `test_crew_config_rebuild.py` (42),
   `test_crew_backup.py` (28), must-block and must-allow; 25 hand sabotages, each red.
 - **Harness follow-ups (left out under the T-0087 rule):** `scope.allowCliApproval` as a personal
@@ -44,6 +50,314 @@ All notable changes to this repository are documented here. Format follows [Keep
   its must-block tests in `test_crew_ticket.py` / `test_scope_guard.py`; and registering the 21
   sabotages as `sabotage_config_layers.py` in `sabotage.py` (harness paths). Until then a global
   `approval: self` still needs the repo's own `scope.allowCliApproval: true`.
+
+### Fixed — `crew` 1.0.324: a concurrent mint no longer dies on a delete-pending lock name (Windows)
+
+- **What changed.** `crew_config_files.Lock` waits on a `PermissionError`
+  from its `O_CREAT | O_EXCL` create while the lock file is there or `stat`
+  is itself denied, bounded by the same wait. Only a lock file seen present
+  during the wait makes the deadline `Busy` (now saying "held, or still being
+  deleted by another process"); a wait that never saw one re-raises the
+  `PermissionError`. A file confirmed absent re-raises it after a 0.25s
+  grace, and any other `stat` error (NotADirectoryError, ...) at once.
+- **Why.** On Windows a lock file the previous holder has just removed stays
+  DELETE PENDING while any handle to it is open, and creating that name
+  answers access denied rather than "exists". One of eight concurrent mints
+  failed with `T-0003 claimed but not minted: [Errno 13] Permission denied:
+  ...INDEX.md.lock` on main's Windows run 37194523702.
+- **Tests.** The Windows answer is simulated with a patched `os.open` and
+  `os.stat`; each new lock test, and the mint test, is red against main or
+  against the first cut of this fix. The concurrent mint
+  tests print every process's stderr in full, and
+  `test_a_declared_rule_that_passes_is_measured` holds the measured rule time
+  between 1 and the test's own wall time instead of asserting exactly 1.
+- **Not verified.** Windows is not runnable where this was written; the fix
+  is checked against a simulation of the error the runner logged.
+
+### Added — `crew` 1.0.323: the full crew 1.0 guide and a generated configuration reference (T-0048)
+
+- `plugin/crew/hooks/scripts/crew_keys.py`: one row per config leaf (132 today), each with a
+  summary, its allowed values, the file that reads it, and the version it arrived in. A value tuple
+  a validator reads is referenced, never copied: the ratchet tiers in `crew_guards.RATCHETED_KEYS`,
+  `QA_PROVIDERS`/`DEV_PROVIDERS`, `AUTHORITIES`, `TICKET_GRANULARITIES`, `crew_ticket.MODES`,
+  `crew_tracker.KINDS`, `crew_shell.MODES`, `crew_autopilot.DEPLOY_VALUES`/`POLICIES` and the
+  per-OS auto-clear methods; `test_crew_keys.py` holds each to `is`, and checks every value list
+  against `crew_config.enum_values`. Code-branch values (`autopilot.mode`, `autopilot.maxPhases`,
+  `resume.auto`, `context.autoClear.enabled`, `route.enabled`, `scope.allowCliApproval`) run
+  through the real readers. A key crew does not validate reads "not validated" and names its
+  reader. The layer is derived from the code (`is_global_path`, the ratchet tables,
+  `crew_config.REPO_VETO_ONLY`), never stated.
+- `COMING`: keys of approved tickets that have not landed, each naming its ticket - T-0009,
+  T-0011, T-0012, T-0017, T-0029, T-0030 and T-0050. `test_no_coming_key_is_in_code`
+  fails, naming the key and ticket, once one of them is in the code. T-0013's two
+  (`resume.typeDelaySeconds`, `resume.readyTimeoutSeconds`) landed on main first (crew 1.0.321)
+  and moved into `KEY_META` in this branch's merge, kind `type` (their reader coerces).
+- Arrival versions were backfilled once from git history: the first crew version whose committed
+  template declared each key, over 37 commits to the two templates (first e9bf1438), no unreadable
+  version; 133 leaves ever declared. Per version: 0.11.0 or earlier 57; 0.11.0 1; 0.14.6 8;
+  0.16.6 4; 0.16.27 1; 0.16.33 7; 0.16.34 1; 0.19.10 9; 0.19.11 1; 0.19.18 1; 0.19.30 10;
+  0.19.31 6; 0.19.92 1; 1.0.25 13; 1.0.37 2; 1.0.39 2; 1.0.40 1; 1.0.41 2; 1.0.42 4; 1.0.54 2
+  (the four `graph.obsidian.*` keys counted there are gone).
+- `docs/guides/crew/src/config_reference.py` generates `configuration-reference.md` and the key
+  tables of `plugin/crew/CONFIG.md` sections 10 and 11 (between `generated:config-keys-*`
+  markers). It reads no config file. `scripts/check-marketplace.py`'s new
+  `check_config_reference` runs its `--check` and fails on a stale file or on any error, never
+  passing a check that did not run. CONFIG.md's hand-counted totals (68, 64, "all 41", "44
+  global-settable keys", 123/55) are gone; its prose sections are unchanged.
+- `docs/guides/crew/src/guide.md`, "crew 1.0 - the full guide", and both new documents built as
+  HTML, DOCX and PDF. `build.py --check` rebuilds every guide's HTML in memory (exit 1 stale, 2
+  did not run); CI runs it only in verify-gate.yml, whose venv installs `markdown`. The troubleshooting guide's HTML was
+  already current against its source, so its built files are unchanged.
+- Suites: `scripts/_test/config-reference.py` and `scripts/_test/crew-guide.py` (must-block and
+  must-allow cases on temp copies), and a `.crew/verify.json` rule running both, the pytest file
+  and the two `--check`s. The ten `crew_keys.py` sabotage mutations each went red on their named
+  test; they are registered separately, under the harness rule.
+
+### Changed — `crew` 1.0.322: the review bundle and the completion audit account for merged main (T-0100)
+
+- **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
+  latest merged integration commit (`git merge-base HEAD <ref>`, `<ref>` from
+  `scope_base._default_ref`) and holds the one rule both consumers share: a path
+  leaves the changed set when its working-state content and mode are
+  byte-identical to that commit. `review_patch.py` diffs from a synthetic base
+  tree (the start's tree with each such path set to its working-state entry,
+  built in a second temporary index), so the patch, `entries` and every file
+  list drop those paths. A file main changed that the ticket changes again is
+  diffed from the merged commit's version instead of the start's, so main's
+  lines are context and only the ticket's are `+`/`-` (review round 1: the
+  first build showed main's landed lines as the ticket's additions). The
+  manifest gains `merged_main` (ref, commit, applies, reason, dropped,
+  diffed_from_merged) and `bundle_base_tree`, `base` stays the recorded
+  start, and the stderr summary carries `merged-main=`. `completion_audit.py`
+  leaves the same paths out, including a merged-in path taken out of the
+  index (`git rm --cached`) whose file on disk is still the merged commit's,
+  which the bundle's `add -A` stages back and drops; its verdict prints
+  `merged main <sha> (<ref>): <n> path(s) identical to it not counted`, and
+  `merged main: could not tell` on a pass as well as a failure. The reviewer's prompt
+  prints a `merged main:` line; `--check-receipt` names the merged commit.
+- **Why.** Both diffed from the ticket's recorded start, so after a merge of
+  main T-0092's round-2 bundle re-carried three landed tickets and its
+  `/crew:done` check 3 flagged 16 merged-in paths; T-0075's flagged 89. Both
+  were waived by hand as merge artifacts.
+- **Could not tell.** No integration ref, a detached HEAD, or git giving no
+  answer: nothing is dropped, and the manifest, stderr (`merged-main=could-not-tell`),
+  prompt, audit verdict and receipt check each say `could not tell`.
+- **Receipt.** A merge of main that touches no reviewed path keeps an
+  accepted receipt current (the line says how many paths it left out); one
+  that changes a reviewed path stales it, conflict or not (that file's diff
+  now starts from main's version), and names the merged commit. A
+  receipt recorded before 1.0.202 on a branch that had already merged main
+  reads stale once. The same fix landing byte-identical on main and on the
+  ticket drops out of both.
+- **Unchanged.** HEAD on the integration branch itself, or no merge of it past
+  the start: byte-identical to the crew before this entry. `completion_audit.changed_paths` without
+  the new argument (the refresh check's caller), Touch membership, the
+  refresh-artifact allowance, `scope_base.py`, and `scope_base.py --changed` /
+  `scope_report.py` (filed to `TODO.md`).
+- **Sabotage.** 33 entries across `plugin/crew/tests/sabotage_scope.py` and
+  `sabotage_review.py`, one or more for every merged-main check: each
+  could-not-tell cause (no ref, detached HEAD, merge-base and is-ancestor
+  failing), the ancestor and on-main tests, the fast-forward, `keep` unfiltered
+  and widened through the module, bash and PowerShell audits, the audit's
+  untracked handling both ways, its `merged` argument and both verdict lines,
+  the bundle's patch, `entries`, merged-commit and fork bases, the summary and
+  nothing-to-review lines, the prompt lines and both receipt notes. Each was
+  run in the foreground against the tracked file, seen RED on an assertion,
+  and restored with `git checkout --` to its HEAD blob.
+- **Successor (round 2).** Two FIXes from the second review round.
+  `completion_audit.py` judges an untracked merged-in path by the mode
+  `git add` would record: the execute bit counts only when `core.fileMode` is
+  not false (unset or unreadable reads true, so a mismatch is counted, never
+  dropped; measured on git 2.53: 100644 under `false` whatever the bit), so the
+  audit and the bundle's `add -A` agree under both settings, and the mode half
+  of the identity test now has a failing control. `review_patch.py` records the
+  fork lookup: `merged_main.fork` is `git merge-base <start> <merged>`, or
+  `null` with a `fork_reason` when git gives no answer; then paths main also
+  changed are still diffed from the start (more shown, never less), and the
+  stderr summary (`diffed-from-merged=could-not-tell`), the prompt's
+  `merged main:` line and `--check-receipt`'s `fork: could not tell` all say
+  so. A manifest without the key, from an older crew, reads as before. The
+  step-2 exit-2 `echo` in `review.md` is kept (its old text is false in the
+  merged-main exit-2 case), permitted by a spec amendment and pinned by a test.
+  Sabotage entries (l)-(q): the identity test reduced to the blob id,
+  `core.fileMode` ignored, `fork_reason` never written, the stderr count
+  printed on a failed lookup, the prompt clause dropped, the receipt note
+  dropped; each run by hand, RED on an assertion, restored to its HEAD blob.
+- Bumped to `1.0.202` (the coordinator's assigned number; 1.0.55, 1.0.60, 1.0.62, 1.0.70,
+  1.0.71, 1.0.76 and 1.0.166 on its branch before it, each re-set after a merge of main). Built on
+  origin/main at crew 1.0.154 (since merged up to main 4f6ef540, crew 1.0.162) merged with T-0061's harness half (`origin/T-0061-harness`,
+  PR #378, which lands first). `merged_main.resolve` now reads the integration ref through
+  T-0061's `scope_base.base_branch` (so `tickets.baseBranch` decides it), and a configured
+  base branch that names no commit is could-not-tell with T-0061's own reason, never a fall
+  back to `origin/main`; two new `test_merged_main.py` cases and two sabotage entries pin it.
+- **Harness PR.** Every production file here is review/gate harness (owner rule T-0087):
+  `merged_main.py` joins `HARNESS` in `scripts/check-tooling-pr.py` (and the harness rule's
+  paths in `.crew/verify.json`), because the review bundle and the completion audit both run
+  its rule. The `/crew:done` check 3 paragraph, a prompt outside the harness, is left at
+  main's text and filed to `TODO.md` for its own PR.
+
+### Added — `crew` 1.0.321: auto-resume types the resume command into its own session (T-0013)
+
+- On the SessionStart after `/clear` or a manual `/compact`, an armed machine (`resume.auto`, T-0006)
+  now TYPES the command `decide` rendered, where the terminal can be driven. The context hook runs its
+  own flavour's sender in resume mode (`auto-clear.sh --resume`, `auto-clear.ps1 -Resume`) before its
+  per-event claim, and names the outcome: `Auto-resume: typing /crew:done T-0001 into this session in
+  2s (method tmux); ...`, or T-0006's line plus `Auto-resume was not typed: <reason>.` No new hook.
+- `crew_autocycle.resume_plan` decides: `decide` (off is silent, any other non-run refuses), then
+  `onlyRepos`/`onlySessions` (silent), then the method from `context.autoClear` (`enabled` is not
+  needed): tmux into the pane whose pid is an ancestor; `auto` on native Windows is `notify`, which
+  types, claims and records nothing; `sendkeys` only by name, on the `.ps1`; `wtype` and `xdotool`
+  refused. CLI `resume-plan` and `probe`.
+- The sender claims a per-handoff marker `<git-common-dir>/crew/resume-typed-<sha256[:16]>` after
+  every refusal, records the run with `crew_resume.py record` (a failed record types nothing), then
+  spawns. tmux: `resume.typeDelaySeconds`, then a ready probe (the `❯` input line between two rule
+  lines, empty once dim placeholder runs are removed, no `esc to interrupt`) every 250 ms up to
+  `resume.readyTimeoutSeconds`, then `CREW_AUTOCLEAR_INHIBIT`, then the text and, 0.5 s later, Enter
+  (the spike's paste rule). Windows: the existing child, delay, focus check, tab recheck, inhibit.
+- New machine keys `resume.typeDelaySeconds` (2, from the T-0013 spike: input ready by 0.134 s on
+  Claude Code 2.1.282) and `resume.readyTimeoutSeconds` (15), in both templates and crew-setup's copy;
+  read from the machine file only. Repo leaf count 130 -> 132.
+- `test_resume_typing.py` (must-fire and must-not-fire for each rule, sh and ps1, the hook entry
+  point) and `test_resume_typing_structure.py` (gate order in both senders' source). Every case sets
+  `CREW_AUTOCLEAR_INHIBIT`, a recording tmux stub and a stub window list. `.crew/verify.json` gains
+  their rule. The `/clear` path is unchanged. The sabotage entries are harness (T-0087) and land in
+  their own PR (TODO.md).
+- Docs: README, CONFIG.md §14b, crew-context SKILL.md, the auto-cycle guide source: the typing path,
+  every refusal, the delay and its limit (a delay is a guess; Windows has no probe).
+
+### Changed — `crew` 1.0.256: `tickets.baseBranch`, the branch ticket branches are cut from (T-0061)
+
+- New repo-only config key `tickets.baseBranch` (default `null`, meaning `origin/HEAD`'s target,
+  then `origin/main`, then `main`, as before), declared in `crew_config.default_config()`, the
+  config template and `crew-setup`'s prose template, after `autopilot`. It is absent from
+  `default_global_config()`: which branch a repo integrates on is a fact about that repo. The
+  declared-leaf count is 130 (`test_crew_config.py`), 58 of them repo-only.
+- `CONFIG.md` §11 documents it: candidate order (`<value>` as given when it contains `/`, then
+  `origin/<value>`, then `<value>`) and "could not tell" when none names a commit or the config
+  does not parse - `scope_base.py --record` exits 1 and writes nothing, `--base`/`--changed` exit 3
+  with nothing on stdout, the completion audit fails, and nothing falls back to `origin/HEAD`.
+- `/crew:implement` step 1 says a record `crew_ticket.py activate` already made is kept and an exit
+  1 means fix `tickets.baseBranch`; step 3 stops on `--base`'s exit 3 instead of diffing against an
+  empty string. `crew-execute` names the same.
+- The reader of the key - `scope_base.read_base_branch` / `base_branch`, `--base`'s exit 3,
+  `activate` recording at branch cut, and the re-derivation of a fallback entry guessed against
+  another ref - is T-0061's harness half. Those files are on the review/gate harness list
+  (`scripts/check-tooling-pr.py`), so they land in their own PR, before this one.
+
+### Changed — `crew` 1.0.254: the upgrade-doc sabotage entry follows whichever doc this tree ships (tooling)
+
+- `plugin/crew/tests/sabotage.py`: `UPGRADE_DOC` is crew-setup's `upgrade-report.md` when that file exists,
+  else `commands/upgrade.md`, and the entry's target test follows it. T-0038 (#370) moves the per-hop
+  migration text into `upgrade-report.md` and leaves `upgrade.md` a removal stub; with this, the harness
+  edit lands alone first (CLAUDE.md, T-0087) and both trees keep the anchor exact. No behaviour change.
+
+### Added — `crew` 1.0.252: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
+
+- **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
+  (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
+  [--direction-file <f>]`) is the one way code creates a ticket: one past the
+  highest `T-` number over `.work/tickets/` folders and `.work/INDEX.md` rows,
+  claimed with an exclusive `os.mkdir`, direction.md written complete or not at
+  all (temp file, fsync, `os.replace`), and only then the INDEX row (and, under
+  `obsidian`, the note and Kanban card) through `crew_tracker.create`, then
+  `move` to `ready`. A tracker `id taken` takes the next id; any other failure
+  releases the folder and refuses; `jira`, `sdp`, no tracker and could-not-tell
+  refuse before anything is claimed. `crew_ticket.py assign --root .
+  --direction-file .work/autopilot/<f>` checks a staging file (under
+  `.work/autopilot/`, symlinks resolved; `title:`, `risk:`, and the four
+  `/crew:brainstorm` sections, none empty) and that autopilot is armed, then
+  mints exactly one `ready` ticket whose direction.md starts with an
+  `origin: /crew:autopilot assign` provenance line.
+- **Split (owner's tooling-PR rule, 2026-09-30).** `crew_ticket.py` is review
+  harness to `scripts/check-tooling-pr.py`, so the `/crew:autopilot assign`
+  route - the router change in `crew_autopilot.py`, `autopilot.md`'s assign
+  lines and their tests - lands separately as L-0611. Until it does,
+  `/crew:autopilot assign` still stops with "arrives with T-0019", and
+  `crew_ticket.py assign` is reachable from the command line: stage the file,
+  run it, then `/crew:autopilot run <id>`.
+- **Approval.** An assigned ticket is approved under `autopilot.approval` like
+  any other (the owner's 2026-09-26 "Follow the policy"); the origin line
+  changes no policy answer (`test_origin_line_changes_no_policy`, and a
+  sabotage entry that puts an origin rule back). `crew_autopilot.py` stays
+  read-only but for `approve`: `assign` and `mint` are `crew_ticket.py`'s.
+- **Concurrency.** The tracker's replace re-reads before it writes, but a write
+  that lands between that re-read and the replace is lost; `mint` therefore
+  holds `.work/INDEX.md.lock` across both its tracker calls, `create` and the
+  `move` to `ready`, and 8 concurrent mints give 8 distinct ids, folders and
+  rows (measured on Linux). A `create` that raises anything (a `KeyError`, a
+  `KeyboardInterrupt`) releases the claimed folder unless its INDEX row is
+  already written; then the folder is kept and the refusal says so. A `move`
+  that raises leaves the ticket at `direction` with a warning.
+- **Review round 1.** A staging file or `mint --direction-file` with a BOM is read as
+  `utf-8-sig`; `mint --status` outside `ready|direction` prints `refused:` and
+  exits 1 instead of an argparse exit 2; `assign --direction-file` resolves a
+  relative path against `--root`, not the current directory.
+- **Unchanged.** `crew_tracker.py`; `/crew:brainstorm`'s and `/crew:fix`'s prose
+  id pick (moving them onto `mint` is a follow-up); T-0010's policies;
+  `crew_autopilot.py` and `autopilot.md` (L-0611's).
+- **Review round 2 (Codex: 1 BLOCK, 5 FIX), fixed test-first.** A `move` to
+  `ready` whose board half fails after the INDEX half landed puts the row back
+  to `direction`, and mint's reported status is always the INDEX row's (the
+  BLOCK: it said `direction` while the row was `ready`, so autopilot could go
+  past the stop). A `create` whose row lands but whose card does not refuses,
+  keeping the ticket at `direction`. Any failure taking `INDEX.md.lock`
+  releases the claimed folder. A `create` that wrote the obsidian note but no
+  row removes that note. `assign` and `mint --direction-file` refuse a file
+  that is not regular (a FIFO no longer hangs them). `assign` refuses
+  `--title` and `--status` instead of ignoring them.
+- **Sabotage.** 34 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
+  appended to `AUTOPILOT_MUTATIONS` (7 for review round 2).
+- Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes,
+  then `1.0.115 -> 1.0.123` after merging main `8d84786d` (crew 1.0.115);
+  1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
+  after merging main `2a2d6e07` (crew 1.0.139); 1.0.140-1.0.143 are held by
+  other lanes. Re-set at 1.0.144 after the L-0611 split and the merge of main
+  `8123fe74` (crew 1.0.140, L-0574). Then `1.0.154 -> 1.0.157` after merging
+  main `f808e5f0` (crew 1.0.154; #328 shipped 1.0.144, so T-0019's number was
+  spent), allocated by the coordinator; L-0611 is 1.0.161. Then `1.0.242 -> 1.0.302`
+  after merging main `38adba44` (crew 1.0.242), allocated by the coordinator.
+- Windows: the staged-file read restores blocking mode only where it set `O_NONBLOCK`. Windows has no
+  `O_NONBLOCK` and its `os.set_blocking` works on pipes only, so every `assign` and `mint --direction-file`
+  refused there with `[WinError 87]` (seen on Windows CI). Pinned by
+  `test_a_staged_file_reads_where_there_is_no_o_nonblock`.
+
+### Added — crew 1.0.248: sabotage entries for L-0516's deadline polls (L-0563)
+
+- `plugin/crew/tests/sabotage_qa.py`: six mutations against the deadline polls L-0516 added -
+  `poll_until` probing once and never waiting, reporting success at the deadline, probing once more
+  after it; `wait_for_pidfile` accepting an existing empty file; child cleanup reaping with an
+  unbounded wait; and `completion-audit.ps1`'s probe killing only the launcher. Each goes red
+  against its test. The ps1 entry needs `pwsh`: on a host without it the target test skips and
+  `sabotage.py` reports it STILL GREEN, as the other pwsh-only entries already do.
+
+### Changed — `crew` 1.0.247: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
+
+- `scope_base.py` measures a ticket against the repo-only key `tickets.baseBranch` in
+  `.crew/config.json` (read straight from the file by `read_base_branch` / `base_branch`): the value
+  as given when it contains `/`, then `origin/<value>`, then `<value>`. Unset or `null` keeps the old
+  chain (`origin/HEAD`'s target, `origin/main`, `main`). TSS-510's repro: a branch cut from
+  `development` with origin/HEAD on `main` recorded the merge-base with `main`, 492 files for a
+  19-file ticket; with the key it records HEAD, exact.
+- "Could not tell" is its own answer. A configured branch naming no commit, or a config that does
+  not parse, gives `resolve` source `unknown` and no base; `--record` writes nothing and exits 1;
+  **`scope_base.py --base` and `--changed` print nothing and exit 3** (they used to print `HEAD` and
+  exit 0 only outside a repository, which is unchanged). It never falls back to `origin/HEAD`. A
+  base branch that resolves but shares no merge-base with HEAD (a shallow clone, unrelated history)
+  is "could not tell" too, configured or default: it used to fall to HEAD, and `--record` wrote that
+  as an exact start that was never moved (QA review F1). The
+  completion audit, the refresh check, `scope_report` and `webtest_guard` already treat no base as
+  unmeasured or failed; tests pin each.
+- `crew_ticket.py activate` records the scope base at branch cut (an existing record is kept; a
+  failure or "could not tell" is printed to stderr and the pointer is still set).
+- A fallback entry guessed against another ref than today's base branch (`merge-base with
+  origin/main` once the key names `development`) is re-derived by the first-record rule, the old
+  provenance kept as `was`; an exact entry (`from: HEAD`) is never re-derived, and a fallback
+  against the same ref is kept. The gone and not-ancestor reasons now start "could not tell where
+  <ticket> started".
+- `/crew:review` step 1a stops on exit 3 instead of bundling; `/crew:autopilot` says activate also
+  records. Six new sabotage entries (`sabotage_scope.py`; `sabotage.py` is at max-module-lines), each RED on its named test; three existing anchors
+  re-pointed onto the same lines' new text. `test_scope_base_branch.py` joins verify rules 11 and
+  25. The verify gate's own fallback base is unchanged and filed to `TODO.md`.
 
 ### Added — `crew` 1.0.242: a measured readability standard for every diagram crew draws
 
@@ -380,6 +694,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Docs.** `/crew:review`'s contract comment, the crew README's prompt paragraph, the
   working-with-codex guide (rebuilt), the crew code map and the lifecycle diagram. `.crew/verify.json`'s
   recurring-findings rule now also runs `test_review_prompt.py`.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

@@ -1,76 +1,107 @@
 # Cloud handoff notes
 
-Live log of the cloud session working PRs #337, #350–#375 and #378 (session
-`session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
-stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
+Live log of the cloud session working ALL open PRs #323-#379 (session
+`session_01YVvVmFJquzLKR26dG6oSQS`, branch `ccr-b039f2bb-6jks7g`, which carries only this file and
+merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
+and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-03 02:24 UTC
+Last updated: 2026-10-04 05:19 UTC
 
-## Standing rules (owner, 2026-10-03)
+## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
-- **Merge rule.** A PR merges only when all three hold:
-  - a Sonnet 5.5 review of its current head has **0 BLOCK and 0 FIX** (NITs are fine);
-  - CI is green on that head;
-  - it is first in line.
-
-  Merge commits only, never squash or rebase.
-- **Merge order:** #372 → #337 → #375 → #378 → #350 → #371 → #351 → #355 → #360 → #368 → #374 (last;
-  it holds these notes).
-- **After each merge:**
-  - Merge `main` into the next PR (version files and CHANGELOG conflict only).
-  - Set a new crew version in the LAST commit; any plugin change after it fails the drift gate.
-  - Wait for green CI, then merge.
-
-  Only the front of the queue is re-merged.
-- **Commits** carry only `Claude-Session:`. Never `Co-Authored-By` (owner's global CLAUDE.md).
-- **Versions** are allocated in `pending-tickets.md`. Next free: **1.0.215**.
+- **Merge rule.** A PR merges only when all three hold: a Sonnet 5 review of its current head has
+  **0 BLOCK and 0 FIX** (NITs fine; after a main merge a merge-only review suffices); CI green on that
+  head; first in line. Merge commits only, never squash or rebase.
+- **Owner 2026-10-04:** merge as I go; build ALL docs-only handoffs too.
+- **After each merge:** merge `main` into the next PR (generated files take main's side, rules
+  regenerated), crew version set in the LAST commit, merge-only Sonnet review, CI, merge.
+- **Commits** carry only `Claude-Session:`. Never `Co-Authored-By`.
+- **Versions:** the next PR in the train takes the next free number. Builders use 1.0.300+
+  placeholders and are re-bumped at landing. Next free for landing: **1.0.247**.
+- **Helpers** (this session's scratchpad, lost on restart; recreate from the description):
+  `catchup.sh <branch>` merges origin/main, takes main's side for graphify-out, .claude/rules, and
+  anchor-only code map and diagram conflicts, then regenerates the rules. `setver.py`/`bump.sh` commit
+  the merge with main's version, then make a version-only commit last.
 
 ## Where things stand
 
-### Merge train (review round 1 done; fixes in flight)
+### Landing train (in order)
 
-| PR | Branch | Round-1 review | Fix | Re-review | CI | Version |
-|---|---|---|---|---|---|---|
-| #372 | L-0562-stamp-reach | BLOCK: `--apply` changes `rule_key`, orphaning timing cache + 3 FIX | in progress | – | – | → 1.0.208 |
-| #337 | ccr-c7dcab79-8iwqt8 | BLOCK: E5 unknown `live`/acceptance → PASS + 3 FIX | in progress | – | – | → 1.0.209 |
-| #375 | crew-diagram-standard | BLOCK: zero nodes measured → PASS + 6 FIX | in progress | – | – | → 1.0.210 |
-| #378 | T-0061-harness | 2 FIX (both resolved by #350 landing next) | n/a | running (paired with #350) | – | 1.0.181; needs main merge |
-| #350 | T-0061-build | 2 FIX | done, 2d83d373 | running | pending | 1.0.207 |
-| #371 | T-0100-build | **clean** | – | – | needs main merge | 1.0.202 |
-| #351 | T-0066-build | 2 FIX | in progress | – | – | → 1.0.211 |
-| #355 | T-0013-build | 1 FIX | in progress | – | – | → 1.0.214 |
-| #360 | T-0048-build | 1 FIX | in progress | – | – | → 1.0.212 |
-| #368 | T-0063-build | 2 FIX | in progress | – | – | → 1.0.213 |
-| #374 | pending-tickets | 2 FIX | done, b72269d9 | due when it is next | – | – |
+Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #379, #389 (tooling).
 
-The round-1 findings are recorded in each PR's fix commit messages.
+| # | PR | State |
+|---|---|---|
+| 1 | #350 T-0061 feature | 8917caf9 crew 1.0.256, merge-only review + CI running |
+| 2 | #371 T-0100 | review CLEAN (prev session), needs re-merge |
+| 3 | #351 #355 #360 #368 | review CLEAN (prev session), need re-merge |
+| 4 | #376 L-0604 | r1 1 FIX was a harness docstring (review_verdict.py) -> needs its own tooling PR or ruling |
+| 5 | #377 #352 #353 #357 #358 #359 #362 #367 | review CLEAN, need re-merge |
+| 6 | #361 T-0050, #348 T-0041, #349 T-0065, #369 T-0044, #370 T-0038 | built + review CLEAN (#370 r2 running) |
+| 7 | harness (each alone): #333, #331, #336 (split sabotage_cloud.py first), #343 T-0068 (r3 running) | |
+| 8 | #338 L-0582 WIP port; #324 owner WIP | |
 
-### Builds and ports (batch 2), each with its own worktree under /home/user/pr-<n>
+### Builds (worktrees /home/user/pr-<n>)
 
-| PR | Ticket | State | Version |
-|---|---|---|---|
-| #352 | T-0069 | building | 1.0.189 |
-| #357 | T-0020 | building | 1.0.190 |
-| #358 | T-0022 | building | 1.0.191 |
-| #359 | T-0025 | building | 1.0.192 |
-| #353 | T-0011 | porting onto main | 1.0.196 |
-| #362 | T-0051 | not started (port) | 1.0.197 |
-| #367 | T-0064 | not started (port) | 1.0.198 |
+| PR | Ticket | State |
+|---|---|---|
+| #354 | T-0012 | built 803c656a, review running |
+| #344 | T-0035 | building |
+| #342 | T-0070 | building |
+| #340 #341 #346 #347 #345 | L-0526, L-0509, T-0039, T-0047, T-0036 | queued |
+| #356 #363 #364 #365 #366 | | BLOCKED: T-0016, T-0037, T-0049 have no ticket/spec (owner) |
 
-Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 (1.0.195, after
-#337 merges).
+## How to resume
 
-## How to resume (a new session)
-
-1. Read this file and `pending-tickets.md`.
-2. For each PR in the merge-train table, check its branch head against the table:
-   `git log -1 origin/<branch>`. A newer head means a fix landed after this file was written.
-3. Any PR whose fix is "done" but whose re-review is "–" needs a fresh Sonnet 5.5 review of its
-   current head before it can merge.
-4. Batch-2 branches: an unchanged head (still docs-only) means the build did not finish; restart it
-   from the ticket's `docs/tickets/<T>/` files.
+1. Read this file and `pending-tickets.md`. `git fetch`; compare each branch head with the table.
+2. Front of the train: re-merge main, re-bump, merge-only Sonnet review, CI, then merge.
+3. A build whose branch head is still docs-only did not finish: restart it from `docs/tickets/<T>/`.
 
 ## Log (newest first)
+
+- 05:19: BATCH (written while the branch carried #389): MERGED #388 (notes). OWNER chose waiver for #370's 1-line harness retarget, BUT a waiver keeps verify-gate red (check-tooling-pr), so instead opened tooling PR #389 (crew 1.0.254): sabotage UPGRADE_DOC resolves to upgrade-report.md if present else upgrade.md - lands alone first, then #370 is green without a harness edit. #370 dup crash-test anchor fixed in-branch (1acdeba3, 1.0.313). #369 r2: 2 FIX (no claude --version check for --setting-sources >=2.1.246; sweep owner check untested) -> fixer. #343 r2: 1 FIX (guard.log still deadlocks the audit -> bookkeeping) -> fixer. #350 CI running. #369 r2 FIXes pushed ea6bc6c9 (claude --version >=2.1.246 check, worktree main-checkout settings.local.json, sweep tests; 1.0.314); r3 started. #389 tooling review CLEAN (0/0/2). #349 T-0065 built 187e2d48 (1.0.309; verify_agents.py, provider_probe.py, UPGRADE.md history, per-test TMPDIR; full suite 9251 passed; harness follow-ups: verify-gate cleanup, sabotage entries, review.md names). Review started. #349 r1 CLEAN (0/0/2). #369 r3 CLEAN (0/0/4). #350 CI red on 459b9724: test_scope_discipline pins 'not from the verify gate's own marker' which #350's implement.md edit dropped (all 4 red checks same test) - fixed 9a3df424 crew 1.0.255, review + CI again. #350 fix review CLEAN; waits CI. #343 r2 FIX fixed -> 741cbce2 (guard.log/.autoclear.log/.cloud-guard-unpinned-noted -> bookkeeping; decision markers stay state, pinned; 4 mutations red; full suite 9380 passed; 1.0.315); r3 started. MERGED #389 at 11dcb99d (tooling, crew 1.0.254). #350 re-merged -> 8917caf9 crew 1.0.256 (merge-only review + CI). #370 re-merged (with #389) -> f6db6878 crew 1.0.257, BUDGETS 22,335/140; r2 review. #354 T-0012 built 803c656a (narrowed scope; minting moved to L-0541; harness follow-up: approval_hook goal:<slug> token) - review started. Next free 1.0.258. 
+- 04:46: #370 r1 on 03f99760: 0 BLOCK, 1 FIX (sabotage anchors: (a) upgrade.md stub lost '- **Schema 6 → 7**' -> needs harness retarget of UPGRADE_DOC in sabotage.py; (b) duplicate crash-test anchor -> fixed in-branch by rewording test_migrate.py:598, 1.0.313). (a) awaits OWNER decision: waive tooling rule for the 1-line retarget in #370, or land #370 with that test red then a tooling PR.
+- 04:45: #350 merge-only review on 459b9724: CLEAN (0/0/2 NIT: codemap says 1.0.184; stray CHANGELOG blank line). Fits #378's scope_base exactly. Waiting CI.
+- 04:44: #343 3 FIX fixed -> 1292b863 (four lists: bookkeeping/write-allowed(metrics.md only)/state/content; rule 2 refuses gate files even in Touch; 13 new mutations, 40/40 red; full suite 9305 passed). r2 started incl. guard.log bookkeeping-vs-state question.
+- 04:44: MERGED #379 at d67098ad (crew 1.0.252; Windows fix verified by CI 25/25). #350 re-merged -> 459b9724 crew 1.0.253 (BUDGETS 22,550), merge-only review + CI next. #369 fixes pushed 9ba064c1 (--setting-sources user per docs, denyWrite, env/stores widened, bounded probe) - r2 started. #370 T-0038 built 03f99760 - review started (1 known red: sabotage anchor in upgrade.md stub needs harness retarget). #361 r2 CLEAN -> train. mmdc installed locally for diagram renders. Next free 1.0.254.
+- 04:41: #361 r2 on ccce8df4: CLEAN (0/0/2 NIT). Joins landing train.
+- 04:39: #348 r1 on 7ec4750f: CLEAN (0/0/2 NIT: docs/diagrams README/index.html embedded done-diagram stale - regenerate with diagram_doc.py --write where mmdc exists; validate-prompts glob cwd). Joins the landing train.
+- 04:37: #348 T-0041 feature half built -> 7ec4750f (1.0.308 placeholder; 18 tests, 5 hand sabotages red; harness half = follow-ups: review_verdict U+2028 split, review_run output_sha256, reviewer.md/review.md rule, sabotage_review entries). Sonnet review started.
+- 04:33: #379 fix review on c5dbf597: CLEAN (0/0/1); CI running. #361 FIXes + 2 safety NITs pushed ccce8df4 (1.0.307 placeholder; full suite 9343 passed); Sonnet r2 started.
+- 04:27: #379 CI on a5b44398: Windows default shards red - REAL: _read_regular os.set_blocking on a file -> WinError 87 refused every assign/mint --direction-file on Windows (round-2 FIFO fix). Fixed 523f0b7c (only restore blocking where O_NONBLOCK set; Windows-simulating test, sabotage red), version 1.0.252 c5dbf597 pushed. Sonnet review of the fix + CI next.
+- 04:06: #369 r1 on ce400de3: 1 BLOCK (repo .claude/settings sandbox.excludedCommands can widen past the probe), 4 FIX (probe cwd != exec cwd; no denyWrite on stores/identity config/sealed dir; only AWS env stripped; probe output truncation), 2 NIT. Fixer started (docs-verified settings semantics), 1.0.311 placeholder.
+- 04:05: #343 r1 on 514ca132: 0 BLOCK, 3 FIX (rule 5a opens trust inputs tfplan/incident/deploy-in-flight to Write/Edit -> forged plan sidecar lets destroy apply; opens verify-gate marker/fingerprint -> forged green gate; bundle/audit exclusion hides committed trust files). Fixer started: split WRITE_ALLOWED (metrics only) vs AUDIT/BUNDLE-EXCLUDED (crew-script bookkeeping only). 1.0.310 placeholder.
+- 04:04: MERGED #387 (notes). #379 merge-only r2 on a5b44398: CLEAN; CI running. #350 pre-merged main locally (BUDGETS re-measure 22,541 pending in its version commit).
+- 04:03: MERGED #339 at af2bf9d2 (crew 1.0.248; CI 25/25 green after runner disk fix; 3 merge-only reviews clean). #379 re-merged -> a5b44398 crew 1.0.250, merge-only review r2 + CI next. Next free 1.0.251.
+- 04:01: #343 T-0068 (harness, lands alone) built -> 514ca132 (1.0.300 placeholder; list in crew_ticket.py not crew_common.py to stay harness-only; 69 tests, 26 sabotages red incl ps1 via scratch pwsh 7.4.6). Sonnet adversarial review started. Builder started: T-0065 #349 (1.0.309).
+- 04:01: #369 T-0044 built -> ce400de3 (1.0.305 placeholder; 87+9 tests, 22/23 hand sabotages red (1 equivalent mutation); follow-up sabotage_unattended.py). Sonnet security review started. Builder started: T-0041 #348 (1.0.308).
+- 03:56: #379 merge-only review on a88e9b07: CLEAN (0/0/0; ASSIGN 34/34 + SCOPE sabotage red, 7 pwsh-only green w/o pwsh). Waits on CI.
+- 03:56: #361 r1 on e6c5fa6a: 0 BLOCK, 2 FIX (approval=null widening warning blank; --restore of corrupt stamp writes it saying nothing to change), 4 NIT. Fixer started (1.0.307 placeholder) incl. 2 safety NITs.
+- 03:52: OWNER: runner disk resolved. CI running on #339 c2a3ccb5 and #379 a88e9b07.
+- 03:52: #361 T-0050 built -> e6c5fa6a (1.0.301 placeholder; 120 new tests, 21 hand sabotages red, full suite 9316 passed; harness follow-ups: allowCliApproval global, sabotage_config_layers.py). Sonnet review started. Builder started: T-0038 #370 (1.0.306).
+- 03:50: MERGED #378 at f7ab26b9 (crew 1.0.247; CI 25/25 green incl verify-gate, merge-only review clean; marked ready then merged). #339 re-merged -> c2a3ccb5 crew 1.0.248, merge-only review CLEAN; CI pending runner disk fix (owner fixing runners 4/5/6 on the self-hosted host). #379 re-merged -> a88e9b07 crew 1.0.249 (543 tests pass on merged tree), merge-only review next. Next free: 1.0.250.
+- 03:37: BLOCKER (owner): self-hosted runner host DISK FULL - #339 verify-gate rerun: 'verify-gate.sh: line 911: printf: No space left on device' (runner-6). Earlier pwsh SIGBUS -7 on runners 4/5 same cause. All PR CI red until freed. Notes pushes paused (they trigger CI on the same runners). #339 and #378 are review-clean, merge on green after cleanup.
+- 03:36: #339 CI 6da2a486: verify-gate red at ~03:29 on self-hosted runner-5: pwsh killed by SIGBUS (-7) and the full suite errored en masse, then every later step (even 0s scripts) failed - host fault (same minute as runner-4's -7s on #387). Re-ran the failed job ONCE (run 37173806451). If it fails again the same way: host needs attention (tmpfs/memory) - owner.
+- 03:34: #379 r3 on d93f3e5a: CLEAN (0/0/3 NIT: mint --status '' -> ready; untested drop-note branch; >4300-digit id ValueError). All 6 r2 findings verified red-on-revert. Train reordered: #379 lands right after #378 (unblocks #354 T-0012).
+- 03:30: #387 (notes, docs-only) crew-shell-matrix ubuntu red on 0a53c7cd: 698 ps1-flavour tests exit -7 (pwsh killed by signal 7) on self-hosted runner-4 - runner fault, not content. Docs PR merges regardless (owner). Watching #339/#378 for the same.
+- 03:29: #379 T-0019: round-2 BLOCK + 5 FIX fixed test-first, merged main, pushed d93f3e5a (1.0.302 placeholder; full crew suite 9280 passed; ASSIGN sabotage 34/34 red). Sonnet round-3 review started. Builder started: T-0044 #369 (1.0.305).
+- 03:25: #378 merge-only review on 9b701365: CLEAN (0/0/2 NIT: diagram comment sha, version gap 243-246 reserved).
+- 03:24: OWNER: docs-only PRs need no gates, just merge. MERGED #386 (notes, 1ffbe7a5). Notes now pushed to branch ccr-b039f2bb-6jks7g after every action (read the BRANCH to resume); merged to main periodically via a docs PR.
+- 03:24: #378 local suites on merged tree: 582 passed, tooling-pr 17/17; merge-only Sonnet review of 9b701365 started. Owner 03:2x: 'merge when ready' (standing).
+- 03:22: #331 r2 on 4a368125: CLEAN (0/0/0; full crew suite 8834 passed). Harness clean set: #331, #333, #336 (needs split at landing).
+- 03:22: #378 merged main + re-bumped -> 9b701365 crew 1.0.247 pushed (CI early signal; will re-merge after #339). #333 r2 on 5b8be69d: CLEAN (0/0/0). Next free: 1.0.248.
+- 03:21: #339 merge-only review r2 on 6da2a486: CLEAN (0/0/0); CI running. #378 pre-merged main locally (not pushed): im1 relabel moved into main's split process-crew-lifecycle-implement.mmd; re-bump waits for #339 to land. Suites running.
+- 03:20: MERGED #385 (35cfcfcf: verify.json maps the handoff docs; notes). #339 re-merged main -> 6da2a486 (no plugin change, crew stays 1.0.246); merge-only review + CI next. Notes continue on a new PR from ccr-b039f2bb-6jks7g.
+- 03:13: #377 r1 (Sonnet) on 05be104b: CLEAN (0 BLOCK, 0 FIX, 2 NIT: implement.md reflow, LANDING_ORDER literal duplicated in test).
+- 03:12: #339 CI verify-gate red: every row PASS but 'UNMAPPED CHANGES: cloud-handoff-notes.md, pending-tickets.md' (#374 added them without a verify.json rule -> gate exit 2 on EVERY PR). Fix dc9c2154 on #385 (docs rule maps both). #385 now lands FIRST; then #339 re-merges main.
+- 03:09: #333 FIX pushed 5b8be69d (terminate OSError -> CouldNotCheck, must-block/allow tests, sabotage entry; 1.0.304 placeholder). Sonnet re-review r2 started.
+- 03:06: #331 FIX pushed 4a368125 (pwsh-simulated label test + typo must-block, sabotage red; 1.0.303 placeholder). Sonnet re-review r2 started.
+- 03:06: #336 r1 (Sonnet) on f08ae7fb: 0 BLOCK, 0 FIX, 2 NIT (numeric workflow ID / gh alias read as unlisted; docstring limit list). CI verify-gate red ONLY on check-tooling-pr.py (owner waiver in PR body). Plan at landing: split the harness part (sabotage_cloud.py) into its own tooling PR, as L-0516/L-0563 did, so both go green.
+- 03:04: #333 r1 (Sonnet) on 73af42d7: 0 BLOCK, 1 FIX (review_checks.py:755 bare job.terminate() on clean exit raises OSError, not CouldNotCheck), 1 NIT. Fixer started, placeholder 1.0.304.
+- 03:03: #331 r1 (Sonnet) on 5bd46939: 0 BLOCK, 1 FIX (test_every_platform_only_label_names_exactly_one_shipped_mutation fails without pwsh), 2 NIT. Fixer started, placeholder crew 1.0.303.
+- 03:02: Content reviews (Sonnet) started on #377, #333, #331, #336 (current heads); merge-only reviews follow at landing. #339 CI: Windows legs, shell, test 3.12, verify-gate still running.
+- 03:01: RESUMED by new session (owner 2026-10-04: work all open PRs #323-#379, merge as I go, build all handoffs). Merged #374 (b1e9bd7e) and #375 (38adba44, crew 1.0.242). #339 re-merged main -> 210901b0 crew 1.0.246, merge-only Sonnet review CLEAN (1 NIT CHANGELOG blank line), CI running. Builders started: T-0068 #343, T-0050 #361, T-0019 #379 fixes.
+## Previous session's log (session_014TLaGTaf3GDU1wccRotE67)
+
 
 - 02:24: #339 r2 on 8855e68f: CLEAN (0 BLOCK, 0 FIX; ps1 STILL GREEN ruled NIT - no skip mechanism in sabotage.py, harness follow-up). Queued right after #375 (needs re-merge once #375 lands). Follow-up ticket: sabotage.py needs a 'requires pwsh' skip state.
 - 02:24: #376 r1: PASS, 1 FIX (review_verdict.py docstring overclaim) + 2 NIT (review.md:485 harness follow-up; sabotage_review entry). Land-prep agent started: fix, merge main (26 generated/version conflicts), crew 1.0.245. Next free: 1.0.246.

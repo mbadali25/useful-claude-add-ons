@@ -729,7 +729,12 @@ AUTOCLEAR_DEFAULTS = {
 # rather than false so the /crew:init template, which writes every key, does
 # not veto a machine opt-in. `context.autoResume` is a different, retired key
 # and stays unread.
-RESUME_DEFAULTS = {"auto": None}
+#
+# T-0013: how auto-resume TYPES, read from the MACHINE file only
+# (`crew_autocycle.resume_typing`); a repo copy is declared but never read.
+# `typeDelaySeconds` precedes the tmux ready probe (Windows' only wait; the spike
+# saw input ready 0.134 s after SessionStart); `readyTimeoutSeconds` caps the probe.
+RESUME_DEFAULTS = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
 
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
 # declared but never granted machine-wide. `unsafeFocus: true` accepts that
