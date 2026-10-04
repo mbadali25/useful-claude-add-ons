@@ -36,7 +36,7 @@ TheSelectSource (crew 1.0.41) reported four gaps; these are crew's halves of the
   before, 0 after). The leftover sender scripts came from a test whose `bash` shim reads the
   sender and never runs it. Existing leftovers are not deleted: the troubleshooting guide names
   the patterns and the owner-run cleanup.
-- Tests: `test_verify_agents.py` (17), `test_provider_probe.py` (8), `test_tmp_hygiene.py` (5),
+- Tests: `test_verify_agents.py` (17), `test_provider_probe.py` (8), `test_tmp_hygiene.py` (6),
   4 in `test_status.py`, 5 in `test_upgrade.py`. Three `.crew/verify.json` rules.
 
 **Harness follow-ups (T-0087 tooling-PR rule; each lands alone):** register `verify-gate.sh`'s
