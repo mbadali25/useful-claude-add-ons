@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:27 UTC
+Last updated: 2026-10-04 10:29 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:29: Spec reconstruction started for T-0016, T-0037, T-0049 (owner request; no spec on GitHub - owner's .work copies never published; T-0016/T-0049 were built+reviewed locally per docs/review/08). Branches <T>-build, docs only, owner approves before build. #377 land-prep done 6156e7f2 (1.0.335) -> merge review. #352 land-prep done 4b8e56cb (1.0.336) -> merge review. MAIN FOLLOW-UP: committed troubleshooting html stale vs src/auto-cycle.md (T-0013).
 - 10:27: #368 merge review 46d957c1: 0/0/0 CLEAN. Owner: write specs for T-0016, T-0037, T-0049 to unblock #356/#363/#364/#365/#366.
 - 10:25: #368 land-prep on edb2b8ff done: head 46d957c1 (1.0.334), codemap:59 fixed, arrival text 1.0.334. Merge review started.
 - 10:22: Owner asked for next-PR order (all open, draft or not). Land-prep started: #377 (1.0.335), #352 (1.0.336). Untriaged open PRs found: #274 T-0104, #275 T-0500 (WIP cloud handoffs, outside 323-379).
