@@ -2619,17 +2619,20 @@ def test_documented_not_caught_is_in_readme(disguise, command):
 
 def test_the_not_caught_section_names_the_boundary():
     """README, CONFIG.md and the crew-cloud skill each say why a command-line
-    guard cannot close these, and name the credentials boundary, T-0044."""
+    guard cannot close these, and name the credentials boundary. T-0044
+    built it, so each now names the launcher, `crew_unattended.py launch`,
+    rather than a future ticket."""
     crew = os.path.join(os.path.dirname(cloud_guard.__file__), os.pardir,
                         os.pardir)
-    assert "T-0044" in _readme_not_caught()
+    assert "crew_unattended.py launch" in _readme_not_caught()
     for rel in ("CONFIG.md", os.path.join("skills", "crew-cloud",
                                           "SKILL.md")):
         with open(os.path.join(crew, rel), encoding="utf-8") as handle:
             text = handle.read()
         assert "What the guard does not catch" in text, rel
         section = text.split("What the guard does not catch", 1)[1][:3000]
-        assert "T-0044" in section and "interpreter" in section, rel
+        assert "crew_unattended.py launch" in section \
+            and "interpreter" in section, rel
 
 
 def test_step10_tables_are_distinct():
