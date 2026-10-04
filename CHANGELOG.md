@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.224: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
+### Fixed - `crew` 1.0.231: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
 
 - **T-0023 r2 FIX 1 (route clipping).** A route whose command `_clip` would change - cut past
   `FIELD_CHARS["command"]` (200) or with its whitespace reflowed - is now an `ask` in `decide`, and
@@ -27,6 +27,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   written either, a record that neither its file nor its directory lets anyone replace or remove
   is not trusted. Six new tests, including a 0444-record-in-a-0555-directory twin that returned
   `run` before the fix under `setpriv`; both new wait reasons are named in the four reason lists.
+  Review round 2: CONFIG.md's accepted risks name the residual (unlink, blank and marker all fail
+  while `os.access` reports writable: the stale record is trusted), and the stuck reason says how
+  to clear it.
 - **T-0042 r2 FIX 2 (pwsh-only fixture).** `_claude` in `test_crew_resume_hook.py` skips by name
   without bash instead of raising TypeError; `test_never_emits_initial_user_message` is parametrised
   and its `wait`/`off` cases no longer need the fixture.
