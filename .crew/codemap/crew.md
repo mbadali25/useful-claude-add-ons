@@ -290,7 +290,8 @@ with no base (DERIVED). Re-executed on main `edb2b8ff` (T-0013 landed): 132 / 74
 T-0013's `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` in both layers.
 Re-executed on T-0066's branch after merging main `155fe6d8` (crew 1.0.342), which changed no config key: 133 / 75 / 58 / 0 -
 `git.forbiddenTrailers` in both layers on top of T-0013's 132 (131 / 73 / 58 / 0 on its earlier
-merge of `c9263465`). `plugin/crew/tests/test_crew_config.py` asserts 133. T-0004's `CHANGELOG.md` entry
+merge of `c9263465`). Re-executed on T-0053's branch after merging main `86d96fa1`: 136 / 75 / 61 / 0 -
+T-0053's three repo-only `autopilot.sleep` keys on top of those 133. `plugin/crew/tests/test_crew_config.py` asserts 136. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:703-704` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:692-693` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
@@ -788,6 +789,33 @@ Tests: `plugin/crew/tests/test_crew_autopilot.py`,
 `plugin/crew/tests/sabotage_autopilot.py` (`STATUS_MUTATIONS` appended to
 `AUTOPILOT_MUTATIONS`); `.crew/verify.json` rule 28 (`:345-354`; rule 27 at `:300-308` on T-0094's merge of `8ab733d7`, `:298-306` before, until L-0516 inserted rule 10); T-0010's policy rule 29 (`:355-362`; rule 28 at `:310-316`, `:307-313` before),
 T-0021's tracker rule 30, T-0023's routing rule 31 and T-0024's group-approval rule 32 follow it. Confirmed present, **not run** by this note.
+
+**T-0053 (sleep schedule, slice 1; DERIVED at f3b3367e on T-0053-build after review round 2, merged main baf193aa).**
+`plugin/crew/hooks/scripts/crew_sleep.py` is pure and read-only: `parse_schedule` (`:55`) full-matches
+`_SCHEDULE_RE` (`:47`, ASCII `[0-9]` classes), refuses an hour past 23 and a start equal to its end;
+`in_window` (`:71`) is start-inclusive, end-exclusive, crossing midnight when start > end; `resolve`
+(`:128`) answers `off|awake|asleep|unknown` from a block and a naive local datetime, and names any key
+outside `KEYS` "not available in this crew version". `read_overrides` (`:90`) reads each key on its
+own through `_override` (`:112`): a non-null value outside `POLICIES` is `STRICTEST` with a warning
+(landing decision; it was None, keeping the day value), so is one that cannot be read (`:41`, `human`), and a non-object block gives `human` for both; `render` (`:79`)
+bounds every config value in a warning with `reprlib`. The clock is `crew_sleep.now` (`:50`) alone,
+local time in the process's `TZ`; crew reads no variable or flag of its own for it.
+`crew_autopilot._settings_at` (`plugin/crew/hooks/scripts/crew_autopilot.py:794`) calls `_sleep_at`
+(`:870`) on every read (`:829`): `_sleep_block` (`:860`) asks the raw repo file first because
+`merge_defaults` drops a non-object `autopilot.sleep` for the default, and a raising read, clock or
+resolve is `unknown` with the overrides still read (`human` if even that fails). `_overlay` (`:843`):
+asleep, each non-null override replaces the day value; unknown, one applies only when earlier in
+`STRICTNESS` (`:840`, human > risk > self) than the day value; the dict gains `day` and `sleep` (with
+`applied`). `_decision` (`:1083`) carries the note for an applied key only, inside `risk["sleep"]`
+(the `approval_policy` head is a sabotage anchor, so its 3-tuple stays), and `_noted` (`:1100`)
+appends it to `approval_policy` (`:1112`) and `question_policy` (`:1176`) reasons. `approve`
+(`:1236`) pins its one decision in the thread-local `_PINNED` (`:1135`) while `crew_ticket.approve`
+re-checks, and prints the note; `_sleep_line` (`:1713`) is the `settings` CLI's third line, ending
+`applied=` under unknown. The defaults are `AUTOPILOT_DEFAULTS["sleep"]`
+(`plugin/crew/hooks/scripts/crew_state.py:1134-1135`); the config menu offers the three policies and
+unset (`plugin/crew/hooks/scripts/crew_config_menu.py:82-83`). JUDGEMENT: `deploy_allowed` reads
+`_settings_at` too but only `deploy`, so sleep cannot reach it. Tests
+`plugin/crew/tests/test_crew_autopilot_sleep.py`; no committed mutations yet (L-0651).
 
 **T-0010 (approval and questions policies, DERIVED on T-0010-solo, crew 1.0.50 on T-0077's main).**
 `approval_policy` (`plugin/crew/hooks/scripts/crew_autopilot.py:1034`) refuses a `policy: unknown`
@@ -1535,6 +1563,47 @@ decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`),
 instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
 (`plugin/crew/CONFIG.md:2639`) is the user-facing account.
 
+## Native-memory vault pointers (T-0084)
+
+Added after this note's anchor; read in full at the T-0084 build head. Read-only: nothing here
+writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, migration L-0678).
+
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:66` - the pointer grammar, one line
+  `vault: <name> | note: <path>`; `:111` `_path_problem` refuses an absolute, backslash, `:`
+  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:80`
+  `_invisible`); `:173` `classify` - a pointer attempt (`:134` `_attempt`: the first non-blank
+  line, Cf removed and stripped, starts `vault` + optional whitespace + `:` in any case, and
+  `note:`/`|` (`:71` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
+  non-blank line starts `|` or `note:` (`:72` `_WRAPPED`), or the line is a bare vault name or nothing after the colon
+  (`:75` `_BARE`)) must be the whole body and match exactly (`:152` `_grammar`), else
+  `malformed`; any other body, a prose line starting `Vault:` included, is `full-text`.
+- DERIVED `crew_memory.py:99` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
+  is split on its first two `---` lines and never parsed as YAML.
+- DERIVED `crew_memory.py:230` `_config` - a config is absent only when `os.lstat` raises
+  FileNotFoundError; anything else must read (at most `CONFIG_CAP`, 1 MiB, `:76`), parse as a
+  JSON object with no duplicate key (`:220` `_no_duplicates`) and no RecursionError, and pass
+  its schema (`:188` `_obsidian_problem`: `vaults` an object of objects with a string `path`,
+  `vaultPath` a string; `:206` `_crew_problem`: `memory` an object, `memory.vaultPath` a string
+  or null), or it is `config unreadable: <path>: <field>`.
+- DERIVED `crew_memory.py:291` `vault_path` - schema-checks the Obsidian config
+  (`crew_recall.obsidian_config_path()`, `:297`) and both crew layers (`:262-263`) before
+  resolving; a bad Obsidian config stops every name, a bad crew config stops `memory` (and any
+  name when there is no Obsidian config); `role: ignore` is `vault-unknown`; only the name
+  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:267`) and
+  then, only with no `vaults` block, the top-level `vaultPath`. `:272` `_vault_dir` stats and
+  lists the vault.
+- DERIVED `crew_memory.py:339` `note_path` - `os.lstat` per component: a link is
+  `outside-vault`, a missing component `note-missing`, any other OSError `unreadable`; the real
+  path must stay under the vault's real path, be a regular file (a directory or FIFO there is
+  `unreadable`) and open (`:86` `_open_regular`, non-blocking with an fstat `S_ISREG` check).
+- DERIVED `crew_memory.py:402` `_check_one` - `check` lists every `*.md` (suffix in any case)
+  but the exact name `MEMORY.md` (`:393`; on a case-insensitive filesystem `memory.md` is that file); `os.stat` follows links and only a regular file is
+  opened, so a dangling link, FIFO, device or directory is `unreadable` unopened.
+- DERIVED `crew_memory.py:436` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+  1 for any other state, 2 for usage, a missing `--file`/`--memory-dir` or an unlistable folder.
+- JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
+  because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:1034` — `TRIGGERS`, a 15-entry
@@ -1600,7 +1669,7 @@ instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
 - `crew_state.PM_DEFAULTS` (`:1145-1158`) and `crew_state.AUTHORITY_DEFAULT`
   (`:1102`) — the unnamed session's own dispatch authority.
 - `crew_state.AUTOPILOT_DEFAULTS` (`:1134-1135`) — the repo-only `autopilot` block, `deploy`
-  included (T-0072), with T-0010's `approval` and `questions` keys.
+  included (T-0072), with T-0010's `approval` and `questions` keys and T-0053's `sleep` block.
 - `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`)
   — 10 guard names across 4 vocabularies.
 - `.crew/metrics.jsonl` — append-only, one JSON object per line, replacing
@@ -1623,6 +1692,8 @@ instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
 - `crew_context.py` -> `obsidian-vault`'s CLI, via `crew_recall.py` (module
   docstring only, **not read**: "crew does not search vaults itself...
   calls that plugin's read-only contract and nothing else").
+- `crew_memory.py` -> `~/.claude/obsidian/config.json` (via `crew_recall.obsidian_config_path`)
+  and the crew config's `memory.vaultPath`; read-only (T-0084, section above).
 - `crew_autoclear_setup.py` -> `~/.claude/crew/config.json` (the
   machine-global file), the only writer path for `context.autoClear`.
 - `verify-gate.sh` -> `.crew/verify.json` (the rule map) and, per rule, a

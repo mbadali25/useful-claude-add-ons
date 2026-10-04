@@ -254,6 +254,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   (written by `crew_ticket.py approve` directly, for tests/CI) is accepted only when
   `.crew/config.json` sets `scope.allowCliApproval: true`, and an `autopilot` receipt (from
   `crew_autopilot.py approve`) only while that is true and `autopilot.approval` still allows it.
+  That includes a receipt written inside an `autopilot.sleep.schedule` window under
+  `autopilot.sleep.approval`: once the window ends, the day value decides, and it may not allow it.
   **Fix:** re-approve. The user types `/crew:approve <id>` again — the only other route is
   `/crew:autopilot` under an opted-in `autopilot.approval`; `scope_guard.py` refuses a Write/Edit
   under `<git-common-dir>/crew/` in every mode but `off`, so a session cannot forge or refresh its

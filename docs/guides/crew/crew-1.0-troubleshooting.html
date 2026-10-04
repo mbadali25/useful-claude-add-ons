@@ -407,6 +407,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   (written by <code>crew_ticket.py approve</code> directly, for tests/CI) is accepted only when
   <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>, and an <code>autopilot</code> receipt (from
   <code>crew_autopilot.py approve</code>) only while that is true and <code>autopilot.approval</code> still allows it.
+  That includes a receipt written inside an <code>autopilot.sleep.schedule</code> window under
+  <code>autopilot.sleep.approval</code>: once the window ends, the day value decides, and it may not allow it.
   <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — the only other route is
   <code>/crew:autopilot</code> under an opted-in <code>autopilot.approval</code>; <code>scope_guard.py</code> refuses a Write/Edit
   under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but <code>off</code>, so a session cannot forge or refresh its
