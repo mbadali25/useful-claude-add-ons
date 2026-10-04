@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Render every .mmd under a directory to PNG + SVG. Skips unchanged sources.
+# Beside each SVG it writes out/<name>.svg.src: the sha256 of the .mmd that SVG
+# was rendered from, so diagram_doc.py can prove a render belongs to the
+# current source instead of trusting file times.
 # Usage: render.sh [dir] [--force] [--png-only|--svg-only]
 set -uo pipefail
 
@@ -103,6 +106,15 @@ if command -v cygpath >/dev/null 2>&1; then
   [ -n "$CONVERTED" ] && PCFG_ARG="$CONVERTED"
 fi
 
+# sha256 of a file's bytes, or nothing when no tool here can compute it.
+src_hash() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum < "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 < "$1" | cut -d' ' -f1
+  fi
+}
+
 render_one() { # render_one <src> <ext> <bg>
   local src="$1" ext="$2" bg="$3"
   local name; name="$(basename "$src" .mmd)"
@@ -111,7 +123,16 @@ render_one() { # render_one <src> <ext> <bg>
   # actual suffix (".tmp" in the middle, not on the end) rather than being
   # rejected with "Output file must end with ... .svg/.png/...".
   local tmp="$OUT/$name.tmp.$ext"
-  if [ "$FORCE" -eq 0 ] && [ -f "$dst" ] && [ "$dst" -nt "$src" ]; then
+  # The SVG's source hash, taken before mmdc reads the file. With a recorded
+  # hash, "unchanged" means the hashes match; without one, the old time rule.
+  local hash="" fresh=0
+  [ "$ext" = svg ] && hash="$(src_hash "$src")"
+  if [ -n "$hash" ] && [ -f "$dst.src" ]; then
+    [ "$(cat "$dst.src")" = "$hash" ] && fresh=1
+  elif [ -f "$dst" ] && [ "$dst" -nt "$src" ]; then
+    fresh=1
+  fi
+  if [ "$FORCE" -eq 0 ] && [ -f "$dst" ] && [ "$fresh" -eq 1 ]; then
     echo "skip  $name.$ext (unchanged)"
     SKIPPED=$((SKIPPED + 1))
     return 0
@@ -124,7 +145,13 @@ render_one() { # render_one <src> <ext> <bg>
   # with it. This way a failed --force run leaves $dst exactly as it was.
   rm -f "$tmp"
   if mmdc -i "$src" -o "$tmp" -b "$bg" -s 2 -p "$PCFG_ARG" >/dev/null 2>&1 && [ -s "$tmp" ]; then
+    # A hash left from an older render would vouch for this one: drop it
+    # first, and write the new one only when it could be computed.
+    rm -f "$dst.src"
     mv -f "$tmp" "$dst"
+    if [ -n "$hash" ]; then
+      printf '%s\n' "$hash" > "$dst.src.tmp" && mv -f "$dst.src.tmp" "$dst.src"
+    fi
     echo "ok    $name.$ext"
     OK=$((OK + 1))
     return 0
