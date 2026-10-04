@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:51 UTC
+Last updated: 2026-10-04 12:53 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:53: #345 T-0036 review 5b1a64ca: 0/3/5 (FIX1 secret patterns miss AWS secret/Stripe sk_live/Slack webhook/URL creds/Bearer/unquoted YAML etc; FIX2 anchor line can echo a secret; FIX3 Generated header matched anywhere, not doc head). Sent to builder (1.0.381).
 - 12:51: #361 re-review 5473c6c8: 0/0/2 CLEAN (NITs: Tooling-seam trailer arguably unneeded - say what it covers in PR body; doubled 'so' in warning).
 - 12:51: #393 CI: Linux checks green; Windows jobs QUEUED since 12:43 (GitHub runner queue). Re-check 13:11.
 - 12:50: T-0036 BUILT on #345: T-0036-build 5b1a64ca (1.0.372; stacked on T-0035-build; crew_reference.py lint + refresh 'reference' kind; 25+9 tests; 24 mutations red; flows left to L-0549; 8 codemaps + 3 diagrams stale pre-existing -> land-prep). Harness follow-ups: sabotage_reference.py + 4 sabotage_refresh entries; artifact_verdicts reference kind. First review started.
