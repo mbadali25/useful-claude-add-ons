@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:46 UTC
+Last updated: 2026-10-04 16:47 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:47: #420 L-0662 review 76aba34a: 0/2/6. OWNER DECIDED: bare greetings (good night/morning) must ASK, not route to sleep/wake; explicit 'I'm heading to bed'/'I'm back' still route. Sent + rule time via pytest_rule.py, allow curly ’ in I’m.
 - 16:46: H2a #399 built -> e6138c16 (T-0082 verify-gate rule-completion records sh+ps1, fixes ps1 rc carry-over bug; T-0080 sabotage_bound RLIMIT_DATA 4GiB/600s (spec fallback from RLIMIT_AS); tooling-pr OK 7 harness paths; 54 tests; 19 sabotage RED). Review started. Rule 4 now 123s > 60 Stop.
 - 16:45: #456 L-0677 review e7c8b073: 0 BLOCK / 5 FIX (2 concurrency races lose text; link fallback overwrites; append rewrites non-UTF8/BOM note; MEMORY.md not refused) / 6 NIT. Crash-at-every-step: 0 losses. Sent: O_EXCL lock files per note+native, EXCL create fallback, refuse MEMORY.md/symlink, keep BOM/mode, merge #450 head.
 - 16:43: BATCH 1 land-prepped: #405 ea2a1884 (1.0.329), #398 670d5cbb (1.0.330), #450 4e9ee867 (1.0.331), #403 791af057 (1.0.332); carries done. Real content conflicts in #398 (codemaps/mmd/diagram index) and #403 (leaf count 136, keys, CONFIG) -> merge+carry review started. CI running on all 4 heads.
