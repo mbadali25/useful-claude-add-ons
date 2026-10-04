@@ -1450,3 +1450,102 @@ def test_upgrade_md_documents_the_current_migration():
     doc = (pathlib.Path(__file__).resolve().parents[1] / "commands" / "upgrade.md"
            ).read_text(encoding="utf-8")
     assert f"**Schema {current - 1} → {current}**" in doc
+
+
+# --- T-0065 item 8: UPGRADE.md keeps every earlier run below the new one -------
+
+MARKER = ("<!-- crew_upgrade: earlier runs below, newest first; "
+          "nothing below this line is rewritten -->")
+SEEDED = ("# Upgrade report\nstatus: upgraded\n\n## Contradictions\n"
+          "- old-conflict (verified: false alarm)\n\nNOTE-T0065 hand-written, keep me\n")
+
+
+def _upgrade_md(root):
+    return root / ".crew" / "codemap" / "UPGRADE.md"
+
+
+def _starts_with_a_report(data):
+    return data.startswith(b"# Upgrade report") or data.startswith(b"NO MACHINE-GLOBAL CONFIG")
+
+
+def test_the_marker_is_the_module_constant():
+    assert crew_upgrade.UPGRADE_HISTORY_MARKER == MARKER
+
+
+def test_force_keeps_earlier_upgrade_reports(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    seeded = _upgrade_md(root).read_bytes()
+
+    first = crew_upgrade.run(str(root), {}, force=True)
+    after_one = _upgrade_md(root).read_bytes()
+
+    assert _starts_with_a_report(after_one)
+    assert after_one == (first["report"].encode("utf-8") + b"\n" + MARKER.encode() + b"\n\n" + seeded)
+
+    second = crew_upgrade.run(str(root), {}, force=True)
+    after_two = _upgrade_md(root).read_bytes()
+
+    assert _starts_with_a_report(after_two)
+    assert after_two == (second["report"].encode("utf-8") + b"\n" + MARKER.encode() + b"\n\n"
+                         + after_one)
+    assert after_two.count(MARKER.encode()) == 2
+    assert after_two.count(b"NOTE-T0065") == 1
+
+
+def test_first_upgrade_has_no_marker(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0}, codemap={"auth": V1_MAP})
+
+    out = crew_upgrade.run(str(root), {})
+
+    assert _upgrade_md(root).read_bytes() == out["report"].encode("utf-8")
+    assert MARKER not in out["report"]
+
+
+def test_carried_conflicts_reads_the_newest_run(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    newest = "# Upgrade report\n\n## Contradictions\n- newest-conflict RESOLVED 2026-10-01\n"
+    older = "# Upgrade report\n\n## Contradictions\n- older-only-conflict VERIFIED by hand\n"
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(newest + "\n" + MARKER + "\n\n" + older)
+
+    out = crew_upgrade.run(str(root), {}, force=True)
+
+    report = out["report"]
+    assert "- newest-conflict RESOLVED 2026-10-01" in report
+    assert "older-only-conflict" not in report
+    assert "1 annotated line(s) carried forward" in report
+    # The older run is still in the file, below the markers, untouched.
+    assert ("older-only-conflict VERIFIED by hand"
+            in _upgrade_md(root).read_text(encoding="utf-8").split(MARKER)[-1])
+
+
+def test_upgrade_report_write_is_atomic(tmp_path, monkeypatch):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    before = _upgrade_md(root).read_bytes()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("injected while building the report")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(crew_upgrade, "_report", boom)
+        try:
+            crew_upgrade.run(str(root), {}, force=True)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the injected failure did not propagate")
+    assert _upgrade_md(root).read_bytes() == before
+
+    crew_upgrade.run(str(root), {}, force=True)
+
+    data = _upgrade_md(root).read_bytes()
+    assert b"\r" not in data
+    leftovers = [p.name for p in _upgrade_md(root).parent.iterdir() if p.name.endswith(".tmp")]
+    assert not leftovers
