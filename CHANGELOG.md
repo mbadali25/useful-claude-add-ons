@@ -4,6 +4,73 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.336: `crew_memory.py save`, the vault note first and then the pointer (L-0677)
+
+- `crew_memory.py save --file <memory> --tag <tag> [--tag ...] [--title] [--note] [--type]
+  [--project] [--root] [--apply] [--json]` turns a native memory holding its full text into a
+  pointer. Dry run by default (prints vault, note, `create` / `append` / `unchanged` and the
+  pointer line; writes nothing; exit 1). The vault is the single writable one: the `role:
+  primary` entry (without roles `default: true`, else the first; with no `vaults` block the name
+  `memory`), resolved through the read side's `vault_path` and required to hold `.obsidian/`.
+  Never a `recall` or `ignore` vault, never a substitute for a primary that is not there.
+- Note: `memories/<project>/<title>.md` by default, the six-key frontmatter (`title` the file
+  name stem, JSON-quoted; `type: concept` by default) plus `project` and `memory_id`. An existing
+  note of the same `memory_id` gains `## Update <date>` and a bumped `updated:` (`unchanged` when
+  the body is already its last passage); any other existing note is a `collision`.
+- Order and crash safety: the full note text and new native bytes are computed first; the note
+  goes through a fsynced temp file and `os.link` (create, never over a file; where hard links
+  are refused, an `O_EXCL` create, never `os.replace`) or `os.replace` (append); its folder is
+  fsynced; it is read back and the pointer resolved; only then is the native body replaced
+  (frontmatter bytes kept, mode kept) through a temp file and `os.replace`. Every refusal and
+  every failure prints `kept-full-text: <reason>` and leaves the memory byte-identical; a
+  dangling pointer is never written. `MEMORY.md` is not edited: as `--file` it is
+  `kept-full-text: MEMORY.md is the index`, exit 1, in text and `--json` (review round 2; it was
+  a usage error on stderr, exit 2). A `memory.md` is the index only where the file system folds
+  case and it is the same file; on Linux it is an ordinary memory. No hook, no config key.
+- Concurrency (review round 2): a save holds kernel locks, note first, for its whole write
+  sequence, one non-blocking try each: `flock(LOCK_EX|LOCK_NB)` on POSIX, `msvcrt.locking
+  (LK_NBLCK)` on Windows, on files named by the sha256 of each guarded file's real path in
+  `$XDG_CACHE_HOME` or `~/.cache` (`%LOCALAPPDATA%` on Windows) under `crew/memory-locks`. The OS
+  drops a lock when its save exits or is killed, so there is no TTL, no stale-lock takeover for
+  two saves to race (round 1's `.<name>.crew-save.lock` files could be taken over by two saves at
+  once, and released by a save that did not own them), no lock file in a synced vault, and no
+  user file is ever mistaken for a lock. A held lock is `kept-full-text: another save is running
+  now`; any other error taking one (unwritable cache, full disk, read-only file system) is
+  `kept-full-text: lock failed`, exit 1, with every lock already taken released - round 1
+  crashed with a traceback there and left the note's lock behind. Review round 3: no absolute
+  cache folder (HOME unset on a uid with no passwd entry leaves `~` as `~`) is `lock failed: no
+  cache folder`, never a lock folder relative to the working directory; a file is locked under
+  its case-folded real path and its `dev:ino`, so a symlinked folder, `..`, a case variant on a
+  case-folding volume and a hard link all meet one lock, and the path key holds across the
+  `os.replace` that gives the file a new inode. It excludes saves by the same
+  user on the same machine only: not a save on another machine syncing the vault, nor Claude
+  Code or Obsidian, which never take it. The memory and an existing note are re-compared right
+  before each `os.replace`. Not guaranteed: an edit by a program that is not `save` in the instant
+  between that last compare and the rename (a rename cannot compare-and-swap). A second save of
+  the same memory that finds it already a resolving pointer reports `already-pointer`.
+- Edge cases (review round 1): an existing note that is not strict UTF-8 is refused; an append
+  keeps every existing byte (BOM, CRLF), changing only the `updated:` value; a symlinked memory
+  file is refused; a note path segment starting `.` is `bad-note-path`; `memory_id` is
+  JSON-decoded when compared; a new note is mode 0644 less the umask, an appended one keeps its
+  mode. The skill says what to do on Git Bash without `python3`.
+- Checked with the real `claude` CLI 2.1.289 (auto-memory on): a one-line pointer body survived
+  three new sessions byte-identical (a session updating that memory rewrote only its
+  frontmatter). The `crew-memory` skill, README section 14 and the memory guide carry the save
+  procedure and its state table.
+- **Tests.** `plugin/crew/tests/test_crew_memory_save.py`, 74 cases (54, then 20 from review
+  round 1, each red on `e7c8b073` except three guards of new code paths); the crew_memory
+  verify rule runs both files. Reviewer races A (an edit while the pointer temp is written) and
+  B (two saves appending to one note, on real threads) now keep every byte. Each failure ordering (note write, link, read-back, pointer temp write,
+  pointer replace, native changed meanwhile) has a test. Sabotaged by hand, each turned a named
+  test red: pointer before note, no read-back, no `memory_id` collision check, no symlink check,
+  falling back to a recall vault, no changed-meanwhile check, no ASCII rule, no temp cleanup, no
+  path grammar, no `.obsidian/` check, rewriting an unchanged note; and from round 1: no locks,
+  no re-compare before the pointer rename, the `os.replace` fallback when `os.link` fails, a
+  lossy UTF-8 decode, the BOM dropped, `MEMORY.md` allowed (plan and CLI, separately), no
+  folder fsync, no new-note mode, a symlinked memory followed, no `already-pointer` on a double
+  save, `.` segments allowed, no JSON decode of `memory_id`, a stale lock never cleared, locks
+  not released.
+
 ### Fixed — `crew` 1.0.335: round-8 terraform guard spellings, and three ordinary lines no longer refused (T-0047)
 
 - **What changed.** The cloud guard's terraform rule closes the four
