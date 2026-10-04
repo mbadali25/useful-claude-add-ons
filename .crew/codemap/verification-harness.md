@@ -153,7 +153,7 @@ Notable rules, re-read directly:
   since T-0047 (its `why` records 40.5s on 2026-09-25, 29s through `pytest_rule.py` on 2026-10-03,
   and 46.8s / 1667 passed on 2026-10-04 after the round-8 tables). Its mutations live in
   `plugin/crew/tests/sabotage_cloud.py` (`CLOUD_GUARD_MUTATIONS`), imported by
-  `plugin/crew/tests/sabotage.py:67`; T-0047's 21 round-8 mutations, and 17 more for the first review of #347, were run but not added there
+  `plugin/crew/tests/sabotage.py:67`; T-0047's 21 round-8 mutations, 17 more for the first review of #347 and 17 for the second, were run but not added there
   (that file is review harness, T-0087), so they are a harness follow-up.
 - **Rule 11**, new at `8ebbdedc` (`.crew/verify.json:226-232`, T-0026; rule 10 until T-0005's rule 6
   merged in above it): `paths`
