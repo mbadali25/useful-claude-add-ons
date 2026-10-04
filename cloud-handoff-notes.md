@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 18:14: #427 L-0652 round-2 review CLEAN at 20a4168c (0/0/3 NIT). Cap change cannot loosen (72 attacks). Carries at landing: backstop test, hang guard on fstat FIFO test, CHANGELOG:42 wording.
 - 18:14: #489 L-1503 round-3 at 7670dbc3: 0 BLOCK, 1 FIX (sh splits env names on newline -> 'a\nb' requireHuman env allowed as a,b: fail-open), 4 NIT. Union rule + dup-key scanner held (600-doc fuzz). Builder: refuse empty/control-char/comma env names in both gates.
 - 18:13: Batch 2 merge review: #396/#356/#347 clean; #456 1 FIX (codemap cites _invisible :102, is :106). Fixed by coordinator: revert version, cite fix, regenerate rules, 1.0.336 last -> #456 head f831386e (an intermediate push 7c9d89d6 had stale rules; superseded). Carried to #400: ps1 known-keys list lacks wrapUp.
 - 18:07: #489 L-1503 at 7670dbc3: rule now 29-45s (was 65-84s; ps1 cases slow-marked in 3 files, run in CI slow jobs); README notes post-union requires; L-1505 named. Round-3 re-review sent to a1134b5 (focus: union rule, Find-DuplicateJsonKey scanner).
