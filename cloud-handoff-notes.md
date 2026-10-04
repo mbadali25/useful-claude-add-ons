@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 00:41 UTC
+Last updated: 2026-10-03 00:42 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:42: OWNER: approved #337 scope ('Merge 337') - documented-limit accepted. Proceeding: #372 merge on green CI, then re-merge main into #337 (1.0.230), merge-only review, CI, merge.
 - 00:41: #362 first review on e4bf90f9: PASS, 0 BLOCK, 6 FIX (SECURITY: CREW_NOTIFY_TELEGRAM_BASE accepts any host -> token exfil via repo settings env; chatId printed; approvals don't reset episode (docs); CONFIG 70->74; missing --outcome reads pass; stale base). Fix agent started (+promote.md bare python3 NIT); target 1.0.235. #374 windows red on d4fea557 = superseded-cancel, not a failure. Next free: 1.0.236.
 - 00:40: #367 first review on 70533df5: FAIL - BLOCK is only stale base (3 behind main; merge at queue front), 5 code FIX (nested repo skipped, symlinks by name, backslash Read rules dropped, case-fold dead end, --write loses mode/symlink/CRLF). Fix agent started; target 1.0.234. Next free: 1.0.235.
 - 00:40: #353 first review on 8e63b3aa: PASS, 0 BLOCK, 1 code FIX (MERGED PR reads closed without comparing headRefOid to HEAD) + base 3 behind main (handled at queue front) + 3 NIT. Fix agent started; target 1.0.233. Next free: 1.0.234.
