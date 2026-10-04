@@ -4,6 +4,85 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
+
+- `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
+  `Co-Authored-By` and wins: the owner's own instructions decide attribution, crew never adds a
+  trailer, and a harness reminder asking for one does not override them.
+- `/crew:implement` step 2: a dispatched prompt carries no attribution or trailer instruction of
+  its own, not even one a harness reminder supplied (autopilot follows that procedure).
+- New config key `git.forbiddenTrailers` (default `[]`) in both layers, combined by UNION rather
+  than precedence, so a cloned repo's `[]` never disarms the machine owner's list; a corrupt layer
+  or malformed value is unknown, never `[]`. Template leaf count 132 -> 133 (on T-0013's 132; global 74 -> 75,
+  repo-only 58); CONFIG.md §22.
+- `crew_trailers.py --check --root . --ticket <id>` reports `trailers: clean (<n> commits)`,
+  `trailers: FINDING <sha7> <Token>` per offending commit in
+  `git log --first-parent <scope base>..HEAD` (the ticket's own commits, not what a merge of main
+  brought in), or `trailers: unknown - <why>`, including any unexpected error (exit 0/1/2). `/crew:done` runs it as a report: it never refuses
+  and crew never rewrites the commits. History is left as it is.
+- Not in this release: the scope guard's refusal of a commit carrying a listed trailer, its
+  must-block/must-allow suite and its sabotage entries. They touch review/gate harness paths
+  (`scripts/check-tooling-pr.py` `HARNESS`), so they land in their own change.
+- Owner step after merge: `python3 plugin/crew/hooks/scripts/crew_config.py --set
+  'git.forbiddenTrailers=["Co-Authored-By"]' --apply`.
+
+### Fixed - `crew` 1.0.327: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
+
+- **T-0023 r2 FIX 1 (route clipping).** A route whose command `_clip` would change - cut past
+  `FIELD_CHARS["command"]` (200) or with its whitespace reflowed - is now an `ask` in `decide`, and
+  `render` refuses one the same way, so the router never passes `--refresh aaaa...` for a longer
+  argument. Tests: `test_an_over_long_command_asks_instead_of_clipping`, its 200-character boundary
+  twin, the reflow neighbour (four commands), a `render`-only defence test; the three huge-command
+  rows of `test_render_is_one_bounded_line_whatever_the_fields` now end with the ask tail, and two
+  short-command route rows keep the ticket, source and phase clips under test.
+- **T-0023 r2 FIX 2 (Unicode line boundaries).** `normalise` refuses every line boundary
+  `str.splitlines` knows (U+000B, U+000C, U+001C-U+001E, U+0085, U+2028, U+2029 beside `\n`/`\r`).
+  `test_every_unicode_line_boundary_is_not_a_route` derives the set and pins it; U+00A0, tab and
+  U+2003 still route.
+- **T-0042 r2 FIX 1 (undeletable author record).** `_drop_author` blanks `handoff-author.json` in
+  place when the unlink is refused (a crew state directory without write permission); an empty
+  record reads as unreadable and waits. `test_an_undeletable_author_record_is_blanked_and_waits`
+  (lock and write paths), the neighbour now refuses the blank too, and a real-permission twin
+  (skips as root; passed under `setpriv` as uid 65534). Review round 1 FIX: when the unlink AND
+  the blank both fail, `_drop_author` leaves `handoff-author.json.stuck` and `_author_refusal` waits
+  while it stands (or cannot be stat'ed) until a later record lands; when the marker cannot be
+  written either, a record that neither its file nor its directory lets anyone replace or remove
+  is not trusted. Six new tests, including a 0444-record-in-a-0555-directory twin that returned
+  `run` before the fix under `setpriv`; both new wait reasons are named in the four reason lists.
+  Review round 2: CONFIG.md's accepted risks name the residual (unlink, blank and marker all fail
+  while `os.access` reports writable: the stale record is trusted), and the stuck reason says how
+  to clear it.
+- **T-0042 r2 FIX 2 (pwsh-only fixture).** `_claude` in `test_crew_resume_hook.py` skips by name
+  without bash instead of raising TypeError; `test_never_emits_initial_user_message` is parametrised
+  and its `wait`/`off` cases no longer need the fixture.
+- **Not in this change.** T-0024 r4's two FIXes (`crew_ticket.py` `_index_closed`, `approval_hook.py`
+  `_wrote`) and every new sabotage entry are harness paths (`scripts/check-tooling-pr.py` `HARNESS`),
+  so they land in a harness-only follow-up. Every existing sabotage anchor on the changed files is
+  kept, and all 75 shipped mutations aimed at them were re-run through `sabotage.py`: RED.
+
+### Changed — `crew` 1.0.326: catch-up refusals and the landing docs name the landing order (L-0522 PR 1)
+
+- `crew_train.py check-land`'s two catch-up refusals (merge-tree conflict, base moved in Touch)
+  now print one order (`LANDING_ORDER`): catch up, resolve, bump the version one past the base,
+  refresh artifacts, commit, gate the merged head, review it again if `review_ledger.py
+  --check-receipt` reads stale, then check-land again - so the tree the gate passed is the tree
+  that lands. `test_check_land_refusal_names_bump_and_refresh_before_the_gate` (both refusals) is
+  red on the old text.
+- `/crew:done`, `/crew:implement` step 6, the README's train section and the daily-workflow guide
+  (rebuilt HTML, DOCX, PDF) say the same, and that a re-anchor after review changes only the
+  `anchor:` sha, its provenance going in the ticket's `notes.md`. The troubleshooting guide's two
+  catch-up fixes (`acquire`'s `merge <base> first`, `check-land`'s base-moved refusal) state the
+  same order (rebuilt HTML, DOCX, PDF); `test_guides_state_landing_order_after_every_catch_up`
+  holds both guides to it and was red on the old troubleshooting text.
+
+### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
+
+- `plugin/crew/tests/sabotage_config.py` gains three mutations against the
+  `PermissionError` branch 1.0.324 added to `crew_config_files.Lock`: a denied
+  create that refuses instead of waiting, an unknown `stat` counted as a lock
+  seen held, and a not-a-lock `stat` error waited on. Each turns its named
+  `test_config_files.py` test red. Harness only, landed apart from the fix.
+
 ### Fixed — `crew` 1.0.324: a concurrent mint no longer dies on a delete-pending lock name (Windows)
 
 - **What changed.** `crew_config_files.Lock` waits on a `PermissionError`
