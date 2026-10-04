@@ -375,6 +375,141 @@ def _t_recall():
         check("recall is read-only", after, before)
 
 
+# --- recall relevance (T-0083): excluded folders, stop words, floor, kind, project -----
+
+def _recall_json(argv):
+    try:
+        code, out = run_cli(["recall"] + argv + ["--json"])
+    except SystemExit as exc:  # an option this CLI does not know: argparse exits 2
+        return exc.code, {"results": [], "unparsed": f"SystemExit {exc.code}"}
+    try:
+        return code, json.loads(out)
+    except ValueError:
+        return code, {"results": [], "unparsed": out}
+
+
+def _paths(res):
+    return [r["path"] for r in res.get("results", [])]
+
+
+def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statements
+    archived = "wiki/sessions/archive/2026-07/Session - x.md"
+    with Sandbox() as sb:
+        vaults = {
+            "arch": sb.vault("arch", {archived: "# Bridge port collision\nbridge port collision\n"}),
+            "filt": sb.vault("filt", {
+                ".obsidian/app.json": json.dumps({"userIgnoreFilters": ["private/", "/tmp.*/"]}),
+                "private/n.md": "zebra crossing\n", "tmpstuff/n.md": "zebra crossing\n",
+                "pub.md": "zebra crossing\n"}),
+            "broken": sb.vault("broken", {
+                ".obsidian/app.json": "{not json",
+                archived: "zebra crossing\n", "keep.md": "zebra crossing\n"}),
+            "floor": sb.vault("floor", {
+                "note-a.md": "the port only\n", "note-b.md": "the port and the collision\n"}),
+            "kinds": sb.vault("kinds", {
+                "wiki/sessions/Session - a.md": "# widget\n# widget\nwidget\nwidget\nwidget\n",
+                "wiki/other.md": "# widget\nwidget\nwidget\n",
+                "wiki/concepts/c.md": "a widget\n",
+                "wiki/decisions/D-001 - d.md": "a widget\n"}),
+            "proj": sb.vault("proj", {
+                "wiki/concepts/p1.md": "---\nproject: \"crew\"\n---\na gizmo\n",
+                "wiki/concepts/p2.md": "# gizmo\ngizmo\n",
+                "wiki/concepts/p3.md": "---\nproject: other\n---\n# gizmo\n# gizmo\ngizmo\n"}),
+            "fold": sb.vault("fold", {"wiki/concepts/acme/crew/n.md": "a gadget\n"}),
+            "dirc": sb.vault("dirc", {
+                "wiki/concepts/Recall ranking.md":
+                    "---\nproject: crew\n---\nvault recall ranking\n",
+                archived: "---\nproject: elsewhere\n---\n# vault recall ranking\n"
+                          "vault recall ranking\n"}),
+            "pbeta": sb.vault("pbeta", {"wiki/sessions/Session - s.md": "a sprocket\n"}),
+            "palpha": sb.vault("palpha", {
+                "wiki/concepts/x.md": "---\nproject: crew\n---\n# sprocket\nsprocket\n"}),
+        }
+        config = {n: {"path": p, "role": "recall"} for n, p in vaults.items()}
+        config["arch"].update(role="primary", default=True)
+        sb.write_config({"vaults": config})
+        before = {n: tree_snapshot(p) for n, p in vaults.items()}
+
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "arch"])
+        check("archived session is never returned", (code, res["results"]), (0, []))
+        check_true("archived session is never returned: excluded_dirs >= 1",
+                   res.get("excluded_dirs", 0) >= 1)
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "arch",
+                                  "--include-excluded"])
+        check("--include-excluded reads the archive", _paths(res), [archived])
+
+        code, res = _recall_json(["--query", "zebra", "--vaults", "filt"])
+        check("userIgnoreFilters prefix is honoured", _paths(res), ["pub.md", "tmpstuff/n.md"])
+        check("userIgnoreFilters prefix is honoured: regex counted, not applied",
+              res.get("skipped_filters"), 1)
+        code, res = _recall_json(["--query", "zebra", "--vaults", "broken"])
+        check("userIgnoreFilters prefix is honoured: broken app.json keeps the built-in prefix",
+              (code, _paths(res)), (0, ["keep.md"]))
+
+        code, res = _recall_json(["--query", "what is the port for this", "--vaults", "floor"])
+        check("stop words are not terms", res.get("terms"), ["port"])
+        code, res = _recall_json(["--query", "what is the", "--vaults", "floor"])
+        check("stop words are not terms: stop words only",
+              (code, res.get("terms"), res["results"]), (0, [], []))
+        code, res = _recall_json(["--query", "with and from", "--vaults", "floor"])
+        check("stop words are not terms: with/and/from", res.get("terms"), [])
+
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "floor"])
+        check("floor drops a one-word match", _paths(res), ["note-b.md"])
+        check("floor drops a one-word match: below_floor", res.get("below_floor"), 1)
+        check("floor drops a one-word match: need", res.get("need"), 2)
+        check("floor drops a one-word match: matched",
+              [r.get("matched") for r in res["results"]], [2])
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "floor",
+                                  "--min-terms", "1"])
+        check("floor drops a one-word match: --min-terms 1 keeps both", sorted(_paths(res)),
+              ["note-a.md", "note-b.md"])
+        code, res = _recall_json(["--query", "port", "--vaults", "floor", "--min-terms", "5"])
+        check("floor drops a one-word match: --min-terms is capped at the term count",
+              (res.get("need"), len(res["results"])), (1, 2))
+
+        code, res = _recall_json(["--query", "widget", "--vaults", "kinds"])
+        check("concept outranks a higher-scoring session", _paths(res),
+              ["wiki/concepts/c.md", "wiki/decisions/D-001 - d.md", "wiki/other.md",
+               "wiki/sessions/Session - a.md"])
+        check("concept outranks a higher-scoring session: kinds",
+              [r.get("kind") for r in res["results"]], ["concept", "decision", "other", "session"])
+
+        for spelled in ("crew", "CREW", " crew "):
+            code, res = _recall_json(["--query", "gizmo", "--vaults", "proj",
+                                      "--project", spelled])
+            check(f"project match ranks first ({spelled!r})", _paths(res),
+                  ["wiki/concepts/p1.md", "wiki/concepts/p2.md", "wiki/concepts/p3.md"])
+            check(f"project match ranks first ({spelled!r}): labels",
+                  [r.get("project") for r in res["results"]], ["match", "none", "other"])
+        check("no project never hides a note", res["results"][1].get("project"), "none")
+        code, res = _recall_json(["--query", "gizmo", "--vaults", "proj"])
+        check("without --project every note is none",
+              [r.get("project") for r in res["results"]], ["none", "none", "none"])
+        check("without --project the order is score", _paths(res)[0], "wiki/concepts/p3.md")
+        code, res = _recall_json(["--query", "gizmo", "--vaults", "proj",
+                                  "--project", "foo,crew", "--project", "bar"])
+        check("--project is comma-separated and repeatable", res.get("project"),
+              ["foo", "crew", "bar"])
+        check("--project is comma-separated and repeatable: still matches",
+              _paths(res)[0], "wiki/concepts/p1.md")
+
+        code, res = _recall_json(["--query", "gadget", "--vaults", "fold", "--project", "crew"])
+        check("project by folder", [r.get("project") for r in res["results"]], ["match"])
+
+        code, res = _recall_json(["--query", "vault recall ranking", "--vaults", "dirc",
+                                  "--project", "crew"])
+        check("the direction's case", _paths(res), ["wiki/concepts/Recall ranking.md"])
+
+        code, res = _recall_json(["--query", "sprocket", "--vaults", "pbeta,palpha",
+                                  "--project", "crew"])
+        check("vault priority still wins", [(r["vault"], r.get("kind")) for r in res["results"]],
+              [("pbeta", "session"), ("palpha", "concept")])
+
+        after = {n: tree_snapshot(p) for n, p in vaults.items()}
+        check("recall is still read-only", after, before)
+
+
 # --- gardener: bound, ack only after write, hosts, lock, owned commits ----------------
 
 PROCESSOR = r'''
@@ -1347,7 +1482,7 @@ def _t_garden_snapshot_time_counts_against_deadline():
                  "spent snapshotting the vault", reason)
 
 
-for case in (_t_adopt, _t_import, _t_recall, _t_garden_bound, _t_garden_ack_after_write,
+for case in (_t_adopt, _t_import, _t_recall, _t_recall_relevance, _t_garden_bound, _t_garden_ack_after_write,
              _t_garden_hosts_and_legacy, _t_garden_owned_commit, _t_schedule, _t_capture,
              _t_capture_unknown_session, _t_detect_install, _t_create_vault_and_config_override,
              _t_writers_primary_only, _t_garden_ack_needs_a_write, _t_garden_commit_bounded,
