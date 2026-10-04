@@ -5155,3 +5155,10 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
   (else `main`), not with the repo's configured base branch. It is a superset, the safe direction, and
   answers "what has not been verified" rather than "what did this ticket change", so T-0061 left it.
   Follow-up: read the key (both flavours) or call `scope_base.base_branch`, a harness change on its own.
+
+## crew 1.0.214: follow-ups filed by T-0013 (auto-resume typing, 2026-10-03)
+
+- **No ready probe on native Windows.** `auto-clear.ps1 -Resume` waits `resume.typeDelaySeconds` and types; the focus and tab rechecks after the delay catch a wrong window, not an input box that is not ready yet. A probe (UI Automation on the terminal's text, or a console-buffer read) would close it. Not done.
+- **SendWait's paste handling was not measured.** The T-0013 spike found tmux text over ~60 characters arriving in one read with its Enter is taken as a paste (the Enter becomes a newline); the tmux sender separates them by 0.5 s. The `.ps1` child sends `SendWait(text)` then `SendWait("{ENTER}")` back to back, unchanged from the `/clear` path, and `/crew:autopilot --goal <slug>` can exceed 60 characters. Measure on Windows, and if it bites, put a pause between the two in the child (a `/clear`-path change too).
+- **Sabotage entries for T-0013 land separately.** `plugin/crew/tests/sabotage*.py` is harness (T-0087), so the eleven mutations (each red on its named `test_resume_typing*.py` test, run by hand on the T-0013 branch) go in their own tooling PR, with the anchor-presence test.
+- **The claiming flavour can report the wrong flavour's outcome on Windows.** Both flavours run their own sender; the one that wins the context claim names ITS sender's result. When the other flavour typed, the claimer's second `decide` reads "already resumed" and its own sender refused, so the context says `Auto-resume did not start: this handoff was already resumed` while the command is being typed. The refusing direction, but misleading.
