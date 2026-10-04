@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 21:29 UTC
+Last updated: 2026-10-04 21:32 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 21:32: MERGED #494 L-1510 at e15a652f -> main 8c0843ca, crew 1.0.338 (coordinator reviewed land-prep delta: sabotage entry 4 now distinct; merge conflict CHANGELOG only). 18 merged. Batch 3 land-prep spawned: #481 1.0.339, #493 1.0.340, #427 1.0.341, #489 1.0.342 (all Windows-green on own heads).
 - 21:29: #489 L-1503 Windows fixed at c1c07aa9, CI all green (6+3 shards). Cause: union names printed one per line; Windows python writes CRLF, Git Bash keeps 'qa\r'. Fix: strip CR from ENVNAMES (coordinator reviewed: safe, names with control chars already refused in python). Red-first CRLF-shim test. Ready for batch 3; must land before #407.
 - 21:14: Container restarted. #489 and #400 builders stopped before pushing (heads unchanged); resumed both. #494 land-prepped to e15a652f (1.0.338), CI in progress; check-in 21:30.
 - 21:05: MERGED #399 H2a (T-0082+T-0080) at ae761c95 -> main 17934e60, crew 1.0.337 (coordinator reviewed the 2 doc-only content conflicts). 17 merged this session. #494 land-prep as 1.0.338 spawned. Pre-flight: #421 Windows GREEN; #489 and #400 RED on all Windows shards -> back to their builders (merge main + fix; #400 also carries N1-N5 + wrapUp known-key + stale cites). #427 green at 677b57ee (test pin fix + NITs, coordinator-reviewed test-only delta).
