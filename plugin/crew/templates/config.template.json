@@ -208,6 +208,9 @@
     "jiraIssueType": "Change",
     "category": null
   },
+  "git": {
+    "forbiddenTrailers": []
+  },
   "scope": {
     "mode": "off",
     "allowCliApproval": false

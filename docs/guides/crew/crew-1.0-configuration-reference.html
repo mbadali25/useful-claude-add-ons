@@ -139,7 +139,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>132 keys</strong>: 74 settable in the machine-global file, 58 repo-only.</p>
+<p><strong>133 keys</strong>: 75 settable in the machine-global file, 58 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1527,6 +1527,29 @@ the plugin.</p>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/crew_change.py</code> (expects string or null)</td>
 <td>0.19.31</td>
 <td>Change category.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="git"><code>Git</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>git.forbiddenTrailers</code></td>
+<td>both</td>
+<td><code>[]</code></td>
+<td>list of trailer tokens (letters, digits and <code>-</code>, no <code>:</code>) (checked in <code>plugin/crew/hooks/scripts/crew_trailers.py</code>)</td>
+<td>1.0.328</td>
+<td>Commit trailer tokens the owner forbids, reported by <code>/crew:done</code>. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (CONFIG.md section 22).</td>
 </tr>
 </tbody>
 </table>
