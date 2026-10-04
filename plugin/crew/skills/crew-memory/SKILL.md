@@ -92,15 +92,18 @@ The name maps to a path through `vaults.<name>.path` in `~/.claude/obsidian/conf
 crew config's `memory.vaultPath`, then, only when that file has no `vaults` block, to
 its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured. The pointer
 line is exact and must be the whole body: a first line that starts `vault` and `:` in
-any case, indent or spacing, and is anything less, is `malformed`, not prose. A config
-file counts as missing only when it is not there at all; one that is there and does
-not read, parse or match its expected shape is `no-vault-config`, naming the field.
+any case, indent or spacing, and also holds `note:` or `|`, is a pointer attempt, and
+anything less is `malformed`. Without `note:` or `|` it is prose (`Vault: keep client
+notes in the work vault` is a memory, not a pointer). A config file counts as missing
+only when it is not there at all; one that is there and does not read, parse or match
+its expected shape (or has a duplicate key, nests too deep or is over 1 MiB) is
+`no-vault-config`, naming the field. A bad Obsidian config stops every name; a bad crew config stops `memory`, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.
 
 | state | meaning | exit |
 |---|---|---|
 | `resolved` | the note exists; `path:` is printed | 0 |
 | `full-text` | not a pointer; the body is the memory | 0 |
-| `malformed` | a `vault:` first line (any case, indent or spacing) that fails the grammar or is not alone | 1 |
+| `malformed` | a `vault:` first line holding `note:` or `|` (any case, indent or spacing) that fails the grammar or is not alone | 1 |
 | `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that cannot be read, does not parse or has a field of the wrong shape | 1 |
 | `vault-unknown` | this host names no such vault, or it is `ignore` | 1 |
 | `vault-unavailable` | the configured path is not an absolute, listable directory here | 1 |

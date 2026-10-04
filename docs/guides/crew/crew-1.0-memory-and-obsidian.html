@@ -355,12 +355,13 @@ machine the vault syncs to. The name is looked up in that machine's
 <code>memory.vaultPath</code>, then, only when the Obsidian config has no <code>vaults</code> block,
 to its legacy top-level <code>vaultPath</code>. <code>OBSIDIAN_VAULT_PATH</code> is not used. The
 line is exact and must be the whole body: a first line that starts <code>vault</code> and
-<code>:</code>, in any case, indent or spacing, and is anything less is <code>malformed</code>, not
-prose. A config file counts as missing only when it is not there at all; one
+<code>:</code>, in any case, indent or spacing, and also holds <code>note:</code> or <code>|</code>, is a pointer
+attempt, and anything less is <code>malformed</code>. Without <code>note:</code> or <code>|</code> the line is
+prose: <code>Vault: keep client notes in the work vault</code> is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
 that is there but does not read, parse or have the expected shape (a <code>vaults</code>
 object of objects with a string <code>path</code>, a string <code>vaultPath</code>, crew's <code>memory</code>
-an object with a string or null <code>vaultPath</code>) is <code>no-vault-config</code>, naming the
-field.</p>
+an object with a string or null <code>vaultPath</code>; no duplicate key, not nested too
+deep, at most 1 MiB) is <code>no-vault-config</code>, naming the field. A bad Obsidian config stops every name; a bad crew config stops <code>memory</code>, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.</p>
 <pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file &lt;memory file&gt;
 python3 plugin/crew/hooks/scripts/crew_memory.py check --memory-dir &lt;memory dir&gt;
 </code></pre>
