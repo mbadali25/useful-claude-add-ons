@@ -1,0 +1,81 @@
+# crew verify gate, on every pull request.
+#
+# Runs crew's verify gate over this repository's WHOLE .crew/verify.json map
+# (`verify-gate.sh --ci`): every rule that matches a tracked file, no time
+# budget. A failing check, a check that exits 77 (SKIP), or a run that checked
+# nothing fails the job. Rules declaring `"reach": "network"` or `"host"`, and
+# undeclared rules the gate cannot prove local, are NOT run here - a CI runner
+# has none of the credentials or network paths they need. The job names them;
+# run them with `/crew:verify --all` where they can reach their target.
+#
+# Crew is fetched at a PINNED COMMIT, never a branch: the gate that judges a
+# pull request must not change underneath it. crew-setup writes the commit of
+# the crew you installed in place of the placeholder below; to upgrade, replace
+# it with a newer commit in a pull request of its own.
+#
+# Crew lives in $RUNNER_TEMP, OUTSIDE the workspace, so a recursive map command
+# (`pytest`, `ruff .`, `pylint`, `eslint .`) never collects crew's own files.
+# actions/checkout cannot write outside the workspace, hence the git fetch.
+#
+# A pull request controls more than its code: the map comes from the PR head,
+# so a PR can change what its own job checks, and a PR can also edit or delete
+# THIS FILE. Review `.crew/verify.json` and `.github/workflows/` changes as
+# code; only CODEOWNERS review or a ruleset on `.github/workflows/` stops a PR
+# from turning its own gate off.
+#
+# Ubuntu only: macOS is untested, and a Windows runner would need
+# `verify-gate.ps1 -Ci` instead.
+#
+# Actions are pinned by major tag, not by SHA: both are first-party and run
+# with the read-only token below. That trade is accepted here.
+name: crew verify
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crew-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # Add `fetch-depth: 0` here if a map command needs git history
+          # (a diff against main, `git log`); the default is one commit.
+
+      - name: Fetch crew at a pinned commit, outside the workspace
+        env:
+          CREW_SHA: __CREW_SHA__
+        run: |
+          git init -q "$RUNNER_TEMP/crew"
+          git -C "$RUNNER_TEMP/crew" fetch -q --depth 1 https://github.com/mbadali25/useful-claude-add-ons "$CREW_SHA"
+          git -C "$RUNNER_TEMP/crew" checkout -q --detach FETCH_HEAD
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # >>> REPLACE: install the tools your .crew/verify.json commands call
+      # (npm ci, pip install -r requirements.txt, terraform, ...). Every
+      # command in the map runs on this runner, so whatever it needs must be
+      # installed here. Delete this step if the map needs nothing extra. A map
+      # command that needs git history needs `fetch-depth: 0` above.
+      - name: Install this repository's check tools
+        run: echo "No extra tools installed - edit this step if .crew/verify.json needs any."
+      # <<< REPLACE
+
+      # --ci scopes to tracked files only. stdin is closed: --ci reads none,
+      # and the gate must never wait on a pipe.
+      - name: Run the crew verify gate
+        run: bash "$RUNNER_TEMP/crew/plugin/crew/hooks/scripts/verify-gate.sh" --ci < /dev/null

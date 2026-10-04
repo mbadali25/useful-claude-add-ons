@@ -736,6 +736,7 @@ Node client rejects the self-signed certificate.
 
 | Doc | What's in it |
 |---|---|
+| [`VERIFYING.md`](VERIFYING.md) | **How to verify a change** — the commands, in order, for people and any AI agent: marketplace gate, smoke, crew's verify gate, the local CI suite, CI receipts, and what nothing runs. |
 | [`INSTALLATION.md`](INSTALLATION.md) | Prerequisite install scripts (Windows/Linux), installing skills, verification, troubleshooting. |
 | [`plugin/README.md`](plugin/README.md) | This repo's **plugins** — what a plugin adds over a skill, the overview table, and how to add one. |
 | [`plugin/PLUGINS.md`](plugin/PLUGINS.md) | Per-plugin reference — every command, agent, bundled skill, and hook, and what starts running on enable. |

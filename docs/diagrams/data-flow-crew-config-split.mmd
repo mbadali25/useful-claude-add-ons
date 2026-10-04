@@ -1,0 +1,58 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py
+%% Purpose: What may be set in the machine file versus only in the repo file (measured leaf counts), and the one asymmetry between the read rule and the write rule.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%% METHODOLOGY: leaf counts below (125 / 68 / 57 at d7c7c75c - T-0010's two repo-only autopilot
+%% keys on T-0072's 123 / 68 / 55, whose `autopilot.deploy` is repo-only too; 124 / 68 / 56 at
+%% c817782f on T-0010-solo; 122 / 68 / 54 on T-0023's merge of main - T-0023's `route.enabled`,
+%% both layers; 121 / 67 / 54 on the T-0005 landing merge; 119 / 66 / 53 at
+%% 07ca3972 - T-0004's `autopilot`, repo-only; 118 / 66 / 52 at T-0005's fc54def6 -
+%% environments.prodUnattended in both, environments.nonProd repo-only; 117 / 66 / 51 at
+%% 6d35ef8c; 116 / 65 / 51 before T-0006 added `resume.auto` to both templates) come from executing
+%% `crew_config.leaf_paths(crew_config.default_config())` and the same for
+%% `default_global_config()` in THIS worktree (module resolution confirmed
+%% local: `crew_config.__file__` resolves under this checkout, not an
+%% installed plugin cache) - not from reading the dict literals by eye.
+%% `.crew/codemap/crew.md` agrees (its table was corrected from 114/63 to the
+%% executed 116/65 on 2026-09-25, records 119 at 07ca3972 and 121 on the T-0005 landing merge) and carries the one-line re-measure command.
+%% Note A2: The WRITE path additionally rejects VALUES the READ path only reports.
+%% Note A3: resolve_config NEVER raises - a malformed file must not wedge every session on the machine.
+%% Note S1: <b>72 global-settable</b> leaves, across eighteen blocks: qa, dev, worktree, secondOpinion,
+%%    memory, notify, pm, context.autoClear, docs, bitbucket, github, install, guards (all TEN), change,
+%%    resume (T-0006: machine opt-in, repo may only veto), environments (prodUnattended only, T-0005), route
+%%    (T-0023: route.enabled, repo beats machine - read by crew_route.settings through resolve_config),
+%%    shellRoute (T-0040: mode + distro, both layers)
+%% Note S2: <b>57 repo-only</b> leaves (set difference, executed), environments.nonProd (T-0005),
+%%    autopilot.deploy (T-0072) and autopilot.approval/questions (T-0010) among them. Whole blocks absent from
+%%    the global template: autopilot, cloud, emergency, graph, jira, obsidian, platform, production, roles,
+%%    schema, scope, sdp, tier, tracker, verifyGate - <b>cloud and scope are NEW repo-only blocks since the
+%%    previous anchor</b> (cloud identity pins, the T3 scope guard); <b>autopilot is NEW at 07ca3972</b>
+%%    (T-0004, mode + maxPhases, CONFIG.md §20; deploy added by T-0072, approval + questions by T-0010)
+%% Note S3: <b>Counts are executed, not read by eye.</b> 129 repo-template / 72 global / 57 repo-only on
+%%    T-0040-land's merge of main 844bfc36 (127 / 70 / 57 on its merge of 6a8c60b1, 125 / 70 / 55 on T-0040's
+%%    branch, 125 / 68 / 57 at d7c7c75c, T-0010-solo's merge of 6387ab49, 123 / 68 / 55 on T-0072's merge of
+%%    main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54
+%%    on the T-0005 landing merge, 120 / 67 / 53 at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 /
+%%    52 at fc54def6, 117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and
+%%    gives the re-measure command.
+%% Note S4: <b>Consent is not capability.</b> context.autoClear.unsafeFocus is excluded from the global
+%%    template on purpose (AUTOCLEAR_CONSENT_KEYS, crew_state.py:711) - a Wayland focus-typing risk accepted
+%%    once must not arm for every repo.
+flowchart TB
+
+    subgraph Asym["The asymmetry, stated because 'exactly what' hides it"]
+        direction TB
+        A1["Both rules agree on which PATHS."]
+        A2["The WRITE path additionally<br/>rejects VALUES the READ path<br/>only reports."]
+        A3["resolve_config NEVER raises -<br/>a malformed file must not wedge<br/>every session on the machine."]
+        A1 --- A2 --- A3
+    end
+
+    subgraph Split["What may be set where - measured, not asserted (executed this pass)"]
+        direction TB
+        S1["<b>72 global-settable</b> leaves<br/>across eighteen blocks"]
+        S2["<b>57 repo-only</b> leaves<br/>(set difference, executed)"]
+        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>129 / 72 / 57"]
+        S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus<br/>is excluded from the global template"]
+        S1 --- S2 --- S3 --- S4
+    end
