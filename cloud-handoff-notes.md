@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 01:32 UTC
+Last updated: 2026-10-03 01:35 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 01:35: PAUSED by owner (another session working). No merges, no pushes, no agents running. Cancelled check-ins (#375, PR-set 3); unsubscribed #374/#375. RESUME STATE: #375 head f4045346 (crew 1.0.241) review clean, CI was running - verify Windows green + main still 3473f08f before merge. Then #378 (worktree /home/user/pr-378, 1.0.242). Clean & waiting: #352 113eccbf, #353 ea342f1f, #358 88e7295f, #362 0920f1eb, #367 00910e28 (+ #350/#351/#355/#357/#359/#360/#368/#371 earlier). Follow-ups: render.sh drive-letter dir bug; lint for tests calling bare bash; process-qa-gates.mmd rule count.
 - 01:32: #375 fix r2 review on f4045346: CLEAN (0 BLOCK, 0 FIX, 1 NIT stale timing). Waiting on CI (Windows is the real proof).
 - 01:31: #375 fix review on 25f64976: FIX - test passed C:/... dir; render.sh rewrites non-/ dirs to ./C:/... -> still red on Windows. Fixed: cwd=tmp_path + relative docs/diagrams, probe timeout; crew 1.0.241; pushed f4045346; Sonnet r2 started. Follow-up ticket: render.sh treats a drive-letter dir as relative (affects real Windows callers too). Next free: 1.0.242.
 - 01:29: #375 CI red on a8752c4e: crew-windows-default (1/3) test_render_sh_records_the_source_hash... - shutil.which('bash') = WSL launcher (no distro, exit 1). This PR's test. Fixed with crew_fixtures.resolve_bash() + sha256 probe via that bash; crew 1.0.240; pushed. Sonnet review of fix next. Next free: 1.0.241.
