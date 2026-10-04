@@ -12,6 +12,34 @@ All notable changes to this repository are documented here. Format follows [Keep
   unbounded wait; and `completion-audit.ps1`'s probe killing only the launcher. Each goes red
   against its test. The ps1 entry needs `pwsh`: on a host without it the target test skips and
   `sabotage.py` reports it STILL GREEN, as the other pwsh-only entries already do.
+### Added — `crew` 1.0.242: a measured readability standard for every diagram crew draws
+
+- `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
+  source: lines crossing, a line through a box that is not one of its ends, an edge label covering
+  a box, another label or another edge's line, and more than 15 boxes all FAIL; a box or edge label
+  over 6 lines of text is a warning. Shapes drawn with relative paths (cylinders) are measured, and
+  a box it cannot measure makes the diagram UNKNOWN, never a quiet PASS. Sequence, state and ER
+  diagrams are NOT CHECKED.
+- `crew-diagrams/scripts/diagram_doc.py` writes `docs/diagrams/README.md` and `index.html`: every
+  diagram embedded beside its `%% Purpose:`, its anchors, its readability verdict (from the render,
+  never guessed) and a "Box details" table built from `%% Note <id>:` lines, so a short box loses
+  no detail. Refuses to overwrite a page it did not generate.
+- `crew-diagrams` SKILL.md and `/crew:diagram`: render, check (a FAIL is not done), then the page;
+  the standard locations are `docs/diagrams/*.mmd`, the generated page beside them, renders in the
+  ignored `out/`.
+- This repo's diagrams: five that failed (63, 54, 40, 31 and 18 boxes; 32 and 10 crossings) are
+  split into overviews plus parts, and wordy boxes are shortened with their detail moved to notes.
+  All 33 pass, re-measured with the fixed checker on fresh renders (Mermaid 11.17.2 in headless
+  Chromium; the seven whose `.mmd` changed in the main merge were re-rendered first).
+  Every original box, line and comment is accounted for (checked by script per file).
+- No verdict passes without measuring (PR #375 review): a drawing with no measured box, path data
+  or a transform (scale, rotate, matrix, skew) the checker cannot read, or a checker error is
+  UNKNOWN; every SVG path command is read (S/T reflect their control point, arcs are sampled along
+  the curve, arc flags by the grammar, each subpath as its own line); a line outside the boxes that
+  is not a recognised edge is UNKNOWN; `render.sh` records each SVG's source sha256 in
+  `out/<name>.svg.src` and the page shows a render whose hash is not the `.mmd`'s as "render out of
+  date" (file times only when there is no `.src`, said as "(freshness by mtime only)"); tables
+  escape `<`, `>` and `&` so GitHub keeps text like `<repo>`.
 
 ### Added — crew 1.0.233: crew-setup ships `crew-verify.yml`, the verify gate as a pull-request workflow
 
