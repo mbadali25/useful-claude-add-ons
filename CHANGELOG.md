@@ -4,7 +4,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew`: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
+### crew 1.0.345 — batch 5: T-0052, T-0057, L-0662
+
+#### Added — `crew`: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
 
 - **What changed.** `crew_route.PHRASES` gains four rows after `focus`:
   `run <id>, <id> and <id> in parallel` -> `/crew:autopilot wave <ID> <ID> ...` (ids upper-cased,
@@ -35,7 +37,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   sleep undo line. The verify rule now runs through `pytest_rule.py`. Local sabotage mutations each went red; they
   are L-0663's to commit (`sabotage*.py` is harness).
 
-### Added — `crew`: plain-text routing for the autopilot commands the router knows (T-0057)
+#### Added — `crew`: plain-text routing for the autopilot commands the router knows (T-0057)
 
 - **What changed.** `crew_route.PHRASES` gains five rows after `status`:
   `autopilot status [<id>]` / `what's autopilot doing?` -> `/crew:autopilot status`;
@@ -75,7 +77,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   Local sabotage mutations of the new branches each went red (the list is L-0661's);
   they are committed separately as L-0661, because `sabotage*.py` is harness.
 
-### Added — `crew`: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+#### Added — `crew`: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
   `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
