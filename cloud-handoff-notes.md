@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:25 UTC
+Last updated: 2026-10-04 11:19 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:19: #360 review FIX x3 (stale 'CI has no markdown' in build.py docstring, guide README, CHANGELOG) fixed a30f6679; delta review 0/0/0 CLEAN; CI running. Land-prep on 155fe6d8: #352 -> 498cc1ed (1.0.341) merge review 0/0/1 CLEAN (NIT: codemap T-0069 para cites crew_resume.py :392/:702/:472 -> :398/:709/:479, pre-existing - carry into next push). #351 -> faa36c21 (1.0.342; NITs carried; counts 75/133/58) merge review running. NOTE #351 adds git.forbiddenTrailers: after #360 lands (crew_keys.py one-row-per-leaf) #351's re-merge must add its KEY_META row. #357 merge review 1176d0ab: 2 FIX (focus now also writes .crew/.scope-base via T-0061 activate - README:861/docstring/codemap say pointer-only; crew_autopilot.py:1516 drops activate()'s scope-base message) -> fixer (1.0.343). #368 land-prep running (1.0.340). Container: libreoffice-writer installed by an agent (guide docx/pdf rebuilds now work here).
 - 11:25: NEW SESSION session_016wQA2o38aSB65bpjaGpMVJ (container fresh: worktrees, scratchpad helpers and in-flight agents of the previous session are GONE; lost in flight: #353 land-prep 1.0.338, #357 merge review on 1176d0ab). #360 CI on 2b2da3e8 red: (a) verify-gate rows build.py --check + crew-guide.py FAIL - gate venv has no markdown (exit 2 did-not-run); fixed 69f1352b (verify-gate.yml installs markdown; rule why no longer says LOCAL ONLY). (b) crew-windows-default 1/3: test_verify_gate_stop_budget::test_a_declared_rule_that_passes_is_measured[sh] timings 2 != 1 (echo took 2s on slow runner; pre-existing test, not touched by #360) - watching the new run; if it recurs, small fix PR on main. Delta review + CI running.
 - 10:51: #357 land-prep on 155fe6d8 done: head 1176d0ab (1.0.339; README writer sentence reworded - review checks it). Merge review started. Owner shown spec decisions 1-11 with recommendations (changed #2 macOS: ps -o lstart keeps start-time check; #11 autopilot.md: net-0 else raise budget <=3); awaiting approval.
 - 10:45: Land-prep started: #353 T-0011 (1.0.338), #357 T-0020 (1.0.339).
