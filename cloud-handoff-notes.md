@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:12 UTC
+Last updated: 2026-10-04 16:13 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:13: #407 round-3 fixes -> 6cada04c (merged main b863b773; pwsh-exact [set] parse; case-insensitive deploy key; ps1 agreement cases slow, rule 40s; sh CR strip; 207 tests, 79 mutations). Round-4 review started.
 - 16:12: MERGED #351 (T-0066 part 1) at 86d96fa1 (crew 1.0.328; CI 24/24 after done.md reflow; merge-only review clean). main = 86d96fa1. Next: #405 L-0688 land-prep at 1.0.329 (+ U-record reason carry). #481 r2 CLEAN.
 - 16:12: #481 T-0074 round-2 858c5336: 0/0/1 CLEAN -> landing queue (carry: daily-workflow.md:189 'raising the cap is your call' -> say limit is 5).
 - 16:10: #347 round-3 877ef4b8: 2 BLOCK (return/throw keyword hides terraform; launcher with runtime scriptblock/variable) / 1 FIX ([Diagnostics.Process]::Start no-space) / 1 NIT. All round-2 closed. Sent back: replace denylist backstop with 'account for every mention' rule (each tool-name occurrence must be a judged command word, else could-not-tell).
