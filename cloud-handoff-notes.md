@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:42: #358 fixes pushed: 88e7295f (crew 1.0.232; corrupt base -> unknown; cat-file-only + README GitFailed tests, sabotage red). Sonnet re-review r3 started.
 - 00:42: OWNER: approved #337 scope ('Merge 337') - documented-limit accepted. Proceeding: #372 merge on green CI, then re-merge main into #337 (1.0.230), merge-only review, CI, merge.
 - 00:41: #362 first review on e4bf90f9: PASS, 0 BLOCK, 6 FIX (SECURITY: CREW_NOTIFY_TELEGRAM_BASE accepts any host -> token exfil via repo settings env; chatId printed; approvals don't reset episode (docs); CONFIG 70->74; missing --outcome reads pass; stale base). Fix agent started (+promote.md bare python3 NIT); target 1.0.235. #374 windows red on d4fea557 = superseded-cancel, not a failure. Next free: 1.0.236.
 - 00:40: #367 first review on 70533df5: FAIL - BLOCK is only stale base (3 behind main; merge at queue front), 5 code FIX (nested repo skipped, symlinks by name, backslash Read rules dropped, case-fold dead end, --write loses mode/symlink/CRLF). Fix agent started; target 1.0.234. Next free: 1.0.235.
