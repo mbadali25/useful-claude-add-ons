@@ -85,6 +85,14 @@ def _concurrent(root, count=8, program=_MINT_ONE):
     return [(p.communicate(timeout=120), p.returncode) for p in procs]
 
 
+def _stderr(runs):
+    """Every process's exit code and stderr in full, as one string: a list in
+    the assertion message is truncated by pytest, which hid the one failing
+    mint's traceback behind `['', '', ...]` on the Windows runner."""
+    return "\n".join(f"--- mint {n} exit {code} ---\n{err}"
+                     for n, ((_out, err), code) in enumerate(runs))
+
+
 def test_concurrent_mints_distinct(tmp_path):
     root = _files_repo(tmp_path)
 
@@ -94,17 +102,17 @@ def test_concurrent_mints_distinct(tmp_path):
                       if (root / ".work" / "tickets" / t / "direction.md").is_file()]
 
     assert ([code for _out, code in runs], len(set(ids)), sorted(ids) == with_direction,
-            len(with_direction)) == ([0] * 8, 8, True, 8), [err for (_o, err), _c in runs]
+            len(with_direction)) == ([0] * 8, 8, True, 8), _stderr(runs)
 
 
 def test_index_rows_intact_after_concurrent_mints(tmp_path):
     root = _files_repo(tmp_path)
 
-    _concurrent(root)
+    runs = _concurrent(root)
     lines = _index(root).decode("utf-8").splitlines()
 
     assert (len(lines), [line for line in lines if not ROW_RE.match(line)],
-            len({line.split(" | ")[0] for line in lines})) == (8, [], 8)
+            len({line.split(" | ")[0] for line in lines})) == (8, [], 8), _stderr(runs)
 
 
 # The tracker's lost-write window, between its re-read and its replace, held
@@ -126,8 +134,7 @@ def test_index_rows_intact_after_concurrent_slow_mints(tmp_path):
     lines = _index(root).decode("utf-8").splitlines()
 
     assert (len(lines), [line for line in lines if not ROW_RE.match(line)],
-            len({line.split(" | ")[0] for line in lines})) == (8, [], 8), [
-        err for (_o, err), _c in runs]
+            len({line.split(" | ")[0] for line in lines})) == (8, [], 8), _stderr(runs)
 
 
 def test_mint_never_takes_an_index_only_id(tmp_path):
@@ -615,6 +622,34 @@ def test_mint_lock_error_releases_the_claimed_folder(tmp_path, monkeypatch):
 
     assert (_tickets(root), _index(root) == before, _no_temp(root),
             "Permission denied" in str(err.value)) == ([], True, [], True), str(err.value)
+
+
+def test_mint_waits_out_a_delete_pending_index_lock(tmp_path, monkeypatch):
+    """Windows CI: one of eight concurrent mints exited 1 with
+    `T-0003 claimed but not minted: [Errno 13] Permission denied: ...INDEX.md.lock`.
+    The previous holder had just removed the lock and Windows still held the
+    name DELETE PENDING, which a create answers with access denied. That is a
+    held lock: mint waits it out and mints."""
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    root = _files_repo(tmp_path)
+    lock = str(root / ".work" / "INDEX.md.lock")
+    pathlib.Path(lock).write_bytes(b"4242")
+    real, denied = os.open, []
+
+    def pending(path, *args, **kwargs):
+        if os.path.normcase(str(path)) == os.path.normcase(lock) and len(denied) < 3:
+            denied.append(path)
+            if len(denied) == 3:
+                os.remove(lock)
+            raise PermissionError(13, "Permission denied", path)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(crew_config_files.os, "open", pending)
+
+    got = crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (got["ticket"], len(denied), _tickets(root), _lock_held(root)) == (
+        "T-0001", 3, ["T-0001"], False), got
 
 
 def test_mint_failed_index_write_under_obsidian_removes_its_note(tmp_path, monkeypatch):
