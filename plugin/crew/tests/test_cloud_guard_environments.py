@@ -3072,6 +3072,8 @@ R8_MUST_BLOCK = _normalise([
      _o(**_STAGING)),
     ("r8-ps-start-process-var", "PowerShell",
      '$t="terraform"; Start-Process $t destroy', _o(**_STAGING)),
+    ("r8-ps-start-process-var-spaced", "PowerShell",
+     '$t = "terraform"; Start-Process $t destroy', _o(**_STAGING)),
     ("r8-ps-saps-filepath-var", "PowerShell",
      '$t="terraform"; saps -FilePath $t -ArgumentList destroy', _o(**_STAGING)),
     # F1: a .NET method call.

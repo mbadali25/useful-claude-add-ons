@@ -2090,14 +2090,6 @@ def ps_head_slot(words):
 _PS_MENTION_RE = re.compile(
     r"(?<![\w.-])(?:" + "|".join(sorted({n.split(".")[0] for n in _TF_NAMES}))
     + r")(?:\.(?:exe|cmd|bat|ps1))?(?![\w.\\/-])", re.IGNORECASE)
-# Statement keywords: what follows one is not a command the guard judged
-# (`return terraform destroy` runs it as `return`'s pipeline).
-_PS_STATEMENTS = frozenset((
-    "return", "throw", "exit", "if", "elseif", "else", "while", "do",
-    "until", "for", "foreach", "switch", "try", "catch", "finally", "trap",
-    "param", "begin", "process", "end", "function", "filter", "workflow",
-    "break", "continue", "data", "dynamicparam", "class", "enum", "using",
-    "!"))
 
 
 def _ps_uncommented(text):
@@ -2142,7 +2134,10 @@ def _ps_layout(cmd):
     return words, start, called
 
 
-# Statement keywords that run what follows them as their own pipeline.
+# Statement keywords that run what follows them as their own pipeline
+# (`return terraform destroy`). Other statements are parsed into: an `if` or
+# `foreach` condition is a group (a sub-expression the guard reads) and a
+# block's commands are commands of their own.
 _PS_RUNS_REST = frozenset(("return", "throw", "exit"))
 
 
@@ -2166,7 +2161,7 @@ def _ps_cmd_accounted(cmd, runner, helpers, depth):
     command word when that is the tool, run plainly; an Invoke-Expression
     whose script is a literal it reads (`_ps_accounted` of that script);
     and, only when no runner is on the line, the literal arguments of a
-    plainly named command that is no runner or statement keyword (data:
+    plainly named command that is no runner (data:
     `git commit -m "terraform destroy"`, `Write-Output (...)`) and a string
     a command only prints or assigns (`$m = "terraform destroy"`). A word a
     group makes is its sub-expression's to account for."""
@@ -2183,7 +2178,7 @@ def _ps_cmd_accounted(cmd, runner, helpers, depth):
             not any("$" in w or w.startswith("@") for w in words[start:]):
         script, sure = ps_eval_script(words[start + 1:])
         return _ps_accounted(script, helpers, depth + 1) if sure else 0
-    if _ps_runner(cmd, head_name) or head in _PS_STATEMENTS:
+    if _ps_runner(cmd, head_name):
         return 0
     own = 1 if _names_tool(words[start]) else 0
     return own + (0 if runner and not own else data)
