@@ -2226,3 +2226,146 @@ def test_checkboxless_card_gets_an_empty_box_elsewhere():
     lines = new.splitlines()
 
     assert (problem, "- [ ] T-0042" in lines, "- T-0042" in lines) == (None, True, False)
+
+
+# --- T-0037: needs-owner, cancelled, superseded ---------------------------------
+
+OPEN_STATUSES = ("direction", "ready", "spec", "planned", "in-progress", "review", "needs-owner")
+
+
+def _obsidian_at(tmp_path, status):
+    """An obsidian repo whose T-0042 INDEX row says `status`; returns (root, board path)."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(ROW.replace("spec", status), encoding="utf-8", newline="\n")
+    return root, vault / "Boards" / "repo" / "Board.md"
+
+
+@pytest.mark.parametrize("closed", ["cancelled", "superseded"])
+@pytest.mark.parametrize("start", OPEN_STATUSES)
+def test_move_to_superseded_from_each_open_status(tmp_path, start, closed):
+    files = _files_repo(tmp_path / "files", f"T-0001 | {start} | low | repo | t\n")
+    root, board = _obsidian_at(tmp_path / "obs", start)
+
+    done_files = _cli(files, "move", "--ticket", "T-0001", "--to", closed)
+    done_obs = _cli(root, "move", "--ticket", CARD, "--to", closed)
+    text = board.read_text(encoding="utf-8")
+
+    assert (done_files.returncode, _index(files), done_obs.returncode, _index(root),
+            _lane_of(text, CARD), f"- [x] [[{CARD}]]" in text) == (
+        0, f"T-0001 | {closed} | low | repo | t\n", 0, ROW.replace("spec", closed), "Done", True)
+
+
+def test_move_to_cancelled_obsidian_done_lane_checked(tmp_path):
+    root, board = _obsidian_at(tmp_path, "in-progress")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "cancelled")
+    lines = board.read_text(encoding="utf-8").splitlines()
+
+    assert (done.returncode, done.stdout.splitlines()[0], _lane_of("\n".join(lines), CARD),
+            f"- [x] [[{CARD}]] Fix token refresh on 401" in lines) == (
+        0, "files: updated: .work/INDEX.md in-progress -> cancelled", "Done", True)
+
+
+@pytest.mark.parametrize("closed,target", [("cancelled", "in-progress"), ("cancelled", "direction"),
+                                           ("superseded", "review"), ("superseded", "ready"),
+                                           ("cancelled", "superseded"), ("superseded", "done")])
+def test_move_out_of_cancelled_needs_reopen(tmp_path, closed, target):
+    root = _files_repo(tmp_path, f"T-0001 | {closed} | low | repo | t\n")
+    before = _snapshot(tmp_path)
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", target)
+
+    assert (done.returncode, done.stdout, _snapshot(tmp_path) == before) == (
+        1, f"files: could not update: T-0001 is {closed}; moving it to {target} needs --reopen\n", True)
+
+
+def test_move_out_of_superseded_needs_reopen(tmp_path):
+    """Obsidian: the refusal writes neither INDEX nor the board."""
+    root, board = _obsidian_at(tmp_path, "superseded")
+    board.write_text(crew_tracker.move_card(_board("board_0_20.md"), CARD, "done")[0], encoding="utf-8",
+                     newline="\n")
+
+    done, untouched = _refused(tmp_path, root, ("move", "--ticket", CARD, "--to", "spec"))
+    reopened = _cli(root, "move", "--ticket", CARD, "--to", "spec", "--reopen")
+
+    assert (done.returncode, untouched, "needs --reopen" in done.stdout, reopened.returncode,
+            _index(root), _lane_of(board.read_text(encoding="utf-8"), CARD)) == (
+        1, True, True, 0, ROW, "Ready")
+
+
+@pytest.mark.parametrize("closed", ["cancelled", "superseded"])
+def test_done_to_cancelled_needs_reopen(tmp_path, closed):
+    root = _files_repo(tmp_path, "T-0001 | done | low | repo | t\n")
+    before = _snapshot(tmp_path)
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", closed)
+    untouched = _snapshot(tmp_path) == before
+    again = _cli(root, "move", "--ticket", "T-0001", "--to", closed, "--reopen")
+
+    assert (done.stdout, untouched, again.returncode, _index(root)) == (
+        f"files: could not update: T-0001 is done; moving it to {closed} needs --reopen\n", True, 0,
+        f"T-0001 | {closed} | low | repo | t\n")
+
+
+@pytest.mark.parametrize("closed", ["done", "cancelled", "superseded"])
+def test_closed_to_needs_owner_needs_reopen(tmp_path, closed):
+    root = _files_repo(tmp_path, f"T-0001 | {closed} | low | repo | t\n")
+    before = _snapshot(tmp_path)
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "needs-owner")
+
+    assert (done.returncode, "needs --reopen" in done.stdout, _snapshot(tmp_path) == before) == (1, True, True)
+
+
+@pytest.mark.parametrize("start", OPEN_STATUSES[:-1])
+def test_needs_owner_round_trip_without_reopen(tmp_path, start):
+    root = _files_repo(tmp_path, f"T-0001 | {start} | low | repo | t\n")
+
+    there = _cli(root, "move", "--ticket", "T-0001", "--to", "needs-owner")
+    middle = _index(root)
+    back = _cli(root, "move", "--ticket", "T-0001", "--to", start)
+
+    assert (there.returncode, middle, back.returncode, _index(root)) == (
+        0, "T-0001 | needs-owner | low | repo | t\n", 0, f"T-0001 | {start} | low | repo | t\n")
+
+
+def test_needs_owner_to_done_is_forward(tmp_path):
+    root = _files_repo(tmp_path, "T-0001 | needs-owner | low | repo | t\n")
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "done")
+
+    assert (done.returncode, _index(root)) == (0, "T-0001 | done | low | repo | t\n")
+
+
+def test_needs_owner_obsidian_backlog(tmp_path):
+    root, board = _obsidian_at(tmp_path, "review")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "needs-owner")
+    text = board.read_text(encoding="utf-8")
+
+    assert (done.returncode, _index(root), _lane_of(text, CARD), f"- [ ] [[{CARD}]]" in text) == (
+        0, ROW.replace("spec", "needs-owner"), "Backlog", True)
+
+
+@pytest.mark.parametrize("kind", ["jira", "sdp"])
+@pytest.mark.parametrize("status", ["needs-owner", "cancelled", "superseded"])
+def test_jira_sdp_new_words_push_nothing(tmp_path, kind, status):
+    root = make_repo(tmp_path)
+    _crew_json(root, {"kind": kind, kind: {"project": "ABC"}})
+    before = _snapshot(tmp_path)
+
+    done = _cli(root, "move", "--ticket", "ABC-12", "--to", status)
+
+    assert (done.returncode, done.stdout, _snapshot(tmp_path) == before) == (
+        0, f"tracker: {kind} syncs at boundaries only (in-progress, done); nothing to push\n", True)
+
+
+def test_the_new_words_are_table_rows():
+    """`a new status is a row here`: the lanes, and the order and push list left alone."""
+    assert ({s: crew_tracker.LANE_FOR_STATUS[s] for s in ("needs-owner", "cancelled", "superseded")},
+            crew_tracker.OWNER_STATUSES, crew_tracker.CLOSED_STATUSES, crew_tracker.STATUS_ORDER,
+            crew_tracker._PUSH_AT) == (  # pylint: disable=protected-access
+        {"needs-owner": "backlog", "cancelled": "done", "superseded": "done"}, ("needs-owner",),
+        ("cancelled", "superseded"),
+        ("direction", "ready", "spec", "planned", "in-progress", "review", "done"), ("in-progress", "done"))

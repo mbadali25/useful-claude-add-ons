@@ -268,11 +268,12 @@ board at the vault root, and a card another repo owns is refused.
 
 | Ticket status | Lane (default name) |
 |---|---|
-| `direction`, `ready` | Backlog |
+| `direction`, `ready`, `needs-owner` | Backlog |
 | `spec`, `planned` | Ready |
 | `in-progress` | In Progress |
 | `review` | Review |
 | `done` | Done, checked, below `**Complete**` |
+| `cancelled`, `superseded` (closed; leaving one needs `--reopen`) | Done, checked |
 
 **Whose card it is.** `/crew:brainstorm` writes a ticket note beside the board,
 `<boardDir>/T-0042.md`, once. Its `repo-id:` line is how crew tells your

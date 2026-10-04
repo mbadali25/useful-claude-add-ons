@@ -309,7 +309,7 @@ board at the vault root, and a card another repo owns is refused.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>direction</code>, <code>ready</code></td>
+<td><code>direction</code>, <code>ready</code>, <code>needs-owner</code></td>
 <td>Backlog</td>
 </tr>
 <tr>
@@ -327,6 +327,10 @@ board at the vault root, and a card another repo owns is refused.</p>
 <tr>
 <td><code>done</code></td>
 <td>Done, checked, below <code>**Complete**</code></td>
+</tr>
+<tr>
+<td><code>cancelled</code>, <code>superseded</code> (closed; leaving one needs <code>--reopen</code>)</td>
+<td>Done, checked</td>
 </tr>
 </tbody>
 </table>
