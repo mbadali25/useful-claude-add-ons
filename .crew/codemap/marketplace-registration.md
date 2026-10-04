@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0620587f
+anchor: useful-claude-add-ons@5479ac05
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -34,7 +34,7 @@ and fails if `<dir>/.claude-plugin/marketplace.json` exists.
 **DERIVED**, by the same method the previous anchor used — partition
 `marketplace.json`'s flat `plugins` array by `source` prefix
 (`./skills/` vs `./plugin/`) — and independently confirmed by running the
-gate. `scripts/check-marketplace.py:1665-1666` still derives `plugins` as
+gate. `scripts/check-marketplace.py:1705-1706` still derives `plugins` as
 `len(entries) - skills`, so an entry matching neither prefix would silently
 count as a plugin; the "neither" set is empty at this anchor, same as at
 `5d1fc5fd`.
@@ -180,13 +180,13 @@ claim it was wrong about was removed, not because it was corrected in place.
 ## Two version-check paths, still not one
 
 **DERIVED, unchanged in shape.** `scripts/check-marketplace.py`'s own
-`main()` (`:1639-1674`) calls all sixteen checks, `check_versions` included,
-at `:1659` in call order. `_verify/smoke.sh` is confirmed byte-identical to
+`main()` (`:1679-1715`) calls all seventeen checks, `check_versions` included,
+at `:1699` in call order (T-0048 added `check_config_reference` at `:1701`). `_verify/smoke.sh` is confirmed byte-identical to
 `5d1fc5fd` (`git diff --stat` empty) — its `run_marketplace_check()`
 (`:72-98`) still exposes the same six named groups calling the same eight
 functions (`registration`, `skills`, `plugins`, `catalogs`, `menus`,
-`hooks`), so the gap is still **eight of sixteen**: `check_versions`,
-`check_self_claims`, `check_crew_ignore_policy`,
+`hooks`), so the gap is now **nine of seventeen**: `check_versions`,
+`check_self_claims`, `check_config_reference`, `check_crew_ignore_policy`,
 `check_argument_hint_frontmatter`, `check_license_consistency`,
 `check_command_backtick_spans`, `check_description_claims` and
 `check_catalog_claims` are all invisible to `bash _verify/smoke.sh`. The
@@ -226,7 +226,7 @@ against synthetic fixtures and never reads this repo's own docs.
 
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct
   against disk on every measured count.
-- `scripts/check-marketplace.py:1639` — `main()`, sixteen checks in the same
+- `scripts/check-marketplace.py:1679` — `main()`, seventeen checks in the same
   order as `verification-harness.md` records.
 - `scripts/check-marketplace.py:104` — `check_registration`.
 - `scripts/check-marketplace.py:301`, `:329`, `:383` — `check_catalogs`,
@@ -1530,3 +1530,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6a2869bd` -> `38975c7a` on 2026-10-03 (L-0601: sabotage_recurring.py reads its data section with newline translation, the Windows CI fix).** Only that test helper changed; this map cites no line of it. No claim changed.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
+
+**Re-anchored `0620587f` -> `5479ac05` on 2026-10-03 (T-0048 merges origin/main `4f6ef540` (L-0601 #327, crew 1.0.162) at `5479ac05`; crew 1.0.183 kept).** Main's maps were taken and T-0048's body edits re-applied at merged-tree lines: `scripts/check-marketplace.py` `main()` `:1679-1715` with seventeen checks (`check_config_reference` at `:1701`, defined `:1375`), the plugins derivation `:1705-1706`, `plugin/crew/CONFIG.md:2478-2485` (main's `:2451-2458`, moved by the generated key tables of sections 10 and 11), `scripts/_test/self-claims.py:1228`. Citations inside earlier re-anchor notes are history and were not moved. Re-anchor only; no claim was re-derived and no suite was executed for this note.
