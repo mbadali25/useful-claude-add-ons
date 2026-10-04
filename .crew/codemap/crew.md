@@ -780,7 +780,7 @@ Tests: `plugin/crew/tests/test_crew_autopilot.py`,
 `AUTOPILOT_MUTATIONS`); `.crew/verify.json` rule 28 (`:345-354`; rule 27 at `:300-308` on T-0094's merge of `8ab733d7`, `:298-306` before, until L-0516 inserted rule 10); T-0010's policy rule 29 (`:355-362`; rule 28 at `:310-316`, `:307-313` before),
 T-0021's tracker rule 30, T-0023's routing rule 31 and T-0024's group-approval rule 32 follow it. Confirmed present, **not run** by this note.
 
-**T-0020 (`/crew:autopilot focus`, a scope lock on one ticket, crew 1.0.190).** DERIVED at
+**T-0020 (`/crew:autopilot focus`, a scope lock on one ticket, crew 1.0.339).** DERIVED at
 `a715032d` (T-0020's merge of origin/main `7846261c`). Focus is this worktree's active-ticket
 pointer and nothing else: no new state file, no new hook, and `crew_ticket.py`, `scope_guard.py`,
 `completion_audit.py` and `plugin/crew/hooks/hooks.json` unchanged (module docstring `:38-54`).
