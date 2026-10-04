@@ -840,7 +840,7 @@ repository or one checkout.
 | `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
 | `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
 | `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
-| `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
+| `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`; and `crew_autopilot.split_policy`, read by `crew_autopilot.py goal-approve` (T-0012), §20 |
 | `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
@@ -2521,7 +2521,13 @@ lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
-that ticket is approved under `autopilot.approval` like any other. Its block is **repo only**: absent from `default_global_config()`, so
+that ticket is approved under `autopilot.approval` like any other.
+`/crew:autopilot goal` (T-0012) writes a goal file and asks for its split
+approval under the same `autopilot.approval`, with no key of its own: `self`
+approves the split, `risk` only when every proposed ticket is a known
+`risk: low`, `human` stops, and every setting needs `scope.allowCliApproval:
+true` and `mode: plan`; the owner's `/crew:approve goal:<slug>` receipt
+approves it at any setting (README, "Autopilot"). Its block is **repo only**: absent from `default_global_config()`, so
 `filter_global` prunes it from the machine file. Whether one checkout may be
 driven is a fact about that checkout.
 
@@ -2575,7 +2581,9 @@ group's hashes.
 
 **The one writer.** `crew_autopilot.py` is read-only except `approve`, and
 only when `autopilot.approval` allows it (a ticket `assign` mints is written by
-`crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
+`crew_ticket.py assign` and `mint`, not by this script; T-0012's `goal-propose`
+and `goal-approve` write only the working file `.work/autopilot/<slug>.json`,
+never a receipt). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger

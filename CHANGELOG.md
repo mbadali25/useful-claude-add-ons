@@ -4,6 +4,59 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.312: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval (T-0012)
+
+- **What changed.** `/crew:autopilot goal "<goal>"` routes through T-0018's
+  router (`goal` joins `AVAILABLE`) as `route --root . --first goal`, so the
+  goal's text never reaches a shell line; `route --args` on `goal ...` stops
+  and names that form. The command researches the goal once and stages a
+  proposal under `.work/autopilot/`; `crew_autopilot.py goal-propose --root .
+  --proposal-file <f>` refuses (writing nothing) a file outside
+  `.work/autopilot/` or not regular, no goal text, an empty `done_condition`,
+  an unknown, cyclic or out-of-order `depends_on`, or a title `mint` would
+  refuse, and otherwise writes the goal file `.work/autopilot/<slug>.json`
+  (schema 1; T-0006's slug grammar, `-2`, `-3` on a collision) and prints
+  `goal_status=printed` and `goal_line: /goal <condition> - or /crew:autopilot
+  has stopped naming a command only the owner types` (one line, at most 300
+  characters; the condition is cut, never the clause). Autopilot never runs,
+  types or reports `/goal` as set. T-0013's typer is offered only when
+  `resume.auto` is armed, a sender resolves and T-0013 exposes a `/goal`
+  typing entry point; today none exists, so each missing one is named once.
+- **Split approval.** `crew_autopilot.py goal-approve --root . --goal <slug>`:
+  the owner's receipt at `<git-common-dir>/crew/goals/<slug>/approval.json`
+  whose `proposal_sha256` matches `goal_digest` (goal, proposal, each ticket's
+  title, risk and depends_on; a minted id is left out) approves at any
+  setting; otherwise `split_policy` applies T-0010's rules with the goal risk
+  (the highest ticket risk, unknown reads `high`): never without
+  `scope.allowCliApproval: true` or unarmed, `human` never, `self` any risk,
+  `risk` only every ticket a known `low`. It is re-asked on every call: the
+  `approval: {via: "autopilot:<policy>"}` note it writes in the goal file
+  grants nothing. A refusal prints `owner: the human types /crew:approve
+  goal:<slug>`, one goal and never a group. An unreadable receipt is named,
+  never read as absent.
+- **Split (owner, 2026-09-30, L-0541).** Minting on approval, `mode: backlog`,
+  dependency order, per-ticket approval, the caps and `--goal` resume are
+  L-0541's: `--goal <slug>` and a handoff's `resume: /crew:autopilot --goal`
+  now stop with "arrives with L-0541", and `goal-approve` names
+  `crew_ticket.py mint` for the human to run in list order.
+- **Harness follow-ups (tooling-PR rule, T-0087; left out of this branch).**
+  (1) `approval_hook.py`'s `goal:<slug>` token — alone on the line, parsed
+  before T-0024's group grammar, writing the receipt above — with its
+  must-block/must-allow cases in `test_approval_hook.py` and `approve.md`'s
+  documentation; until it lands, the hook refuses `/crew:approve goal:<slug>`
+  and `goal-approve` says so. (2) Registering this ticket's mutations in
+  `sabotage_autopilot.py` (`GOAL_MUTATIONS`); they were run by hand here, 30
+  mutations, each RED on its named test in `test_crew_autopilot_goals.py`.
+- **Line budget.** `autopilot.md` stays at 110 lines: section 6 (`goal`) is 5
+  lines, paid for by joining lines of sections 0, 2 and 5 in place; every
+  sabotage anchor is unchanged.
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_goals.py` (160 cases);
+  router expectations in `test_crew_autopilot_status.py` and
+  `test_crew_autopilot.py` move from T-0012 to L-0541;
+  `test_lifecycle_commands.py`'s exact-CLI list gains `goal-propose`,
+  `goal-approve` and `route --root . --first goal`. `.crew/verify.json`'s
+  autopilot rule runs the new file.
+
 ### Added — `crew` 1.0.252: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
