@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 17:37 UTC
+Last updated: 2026-10-04 17:38 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 17:38: #421 T-0083 round-4 at 94beefde: 0 BLOCK, 1 FIX (-es strip keeps wrong stem: releases->releas, uses->us matches us-east-1), 3 NIT. Recall for paths/backticks/punctuation confirmed. Decision: plain-s stem 3 with exception list {news} (restores logs/tags/runs/bugs); add -ies->y. Sent to builder.
 - 17:37: #347 T-0047 round-4 review CLEAN at fbc7690c (0/0/0): BL1/BL2/F1/N1 fixed, no bypass of the data-argument deviation or comment stripping; rule 6 3334 passed. Ready for a landing batch.
 - 17:36: #456 L-0677 round-3 fixes pushed at ea18c748: non-absolute cache base -> kept-full-text; lock keyed on casefolded realpath + dev:ino (dev:ino alone breaks across os.replace); 213 tests, 6 sabotages. Round-4 re-review sent to aded203.
 - 17:34: #489 L-1503 re-review at 39f7b324: 1 BLOCK (ps1 unrolls deploy:[] to null -> every PS command blocked), 1 FIX (two-way match: bare 'git push' inside two deploy strings blocks forever). Decision: multi-env match applies the UNION of matched envs' requirements (fail-closed, no lockout) instead of blocking; #407 _gate_pick must adopt union rule. NITs: fold comment, refuse exact duplicate keys, non-scalar requireHuman refuses. Sent to builder with rule-time task.
