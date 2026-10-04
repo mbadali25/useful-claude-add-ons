@@ -4,6 +4,46 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.399: plain-text routing for the autopilot commands the router knows (T-0057)
+
+- **What changed.** `crew_route.PHRASES` gains five rows after `status`:
+  `autopilot status [<id>]` / `what's autopilot doing?` -> `/crew:autopilot status`;
+  `take care of <work>` / `handle <work>` -> `assign <work>`; `work toward(s) <goal>` /
+  `make it so <goal>` -> `goal <goal>`; `pick the goal back up` / `resume the goal`
+  (always asks: routing never picks a goal slug, T-0056); `focus on <id>` -> `focus <id>`.
+  Same switch (`route.enabled`), same whole-prompt matcher, same route / ask / none.
+- **Availability is read, not copied.** Each row asks `crew_autopilot.route` at decide
+  time. A subcommand that stops (today `assign`, `goal`, `focus`, `run --goal`) gets a line
+  that runs nothing, says it is not available yet and tells Claude to answer the prompt as
+  written; a router that raises or answers an unknown shape asks; a name the router does
+  not know produces no line. A row goes live the day its ticket adds the name to
+  `crew_autopilot.AVAILABLE`, with no edit to `crew_route.py`.
+- **An allowlist, not a phrase list.** First, no line for a line break (`normalise`
+  refuses every boundary `str.splitlines` knows, T-0069), free text whose first token is `it`, `that`, `everything`
+  and the like, or free text naming the stem `approv`, also with every non-letter
+  removed. Then an assign, goal or focus prompt with any character other than ASCII
+  letters, digits, space and `.,:;_#()-` asks: quotes, lookalike letters, combining
+  marks, format characters (RLO, zero-width space, soft hyphen), fullwidth or lookalike
+  `/` and `?`, and `/ ? " $ \ | & < > *`. So the routed command is
+  exactly what was typed. On that ASCII, a word starting with `-` (a flag:
+  `handle --goal x`, `handle -rf`) asks while `sign-off` routes, and a trailing negation
+  (`not`, `no`, `nah`, `nope`, `wait`, `cancel`, `cancel that`, `scratch that`,
+  `never mind`, `forget it`, `not now`) asks. `?` is accepted
+  only on the two status questions. A router answer whose `sub` is not a string naming
+  the subcommand asked about asks; a stop with no reason reads "not available yet". A
+  `goal` route also asks Claude to say what changed and how to undo it. Every decision
+  carries `unavailable`, and a non-ticket ask no longer says "which ticket".
+- **Every autopilot route goes through T-0069's `_route`** (carried at the batch-5
+  merge): a command `_clip` would cut or reflow asks instead of routing a different
+  command, as the lifecycle rows already do; T-0057's own line-break tuple is gone.
+- **Ticket ids are ASCII.** `_ID` is `(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+` for every row,
+  so an Arabic-Indic digit, a long s, a Kelvin sign or a dotless i no longer matches.
+- **Tests.** `test_crew_route.py` and `test_crew_route_hook.py` (both wrappers): one case
+  per gate branch, must-route and must-not-route prompts, shell characters, the undo line,
+  bounded lines, and three review rounds' must-not-route, must-ask and must-allow cases.
+  Local sabotage mutations of the new branches each went red (the list is L-0661's);
+  they are committed separately as L-0661, because `sabotage*.py` is harness.
+
 ### Added — `crew` 1.0.387: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds

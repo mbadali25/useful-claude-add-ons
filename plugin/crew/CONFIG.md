@@ -3093,10 +3093,10 @@ still decide.
 
 ---
 
-## 21. `route` — plain-text lifecycle routing, off until `true`
+## 21. `route` — plain-text command routing, off until `true`
 
 `route.enabled` (T-0023, since 1.0.46) lets a short plain-text prompt reach a
-lifecycle command. When it is on, crew's UserPromptSubmit context hook
+lifecycle command or, since 1.0.399, a `/crew:autopilot` subcommand. When it is on, crew's UserPromptSubmit context hook
 (`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
 the answer is `none`, puts one line FIRST in the turn's context: the
 `/crew:<command> <ticket>` whose procedure Claude should run through the Skill
@@ -3104,6 +3104,9 @@ tool, or a request to ask the user which ticket. The hook runs nothing and
 blocks nothing; the command's own checks still decide. The table of phrases,
 the three outcomes and what never routes are in the plugin README's
 "Plain-text lifecycle" section; `crew_route.PHRASES` is the single definition.
+Since 1.0.399 (T-0057) the table also names five `/crew:autopilot` phrases
+(status, assign, goal, goal resume, focus); this same key arms them, and one
+whose subcommand has not landed gets a line that runs nothing.
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|
