@@ -23,6 +23,76 @@ All notable changes to this repository are documented here. Format follows [Keep
   another ref - is T-0061's harness half. Those files are on the review/gate harness list
   (`scripts/check-tooling-pr.py`), so they land in their own PR, before this one.
 
+### Added — `crew` 1.0.252: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
+
+- **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
+  (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
+  [--direction-file <f>]`) is the one way code creates a ticket: one past the
+  highest `T-` number over `.work/tickets/` folders and `.work/INDEX.md` rows,
+  claimed with an exclusive `os.mkdir`, direction.md written complete or not at
+  all (temp file, fsync, `os.replace`), and only then the INDEX row (and, under
+  `obsidian`, the note and Kanban card) through `crew_tracker.create`, then
+  `move` to `ready`. A tracker `id taken` takes the next id; any other failure
+  releases the folder and refuses; `jira`, `sdp`, no tracker and could-not-tell
+  refuse before anything is claimed. `crew_ticket.py assign --root .
+  --direction-file .work/autopilot/<f>` checks a staging file (under
+  `.work/autopilot/`, symlinks resolved; `title:`, `risk:`, and the four
+  `/crew:brainstorm` sections, none empty) and that autopilot is armed, then
+  mints exactly one `ready` ticket whose direction.md starts with an
+  `origin: /crew:autopilot assign` provenance line.
+- **Split (owner's tooling-PR rule, 2026-09-30).** `crew_ticket.py` is review
+  harness to `scripts/check-tooling-pr.py`, so the `/crew:autopilot assign`
+  route - the router change in `crew_autopilot.py`, `autopilot.md`'s assign
+  lines and their tests - lands separately as L-0611. Until it does,
+  `/crew:autopilot assign` still stops with "arrives with T-0019", and
+  `crew_ticket.py assign` is reachable from the command line: stage the file,
+  run it, then `/crew:autopilot run <id>`.
+- **Approval.** An assigned ticket is approved under `autopilot.approval` like
+  any other (the owner's 2026-09-26 "Follow the policy"); the origin line
+  changes no policy answer (`test_origin_line_changes_no_policy`, and a
+  sabotage entry that puts an origin rule back). `crew_autopilot.py` stays
+  read-only but for `approve`: `assign` and `mint` are `crew_ticket.py`'s.
+- **Concurrency.** The tracker's replace re-reads before it writes, but a write
+  that lands between that re-read and the replace is lost; `mint` therefore
+  holds `.work/INDEX.md.lock` across both its tracker calls, `create` and the
+  `move` to `ready`, and 8 concurrent mints give 8 distinct ids, folders and
+  rows (measured on Linux). A `create` that raises anything (a `KeyError`, a
+  `KeyboardInterrupt`) releases the claimed folder unless its INDEX row is
+  already written; then the folder is kept and the refusal says so. A `move`
+  that raises leaves the ticket at `direction` with a warning.
+- **Review round 1.** A staging file or `mint --direction-file` with a BOM is read as
+  `utf-8-sig`; `mint --status` outside `ready|direction` prints `refused:` and
+  exits 1 instead of an argparse exit 2; `assign --direction-file` resolves a
+  relative path against `--root`, not the current directory.
+- **Unchanged.** `crew_tracker.py`; `/crew:brainstorm`'s and `/crew:fix`'s prose
+  id pick (moving them onto `mint` is a follow-up); T-0010's policies;
+  `crew_autopilot.py` and `autopilot.md` (L-0611's).
+- **Review round 2 (Codex: 1 BLOCK, 5 FIX), fixed test-first.** A `move` to
+  `ready` whose board half fails after the INDEX half landed puts the row back
+  to `direction`, and mint's reported status is always the INDEX row's (the
+  BLOCK: it said `direction` while the row was `ready`, so autopilot could go
+  past the stop). A `create` whose row lands but whose card does not refuses,
+  keeping the ticket at `direction`. Any failure taking `INDEX.md.lock`
+  releases the claimed folder. A `create` that wrote the obsidian note but no
+  row removes that note. `assign` and `mint --direction-file` refuse a file
+  that is not regular (a FIFO no longer hangs them). `assign` refuses
+  `--title` and `--status` instead of ignoring them.
+- **Sabotage.** 34 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
+  appended to `AUTOPILOT_MUTATIONS` (7 for review round 2).
+- Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes,
+  then `1.0.115 -> 1.0.123` after merging main `8d84786d` (crew 1.0.115);
+  1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
+  after merging main `2a2d6e07` (crew 1.0.139); 1.0.140-1.0.143 are held by
+  other lanes. Re-set at 1.0.144 after the L-0611 split and the merge of main
+  `8123fe74` (crew 1.0.140, L-0574). Then `1.0.154 -> 1.0.157` after merging
+  main `f808e5f0` (crew 1.0.154; #328 shipped 1.0.144, so T-0019's number was
+  spent), allocated by the coordinator; L-0611 is 1.0.161. Then `1.0.242 -> 1.0.302`
+  after merging main `38adba44` (crew 1.0.242), allocated by the coordinator.
+- Windows: the staged-file read restores blocking mode only where it set `O_NONBLOCK`. Windows has no
+  `O_NONBLOCK` and its `os.set_blocking` works on pipes only, so every `assign` and `mint --direction-file`
+  refused there with `[WinError 87]` (seen on Windows CI). Pinned by
+  `test_a_staged_file_reads_where_there_is_no_o_nonblock`.
+
 ### Added — crew 1.0.248: sabotage entries for L-0516's deadline polls (L-0563)
 
 - `plugin/crew/tests/sabotage_qa.py`: six mutations against the deadline polls L-0516 added -
