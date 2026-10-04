@@ -158,21 +158,42 @@ def test_lint_refuses_a_doc_with_no_entry(tmp_path):
 # --- the secret refusal --------------------------------------------------------
 
 _JWT_PART = "eyJ" + "hbGciOiJIUzI1NiJ9"
+_AWS_SECRET = "wJalrXUtnFEMI" + "/K7MDENG/bPxRfiCY" + "EXAMPLEKEY"
+_HUNTER = "hunter2" * 2
+# (pattern name, the line written into the doc, the part that must never be echoed)
 _SECRETS = [
-    ("aws-access-key-id", "AKIA" + "Q" * 16),
-    ("private-key", "-----BEGIN RSA " + "PRIVATE KEY-----"),
-    ("github-token", "ghp_" + "a" * 36),
-    ("github-pat", "github_pat_" + "a" * 60),
-    ("slack-token", "xoxb-" + "1" * 12 + "-" + "a" * 24),
-    ("api-key", "sk-" + "a" * 40),
-    ("jwt", _JWT_PART + "." + "eyJ" + "zdWIiOiIxMjM0NTY3ODkwIn0" + "." + "b" * 43),
-    ("assigned-literal", 'password = "' + "hunter2" * 2 + '"'),
+    ("aws-access-key-id", "AKIA" + "Q" * 16, "Q" * 16),
+    ("aws-access-key-id", "akia" + "q" * 16, "q" * 16),
+    ("aws-secret-access-key", "aws_secret_access_key = " + _AWS_SECRET, _AWS_SECRET),
+    ("aws-secret-access-key", "AWS_SECRET_ACCESS_KEY: " + _AWS_SECRET, _AWS_SECRET),
+    ("private-key", "-----BEGIN RSA " + "PRIVATE KEY-----", "PRIVATE KEY"),
+    ("github-token", "ghp_" + "a" * 36, "a" * 36),
+    ("github-pat", "github_pat_" + "a" * 60, "a" * 60),
+    ("slack-token", "xoxb-" + "1" * 12 + "-" + "a" * 24, "a" * 24),
+    ("slack-webhook", "https://hooks.slack.com/services/T" + "0" * 8 + "/B" + "1" * 8 + "/"
+     + "x" * 24, "x" * 24),
+    ("api-key", "sk-" + "a" * 40, "a" * 40),
+    ("stripe-key", "sk_live_" + "b" * 24, "b" * 24),
+    ("stripe-key", "rk_live_" + "c" * 24, "c" * 24),
+    ("google-api-key", "AIza" + "d" * 35, "d" * 35),
+    ("npm-token", "npm_" + "e" * 36, "e" * 36),
+    ("sendgrid-key", "SG." + "f" * 22 + "." + "g" * 43, "g" * 43),
+    ("jwt", _JWT_PART + "." + "eyJ" + "zdWIiOiIxMjM0NTY3ODkwIn0" + "." + "b" * 43, "b" * 43),
+    ("url-credentials", "https://orders:" + "s3cretPw9" + "@api.example.com/v1", "s3cretPw9"),
+    ("authorization-header", "Authorization: Bearer " + "h" * 12 + "9" * 8, "h" * 12),
+    ("authorization-header", "Authorization: Basic " + "b3JkZXJzOnMzY3JldA==",
+     "b3JkZXJzOnMzY3JldA=="),
+    ("assigned-literal", 'password = "' + _HUNTER + '"', _HUNTER),
+    ("assigned-literal", 'password="' + "abc12" + '"', "abc12"),
+    ("assigned-unquoted", "password: " + _HUNTER, _HUNTER),
+    ("assigned-unquoted", "api_key: " + "abcdef" + "123456789", "abcdef123456789"),
 ]
 
 
-@pytest.mark.parametrize("name,value", _SECRETS, ids=[n for n, _ in _SECRETS])
-def test_lint_refuses_secret_shaped_strings(tmp_path, name, value):
-    entry = ENTRY.replace("Retries: 3", f"Example: {value}\nRetries: 3")
+@pytest.mark.parametrize("name,line,secret", _SECRETS,
+                         ids=[f"{n}-{i}" for i, (n, _, _) in enumerate(_SECRETS)])
+def test_lint_refuses_secret_shaped_strings(tmp_path, name, line, secret):
+    entry = ENTRY.replace("Retries: 3", f"Example: {line}\nRetries: 3")
     root, path = _repo(tmp_path, _doc(entry))
 
     problems = crew_reference.lint(root, path, "integrations")["problems"]
@@ -180,8 +201,66 @@ def test_lint_refuses_secret_shaped_strings(tmp_path, name, value):
 
     assert any(":14: " in p and f"secret-shaped string ({name})" in p for p in problems), problems
     assert run.returncode == 1, run
-    assert value not in run.stdout + run.stderr
-    assert all(value not in p for p in problems)
+    assert secret not in run.stdout + run.stderr
+    assert all(secret not in p for p in problems)
+
+
+@pytest.mark.parametrize("line", [
+    "password: <set in env>",
+    "api_key: ${API_KEY}",
+    'password = "${DB_PASSWORD}"',
+    "Authorization: Bearer <token>",
+    "Authorization: Bearer <orders-api-token>",
+    "Authorization: Bearer ${ORDERS_API_TOKEN}",
+    "Token: undocumented - needs a human",
+    "Secret: environment variable `ORDERS_SECRET`",
+    "secret: orders/prod2/api",
+    "https://user:<password>@api.example.com",
+    "https://api.example.com:443/v1/orders",
+    "Auth: basic, key from env `SHIPSTATION_API_KEY`",
+])
+def test_lint_allows_placeholders_and_prose_beside_credential_words(tmp_path, line):
+    entry = ENTRY.replace("Retries: 3", f"Example: {line}\nRetries: 3")
+
+    assert _problems(tmp_path, _doc(entry)) == []
+
+
+def test_an_anchor_on_a_secret_line_is_never_echoed(tmp_path):
+    token = "ghp_" + "z" * 36
+    entry = ENTRY.replace("Retries: 3", f"Example: `{token}:3`\nRetries: 3")
+    root, path = _repo(tmp_path, _doc(entry))
+
+    problems = crew_reference.lint(root, path, "integrations")["problems"]
+    run = _cli("lint", "--root", root, "--kind", "integrations", path)
+
+    assert any("secret-shaped string (github-token)" in p for p in problems), problems
+    assert any(":14: " in p and "anchor" in p for p in problems), problems
+    assert "z" * 36 not in run.stdout + run.stderr
+    assert all("z" * 36 not in p for p in problems)
+
+
+@pytest.mark.parametrize("anchor", ["`/etc/passwd:1`", "`../outside.py:1`"])
+def test_lint_refuses_an_absolute_or_parent_relative_anchor(tmp_path, anchor):
+    entry = ENTRY.replace("Call sites: `src/client.py:12`",
+                          f"Call sites: `src/client.py:12`, {anchor}")
+
+    problems = _problems(tmp_path, _doc(entry))
+
+    assert any(":15: " in p and "repo-relative" in p for p in problems), problems
+
+
+def test_a_header_inside_a_fenced_example_is_not_the_header(tmp_path):
+    body = "# Integrations\n\n```\n" + HEADER + "```\n\n## ShipStation\n\n" + ENTRY
+
+    problems = _problems(tmp_path, body)
+
+    assert any(":1: " in p and "Generated from" in p for p in problems), problems
+
+
+def test_the_header_must_be_the_first_non_blank_line(tmp_path):
+    assert _problems(tmp_path / "a", "\n\n" + _doc()) == []
+    assert any("Generated from" in p for p in _problems(
+        tmp_path / "b", "# Integrations\n\n" + _doc()))
 
 
 def test_a_documented_placeholder_is_not_a_secret(tmp_path):

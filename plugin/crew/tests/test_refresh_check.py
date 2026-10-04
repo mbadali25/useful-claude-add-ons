@@ -1231,3 +1231,16 @@ def test_a_reference_refresh_commit_stales_nothing(tmp_path):
     result = _check(root)
 
     assert result["status"] == "fresh", result
+
+
+def test_a_header_inside_a_fenced_example_is_not_the_doc_header(tmp_path):
+    root, _start = _repo(tmp_path)
+    _commit(root, "src/app.py", "print('changed')\n")
+    head = head_sha(root, length=40)
+    _commit(root, _INTEGRATIONS,
+            "# Integrations\n\n```\n> Generated from repo@" + head + " on 2026-09-27.\n```\n\n"
+            "## Shop\n\n### GET https://shop.example/orders\n`src/app.py:1`\n\nAuth: none\n")
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], item["refreshable"]) == ("unknown", True), item

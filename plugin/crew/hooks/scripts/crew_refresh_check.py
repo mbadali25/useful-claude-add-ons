@@ -44,7 +44,9 @@ README embeds of the diagrams and the integrations reference:
   reference  (T-0036) `docs/reference/integrations.md`, when it exists, in
            scope when a path it cites (read as a codemap's citations are) is
            one the ticket changed, judged against the sha in its `> Generated
-           from <repo>@<sha>` header (`crew_reference.GENERATED_RE`). No
+           from <repo>@<sha>` header, its first non-blank line
+           (`crew_reference.generated_header`; one in a fenced example is not
+           the header). No
            header, or no citation, is `unknown` and refreshable; an
            unreadable doc is `unknown` and a stop. `api.md`, `features.md`
            and `flows/` are not judged (their own follow-ups). Refresh:
@@ -1293,7 +1295,7 @@ def _references(root, changed, untracked):
     reached = _reached(cited, changed)
     if not reached:
         return []
-    header = crew_reference.GENERATED_RE.search(body)
+    header = crew_reference.generated_header(body)
     if not header:
         return [_entry("reference", name, UNKNOWN, "no `> Generated from <repo>@<sha>` "
                        "header, so nothing about it can be checked", command,

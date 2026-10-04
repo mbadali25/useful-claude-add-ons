@@ -83,7 +83,7 @@ provider, cloud SDK), one `##` per external system, one `###` entry per call wit
 `Auth:` line naming WHERE the credential comes from, never its value (format and steps:
 `${CLAUDE_PLUGIN_ROOT}/skills/crew-docs/integrations.md`). Auth and credentials go to `crew:security`.
 Draft outside the repo; copy in only once `crew_reference.py lint --kind integrations` exits 0. No
-outbound calls: write no file, and say so.
+outbound calls: write no file, and say so. The lint knows listed secret shapes only; a novel one passes.
 
 ## `--audit`
 

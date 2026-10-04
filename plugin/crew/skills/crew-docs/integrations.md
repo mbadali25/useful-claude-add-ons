@@ -34,7 +34,9 @@ Call sites: `src/jobs/order_sync.py:88`, `src/admin/resend.py:12`
 - Request, response, retries, timeouts, rate limits and error handling: as far as the code shows
   them. What you could not find is `undocumented - needs a human`, never inferred from a name.
 - A backticked `host:port` reads as an anchor and fails the lint as a missing file: write a host
-  unquoted or as a URL.
+  unquoted or as a URL. An absolute (`/x:1`) or parent-relative (`../x:1`) anchor is refused.
+- The Generated header is the first non-blank line. A header-shaped line further down (inside a
+  fenced example) is not the header, and the lint and the refresh check both say so.
 
 ## Draft, lint, then copy
 
@@ -45,11 +47,18 @@ Call sites: `src/jobs/order_sync.py:88`, `src/admin/resend.py:12`
    Exit 0 is clean, 1 lists `<doc>:<line>` problems, 2 is a usage error or an unreadable file.
 4. Copy into `docs/reference/integrations.md` only on exit 0.
 
-A secret-shaped string (an AWS access key id, a private-key block, a GitHub or Slack token, an `sk-`
-key, a JWT, a quoted literal assigned to a password, secret, token or API-key name) stops the write.
-The lint names the pattern and the line, never the value; do not print the value either. Replace it
-with where the credential comes from. A documented example key is refused too: write a placeholder
-such as `"${API_KEY}"`.
+A secret-shaped string stops the write: an AWS access key id or secret access key, a private-key
+block, a GitHub, Slack, Stripe, Google, npm or SendGrid key, an `sk-` key, a Slack webhook URL, a JWT,
+a password in a URL (`scheme://user:pass@host`), an `Authorization: Bearer|Basic ...` value, or a
+literal assigned to a password, secret, token or API-key name (quoted, or unquoted with a letter and
+a digit). The lint names the pattern and the line, never the value - nor the text of an anchor on
+that line; do not print the value either. Replace it with where the credential comes from. A
+documented example key is refused too: write a placeholder such as `"${API_KEY}"` or `<token>`.
+
+**Known gap.** The check is a list of known shapes. A token format not on it, or a bare
+high-entropy string with no credential-named key beside it, passes the lint. It is a backstop, not
+a guarantee: `crew:security`'s review of every `Auth:` line is the second line, and the author's
+rule stays "write where the credential comes from, never the value".
 
 ## No outbound calls
 
