@@ -442,6 +442,47 @@ def test_split_apply_refuses_a_decision_missing_a_fired_trigger(tmp_path):
     assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
 
 
+def test_split_check_and_apply_refuse_while_a_measure_is_unknown(tmp_path):
+    """Re-review FIX: where next says split-check-unknown, --check and --apply
+    refuse too (the gate's wording), and nothing is minted or superseded."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12)
+    _decision(root, ticket, "split", "acceptance-count")
+    (root / ".crew" / "metrics.md").mkdir()
+    before = sorted(os.listdir(root / ".work" / "tickets"))
+
+    gate = _next(root, ticket)
+    check = _cli(root, "split", "--ticket", ticket, "--check")
+    applied = _cli(root, "split", "--ticket", ticket, "--apply")
+
+    assert gate["phase"] == "split-check-unknown", gate
+    assert (check.returncode, "could not read findings-rate" in check.stdout) == (1, True), \
+        check.stdout
+    assert (applied.returncode, "could not read findings-rate" in applied.stdout) == (1, True), \
+        applied.stdout
+    assert applied.stdout.rstrip().splitlines()[-1] == (
+        f"owner: the human types /crew:split {ticket}")
+    assert sorted(os.listdir(root / ".work" / "tickets")) == before
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+
+
+def test_split_check_uses_the_gate_stage_when_the_plan_fails_validate(tmp_path):
+    """Re-review NIT: with a plan.md that fails validate, the gate runs only
+    the spec-stage check, so --check does not hold the decision to plan-steps."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12, steps=9)
+    plan = root / ".work" / "tickets" / ticket / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8").replace("src/app.py", "other/keep.py"),
+                    encoding="utf-8")
+    _decision(root, ticket, "not-too-big", "acceptance-count")
+
+    gate = _next(root, ticket)
+    check = _cli(root, "split", "--ticket", ticket, "--check")
+
+    assert gate["phase"] == "plan", gate
+    assert (check.returncode, check.stdout.strip()) == (0, "ok decision=not-too-big"), check.stdout
+
+
 def test_split_check_refuses_a_decision_missing_a_fired_trigger(tmp_path):
     root = _repo(tmp_path)
     ticket = _ticket(root, count=12, steps=9)

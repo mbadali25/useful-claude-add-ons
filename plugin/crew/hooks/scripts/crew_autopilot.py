@@ -638,12 +638,7 @@ def _split_gate(top, ticket, stage, answer, policy=True):
         return answer("split-check-unknown", True, f"the size check after {stage} could not "
                       f"run ({type(exc).__name__}: {exc}) - a person looks", look)
     if size["unknown"]:
-        return answer("split-check-unknown", True, f"the size check after {stage} could not "
-                      f"read {', '.join(size['unknown'])} (its source is there): could not "
-                      "tell is not \"small\" - a person fixes the source (Acceptance checks as "
-                      "`- [ ]` bullets, `### Step` plan headings, every Touch entry under a "
-                      "codemap subsystem, a readable .crew/metrics.md)",
-                      look)
+        return answer("split-check-unknown", True, _unknown_words(stage, size["unknown"]), look)
     if not size["fired"]:
         return None
     fired = f"after {stage}: {', '.join(size['fired'])} fired (a trigger means look, never split)"
@@ -671,8 +666,7 @@ def split_report(root, ticket):
     """`split`'s bare lines: the measures, the fired triggers, the unmeasured
     and unknown ones, the tracker, the current decision and the policy."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    folder = crew_ticket.ticket_dir(top, ticket)
-    stage = "plan" if os.path.isfile(os.path.join(folder, "plan.md")) else "spec"
+    stage = _gate_stage(top, ticket)
     size = _size_check(top, ticket, stage)
     decision, why = _decision_state(top, ticket, size["fired"])
     rule = crew_split.ticket_split_policy(top, ticket)
@@ -689,15 +683,37 @@ def split_report(root, ticket):
     return [_one_line(line) for line in lines]
 
 
-def _unanswered(top, ticket):
-    """`["answered: does not name <triggers>"]` for the triggers firing now at
-    the ticket's stage that split.md's `answered:` misses, else []."""
+def _unknown_words(stage, unknown):
+    """The split-check-unknown reason: the gate's, `--check`'s and `--apply`'s."""
+    return (f"the size check after {stage} could not read {', '.join(unknown)} (its source "
+            "is there): could not tell is not \"small\" - a person fixes the source "
+            "(Acceptance checks as `- [ ]` bullets, `### Step` plan headings, every Touch "
+            "entry under a codemap subsystem, a readable .crew/metrics.md)")
+
+
+def _gate_stage(top, ticket):
+    """The stage `_phase` last ran the size check at: `plan` once plan.md
+    passes crew_ticket.validate, else `spec` (a plan that fails it stops at
+    `plan` before the plan-stage check)."""
+    contract = crew_ticket.read_contract(top, ticket)
+    if contract["plan.md"] is None or crew_ticket.validate(top, ticket, contract):
+        return "spec"
+    return "plan"
+
+
+def _not_current(top, ticket):
+    """What the gate would still stop or look at, for `--check` and `--apply`:
+    the split-check-unknown reason while a measure is unknown, else
+    `answered: does not name <triggers>` for triggers firing now at the
+    gate's stage that split.md misses; [] when neither."""
     folder = crew_ticket.ticket_dir(top, ticket)
-    stage = "plan" if os.path.isfile(os.path.join(folder, "plan.md")) else "spec"
-    fired = _size_check(top, ticket, stage)["fired"]
+    stage = _gate_stage(top, ticket)
+    size = _size_check(top, ticket, stage)
+    if size["unknown"]:
+        return [_unknown_words(stage, size["unknown"])]
     answered = crew_split.parse_proposal(
         read_text(os.path.join(folder, crew_split.PROPOSAL)) or "")["answered"]
-    missing = [f for f in fired if f not in answered]
+    missing = [f for f in size["fired"] if f not in answered]
     return [f"answered: does not name {', '.join(missing)}"] if missing else []
 
 
@@ -711,16 +727,16 @@ def _split_main(args):
         crew_ticket.check_ticket(args.ticket)
         if args.check:
             decision, problems = crew_split.check(top, args.ticket)
-            problems = problems + _unanswered(top, args.ticket)
+            problems = problems + _not_current(top, args.ticket)
             lines = [f"problem: {p}" for p in problems] or [f"ok decision={decision}"]
             code = 1 if problems else 0
         elif args.apply:
-            # The same answered: rule as --check and the gate: a decision taken
-            # before a trigger fired is not applied.
-            unanswered = _unanswered(top, args.ticket)
-            if unanswered:
-                raise crew_split.SplitError(f"{crew_split.PROPOSAL} is not current: "
-                                            + "; ".join(unanswered) + "; nothing was written")
+            # The gate's rules: nothing applies while a measure is unknown, nor
+            # a decision taken before a trigger now firing.
+            stale = _not_current(top, args.ticket)
+            if stale:
+                raise crew_split.SplitError(f"{crew_split.PROPOSAL} cannot be applied: "
+                                            + "; ".join(stale) + "; nothing was written")
             got = crew_split.apply(top, args.ticket, "autopilot")
             lines = ([f"child={kid}" for kid in got["children"]]
                      + [f"parent={args.ticket} status={got['parent']}"]

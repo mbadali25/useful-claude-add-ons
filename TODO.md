@@ -32,7 +32,10 @@ be wrong can be closed on evidence.
   record folder (`test_apply_self_files_mode_mints_children`); and in `crew_autopilot.py`'s gate
   (`test_crew_autopilot_split.py`): an unreadable measure, or a plain-bullet acceptance list,
   read as not fired; an unreadable metrics file counted absent; `answered:` unchecked in the
-  gate or in `split --apply`; no gate after spec or after plan; a split decision continuing;
+  gate or in `split --apply`; an unknown measure ignored by `split --check`/`--apply`
+  (`test_split_check_and_apply_refuse_while_a_measure_is_unknown`); `--check` taking its stage
+  from plan.md's existence instead of the gate's
+  (`test_split_check_uses_the_gate_stage_when_the_plan_fails_validate`); no gate after spec or after plan; a split decision continuing;
   slices without `parse_slices` continuing; `split-check` becoming a stop; a refused `--apply`
   not naming `/crew:split`.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta

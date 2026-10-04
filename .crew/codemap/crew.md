@@ -1250,12 +1250,13 @@ Obsidian vault). A CLI the commands call, not a hook.
   `crew_split.measure`, `triggers`, `absent_sources`) and `_decision_state`
   (`:595`: `check_proposal` plus the `answered:` rule), and T-0059's
   `parse_slices` through `_slice_problems` (`:612`, `SLICES_ARRIVE` `:574`).
-  `split_report` (`:670`), `_unanswered` (`:692`, the `answered:` rule `--check`
-  and `--apply` share) and `_split_main` (`:704`) are the `split`
+  `split_report` (`:665`), `_not_current` (`:704`: the gate's unknown stop
+  and `answered:` rule, which `--check` and `--apply` share, at `_gate_stage`
+  `:694`; wording `_unknown_words` `:686`) and `_split_main` (`:720`) are the `split`
   subcommand; `split` joins the router at `:289-290` (appended under the
   `SUBCOMMANDS` line, which a sabotage anchor pins) and `WAITING` at
-  `:2126-2128`. T-0012's rule is slug-free as `_split_rule` (`:1933`), which
-  `split_policy` (`:1899`) and `crew_split.ticket_split_policy`
+  `:2142-2144`. T-0012's rule is slug-free as `_split_rule` (`:1949`), which
+  `split_policy` (`:1915`) and `crew_split.ticket_split_policy`
   (`plugin/crew/hooks/scripts/crew_split.py:741`, its whole read inside one could-not-tell
   boundary) both call. `VIAS` gains
   `autopilot` (`plugin/crew/hooks/scripts/crew_split.py:141`, `JIRA_STOP`

@@ -41,9 +41,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   `crew_ticket.approve`, the gate is the repository's policy, not the caller.
   Everything the policy reads, the rule included, is inside its
   could-not-tell boundary, so a crash refuses and `next` stops at
-  `split-approval` instead of raising. `split --apply` refuses a `split.md`
-  whose `answered:` misses a trigger firing now, as `--check` and the gate
-  do.
+  `split-approval` instead of raising. `split --check` and `split --apply`
+  apply the gate's rules at the gate's stage (`plan` only once plan.md
+  validates): both refuse while a measure is unknown, in the gate's
+  `split-check-unknown` wording, and refuse a `split.md` whose `answered:`
+  misses a trigger firing now.
 - **Unknown measures.** A measure whose source is there and cannot be read
   stops as `split-check-unknown`. A source the repository does not have at
   all (no `.crew/codemap/`; no review recorded in `.crew/metrics.md`) is
@@ -61,12 +63,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   ticket's size after spec and after plan through the same rulebook as
   `/crew:split`, and a split it applies goes through the approval policy,
   with Jira always the owner's yes.
-- **Tests.** `test_crew_autopilot_split.py` (38 cases: every gate outcome,
+- **Tests.** `test_crew_autopilot_split.py` (40 cases: every gate outcome,
   the subcommand, the router, the prose) and the T-0058 block in
   `test_crew_split.py` (policy must-block and must-allow, apply via
   autopilot in files and Obsidian mode). `test_crew_route.py`'s subcommand
   tuple and `test_lifecycle_commands.py`'s exact-CLI list gain `split`.
-  Twenty T-0058 mutations and T-0052's ten were hand-run on the tree
+  Twenty-two T-0058 mutations and T-0052's ten were hand-run on the tree
   merged with T-0052 at 1b0de3cb, each red on its
   named test; `sabotage_split.py` is a HARNESS path, so registering them is
   a separate tooling PR. `autopilot.md` stays inside its 110 lines by
