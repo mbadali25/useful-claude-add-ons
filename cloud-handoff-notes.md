@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:27: #393 review 81a7b991: 0/0/0 CLEAN. Waits CI (check-in 12:50).
 - 12:27: #393 land-prep: merged main ce235468, crew 1.0.325 last -> 81a7b991; PR retargeted to main. check-tooling-pr 'OK - 1 harness path'; tooling-pr suite 17/17; 3 mutations hand-run RED; anchors test 17 passed. Review started.
 - 12:25: MERGED #392 (Windows lock fix) at ce235468 (crew 1.0.324; all CI green incl Windows 3/3 first try; verify-gate n/a - only runs on L-/T-/W- branch pushes). main = ce235468. #353 merge review b04bd6b3: 0/0/1 CLEAN (NIT daily-workflow.md:106 '(crew never merges)' -> 'the train never merges' + rebuild; carry at landing). Next: #393 (harness, alone) -> 1.0.325, then #377.
 - 12:23: #353 land-prep onto e9364a70 done: b04bd6b3 (1.0.366; 3 KEY_META rows + tests; CONFIG §10/11 generated 74/135/61; guide ship shipped; reference+guides rebuilt). NOTE re-bump must also change since 1.0.366 in crew_keys.py x3 + guide.md + rebuilt guides. Merge-only review started.
