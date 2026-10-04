@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 18:01 UTC
+Last updated: 2026-10-04 18:03 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 18:03: Batch 2 land-prepped and pushed: #396 0a880a5d 1.0.333, #356 fb5b9169 1.0.334 (real conflicts: auto-clear.ps1 resolver, test_crew_config key count 137, CONFIG.md), #347 14ce284f 1.0.335, #456 94b2bd24 1.0.336 (23 codemap cites re-derived +3). Merge-resolution review spawned. CI running on all 4. Stale codemap auto-clear.ps1 cites carried to batch 3 (#400).
 - 18:01: #489 L-1503 fixes pushed at 7b8462b1: union rule both gates, [] fixed, exact-dup keys + non-scalar requireHuman refuse; 106 cases, 11 sabotages (all red in CI slow run). Rule 65-84s, chronic pre-existing -> authorised slow-marking ps1 cases in 2 existing files. Minted L-1505 (harness: per-env PROMOTIONS rows for union deploys; fails closed meanwhile).
 - 17:53: #427 L-0652 round-2 fixes pushed at 20a4168c (per-layer read-safety tests; cap = 24 wall-clock h + 25 real-h backstop; sleep validates own record; spring-forward later fold; merged main a27c5e38). Re-review sent to a023c4f.
 - 17:53: #421 T-0083 round-5 review CLEAN at 41b1d576 (0/0/1 NIT: se+s leftover stems dos/los/pos, no corpus hits, no action). Joins batch 3. Not verified on a real vault or Windows.
