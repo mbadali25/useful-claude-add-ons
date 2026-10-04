@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 04:05 UTC
+Last updated: 2026-10-04 04:06 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 04:05 UTC
 
 ## Log (newest first)
 
+- 04:06: #369 r1 on ce400de3: 1 BLOCK (repo .claude/settings sandbox.excludedCommands can widen past the probe), 4 FIX (probe cwd != exec cwd; no denyWrite on stores/identity config/sealed dir; only AWS env stripped; probe output truncation), 2 NIT. Fixer started (docs-verified settings semantics), 1.0.311 placeholder.
 - 04:05: #343 r1 on 514ca132: 0 BLOCK, 3 FIX (rule 5a opens trust inputs tfplan/incident/deploy-in-flight to Write/Edit -> forged plan sidecar lets destroy apply; opens verify-gate marker/fingerprint -> forged green gate; bundle/audit exclusion hides committed trust files). Fixer started: split WRITE_ALLOWED (metrics only) vs AUDIT/BUNDLE-EXCLUDED (crew-script bookkeeping only). 1.0.310 placeholder.
 - 04:04: MERGED #387 (notes). #379 merge-only r2 on a5b44398: CLEAN; CI running. #350 pre-merged main locally (BUDGETS re-measure 22,541 pending in its version commit).
 - 04:03: MERGED #339 at af2bf9d2 (crew 1.0.248; CI 25/25 green after runner disk fix; 3 merge-only reviews clean). #379 re-merged -> a5b44398 crew 1.0.250, merge-only review r2 + CI next. Next free 1.0.251.
