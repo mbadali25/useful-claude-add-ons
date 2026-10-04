@@ -1198,6 +1198,24 @@ def _identity(cmd, env):
 def _identity_text(identity):
     return identity.split("\x1c", 1)[0]
 
+# T-0068: crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`: this
+# gate's records, the scope base, the metrics files) is dropped from the
+# changed list, so in a repository that does not ignore `.crew/` the gate's
+# last run is never this run's UNMAPPED CHANGE. A refresh artifact
+# (`crew_refresh_check.REFRESH_ARTIFACT_PATHS`, which `/crew:done` checks for
+# freshness on its own) still runs any rule that names it, but is never
+# unmapped. One judgement for both flavours, `completion_audit.classify_paths`;
+# the .ps1 pipes the same list to `completion_audit.py --classify`. If it
+# cannot be imported every path stays `other`: unmapped, never mapped.
+try:
+    import completion_audit as _ca
+    _kinds = dict(zip(changed, _ca.classify_paths(os.getcwd(), changed)))
+except Exception as _e:  # pylint: disable=broad-except
+    print("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other "
+          "changes (%s: %s) - every changed path is judged" % (type(_e).__name__, _e),
+          file=sys.stderr)
+    _kinds = {}
+changed = [f for f in changed if _kinds.get(f) != "bookkeeping"]
 for f in changed:
     hit=False
     for ri, r in enumerate(cfg.get("rules",[])):
@@ -1276,7 +1294,7 @@ for f in changed:
                 if ident not in cmds: cmds.append(ident)
                 if ident not in rule_cmds[ri]: rule_cmds[ri].append(ident)
                 note_cost(ident, r if r.get("seconds") is not None else {"seconds": rule_secs.get(ri)})
-    if not hit: unmatched.append(f)
+    if not hit and _kinds.get(f) != "artifact": unmatched.append(f)
 for ri in rule_order:
     if ri not in stop_excluded and ri not in rule_secs:
         truly_unknown[ri] = True

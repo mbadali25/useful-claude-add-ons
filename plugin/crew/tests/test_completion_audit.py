@@ -682,3 +682,57 @@ def test_unapproved_touch_still_fails_but_lists_no_bookkeeping(tmp_path):
     text = "\n".join(lines)
     assert not ok and "not approved" in text and "src/app.py" in text
     assert not [p for p in paths if p in text.split()]
+
+
+# --- T-0068: --classify, the verify gate's .ps1 flavour's one classifier -----------
+
+def _classify(root, text):
+    return subprocess.run([sys.executable, _AUDIT, "--classify", "--root", str(root)],
+                          input=text, capture_output=True, text=True, check=False)
+
+
+def test_classify_names_each_kind(repo):
+    """One `<kind>\\t<path>` line per input line, in input order; a path
+    holding a tab is `other`, never dropped."""
+    lines = ["src/a.py", ".crew/.scope-base", ".crew/codemap/crew.md", "docs/diagrams/x.mmd",
+             ".crew/verify.json", "sub/.crew/.scope-base", "a\tb.py", ".crew/metrics.md"]
+
+    done = _classify(repo, "\n".join(lines) + "\n")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split("\n")[:-1] == [
+        "other\tsrc/a.py", "bookkeeping\t.crew/.scope-base", "artifact\t.crew/codemap/crew.md",
+        "artifact\tdocs/diagrams/x.mmd", "other\t.crew/verify.json",
+        "other\tsub/.crew/.scope-base", "other\ta\tb.py", "bookkeeping\t.crew/metrics.md"]
+
+
+def test_classify_reads_crlf_input(repo):
+    """PowerShell pipes `\\r\\n` to a native command on Windows."""
+    done = _classify(repo, ".crew/.scope-base\r\nsrc/a.py\r\n")
+
+    assert done.stdout == "bookkeeping\t.crew/.scope-base\nother\tsrc/a.py\n", done.stderr
+
+
+def test_classify_without_refresh_check_calls_nothing_an_artifact(repo, monkeypatch, capsys):
+    """Could not tell is its own state: when the refresh-artifact list cannot
+    be read, nothing is an artifact (fails toward unmapped, never toward
+    mapped), and stderr says why."""
+    import crew_refresh_check  # pylint: disable=import-outside-toplevel
+
+    def broken(_root):
+        raise OSError("unreadable")
+    monkeypatch.setattr(crew_refresh_check, "refresh_artifact_paths", broken)
+
+    kinds = completion_audit.classify_paths(str(repo), [".crew/codemap/x.md",
+                                                        ".crew/.scope-base"])
+
+    assert kinds == ["other", "bookkeeping"]
+    assert "could not tell" in capsys.readouterr().err
+
+
+def test_ticket_is_still_required_without_classify(repo):
+    done = subprocess.run([sys.executable, _AUDIT, "--check", "--root", str(repo)],
+                          capture_output=True, text=True, check=False,
+                          stdin=subprocess.DEVNULL)
+
+    assert done.returncode == 2 and "--ticket" in done.stderr

@@ -65,6 +65,17 @@ failed, no base) is a failure, never a pass.
 
 `completion_audit.py --check --ticket <id> [--root <dir>]` runs the same audit
 whatever `scope.mode` says, prints the verdict, and exits 0 only on a pass.
+
+## As the verify gate's classifier (T-0068)
+
+`completion_audit.py --classify [--root <dir>]` reads newline-separated
+repo-relative paths on stdin and prints one `<kind>\t<path>` line per input
+line, in input order: `bookkeeping` (`crew_ticket.CREW_BOOKKEEPING_PATHS`),
+`artifact` (`crew_refresh_check.REFRESH_ARTIFACT_PATHS` for this repo) or
+`other`. A path holding a tab or a carriage return is `other`, never dropped.
+`classify_paths` is the same judgement in-process: `verify-gate.sh` imports
+it and `verify-gate.ps1` pipes its changed list here, so the two flavours
+share one definition. It reads nothing but the crew config.
 """
 import argparse
 import json
@@ -194,6 +205,47 @@ def _outside_refresh_artifacts(top, paths, approval):
     return [p for p in paths if not crew_refresh_check.is_refresh_artifact(p, dirs)]
 
 
+BOOKKEEPING, ARTIFACT, OTHER = "bookkeeping", "artifact", "other"
+
+
+def classify_paths(root, paths):
+    """One kind per path in `paths` (module docstring, "As the verify gate's
+    classifier"). When the refresh-artifact list cannot be read, that is
+    said on stderr and nothing is an artifact: an unknown fails toward
+    unmapped, never toward mapped."""
+    try:
+        import crew_refresh_check  # pylint: disable=import-outside-toplevel
+        dirs = crew_refresh_check.refresh_artifact_paths(root)
+        is_artifact = crew_refresh_check.is_refresh_artifact
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        sys.stderr.write(f"completion audit: could not tell which paths are refresh artifacts "
+                         f"({type(exc).__name__}: {shown(str(exc))}); none is treated as one\n")
+        dirs, is_artifact = [], None
+    kinds = []
+    for path in paths:
+        if not isinstance(path, str) or any(c in path for c in "\t\r\n"):
+            kinds.append(OTHER)
+        elif crew_ticket.is_crew_bookkeeping(path):
+            kinds.append(BOOKKEEPING)
+        elif is_artifact is not None and is_artifact(path, dirs):
+            kinds.append(ARTIFACT)
+        else:
+            kinds.append(OTHER)
+    return kinds
+
+
+def _classify_main(root):
+    data = sys.stdin.buffer.read().decode("utf-8", errors="surrogateescape")
+    lines = data.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    lines = [line[:-1] if line.endswith("\r") else line for line in lines]
+    kinds = classify_paths(os.path.abspath(root), lines)
+    out = "".join(f"{kind}\t{line}\n" for kind, line in zip(kinds, lines))
+    sys.stdout.buffer.write(out.encode("utf-8", errors="surrogateescape"))
+    return 0
+
+
 def audit(root, ticket):
     """(ok, lines). `lines` explains a failure; empty on a pass."""
     top = crew_ticket.toplevel(root)
@@ -288,10 +340,15 @@ def main(argv):
     if not argv:
         return stop_hook(_payload())
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--check", action="store_true", required=True)
-    parser.add_argument("--ticket", required=True)
+    parser.add_argument("--classify", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--ticket")
     parser.add_argument("--root", default=".")
     args = parser.parse_args(argv)
+    if args.classify:
+        return _classify_main(args.root)
+    if not args.check or not args.ticket:
+        parser.error("--check and --ticket are required unless --classify is given")
     try:
         crew_ticket.check_ticket(args.ticket)
         ok, lines = audit(os.path.abspath(args.root), args.ticket)
