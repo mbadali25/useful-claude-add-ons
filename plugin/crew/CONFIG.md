@@ -162,11 +162,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
-leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
-For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **74**
+leaves. `leaf_paths(default_config())` yields **132**, so **58** are repo-only.
+For all 132, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on T-0061's branch after merging main 34d9f267; the repo-only
+on T-0070's merge of main 155fe6d8; T-0013 added `resume.typeDelaySeconds` and
+`resume.readyTimeoutSeconds` to both layers, §14b, and this paragraph still said
+72 / 130 / 58. That was measured on T-0061's branch after merging main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
 `autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
@@ -677,13 +679,14 @@ them:
 
 ---
 
-## 10. Global-settable keys — 72
+## 10. Global-settable keys — 74
 
-72 measured (`leaf_paths(default_global_config())`, crew 1.0.207); the table
-below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+74 measured (`leaf_paths(default_global_config())`, on T-0070's merge of main
+155fe6d8); the table below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
 global-settable and not tabled here; `shellRoute.mode` and `shellRoute.distro`
-are tabled in §11 with both layers' defaults.
+are tabled in §11 with both layers' defaults, and `resume.typeDelaySeconds` and
+`resume.readyTimeoutSeconds` in §14b.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -1123,7 +1126,7 @@ command may be resumed (`crew_resume.py::decide`). **Nothing starts on its
 own yet**: the 2026-09-25 spike (Claude Code 2.1.282) proved an interactive
 session drops SessionStart `initialUserMessage`, so the context hook names
 the exact command and the reason it did not start, and the human presses
-Enter or types it. T-0013 is the typing fallback.
+Enter or types it. T-0013 is the typing fallback (§14b).
 
 | Where | Value | Effect |
 |---|---|---|
@@ -1219,6 +1222,61 @@ never overwrites: of two senders holding the same `run`, only the first may type
 If the opt-in cannot even be confirmed (the module or the machine file cannot
 be read), the answer is `off`, so an unarmed machine sees exactly the
 pre-T-0006 output.
+
+## 14b. Typing the resume command (T-0013)
+
+Where the terminal can be driven, an armed machine TYPES the command
+`decide` rendered into its own session. On the SessionStart after `/clear`
+or a manual `/compact`, before its per-event claim, the context hook runs
+its own flavour's sender in resume mode (`auto-clear.sh --resume`,
+`auto-clear.ps1 -Resume`) and names what happened in the context:
+`Auto-resume: typing /crew:done T-0001 into this session in 2s (method
+tmux); ...`, or T-0006's line plus `Auto-resume was not typed: <reason>.`
+
+Consent is `resume.auto` (§14a); `context.autoClear.enabled` is not needed.
+The rest of `context.autoClear` is read as the machine's description of its
+terminal, exactly as for `/clear`: `method`, `windowTitle`, `onlyRepos`,
+`onlySessions`. No new hook is registered.
+
+| Key (machine file only) | Default | Effect |
+|---|---|---|
+| `resume.typeDelaySeconds` | `2` | wait before the tmux ready probe starts; the only wait on Windows |
+| `resume.readyTimeoutSeconds` | `15` | how long the tmux probe waits for an idle, empty input line before it types nothing |
+
+Both are read from `~/.claude/crew/config.json` only
+(`crew_autocycle.resume_typing`); a repo copy is declared, because every
+global key is a repo key, but never read. A fractional number is cut to its
+whole part (`7.5` is `7`); any other value that is not a whole number, or is
+negative, is the default.
+
+Order, first refusal wins, and each is logged to `.crew/.autoclear.log`
+(off is silent: not armed, or outside `onlyRepos`/`onlySessions`):
+`decide` did not return `run`; no usable method, `$TMUX` unset, or a pane
+that is not an ancestor of the hook; `wtype`; `xdotool` (no probe can see an
+X11 input line); `sendkeys` on the bash flavour or `tmux` on the PowerShell
+one; `auto` on native Windows is `notify`, which types, claims and records
+nothing. Then the per-handoff marker
+`<git-common-dir>/crew/resume-typed-<handoff sha256[:16]>` is claimed with
+`O_EXCL`/`CreateNew` (taken: refuse), then `crew_resume.py record` runs
+(failed: refuse, nothing typed), then the detached sender starts. tmux:
+sleep `typeDelaySeconds`, poll `capture-pane -p -e` every 250 ms up to
+`readyTimeoutSeconds` for the `❯` line between two rule lines holding only
+whitespace once dim runs (the placeholder) and escapes are removed, with no
+`esc to interrupt` on screen; a non-empty line refuses at once; then
+`CREW_AUTOCLEAR_INHIBIT`; then the text, 0.5 s, and Enter (text and Enter
+in one read, over ~60 characters, are taken as a paste). sendkeys: the
+existing child, with the delay, the focus check, the tab recheck, the
+inhibit check, then `SendWait`.
+
+**The default and its limit.** The T-0013 spike (Claude Code 2.1.282, tmux,
+77 `/clear` and 66 `/compact` runs) saw the input ready 0.134 s after
+SessionStart at worst; ceil(2 x 0.134) is below the floor of 2. A delay is a
+guess, not a proof. tmux has a probe; Windows has none, so on a loaded
+machine a key can still land before the input box is ready: the focus and
+tab rechecks catch a wrong window, not an unready box. On `/compact` the
+probe waits for every SessionStart hook to finish, so `readyTimeoutSeconds`
+must exceed the slowest one on the machine. Whether SendWait's per-character
+input hits the same paste rule was not measured.
 
 ## 15. `install.policy`
 

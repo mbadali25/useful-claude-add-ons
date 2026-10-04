@@ -266,7 +266,16 @@ contract itself. This section is what goes wrong with the approval and the audit
   formatter or a `git mv` never reaches it. The audit instead diffs the **whole working tree**
   against the ticket's scope base (`scope_base.resolve` — the commit the ticket started from) across
   committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
-  though nothing blocked it at the time.
+  though nothing blocked it at the time. A file byte-identical to main as last merged is not
+  counted; a `merged main: could not tell` line (a detached HEAD, none of `origin/HEAD`,
+  `origin/main` and `main` naming a commit, or a git error) means every merged-in file was
+  counted, so check out the ticket branch and rerun. A missing `origin/main` alone is not that:
+  a local `main` is used instead. An untracked merged-in file (after `git rm --cached`) is main's
+  only when `git add` would record it identically: with `core.fileMode=false` its execute bit is
+  ignored, as git ignores it. On the review side, `diffed-from-merged=could-not-tell` (or
+  `fork: could not tell` from `--check-receipt`) means `git merge-base <start> <merged>` gave no
+  answer, so a file main also changed shows main's lines as the ticket's: fetch, check the start
+  commit still exists, and rebuild.
   **Check it directly, without waiting for a Stop:**
   ```bash
   python3 "<crew>/hooks/scripts/completion_audit.py" --check --ticket <id>
