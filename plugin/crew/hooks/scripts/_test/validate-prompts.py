@@ -114,7 +114,6 @@ NOT_VERIFIED = "**Not verified"
 # (T-0087), so its share of T-0041 is a harness follow-up. Remove it from
 # RULE_EXEMPT in that follow-up's commit.
 RULE_EXEMPT = {"reviewer": "review harness (T-0087); its rule edit lands as a harness follow-up"}
-RULE_FILES = sorted(glob.glob("agents/*.md")) + ["skills/crew-best-practices/SKILL.md"]
 # Agents whose report is free-form prose end with a **Not verified** section.
 # Not `reviewer`: its output is the machine contract review_verdict.py parses
 # (READ| / SEVERITY|file:line|... / CLEAN), so an extra section would be an
@@ -345,7 +344,11 @@ def _text(path):
 def check_verification_rule():
     """T-0041: the rule, and a **Not verified** report section, are present."""
     print("=== VERIFICATION RULE ===")
-    for path in RULE_FILES:
+    # Listed here, at call time, and joined with "/": glob would hand back
+    # `agents\x.md` on Windows and miss the reviewer exemption below.
+    rule_files = [f"agents/{n}" for n in sorted(os.listdir("agents")) if n.endswith(".md")]
+    rule_files.append("skills/crew-best-practices/SKILL.md")
+    for path in rule_files:
         name = os.path.basename(path)[:-3]
         if path.startswith("agents/") and name in RULE_EXEMPT:
             # Printed, not just counted: an exemption nobody sees is never removed.
