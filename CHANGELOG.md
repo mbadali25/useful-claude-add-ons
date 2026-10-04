@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.372: `/crew:reference --integrations`, linted before it is written, judged by the refresh check (T-0036)
+### Added — `crew` 1.0.381: `/crew:reference --integrations`, linted before it is written, judged by the refresh check (T-0036)
 
 - **What changed.** `/crew:reference --integrations` writes `docs/reference/integrations.md`: every
   outbound call, one `##` per external system, one `###` entry per call with a `path:line` anchor
