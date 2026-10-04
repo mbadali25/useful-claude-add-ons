@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:58: T-0049 BUILT -> PR #395 (T-0049-build a972a0af, crew 1.0.353 placeholder). Heartbeat measured on Linux cloud: detached child survives Bash calls (128s, 5 calls) -> fallback not built; Windows/macOS pid check 'unmeasured', TTL decides. 13/13 hand sabotage red; harness follow-up sabotage_inflight.py (draft in scratchpad/sab/). NOTE builder wrote code before tests (sabotage showed red half). First review (security-focused) started.
 - 11:58: #352 land-prep onto e9364a70 done: fe45b8bb (1.0.357; troubleshooting guide rebuilt; 12 crew_resume.py codemap cites re-derived incl. the NIT). Merge-only review started.
 - 11:57: #377 land-prep onto e9364a70 done: 0d8c1bce (1.0.355; daily-workflow guide rebuilt; build.py/config_reference --check pass). Merge-only review started.
 - 11:56: #392 merge-only review 136eaade: 0/0/0 CLEAN. Waits CI (check-in 12:16), then merge.
