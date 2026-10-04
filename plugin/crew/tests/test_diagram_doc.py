@@ -176,7 +176,7 @@ def _bash_has_sha256():
     if _BASH is None:
         return False
     probe = subprocess.run([_BASH, "-c", "command -v sha256sum || command -v shasum"],
-                           capture_output=True, check=False)
+                           capture_output=True, check=False, timeout=30)
     return probe.returncode == 0
 
 
@@ -190,8 +190,10 @@ def test_render_sh_records_the_source_hash_and_rerenders_on_a_new_one(tmp_path):
     env = dict(os.environ, PATH=f"{tools}{os.pathsep}{os.environ['PATH']}", MMDC_LOG=str(tmp_path / "log"))
 
     def render():
-        subprocess.run([_BASH, RENDER_SH.replace("\\", "/"), str(d).replace("\\", "/"), "--svg-only"],
-                       env=env, check=True, capture_output=True)
+        # A relative dir, as real callers pass it: render.sh prefixes "./" to any
+        # dir not starting with "/", so a "C:/..." argument would become "./C:/...".
+        subprocess.run([_BASH, RENDER_SH.replace("\\", "/"), "docs/diagrams", "--svg-only"],
+                       cwd=str(tmp_path), env=env, check=True, capture_output=True)
         return (tmp_path / "log").read_text(encoding="utf-8").count("process-merge")
 
     assert render() == 1
