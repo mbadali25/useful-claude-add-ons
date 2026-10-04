@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:01 UTC
+Last updated: 2026-10-04 16:08 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:08: #481 fixes -> 858c5336 (merged main b863b773; _auto_rejected re-runs conds 5-8 via _block_round; clamp <=5; auto-replan-cap phase; current-plan check; 83 cases; 22 mutations). Round-2 review started.
 - 16:01: #407 round-3 3e2afb49: 0/3/4 (re.error crash; ps1 reads 'Deploy' case-insensitively -> prod unattended; rule 90s > 60s Stop). Sent fixes + merge main. NEW PRE-EXISTING GATE BUG -> L-1503 (proposed): promote-gate.ps1 -like throws on an invalid pattern ([, [], [z-a]) in an env's deploy string -> iteration skipped -> exit 0, NO GATE on PowerShell. High severity. Related open handoffs: L-0664, L-0665, L-0689.
 - 15:58: #403 T-0053 round-3 610deaea: 0/0/2 CLEAN -> landing queue. Carry at landing (consistent with owner's 'unreadable never loosens' decisions): non-null non-policy night value (e.g. 'Human' typo) reads STRICTEST under asleep/unknown. Sabotage script NIT: require rc==1, run assign ids from plugin/crew (L-0651 port).
 - 15:56: #351 CI fix -> 2c09afff (done.md 123->120 by pure reflow, wording unchanged - reviewed diff myself; diagram/codemap cites re-pointed; 1.0.328 last). Waiting CI on 2c09afff.
