@@ -139,11 +139,11 @@
     { "paths": ["plugin/crew/hooks/scripts/crew_ghdeploy.py",
                 "plugin/crew/tests/test_crew_ghdeploy.py",
                 "plugin/crew/tests/ghdeploy_mutations.py"],
-      "seconds": 4,
+      "seconds": 10,
       "coveredBy": "crew-suite",
       "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_ghdeploy.py -q"],
       "reach": "local",
-      "why": "T-0045 slice 1: crew_ghdeploy.py check validates a verify.json environment's github entry and prints the gh workflow run dispatch for HEAD. 48 cases, 3.7s wall through pytest_rule.py on the 4-CPU Linux cloud container, 2026-10-04. reach: local - check runs no gh (test_check_calls_no_gh puts a recording, failing gh stub first on PATH and asserts it never ran); the only subprocesses are git in throwaway tmp_path repos and promote-gate.sh fed one printed dispatch, which it judges and never runs. ghdeploy_mutations.py is listed so an edit to a mutation re-runs the cases it names; its 35 mutations are run by hand with the one-liner in its docstring until L-0650 wires them into sabotage.py." },
+      "why": "T-0045 slice 1: crew_ghdeploy.py check validates a verify.json environment's github entry and prints the gh workflow run dispatch for HEAD. 99 cases, 10.3s wall through pytest_rule.py on the 4-CPU Linux cloud container with pwsh 7.4 on PATH, 2026-10-04 (review round 1 added the two-environment cases, which drive promote-gate.sh AND promote-gate.ps1 under OS=Windows_NT; without pwsh the .ps1 must-allow case skips and says so). reach: local - check runs no gh (test_check_calls_no_gh puts a recording, failing gh stub first on PATH and asserts it never ran); the only subprocesses are git in throwaway tmp_path repos and promote-gate.sh fed one printed dispatch, which it judges and never runs. ghdeploy_mutations.py is listed so an edit to a mutation re-runs the cases it names; its 56 mutations are run by hand with the one-liner in its docstring until L-0650 wires them into sabotage.py." },
 
     { "paths": ["plugin/crew/hooks/scripts/crew_guards.py",
                 "plugin/crew/tests/test_guard*.py"],

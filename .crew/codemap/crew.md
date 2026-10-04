@@ -334,11 +334,13 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 `environments.*` section, not re-derived here.
 
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
-environment's `github` entry out of `.crew/verify.json` (`_environment`, `:185`; `entries`, `:153`),
-validates each against a closed key set (`KEYS`, `:51`) and value grammar (`VALUE`, `:48`;
-`entry_problem`, `:117`), requires `deploy` to be exactly the entries' prefixes (`check`, `:219`;
-`prefix`, `:166`) and prints the dispatch for HEAD (`dispatch`, `:174`). It runs only
-`git rev-parse HEAD` (`_head`, `:206`) and writes nothing; no hook calls it yet, and promote-gate
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:276`; `entries`, `:191`),
+validates each against a closed key set (`KEYS`, `:65`) and value grammar (`VALUE`, `:62`;
+`entry_problem`, `:153`; the ref as a branch name, `_ref_problem`, `:92`), requires `deploy` to be
+exactly the entries' prefixes (`check`, `:310`; `prefix`, `:204`), refuses an environment another
+environment's `deploy` would match, case-insensitively, because both gates take the first
+substring match (`_ambiguity`, `:254`), and prints the dispatch for HEAD (`dispatch`, `:212`). It
+runs only `git rev-parse HEAD` (`_head`, `:297`) and writes nothing; no hook calls it yet, and promote-gate
 ignores the `github` key. DERIVED from the definitions cited. Its unwired mutations are
 `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after the anchor;
 the anchor was not moved for it.

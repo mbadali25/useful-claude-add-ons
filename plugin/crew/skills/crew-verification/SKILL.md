@@ -441,7 +441,7 @@ one object or a list of them, and lists each entry's canonical prefix in
 | Key | Meaning |
 |---|---|
 | `workflow` | Required. The workflow's `.yml`/`.yaml` filename - not its display name or id |
-| `ref` | Required. A branch, never a tag |
+| `ref` | Required. A branch name: valid for `git check-ref-format --branch`, not starting `-` or `@`, not `HEAD`, no `refs/` path but `refs/heads/`. A bare tag name is not detected |
 | `inputs` | Fixed `-f` inputs, dispatched in the order listed |
 | `shaInput` | The input that receives the full HEAD sha |
 | `correlationInput` | The input that receives `crew-<env>-<sha7>-<8 hex>`; useful only when the workflow's `run-name` shows it |
@@ -452,8 +452,11 @@ Every value must fit `[A-Za-z0-9._/@:+-]`; one that does not is refused by
 name, never quoted. There is no key for `-R/--repo`, and an unknown key is
 refused. `python3 <crew>/hooks/scripts/crew_ghdeploy.py check --root . --env
 <name>` validates the entries, checks `deploy` lists exactly their prefixes,
-and prints the literal dispatch for HEAD. It writes nothing and runs no `gh`.
-Exit 0 is valid (or no `github` entry), 2 is refused with
+and refuses an environment whose dispatch would be gated as another one: the
+gates take the first environment whose `deploy` string is in the command,
+ignoring case in PowerShell, so no environment's `deploy` may sit inside
+another's dispatch (`ambiguous-environment`). It prints the literal dispatch
+for HEAD, writes nothing and runs no `gh`. Exit 0 is valid (or no `github` entry), 2 is refused with
 `result=refused reason=<code>`, 3 is could-not-tell (map, environment or HEAD
 unreadable). **The dispatch sequence is not built yet:** nothing dispatches,
 finds the run, watches it or records it. Run the printed command by hand.

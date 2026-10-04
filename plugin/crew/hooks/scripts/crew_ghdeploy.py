@@ -26,13 +26,27 @@ is the guard on the Bash call (T-0009). The later slices (`prepare`,
 
 VALUES ARE CLOSED, NOT ESCAPED. Every value that reaches the command matches
 `[A-Za-z0-9._/@:+-]+`; anything else is refused by name and never quoted.
-A workflow is a `.yml`/`.yaml` filename (no display name, no numeric id), a
-ref is a branch (no `refs/tags/`), and there is no key for `-R/--repo`.
+A workflow is a `.yml`/`.yaml` filename (no display name, no numeric id) and
+there is no key for `-R/--repo`. A ref is checked as a branch NAME only: it
+must pass `git check-ref-format --branch` (re-implemented here, no git call),
+must not start with `-` or `@` (PowerShell splats `@name`), and must not be
+`HEAD` or a `refs/` path other than `refs/heads/` (both case-insensitive). A
+tag given by its bare name is NOT detected: telling it from a branch needs
+the remote, and `check` asks nothing.
+
+ONE ENVIRONMENT PER DISPATCH. Both promote-gate flavours gate a command as
+the FIRST environment, in file order, one of whose `deploy` strings is a
+substring of it (the .ps1 with `-like`, which ignores case). So `check`
+refuses, as `ambiguous-environment`, an environment whose dispatch contains
+another environment's `deploy` string, or whose `deploy` string is contained
+in another environment's dispatch, compared case-insensitively. Otherwise an
+input-less staging entry would gate production's dispatch as staging.
 
 Exit codes, with the last stdout line always `result=...`:
   0  `result=ok entries=N sha=<sha>` after one `dispatch: <command>` per entry,
      or `result=ok github=none` for an environment without a `github` key.
-  2  `result=refused reason=<code>`: an entry problem or `deploy-prefix-mismatch`.
+  2  `result=refused reason=<code>`: an entry problem, `deploy-prefix-mismatch`
+     or `ambiguous-environment`.
   3  `result=could-not-tell reason=<code>`: the map is absent or unreadable,
      the environment is not in it, or HEAD cannot be read. Never read as
      "no github entry".
@@ -50,6 +64,7 @@ NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 WORKFLOW = re.compile(r"[A-Za-z0-9._][A-Za-z0-9._-]*\.ya?ml")
 KEYS = ("workflow", "ref", "inputs", "shaInput", "correlationInput",
         "deployJob", "watchMinutes", "identifySeconds")
+SAMPLE_SHA = "0" * 40
 RANGES = {"watchMinutes": (1, 360, 60, "watch-minutes-range"),
           "identifySeconds": (10, 900, 120, "identify-seconds-range")}
 
@@ -79,13 +94,28 @@ def _ref_problem(ref):
         return "ref-chars"
     if ref.startswith("-"):
         return "ref-dash"
+    if ref.startswith("@"):
+        return "ref-at"
     if ".." in ref:
         return "ref-dotdot"
-    if ref.startswith("refs/tags/"):
-        return "ref-tag"
+    low = ref.lower()
+    if low == "head" or (low.startswith("refs/") and not ref.startswith("refs/heads/")):
+        return "ref-not-branch"
     if not _fits(ref):
         return "ref-chars"
+    # What `git check-ref-format --branch` still rejects inside the value grammar.
+    # An empty component is a leading or trailing `/` or a `//`.
+    parts = ref.split("/")
+    if ":" in ref or "" in parts or ref.endswith(".") \
+            or any(part.startswith(".") or part.endswith(".lock") for part in parts):
+        return "ref-format"
     return None
+
+
+def _one_line(text):
+    """No C0/C1 control character, DEL, or Unicode line/paragraph separator."""
+    return not any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in "\u2028\u2029"
+                   for c in text)
 
 
 def _inputs_problem(entry):
@@ -100,17 +130,23 @@ def _inputs_problem(entry):
         if not _fits(value):
             return "value-chars", (f"input {name!r} has a value outside "
                                    "[A-Za-z0-9._/@:+-]; it is refused, never quoted")
-    sha, corr = entry.get("shaInput"), entry.get("correlationInput")
-    for key, name in (("shaInput", sha), ("correlationInput", corr)):
-        if name is not None and (not isinstance(name, str)
-                                 or NAME.fullmatch(name) is None):
+    # Input names are compared case-insensitively throughout.
+    names = {name.lower() for name in inputs}
+    if len(names) != len(inputs):
+        return "input-name-duplicate", "two `inputs` names differ only in case"
+    for key in ("shaInput", "correlationInput"):
+        if key in entry and (not isinstance(entry[key], str)
+                             or NAME.fullmatch(entry[key]) is None):
             return "input-name-chars", f"`{key}` is not a plain input name"
-    if sha is not None and sha in inputs:
-        return "sha-input-in-inputs", f"`shaInput` {sha!r} is also in `inputs`"
-    if corr is not None and corr == sha:
+    sha = entry.get("shaInput", "").lower()
+    corr = entry.get("correlationInput", "").lower()
+    if sha and sha in names:
+        return "sha-input-in-inputs", f"`shaInput` {entry['shaInput']!r} is also in `inputs`"
+    if corr and corr == sha:
         return "sha-equals-correlation", "`shaInput` and `correlationInput` are the same input"
-    if corr is not None and corr in inputs:
-        return "correlation-in-inputs", f"`correlationInput` {corr!r} is also in `inputs`"
+    if corr and corr in names:
+        return "correlation-in-inputs", (f"`correlationInput` {entry['correlationInput']!r} "
+                                         "is also in `inputs`")
     return None
 
 
@@ -130,13 +166,15 @@ def entry_problem(entry, env):
         return "ref-missing", "no `ref`"
     reason = _ref_problem(entry["ref"])
     if reason:
-        return reason, "`ref` must be a branch name in [A-Za-z0-9._/@:+-]"
+        return reason, ("`ref` must be a branch name: valid for `git check-ref-format "
+                        "--branch`, in [A-Za-z0-9._/@:+-], not starting with - or @, not "
+                        "HEAD, and no refs/ path other than refs/heads/")
     problem = _inputs_problem(entry)
     if problem:
         return problem
     if "deployJob" in entry:
         job = entry["deployJob"]
-        if not isinstance(job, str) or not job or any(ord(c) < 32 for c in job):
+        if not isinstance(job, str) or not job or not _one_line(job):
             return "deploy-job-bad", "`deployJob` must be a non-empty glob on one line"
     for key, (low, high, _default, code) in RANGES.items():
         if key in entry:
@@ -182,6 +220,59 @@ def dispatch(entry, env, sha):
     return line
 
 
+def _deploys(cfg):
+    """An environment's `deploy` as a list of strings, or None when malformed."""
+    declared = cfg.get("deploy", [])
+    if isinstance(declared, str):
+        declared = [declared]
+    if not isinstance(declared, list) or not all(isinstance(d, str) for d in declared):
+        return None
+    return declared
+
+
+def _dispatches(env, cfg):
+    """Sample-sha dispatches of an environment's entries; [] when it has none
+    or any is invalid (its own `check` refuses those)."""
+    try:
+        found = entries(cfg)
+    except Refused:
+        return []
+    if not found or any(entry_problem(e, env) for e in found):
+        return []
+    return [dispatch(e, env, SAMPLE_SHA) for e in found]
+
+
+def _overlap(lines, deploys):
+    """The first `deploy` string a gate would match against one of `lines`."""
+    for line in lines:
+        for dep in deploys:
+            if dep and (dep.lower() in line.lower() or line.lower() in dep.lower()):
+                return dep
+    return None
+
+
+def _ambiguity(envs, env, mine):
+    """Refuse when another environment's `deploy` matches this environment's
+    dispatch, or this one's `deploy` matches another's, case-insensitively."""
+    lines = _dispatches(env, envs[env])
+    for other, cfg in envs.items():
+        if other == env:
+            continue
+        theirs = _deploys(cfg) if isinstance(cfg, dict) else None
+        if theirs is None:
+            raise CouldNotTell("verify-json-unreadable",
+                               f"environment {other!r} is not an object with a `deploy` "
+                               "command or list of commands")
+        dep = _overlap(lines, theirs)
+        if dep is None:
+            dep = _overlap(_dispatches(other, cfg), mine)
+        if dep is not None:
+            raise Refused("ambiguous-environment",
+                          f"{env!r} and {other!r} overlap on {dep!r}: a gate takes the first "
+                          "environment whose deploy string is in the command (ignoring "
+                          "case in PowerShell), so one would be gated as the other")
+
+
 def _environment(root, env):
     path = os.path.join(root, ".crew", "verify.json")
     if not os.path.lexists(path):
@@ -200,7 +291,7 @@ def _environment(root, env):
                            f"no environment {env!r} in .crew/verify.json")
     if not isinstance(envs[env], dict):
         raise CouldNotTell("verify-json-unreadable", f"environment {env!r} is not an object")
-    return envs[env]
+    return envs
 
 
 def _head(root):
@@ -218,23 +309,22 @@ def _head(root):
 
 def check(root, env):
     """Lines to print for `check`; raises Refused or CouldNotTell."""
-    cfg = _environment(root, env)
+    envs = _environment(root, env)
+    cfg = envs[env]
     found = entries(cfg)
     if found is None:
         return [f"environment {env!r} has no github entry", "result=ok github=none"]
     for index, entry in enumerate(found):
         problem = entry_problem(entry, env)
         if problem:
-            raise Refused(problem[0], f"{env} github[{index}]: {problem[1]}")
-    declared = cfg.get("deploy", [])
-    if isinstance(declared, str):
-        declared = [declared]
+            raise Refused(problem[0], f"{env!r} github[{index}]: {problem[1]}")
+    declared = _deploys(cfg)
     wanted = {prefix(e) for e in found}
-    if not isinstance(declared, list) or not all(isinstance(d, str) for d in declared) \
-            or set(declared) != wanted:
+    if declared is None or set(declared) != wanted:
         raise Refused("deploy-prefix-mismatch",
-                      f"{env}: `deploy` must list exactly these prefixes, and nothing "
+                      f"{env!r}: `deploy` must list exactly these prefixes, and nothing "
                       f"else: {sorted(wanted)}")
+    _ambiguity(envs, env, declared)
     sha = _head(root)
     return ([f"dispatch: {dispatch(e, env, sha)}" for e in found]
             + [f"result=ok entries={len(found)} sha={sha}"])

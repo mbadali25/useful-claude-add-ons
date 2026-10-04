@@ -8,14 +8,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 - **What changed.** A `.crew/verify.json` environment may carry a `github`
   entry (one object or a list): `workflow` (a `.yml`/`.yaml` filename),
-  `ref` (a branch), fixed `inputs`, and optional `shaInput`,
+  `ref` (a branch name, checked as a name only: `git check-ref-format
+  --branch` rules, no leading `-` or `@`, not `HEAD`, no `refs/` path but
+  `refs/heads/`; a bare tag name is NOT detected), fixed `inputs`, and optional `shaInput`,
   `correlationInput`, `deployJob`, `watchMinutes` (1-360) and
   `identifySeconds` (10-900). The new
   `plugin/crew/hooks/scripts/crew_ghdeploy.py check --root . --env <name>`
   validates it against a closed key set and the value grammar
   `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
   requires `deploy` to list exactly the entries' canonical prefixes so
-  promote-gate's existing match fires on the real dispatch, and prints the one
+  promote-gate's existing match fires on the real dispatch, refuses as
+  `ambiguous-environment` any environment whose dispatch contains another
+  environment's `deploy` string or whose `deploy` is inside another's
+  dispatch (case-insensitively: both gates take the first substring match, the
+  PowerShell one ignoring case), and prints the one
   literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
   (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
   HEAD unreadable - never "no github entry"). It writes nothing and runs no
@@ -23,8 +29,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Nothing dispatches, identifies, watches or records a run
   (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
   does not deploy (L-0649).
-- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 48 cases, including
-  one that feeds the printed dispatch to the real `promote-gate.sh`. The 35
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 99 cases, including
+  two-environment cases that feed every accepted dispatch to the real
+  `promote-gate.sh` and `promote-gate.ps1`. The 56
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 

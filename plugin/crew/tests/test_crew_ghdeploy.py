@@ -134,7 +134,23 @@ _PROBLEMS = {
     "ref missing": (_with(ref=_DROP), "ref-missing"),
     "ref leading dash": (_with(ref="-R"), "ref-dash"),
     "ref dotdot": (_with(ref="main..x"), "ref-dotdot"),
-    "ref tag": (_with(ref="refs/tags/v1"), "ref-tag"),
+    "ref tag": (_with(ref="refs/tags/v1"), "ref-not-branch"),
+    "ref tag upper case": (_with(ref="REFS/TAGS/v1"), "ref-not-branch"),
+    "ref remote": (_with(ref="refs/remotes/origin/main"), "ref-not-branch"),
+    "ref HEAD": (_with(ref="HEAD"), "ref-not-branch"),
+    "ref head lower case": (_with(ref="head"), "ref-not-branch"),
+    "ref leading @": (_with(ref="@main"), "ref-at"),
+    "ref lone @": (_with(ref="@"), "ref-at"),
+    "ref .lock": (_with(ref="main.lock"), "ref-format"),
+    "ref component .lock": (_with(ref="a.lock/b"), "ref-format"),
+    "ref colon": (_with(ref="a:b"), "ref-format"),
+    "ref trailing slash": (_with(ref="main/"), "ref-format"),
+    "ref leading slash": (_with(ref="/main"), "ref-format"),
+    "ref double slash": (_with(ref="a//b"), "ref-format"),
+    "ref leading dot": (_with(ref=".main"), "ref-format"),
+    "ref component leading dot": (_with(ref="a/.b"), "ref-format"),
+    "ref trailing dot": (_with(ref="main."), "ref-format"),
+    "ref null": (_with(ref=None), "ref-chars"),
     "ref space": (_with(ref="ma in"), "ref-chars"),
     "ref not a string": (_with(ref=["main"]), "ref-chars"),
     "inputs not object": (_with(inputs=["a=b"]), "inputs-not-object"),
@@ -146,6 +162,16 @@ _PROBLEMS = {
     "input name bad": (_with(inputs={"a b": "x"}), "input-name-chars"),
     "shaInput name bad": (_with(shaInput="s ha"), "input-name-chars"),
     "shaInput also in inputs": (_with(shaInput="target"), "sha-input-in-inputs"),
+    "shaInput in inputs by case": (_with(inputs={"Target": "staging"}, shaInput="target"),
+                                   "sha-input-in-inputs"),
+    "shaInput null": (_with(shaInput=None), "input-name-chars"),
+    "correlationInput null": (_with(correlationInput=None), "input-name-chars"),
+    "correlationInput in inputs by case": (_with(correlationInput="MODE"),
+                                           "correlation-in-inputs"),
+    "shaInput equals correlationInput by case": (_with(correlationInput="SHA"),
+                                                 "sha-equals-correlation"),
+    "input names equal by case": (_with(inputs={"a": "1", "A": "2"}),
+                                  "input-name-duplicate"),
     "correlationInput also in inputs": (_with(correlationInput="mode"),
                                         "correlation-in-inputs"),
     "shaInput equals correlationInput": (_with(correlationInput="sha"),
@@ -158,6 +184,11 @@ _PROBLEMS = {
     "identifySeconds 901": (_with(identifySeconds=901), "identify-seconds-range"),
     "deployJob empty": (_with(deployJob=""), "deploy-job-bad"),
     "deployJob control char": (_with(deployJob="deploy\n"), "deploy-job-bad"),
+    "deployJob DEL": (_with(deployJob="deploy\x7f"), "deploy-job-bad"),
+    "deployJob line separator": (_with(deployJob="deploy\u2028x"), "deploy-job-bad"),
+    "deployJob paragraph separator": (_with(deployJob="deploy\u2029x"), "deploy-job-bad"),
+    "deployJob NEL": (_with(deployJob="deploy\x85x"), "deploy-job-bad"),
+    "deployJob null": (_with(deployJob=None), "deploy-job-bad"),
     "unknown key": (_with(repo="other/repo"), "unknown-key"),
     "github a string": ("deploy.yml", "github-shape"),
     "github a number": (7, "github-shape"),
@@ -185,6 +216,21 @@ def test_correlation_needs_an_env_name_in_the_value_grammar(tmp_path):
 
     assert proc.returncode == 2, proc.stdout
     assert _last(proc) == "result=refused reason=env-name-chars"
+
+
+def test_an_env_name_is_never_printed_raw(tmp_path):
+    """A detail line names the environment by repr, so a newline in its name
+    cannot forge a second line, least of all a `result=` one."""
+    env = "a\nresult=ok github=none"
+    root = _repo(tmp_path, _doc(_with(inputs={"n": "a b"}), deploy=[_PREFIX], env=env))
+
+    proc = _check(root, env=env)
+
+    assert proc.returncode == 2, proc.stdout
+    lines = proc.stdout.strip().splitlines()
+    assert len(lines) == 2, lines
+    assert repr(env) in lines[0], lines[0]
+    assert lines[1] == "result=refused reason=value-chars"
 
 
 def test_check_refuses_deploy_prefix_mismatch(tmp_path):
@@ -335,3 +381,142 @@ def test_dispatch_matches_promote_gate(tmp_path):
     else:
         assert gate.returncode == 2, gate.stderr
         assert "PROMOTION BLOCKED (staging" in gate.stderr, gate.stderr
+
+
+@pytest.mark.parametrize("ref", ["main", "refs/heads/main", "release/1.2", "user@x",
+                                 "a+b", "feature/a.b-c", "v1.2.3"])
+def test_branch_refs_are_accepted(ref):
+    """`v1.2.3` is accepted on purpose: a tag given by its bare name cannot be
+    told from a branch without asking the remote, and `check` asks nothing."""
+    assert crew_ghdeploy.entry_problem(_with(ref=ref), "staging") is None
+
+
+# --- two environments: the gates' first substring match ----------------------
+#
+# Both promote-gate flavours take the FIRST environment, in file order, one of
+# whose `deploy` strings is a substring of the command (the .ps1 with -like,
+# which ignores case). So an environment whose dispatch contains another
+# environment's `deploy` string is gated as that other environment. `check`
+# refuses either side of such a pair as `ambiguous-environment`.
+
+_PROD = {"workflow": "deploy.yml", "ref": "main", "inputs": {"target": "prod"},
+         "shaInput": "sha"}
+
+
+def _envs(*pairs, human=()):
+    """{"environments": ...} from (name, github entry or None, deploy) triples."""
+    out = {}
+    for name, github, deploy in pairs:
+        cfg = {"deploy": deploy, "rollback": "none",
+               "rollbackReason": "the fixture deploys nothing"}
+        if github is not None:
+            cfg["github"] = github
+            if deploy is None:
+                cfg["deploy"] = [crew_ghdeploy.prefix(github)]
+        if name in human:
+            cfg["requireHuman"] = True
+        out[name] = cfg
+    return {"environments": out}
+
+
+_CONFIGS = {
+    # The review's repro: an input-less staging entry is a prefix of
+    # production's dispatch, so production went out as staging, with no human.
+    "inputless staging before production": (_envs(
+        ("staging", {"workflow": "deploy.yml", "ref": "main"}, None),
+        ("production", _PROD, None), human=("production",)), set()),
+    # The other direction: staging's own dispatch overlaps no deploy string,
+    # but its `deploy` is inside production's dispatch.
+    "shaInput-only staging before production": (_envs(
+        ("staging", {"workflow": "deploy.yml", "ref": "main", "shaInput": "sha"}, None),
+        ("production", _PROD, None), human=("production",)), set()),
+    # -like ignores case: `target=Prod` matches `target=prod` in the .ps1 only.
+    "qa/Prod before production/prod": (_envs(
+        ("qa", _with(inputs={"target": "Prod"}, shaInput="sha",
+                     correlationInput=_DROP), None),
+        ("production", _PROD, None), human=("production",)), set()),
+    # A plain deploy string inside a github environment's dispatch.
+    "plain deploy contained in a dispatch": (_envs(
+        ("legacy", None, ["gh workflow run deploy.yml"]),
+        ("production", _PROD, None), human=("production",)), {"legacy"}),
+    "distinct targets": (_envs(
+        ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
+        ("production", _PROD, None), human=("production",)),
+        {"staging", "production"}),
+}
+
+
+@pytest.mark.parametrize("label", sorted(_CONFIGS))
+def test_check_refuses_an_environment_another_one_matches(tmp_path, label):
+    doc, accepted = _CONFIGS[label]
+    root = _repo(tmp_path, doc)
+    for env, cfg in doc["environments"].items():
+        proc = _check(root, env=env)
+        if env in accepted:
+            assert proc.returncode == 0, f"{label}/{env}: {proc.stdout}"
+        elif "github" in cfg:
+            assert proc.returncode == 2, f"{label}/{env}: {proc.stdout}"
+            assert _last(proc) == "result=refused reason=ambiguous-environment", proc.stdout
+
+
+def test_another_unreadable_environment_is_could_not_tell(tmp_path):
+    """The gates exit 4 on any malformed environment, so `check` cannot say
+    which environment a dispatch would be gated as either."""
+    doc = _envs(("staging", _PROD, None))
+    doc["environments"]["broken"] = {"deploy": 7}
+    root = _repo(tmp_path, doc)
+
+    proc = _check(root)
+
+    assert proc.returncode == 3, proc.stdout
+    assert _last(proc) == "result=could-not-tell reason=verify-json-unreadable"
+
+
+_PWSH = crew_fixtures.resolve_pwsh()
+_GATE_PS1 = os.path.join(_HOOKS, "promote-gate.ps1")
+
+
+def _gate(flavour, root, command):
+    if flavour == "sh":
+        if _BASH is None:
+            pytest.skip("no MSYS/POSIX bash - the .sh flavour was NOT run")
+        argv, tool, extra = [_BASH, _GATE_SH], "Bash", {}
+    else:
+        if _PWSH is None:
+            pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+        argv = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _GATE_PS1]
+        tool, extra = "PowerShell", {"OS": "Windows_NT"}
+    marker = root / ".crew" / ".deploy-in-flight"
+    if marker.exists():
+        marker.unlink()
+    payload = json.dumps({"tool_name": tool, "tool_input": {"command": command}})
+    proc = subprocess.run(argv, input=payload, capture_output=True, text=True,
+                          check=False, cwd=str(root),
+                          env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root), **extra))
+    if proc.returncode == 0:
+        return marker.read_text(encoding="utf-8").split()[0] if marker.exists() else None
+    found = re.search(r"PROMOTION BLOCKED \(([^,)]+)", proc.stderr)
+    return found.group(1) if found else "unparsed: " + proc.stderr
+
+
+@pytest.mark.parametrize("flavour", ["sh", "ps1"])
+@pytest.mark.parametrize("label", sorted(_CONFIGS))
+def test_every_accepted_dispatch_is_gated_as_its_own_environment(tmp_path, label, flavour):
+    """For each environment `check` accepts, both real gates attribute its
+    printed dispatch to that environment - blocked or allowed, never another
+    environment's gates and never none."""
+    doc, accepted = _CONFIGS[label]
+    root = _repo(tmp_path, doc)
+    gated = set()
+    for env, cfg in doc["environments"].items():
+        if "github" not in cfg:
+            continue
+        proc = _check(root, env=env)
+        if proc.returncode != 0:
+            continue
+        for line in proc.stdout.splitlines():
+            if line.startswith("dispatch: "):
+                assert _gate(flavour, root, line[len("dispatch: "):]) == env, (
+                    f"{label}: {env}'s dispatch is gated as another environment")
+        gated.add(env)
+    assert gated == {e for e in accepted if "github" in doc["environments"][e]}
