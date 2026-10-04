@@ -36,8 +36,10 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 | L-1509 | Follow-up to L-1508: `skills/repo-docs/scripts/git_changelog.py:71` and `repo_survey.py:140` run a bare `git`; also `plugin/obsidian-vault/hooks/scripts/vault_garden.py:662,667` (bare git via `_run_bounded`) and `plugin/rule-of-two/scripts/rule_of_two.py:577` (bare `codex`, an npm .cmd on Windows -> reads "ran: False"); resolve it with shutil.which ; also `plugin/gizmoduck/scripts/scanners/depcheck.py:101,112` runs bare `dependency-check` (a .bat on Windows) after `base.which` found it at :64 - same found-one-way-run-another bug; consider teaching the lint attribute calls for non-colliding wrapper names (run_tool, _run_bounded, capture, execute_job). Each plugin its own bump. | none yet | needs ticket in your tracker |
 | L-1510 | `test_crew_ticket_mint.py::test_concurrent_mints_distinct` failed once on Windows CI (#493 shard 4/6): "crew_ticket.TicketError: .work/INDEX.md exists but could not be read" - ALSO RED ON MAIN (run 37221280492, a27c5e38). Cause: `_mint_taken` (crew_ticket.py:1079-1083) reads INDEX without the INDEX lock while another minter's tracker create does os.replace; Windows sharing violation -> read_text None -> mint refuses. Fix: retry on PermissionError or read under the lock. Harness (crew_ticket.py). Root-cause; never skip. | MERGED 8c0843ca (#494, crew 1.0.338) | needs ticket in your tracker |
 | L-1511 | Follow-up to L-1510: `crew_tracker.py create` and `move` (or `_atomic_update` on INDEX) take `.work/INDEX.md.lock`, the same lock mint uses. Every unlocked `move` (implement.md:33,112, done.md:82, spec.md:46, review.md, plan.md) replaces INDEX while parallel lanes mint; on Windows mint then refuses (never a wrong id). Not harness. | none yet | needs ticket in your tracker |
+| L-1512 | Windows CI: cloud-guard bash tests intermittently exit 2304 (MSYS bash SIGKILLed) - `test_cloud_guard.py::test_must_block_bash[aws-s3-rm-recursive]` (#493 slow 1/3) and `test_identity_bash[aws-read-known-profile-other-cloud-pinned-ok]` (#356 slow). Likely a per-test timeout killing a slow Git Bash under load. Root-cause; never skip. | none yet | needs ticket in your tracker |
+| L-1513 | Harness (L-0671 family): sabotage entry "approve writes beside the receipt" (sabotage_autopilot.py) inserts 4-space code after crew_autopilot.py:1668, landing inside T-0053's try/finally -> SyntaxError (RED BUT UNPROVEN, exit 4). Broken on main since T-0053. Re-anchor. Also: no test ties argparse choices to the usage block (a new subcommand missing from usage escapes the writer check). | none yet | needs ticket in your tracker |
 
-Next free untracked ID: **L-1512**.
+Next free untracked ID: **L-1514**.
 
 ## Merged this session
 
@@ -61,6 +63,7 @@ Next free untracked ID: **L-1512**.
 | L-0677 | #456 | 644adfc2 | 1.0.336 |
 | T-0082, T-0080 (H2a harness bundle) | #399 | 17934e60 | 1.0.337 (#475 closed) |
 | L-1510 | #494 | 8c0843ca | 1.0.338 |
+| T-0074 | #481 | a92dc59a | 1.0.339 (slice 1 of 3) |
 
 ## Closed without merging (your instruction)
 
@@ -77,7 +80,6 @@ Next free untracked ID: **L-1512**.
 | T-0058 | #365 | 16228584 | ready to land | Stacked on #364/#354. Carry: `_gate_stage` must pick stage like `_phase`; `split_report current=` from `_not_current`. Decision: absent sources read as unmeasured (owner-approved). |
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
 | T-0045 | #407 | 6cada04c | ready to land | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
-| T-0074 | #481 | 858c5336 | ready to land | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. Review clean. Carry: daily-workflow.md:189 cap-limit wording. Q7 open. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
 
 ## Review-clean on older bases (catch-up merge + version at their turn)
