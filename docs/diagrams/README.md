@@ -1050,18 +1050,18 @@ flowchart TB
 flowchart TB
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:35-48"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
-        dn5 -- fresh --> dn4["spec.md 'status: done',<br/>move --to done<br/>:63-74"]
+        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
+        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
+        dn5 -- fresh --> dn4["spec.md 'status: done',<br/>move --to done<br/>:68-79"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:88-92"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:87-90"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:93-97"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :98-99"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:99-104" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
 ```
 
@@ -1085,7 +1085,7 @@ flowchart TB
     subgraph implement["/crew:implement"]
         im0{"plan approved?<br/>implement.md:17-23"}
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
-        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
+        im0 -- yes --> im1["scope_base --record (kept if activate<br/>recorded; exit 1 could not tell), then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
         im1 --> im2["steps in order, test first,<br/>scope-guard on every write<br/>:38-42"]
         im2 --> im3a["changed-file list, verify<br/>:57, :67"]
         im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
@@ -1094,8 +1094,8 @@ flowchart TB
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check<br/>:105-109"]
-        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:110-113"]
-        im4 --> im5["then /crew:review last<br/>:114"]
+        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:110-112"]
+        im4 --> im5["then /crew:review last<br/>:113"]
     end
 
     im5 --> to_pf0>"next: review part<br/>preflight first"]
