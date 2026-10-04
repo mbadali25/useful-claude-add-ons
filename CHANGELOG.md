@@ -4,6 +4,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed - `crew` 1.0.408: promote-gate.ps1 matches deploy commands literally and fails closed (L-1503)
+
+- High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with
+  `$cmd -like "*$dep*" -or $dep -like "*$cmd*"`, and `-like` reads `*`, `?` and `[set]` in a
+  `deploy` as wildcards. On the PowerShell tool an environment whose literal deploy held `[...]`
+  (`./deploy.sh && curl -s https://x/status | jq .items[0]`, `requireHuman: true`) never matched
+  itself and exited 0 with no in-flight marker, where `promote-gate.sh` exits 2; a pattern `-like`
+  cannot read (`[`, `[]`, `[z-a]`, `[!-[]`) threw WildcardPatternException and that environment was
+  skipped; and a `deploy-*` or `deploy-pro?` claimed another environment's command.
+- Both matching paths (working map and committed map) now share `Test-DeployMatch`: a literal
+  `OrdinalIgnoreCase` substring test in both directions, the same choice as `promote-gate.sh`'s
+  `d in cmd or cmd in d`, still case-insensitive as the .ps1 always was, on the command with its
+  CRs removed as the .sh's `crew_strip_cr` does. The committed-map path was literal but
+  case-sensitive (`.Contains`), so it now ignores case too. A comparison that throws blocks (exit
+  2, above the emergency lane) instead of skipping the environment.
+- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 39 cases - must-block (the `jq`
+  repro, the four unreadable patterns, `*`/`?` claiming another environment, a comparison that
+  throws, the committed-map path), must-allow (the same deploys once approved, case-insensitive
+  matching, a trailing CR, an unrelated command) and a sh/ps1 agreement table over six maps.
+  Sabotage: restoring `-like` turns 19 red; swallowing the exception turns the throw case red.
+- Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; its ps1 flavour
+  should use the same literal test when it lands.
+
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
