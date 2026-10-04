@@ -537,7 +537,8 @@ def _decode(data, label):
 def _git_out(root, *args):
     """`(returncode, stdout stripped)`, or `(None, "")` when git could not run."""
     try:
-        done = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False,
+        done = subprocess.run([crew_common.require_tool("git"), *args], cwd=root, capture_output=True,
+                              text=True, check=False,
                               stdin=subprocess.DEVNULL, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None, ""
@@ -976,7 +977,7 @@ def _inside(parent, path):
 def _git_ignored(repo, path):
     """True/False from `git check-ignore`, None when git could not say."""
     try:
-        done = subprocess.run(["git", "check-ignore", "-q", "--", path], cwd=repo,
+        done = subprocess.run([crew_common.require_tool("git"), "check-ignore", "-q", "--", path], cwd=repo,
                               capture_output=True, text=True, check=False,
                               stdin=subprocess.DEVNULL, timeout=10)
     except (OSError, subprocess.SubprocessError):

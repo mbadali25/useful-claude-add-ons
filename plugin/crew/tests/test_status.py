@@ -15,6 +15,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_shell
 import crew_status
 import review_ledger
+import tool_fixtures
 from crew_fixtures import make_repo
 
 SCRIPT = os.path.join(os.path.dirname(crew_status.__file__), "crew_status.py")
@@ -328,3 +329,24 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 
     assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
         0, True), done.stdout + done.stderr
+
+
+def test_status_tree_runs_the_git_which_resolves(tmp_path, monkeypatch):
+    # L-1508: the tree line judges the git PATH resolves the way bash, pwsh
+    # and shutil.which do (PATHEXT: git.cmd). The failing git is NOT on PATH:
+    # a bare "git" runs the real one and a clean fixture reads "tree clean".
+    root = make_repo(tmp_path)
+    tool_fixtures.which_only(monkeypatch, tmp_path / "resolved", "git")
+
+    first = crew_status.collect(str(root))[0]
+
+    assert first.endswith("?@?  tree unknown"), first
+
+
+def test_status_tree_is_unknown_when_git_does_not_resolve(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    tool_fixtures.which_none(monkeypatch, "git")
+
+    first = crew_status.collect(str(root))[0]
+
+    assert first.endswith("?@?  tree unknown"), first

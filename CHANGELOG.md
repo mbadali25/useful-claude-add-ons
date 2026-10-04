@@ -51,6 +51,77 @@ All notable changes to this repository are documented here. Format follows [Keep
   (L-0653), a `deploy` override (L-0654), sabotage entries (L-0655, harness path), and no change
   to `scope_guard.py`.
 
+### Fixed — `crew` 1.0.340: every tool runs the way it was found, no bare-name subprocess (L-1508, PR A)
+
+- **What changed.** crew ran `git`, `ps` and `xdotool` by bare name. On native
+  Windows that reaches CreateProcess, which ignores PATHEXT and tries only
+  `<name>.exe`, while bash, pwsh and `shutil.which` find a `<name>.cmd` first.
+  With a `.cmd` shim ahead of the `.exe` on PATH, crew judged a different tool
+  from the one the user's shell runs, and a guard that read its answer could
+  pass (T-0017's wrap-up veto did). New `crew_common.resolve_tool(name)` is
+  `shutil.which(name)` (no cache: ~30us a lookup against ~1.8ms to spawn git,
+  and a cache would hide a PATH change); `require_tool` raises a
+  `FileNotFoundError` naming the tool, so each site keeps its existing failure
+  path. Fixed: `ci_receipt`, `crew_common.git_out`, `crew_instructions`,
+  `crew_refresh_check`, `crew_state.in_git_repo`, `crew_status` (tree line),
+  `crew_tracker`, `crew_trailers`, `event_claim`, `crew_autocycle`'s process
+  table (`ps`; native Windows has no `/proc`) and `xdotool`, `crew_shell`'s
+  Git Bash probe (`git --exec-path`), `crew_upgrade`, and the three
+  `crew-qa-standards` scripts. `crew_status` is a `SEAM` path in
+  `scripts/check-tooling-pr.py`; its commit carries a `Tooling-seam` trailer,
+  which has no effect here because the check reads SEAM only when a harness
+  path changed, and none does.
+- **At a guard, a tool that does not resolve is "could not tell".** The CI
+  receipt reads UNKNOWN, crew status shows `tree unknown`, the tracker refuses
+  a board inside the worktree, the wrap-up veto refuses the clear.
+- **New lint.** `plugin/crew/tests/test_tool_resolution.py` AST-scans every
+  plugin and skill script and fails on a process start that names its program
+  literally: a `subprocess` argv list or tuple (or a `+` of one), a command
+  string, a name the function assigns such a value exactly once,
+  `subprocess.getoutput`, `os.system`/`os.popen`/`os.exec*p`/`os.spawn*p`,
+  `asyncio.create_subprocess_exec`, and the known argv wrappers (`crew_shell`'s
+  `runner`/`execute`, obsidian-vault's `_run_bounded`). Each exception is on an
+  allowlist naming the file, function, tool and reason: the review/gate harness
+  files (fixed in L-1508 PR B, which lands alone under T-0087); POSIX- or
+  container-only sites, each with its gate's `path:line`, whose whole line is
+  checked (`ps` in `crew_autocycle._proc`, `ip` in `crew_platform._wsl_facts`,
+  `bash -c` in `crew_shell.run`, `npx` in `webtest_guard.check_visual`);
+  obsidian-vault's macOS-only `ps` and notify's Windows-only `tasklist.exe`;
+  and L-1509's sites (repo-docs' two git calls, obsidian-vault's
+  `vault_garden` git, rule-of-two's `codex`).
+- **Not covered.** An argv built in another function, or assigned more than
+  once, is not seen.
+
+### Added — `crew` 1.0.339: autopilot rejects an out-of-rounds BLOCK review and replans, capped (T-0074)
+
+- **What changed.** A new repo-only key, `autopilot.maxAutoReplans` (default
+  `0`, off: today's behaviour). At 1 or more, with autopilot armed and
+  `autopilot.approval` allowing the successor plan, a final review round that
+  is FINDINGS with a BLOCK and no round left is no longer a stop: `next`
+  answers the new phase `auto-replan`, whose command is
+  `crew_autopilot.py auto-reject --root . --ticket <id>`. It moves the ledger
+  REVIEWED -> NEEDS_REPLAN through `review_ledger.reject` under the fixed
+  name `autopilot (policy: autopilot.maxAutoReplans)` and prints every BLOCK
+  and FIX line; `next` then names `/crew:plan` without stopping, and the
+  existing approve phase and fresh rounds follow. At the cap (every successor
+  plan on the ledger counts; the cap is at most 5) `next` stops with phase
+  `auto-replan-cap`, naming the cap and each successor plan. The non-stop
+  `replan` re-checks the rejected round (current plan, FINDINGS, a BLOCK, no
+  round left, another family), so a hand-typed reject name is the owner's stop. `settings` prints
+  `maxAutoReplans=` on its first line.
+- **Never.** Autopilot accepts no round with a BLOCK at any setting. An
+  INCOMPLETE round, a same-family or unknown reviewer, counts and finding
+  lines that disagree, a round still left, an unreadable ledger or config, or
+  a value of the wrong type is today's stop. `status` reads neither route.
+- **Tests.** `test_crew_autopilot_replan.py` (new): the setting, a refusal
+  per policy condition that leaves the ledger bytes unchanged, the routes,
+  the full reject -> plan -> approve -> implement cycle, and the family rule
+  held against `review_ledger.auto_accept_refusal`. The write-path test now
+  names two writers, `approve` and `auto-reject`.
+- **Not here.** The check that a successor plan quotes every BLOCK and FIX
+  line (L-0670) and the committed sabotage entries plus the `review.md`
+  sentence (L-0671, a tooling-only PR).
+
 ### Fixed — `crew` 1.0.338: mint never reads INDEX.md mid-replace (L-1510)
 
 - **What broke.** On the Windows runner, `test_concurrent_mints_distinct` and

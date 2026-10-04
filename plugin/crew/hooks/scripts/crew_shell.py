@@ -33,6 +33,8 @@ import shutil
 import subprocess
 import sys
 
+import crew_common
+
 MODES = ("auto", "wsl", "powershell", "gitbash")
 
 # Any of these anywhere in a command means it is not provably plain argv. The
@@ -239,7 +241,8 @@ def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which):
     that is not WSL's launcher. `(None, reason)` naming every path tried."""
     runner = runner or capture
     try:
-        code, out, _ = runner(["git", "--exec-path"], 10)
+        # The git which() resolves (L-1508): CreateProcess would skip a git.cmd.
+        code, out, _ = runner([crew_common.require_tool("git"), "--exec-path"], 10)
         exec_path = decode(out).strip() if code == 0 else ""
     except (OSError, subprocess.SubprocessError):
         exec_path = ""

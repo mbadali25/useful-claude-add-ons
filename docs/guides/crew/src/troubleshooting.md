@@ -116,7 +116,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   A round's outcome is `CLEAN`, `FINDINGS` or `INCOMPLETE`. A completed round 2 — either `FINDINGS`
   or `INCOMPLETE` — leaves the ticket state `REVIEWED`, so its `FINDINGS` can still be accepted. A
   **third** reservation attempt is refused outright and the state becomes `NEEDS_REPLAN`; that
-  refusal, and an explicit `--reject`, are the only two ways into `NEEDS_REPLAN`.
+  refusal, and an explicit `--reject`, are the only two ways into `NEEDS_REPLAN` (autopilot's
+  `crew_autopilot.py auto-reject`, under `autopilot.maxAutoReplans`, is a `--reject` by the name
+  `autopilot (policy: autopilot.maxAutoReplans)`).
   **Fix:** a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: `review: auto-accept: eligible`, then
   `--auto-accept --follow-up <id>` writes an `auto-accepted` receipt and its FIX/NIT lines go
   verbatim into one follow-up ticket. A `review: auto-accept: refused - <reason>` line names what
