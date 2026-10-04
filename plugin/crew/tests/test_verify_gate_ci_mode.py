@@ -39,8 +39,17 @@ _PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
 
+# Rule time (L-1503): every .ps1 case is `slow` - deselected from the
+# promote/verify rule's default run, run by CI's `-m slow` jobs
+# (crew-shell-matrix (ubuntu-latest), crew-windows-slow) - except the one
+# parity case on _FLAVOURS_DEFAULT. Every .sh case runs by default.
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
+    pytest.param("ps1", marks=[pytest.mark.skipif(_PWSH is None, reason="needs pwsh"),
+                               pytest.mark.slow]),
+]
+_FLAVOURS_DEFAULT = [
+    _FLAVOURS[0],
     pytest.param("ps1", marks=pytest.mark.skipif(_PWSH is None, reason="needs pwsh")),
 ]
 
@@ -99,7 +108,7 @@ def _run(flavour, root, *args, payload="{}", cwd=None):
                                   timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
-@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("flavour", _FLAVOURS_DEFAULT)
 def test_a_passing_map_exits_0_and_records_nothing(flavour, tmp_path):
     """MUST-ALLOW, and the marker half: a full pass under --ci exits 0, says
     it did not record the pass, and leaves neither marker on disk."""
@@ -460,6 +469,7 @@ def test_ci_and_price_together_is_a_usage_error(flavour, order, tmp_path):
 
 
 @pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
+@pytest.mark.slow
 def test_the_ps1_with_ci_off_windows_fails_instead_of_standing_down(tmp_path):
     """MUST-BLOCK: the flavour guard's silent exit 0 is for the hook pair. A CI
     job calling the .ps1 with -Ci on Linux or macOS (pwsh is preinstalled on

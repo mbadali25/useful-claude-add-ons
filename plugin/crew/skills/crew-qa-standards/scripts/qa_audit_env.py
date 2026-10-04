@@ -27,6 +27,18 @@ try:
     import verify_record  # noqa: E402  pylint: disable=wrong-import-position
 except ImportError:  # a copy of this skill without crew's hooks beside it
     verify_record = None
+try:
+    from crew_common import require_tool  # noqa: E402  pylint: disable=wrong-import-position
+except ImportError:  # the same copy: resolve the way crew_common does (L-1508)
+    import errno
+    import shutil
+
+    def require_tool(name):
+        """The path shutil.which resolves, never a bare name (crew_common.require_tool)."""
+        path = shutil.which(name)
+        if path is None:
+            raise FileNotFoundError(errno.ENOENT, f"{name} is not on PATH", name)
+        return path
 
 PASS, GAP, NA, UNKNOWN = "PASS", "GAP", "N/A", "UNKNOWN"
 REF = "references/environments.md"
@@ -270,7 +282,7 @@ def check_verify_scripts(root, ci, tests):
 
 def _git(root, *args):
     try:
-        proc = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True,
+        proc = subprocess.run([require_tool("git"), "-C", root, *args], capture_output=True, text=True,
                               timeout=30, check=False)
     except (OSError, subprocess.SubprocessError):
         return None

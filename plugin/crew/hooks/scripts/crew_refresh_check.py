@@ -500,7 +500,8 @@ def _git_rc(root, *args):
     """git's return code, or None when git could not run at all."""
     try:
         return subprocess.run(
-            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            [crew_common.require_tool("git"), "-C", root, "--no-optional-locks",
+             "--literal-pathspecs", *args],
             capture_output=True, stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT,
             check=False).returncode
     except (OSError, subprocess.SubprocessError):
@@ -513,7 +514,8 @@ def _git_out(root, *args, data=None):
     feed = {"input": data} if data is not None else {"stdin": subprocess.DEVNULL}
     try:
         done = subprocess.run(
-            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            [crew_common.require_tool("git"), "-C", root, "--no-optional-locks",
+             "--literal-pathspecs", *args],
             capture_output=True, timeout=GIT_TIMEOUT, check=False, **feed)
     except (OSError, subprocess.SubprocessError):
         return None, b""
@@ -543,7 +545,8 @@ def _base_text(root, base, rel):
     if not out.strip(b"\0"):
         return None, "absent"
     try:
-        done = subprocess.run(["git", "-C", root, "--no-optional-locks", "show", spec],
+        done = subprocess.run([crew_common.require_tool("git"), "-C", root, "--no-optional-locks",
+                               "show", spec],
                               capture_output=True, stdin=subprocess.DEVNULL,
                               timeout=GIT_TIMEOUT, check=False)
     except (OSError, subprocess.SubprocessError):

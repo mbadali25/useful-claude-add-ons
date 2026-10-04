@@ -16,15 +16,51 @@ path itself.
 `crew_state` re-exports the three readers, so `crew_config` and
 `crew_upgrade` keep reaching them as `crew_state.read_text` and friends.
 
+`resolve_tool` / `require_tool` (L-1508) are how every crew script names an
+external tool to `subprocess`: the path `shutil.which` resolves, never a bare
+name. `plugin/crew/tests/test_tool_resolution.py` fails the build on a bare one.
+
 Standard library only, and every read fails soft, for the reason `crew_state`
 does: this runs from a SessionStart hook, where an exception breaks every
 session opened in the repository.
 """
 
+import errno
 import os
+import shutil
 import subprocess
 
 GIT_TIMEOUT = 10
+
+
+# --- L-1508: run a tool the way it was found ---------------------------------------
+
+def resolve_tool(name):
+    """The executable `name` resolves to on PATH, or None when it does not.
+
+    `shutil.which`, because it finds what bash, pwsh and the user's shell
+    find. A bare name handed to subprocess on native Windows reaches
+    CreateProcess, which ignores PATHEXT and tries only `name.exe`: a
+    `name.cmd` earlier on PATH is skipped for a later `.exe`, so crew judged a
+    different tool from the one the user runs -- T-0017's wrap-up veto read a
+    clean tree through the wrong git and failed open. No cache: a lookup
+    costs ~30us against ~1.8ms to spawn git (measured, Linux), and a cache
+    would hide a PATH change inside one process, which the suite makes.
+    """
+    return shutil.which(name)
+
+
+class ToolNotFound(FileNotFoundError):
+    """`require_tool`'s "not on PATH": a FileNotFoundError, so every caller's
+    existing `except OSError` takes the same path a bare name's ENOENT did."""
+
+
+def require_tool(name):
+    """`resolve_tool(name)`, or raise ToolNotFound naming the tool."""
+    path = resolve_tool(name)
+    if path is None:
+        raise ToolNotFound(errno.ENOENT, f"{name} is not on PATH", name)
+    return path
 
 
 def read_text(path):
@@ -56,7 +92,7 @@ def git_out(root, *args):
     """
     try:
         done = subprocess.run(
-            ("git",) + args, cwd=root, capture_output=True,
+            (require_tool("git"),) + args, cwd=root, capture_output=True,
             text=True, encoding="utf-8", errors="replace",
             timeout=GIT_TIMEOUT, check=False,
             stdin=subprocess.DEVNULL,

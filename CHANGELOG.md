@@ -41,6 +41,182 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Tests: `plugin/crew/tests/test_worktree_config_shell.py` (both flavours and the no-python
   path; a static check that no executable line in the eight scripts names the own path outside
   a counted allowlist). Every routed gate was sabotaged by hand and went red.
+### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
+
+- High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with
+  `$cmd -like "*$dep*" -or $dep -like "*$cmd*"`, and `-like` reads `*`, `?` and `[set]` in a
+  `deploy` as wildcards. On the PowerShell tool an environment whose literal deploy held `[...]`
+  (`./deploy.sh && curl -s https://x/status | jq .items[0]`, `requireHuman: true`) never matched
+  itself and exited 0 with no in-flight marker, where `promote-gate.sh` exits 2; a pattern `-like`
+  cannot read (`[`, `[]`, `[z-a]`, `[!-[]`) threw WildcardPatternException and that environment was
+  skipped; and a `deploy-*` or `deploy-pro?` claimed another environment's command.
+- Review of the first fix found the gates still chose differently: the `.sh` was case-sensitive and
+  read only a lower-case `deploy` key, and both took the first match, so qa `target=Prod` and
+  production `target=prod` resolved to different environments per flavour.
+- `promote-gate.sh` and `promote-gate.ps1` now share one rule, on the working map and the committed
+  map alike: every CR and trailing newline is stripped from the command, and a whitespace-only
+  command deploys nothing; a declared command matches when either contains the other, literally,
+  ignoring case; the `deploy` key is read ignoring case, and keys differing only by case refuse the
+  map, and so does an exact duplicate key (both parsers kept the last, so `"requireHuman": true,
+  "requireHuman": false` read as gated and applied as not; the `.ps1` finds it with
+  `Find-DuplicateJsonKey`); `requires`, `rollback`, `rollbackReason`, `requireHuman` and
+  `environments` are read ignoring case too (the `.sh` read them case-sensitively, so
+  `"RequireHuman": true` required a human on PowerShell and nobody on bash); `"deploy": null` and
+  a list or object `requireHuman` refuse the map in both; `"deploy": []` and `[""]` declare nothing
+  (the `.ps1` unrolled `[]` to null and blocked every PowerShell command); an environment name that
+  is empty, holds a control character or holds `,` refuses the map (the `.sh` split `"a\nb"` into
+  the lax environments `a` and `b`); a comment or a single-quoted or unquoted key refuses the map on
+  the `.ps1` as python's json does on the `.sh` (a trailing comma is still read by the `.ps1` only);
+  a comparison that throws blocks instead of skipping the environment. The `.ps1`'s key scan
+  (`Find-DuplicateJsonKey`) costs about 5 ms on a small map and 256 ms on this repository's
+  129 KB `.crew/verify.json` (pwsh 7.4, 4-CPU Linux, load 4.4), per PowerShell tool call.
+- Matched several environments: the strictest union of their requirements applies - every
+  matched environment's `requires`, `rollback` and `requireHuman` - named together (`staging,prod`)
+  in the block message and the in-flight marker, so the PROMOTIONS row that clears the Stop check
+  names `staging,prod`. Before, the first match won (prod's command could be gated as staging); a
+  short command inside two deploys (`git push`) is now gated by both, not locked out.
+- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 134 cases. 55 run by default:
+  every `.sh` case and one agreement map through both gates. The other `.ps1` cases are `slow`, and
+  CI runs them in `crew-shell-matrix (ubuntu-latest)` and `crew-windows-slow`. There are
+  must-block and must-allow cases, plus a sh/ps1 agreement table run through both
+  real gates (26 maps). Each rule was sabotaged and confirmed red in the CI slow selection, then restored:
+  the `.ps1` unrolling `[]` again; first-match instead of the union (`.sh`, `.ps1`); exact
+  duplicates accepted (`.sh`, `.ps1`); a list or object `requireHuman` accepted (`.sh`, `.ps1`); the
+  `.sh` verdict reading keys case-sensitively; the `.sh` reading only `environments`; the `.ps1`
+  skipping a null `deploy`; the `.sh` accepting case twins; the bad-name check dropped (`.sh`, `.ps1`); the `.ps1`'s strict-JSON
+  check dropped. Earlier rounds: `-like` back in the
+  `.ps1`, and the `.ps1` swallowing a comparison exception.
+- Windows: `promote-gate.sh` strips CRs from the matched environment names. Windows python writes
+  them as `qa\r\nprod` and Git Bash drops only the final CRLF, so on Windows every
+  multi-environment match named `qa\r` and blocked as a malformed map. A test reproduces it on
+  Linux with a `python3` that writes CRLF.
+- Rule time: the promote/verify rule in `.crew/verify.json` was chronic before this change (over
+  60s). Its `.ps1` cases in `test_verify_gate_ci_mode.py`, `test_promote_gate_effective_tree.py` and
+  the new file are now `slow`, except one parity case per file; every `.sh` case stays in the
+  default run, and CI's `-m slow` jobs run the rest. Declared 45s (29-45s measured, was 65-84s).
+- After a union deploy the PROMOTIONS row names `staging,prod`, which does not satisfy a later
+  `requires: [prod]`: that environment needs an unambiguous deploy record first. L-1505 (harness)
+  is to write one row per matched environment.
+- Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
+  and #407 adopts this rule, the union included (not a block on several matches).
+
+### Added — `crew` 1.0.341: manual `/crew:autopilot sleep` and `wake` (L-0652, T-0053 slice 2)
+
+- **What changed.** `/crew:autopilot sleep` (`crew_autopilot.py sleep --root . [--by <text>]`)
+  enters sleep mode now and `/crew:autopilot wake` (`crew_autopilot.py wake --root .`) leaves it
+  now. Both keep one record, `<git-common-dir>/crew/autopilot-sleep.json`
+  (`{"state", "by", "at", "until"}`), written to a temp file and moved into place with
+  `os.replace`, shared by every worktree and never read from a worktree or `.work/`. A valid
+  record beats the schedule until `until`: for `sleep`, the end of the current window, else of
+  the next one, or 12 hours with no schedule; for `wake` inside the window, the window's end (it
+  never extends past it); `wake` outside the window removes the record. `settings`' sleep line
+  gains `source=<schedule|manual>` and, for manual, `until=<HH:MM>`; a policy reason a manual
+  sleep set ends `(asleep by hand until <HH:MM>; day value <day>)`.
+- **Until L-1504, a manual sleep only tightens (owner decision 2026-10-04, #427 review B1).** The
+  session can run `crew_autopilot.py sleep` itself (`scope_guard.py` allows it, `--by` is free
+  text): day `human` / night `self` at noon was 19 hours of self-approval. Outside the window a
+  manual `asleep` now applies a night value only where it is stricter than the day value, per key;
+  inside it the schedule's night values stand; `sleep` refuses when nothing would tighten. L-1504
+  (harness-only) makes the approval hook accept only the owner's typed `/crew:autopilot sleep` and
+  then unlocks loosening.
+- **Review NITs.** N1: `at` and `until` are stored as UTC-aware ISO and compared in UTC; a naive
+  record reads `unknown`. N2: `wake` says when whether the schedule is asleep cannot be told
+  rather than "resumes at <now>". N3: the record is read only as a regular file (`lstat`,
+  `O_NOFOLLOW|O_NONBLOCK`, `fstat`, 64 KiB cap); a FIFO, device, directory or symlink is `unknown`.
+- **Review round 2.** Each read-safety layer has its own test (a removal goes red). The cap is 24
+  wall-clock hours with a 25-real-hour backstop, so a sleep on a fall-back day (03:30, window
+  23:00-03:00) writes a record its reader trusts; `sleep` validates the record it is about to
+  write and refuses rather than report a sleep it would distrust. A spring-forward `until` at a
+  skipped time resolves forward; `wake` writes whole seconds.
+- **Refusals.** `sleep` exits 2 with `refused: ...` and writes nothing unless
+  `scope.allowCliApproval` is exactly `true`, autopilot is armed, `.crew/config.json` and its
+  `autopilot.sleep` can be read, and the window is open or an override is stricter than its day
+  value. `wake` never refuses
+  for policy; with nothing to undo it prints `already awake`. A crash in either exits 1.
+- **Fail closed, stricter than the spec's "ignored" in three places (owner may review).** A record
+  that is unreadable, not an object, missing a field, with another `state`, an `at`/`until` that
+  is not a UTC-aware ISO time, an `at` in the future or an `until` more than 24 wall-clock hours (or 25 real hours) after `at`
+  reads `unknown` with a warning naming the file (per key the stricter of the day value and the
+  night override), not "no manual state"; an expired record is ignored with a warning. A manual
+  `asleep` counts only while `scope.allowCliApproval` is exactly `true` at read time too. A
+  manual `awake` over an open window keeps any night value stricter than the day value.
+- **Writers.** `crew_autopilot.py`'s writers are now `approve`, `sleep` and `wake`; the
+  only-writer test, the module docstring, `autopilot.md`, README, CONFIG.md §20 and PLUGINS.md say
+  so. `autopilot.md` stays inside its 110-line budget (110).
+- **Not in this release.** Plain-text sleep phrases (T-0057), a sleep log and morning summary
+  (L-0653), a `deploy` override (L-0654), sabotage entries (L-0655, harness path), and no change
+  to `scope_guard.py`.
+
+### Fixed — `crew` 1.0.340: every tool runs the way it was found, no bare-name subprocess (L-1508, PR A)
+
+- **What changed.** crew ran `git`, `ps` and `xdotool` by bare name. On native
+  Windows that reaches CreateProcess, which ignores PATHEXT and tries only
+  `<name>.exe`, while bash, pwsh and `shutil.which` find a `<name>.cmd` first.
+  With a `.cmd` shim ahead of the `.exe` on PATH, crew judged a different tool
+  from the one the user's shell runs, and a guard that read its answer could
+  pass (T-0017's wrap-up veto did). New `crew_common.resolve_tool(name)` is
+  `shutil.which(name)` (no cache: ~30us a lookup against ~1.8ms to spawn git,
+  and a cache would hide a PATH change); `require_tool` raises a
+  `FileNotFoundError` naming the tool, so each site keeps its existing failure
+  path. Fixed: `ci_receipt`, `crew_common.git_out`, `crew_instructions`,
+  `crew_refresh_check`, `crew_state.in_git_repo`, `crew_status` (tree line),
+  `crew_tracker`, `crew_trailers`, `event_claim`, `crew_autocycle`'s process
+  table (`ps`; native Windows has no `/proc`) and `xdotool`, `crew_shell`'s
+  Git Bash probe (`git --exec-path`), `crew_upgrade`, and the three
+  `crew-qa-standards` scripts. `crew_status` is a `SEAM` path in
+  `scripts/check-tooling-pr.py`; its commit carries a `Tooling-seam` trailer,
+  which has no effect here because the check reads SEAM only when a harness
+  path changed, and none does.
+- **At a guard, a tool that does not resolve is "could not tell".** The CI
+  receipt reads UNKNOWN, crew status shows `tree unknown`, the tracker refuses
+  a board inside the worktree, the wrap-up veto refuses the clear.
+- **New lint.** `plugin/crew/tests/test_tool_resolution.py` AST-scans every
+  plugin and skill script and fails on a process start that names its program
+  literally: a `subprocess` argv list or tuple (or a `+` of one), a command
+  string, a name the function assigns such a value exactly once,
+  `subprocess.getoutput`, `os.system`/`os.popen`/`os.exec*p`/`os.spawn*p`,
+  `asyncio.create_subprocess_exec`, and the known argv wrappers (`crew_shell`'s
+  `runner`/`execute`, obsidian-vault's `_run_bounded`). Each exception is on an
+  allowlist naming the file, function, tool and reason: the review/gate harness
+  files (fixed in L-1508 PR B, which lands alone under T-0087); POSIX- or
+  container-only sites, each with its gate's `path:line`, whose whole line is
+  checked (`ps` in `crew_autocycle._proc`, `ip` in `crew_platform._wsl_facts`,
+  `bash -c` in `crew_shell.run`, `npx` in `webtest_guard.check_visual`);
+  obsidian-vault's macOS-only `ps` and notify's Windows-only `tasklist.exe`;
+  and L-1509's sites (repo-docs' two git calls, obsidian-vault's
+  `vault_garden` git, rule-of-two's `codex`).
+- **Not covered.** An argv built in another function, or assigned more than
+  once, is not seen.
+
+### Added — `crew` 1.0.339: autopilot rejects an out-of-rounds BLOCK review and replans, capped (T-0074)
+
+- **What changed.** A new repo-only key, `autopilot.maxAutoReplans` (default
+  `0`, off: today's behaviour). At 1 or more, with autopilot armed and
+  `autopilot.approval` allowing the successor plan, a final review round that
+  is FINDINGS with a BLOCK and no round left is no longer a stop: `next`
+  answers the new phase `auto-replan`, whose command is
+  `crew_autopilot.py auto-reject --root . --ticket <id>`. It moves the ledger
+  REVIEWED -> NEEDS_REPLAN through `review_ledger.reject` under the fixed
+  name `autopilot (policy: autopilot.maxAutoReplans)` and prints every BLOCK
+  and FIX line; `next` then names `/crew:plan` without stopping, and the
+  existing approve phase and fresh rounds follow. At the cap (every successor
+  plan on the ledger counts; the cap is at most 5) `next` stops with phase
+  `auto-replan-cap`, naming the cap and each successor plan. The non-stop
+  `replan` re-checks the rejected round (current plan, FINDINGS, a BLOCK, no
+  round left, another family), so a hand-typed reject name is the owner's stop. `settings` prints
+  `maxAutoReplans=` on its first line.
+- **Never.** Autopilot accepts no round with a BLOCK at any setting. An
+  INCOMPLETE round, a same-family or unknown reviewer, counts and finding
+  lines that disagree, a round still left, an unreadable ledger or config, or
+  a value of the wrong type is today's stop. `status` reads neither route.
+- **Tests.** `test_crew_autopilot_replan.py` (new): the setting, a refusal
+  per policy condition that leaves the ledger bytes unchanged, the routes,
+  the full reject -> plan -> approve -> implement cycle, and the family rule
+  held against `review_ledger.auto_accept_refusal`. The write-path test now
+  names two writers, `approve` and `auto-reject`.
+- **Not here.** The check that a successor plan quotes every BLOCK and FIX
+  line (L-0670) and the committed sabotage entries plus the `review.md`
+  sentence (L-0671, a tooling-only PR).
 
 ### Fixed — `crew` 1.0.338: mint never reads INDEX.md mid-replace (L-1510)
 

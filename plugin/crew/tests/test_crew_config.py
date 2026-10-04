@@ -365,7 +365,11 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # measured by running this test on T-0017-build after merging main
     # a27c5e38 through T-0016-build.
     assert "context.autoClear.wrapUp" in declared
-    assert len(declared) == 137
+    # 138 with T-0074's repo-only `autopilot.maxAutoReplans` on top of those
+    # 137, measured by running this test on T-0074-build after merging main
+    # 8c0843ca.
+    assert "autopilot.maxAutoReplans" in declared
+    assert len(declared) == 138
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
