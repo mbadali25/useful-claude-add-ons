@@ -2,42 +2,44 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py
 %% Purpose: The two writers behind /crew:config --set: the machine-file planner and the repo-file planner, the per-leaf and merged-file checks both share, and where each refuses.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
-%% Note PLAN: plan_global_write() plugin/crew/hooks/scripts/crew_config.py:2922 <i>pure</i>; on
-%%    global_snapshot() :2856, which REFUSES an unparsable or non-object machine file instead of merging onto
+%% Re-pointed for T-0066 (crew 1.0.328, merging origin/main edb2b8ff, then 155fe6d8 and e9364a70): every crew_config.py line cite re-read with
+%%    grep -n; the `git` block in both default functions moved everything below :245 (main's edb2b8ff, 155fe6d8 and e9364a70 left crew_config.py unchanged).
+%% Note PLAN: plan_global_write() plugin/crew/hooks/scripts/crew_config.py:2936 <i>pure</i>; on
+%%    global_snapshot() :2887, which REFUSES an unparsable or non-object machine file instead of merging onto
 %%    {} (absent = ABSENT)
-%% Note ISG: per LEAF: leaf_updates() :2643, value_allowed() :2759 MACHINE_REFUSED :2679 (consent keys, inside
-%%    a whole-block value too), is_global_path() :717, a block emptied or replaced, null_means() :2716 (an
-%%    enum key's null refused), enum_values() :2625; round 5: a path under a leaf or an object at a leaf
-%%    :2766-2776
-%% Note MERGED: merged_problems() :2818 - the FILE the write produces, every known leaf by _content_problem()
-%%    :2791: an enum value outside its values, a consent key (machine), an armed veto key (repo), a key under
-%%    or an object at a leaf :2804-2807 refuses an unrelated write (pre-existing), then validate_providers()
-%%    :178 on the merged file (qa.order a list, qa/dev.roles and each pin an object or null :206-237)
-%% Note WIDEN: _plan_on() :2872 writes assignments() :2662 - the judged leaves (a block's siblings survive;
+%% Note ISG: per LEAF: leaf_updates() :2674, value_allowed() :2790 MACHINE_REFUSED :2710 (consent keys, inside
+%%    a whole-block value too), is_global_path() :748, a block emptied or replaced, null_means() :2747 (an
+%%    enum key's null refused), enum_values() :2656; round 5: a path under a leaf or an object at a leaf
+%%    :2798-2807
+%% Note MERGED: merged_problems() :2849 - the FILE the write produces, every known leaf by _content_problem()
+%%    :2822: an enum value outside its values, a consent key (machine), an armed veto key (repo), a key under
+%%    or an object at a leaf :2835-2838 refuses an unrelated write (pre-existing), then validate_providers()
+%%    :179 on the merged file (qa.order a list, qa/dev.roles and each pin an object or null :208-241)
+%% Note WIDEN: _plan_on() :2903 writes assignments() :2693 - the judged leaves (a block's siblings survive;
 %%    one whole pin per role) - marking each leaf with _widens()
-%%    plugin/crew/hooks/scripts/crew_config.py:2343. RANK, not equality.
-%% Note WRITE: write_global_config() plugin/crew/hooks/scripts/crew_config.py:2941 the only function in crew
+%%    plugin/crew/hooks/scripts/crew_config.py:2357. RANK, not equality.
+%% Note WRITE: write_global_config() plugin/crew/hooks/scripts/crew_config.py:2955 the only function in crew
 %%    that writes outside the repo. Re-plans on the bytes read under the lock; --expect DIGEST|absent refuses
-%%    a changed file (GlobalWriteConflict :2259); any other OSError (directory, lock, write) is
-%%    GlobalWriteRefused :2947, exit 2
-%% Note RPLAN: plan_repo_write() plugin/crew/hooks/scripts/crew_config.py:3122 on repo_snapshot() :3093
-%%    (refuses a missing or malformed file rather than creating one) and machine_view() :3124 (the machine
+%%    a changed file (GlobalWriteConflict :2290); any other OSError (directory, lock, write) is
+%%    GlobalWriteRefused :2979, exit 2
+%% Note RPLAN: plan_repo_write() plugin/crew/hooks/scripts/crew_config.py:3136 on repo_snapshot() :3124
+%%    (refuses a missing or malformed file rather than creating one) and machine_view() :3155 (the machine
 %%    file and its digest, one read)
-%% Note RREF: RepoWriteRefused (class :2957) REPO_REFUSED :2972 - platform, schema, scope.mode,
+%% Note RREF: RepoWriteRefused (class :2988) REPO_REFUSED :3003 - platform, schema, scope.mode,
 %%    scope.allowCliApproval, the machine-only autoClear paths; a block emptied or replaced is refused
-%%    (is_repo_path :3029); REPO_VETO_ONLY :2993 takes only false / null (by identity, is_repo_veto :2996)
-%% Note RWIDEN: repo_widens() :3037 - the ratchet against what is in force, plus _REPO_WIDENING :3006; a repo
+%%    (is_repo_path :3060); REPO_VETO_ONLY :3024 takes only false / null (by identity, is_repo_veto :3027)
+%% Note RWIDEN: repo_widens() :3068 - the ratchet against what is in force, plus _REPO_WIDENING :3037; a repo
 %%    value held down by the machine layer is named, not marked as a widening
-%% Note RWRITE: write_repo_config() plugin/crew/hooks/scripts/crew_config.py:3148 the same compare-and-swap
-%%    (RepoWriteConflict :2961), and --expect-global binds the machine file under its lock; never creates the
-%%    file; an OSError is RepoWriteRefused :3162, exit 2
+%% Note RWRITE: write_repo_config() plugin/crew/hooks/scripts/crew_config.py:3162 the same compare-and-swap
+%%    (RepoWriteConflict :2992), and --expect-global binds the machine file under its lock; never creates the
+%%    file; an OSError is RepoWriteRefused :3194, exit 2
 flowchart TB
 
     subgraph Write["The WRITE side - /crew:config --set, and the menu's Save (machine layer)"]
         direction TB
-        PLAN["<b>plan_global_write()</b><br/>crew_config.py:2905, <i>pure</i>"]
+        PLAN["<b>plan_global_write()</b><br/>crew_config.py:2936, <i>pure</i>"]
         ISG{"per LEAF:<br/>allowed?"}
-        REFUSE>"GlobalWriteRefused (class :2255)<br/>names the path AND lists every allowed one"]
+        REFUSE>"GlobalWriteRefused (class :2286)<br/>names the path AND lists every allowed one"]
         MERGED{"merged file<br/>OK?"}
         WIDEN["<b>_plan_on()</b><br/>writes the judged leaves,<br/>marks each with _widens()"]
         WRITE["<b>write_global_config()</b><br/>the only crew write<br/>outside the repo"]
@@ -51,10 +53,10 @@ flowchart TB
     WIDEN --> WRITE
     subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
         direction TB
-        RPLAN["<b>plan_repo_write()</b><br/>crew_config.py:3105"]
-        RREF>"<b>RepoWriteRefused</b><br/>(class :2957)"]
-        RWIDEN["<b>repo_widens()</b> :3037<br/>the ratchet against<br/>what is in force"]
-        RWRITE["<b>write_repo_config()</b><br/>crew_config.py:3131<br/>never creates the file"]
+        RPLAN["<b>plan_repo_write()</b><br/>crew_config.py:3136"]
+        RREF>"<b>RepoWriteRefused</b><br/>(class :2988)"]
+        RWIDEN["<b>repo_widens()</b> :3068<br/>the ratchet against<br/>what is in force"]
+        RWRITE["<b>write_repo_config()</b><br/>crew_config.py:3162<br/>never creates the file"]
         RPLAN -->|"refused leaf, or a bad value in the merged file"| RREF
         RPLAN --> RWIDEN --> RWRITE
     end

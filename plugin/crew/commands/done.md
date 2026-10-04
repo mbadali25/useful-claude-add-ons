@@ -65,6 +65,16 @@ stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh,
 commit, then `/crew:review $1` again, then rerun this command. Documents read
 `not measured`, which is `/crew:docs`'s judgement, not a pass or a refusal.
 
+## Report — forbidden trailers (never refuses)
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_trailers.py --check --root . --ticket "$1"
+```
+
+Copy its lines verbatim into the close note and the PR body. `clean`, a `FINDING <sha> <trailer>` (a commit
+carrying a trailer `git.forbiddenTrailers` lists) or `unknown - <why>`: this report never refuses done and crew
+never rewrites the commits — a rewrite is the owner's decision, and it stales check 1.
+
 ## On all four passing
 
 1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
@@ -97,9 +107,14 @@ It refuses unless this ticket holds the train, `git merge-tree` is clean, the
 base has not moved in Touch paths, and HEAD carries checks 1 and 2. On
 `LAND_OK` run the `gh pr merge <PR> --merge --match-head-commit <sha>` it
 printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A
-refusal names `crew_train.py catch-up` (a merge, never a rebase): catch up,
-gate the merged head again, rerun this command.
+refusal names `crew_train.py catch-up` (a merge, never a rebase). Land in this
+order, so the tree the gate passed is the tree that lands: catch up (resolve any
+conflict), bump the version one past the base's, refresh the artifacts, commit,
+gate the merged head, review it again if `review_ledger.py --check-receipt`
+reads stale, then rerun this command. After the review, a re-anchor
+changes only the sha on the `anchor:` line (or a diagram's header) and
+regenerates the rules; its provenance sentence goes in the ticket's `notes.md`,
+since any other byte in a code map, rules file or diagram is read as unreviewed.
 
-Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing"
-is the reason nobody trusts a notification channel — the same line `/crew:work`
-opened with. <!-- deliberate -->
+Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing" is the reason nobody
+trusts a notification channel — the same line `/crew:work` opened with. <!-- deliberate -->
