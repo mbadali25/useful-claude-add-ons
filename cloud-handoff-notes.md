@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 09:57 UTC
+Last updated: 2026-10-04 09:58 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -17,37 +17,42 @@ Last updated: 2026-10-04 09:57 UTC
   regenerated), crew version set in the LAST commit, merge-only Sonnet review, CI, merge.
 - **Commits** carry only `Claude-Session:`. Never `Co-Authored-By`.
 - **Versions:** the next PR in the train takes the next free number. Builders use 1.0.300+
-  placeholders and are re-bumped at landing. Next free for landing: **1.0.247**.
+  placeholders and are re-bumped at landing. Next free for landing: see the latest log line (main is crew **1.0.256** at c9263465; placeholders 1.0.319-1.0.327 are in use and get re-bumped at landing).
 - **Helpers** (this session's scratchpad, lost on restart; recreate from the description):
   `catchup.sh <branch>` merges origin/main, takes main's side for graphify-out, .claude/rules, and
   anchor-only code map and diagram conflicts, then regenerates the rules. `setver.py`/`bump.sh` commit
   the merge with main's version, then make a version-only commit last.
 
-## Where things stand
+## Where things stand (snapshot 2026-10-04 10:05 UTC)
+
+Merged this session: #374, #375, #385, #386, #387, #388 (notes), #390, #378, #339, #379, #389 (tooling), #350.
+main = c9263465, crew 1.0.256.
 
 ### Landing train (in order)
 
-Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #379, #389 (tooling).
+| # | PR | Head | State |
+|---|---|---|---|
+| 1 | #355 T-0013 | 97c8e6fd (1.0.321) | merge-only review CLEAN; CI 17/24 green, rest running -> MERGE when green |
+| 2 | #371 T-0100 (harness, alone) | 3bca38dd | review CLEAN (Windows autocrlf fixture fix); was CONFLICTED with main so PR CI never ran -> land-prep running (1.0.326) |
+| 3 | #344 T-0035 | 6af8d6fd | r2 CLEAN (embeds adopted in 3 READMEs, localgpu 0.1.21); CONFLICTED -> land-prep running (1.0.327) |
+| 4 | #360 T-0048 | 7d442123 (1.0.323) | merge review 1 FIX fixed (baseBranch row kind); delta review running |
+| 5 | #368 T-0063 | d48fa7a5 (1.0.323) | merge-only review running (diagram split + stale '1.0.213' mentions) |
+| 6 | #342 T-0070 | c6b33f3f (1.0.324) | 3 FIX fixed; r2 review running (incl. post-#361 check) |
+| 7 | #351 | - | land-prep running (1.0.320) |
+| 8 | #376 L-0604 | | r1 FIX is a harness docstring (review_verdict.py) -> needs tooling PR or ruling |
+| 9 | #377 #352 #353 #357 #358 #359 #362 #367 | | review CLEAN, need land-prep |
+| 10 | #361 T-0050, #348 T-0041, #349 T-0065, #369 T-0044, #370 T-0038, #354 T-0012 | | review CLEAN, need land-prep |
+| 11 | harness (each alone): #333, #331, #336 (split sabotage_cloud.py first), #343 T-0068 | | |
+| 12 | #338 L-0582 WIP port; #324 owner WIP | | |
 
-| # | PR | State |
-|---|---|---|
-| 1 | #350 T-0061 feature | 8917caf9 crew 1.0.256, merge-only review + CI running |
-| 2 | #371 T-0100 | review CLEAN (prev session), needs re-merge |
-| 3 | #351 #355 #360 #368 | review CLEAN (prev session), need re-merge |
-| 4 | #376 L-0604 | r1 1 FIX was a harness docstring (review_verdict.py) -> needs its own tooling PR or ruling |
-| 5 | #377 #352 #353 #357 #358 #359 #362 #367 | review CLEAN, need re-merge |
-| 6 | #361 T-0050, #348 T-0041, #349 T-0065, #369 T-0044, #370 T-0038 | built + review CLEAN (#370 r2 running) |
-| 7 | harness (each alone): #333, #331, #336 (split sabotage_cloud.py first), #343 T-0068 (r3 running) | |
-| 8 | #338 L-0582 WIP port; #324 owner WIP | |
+NOTE: #355 and #360 both change config leaf counts / CONFIG.md -> whichever lands second re-merges carefully.
+NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate receipt") - check mergeable_state.
 
 ### Builds (worktrees /home/user/pr-<n>)
 
 | PR | Ticket | State |
 |---|---|---|
-| #354 | T-0012 | built 803c656a, review running |
-| #344 | T-0035 | building |
-| #342 | T-0070 | building |
-| #340 #341 #346 #347 #345 | L-0526, L-0509, T-0039, T-0047, T-0036 | queued |
+| #340 #341 #346 #347 #345 | L-0526 (harness), L-0509, T-0039, T-0047, T-0036 (after #344) | queued, not started |
 | #356 #363 #364 #365 #366 | | BLOCKED: T-0016, T-0037, T-0049 have no ticket/spec (owner) |
 
 ## How to resume
@@ -58,6 +63,7 @@ Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #37
 
 ## Log (newest first)
 
+- 09:58: Snapshot table refreshed; notes now pushed after every action (owner request).
 - 09:57: #360 fixer: head 7d442123 (kind branch + test, docs regen), version 1.0.323 (placeholder). Delta review started.
 - 09:57: #371 and #344 are CONFLICTED with main (mergeable_state dirty) so pull_request CI never ran (only verify-gate receipt). Land-prep started: #371 -> 1.0.326, #344 -> 1.0.327. #355 CI 15/24 green, merges first.
 - 09:56: #344 r2 6af8d6fd: 0 BLOCK 0 FIX 1 NIT (embedded Source: links relative, dangle in plugin cache). Review-clean; waits its turn.
