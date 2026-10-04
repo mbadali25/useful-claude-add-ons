@@ -58,6 +58,7 @@ Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #37
 
 ## Log (newest first)
 
+- 09:55: #342 fixer done: head c6b33f3f, 3 FIX + NIT fixed (global-not-read wording, approvals unknown, escaping incl --inert lines), 1.0.324. r2 review started (incl post-#361 merge check).
 - 09:55: #355 merge review 97c8e6fd: 0/0/0 clean. Lands after #371 (re-merge+rebump then).
 - 09:55: #360 merge review aedd225b: 0 BLOCK 1 FIX (tickets.baseBranch row kind 'type' renders 'coerced'; should be 'branch'/checked). Fixer started.
 - 09:54: #368 land-prep done: head d48fa7a5, 1.0.323; lifecycle diagram split by main #375 -> PR nodes moved into implement/done parts; guide docx/pdf rebuilt. Open: diagrams not rendered; stale '1.0.213' mentions in README/guide/codemap. Merge review started.
