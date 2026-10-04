@@ -2566,14 +2566,20 @@ literal sha in the command must be its HEAD):
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
 - that tree is clean - you cannot deploy a sha plus uncommitted changes
 
-"Matching" is a plain substring test in both directions (the declared command
-inside the one being run, or the reverse), the first environment in the map
-that matches wins, and both flavours make the same choice. `*`, `?` and
-`[...]` in a `deploy` are literal text, never wildcards (L-1503: the
-PowerShell flavour used `-like`, so `jq .items[0]` never matched itself and
-`[z-a]` threw and skipped the environment). The PowerShell flavour ignores
-case; the bash flavour does not. If the comparison itself fails, the
-PowerShell flavour blocks rather than skipping that environment.
+Both flavours (`.sh` and `.ps1`) choose the environment by one rule, on the
+working map and, when that is dirty, the committed map alike (L-1503):
+
+- the command loses every CR and its trailing newlines; a command that is then
+  empty or only whitespace deploys nothing and passes
+- a declared command matches when either one contains the other - a plain
+  substring test, ignoring case (on Windows `./Deploy.ps1` and `./deploy.ps1`
+  are one file). `*`, `?` and `[...]` are literal text, never wildcards
+- the `deploy` key is read ignoring case; a map with two keys that differ
+  only by case (`deploy` and `Deploy`) is refused and the command blocks
+- if more than one environment matches, the command blocks as ambiguous and
+  every matching environment is named - there is no first-match pick
+- if the comparison itself fails, the command blocks rather than skipping
+  that environment
 
 So a clean worktree deploys while the main checkout is dirty, and a clean main
 checkout cannot wave a dirty or wrong-sha worktree through. `.crew/verify.json`,

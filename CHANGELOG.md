@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.408: promote-gate.ps1 matches deploy commands literally and fails closed (L-1503)
+### Fixed - `crew` 1.0.408: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with
   `$cmd -like "*$dep*" -or $dep -like "*$cmd*"`, and `-like` reads `*`, `?` and `[set]` in a
@@ -13,19 +13,24 @@ All notable changes to this repository are documented here. Format follows [Keep
   itself and exited 0 with no in-flight marker, where `promote-gate.sh` exits 2; a pattern `-like`
   cannot read (`[`, `[]`, `[z-a]`, `[!-[]`) threw WildcardPatternException and that environment was
   skipped; and a `deploy-*` or `deploy-pro?` claimed another environment's command.
-- Both matching paths (working map and committed map) now share `Test-DeployMatch`: a literal
-  `OrdinalIgnoreCase` substring test in both directions, the same choice as `promote-gate.sh`'s
-  `d in cmd or cmd in d`, still case-insensitive as the .ps1 always was, on the command with its
-  CRs removed as the .sh's `crew_strip_cr` does. The committed-map path was literal but
-  case-sensitive (`.Contains`), so it now ignores case too. A comparison that throws blocks (exit
-  2, above the emergency lane) instead of skipping the environment.
-- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 39 cases - must-block (the `jq`
-  repro, the four unreadable patterns, `*`/`?` claiming another environment, a comparison that
-  throws, the committed-map path), must-allow (the same deploys once approved, case-insensitive
-  matching, a trailing CR, an unrelated command) and a sh/ps1 agreement table over six maps.
-  Sabotage: restoring `-like` turns 19 red; swallowing the exception turns the throw case red.
-- Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; its ps1 flavour
-  should use the same literal test when it lands.
+- Review of the first fix found the gates still chose differently: the `.sh` was case-sensitive and
+  read only a lower-case `deploy` key, and both took the first match, so qa `target=Prod` and
+  production `target=prod` resolved to different environments per flavour.
+- `promote-gate.sh` and `promote-gate.ps1` now share one rule, on the working map and the committed
+  map alike: every CR and trailing newline is stripped from the command, and a whitespace-only
+  command deploys nothing; a declared command matches when either contains the other, literally,
+  ignoring case; the `deploy` key is read ignoring case, and keys differing only by case refuse the
+  map; more than one matching environment blocks as ambiguous, naming each (`.sh` status 5,
+  `Deny-AmbiguousDeploy`); a comparison that throws blocks instead of skipping the environment.
+  Before, a `deploy` that matched several environments silently took the first; it now blocks.
+- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 69 cases (45 by default; the
+  pwsh-heavy rest are `slow`): must-block, must-allow, and a sh/ps1 agreement table over nine maps
+  run through both real gates. Sabotage, each confirmed red then restored: `-like` back in the
+  `.ps1` (23 red), the `.ps1` exception swallowed (1), first-match instead of ambiguity in the `.sh`
+  (8) and in the `.ps1` (8), the `.sh` reading only a lower-case `deploy` key (2), the `.sh`
+  accepting case-twin keys (1).
+- Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
+  and #407 adapts it to this rule.
 
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
