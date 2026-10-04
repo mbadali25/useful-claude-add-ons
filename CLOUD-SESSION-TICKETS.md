@@ -40,6 +40,8 @@ Next free untracked ID: **L-1504**.
 | L-0522 | #377 | f3f319d1 | 1.0.326 (L-0522 slice 1 of 3) |
 | T-0069 | #352 | b863b773 | 1.0.327 |
 | T-0066 (part 1 of 2) | #351 | 86d96fa1 | 1.0.328 |
+| L-0688 | #405 | 66be99cd | 1.0.329 |
+| T-0096 (slice 0) | #398 | 3c4ccd2f | 1.0.330 |
 
 ## Closed without merging (your instruction)
 
@@ -55,8 +57,6 @@ Next free untracked ID: **L-1504**.
 | T-0017 | #356 | 5e37f872 | ready to land | Stacked on #396 (T-0016). Carry NIT: stdout backslashreplace for non-ASCII refusal reasons. |
 | T-0059 | #366 | e14b5a45 | ready to land | Stacked on T-0052 (#364). |
 | T-0058 | #365 | 16228584 | ready to land | Stacked on #364/#354. Carry: `_gate_stage` must pick stage like `_phase`; `split_report current=` from `_not_current`. Decision: absent sources read as unmeasured (owner-approved). |
-| L-0688 | #405 | ea2a1884 | landing (batch 1, crew 1.0.329) | Carry NIT: unmerged (U) record reason. Lands before L-0540. |
-| T-0096 | #398 | 670d5cbb | landing (batch 1, crew 1.0.330) | Slice 0. Follow-ups in TODO.md: could-not-tell treated as absent for stand-down/veto across all flavours. |
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
 | T-0045 | #407 | 6cada04c | ready to land | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
 | T-0053 | #403 | 791af057 | landing (batch 1, crew 1.0.332) | Slice 1. Decisions taken for you: unknown = strictest per key; non-object block = human; carry: a typo night value (not a policy) reads strictest. |
