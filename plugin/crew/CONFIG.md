@@ -1647,9 +1647,10 @@ nobody does and denied under `block`; a live one-shot marker for that exact
 text still lets it through under `ask`/`allow`. Nothing else below is
 consulted for it (guard.log policy `could-not-tell`). Unusual quoting on a
 terraform line is asked about, not allowed; unattended, it is refused — which
-includes `terraform apply "p.tfplan"`, `terraform plan 2>$null` and a commit
-message that quotes the word terraform. Plain lines are read exactly as
-before.
+includes `terraform apply "p.tfplan"`. A read-only subcommand (`terraform plan
+2>$null`, `terraform workspace select "staging"`) and a line that only
+mentions terraform (a commit message quoting it) are not gated for their
+quoting (below). Plain lines are read exactly as before.
 
 **Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
 `destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
@@ -1716,12 +1717,15 @@ subcommand are skipped as terraform and terragrunt read them (`terragrunt
 --working-dir infra destroy` is a destroy).
 
 **What the guard does not catch.** It catches terraform, terragrunt and tofu
-written directly: bare or path-qualified, behind the listed wrappers, inside
+written directly: bare or path-qualified, behind the listed wrappers
+(`aws-vault exec` and `unbuffer` among them; an option a listed `xargs`,
+`parallel`, `aws-vault` or `unbuffer` does not know makes the line
+`could-not-tell`), inside
 `bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
 PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
--e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
+-e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
 entrypoint. No command-line guard can: unattended work must run interpreters
 and scripts. The real boundary is the credentials an unattended run holds,

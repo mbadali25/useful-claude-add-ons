@@ -1418,11 +1418,14 @@ command, not a sandbox against deliberate evasion (owner decision,
 2026-09-26). It catches `terraform`, `terragrunt` and `tofu` written directly:
 bare or path-qualified, behind the listed wrappers (`env`, `sudo`, `doas`,
 `nice`, `ionice`, `timeout`, `stdbuf`, `nohup`, `command`, `exec`, `time`,
-`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`),
-inside `bash|sh|zsh -c` and `eval` strings, with global options before the
+`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`,
+`aws-vault exec`, `unbuffer`), inside `bash|sh|zsh -c` and `eval` strings, with global options before the
 subcommand (`-chdir=`, terragrunt's `--working-dir`), and PowerShell's `&`,
-`.`, `terraform.exe` and `Start-Process`. It does not try to catch a program
-renamed or started some other way. Each of these runs unjudged:
+`.`, `terraform.exe` and `Start-Process`. PowerShell strips the same listed
+wrappers. An option a listed `xargs`, `parallel`, `aws-vault` or `unbuffer`
+does not know makes a line that names terraform could-not-tell: crew cannot
+tell where the command starts. It does not try to catch a program renamed or
+started some other way. Each of these runs unjudged:
 
 - a rename by alias, function, symlink or copy, unless the same line makes a
   plain copy or link and runs it by that name: `env ln -sf /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
@@ -1436,9 +1439,7 @@ renamed or started some other way. Each of these runs unjudged:
 - a script file: `bash deploy.sh`
 - a wrapper not in the list above: `strace -f terraform destroy`,
   `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
-  `aws-vault exec p -- terraform destroy`,
-  `aws-vault exec prod -- terraform "destroy" -auto-approve`,
-  `unbuffer terraform destroy`, `systemd-run terraform destroy`
+  `systemd-run terraform destroy`
 - a program that runs another it is handed: `git bisect run terraform destroy`,
   `git -C infra bisect run terraform destroy`,
   `git -C add bisect run terraform destroy`, `rg --pre terraform destroy .`

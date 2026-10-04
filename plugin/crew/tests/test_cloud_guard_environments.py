@@ -2532,10 +2532,6 @@ DOCUMENTED_NOT_CAUGHT = [
     ("an unlisted wrapper", "strace -f terraform destroy"),
     ("an unlisted wrapper", "strace -f terraform $'\\x64estroy' -auto-approve"),
     ("an unlisted wrapper", "strace =terraform destroy"),
-    ("an unlisted wrapper", "aws-vault exec p -- terraform destroy"),
-    ("an unlisted wrapper",
-     'aws-vault exec prod -- terraform "destroy" -auto-approve'),
-    ("an unlisted wrapper", "unbuffer terraform destroy"),
     ("an unlisted wrapper", "systemd-run terraform destroy"),
     ("a program that runs another", "git bisect run terraform destroy"),
     ("a program that runs another", "git -C infra bisect run terraform destroy"),
@@ -2787,3 +2783,195 @@ def test_round7_tables_are_distinct():
                + R5_MUST_BLOCK + R5_MUST_ALLOW + S10_DIRECT_BLOCK
                + S10_ORDINARY_ALLOW + R7_MUST_BLOCK + R7_MUST_ALLOW)
     assert len(ids) == len(set(ids))
+
+
+# --- Review round 8 (LKKlDl, T-0047): direct spellings and wrong refusals -----
+#
+# Measured on origin/main 502cb137 (T-0047 spec) and again before the fix on
+# this branch: every R8_MUST_BLOCK row naming a round-8 BLOCK was allowed
+# unattended, and every R8_MUST_ALLOW over-block row was denied. The rest are
+# neighbours that pin the other side of each fix.
+R8_MUST_BLOCK = _normalise([
+    # BLOCK 1: `xargs -I`/`-i`/`--replace`, found wherever getopt finds it.
+    ("r8-xargs-cluster-I", "Bash", "xargs -rn 1 -Iplan terraform plan < verbs.txt",
+     _o(**_STAGING)),
+    ("r8-xargs-rI-cluster", "Bash", "xargs -rI plan terraform plan",
+     _o(**_STAGING)),
+    ("r8-xargs-i-attached", "Bash", "xargs -iplan terraform plan",
+     _o(**_STAGING)),
+    ("r8-xargs-replace-long", "Bash", "xargs -r --replace=plan terraform plan",
+     _o(**_STAGING)),
+    # BLOCK 2: `parallel`'s value options, and an option neither table knows.
+    ("r8-parallel-timeout", "Bash",
+     "parallel --timeout 60 terraform destroy ::: -auto-approve",
+     _o(**_STAGING)),
+    ("r8-parallel-delay-tofu", "Bash",
+     "parallel --delay 1 tofu workspace delete ::: production", _o(**_STAGING)),
+    ("r8-parallel-delay-eq", "Bash",
+     "parallel --delay=1 terraform destroy ::: -auto-approve", _o(**_STAGING)),
+    ("r8-parallel-halt", "Bash",
+     "parallel --halt now,fail=1 terraform destroy ::: -auto-approve",
+     _o(**_STAGING)),
+    ("r8-parallel-unknown-opt", "Bash",
+     "parallel --frobnicate 3 terraform destroy ::: x", _unseen()),
+    # BLOCK 3: Invoke-Expression's colon-bound `-Command:`.
+    ("r8-ps-iex-colon", "PowerShell",
+     'Invoke-Expression -Command:"terraform destroy -auto-approve"',
+     _o(**_STAGING)),
+    ("r8-ps-iex-colon-single", "PowerShell", "iex -Command:'terraform destroy'",
+     _o(**_STAGING)),
+    # BLOCK 4: the listed wrappers, stripped by PowerShell's trigger too.
+    ("r8-ps-env-wrapper", "PowerShell", "env terraform destroy${x} -auto-approve",
+     _o(**_STAGING)),
+    ("r8-ps-sudo-wrapper", "PowerShell",
+     "sudo terraform destroy${x} -auto-approve", _o(**_STAGING)),
+    ("r8-ps-sudo-u", "PowerShell", "sudo -u root terraform destroy${x}",
+     _o(**_STAGING)),
+    ("r8-ps-timeout-wrapper", "PowerShell",
+     "timeout 60 terraform destroy${x} -auto-approve", _o(**_STAGING)),
+    ("r8-ps-stdbuf-attached", "PowerShell", "stdbuf -oL terraform destroy${x}",
+     _o(**_STAGING)),
+    ("r8-ps-vault", "PowerShell", "aws-vault exec prod -- terraform destroy${x}",
+     _o(**_STAGING)),
+    # The two wrappers this ticket lists.
+    ("r8-vault-destroy", "Bash",
+     "aws-vault exec prod -- terraform destroy -auto-approve", _o(**_STAGING)),
+    ("r8-vault-no-dashdash-quoted", "Bash", 'aws-vault exec prod terraform "destroy"',
+     _o(**_STAGING)),
+    ("r8-vault-global-and-duration", "Bash",
+     "aws-vault --debug exec -d 1h prod -- tofu workspace delete production",
+     _o(**_STAGING)),
+    ("r8-vault-unknown-opt", "Bash",
+     "aws-vault exec --frob prod -- terraform destroy", _unseen()),
+    ("r8-unbuffer", "Bash", "unbuffer terraform destroy", _o(**_STAGING)),
+    ("r8-unbuffer-p", "Bash", "unbuffer -p terraform destroy", _o(**_STAGING)),
+    # The over-blocks' neighbours: each fix still refuses the spelling beside
+    # the one it allows.
+    ("r8-tg-noninteractive-destroy", "Bash", "terragrunt --non-interactive destroy",
+     _o(**_STAGING)),
+    ("r8-tg-valued-plan-destroy", "Bash",
+     "terragrunt --terragrunt-log-level plan destroy", _o(**_STAGING)),
+    ("r8-ws-select-or-create-quoted", "Bash",
+     'terraform workspace select -or-create "prod"', _o(**_STAGING)),
+    ("r8-ws-select-or-create-true", "Bash",
+     'terraform workspace select -or-create=true "prod"', _o(**_STAGING)),
+    ("r8-ws-select-quoted-then-apply", "Bash",
+     'terraform workspace select "staging" && terraform apply p.tfplan',
+     _o(**_STAGING)),
+    ("r8-ps-amp-paren", "PowerShell", '& ("terraform") destroy', _o(**_STAGING)),
+    ("r8-ps-amp-quoted", "PowerShell", '& "terraform" destroy -auto-approve',
+     _o(**_STAGING)),
+    ("r8-ps-assign-bare", "PowerShell", "$out = terraform destroy",
+     _o(**_STAGING)),
+])
+
+R8_MUST_ALLOW = _normalise([
+    # FIX 1: a terragrunt boolean option takes no value.
+    ("r8a-tg-noninteractive-plan", "Bash",
+     'terragrunt --non-interactive plan -out="p.tfplan"', _o(**_STAGING)),
+    ("r8a-tg-noninteractive-run-all-plan", "Bash",
+     'terragrunt --non-interactive run-all plan -out="p.tfplan"',
+     _o(**_STAGING)),
+    ("r8a-tg-run-all-noninteractive-plan", "Bash",
+     'terragrunt run-all --non-interactive plan -out="p.tfplan"',
+     _o(**_STAGING)),
+    # FIX 3: `workspace select` with a quoted name, and no creation.
+    ("r8a-ws-select-quoted", "Bash", 'terraform workspace select "staging"',
+     _o(**_STAGING)),
+    ("r8a-ws-select-or-create-false", "Bash",
+     'terraform workspace select -or-create=false "staging"', _o(**_STAGING)),
+    # FIX 2: a quoted first word starts PowerShell's expression mode.
+    ("r8a-ps-write-output-concat", "PowerShell",
+     'Write-Output ("terraform" + " destroy")', _o(**_STAGING)),
+    ("r8a-ps-assign-list", "PowerShell", '$message = "terraform", "destroy"',
+     _o(**_STAGING)),
+    ("r8a-ps-replace-expr", "PowerShell",
+     '"terraform destroy" -replace "destroy","plan"', _o(**_STAGING)),
+    # The BLOCKs' neighbours: each fix still allows the read-only spelling.
+    ("r8a-ps-iex-colon-plan", "PowerShell",
+     "Invoke-Expression -Command:'terraform plan'", _o(**_STAGING)),
+    ("r8a-xargs-cluster-fmt", "Bash", "ls *.tf | xargs -rn 1 terraform fmt",
+     _o(**_STAGING)),
+    ("r8a-vault-plan", "Bash", "aws-vault exec prod -- terraform plan",
+     _o(**_STAGING)),
+    ("r8a-unbuffer-plan", "Bash", "unbuffer terraform plan", _o(**_STAGING)),
+    # CONFIG.md's literal-word paragraph (the NIT): these were never refused.
+    ("r8a-commit-message", "Bash", 'git commit -m "terraform destroy"',
+     _o(**_STAGING)),
+    ("r8a-plan-redirect", "Bash", "terraform plan 2>/dev/null", _o(**_STAGING)),
+    ("r8a-ps-plan-redirect", "PowerShell", "terraform plan 2>$null",
+     _o(**_STAGING)),
+])
+
+
+@pytest.mark.parametrize("policy", ["ask", "block", "allow"])
+@pytest.mark.parametrize("case", R8_MUST_BLOCK, ids=_ids(R8_MUST_BLOCK))
+def test_round8_must_block_python(tmp_path, case, policy):
+    over = {"ask": {}, "block": BLOCK_POLICY, "allow": ALLOW_POLICY}[policy]
+    case_id, tool, command, opts = case
+    _deny("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **over}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    R8_MUST_BLOCK, ("r8-parallel-timeout", "r8-vault-destroy"),
+    (tcg.needs_bash,)))
+def test_round8_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    R8_MUST_BLOCK, ("r8-ps-iex-colon", "r8-ps-env-wrapper"),
+    (tcg.needs_pwsh,)))
+def test_round8_must_block_pwsh(tmp_path, case):
+    _deny("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", R8_MUST_ALLOW, ids=_ids(R8_MUST_ALLOW))
+def test_round8_must_allow_python(tmp_path, case):
+    _allow_literal("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", [
+    c for c in R8_MUST_ALLOW if c[0] in (
+        "r8a-tg-noninteractive-plan", "r8a-ws-select-quoted",
+        "r8a-ps-write-output-concat", "r8a-vault-plan")],
+    ids=lambda c: c[0])
+def test_round8_must_allow_under_block(tmp_path, case):
+    case_id, tool, command, opts = case
+    _allow_literal("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **BLOCK_POLICY}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    R8_MUST_ALLOW, ("r8a-ps-write-output-concat", "r8a-ps-iex-colon-plan"),
+    (tcg.needs_pwsh,)))
+def test_round8_must_allow_pwsh(tmp_path, case):
+    _allow_literal("pwsh", tmp_path, case)
+
+
+def test_round8_tables_are_distinct():
+    ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
+               + NOW_NOT_LITERAL + S9_MUST_ALLOW + S9_MUST_BLOCK
+               + R5_MUST_BLOCK + R5_MUST_ALLOW + S10_DIRECT_BLOCK
+               + S10_ORDINARY_ALLOW + R7_MUST_BLOCK + R7_MUST_ALLOW
+               + R8_MUST_BLOCK + R8_MUST_ALLOW)
+    assert len(ids) == len(set(ids))
+
+
+@pytest.mark.parametrize("command, wrapper, option", [
+    ("parallel --frobnicate 3 terraform destroy ::: x", "parallel",
+     "--frobnicate"),
+    ("xargs --frob terraform destroy", "xargs", "--frob"),
+    ("aws-vault exec --frob prod -- terraform destroy", "aws-vault", "--frob"),
+    ("unbuffer -z terraform destroy", "unbuffer", "-z"),
+])
+def test_round8_unknown_option_is_could_not_tell(command, wrapper, option):
+    """An option a listed wrapper's tables do not know: crew cannot tell
+    where the command starts, so the line is could-not-tell, and the reason
+    says which wrapper and which option."""
+    found = cloud_guard._literal_gate("bash", command)  # pylint: disable=protected-access
+    assert found is not None, command
+    assert found.scope["op"] == cloud_guard.OP_UNREADABLE_LINE
+    assert wrapper in found.what and option in found.what, found.what
+    assert "does not know" in found.what, found.what
