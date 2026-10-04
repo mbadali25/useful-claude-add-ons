@@ -4,9 +4,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.346: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
+### Added — `crew` 1.0.349: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
 
-- Bumped `1.0.322 -> 1.0.346`. New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
+- Bumped `1.0.322 -> 1.0.349`. New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
   phase in `next`, both only while autopilot is armed; unarmed, a done ticket still reads `closed`
   and gh is never asked. `commands/autopilot.md` runs it at `phase=ship` and stays inside its
   110-line budget (110).
