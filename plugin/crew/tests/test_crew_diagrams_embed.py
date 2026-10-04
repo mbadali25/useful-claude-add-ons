@@ -302,6 +302,44 @@ def test_an_unlistable_diagrams_dir_is_unknown_injected(tmp_path, monkeypatch):
     assert _embed(root) == 1
 
 
+def _orphan_tree(tmp_path):
+    """A README no diagram targets, holding a section: only its markers make
+    it judged, so failing to read it must not read as having none."""
+    root = _tree(tmp_path)
+    _write(root, "plugin/y/README.md", "# y\n\n" + BEGIN + "\nold\n" + END + "\n")
+    return root
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                    reason="chmod 000 does not deny a read on Windows or to root")
+def test_an_unreadable_untargeted_readme_is_unknown_not_fresh(tmp_path):
+    root = _orphan_tree(tmp_path)
+    path = os.path.join(str(root), "plugin", "y", "README.md")
+    os.chmod(path, 0)
+    try:
+        result = crew_diagrams.check(str(root))
+        assert result["status"] == crew_diagrams.UNKNOWN
+        assert any("plugin/y/README.md" in u for u in result["unknown"])
+    finally:
+        os.chmod(path, 0o644)
+
+
+def test_an_unreadable_untargeted_readme_is_unknown_injected(tmp_path, monkeypatch):
+    """The same could-not-tell, injected, so it runs as root and on Windows."""
+    root = _orphan_tree(tmp_path)
+    real = crew_diagrams.read_text
+
+    def denied(path):
+        if os.path.normpath(str(path)).endswith(os.path.join("plugin", "y", "README.md")):
+            return None
+        return real(path)
+    monkeypatch.setattr(crew_diagrams, "read_text", denied)
+    result = crew_diagrams.check(str(root))
+    assert result["status"] == crew_diagrams.UNKNOWN
+    assert any("plugin/y/README.md" in u for u in result["unknown"])
+    assert _embed(root) == 1
+
+
 def test_a_missing_diagrams_dir_is_fresh_with_nothing_to_embed(tmp_path):
     root = tmp_path / "repo"
     _write(root, "README.md", "# root\n")

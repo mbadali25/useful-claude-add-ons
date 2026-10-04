@@ -308,7 +308,7 @@ def plan(top):
 
     # Every README holding markers is judged, targeted or not: a section no
     # diagram targets any more is drift, and embed removes it.
-    marked = _marked_readmes(top, targets)
+    marked = _marked_readmes(top, targets, out["unknown"])
     bitbucket = _origin_is_bitbucket(top)
     for readme in sorted(set(targets) | marked):
         path = os.path.join(top, readme)
@@ -365,11 +365,13 @@ def plan(top):
     return out
 
 
-def _marked_readmes(top, targets):
+def _marked_readmes(top, targets, unknown):
     """README.md files below the root holding a begin or end marker: the
     files git lists (tracked and untracked, not ignored) in a repository,
     otherwise a walk that skips dot-dirs and node_modules. Either way an
-    orphaned section -- one no diagram targets any more -- is found."""
+    orphaned section -- one no diagram targets any more -- is found. A
+    README that cannot be read is appended to `unknown`: whether it holds
+    an orphaned section cannot be told."""
     found = set(targets)
     listing = crew_common.git_out(top, "ls-files", "-z", "--cached", "--others",
                                   "--exclude-standard", "--", f"*{README}", README)
@@ -385,7 +387,12 @@ def _marked_readmes(top, targets):
         if os.path.basename(rel) != README or rel == README:
             continue
         text = read_text(os.path.join(top, rel))
-        if text is not None and (_BEGIN_LINE.search(text) or _END_LINE.search(text)):
+        if text is None:
+            if rel not in found:
+                unknown.append(f"{rel} could not be read, so whether it holds a "
+                               "diagrams section cannot be told")
+            continue
+        if _BEGIN_LINE.search(text) or _END_LINE.search(text):
             found.add(rel)
     return found
 
