@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.231: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
+### Fixed - `crew` 1.0.336: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
 
 - **T-0023 r2 FIX 1 (route clipping).** A route whose command `_clip` would change - cut past
   `FIELD_CHARS["command"]` (200) or with its whitespace reflowed - is now an `ask` in `decide`, and
