@@ -1045,8 +1045,17 @@ def resolve_target(ancestor_pids, windows, title):
 
 
 def _tmux_pane_pid(pane):
+    # Run the tmux that shutil.which found -- the one resolve_method's "on
+    # PATH" check just accepted -- not a bare "tmux". On native Windows a bare
+    # name reaches CreateProcess, which tries only tmux.exe, while which()
+    # also honours PATHEXT (tmux.cmd, tmux.bat): the check passed, the run
+    # raised OSError, and the refusal named the pane pid "unknown" for a tmux
+    # that was never run. An unresolvable tmux is still 0, still refused.
+    tmux = shutil.which("tmux")
+    if not tmux:
+        return 0
     try:
-        out = subprocess.run(["tmux", "display-message", "-p", "-t", pane, "#{pane_pid}"],
+        out = subprocess.run([tmux, "display-message", "-p", "-t", pane, "#{pane_pid}"],
                              capture_output=True, text=True, timeout=5, check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return 0

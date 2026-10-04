@@ -240,7 +240,7 @@ theirs, and so were the second review's 30. Each fix was sabotaged (21 + 17
   leaves its record behind. Windows' entrypoint and macOS are unmeasured: on
   Windows an entrypoint outside `cli` is unknown and `procStart` is unchecked;
   macOS reads `ps` and leaves `procStart` unchecked.
-- **Tests.** `test_autoclear_binding.py` (110 cases, both flavours on the same
+- **Tests.** `test_autoclear_binding.py` (111 cases, both flavours on the same
   fixtures), and `crew_fixtures.write_session_record` / `proc_stub` /
   `bind_session`, which T-0017 builds on. `CREW_AUTOCLEAR_PROC_STUB` replaces
   the whole process table in tests, so no case reads the real tree;
@@ -266,6 +266,13 @@ theirs, and so were the second review's 30. Each fix was sabotaged (21 + 17
   refused while another live session record exists or the window's pid is
   ≤ 1; resume typing in scope; no `allowHeadless`-style escape hatch; the
   entrypoint allowlist is `{"cli"}` plus a tty.
+- **Windows CI fix.** The pane pid is read from the `tmux` that
+  `shutil.which` accepted, not a bare `tmux`: on native Windows CreateProcess
+  tries only `tmux.exe` while `which` honours PATHEXT, so a `tmux.cmd` passed
+  the check, was never run, and every Git Bash tmux case refused with "pane
+  pid unknown". `test_tmux_pane_pid_is_read_from_the_tmux_the_path_check_found`
+  pins it on any OS; the `~/.claude` owner test sets `USERPROFILE` too, which
+  is where `expanduser` looks on Windows.
 
 ### Added — `crew` 1.0.332: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
 
