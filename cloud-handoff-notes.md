@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:31: #352 merge review 4b8e56cb: 0/0/0 CLEAN. Waits CI + turn.
 - 10:31: #351 land-prep on edb2b8ff done: head b21ad210 (1.0.333), counts 133/75/58, ~75 codemap cites remapped. #351 arrival-claim list: CONFIG.md:686,2773; codemap:291,1478; CHANGELOG:7; diagrams split/read/write:5, lifecycle-implement:10, lifecycle-done:4. Review (fix delta+merge) started. NOTE #360 and #351 both change CONFIG.md counts/tables - second to land recounts.
 - 10:29: Spec reconstruction started for T-0016, T-0037, T-0049 (owner request; no spec on GitHub - owner's .work copies never published; T-0016/T-0049 were built+reviewed locally per docs/review/08). Branches <T>-build, docs only, owner approves before build. #377 land-prep done 6156e7f2 (1.0.335) -> merge review. #352 land-prep done 4b8e56cb (1.0.336) -> merge review. MAIN FOLLOW-UP: committed troubleshooting html stale vs src/auto-cycle.md (T-0013).
 - 10:27: #368 merge review 46d957c1: 0/0/0 CLEAN. Owner: write specs for T-0016, T-0037, T-0049 to unblock #356/#363/#364/#365/#366.
