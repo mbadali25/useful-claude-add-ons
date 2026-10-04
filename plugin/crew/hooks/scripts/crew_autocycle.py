@@ -1402,6 +1402,13 @@ def _wrapup_cli(args):
 
 
 def main(argv=None):
+    # A refusal reason can carry any character a branch name or a file path
+    # does; a cp1252 console's strict encoder would crash the print and turn
+    # a refusal into a traceback. Escape what the console cannot show.
+    try:
+        sys.stdout.reconfigure(errors="backslashreplace")
+    except (AttributeError, ValueError):
+        pass  # a replaced stdout (tests) has no reconfigure
     parser = argparse.ArgumentParser(prog="crew_autocycle.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_plan = sub.add_parser("plan")

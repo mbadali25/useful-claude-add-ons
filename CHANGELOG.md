@@ -38,16 +38,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Windows.** `context-watch.ps1` and `auto-clear.ps1` now carry the shared
   `Resolve-CrewPython` (added to `test_ps1_python_probe.py`'s carriers); it is
   probed only when the machine file arms the wrap-up.
-- **Tests.** `plugin/crew/tests/test_wrapup.py` (102 cases with pwsh, both
+- **Tests.** `plugin/crew/tests/test_wrapup.py` (103 cases with pwsh, both
   flavours: arming, the check's must-allow and must-block cases, unarmed
   byte-identity, the procedure and its parity, escalation once and never on
   `stop_hook_active`, the refusal before the claim, `handoff.md` and
-  `autopilot.md`); `test_crew_config.py` (133 leaves, a repo writer refuses
+  `autopilot.md`); `test_crew_config.py` (137 leaves after the merge of main, a repo writer refuses
   `wrapUp: true`) and `test_crew_keys.py` (the key moves from `COMING` to
   `KEY_META`). 22 hand sabotages (python, bash, PowerShell) each turned their
   named test red; the `sabotage*.py` entries are a separate tooling PR.
 - **Built on T-0016** (stacked on its branch): its session-record fixtures,
   and its order (the wrap-up check runs before the binding).
+- **Non-ASCII reasons.** `crew_autocycle.py`'s CLI writes stdout with
+  `errors="backslashreplace"`, so a refusal reason naming a non-ASCII branch
+  or path prints escaped on a cp1252 console instead of crashing the print
+  (`test_check_cli_prints_a_non_ascii_reason_on_a_cp1252_console`).
 
 ### Fixed — `crew` 1.0.333: auto-clear and resume typing bind to the session's own terminal (T-0016)
 

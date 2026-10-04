@@ -516,6 +516,23 @@ def test_check_cli_prints_ok_or_the_reason(repo):
     assert cli() == "ok"
 
 
+def test_check_cli_prints_a_non_ascii_reason_on_a_cp1252_console(repo):
+    """Landing NIT: the reason names the handoff's branch, which can hold any
+    character. On a cp1252 stdout the CLI escapes what it cannot encode
+    instead of crashing the print."""
+    repo.arm()
+    repo.commit()
+    repo.handoff(branch="feature\u2192x")
+    env = dict(os.environ, HOME=str(repo.home), USERPROFILE=str(repo.home),
+               PYTHONIOENCODING="cp1252")
+    done = subprocess.run([sys.executable, str(_SCRIPTS / "crew_autocycle.py"), "wrapup-check",
+                           "--root", str(repo.root)], env=env, capture_output=True,
+                          check=False, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert b"Traceback" not in done.stderr, done.stderr
+    assert b"feature\\u2192x" in done.stdout, done.stdout
+
+
 def _plan(box):
     return crew_autocycle.plan(str(box.root), SESSION, global_path=str(box.gpath))
 
