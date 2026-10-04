@@ -51,6 +51,32 @@ function Deny-UnreadableMap([string]$Why) {
   exit 2
 }
 
+# Does this command deploy what `$Dep` declares? L-1503: the SAME test as
+# promote-gate.sh's `d in cmd or cmd in d` - a literal substring, both ways -
+# kept case-insensitive as this flavour always was, on the command with every
+# CR removed (the .sh runs `crew_strip_cr` before it matches). It used to be
+# `$cmd -like "*$dep*"`, and `-like` reads `*`, `?` and `[set]` in a deploy as
+# wildcards: `jq .items[0]` never matched itself, `deploy-*` claimed another
+# environment's command, and `[`, `[]`, `[z-a]` or `[!-[]` threw
+# WildcardPatternException, which skipped that environment and exited 0.
+#
+# Fail CLOSED when the comparison itself throws (a command that is not a
+# string has no IndexOf, for one): that environment cannot be ruled out, and
+# skipping it is the bug. Like the .sh's traceback path this is above the
+# emergency lane - which environment is the very thing not known.
+function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
+  try {
+    $c = $Cmd.Replace("`r", "")
+    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $Dep.IndexOf($c, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+  } catch {
+    [Console]::Error.WriteLine("PROMOTION BLOCKED: could not compare the command with environment ``$EnvName``'s deploy in .crew/verify.json: $($_.Exception.Message)")
+    [Console]::Error.WriteLine("  This is NOT a pass. Crew cannot tell whether this command deploys to")
+    [Console]::Error.WriteLine("  ``$EnvName``, so it will not skip that environment's pre-deploy gate.")
+    exit 2
+  }
+}
+
 # Fail CLOSED on a map that will not parse. An ABSENT verify.json (line 11) is
 # a repo that opted out of gating; an UNPARSEABLE one is corruption, and the
 # two are not the same fact. `catch { exit 0 }` treated them identically, so a
@@ -87,7 +113,7 @@ if ($mapDirty -and $headMap) {
   foreach ($p in $committedEnvs.Value.PSObject.Properties) {
     $declared = @($p.Value.deploy) | Where-Object { $_ -is [string] -and $_ }
     foreach ($dep in $declared) {
-      if ($cmd.Contains($dep) -or $dep.Contains($cmd)) { $envName = $p.Name; break }
+      if (Test-DeployMatch $cmd $dep $p.Name) { $envName = $p.Name; break }
     }
     if ($envName) { break }
   }
@@ -131,7 +157,7 @@ foreach ($p in $vm.environments.PSObject.Properties) {
       Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``deploy`` that is not a command or a list of commands."
     }
     foreach ($dep in $declared) {
-      if ($dep -and ($cmd -like "*$dep*" -or $dep -like "*$cmd*")) { $envName = $p.Name; break }
+      if ($dep -and (Test-DeployMatch $cmd $dep $p.Name)) { $envName = $p.Name; break }
     }
   }
   if ($envName) { break }
