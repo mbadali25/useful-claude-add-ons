@@ -1113,6 +1113,28 @@ ASSIGN_MUTATIONS = (
      "                if value is not None:\n                    raise TicketError(f\"assign takes no",
      "                if False:\n                    raise TicketError(f\"assign takes no",
      _A + "test_assign_cli_refuses_a_mint_only_option[title]"),
+    # L-1510: mint's id scan opened INDEX while another mint's `create` was
+    # replacing it, a sharing violation on Windows. The scan reads under the
+    # INDEX lock; without it the held-open replace window is hit every run.
+    ("L-1510: mint's id scan reads INDEX outside the INDEX lock", TICKET,
+     "        with crew_config_files.Lock(index, _MINT_LOCK_WAIT):\n"
+     "            text = crew_common.read_text(index)\n",
+     "        if True:\n            text = crew_common.read_text(index)\n",
+     _M + "test_mint_never_reads_index_while_another_mint_replaces_it"),
+    ("L-1510: an INDEX that stays unreadable reads as no rows", TICKET,
+     "    if text is None and os.path.lexists(index):\n",
+     "    if False:\n",
+     _M + "test_mint_persistently_unreadable_index_still_refuses"),
+    ("L-1510: a Busy scan lock falls back to an unlocked read", TICKET,
+     "            text = crew_common.read_text(index)\n    except crew_config_files.Busy as exc:\n",
+     "            text = crew_common.read_text(index)\n    except (crew_config_files.Busy, OSError):\n"
+     "        text = crew_common.read_text(index)\n    except crew_config_files.Busy as exc:\n",
+     _M + "test_mint_index_lock_failure_during_the_id_scan_claims_nothing[busy]"),
+    ("L-1510: a scan lock that cannot be created falls back to an unlocked read", TICKET,
+     "            text = crew_common.read_text(index)\n    except crew_config_files.Busy as exc:\n",
+     "            text = crew_common.read_text(index)\n    except (crew_config_files.Busy, OSError):\n"
+     "        text = crew_common.read_text(index)\n    except crew_config_files.Busy as exc:\n",
+     _M + "test_mint_index_lock_failure_during_the_id_scan_claims_nothing[oserror]"),
 )
 
 AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
