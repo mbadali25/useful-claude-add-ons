@@ -1,15 +1,15 @@
 ---
 description: Report a ticket's standing (status), or drive it through the lifecycle until a human is needed (run)
-argument-hint: "[status|run|assign|goal|focus] [ticket id | --goal <slug>]"
+argument-hint: "[status|run|sleep|wake|assign|goal|focus] [ticket id | --goal <slug>]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
-Subcommands `status`, `run`, `assign`, `goal`, `focus`; a bare ticket id or nothing is `run`: drive
-one ticket through spec, plan, approval, implement, refresh, review and done, following each phase
-command's procedure here in the order `crew_autopilot.py next` names from disk, stopping when a
-phase needs a person. Nothing here accepts a review or skips a phase, and nothing approves except
+`run` (a bare ticket id, or nothing) drives one ticket through its phases and `status` reports it,
+each phase by its command's procedure, in the order `crew_autopilot.py next` names from disk, stopping
+when a person is needed. Nothing here accepts a review or skips a phase, and nothing approves except
 section 3's `approve`, under the approval policy; it writes `approval.json`, `scope-tickets.json`
 on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move.
+`sleep` and `wake` (section 0) write only `<git-common-dir>/crew/autopilot-sleep.json`.
 
 ## 0. Route
 
@@ -22,9 +22,10 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
 a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
-never read as a ticket; `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020). `sub=status`:
-section 1 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
-arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
+never a ticket; `assign`, `goal`, `focus` come with T-0019, T-0012, T-0020). `sub=status`: section 1;
+`sub=sleep`, `sub=wake`: run (as route ran) `crew_autopilot.py sleep --root .` or
+`crew_autopilot.py wake --root .`, print its line, stop. `sub=run`: sections 2 to 5; `<ticket>` is route's
+`ticket=`, never re-read from the arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 
 ## 1. status
 

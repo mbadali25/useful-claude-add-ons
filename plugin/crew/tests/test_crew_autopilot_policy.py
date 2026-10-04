@@ -679,9 +679,16 @@ def _main(root, action, *rest):
     return crew_autopilot.main(argv)
 
 
-def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
+def test_approve_sleep_and_wake_are_the_only_writing_subcommands(tmp_path, monkeypatch,
+                                                                capsys):
+    """`approve` writes its receipt; L-0652's `sleep` and `wake` write exactly
+    `<git-common-dir>/crew/autopilot-sleep.json` and nothing in the worktree;
+    every other subcommand leaves every file byte-identical."""
     monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
     root = _repo(tmp_path, approval="self", risk="low")
+    config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    config["autopilot"]["sleep"] = {"approval": "self"}
+    _write(root / ".crew" / "config.json", json.dumps(config))
     _questions(root, GOOD_QUESTIONS)
     before = _files(root)
 
@@ -690,6 +697,10 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     after_reads = _files(root)
     code = _main(root, "approve", "--ticket", T)
     after = _files(root)
+    slept = _main(root, "sleep")
+    after_sleep = _files(root)
+    woke = _main(root, "wake")
+    after_wake = _files(root)
     capsys.readouterr()
 
     added = sorted(set(after) - set(before))
@@ -697,9 +708,13 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     # approval and, on a ticket's first approval, the scope ramp's list.
     receipt = sorted([crew_ticket.approval_path(str(root), T),
                       os.path.join(crew_ticket.state_dir(str(root)), "scope-tickets.json")])
+    manual = os.path.join(crew_ticket.state_dir(str(root)), "autopilot-sleep.json")
     assert (after_reads == before, code, added,
-            {p: v for p, v in after.items() if p in before} == before) == (
-        True, 0, receipt, True)
+            {p: v for p, v in after.items() if p in before} == before,
+            slept, sorted(set(after_sleep) - set(after)),
+            {p: v for p, v in after_sleep.items() if p in after} == after,
+            woke, after_wake == after) == (
+        True, 0, receipt, True, 0, [manual], True, 0, True)
 
 
 def test_approve_refused_writes_nothing(tmp_path, monkeypatch, capsys):

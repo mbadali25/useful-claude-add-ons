@@ -391,13 +391,13 @@ def test_asleep_human_refuses(tmp_path, clock):
 # --- reporting -------------------------------------------------------------------
 
 @pytest.mark.parametrize("sleep,now,line", [
-    (_night(), NIGHT, "sleep=asleep schedule=22:00-07:00 approval=self questions=self"),
+    (_night(), NIGHT, "sleep=asleep schedule=22:00-07:00 approval=self questions=self source=schedule"),
     (_night(questions=None), DAY,
-     "sleep=awake schedule=22:00-07:00 approval=self questions=-"),
-    (_night(schedule=None), NIGHT, "sleep=off schedule=none approval=self questions=self"),
+     "sleep=awake schedule=22:00-07:00 approval=self questions=- source=schedule"),
+    (_night(schedule=None), NIGHT, "sleep=off schedule=none approval=self questions=self source=schedule"),
     (_night(schedule="22"), NIGHT,
-     "sleep=unknown schedule=none approval=self questions=self applied=-"),
-    (MISSING, NIGHT, "sleep=off schedule=none approval=- questions=-"),
+     "sleep=unknown schedule=none approval=self questions=self source=schedule applied=-"),
+    (MISSING, NIGHT, "sleep=off schedule=none approval=- questions=- source=schedule"),
 ])
 def test_settings_cli_prints_the_sleep_line(tmp_path, clock, capsys, sleep, now, line):
     clock(now)
@@ -419,7 +419,7 @@ def test_settings_cli_prints_unknown_for_an_unreadable_config(tmp_path, capsys):
     crew_autopilot.main(["settings", "--root", str(root)])
 
     assert capsys.readouterr().out.splitlines()[2] == (
-        "sleep=unknown schedule=none approval=- questions=- applied=-")
+        "sleep=unknown schedule=none approval=- questions=- source=schedule applied=-")
 
 
 def test_a_schedule_set_keeps_approve_the_only_writer(tmp_path, clock, monkeypatch, capsys):
@@ -707,3 +707,330 @@ def test_the_unknown_sleep_line_names_what_applied(tmp_path, clock, capsys, slee
 
     assert (line.split()[0], line.split()[-1], line.split()[-1]) == (
         "sleep=unknown", tail, "applied=" + (",".join(applied) or "-"))
+
+
+# --- L-0652: manual `sleep` and `wake` -------------------------------------------
+# `crew_autopilot.py sleep` and `wake` write `<git-common-dir>/crew/autopilot-sleep.json`,
+# which beats the schedule until its `until`. A file that cannot be trusted
+# reads as `unknown` (per key the stricter of the day and the night value),
+# never as a looser state.
+
+EVENING = _at(20, 0)
+
+
+def _manual_path(root):
+    return os.path.join(crew_ticket.state_dir(str(root)), crew_sleep.MANUAL_FILE)
+
+
+def _cmd(root, capsys, action, *rest):
+    code = crew_autopilot.main([action, "--root", str(root)] + list(rest))
+    return code, capsys.readouterr().out
+
+
+def _allowed(root):
+    return crew_autopilot.approval_policy(str(root), T)["allow"]
+
+
+def _record(root):
+    with open(_manual_path(root), encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _plant(root, payload):
+    """A state file written by hand: `payload` is text, or JSON-dumped."""
+    text = payload if isinstance(payload, str) else json.dumps(payload)
+    _write(_manual_path(root), text)
+
+
+def _sleep_conf(root):
+    return crew_autopilot.settings(str(root))
+
+
+def test_manual_sleep_before_the_window(tmp_path, clock, capsys):
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    before = _allowed(root)
+
+    code, out = _cmd(root, capsys, "sleep")
+
+    assert (before, code, out, _record(root)["until"], _record(root)["state"],
+            _allowed(root)) == (
+        False, 0, "asleep until 07:00 (set by cli); /crew:autopilot wake undoes it\n",
+        "2026-10-05T07:00:00", "asleep", True)
+
+
+def test_manual_sleep_records_who_set_it(tmp_path, clock, capsys):
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night())
+
+    _cmd(root, capsys, "sleep", "--by", "owner")
+    conf = _sleep_conf(root)
+
+    assert (_record(root)["by"], _record(root)["at"], conf["sleep"]["source"],
+            conf["sleep"]["until"]) == ("owner", "2026-10-04T20:00:00", "manual",
+                                        "2026-10-05T07:00:00")
+
+
+def test_manual_wake_inside_the_window(tmp_path, clock, capsys):
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    asleep = _allowed(root)
+
+    code, out = _cmd(root, capsys, "wake")
+    awake_now = _allowed(root)
+    clock(datetime.datetime(2026, 10, 5, 6, 59))
+    awake_late = _allowed(root)
+    clock(datetime.datetime(2026, 10, 5, 22, 30))
+    next_night = _allowed(root)
+
+    assert (asleep, code, out, awake_now, awake_late, next_night) == (
+        True, 0, "awake; the schedule resumes at 07:00\n", False, False, True)
+
+
+def test_manual_sleep_without_a_schedule_expires(tmp_path, clock, capsys):
+    clock(DAY)
+    root = _repo(tmp_path, sleep=_night(schedule=None), risk="high")
+
+    code, _out = _cmd(root, capsys, "sleep")
+    clock(datetime.datetime(2026, 10, 4, 23, 59))
+    late = _allowed(root)
+    clock(datetime.datetime(2026, 10, 5, 0, 1))
+    after = _allowed(root)
+
+    assert (code, _record(root)["until"], late, after) == (
+        0, "2026-10-05T00:00:00", True, False)
+
+
+def _without_allow(root):
+    path = root / ".crew" / "config.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["scope"]["allowCliApproval"]
+    _write(path, json.dumps(data))
+
+
+@pytest.mark.parametrize("allow", [MISSING, False, "true", 1])
+def test_sleep_refuses_unless_allow_cli_approval_is_exactly_true(tmp_path, clock, capsys,
+                                                                   allow):
+    import test_crew_autopilot_policy as policy  # pylint: disable=import-outside-toplevel
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night(), allow=True if allow is MISSING else allow)
+    if allow is MISSING:
+        _without_allow(root)
+    before = policy._files(root)  # pylint: disable=protected-access
+
+    code, out = _cmd(root, capsys, "sleep")
+
+    assert (code, out.startswith("refused: scope.allowCliApproval"),
+            policy._files(root) == before) == (2, True, True)  # pylint: disable=protected-access
+
+
+def _unarmed(tmp_path):
+    return _repo(tmp_path, sleep=_night(), armed=False)
+
+
+def _unreadable(tmp_path):
+    root = _repo(tmp_path, sleep=_night())
+    _write(root / ".crew" / "config.json", "{not json")
+    return root
+
+
+def _no_override(tmp_path):
+    return _repo(tmp_path, sleep={"schedule": "22:00-07:00"})
+
+
+def _no_sleep_block(tmp_path):
+    return _repo(tmp_path)
+
+
+def _bad_window(tmp_path):
+    return _repo(tmp_path, sleep=_night(schedule="22-07"))
+
+
+@pytest.mark.parametrize("build,why", [
+    (_unarmed, "autopilot.mode is not plan"),
+    (_unreadable, "could not be read"),
+    (_no_override, "no autopilot.sleep override"),
+    (_no_sleep_block, "no autopilot.sleep override"),
+    (_bad_window, "autopilot.sleep.schedule"),
+])
+def test_sleep_refuses_and_writes_nothing(tmp_path, clock, capsys, build, why):
+    import test_crew_autopilot_policy as policy  # pylint: disable=import-outside-toplevel
+    clock(EVENING)
+    root = build(tmp_path)
+    before = policy._files(root)  # pylint: disable=protected-access
+
+    code, out = _cmd(root, capsys, "sleep")
+
+    assert (code, out.startswith("refused:"), why in out,
+            policy._files(root) == before) == (2, True, True, True)  # pylint: disable=protected-access
+
+
+VALID = {"state": "asleep", "by": "x", "at": "2026-10-04T11:00:00",
+         "until": "2026-10-05T07:00:00"}
+
+
+@pytest.mark.parametrize("payload,state,reason", [
+    ("not json", "unknown", "not JSON"),
+    ([], "unknown", "not an object"),
+    ({k: v for k, v in VALID.items() if k != "until"}, "unknown", "until"),
+    (dict(VALID, state="on"), "unknown", "state"),
+    (dict(VALID, until="2026-10-04T11:30:00"), "awake", "expired"),
+    (dict(VALID, until="2026-10-05T12:00:00"), "unknown", "24 hours"),
+    (dict(VALID, at="2026-10-04T13:00:00"), "unknown", "future"),
+    (dict(VALID, at="yesterday"), "unknown", "at"),
+    (dict(VALID, by=["x"]), "unknown", "by"),
+])
+def test_an_untrusted_state_file_is_ignored_with_a_warning(tmp_path, clock, payload, state,
+                                                           reason):
+    clock(DAY)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    _plant(root, payload)
+
+    conf = _sleep_conf(root)
+    warned = [w for w in conf["warnings"] if crew_sleep.MANUAL_FILE in w and reason in w]
+
+    assert (conf["sleep"]["state"], warned != [], _allowed(root)) == (state, True, False)
+
+
+def test_a_valid_state_file_is_honoured(tmp_path, clock):
+    """The must-allow neighbour of the untrusted shapes above."""
+    clock(DAY)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    _plant(root, VALID)
+
+    conf = _sleep_conf(root)
+
+    assert (conf["sleep"]["state"], conf["sleep"]["source"], conf["warnings"],
+            _allowed(root)) == ("asleep", "manual", [], True)
+
+
+def test_an_untrusted_state_file_inside_the_window_never_loosens(tmp_path, clock):
+    """Could-not-tell is per key the stricter value, not "no manual state":
+    garbage planted at night does not leave the looser night value in force."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    without = _allowed(root)
+    _plant(root, "{")
+
+    assert (without, _allowed(root), _sleep_conf(root)["sleep"]["state"]) == (
+        True, False, "unknown")
+
+
+def test_a_manual_sleep_stops_counting_when_allow_cli_approval_is_turned_off(tmp_path, clock):
+    """Read-time gate: a valid `asleep` file is honoured only while
+    `scope.allowCliApproval` is exactly true. `questions` has no gate of its
+    own, so it shows the difference."""
+    clock(DAY)
+    root = _repo(tmp_path, sleep=_night(), allow=False, risk="high")
+    _plant(root, VALID)
+
+    got = crew_autopilot.question_policy(str(root), T)
+    conf = _sleep_conf(root)
+
+    assert (got["action"], conf["sleep"]["state"],
+            [w for w in conf["warnings"] if "scope.allowCliApproval" in w] != []) == (
+        "stop", "unknown", True)
+
+
+def test_a_manual_wake_never_loosens_a_stricter_night_value(tmp_path, clock, capsys):
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=_night(questions="human"), questions="self", risk="high")
+
+    code, _out = _cmd(root, capsys, "wake")
+    got = crew_autopilot.question_policy(str(root), T)
+    conf = _sleep_conf(root)
+
+    assert (code, got["action"], conf["sleep"]["state"], conf["approval"]) == (
+        0, "stop", "awake", "risk")
+
+
+def test_wake_with_nothing_to_undo_says_already_awake(tmp_path, clock, capsys):
+    import test_crew_autopilot_policy as policy  # pylint: disable=import-outside-toplevel
+    clock(DAY)
+    root = _repo(tmp_path, sleep=_night())
+    before = policy._files(root)  # pylint: disable=protected-access
+
+    code, out = _cmd(root, capsys, "wake")
+
+    assert (code, out, policy._files(root) == before) == (  # pylint: disable=protected-access
+        0, "already awake\n", True)
+
+
+def test_wake_outside_the_window_removes_a_manual_sleep(tmp_path, clock, capsys):
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    _cmd(root, capsys, "sleep")
+
+    code, out = _cmd(root, capsys, "wake")
+
+    assert (code, out, os.path.exists(_manual_path(root)), _allowed(root)) == (
+        0, "awake; the schedule resumes at 20:00\n", False, False)
+
+
+def test_wake_never_refuses_for_policy(tmp_path, clock, capsys):
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    _cmd(root, capsys, "sleep")
+    _write(root / ".crew" / "config.json", "{not json")
+
+    code, _out = _cmd(root, capsys, "wake")
+
+    assert (code, os.path.exists(_manual_path(root))) == (0, False)
+
+
+def test_manual_state_is_shared_by_worktrees(tmp_path, clock, capsys):
+    import subprocess  # pylint: disable=import-outside-toplevel
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    lane = tmp_path / "lane"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", str(lane), "-b", "lane"],
+                   check=True, capture_output=True)
+
+    code, _out = _cmd(root, capsys, "sleep")
+    conf = crew_autopilot.settings(str(lane))
+
+    assert (code, conf["sleep"]["state"], conf["sleep"]["source"],
+            os.path.exists(lane / crew_sleep.MANUAL_FILE)) == (0, "asleep", "manual", False)
+
+
+def test_the_sleep_line_names_a_manual_source(tmp_path, clock, capsys):
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night())
+    _cmd(root, capsys, "sleep")
+
+    crew_autopilot.main(["settings", "--root", str(root)])
+    line = capsys.readouterr().out.splitlines()[2]
+
+    assert line == ("sleep=asleep schedule=22:00-07:00 approval=self questions=self "
+                    "source=manual until=07:00")
+
+
+def test_a_manual_sleep_note_names_its_end(tmp_path, clock, capsys):
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    _cmd(root, capsys, "sleep")
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert "(asleep by hand until 07:00; day value risk)" in got["reason"]
+
+
+@pytest.mark.parametrize("when,end,want", [
+    (_at(20, 0), "07:00", "2026-10-05T07:00:00"),
+    (_at(23, 0), "07:00", "2026-10-05T07:00:00"),
+    (_at(6, 59), "07:00", "2026-10-04T07:00:00"),
+    (_at(7, 0), "07:00", "2026-10-05T07:00:00"),
+])
+def test_next_edge(when, end, want):
+    minute = int(end[:2]) * 60 + int(end[3:])
+
+    assert crew_sleep.next_edge(minute, when).isoformat() == want
+
+
+def test_read_manual_caps_at_24_hours():
+    at = datetime.datetime(2026, 10, 4, 7, 0)
+    exact = dict(VALID, at=at.isoformat(), until="2026-10-05T07:00:00")
+    over = dict(exact, until="2026-10-05T07:01:00")
+
+    assert (crew_sleep.read_manual(("ok", exact), _at(8, 0))["kind"],
+            crew_sleep.read_manual(("ok", over), _at(8, 0))["kind"]) == ("valid", "untrusted")

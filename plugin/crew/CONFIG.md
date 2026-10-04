@@ -2659,7 +2659,8 @@ by `settings` ("move it to .crew/config.json") rather than read as `off` with
 no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
 line, the effective `approval` and `questions` on its second, and
 `sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
-questions=<override|->` on its third; `--json` adds `day` (the two day values)
+questions=<override|-> source=<schedule|manual>` on its third (L-0652 adds
+`until=<HH:MM>` for a manual state); `--json` adds `day` (the two day values)
 and `sleep`.
 
 **Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
@@ -2699,9 +2700,36 @@ way a `taken:` line written asleep makes `questions-check` say `valid=0` by
 day when the day policy stops. The clock is local time as each process sees
 it, so it follows that process's `TZ`: `approve` and `questions-check` run in
 the model's shell environment, and a different `TZ` there moves the window.
-crew adds no variable or flag of its own that moves the clock. Not in this version: manual `sleep` / `wake`, a sleep log, a
+crew adds no variable or flag of its own that moves the clock. Not in this version: a sleep log, a
 `deploy` override (sleep leaves `deploy_allowed` unchanged), and a
 machine-global `autopilot.sleep`.
+
+**Manual sleep and wake (L-0652).** `/crew:autopilot sleep` runs
+`crew_autopilot.py sleep --root . [--by <text>]` and `/crew:autopilot wake`
+runs `crew_autopilot.py wake --root .`. Both keep one file,
+`<git-common-dir>/crew/autopilot-sleep.json` (`{"state", "by", "at",
+"until"}`, local ISO times, written to a temp file and moved into place with
+`os.replace`), shared by every worktree of the repository and never read from
+a worktree or `.work/`. A valid record beats the schedule until its `until`,
+then the schedule decides again. `sleep` sets `asleep` until the end of the
+current window if inside one, else the end of the next window, or for 12 hours
+with no schedule; it exits 2 with `refused: ...` and writes nothing unless
+`scope.allowCliApproval` is exactly `true`, autopilot is armed, the config and
+its `autopilot.sleep` can be read, and at least one `autopilot.sleep` override
+is set: it grants only what the night values already configure. `wake` never
+refuses: inside the window it sets `awake` until the window's end (it never
+extends past it); outside, it removes the record; with nothing to undo it
+prints `already awake`. Fail closed: a record that is unreadable, not an
+object, missing a field, with a `state` other than `asleep`/`awake`, an `at`
+or `until` that is not a local ISO time, an `at` in the future, or an `until`
+more than 24 hours after `at` is `unknown` with a warning naming the file —
+per key the stricter of the day value and the night override, never "not
+set", so a planted file cannot loosen anything. An expired record is ignored with a warning. A manual `asleep` is
+honoured only while `scope.allowCliApproval` is exactly `true` at read time
+too (turning it off ends the sleep; until then it reads `unknown`). A manual
+`awake` while the window is open keeps any night value stricter than the day
+value, so `wake` never loosens a tightening. A policy reason a manual sleep
+set ends with `(asleep by hand until <HH:MM>; day value <day>)`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
@@ -2735,8 +2763,9 @@ ticket at a time: a group approval and its `/crew:approve --confirm` stay the
 owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
 group's hashes.
 
-**The one writer.** `crew_autopilot.py` is read-only except `approve`, and
-only when `autopilot.approval` allows it (a ticket `assign` mints is written by
+**The writers.** `crew_autopilot.py` is read-only except `approve`, and
+only when `autopilot.approval` allows it, and L-0652's `sleep` and `wake`, which
+write or remove only `<git-common-dir>/crew/autopilot-sleep.json` (a ticket `assign` mints is written by
 `crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's

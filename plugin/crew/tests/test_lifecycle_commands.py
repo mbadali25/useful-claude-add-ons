@@ -119,6 +119,15 @@ def test_autopilot_command_at_most_110_lines():
         f"autopilot.md: {lines} lines, budget {AUTOPILOT_MAX_LINES}")
 
 
+def test_autopilot_command_names_the_sleep_and_wake_calls():
+    """L-0652: section 0 names both exact CLI calls inside the budget."""
+    flat = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert [call for call in ("crew_autopilot.py sleep --root .",
+                              "crew_autopilot.py wake --root .", "`sub=sleep`", "`sub=wake`")
+            if call not in flat] == []
+
+
 IMPLEMENT_APPROVAL_TEXT = (
     "This command refuses to edit anything unless that call reports the plan\n"
     "approved."

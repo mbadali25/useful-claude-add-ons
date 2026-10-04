@@ -58,7 +58,11 @@ distinct successor plan under a spent review budget, the review ledger moved
 NEEDS_REPLAN -> IN_REVIEW. Both default off, so out of the box nothing self-approves. Inside an
 `autopilot.sleep.schedule` window, `autopilot.sleep.approval` stands in for `autopilot.approval`
 (T-0053), and a receipt written asleep stops standing when the window ends if the day value would
-not have approved it: in the morning that ticket waits for `/crew:approve <id>`. The
+not have approved it: in the morning that ticket waits for `/crew:approve <id>`.
+`/crew:autopilot sleep` starts that night mode now, until the window's end (12 hours with no
+window), and `/crew:autopilot wake` ends it now (L-0652); they are autopilot's only other writers,
+and write only `<git-common-dir>/crew/autopilot-sleep.json`. `sleep` needs
+`scope.allowCliApproval: true` and a configured `autopilot.sleep` override. The
 approval is a step you take, not a lock.
 
 `crew_ticket.py status --ticket T-0042` prints one of three states:
