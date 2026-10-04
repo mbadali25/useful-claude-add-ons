@@ -12,21 +12,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   `.work/tickets/<id>/` folder asks, naming it); `split this ticket` / `split it` / `split <id>` /
   `this ticket is too big` / `<id> is too big` -> `/crew:autopilot split <ID>` (resolved like
   every ticket row; never `/crew:split`); `I'm heading to bed`, `heading to bed`,
-  `going to sleep`, `I'm going to sleep`, `good night` -> `/crew:autopilot sleep`, whose line
-  also asks Claude to say what changed and how to undo it; `I'm back`, `morning`,
-  `good morning` -> `/crew:autopilot wake`.
+  `going to sleep`, `I'm going to sleep` -> `/crew:autopilot sleep`, whose line also asks
+  Claude to say what changed and how to undo it; `I'm back` -> `/crew:autopilot wake`.
+- **Bare greetings never route (owner decision, 2026-10-04).** `good night`, `morning` and
+  `good morning` match the sleep and wake rows but, past the gate, always ask
+  "did you mean /crew:autopilot sleep?" (or `wake`).
 - **Inert until each command lands.** None of the four is in `crew_autopilot.SUBCOMMANDS`, so
   T-0057's gate gives no line; reserved, the soft ask; available, a route through T-0069's
   `_route`. No edit to `crew_autopilot.py`.
 - **Same screen.** Every new row passes T-0057's `_screen` allowlist (sleep and wake add only the
-  ASCII apostrophe of `I'm`), so a long s or Kelvin sign that IGNORECASE folds onto a pattern
-  letter, or a curly apostrophe, asks rather than routes.
+  apostrophe of `I'm`: ASCII, or U+2019 as the second character of a leading `I'm`, which iOS
+  and macOS type), so a long s or Kelvin sign that IGNORECASE folds onto a pattern letter, or a
+  curly quote anywhere else, asks rather than routes.
 - **Merge of T-0057 onto main.** T-0057's autopilot routes go through `_route`; its `_screen`
   line-break check is gone (`normalise` already refuses every `str.splitlines` boundary), so the
   `\x1c`-`\x1e` separators in free text now decide `none` rather than `ask`.
 - **Tests.** `test_crew_route.py`: inert, reserved and available (every subcommand available)
   cases for each example, wave's two-real-tickets rule, split's ask, the must-not-route list,
-  lookalike must-ask cases and the sleep undo line. Local sabotage mutations each went red; they
+  lookalike must-ask cases, the greeting must-ask cases, the curly-apostrophe position and the
+  sleep undo line. The verify rule now runs through `pytest_rule.py`. Local sabotage mutations each went red; they
   are L-0663's to commit (`sabotage*.py` is harness).
 
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
