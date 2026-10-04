@@ -34,9 +34,9 @@ must not start with `-` or `@` (PowerShell splats `@name`), and must not be
 tag given by its bare name is NOT detected: telling it from a branch needs
 the remote, and `check` asks nothing.
 
-THE GATES ARE SIMULATED, EXACTLY (L-1503). Both promote-gate flavours read
-the map and pick environments by one shared rule, and `check` applies the
-same rule (`gate_problem`, `gate_matches`):
+THE GATES ARE SIMULATED (L-1503): REFUSE WHEN EITHER GATE REFUSES, MATCH
+WITH THE UNION. Both promote-gate flavours share one rule, and `check`
+applies it (`load_map`, `gate_problem`, `gate_matches`):
   - every key the gates read (`environments`, `deploy`, `requireHuman`, ...)
     is read ignoring case; a map with two keys equal or equal ignoring case,
     an environment name that is empty or holds a control character or `,`,
@@ -50,26 +50,38 @@ same rule (`gate_problem`, `gate_matches`):
     characters, never a wildcard set);
   - EVERY matching environment applies, in file order, joined `staging,prod`:
     the union of their `requires`, `rollback` and `requireHuman`.
-So a dispatch matching several environments is not a refusal: `check`
-prints `gated-as: <names>` under each dispatch, the exact set both gates
-apply to that literal command. `<env>` is always in it, because `deploy`
-lists the entry's prefix and the dispatch starts with it. Only the working
-map is simulated: a dirty map is also matched against the committed one.
-Known gap: case folding is per character (Python's simple upper case, as
-promote-gate.sh); the .ps1's OrdinalIgnoreCase differs on 29 non-ASCII BMP
-characters (#489 N1), so the gates themselves disagree there. A dispatch is
-ASCII by the value grammar; another environment's deploy string need not be.
+Where the two flavours still differ, `check` takes the STRICTER answer, by
+construction rather than by luck:
+  - it refuses a map EITHER gate refuses. promote-gate.ps1 alone refuses an
+    empty key at any depth (ConvertFrom-Json), keys that are twins only
+    under .NET's OrdinalIgnoreCase (`_DOTNET_ONLY_FOLDS`: 27 Greek
+    iota-subscript pairs), and a `deploy` string ConvertFrom-Json turns into
+    a DateTime (`_is_dotnet_date`). promote-gate.sh alone refuses keys that
+    are twins only under Python's fold (dotless i, long s) and JSON nested
+    past Python's recursion limit;
+  - an environment matches when it matches under EITHER gate's case fold,
+    so `gated-as: <names>` (printed under each dispatch) is the union of
+    what the two gates apply. They agree on every ASCII command, and a
+    dispatch is ASCII by the value grammar; they differ only for another
+    environment's deploy string holding one of those 29 characters.
+A dispatch matching several environments is therefore not a refusal.
+`<env>` is always in `gated-as`, because `deploy` lists the entry's prefix
+and the dispatch starts with it.
+`check` reads only the working `.crew/verify.json`, never the committed one:
+with the map uncommitted, both gates block every deploy anyway (and then
+match the committed map too).
 
 Exit codes, with the last stdout line always `result=...`:
   0  `result=ok entries=N sha=<sha>` after a `dispatch: <command>` and a
      `gated-as: '<names>'` line per entry, or `result=ok github=none` for an environment without a `github` key.
   2  `result=refused reason=<code>`: an entry problem, `deploy-prefix-mismatch`
-     or `gate-refuses-map` (both gates refuse the map, so every command blocks).
+     or `gate-refuses-map` (a gate refuses the map, so every command blocks).
   3  `result=could-not-tell reason=<code>`: the map is absent or unreadable,
      the environment is not in it, or HEAD cannot be read. Never read as
      "no github entry".
 """
 import argparse
+import calendar
 import json
 import os
 import re
@@ -241,7 +253,18 @@ def dispatch(entry, env, sha):
 
 
 class _MapRefused(Exception):
-    """A map both gates refuse to read: every command then blocks."""
+    """A map at least one promote gate refuses to read: every command blocks."""
+
+
+# Case pairs .NET's OrdinalIgnoreCase folds and Python's per-character simple
+# upper case does not (its full upper case of the lower one is two
+# characters): measured with [string]::Equals on pwsh 7.4.6 (.NET 8), every
+# BMP code point. The reverse direction - U+0131 dotless i and U+017F long s,
+# folded by Python only - is what `_fold` already does.
+_DOTNET_ONLY_FOLDS = {chr(low): chr(low + 8) for low in
+                      list(range(0x1F80, 0x1F88)) + list(range(0x1F90, 0x1F98))
+                      + list(range(0x1FA0, 0x1FA8))}
+_DOTNET_ONLY_FOLDS.update({"\u1fb3": "\u1fbc", "\u1fc3": "\u1fcc", "\u1ff3": "\u1ffc"})
 
 
 def _fold(text):
@@ -250,19 +273,92 @@ def _fold(text):
     return "".join(c.upper() if len(c.upper()) == 1 else c for c in text)
 
 
+def _dotnet_fold(text):
+    """promote-gate.ps1's: OrdinalIgnoreCase, which keeps U+0131 and U+017F
+    and folds the iota-subscript pairs Python keeps."""
+    return "".join(c if c in "\u0131\u017f" else _DOTNET_ONLY_FOLDS.get(c) or _fold(c)
+                   for c in text)
+
+
 def _blank(text):
     """.NET's String.IsNullOrWhiteSpace, as promote-gate.sh spells it."""
     return all(c.isspace() and c not in "\x1c\x1d\x1e\x1f" for c in text)
 
 
 def _no_twins(pairs):
-    """json object hook: two keys equal, or equal ignoring case, refuse."""
+    """json object hook, at every depth: an empty key (ConvertFrom-Json
+    refuses it), or two keys equal ignoring case under EITHER gate's fold."""
     seen = set()
     for key, _value in pairs:
-        if _fold(key) in seen:
+        if key == "":
+            raise _MapRefused("an empty key, which ConvertFrom-Json refuses")
+        folds = {("py", _fold(key)), ("net", _dotnet_fold(key))}
+        if folds & seen:
             raise _MapRefused(f"two keys equal or differing only by case ({key!r})")
-        seen.add(_fold(key))
+        seen |= folds
     return dict(pairs)
+
+
+def _iso_date(s):
+    """Newtonsoft's DateTimeParser.Parse (ISO 8601), which ConvertFrom-Json
+    runs on every string of 19-40 characters starting with a digit and
+    holding `T` at index 10."""
+    end = len(s)
+
+    def num(start, width):
+        if start + width - 1 < end and all("0" <= c <= "9" for c in s[start:start + width]):
+            return int(s[start:start + width])
+        return None
+
+    head = re.match(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})", s)
+    if head is None:
+        return False
+    year, month, day, hour, minute, second = (int(g) for g in head.groups())
+    if not (year and 1 <= month <= 12 and 1 <= day <= calendar.monthrange(year, month)[1]):
+        return False
+    if hour > 24 or max(minute, second) >= 60 or (hour == 24 and minute + second):
+        return False
+    pos = 19
+    if pos < end and s[pos] == ".":
+        digits = ""
+        pos += 1
+        while pos < end and len(digits) < 7 and "0" <= s[pos] <= "9":
+            digits += s[pos]
+            pos += 1
+        if not digits or (hour == 24 and int(digits)):
+            return False
+    if pos < end:
+        if s[pos] in "zZ":
+            pos += 1
+        else:
+            if pos + 2 < end and num(pos + 1, 2) is not None and s[pos] in "+-":
+                pos += 3
+            if pos < end:
+                if s[pos] == ":":
+                    pos += 1
+                    if pos + 1 < end and num(pos, 2) is not None:
+                        pos += 2
+                elif pos + 1 < end and num(pos, 2) is not None:
+                    pos += 2
+    return pos == end
+
+
+def _is_dotnet_date(s):
+    """A string ConvertFrom-Json (pwsh 7, Newtonsoft DateParseHandling
+    .DateTime) reads as a DateTime, so promote-gate.ps1 finds no command.
+    `/Date(<ticks>[+-<offset>])/`: the ticks must be an Int64; Newtonsoft's
+    offset parse depends on the string's position in its read buffer, so any
+    offset is treated as a date - stricter than the gate, never laxer."""
+    if s.startswith("/"):
+        if not (len(s) >= 9 and s.startswith("/Date(") and s.endswith(")/")):
+            return False
+        cut = s.find("+", 7, len(s) - 1)
+        cut = s.find("-", 7, len(s) - 1) if cut == -1 else cut
+        ticks = s[6:cut if cut != -1 else len(s) - 2]
+        return (re.fullmatch(r"-?[0-9]+", ticks) is not None
+                and -2 ** 63 <= int(ticks) < 2 ** 63)
+    return (19 <= len(s) <= 40 and unicodedata.category(s[0]) == "Nd"
+            and s[10] == "T" and _iso_date(s))
 
 
 def _get_ci(obj, name, default):
@@ -273,21 +369,23 @@ def _get_ci(obj, name, default):
 
 def _deploys(cfg):
     """An environment's `deploy` as a list of strings, the key read ignoring
-    case; None when it is neither a command nor a list of commands."""
+    case; None when it is neither a command nor a list of commands - to
+    either gate, so a string ConvertFrom-Json reads as a DateTime too."""
     declared = _get_ci(cfg, "deploy", [])
     if isinstance(declared, str):
         declared = [declared]
-    if not isinstance(declared, list) or not all(isinstance(d, str) for d in declared):
+    if not isinstance(declared, list) or not all(
+            isinstance(d, str) and not _is_dotnet_date(d) for d in declared):
         return None
     return declared
 
 
 def gate_problem(envs):
-    """Why both promote gates refuse this map of environments, or None."""
+    """Why at least one promote gate refuses this map of environments, or None."""
+    # An empty name never gets here: `_no_twins` refuses an empty key.
     for name in envs:
-        if not name or "," in name or any(unicodedata.category(c) == "Cc" for c in name):
-            return (f"environment name {name!r} is empty or holds a control "
-                    "character or a comma")
+        if "," in name or any(unicodedata.category(c) == "Cc" for c in name):
+            return f"environment name {name!r} holds a control character or a comma"
     for name, cfg in envs.items():
         if not isinstance(cfg, dict):
             return f"environment {name!r} is not an object"
@@ -295,29 +393,41 @@ def gate_problem(envs):
             return f"environment {name!r} has a `requireHuman` that is a list or an object"
         if _deploys(cfg) is None:
             return (f"environment {name!r} has a `deploy` that is not a command "
-                    "or a list of commands")
+                    "or a list of commands (a date-time string is not one to "
+                    "promote-gate.ps1)")
     return None
 
 
+def _matches(command, dep):
+    return any(fold(dep) in fold(command) or fold(command) in fold(dep)
+               for fold in (_fold, _dotnet_fold))
+
+
 def gate_matches(command, envs):
-    """Every environment, in file order, both promote gates apply to
+    """Every environment, in file order, either promote gate applies to
     `command` on this (gate_problem-free) map: [] when none."""
     command = command.replace("\r", "").rstrip("\n")
     if _blank(command):
         return []
-    folded = _fold(command)
     return [name for name, cfg in envs.items()
-            if any(dep and (_fold(dep) in folded or folded in _fold(dep))
-                   for dep in _deploys(cfg))]
+            if any(dep and _matches(command, dep) for dep in _deploys(cfg))]
+
+
+def _parse(text):
+    """`text` as JSON with `_no_twins` at every depth; _MapRefused for what
+    either gate refuses to parse, nesting past the recursion limit included."""
+    try:
+        return json.loads(text, object_pairs_hook=_no_twins)
+    except RecursionError as exc:
+        raise _MapRefused("nested too deeply to read") from exc
+    except ValueError as exc:
+        raise _MapRefused(f"not JSON: {exc}") from exc
 
 
 def load_map(text):
     """The environments object of map `text`, read as the gates read it.
-    Raises _MapRefused where both gates refuse it."""
-    try:
-        doc = json.loads(text, object_pairs_hook=_no_twins)
-    except ValueError as exc:
-        raise _MapRefused(f"not JSON: {exc}") from exc
+    Raises _MapRefused where either gate refuses it."""
+    doc = _parse(text)
     envs = _get_ci(doc, "environments", {}) if isinstance(doc, dict) else None
     if not isinstance(envs, dict):
         raise _MapRefused("no object of environments")
@@ -330,7 +440,14 @@ def load_map(text):
 def simulate_gate(text, command):
     """What promote-gate.sh and .ps1 decide for `command` on a clean,
     committed map `text`: "map" (refused), None (no match) or the matched
-    names joined by `,` - the agreement table's comparison."""
+    names joined by `,` - the agreement table's comparison.
+
+    THE RULE: refuse when EITHER gate refuses; match with the UNION of both.
+    Two choices are deliberately stricter than both gates: the map is read
+    before the command is checked for being blank (a blank command on a
+    refused map is "map", where the gates exit 0 first), and a leading BOM
+    is refused (`text` is the decoded file; the gates read utf-8-sig, as
+    `check` itself does)."""
     try:
         envs = load_map(text)
     except _MapRefused:
@@ -345,10 +462,15 @@ def _environment(root, env):
         raise CouldNotTell("verify-json-absent", f"{path} does not exist")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as fh:
-            doc = json.loads(fh.read(), object_pairs_hook=_no_twins)
-    except _MapRefused as exc:
-        raise Refused("gate-refuses-map", f"both promote gates refuse {path}: {exc}") from exc
-    except (OSError, ValueError) as exc:
+            text = fh.read()
+    except OSError as exc:
+        raise CouldNotTell("verify-json-unreadable", f"{path}: {exc}") from exc
+    try:
+        doc = json.loads(text, object_pairs_hook=_no_twins)
+    except (_MapRefused, RecursionError) as exc:
+        raise Refused("gate-refuses-map", f"a promote gate refuses {path}: "
+                                          f"{exc or 'nested too deeply to read'}") from exc
+    except ValueError as exc:
         raise CouldNotTell("verify-json-unreadable", f"{path}: {exc}") from exc
     envs = _get_ci(doc, "environments", None) if isinstance(doc, dict) else None
     if not isinstance(envs, dict):
@@ -361,7 +483,7 @@ def _environment(root, env):
         raise CouldNotTell("verify-json-unreadable", f"environment {env!r} is not an object")
     problem = gate_problem(envs)
     if problem:
-        raise Refused("gate-refuses-map", "both promote gates refuse .crew/verify.json, "
+        raise Refused("gate-refuses-map", "a promote gate refuses .crew/verify.json, "
                                           f"so every command would block: {problem}")
     return envs
 

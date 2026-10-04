@@ -18,13 +18,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
   requires `deploy` to list exactly the entries' canonical prefixes so
   promote-gate's existing match fires on the real dispatch, and applies
-  both gates' one rule as L-1503 left it: a map the gates refuse (exact or
-  case twin keys, an empty, comma or control-character environment name, a
-  null or non-string `deploy`, a list or object `requireHuman`) is refused
-  as `gate-refuses-map`, and each dispatch is printed with `gated-as:
-  '<names>'`, every environment whose `deploy` matches it literally,
-  ignoring case, either way round, after CR stripping - the union whose
-  requirements the gates apply. A multi-environment match is not refused.
+  both gates' one rule as L-1503 left it, taking the stricter gate where
+  they differ: a map EITHER gate refuses (exact or case twin keys under
+  Python's or .NET's fold, an empty key at any depth, a comma or
+  control-character environment name, a null, non-string or date-time
+  `deploy`, a list or object `requireHuman`, JSON nested too deeply) is
+  refused as `gate-refuses-map`, and each dispatch is printed with
+  `gated-as: '<names>'`, every environment whose `deploy` matches it
+  literally, ignoring case under either gate's fold, either way round,
+  after CR stripping - the union whose requirements apply. A
+  multi-environment match is not refused.
   It prints the one
   literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
   (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
@@ -33,14 +36,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Nothing dispatches, identifies, watches or records a run
   (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
   does not deploy (L-0649).
-- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 229 cases. An
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 294 cases. An
   agreement table (L-1503's 26 maps from test_promote_gate_literal_match.py
   plus 9: 35 maps, 95 commands) feeds every command to the real
-  `promote-gate.sh`, the real `promote-gate.ps1` and `simulate_gate`, and 25
+  `promote-gate.sh`, the real `promote-gate.ps1` and `simulate_gate`, and 33
   github maps compare `check`'s decision with both real gates on the dispatch
-  it printed; the `.ps1` halves but one smoke map each are `slow`. A
+  it printed; 11 more maps where the two real gates differ prove the
+  either-refuses / union rule, with the .NET-only fold table (27 pairs) and
+  the ConvertFrom-Json date-time port pinned; the `.ps1` halves but one
+  smoke map each are `slow`. A
   `[!-[]` deploy (a range pwsh's `-like` threw on) is literal text and
-  accepted (#407 round-4 FIX). The 73
+  accepted (#407 round-4 FIX). The 83
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 

@@ -549,6 +549,43 @@ _CONFIGS = {
         '"production": {"deploy": "x", ' + _RB + '}, "production": {"deploy": ["'
         + _PROD_PREFIX + '"], "github": ' + _GH_PROD + ', ' + _RB + '}'),
         {"production": "refused"}),
+    # Re-review FIX-1: maps only ONE gate refuses. `check` takes the stricter.
+    "an empty key inside an environment (ps1 refuses)": (_raw(
+        '"production": {"deploy": ["' + _PROD_PREFIX + '"], "github": ' + _GH_PROD
+        + ', "note": {"": 1}, ' + _RB + '}'), {"production": "refused"}),
+    "iota-subscript twin names (ps1 refuses)": (_envs(
+        ("\u1f80", None, ["./deploy.sh a"]), ("\u1f88", None, ["./deploy.sh b"]),
+        ("production", _PROD, None)), {"production": "refused"}),
+    "a date-time deploy elsewhere (ps1 refuses)": (_envs(
+        ("dated", None, ["2026-10-04T00:00:00Z"]), ("production", _PROD, None)),
+        {"production": "refused"}),
+    "a /Date()/ deploy elsewhere (ps1 refuses)": (_envs(
+        ("dated", None, "/Date(0)/"), ("production", _PROD, None)),
+        {"production": "refused"}),
+    "dotless-i twin names (sh refuses)": (_envs(
+        ("Iq", None, ["./deploy.sh a"]), ("\u0131q", None, ["./deploy.sh b"]),
+        ("production", _PROD, None)), {"production": "refused"}),
+    "JSON nested 1000 deep (sh refuses)": (_raw(
+        '"production": {"deploy": ["' + _PROD_PREFIX + '"], "github": ' + _GH_PROD
+        + ', ' + _RB + '}, "deep": {"x": ' + "[" * 1000 + "]" * 1000 + '}'),
+        {"production": "refused"}),
+    "JSON nested 1100 deep (both refuse)": (_raw(
+        '"production": {"deploy": ["' + _PROD_PREFIX + '"], "github": ' + _GH_PROD
+        + ', ' + _RB + '}, "deep": {"x": ' + "[" * 1100 + "]" * 1100 + '}'),
+        {"production": "refused"}),
+    # A date-shaped string that ConvertFrom-Json keeps as a string is fine.
+    "a near-date deploy elsewhere": (_envs(
+        ("dated", None, ["2026-10-04T00:00"]), ("production", _PROD, None)),
+        {"production": "production"}),
+}
+# The one gate that refuses each of these maps; the other reads it.
+_ONE_GATE_REFUSES = {
+    "an empty key inside an environment (ps1 refuses)": "ps1",
+    "iota-subscript twin names (ps1 refuses)": "ps1",
+    "a date-time deploy elsewhere (ps1 refuses)": "ps1",
+    "a /Date()/ deploy elsewhere (ps1 refuses)": "ps1",
+    "dotless-i twin names (sh refuses)": "sh",
+    "JSON nested 1000 deep (sh refuses)": "sh",
 }
 
 
@@ -637,7 +674,12 @@ def test_check_agrees_with_the_real_gate(tmp_path, label, flavour):
         decided = _decision(proc)
         if decided == "refused":
             command = "gh workflow run deploy.yml --ref main -f target=prod"
-            assert _gate(flavour, root, command) == "map", f"{label}/{env!r}"
+            real = _gate(flavour, root, command)
+            if _ONE_GATE_REFUSES.get(label, flavour) == flavour:
+                assert real == "map", f"{label}/{env!r}: {flavour} did not refuse"
+            else:
+                # The laxer gate reads the map; check took the stricter one.
+                assert real != "map", f"{label}/{env!r}: {flavour} refused too"
             continue
         for line in proc.stdout.splitlines():
             if line.startswith("dispatch: "):
@@ -698,3 +740,114 @@ def test_simulate_gate_agrees_with_the_real_gate(tmp_path, index, flavour):
         real = _gate(flavour, repo.root, command)
         assert crew_ghdeploy.simulate_gate(text, command) == real, (
             f"map {index}, {command!r}: promote-gate.{flavour} decided {real!r}")
+
+
+# --- re-review FIX-1: refuse when EITHER gate refuses, match with the union --
+#
+# Maps and commands where the two real gates decide differently. The rule:
+# `simulate_gate` says "map" when either gate refuses the map, and otherwise
+# names the union of what the two gates apply.
+
+_EITHER = [
+    # ps1 alone refuses (ConvertFrom-Json / OrdinalIgnoreCase / DateTime)
+    (_raw('"p": {"deploy": "deploy-p", "x": {"": 1}, ' + _RB + '}'), ["deploy-p"]),
+    ({"\u1f80": "deploy-a", "\u1f88": "deploy-b"}, ["deploy-a", "echo hi"]),
+    ({"p": {"deploy": "deploy-p", "\u1fb3": 1, "\u1fbc": 2, "rollback": "none",
+            "rollbackReason": "f"}}, ["deploy-p"]),
+    ({"d": gate_tests._env(["2026-10-04T00:00:00Z"]), "p": "deploy-p"},  # pylint: disable=protected-access
+     ["deploy-p"]),
+    ({"d": gate_tests._env("2026-10-04T00:00:00.123+02:00"), "p": "deploy-p"},  # pylint: disable=protected-access
+     ["deploy-p"]),
+    ({"d": gate_tests._env("/Date(0)/"), "p": "deploy-p"}, ["deploy-p"]),  # pylint: disable=protected-access
+    # sh alone refuses (Python's fold, Python's recursion limit)
+    ({"Iq": "deploy-a", "\u0131q": "deploy-b"}, ["deploy-a"]),
+    ({"Sx": "deploy-a", "\u017fx": "deploy-b"}, ["deploy-a"]),
+    (_raw('"p": {"deploy": "deploy-p", ' + _RB + '}, "deep": {"x": '
+          + "[" * 1000 + "]" * 1000 + '}'), ["deploy-p"]),
+    # both read it; a date-shaped string ConvertFrom-Json keeps is a command
+    ({"d": gate_tests._env(["2026-10-04T00:00", "2026-10-04 00:00:00"]),  # pylint: disable=protected-access
+      "p": "deploy-p"}, ["2026-10-04T00:00", "deploy-p", "2026-10-04 00:00:00 now"]),
+    # the gates match differently; the simulation names the union
+    ({"net": "ship \u1f88", "py": "ship \u0131x"},
+     ["ship \u1f80", "SHIP \u1f88", "ship Ix", "ship \u0131x"]),
+]
+
+
+def _union(sh, ps1, names):
+    """The rule's expectation from two real decisions."""
+    if "map" in (sh, ps1):
+        return "map"
+    hit = set((sh or "").split(",")) | set((ps1 or "").split(","))
+    return ",".join(n for n in names if n in hit) or None
+
+
+@pytest.mark.parametrize("index", [
+    pytest.param(i, id=f"either{i}", marks=() if i == 1 else crew_fixtures.SLOW)
+    for i in range(len(_EITHER))])
+def test_simulate_gate_refuses_when_either_gate_refuses(tmp_path, index):
+    deploys, commands = _EITHER[index]
+    repo = gate_tests.Repo(tmp_path / "r", deploys if isinstance(deploys, str) else
+                           {n: gate_tests._cfg(d) for n, d in deploys.items()})  # pylint: disable=protected-access
+    text = (repo.root / ".crew" / "verify.json").read_text(encoding="utf-8")
+    # The raw rows name only `p` (and `deep`); json cannot read the deep one.
+    names = list(deploys) if isinstance(deploys, dict) else ["p", "deep"]
+    differed = False
+    for command in commands:
+        sh, ps1 = _gate("sh", repo.root, command), _gate("ps1", repo.root, command)
+        differed |= sh != ps1
+        assert crew_ghdeploy.simulate_gate(text, command) == _union(sh, ps1, names), (
+            f"either{index}, {command!r}: sh {sh!r}, ps1 {ps1!r}")
+    # Each row but the both-read one is a case where the gates really differ.
+    assert differed or index == 9, f"either{index}: the gates agree; the row proves nothing"
+
+
+def test_the_dotnet_only_fold_table_is_pinned():
+    """27 pairs, measured on pwsh 7.4.6 over every BMP code point: equal
+    under OrdinalIgnoreCase, different under Python's per-character fold."""
+    table = crew_ghdeploy._DOTNET_ONLY_FOLDS  # pylint: disable=protected-access
+    assert len(table) == 27
+    for low, up in table.items():
+        assert crew_ghdeploy._fold(low) != crew_ghdeploy._fold(up)  # pylint: disable=protected-access
+        assert crew_ghdeploy._dotnet_fold(low) == crew_ghdeploy._dotnet_fold(up)  # pylint: disable=protected-access
+    assert crew_ghdeploy._dotnet_fold("\u0131\u017f") == "\u0131\u017f"  # pylint: disable=protected-access
+    if _PWSH is None:
+        pytest.skip("pwsh not installed - the .NET side of the table was NOT measured")
+    pairs = ";".join(f"[string]::Equals([string][char]{ord(a)},[string][char]{ord(b)},"
+                     "[StringComparison]::OrdinalIgnoreCase)" for a, b in table.items())
+    out = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-Command", pairs],
+                         capture_output=True, text=True, check=True, timeout=120).stdout
+    assert out.split() == ["True"] * 27, out
+
+
+@pytest.mark.parametrize("text, date", [
+    ("2026-10-04T00:00:00Z", True), ("2026-10-04T00:00:00", True),
+    ("2026-10-04T00:00:00.123+02:00", True), ("0001-01-01T00:00:00", True),
+    ("9999-12-31T23:59:59.9999999", True), ("2026-10-04T24:00:00", True),
+    ("2026-10-04T00:00:00-0500", True), ("2026-10-04T00:00:00+05", True),
+    ("2026-10-04T00:00:00.123456789", True), ("/Date(0)/", True),
+    ("/Date(-1)/", True), ("/Date(0+0100)/", True),
+    ("2026-10-04", False), ("2026-10-04 00:00:00", False), ("2026-10-04T00:00", False),
+    ("2026-10-04T00:00:00 x", False), ("x 2026-10-04T00:00:00Z", False),
+    ("2026-13-04T00:00:00", False), ("2026-10-04t00:00:00", False),
+    ("2023-02-29T00:00:00", False), ("2026-10-04T24:00:01", False),
+    ("2026-10-04T00:00:00.1234567890123Z", False), ("2026-10-04T00:00:00Zx", False),
+    ("\uff12026-10-04T00:00:00", False), ("/Date(x)/", False), ("/Date()/", False),
+    ("/Date(99999999999999999999)/", False), ("/Date(1)/x", False),
+])
+def test_is_dotnet_date_is_what_convertfrom_json_converts(text, date):
+    """Each measured with ConvertFrom-Json on pwsh 7.4.6; 9,000 fuzzed
+    strings agreed with the port on 2026-10-04."""
+    assert crew_ghdeploy._is_dotnet_date(text) is date  # pylint: disable=protected-access
+
+
+def test_deep_json_is_refused_not_a_traceback(tmp_path):
+    """NIT1: past Python's recursion limit json raises RecursionError, which
+    is no ValueError; check must still end on a result line."""
+    root = _repo(tmp_path, None, raw=_raw(
+        '"staging": {"deploy": ["' + _PREFIX + '"], "github": ' + json.dumps(_ENTRY)
+        + ', ' + _RB + '}, "deep": {"x": ' + "[" * 5000 + "]" * 5000 + '}'))
+    proc = _check(root)
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert _last(proc) == "result=refused reason=gate-refuses-map"
+    assert crew_ghdeploy.simulate_gate(
+        _raw('"d": {"x": ' + "[" * 5000 + "]" * 5000 + '}'), "x") == "map"

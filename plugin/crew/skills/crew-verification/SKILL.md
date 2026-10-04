@@ -455,11 +455,12 @@ refused. `python3 <crew>/hooks/scripts/crew_ghdeploy.py check --root . --env
 and applies both gates' one rule: every environment whose `deploy` string
 matches the command literally, ignoring case, either way round (CRs and
 trailing newlines stripped; `*`, `?`, `[` are text) applies, the union of
-their `requires`, `rollback` and `requireHuman`. A map the gates refuse
-(twin keys, an empty, comma or control-character name, a null or
-non-string `deploy`, a list or object `requireHuman`) is refused as
-`gate-refuses-map`. Each printed dispatch carries `gated-as: '<names>'`,
-the set both gates apply to it.
+their `requires`, `rollback` and `requireHuman`. A map EITHER gate refuses
+(twin keys, an empty key, a comma or control-character name, a null,
+non-string or date-time `deploy`, a list or object `requireHuman`) is
+refused as `gate-refuses-map`. Each printed dispatch carries `gated-as:
+'<names>'`, the union of what the two gates apply (they differ only on 29
+non-ASCII case pairs in another environment's deploy string).
 It prints the literal dispatch for HEAD, writes nothing and runs no `gh`. Exit 0 is valid (or no `github` entry), 2 is refused with
 `result=refused reason=<code>`, 3 is could-not-tell (map, environment or HEAD
 unreadable). **The dispatch sequence is not built yet:** nothing dispatches,
