@@ -489,7 +489,8 @@ def progress_fingerprint(root, ticket, goal=None):
     """sha256 over everything that moves when a ticket makes progress, or
     None when any part cannot be read -- and None is never progress.
 
-    HEAD, every file under `.work/tickets/<ticket>/` (path and content), the
+    HEAD, every file in the ticket's folder, live or archived in `Complete/`
+    (path and content; could-not-tell is None, L-0509), the
     ticket's approval and review receipts under `<git-common-dir>/crew/`, its
     `.work/INDEX.md` row(s), and `.work/autopilot/<goal>.json` for a goal. A
     bare command (no ticket) fingerprints HEAD and the whole INDEX.md."""
@@ -498,8 +499,8 @@ def progress_fingerprint(root, ticket, goal=None):
         return None
     parts = [("HEAD", head)]
     if ticket:
-        tdir = os.path.join(root, ".work", "tickets", ticket)
-        if not os.path.isdir(tdir):
+        tdir, where, _ = crew_common.locate_ticket(root, ticket)
+        if where not in (crew_common.LIVE, crew_common.COMPLETE):
             return None
         unlisted = []
         for base, dirs, files in os.walk(tdir, onerror=unlisted.append):
@@ -701,8 +702,12 @@ def decide(root, payload, handoff_text, plugin_root, global_path=None, archived=
         return _decision("wait", "the handoff's head: line does not match HEAD", prompt, sha)
     ticket = parsed["arg"] if parsed["kind"] == "ticket" else None
     goal = parsed["arg"] if parsed["kind"] == "goal" else None
-    if ticket and not os.path.isdir(os.path.join(root, ".work", "tickets", ticket)):
-        return _decision("wait", f".work/tickets/{ticket}/ does not exist", prompt, sha)
+    where, why = (crew_common.locate_ticket(root, ticket)[1:]) if ticket else (None, None)
+    if where == crew_common.COULD_NOT_TELL:
+        return _decision("wait", f"could not tell where {ticket} lives: {why}", prompt, sha)
+    if where == crew_common.ABSENT:
+        return _decision("wait", f".work/tickets/{ticket}/ does not exist (nor under "
+                         f"{crew_common.ARCHIVE_DIR}/)", prompt, sha)
     if goal and not os.path.isfile(os.path.join(root, ".work", "autopilot", goal + ".json")):
         return _decision("wait", f".work/autopilot/{goal}.json does not exist", prompt, sha)
     name = parsed["command"].split(":", 1)[1]

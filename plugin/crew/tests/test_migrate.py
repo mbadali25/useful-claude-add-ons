@@ -454,3 +454,54 @@ def test_autopilot_note_names_the_shipped_command_not_a_future_release():
 
     assert ("arrives in 1.1.0" in note, "/crew:autopilot" in note,
             "autopilot.mode: plan" in note) == (False, True, True)
+
+
+# --- ids beyond T- and the Complete/ archive (L-0509) ----------------------------
+
+@pytest.mark.parametrize("ticket_id,tracker,indexed,source", [
+    ("L-0509", "obsidian", False, "obsidian"),
+    ("W-0001", "obsidian", False, "obsidian"),
+    ("L-0509", "files", True, "files-cache"),
+    ("T-0001", "files", False, "files-cache"),
+    ("SDP-12", "sdp", False, "sdp"),
+    ("SDP-12", "files", False, "sdp"),
+    ("PROJ-7", "jira", False, "jira"),
+    ("L-0509", "jira", True, "jira"),
+    ("ABC-12", "files", False, "jira"),
+])
+def test_cache_source_follows_the_tracker(ticket_id, tracker, indexed, source):
+    index = {ticket_id} if indexed else set()
+
+    assert crew_migrate._cache_source(ticket_id, tracker, index) == source  # pylint: disable=protected-access
+
+
+def test_an_l_prefixed_cache_file_this_box_minted_is_not_labelled_jira(repo):
+    with open(os.path.join(repo, ".work", "cache", "L-0509.md"), "w", encoding="utf-8") as fh:
+        fh.write("# L-0509 cached\n")
+    with open(os.path.join(repo, ".work", "INDEX.md"), "a", encoding="utf-8") as fh:
+        fh.write("L-0509 | open | low | repo | Archive\n")
+
+    crew_migrate.main(["--root", repo, "--apply"])
+
+    assert json.loads(_load(repo, ".work/tickets/L-0509/provenance.json"))["source"] == "files-cache"
+
+
+def test_migrate_skips_an_archived_target(repo, capsys):
+    os.makedirs(os.path.join(repo, ".work", "tickets", "Complete", "T-0001"))
+
+    code = crew_migrate.main(["--root", repo, "--apply"])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "skip   .work/tickets/T-0001.md: archived in Complete/; not migrated" in out
+    assert not os.path.exists(os.path.join(repo, ".work", "tickets", "T-0001"))
+
+
+def test_migrate_apply_refuses_a_could_not_tell_target(repo):
+    os.makedirs(os.path.join(repo, ".work", "tickets", "Complete", "T-0001"))
+    os.makedirs(os.path.join(repo, ".work", "tickets", "T-0001"))
+    before = _snapshot(repo, skip_backups=False)
+
+    code = crew_migrate.main(["--root", repo, "--apply"])
+
+    assert (code, _snapshot(repo, skip_backups=False)) == (1, before)

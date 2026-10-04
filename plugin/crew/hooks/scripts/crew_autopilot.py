@@ -228,7 +228,7 @@ GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
 # The INDEX.md id shape, whole-string; [0-9], not \d, which is any Unicode digit.
-_INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
+_INDEX_ID = crew_common.TICKET_ID
 
 
 def _rel(top, path):
@@ -270,13 +270,26 @@ def _is_open(ticket, line):
     return not crew_state._DONE_RE.search(line)  # pylint: disable=protected-access
 
 
+def _where(top, ticket):
+    """`(folder, where, why)` from `crew_common.locate_ticket` (L-0509): the
+    ticket's folder live or archived in `Complete/`; could-not-tell is its own
+    answer and every caller here stops on it, naming `why`."""
+    return crew_common.locate_ticket(top, ticket)
+
+
+def _found(where):
+    return where in (crew_common.LIVE, crew_common.COMPLETE)
+
+
 def open_index_tickets(top):
-    """Every open INDEX.md ticket whose `.work/tickets/<id>/` exists, in order,
-    once each. Unlike `crew_state.read_work`, this does not stop at the first."""
+    """Every open INDEX.md ticket whose folder exists (live or `Complete/`), in
+    order, once each. Unlike `crew_state.read_work`, this does not stop at the
+    first. A ticket whose folder could not be located is kept, not dropped as
+    folderless: the step that takes it stops naming why."""
     seen = []
     for ticket, line in _index_rows(top):
         if ticket not in seen and _is_open(ticket, line) \
-                and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+                and _where(top, ticket)[1] != crew_common.ABSENT:
             seen.append(ticket)
     return seen
 
@@ -408,12 +421,15 @@ def _phase(root, ticket, policy=True):
     `policy=False` is `status`'s read: the approve and open-questions reasons
     then name no policy, so status reads the same under every setting."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    folder = crew_ticket.ticket_dir(top, ticket)
+    folder, where, why = _where(top, crew_ticket.check_ticket(ticket))
     evidence = []
 
     def answer(phase, stop, reason, command=""):
         return {"ticket": ticket, "phase": phase, "stop": stop, "reason": reason,
                 "command": command, "evidence": list(evidence)}
+
+    if where == crew_common.COULD_NOT_TELL:
+        return answer("invalid", True, f"could not tell where {ticket} lives: {why}")
 
     direction = os.path.join(folder, "direction.md")
     evidence.append(_rel(top, direction))
@@ -659,8 +675,14 @@ def _handoff_ticket(top):
         return None, "", None, (f"the handoff's head: "
                                 f"{head.group(1) if head else '(missing)'} is not this "
                                 f"checkout's {here_head[:12] or '(unknown)'}")
+    _, where, why = _where(top, arg)
+    if where == crew_common.COULD_NOT_TELL:
+        return None, "", None, f"the handoff names {arg}: could not tell where {arg} lives: {why}"
+    # The live test is kept as written (sabotage_autopilot.py anchors it); an
+    # archived folder answers it too.
     if not os.path.isdir(crew_ticket.ticket_dir(top, arg)):
-        return None, "", None, f"the handoff names {arg}, which has no .work/tickets/ folder"
+        if where != crew_common.COMPLETE:
+            return None, "", None, f"the handoff names {arg}, which has no .work/tickets/ folder"
     render = getattr(resume, "render", None)
     return arg, (render(parsed) if callable(render) else f"{command} {arg}"), None, ""
 
@@ -680,8 +702,10 @@ def resume_target(root, ticket=None, policy=True):
 
     hint, source, why = "", "argument", ""
     if ticket:
-        crew_ticket.check_ticket(ticket)
-        if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        _, where, why = _where(top, crew_ticket.check_ticket(ticket))
+        if where == crew_common.COULD_NOT_TELL:
+            return stopped(source, f"could not tell where {ticket} lives: {why}")
+        if not _found(where):
             return stopped(source, f"{ticket} has no .work/tickets/ folder")
     else:
         ticket, hint, stop_reason, why = _handoff_ticket(top)
@@ -1252,7 +1276,7 @@ def questions_check(root, ticket):
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     decision = question_policy(top, ticket)
-    path = os.path.join(crew_ticket.ticket_dir(top, ticket), "questions.md")
+    path = os.path.join(crew_common.ticket_folder(top, ticket, crew_ticket.TicketError), "questions.md")
     blocks = _question_blocks(read_text(path))
     problems, taken = [], []
     if not blocks:
@@ -1289,9 +1313,11 @@ def stops():
 
 
 def _existing_ticket(top, token):
-    """Whether `token` is a plain ticket id naming a `.work/tickets/` folder."""
+    """Whether `token` is a plain ticket id naming a ticket folder, live or
+    `Complete/`. Could-not-tell is False here: every caller refuses a token
+    that is not a ticket, and the step that takes an id stops naming why."""
     try:
-        return os.path.isdir(crew_ticket.ticket_dir(top, token))
+        return _found(_where(top, crew_ticket.check_ticket(token))[1])
     except crew_ticket.TicketError:
         return False
 
@@ -1448,8 +1474,10 @@ def _closed(top, ticket):
     spec = crew_ticket.read_contract(top, ticket)["spec.md"]
     # read_contract returns None for a spec it could not read as well as for an
     # absent one; only absence says "not closed".
-    if spec is None and os.path.lexists(os.path.join(crew_ticket.ticket_dir(top, ticket),
-                                                     "spec.md")):
+    folder, where, _ = _where(top, ticket)
+    if where == crew_common.COULD_NOT_TELL:
+        return None
+    if spec is None and os.path.lexists(os.path.join(folder, "spec.md")):
         return None
     return spec is not None and _header_status(
         crew_ticket._text(spec)) == "done"  # pylint: disable=protected-access
@@ -1531,14 +1559,16 @@ def status(root, ticket=None):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     conf = settings(top)
     if ticket:
-        crew_ticket.check_ticket(ticket)
-        if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        _, where, why = _where(top, crew_ticket.check_ticket(ticket))
+        if _found(where):
             pick = {"ticket": ticket, "source": "argument", "reason": "", "fallthrough": [],
                     "disagreement": "", "next": next_phase(top, ticket, policy=False)}
         else:
             pick = {"ticket": None, "source": "argument", "fallthrough": [],
                     "disagreement": "", "next": None,
-                    "reason": f"{ticket} has no .work/tickets/ folder"}
+                    "reason": (f"could not tell where {ticket} lives: {why}"
+                               if where == crew_common.COULD_NOT_TELL
+                               else f"{ticket} has no .work/tickets/ folder")}
         bare = _bare(top)
     else:
         pick = bare = resume_target(top, policy=False)

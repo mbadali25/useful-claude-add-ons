@@ -328,3 +328,46 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 
     assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
         0, True), done.stdout + done.stderr
+
+
+# --- the Complete/ archive (L-0509) ------------------------------------------------
+
+def _ticket_tree(tmp_path, live=(), archived=(), complete=True):
+    root = tmp_path / "r"
+    tickets = root / ".work" / "tickets"
+    tickets.mkdir(parents=True)
+    for name in live:
+        (tickets / name).mkdir()
+    if complete:
+        (tickets / "Complete").mkdir()
+    for name in archived:
+        (tickets / "Complete" / name).mkdir()
+    return root
+
+
+def test_status_counts_archived_tickets_apart(tmp_path):
+    root = _ticket_tree(tmp_path, live=("T-1", "L-0509"), archived=("T-2", "T-3", "W-0001"))
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  2 ticket dir(s), 3 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_never_counts_complete_as_a_ticket(tmp_path):
+    root = _ticket_tree(tmp_path)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_unlistable_complete_says_could_not_tell(tmp_path, monkeypatch):
+    root = _ticket_tree(tmp_path, live=("T-1",), archived=("T-2",))
+    real = os.listdir
+
+    def listdir(path):
+        if os.path.basename(os.fspath(path)) == "Complete":
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+    monkeypatch.setattr(crew_status.os, "listdir", listdir)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  1 ticket dir(s), archived: could not tell (Permission denied), 0 legacy file(s)")

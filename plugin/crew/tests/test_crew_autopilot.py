@@ -1446,3 +1446,41 @@ def test_module_defines_each_function_once():
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
 
     assert sorted({n for n in names if names.count(n) > 1}) == []
+
+
+# --- a ticket archived in Complete/ (L-0509) ---------------------------------------
+
+def test_autopilot_resume_finds_an_archived_ticket(tmp_path):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = _two_tickets(tmp_path)
+    _ticket(root, ticket="T-3", status="done")
+    _index(root, "T-1 | spec | high | r | one", "T-2 | spec | high | r | two",
+           "T-3 | done | low | r | closed")
+    archive_ticket(root, "T-3")
+
+    got = crew_autopilot.resume_target(str(root), ticket="T-3")
+    phase = crew_autopilot.next_phase(str(root), "T-3", policy=False)
+
+    assert (got["ticket"], got["stop"], phase["phase"], phase["stop"]) == ("T-3", False, "closed", True)
+
+
+def test_autopilot_resume_could_not_tell_stops(tmp_path):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    root = _two_tickets(tmp_path)
+    both_places(root, "T-1")
+
+    got = crew_autopilot.resume_target(str(root), ticket="T-1")
+    phase = crew_autopilot.next_phase(str(root), "T-1", policy=False)
+
+    assert (got["ticket"], got["stop"], "could not tell where T-1 lives" in got["reason"]) == (
+        None, True, True)
+    assert (phase["phase"], phase["stop"], "could not tell where T-1 lives" in phase["reason"]) == (
+        "invalid", True, True)
+
+
+def test_autopilot_bare_resume_keeps_a_could_not_tell_open_ticket(tmp_path):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    root = _two_tickets(tmp_path)
+    both_places(root, "T-1")
+
+    assert crew_autopilot.open_index_tickets(str(root)) == ["T-1", "T-2"]

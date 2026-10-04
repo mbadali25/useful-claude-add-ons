@@ -108,14 +108,25 @@ def _ticket_lines(root):
         names = os.listdir(folder)
     except OSError:
         return ["tickets  none (.work/tickets/ absent)"]
-    dirs = sorted(n for n in names if os.path.isdir(os.path.join(folder, n)))
+    # Complete/ is the archive (L-0509), never a ticket: its folders are
+    # counted apart, and a listing that fails is said, not read as none.
+    dirs = sorted(n for n in names if n != crew_common.ARCHIVE_DIR
+                  and os.path.isdir(os.path.join(folder, n)))
     files = [n for n in names if n.endswith(".md")]
+    archive = os.path.join(folder, crew_common.ARCHIVE_DIR)
+    try:
+        archived = f"{sum(1 for n in os.listdir(archive) if os.path.isdir(os.path.join(archive, n)))} " \
+                   f"archived in {crew_common.ARCHIVE_DIR}/"
+    except (FileNotFoundError, NotADirectoryError):
+        archived = f"0 archived in {crew_common.ARCHIVE_DIR}/"
+    except OSError as exc:
+        archived = f"archived: could not tell ({exc.strerror or exc})"
     open_ids = []
     for line in (read_text(os.path.join(root, ".work", "INDEX.md")) or "").splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) > 1 and cells[1].lower() in ("open", "in-progress", "in progress", "review"):
             open_ids.append(cells[0])
-    lines = [f"tickets  {len(dirs)} ticket dir(s), {len(files)} legacy file(s)"]
+    lines = [f"tickets  {len(dirs)} ticket dir(s), {archived}, {len(files)} legacy file(s)"]
     if open_ids:
         shown = ", ".join(open_ids[:5]) + (f" (+{len(open_ids) - 5})" if len(open_ids) > 5 else "")
         lines.append(f"open     {shown}")

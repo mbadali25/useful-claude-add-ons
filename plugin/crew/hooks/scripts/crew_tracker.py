@@ -109,7 +109,7 @@ DEFAULT_BOARD = "Board.md"
 WRITE_TRIES = 3
 INDEX_REL = ".work/INDEX.md"
 
-_TICKET_ID = re.compile(r"[A-Z][A-Z0-9]*-\d+\Z")
+_TICKET_ID = crew_common.TICKET_ID
 _SYNC = {"jira": "/crew:jira-sync", "sdp": "/crew:sdp-sync"}
 # Jira and SDP are pushed at pickup and completion, never mid-task (jira-sync.md).
 _PUSH_AT = ("in-progress", "done")
@@ -749,8 +749,8 @@ _HEADING = re.compile(r"## (.+?)[ \t]*\Z")
 _KANBAN_KEY = re.compile(r"kanban-plugin:\s*['\"]?board['\"]?\s*\Z")
 _CARD_START = re.compile(r"- ")
 _CHECKED = re.compile(r"- \[[xX]\]")
-_FIRST_ID = re.compile(r"\[\[([A-Z][A-Z0-9]*-\d+)(?:[|#][^\]]*)?\]\]"
-                       r"|(?<![A-Za-z0-9-])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])")
+_FIRST_ID = re.compile(rf"\[\[({crew_common.TICKET_ID_CORE})(?:[|#][^\]]*)?\]\]"
+                       rf"|(?<![A-Za-z0-9-])({crew_common.TICKET_ID_CORE})(?![A-Za-z0-9])")
 _COMPLETE = "**Complete**"
 
 

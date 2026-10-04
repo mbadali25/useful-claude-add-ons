@@ -16,12 +16,24 @@ path itself.
 `crew_state` re-exports the three readers, so `crew_config` and
 `crew_upgrade` keep reaching them as `crew_state.read_text` and friends.
 
+Where a ticket lives (L-0509): `locate_ticket(top, ticket)` is the one
+resolver. A ticket folder is live at `.work/tickets/<ID>/` or archived at
+`.work/tickets/Complete/<ID>/`; the answer is `live`, `complete`, `absent`
+(with the live path, so a writer creates the live folder) or `could not tell`
+-- a `stat` that fails with anything but not-found, or BOTH folders present
+(a half-finished archive). An unknown never reads as absent. The ticket-id
+shapes live here once too: `TICKET_ID` (strict, `[A-Z][A-Z0-9]*-[0-9]+`, any
+prefix: `T-`, `L-`, `W-`), `TICKET_ID_SEARCH` for INDEX lines, `PLAIN_ID`
+(the loose path-safe id) and `ARCHIVE_DIR`, a reserved name, never an id.
+
 Standard library only, and every read fails soft, for the reason `crew_state`
 does: this runs from a SessionStart hook, where an exception breaks every
 session opened in the repository.
 """
 
 import os
+import re
+import stat
 import subprocess
 
 GIT_TIMEOUT = 10
@@ -200,3 +212,72 @@ def shadow_note(main_crew_dir):
             "is not read (own wins whole, never merged). A default written by a crew <= 1.0.68 "
             "SessionStart heal shadows it too: delete this worktree's .crew/config.json "
             "(and .crew/crew.json) to inherit")
+
+
+# --- where a ticket lives, and the ticket-id shapes (L-0509) ---------------------------
+
+TICKET_ID_CORE = r"[A-Z][A-Z0-9]*-[0-9]+"
+TICKET_ID = re.compile(rf"^{TICKET_ID_CORE}\Z")
+TICKET_ID_SEARCH = re.compile(rf"({TICKET_ID_CORE})")
+PLAIN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\Z")
+ARCHIVE_DIR = "Complete"
+LIVE, COMPLETE, ABSENT, COULD_NOT_TELL = "live", "complete", "absent", "could not tell"
+
+
+def tickets_root(top):
+    """`<top>/.work/tickets`: where live ticket folders, and `Complete/`, sit."""
+    return os.path.join(top, ".work", "tickets")
+
+
+def reserved_id(name):
+    """Whether `name` is the archive folder's name in any case: `complete` is
+    the same folder as `Complete` on a case-insensitive filesystem."""
+    return isinstance(name, str) and name.casefold() == ARCHIVE_DIR.casefold()
+
+
+def _probe(path):
+    """(True | False | None, why): a directory, not one (absent, or something
+    else at the name), or could not tell."""
+    try:
+        seen = os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False, None
+    except (OSError, ValueError) as exc:
+        return None, f"{path}: {getattr(exc, 'strerror', None) or exc}"
+    return stat.S_ISDIR(seen.st_mode), None
+
+
+def locate_ticket(top, ticket):
+    """`(path, where, why)` for ticket folder `ticket` under `top`. Never raises.
+
+    `where` is LIVE, COMPLETE, ABSENT (path is the live one, for a writer to
+    create) or COULD_NOT_TELL (path None, `why` says why): a probe that failed,
+    both folders present -- neither is picked -- or `ticket` not a plain id or
+    the reserved archive name.
+    """
+    if not isinstance(ticket, str) or not PLAIN_ID.match(ticket):
+        return None, COULD_NOT_TELL, f"ticket id {ticket!r} is not a plain id"
+    if reserved_id(ticket):
+        return None, COULD_NOT_TELL, f"{ARCHIVE_DIR!r} is reserved for the archive folder, not a ticket id"
+    live = os.path.join(tickets_root(top), ticket)
+    complete = os.path.join(tickets_root(top), ARCHIVE_DIR, ticket)
+    (is_live, live_why), (is_complete, complete_why) = _probe(live), _probe(complete)
+    if is_live is None or is_complete is None:
+        return None, COULD_NOT_TELL, live_why or complete_why
+    if is_live and is_complete:
+        return None, COULD_NOT_TELL, f"both {live} and {complete} exist"
+    if is_live:
+        return live, LIVE, None
+    if is_complete:
+        return complete, COMPLETE, None
+    return live, ABSENT, None
+
+
+def ticket_folder(top, ticket, error):
+    """The folder `locate_ticket` names, or `error(...)` raised for could not
+    tell -- the caller's own exception class, so each module keeps catching
+    what it catches today."""
+    path, where, why = locate_ticket(top, ticket)
+    if where == COULD_NOT_TELL:
+        raise error(f"could not tell where {ticket} lives: {why}")
+    return path

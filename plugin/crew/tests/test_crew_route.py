@@ -605,3 +605,28 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
 
     assert (crew_autopilot.SUBCOMMANDS, got) == (
         ("status", "run", "assign", "goal", "focus"), [True, True])
+
+
+# --- a ticket archived in Complete/ (L-0509) ---------------------------------------
+
+def test_route_resolves_an_archived_ticket(tmp_path):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path)
+    make_ticket(root, "L-0509", activate=False)
+    archive_ticket(root, "L-0509")
+
+    got = crew_route.decide(str(root), "review L-0509")
+
+    assert (got["outcome"], got["command"], got["ticket"]) == ("route", "/crew:review L-0509", "L-0509")
+
+
+def test_route_could_not_tell_asks_with_the_reason(tmp_path):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path)
+    make_ticket(root, "T-7", activate=False)
+    both_places(root, "T-7")
+
+    got = crew_route.decide(str(root), "review T-7")
+
+    assert (got["outcome"], got["ticket"], "could not tell where T-7 lives" in got["reason"]) == (
+        "ask", None, True)

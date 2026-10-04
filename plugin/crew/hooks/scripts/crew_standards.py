@@ -66,6 +66,7 @@ import stat
 import statistics
 import sys
 
+import crew_common
 import crew_ticket
 
 OVERLAY_REL = ".crew/standards.md"
@@ -322,8 +323,10 @@ def summary_line(found):
 # ---- the self-check record ------------------------------------------------------
 
 def selfcheck_path(root, ticket):
-    return os.path.join(root, ".work", "tickets", crew_ticket.check_ticket(ticket),
-                        SELFCHECK_NAME)
+    """The self-check in the ticket's folder, live or `Complete/` (L-0509);
+    TicketError when where the ticket lives could not be told."""
+    return os.path.join(crew_common.ticket_folder(root, crew_ticket.check_ticket(ticket),
+                                                  crew_ticket.TicketError), SELFCHECK_NAME)
 
 
 def _write_replacing(path, text):
@@ -370,7 +373,11 @@ def read_selfcheck(root, ticket):
 def _read_selfcheck_raw(root, ticket):
     """(raw_bytes_or_None, rows, stamp, problems): one read, parsed from the
     bytes it returned, so a caller that writes back writes what it checked."""
-    raw, why = _read_bytes(selfcheck_path(root, ticket))
+    try:
+        path = selfcheck_path(root, ticket)
+    except crew_ticket.TicketError as exc:
+        return None, [], None, [str(exc)]
+    raw, why = _read_bytes(path)
     if raw is None:
         return None, [], None, [f"no self-check at .work/tickets/{ticket}/{SELFCHECK_NAME}; "
                                 f"run crew_standards.py init --root . --ticket {ticket}"
@@ -525,7 +532,10 @@ def init(root, ticket, refs_dir=None):
     found = effective_set(root, changed_files(manifest), refs_dir)
     if found["problems"]:
         return 1, ["the effective standards set could not be read:"] + found["problems"]
-    path = selfcheck_path(root, ticket)
+    try:
+        path = selfcheck_path(root, ticket)
+    except crew_ticket.TicketError as exc:
+        return 1, [str(exc)]
     if not _create_exclusive(path, selfcheck_template(ticket, found)):
         return 1, [f".work/tickets/{ticket}/{SELFCHECK_NAME} already exists; left unchanged"]
     return 0, [_noted(f"self-check: wrote .work/tickets/{ticket}/{SELFCHECK_NAME} with "
@@ -556,7 +566,10 @@ def stamp(root, ticket, refs_dir=None):
         problems += found["problems"] + record_problems(rows, found)
     if problems or found is None:
         return 1, [f"self-check: {p}" for p in problems]
-    path = selfcheck_path(root, ticket)
+    try:
+        path = selfcheck_path(root, ticket)
+    except crew_ticket.TicketError as exc:
+        return 1, [f"self-check: {exc}"]
     now, why = _read_bytes(path)
     if now != raw:
         return 1, [f"self-check: .work/tickets/{ticket}/{SELFCHECK_NAME} changed while it was "
@@ -748,7 +761,11 @@ def proposals(root, ticket, scratch, round_no):
                        f"proposals:   {reason}" for reason in parsed["reasons"]]
     findings = [line for line in parsed["findings"] if not line.startswith("NIT|")]
     name = f"standards-proposals-r{round_no}.md"
-    path = os.path.join(root, ".work", "tickets", crew_ticket.check_ticket(ticket), name)
+    try:
+        path = os.path.join(crew_common.ticket_folder(root, crew_ticket.check_ticket(ticket),
+                                                      crew_ticket.TicketError), name)
+    except crew_ticket.TicketError as exc:
+        return 1, [f"proposals: {exc}"]
     body = [f"# {ticket} standards proposals, review round {round_no}", "",
             f"From `{source}`: {len(findings)} BLOCK/FIX finding(s), each verbatim below. For each,",
             "fill Covered by (the standard that covers it, or `none`), Self-check said (what the",
