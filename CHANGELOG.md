@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` NEXT: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
+
+- **What changed.** The harness files PR A left on its lint's allowlist now run
+  `crew_common.require_tool("git")` instead of a bare `"git"`, so on native
+  Windows they judge the git bash, pwsh and `shutil.which` find (a `git.cmd`
+  ahead of `git.exe` on PATH), not whatever CreateProcess reaches:
+  `completion_audit._git_fields`, `crew_ticket._git`, `merged_main._is_ancestor`,
+  `review_gate._git`, `review_ledger.common_dir`, `review_patch._run_raw`,
+  `review_prompt._head`, `verify_fingerprint` (`_head`, `_index_entries`,
+  `_sub_changed`) and `verify_record` (`tree_snapshot`, `_refs_digest`). Each
+  call sits inside its existing `try`, and `ToolNotFound` is a
+  `FileNotFoundError`, so a git that does not resolve takes the same `except`
+  branch a missing one did: the review gate reads UNKNOWN, the completion audit
+  refuses, merged main and the tree snapshot are could-not-tell, the ledger and
+  the review bundle raise naming git. Harness-only: it lands alone under T-0087.
+- **The allowlist entries are gone.** `plugin/crew/tests/test_tool_resolution.py`
+  no longer excuses any harness file, so a bare-name git put back in one fails
+  the lint.
+- **Tests.** New `plugin/crew/tests/test_harness_tool_resolution.py`: for each
+  site a failing git reachable only through `shutil.which` (a bare `"git"` runs
+  the healthy one and passes), and the guard refuses or reports could-not-tell
+  on every OS; `tree_snapshot`'s two git sites are broken one at a time. Each of
+  the 13 sites put back to a bare `"git"` turned its test red. No sabotage
+  anchor quoted a changed argv; the 8 entries anchored within 15 lines of a
+  change still match exactly once and go red.
+
 ### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with
