@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:35 UTC
+Last updated: 2026-10-04 15:36 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:36: MERGED #352 (T-0069) at b863b773 (crew 1.0.327; CI 24/24, merge-only review clean). main = b863b773. Next: #351 land-prep at 1.0.328.
 - 15:35: #416 round-3 18efb28e: 0/1/6 (leading '-' words inject flags into routed command). Round-2 all fixed; ASCII _ID only changes non-ASCII ids (fixes main defects: implement ſ-12 -> S-12). Sent final fix + N2-N4.
 - 15:34: H1 #418 fixes -> ea9dcc10 (--by checked pre-lock on reject/supersede/accept; round type checks; codemap re-anchored; _is_auto_name NFKC; allow_abbrev=False; 25 sabotage RED). Round-2 review started.
 - 15:31: #450 round-4 31c1e061: 0/1/2 (pointer broken before | reads full-text again - regression; bare 'vault: work' guard lost). Sent small final fix.
