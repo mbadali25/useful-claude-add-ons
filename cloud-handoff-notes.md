@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 17:23 UTC
+Last updated: 2026-10-04 17:24 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 17:24: MERGED #450 T-0084 at 3ff3b737 -> main 6dead441, crew 1.0.331. Next: #403 T-0053 (4cdf076f, 1.0.332) when CI green.
 - 17:23: #489 L-1503 at 39f7b324: sh/ps1 key-case parity + null deploy blocks in both; 77 cases, 4 sabotages. Rule time 82s under load (56s quiet) vs 60s budget -> builder moving ps1 cases to slow marker. Logic re-review sent to a1134b5 in parallel.
 - 17:23: #456 L-0677 fixes pushed at 60be2dbb: kernel locks in ~/.cache/crew/memory-locks, OSError -> kept-full-text, MEMORY.md kept-full-text exit 1, samefile index check; 207 tests, 5 sabotages. Round-3 re-review sent to aded203.
 - 17:17: #421 T-0083 round-3 at 5c1d20ba: 0 BLOCK, 2 FIX (plural variants make not/new/stat/can; joined query word replaced by scattered parts - t-0083 finds L-0083, github.com finds any .com), 3 NIT. Sent back to builder: es only after s/x/z/ch/sh + stopword guard; joined word = whole token or contiguous parts; must-not-match tests.
