@@ -338,8 +338,72 @@ only; `--json` gives the same rows as JSON.
 | `unreadable` | the memory file is not a regular file readable as UTF-8 (`check` never opens a FIFO, device or directory), or a folder or note inside the vault cannot be read or opened | 1 |
 
 An unavailable vault is never replaced by another one that happens to hold a
-note at the same path. This crew version only reads pointers; writing them,
-and converting existing memories, arrive in later versions.
+note at the same path.
+
+### Saving a memory as a pointer
+
+`save` turns one memory that holds its full text into a pointer, note first:
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file <memory file> --tag <tag>
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file <memory file> --tag <tag> --apply
+```
+
+Without `--apply` it prints the plan (the vault, the note, `create`, `append`
+or `unchanged`, and the pointer line) and writes nothing. Read your vault's own
+`CLAUDE.md` for its folders and tags first; `--note`, `--title`, `--type`
+(`concept` by default) and `--project` change the defaults
+(`memories/<project>/<title>.md`, the title taken from the memory's `name:`
+line).
+
+It writes only to the one writable vault: the vault with role `primary`
+(without roles, the `default: true` vault, else the first; with no `vaults`
+block, `memory`). The folder must hold `.obsidian/`. A `recall` or `ignore`
+vault is never written, and a primary that is not mounted is reported, not
+replaced. The note gets the vault's six frontmatter keys plus `project` and
+`memory_id`; saving the same memory again appends a dated `## Update`
+passage, and a note that belongs to another memory is a `collision`.
+
+The order is the point. The note is written through a temp file, read back,
+and the pointer resolved; only then is the memory's body replaced, its
+frontmatter kept byte for byte, through a temp file and a rename. Any refusal
+or failure prints `kept-full-text: <reason>` and leaves the memory exactly as
+it was:
+
+| state | memory file | exit |
+|---|---|---|
+| `pointer-written` | body replaced by the pointer | 0 |
+| `already-pointer` | untouched | 0 |
+| `kept-full-text: no vault configured` | untouched | 0 |
+| `kept-full-text: vault unavailable`, `no primary`, `several primaries`, `not a vault`, `config unreadable` | untouched | 1 |
+| `kept-full-text: collision`, `ascii-required`, `outside-vault`, `bad-note-path`, `the existing note is not UTF-8` | untouched | 1 |
+| `kept-full-text: MEMORY.md is the index`, `the memory file is a symlink`, `the memory has no body to save` | untouched | 1 |
+| `kept-full-text: another save is running now`, `lock failed`, `note write failed`, `the note changed during save`, `note not readable after write`, `the memory file changed during save`, `the memory file cannot be read again`, `pointer write failed` | untouched | 1 |
+
+Two `save` runs by the same user on the same machine do not interleave:
+each holds kernel locks for the note and for the memory, on files
+in `~/.cache/crew/memory-locks` (`$XDG_CACHE_HOME` when set;
+`%LOCALAPPDATA%\crew\memory-locks` on Windows), never in the vault. The
+operating system drops a lock when its save exits or is killed, so
+`another save is running now` means one is running; a lock that cannot be
+taken at all (an unwritable cache, a full disk, or no absolute cache folder
+because `HOME` is unset) is `lock failed`. A file is locked by its real path,
+case-folded, and by its inode, so a symlinked folder, `..`, a case variant
+and a hard link all meet the same lock. The lock
+does not cover a save on another machine that syncs the same vault, or an
+edit by Claude Code, Obsidian or any other program, none of which take it.
+For those, the memory and an existing note are compared again right before
+each rename. An edit by another program in the
+instant between that compare and the rename is not detected: a rename cannot
+compare and swap. An existing note keeps every byte, a BOM and CRLF line
+endings included; only its `updated:` value changes and the passage is
+appended. A new note gets mode 0644 less your umask.
+
+Claude Code 2.1.289 was seen to keep a one-line pointer body across new
+sessions (it rewrites the frontmatter when it updates the memory, and kept
+the pointer). If a later version rewrites the body with full text, `check`
+shows it as `full-text` again; run `save` again. Converting existing
+memories in bulk arrives in a later version.
 
 ## Confirming recall reaches your sessions
 

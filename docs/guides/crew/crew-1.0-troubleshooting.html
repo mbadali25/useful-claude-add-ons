@@ -843,7 +843,8 @@ cleanly, clear, and pick up where it stopped.</p>
 <li><strong>Wrap-up.</strong> When the context window crosses its threshold, the <code>Stop</code> hook blocks once. It asks
    the session to finish or park the change in flight, write <code>.work/HANDOFF.md</code>, and update the
    ticket. This happens once for each threshold crossing in each session. It never happens on the
-   forced continuation that follows a block.</li>
+   forced continuation that follows a block. With <code>context.autoClear.wrapUp</code> armed (below), the
+   block carries the wrap-up procedure instead, and the clear waits for its results.</li>
 <li><strong>Clear, or notify.</strong> After the handoff is written, auto-clear acts on it. What it does depends
    on <code>method</code> (below): <code>notify</code> (the default on native Windows) prints a message telling you the
    handoff is written and it is safe to run <code>/clear</code> (or <code>/compact</code>) yourself — it types nothing.
@@ -966,10 +967,16 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 <td>vetoes auto-resume in this repo. <code>true</code> here does not switch it on.</td>
 </tr>
 <tr>
+<td><code>~/.claude/crew/config.json</code></td>
+<td><code>context.autoClear.wrapUp</code></td>
+<td><code>true</code></td>
+<td>turns the wrap-up into the wrap-up procedure and makes the clear wait for its results (off by default; acts only where <code>enabled</code> is armed). A repo <code>false</code> vetoes it; a repo <code>true</code> does nothing.</td>
+</tr>
+<tr>
 <td><code>.crew/config.json</code></td>
 <td><code>context.autoWrapUp</code></td>
 <td><code>false</code></td>
-<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once.</td>
+<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once. Armed <code>wrapUp</code> supersedes both wordings.</td>
 </tr>
 <tr>
 <td><code>.crew/config.json</code></td>
@@ -991,6 +998,25 @@ before anything is written. To turn the cycle off on a machine, set <code>contex
 <code>false</code> or delete the key. In a repo the menu offers only the veto (<code>false</code>) or <code>null</code> for
 <code>context.autoClear.enabled</code> and <code>resume.auto</code>, and shows <code>onlyRepos</code>/<code>onlySessions</code> read-only,
 because only the machine file can arm or narrow them.</p>
+<h4 id="armed-wrap-up-contextautoclearwrapup">Armed wrap-up (<code>context.autoClear.wrapUp</code>)</h4>
+<p>A hook cannot make the session do anything; it can only refuse to clear. So with <code>wrapUp</code> armed the
+threshold block sends one procedure — start no new step; run the step's <code>Test:</code> command (the
+active ticket's plan step, or the checks for the tracked diff with no ticket); commit only if it
+passes; if it cannot pass, leave the tree and write <code>resume: none</code> with the reason under <strong>Verify
+first</strong>; run <code>/crew:handoff --wrap-up</code>; end the turn — and auto-clear acts only when, beside the
+checks above:</p>
+<ul>
+<li>the handoff's <code>head:</code> is HEAD, so it was written after the commit;</li>
+<li>its <code>branch:</code> is the checked-out branch;</li>
+<li>no tracked file is modified (untracked files, and the handoff itself, do not count);</li>
+<li>its <code>resume:</code> line parses, or is <code>resume: none</code>.</li>
+</ul>
+<p>Anything crew cannot tell — git failing, no <code>crew_resume</code>, on native Windows no python — refuses.
+A refusal is logged, shown to you as <code>crew wrap-up: not clearing - &lt;reason&gt;</code>, and handed back to
+the session once, at its next ordinary Stop. Crew checks that the commit happened, not that the
+test passed: the verify gate stands down on the turn the commit is made on.</p>
+<p>The chain end to end: wrap-up (T-0017) → the target proven from this session's own process
+(T-0016) → clear → <code>resume.auto</code> decides (T-0006) → the command is typed (T-0013).</p>
 <h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
 <p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
 are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal

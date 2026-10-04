@@ -1434,11 +1434,27 @@ command, not a sandbox against deliberate evasion (owner decision,
 2026-09-26). It catches `terraform`, `terragrunt` and `tofu` written directly:
 bare or path-qualified, behind the listed wrappers (`env`, `sudo`, `doas`,
 `nice`, `ionice`, `timeout`, `stdbuf`, `nohup`, `command`, `exec`, `time`,
-`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`),
-inside `bash|sh|zsh -c` and `eval` strings, with global options before the
+`xargs`, `parallel`, `sem`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`,
+`pwsh -c`, `aws-vault exec`, `unbuffer`), inside `bash|sh|zsh -c` and `eval` strings, with global options before the
 subcommand (`-chdir=`, terragrunt's `--working-dir`), and PowerShell's `&`,
-`.`, `terraform.exe` and `Start-Process`. It does not try to catch a program
-renamed or started some other way. Each of these runs unjudged:
+`.`, `terraform.exe` and `Start-Process`. PowerShell strips the same listed
+wrappers. An option a listed `xargs`, `parallel`, `sem`, `aws-vault` or
+`unbuffer` does not know makes a line that names terraform could-not-tell:
+crew cannot tell where the command starts. So does an `Invoke-Expression`
+whose script is not a literal string. terragrunt's `apply-all`,
+`destroy-all`, `stack run`, `graph` and `backend delete` are read as the
+apply or destroy they run, and `terragrunt exec -- cmd` is unwrapped like any
+listed wrapper. On a PowerShell line, every mention of terraform, tofu or
+terragrunt must be one crew accounts for -- the command word of a command it
+judged, a literal script given to `Invoke-Expression`, or, when nothing on the
+line can run a value made at run time, a literal argument of a plainly named
+command (`git commit -m "terraform destroy"`) or a string it only prints or
+assigns -- or the line is could-not-tell (`return terraform destroy`,
+`$t="terraform"; Start-Process $t destroy`,
+`[Diagnostics.Process]::Start("terraform","destroy")`). A mention inside a
+comment is dropped before counting; a name built at run time from parts is
+still not read (above). It does not try to catch a program renamed or
+started some other way. Each of these runs unjudged:
 
 - a rename by alias, function, symlink or copy, unless the same line makes a
   plain copy or link and runs it by that name: `env ln -sf /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
@@ -1452,9 +1468,7 @@ renamed or started some other way. Each of these runs unjudged:
 - a script file: `bash deploy.sh`
 - a wrapper not in the list above: `strace -f terraform destroy`,
   `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
-  `aws-vault exec p -- terraform destroy`,
-  `aws-vault exec prod -- terraform "destroy" -auto-approve`,
-  `unbuffer terraform destroy`, `systemd-run terraform destroy`
+  `systemd-run terraform destroy`
 - a program that runs another it is handed: `git bisect run terraform destroy`,
   `git -C infra bisect run terraform destroy`,
   `git -C add bisect run terraform destroy`, `rg --pre terraform destroy .`
@@ -1829,7 +1843,9 @@ The real payoff at five or more repositories is `contracts/`. That repository A'
 
 Symlink `.crew/codemap` into the vault rather than copying, so divergence is never a question.
 
-**Native memories as pointers.** A Claude Code native memory file may carry one line in place of its body, `vault: <name> | note: <vault-relative path>`, naming the vault the way this host's `~/.claude/obsidian/config.json` names it (only the name `memory` falls back: to `memory.vaultPath`, then, when that file has no `vaults` block, to its legacy top-level `vaultPath`). `crew_memory.py resolve --file <memory file>` prints the note's path on this host; `crew_memory.py check --memory-dir <dir>` lists every memory file's state. Each failure is a named state with exit 1 - `malformed`, `no-vault-config`, `vault-unknown`, `vault-unavailable`, `note-missing`, `outside-vault`, `unreadable` - and an unavailable vault is never swapped for another. A config counts as missing only when it is not there; one that does not read, parse or match its expected shape is `no-vault-config`, naming the field. A bad Obsidian config stops every name; a bad crew config stops `memory`, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies. A `vault:` first line is a pointer attempt only when `note:` or `|` is on it, or the next line starts with `|` or `note:`, or it is a bare vault name alone; otherwise it is prose. The `crew-memory` skill carries the state table. This version only reads pointers; nothing in crew writes one yet.
+**Native memories as pointers.** A Claude Code native memory file may carry one line in place of its body, `vault: <name> | note: <vault-relative path>`, naming the vault the way this host's `~/.claude/obsidian/config.json` names it (only the name `memory` falls back: to `memory.vaultPath`, then, when that file has no `vaults` block, to its legacy top-level `vaultPath`). `crew_memory.py resolve --file <memory file>` prints the note's path on this host; `crew_memory.py check --memory-dir <dir>` lists every memory file's state. Each failure is a named state with exit 1 - `malformed`, `no-vault-config`, `vault-unknown`, `vault-unavailable`, `note-missing`, `outside-vault`, `unreadable` - and an unavailable vault is never swapped for another. A config counts as missing only when it is not there; one that does not read, parse or match its expected shape is `no-vault-config`, naming the field. A bad Obsidian config stops every name; a bad crew config stops `memory`, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies. A `vault:` first line is a pointer attempt only when `note:` or `|` is on it, or the next line starts with `|` or `note:`, or it is a bare vault name alone; otherwise it is prose. The `crew-memory` skill carries the state table.
+
+**Saving a memory as a pointer.** `crew_memory.py save --file <memory file> --tag <tag> [--tag ...] [--title <t>] [--note <path>] [--type <type>] [--project <p>] [--apply]` writes the memory into the one writable vault and only then turns the memory into a pointer. Without `--apply` it prints the plan (vault, note, `create` / `append` / `unchanged`, the pointer line), writes nothing and exits 1. The vault is the single `role: primary` entry of `~/.claude/obsidian/config.json` (without roles, `default: true`, else the first; with no `vaults` block, `memory` as `resolve` finds it); it must hold `.obsidian/`, and a `recall` or `ignore` vault, or a substitute for a primary that is not there, is never written. The note defaults to `memories/<project>/<title>.md` (title from the memory's `name:` line, project from the repository folder), `type: concept`, the six-key frontmatter plus `project` and `memory_id` (the memory file's stem). A note already holding the same `memory_id` gains a dated `## Update` passage; any other existing note is a `collision`. The note is written through a temp file (a new one by hard link, or an exclusive create where hard links are refused; never renamed over a file; an existing note keeps every byte, only its `updated:` value changes and the passage is appended), its folder fsynced, read back and its pointer resolved; only then is the memory's body replaced (frontmatter bytes kept) through a temp file and `os.replace`. Two `save` runs by the same user on the same machine exclude each other with kernel locks (`flock`, or `msvcrt.locking` on Windows), the note's then the memory's, on files named by the sha256 of each file's case-folded real path and of its `dev:ino` (so a symlinked folder, `..`, a case variant and a hard link meet one lock) in `$XDG_CACHE_HOME` or `~/.cache` (`%LOCALAPPDATA%` on Windows) under `crew/memory-locks`, never in the vault (with no absolute cache folder, `lock failed`); the OS drops a lock when its save exits or is killed, so a second run's `another save is running now` means one is, and a lock that cannot be taken at all is `lock failed`. The lock does not cover a save on another machine syncing the vault, nor an edit by Claude Code or Obsidian, which never take it. The memory and an existing note are re-read and compared right before each rename, so an edit made earlier in the save is kept and refused as `changed during save`; an edit by another program in the instant between that last compare and the rename is not detected, because a rename cannot compare-and-swap. Every refusal prints `kept-full-text: <reason>` and leaves the memory byte-identical: `no vault configured` (exit 0), and with exit 1 `vault unavailable`, `no primary`, `several primaries`, `not a vault`, `config unreadable`, `collision`, `ascii-required` (`guard.asciiOnly`), `outside-vault`, `bad-note-path` (including a `.`-prefixed segment), `the existing note is not UTF-8`, `MEMORY.md is the index` (a case variant such as `memory.md` only where the file system folds case and it is the same file), `the memory file is a symlink`, `the memory has no body to save`, `another save is running now`, `lock failed`, `note write failed`, `the note changed during save`, `note not readable after write`, `the memory file changed during save`, `the memory file cannot be read again`, `pointer write failed`. A memory that is already a resolving pointer, including one another save just wrote, is `already-pointer` (exit 0). `MEMORY.md` is never edited.
 
 ---
 
@@ -1993,6 +2009,14 @@ whether it fires. On (the default), it instructs the session to reach a
 stopping point — finish or safely abandon the change in flight, write the
 handoff, update the ticket — before telling you it's ready. Off, it just asks
 you to write the handoff.
+
+With `context.autoClear.wrapUp` armed (machine file only, and only where
+auto-clear is armed), the warning becomes the one wrap-up procedure — finish
+the step, commit only if its `Test:` passes, run `/crew:handoff --wrap-up`,
+end the turn — and auto-clear waits until the handoff's `head:` is HEAD, its
+`branch:` matches, no tracked file is modified and its `resume:` line parses
+(or is `resume: none`). A refusal is shown to you and fed back to the session
+once. Crew checks the commit, not the test (CONFIG.md §14).
 
 It blocks **once per threshold crossing per session**: keyed on the payload's
 `session_id`, never on a `stop_hook_active` continuation, and re-armed only
@@ -2888,7 +2912,7 @@ with three hooks registered and unlisted.
 | `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. A rule passes only on a completion record its wrapper writes; a killed, never-started or unrecorded rule is FAILED as COULD NOT TELL (T-0082). Stands down while an emergency lane is open (§24), recording what did not run |
-| `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
+| `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on; with `context.autoClear.wrapUp` armed, sends the wrap-up procedure and feeds a refused wrap-up back once |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
 

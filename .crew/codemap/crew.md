@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@51b2222b
-verified: 2026-10-03
+anchor: useful-claude-add-ons@e2d2f9f0
+verified: 2026-10-04
 
 ## Re-derive provenance
 
@@ -329,7 +329,7 @@ paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:33-55`) states it: a terraf
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
-`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2976`) decides. The sidecar
+`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2980`) decides. The sidecar
 is `.crew/tfplan/<sha256>.json`, written outside the hook by
 `plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
 the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
@@ -340,36 +340,54 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls
-`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2785`, called at `:2834`, and only at
+`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2789`, called at `:2838`, and only at
 depth 0 - the raw command, never the lexer's own nested extractions): a line that RUNS terraform,
 terragrunt or tofu and holds a word that is not a plain literal (`crew_guards.first_non_literal`,
 `plugin/crew/hooks/scripts/crew_guards.py:1206`) yields one `terraformApply` finding whose scope
 `op` is `OP_UNREADABLE_LINE`; `_terraform_verdict` answers it before reading any plan or
 environment (ask, denied unattended; `block` denies). "Runs" is Step 9's trigger,
-`crew_guards.command_trigger` (`:1873`; `command_names_terraform` `:1884` returns its word): its
+`crew_guards.command_trigger` (`:2408`; `command_names_terraform` `:2419` returns its word): its
 own bash reader, `_GateReader` (`:1251`), splits the raw text into argv lists, and `_argv_trigger`
-(`:1642`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
+(`:1941`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
 a `bash -c`/`eval`/`pwsh -c` payload or substitution that does, or on an unreadable command word
 when the line names terraform, `destroy`, `apply` or `workspace`. Anything the reader does not
 read with certainty falls back to Step 8's any-word trigger, `crew_guards.names_terraform`
 (`:1194`). PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
-(`:1849`, per command `_ps_argv_trigger` `:1783`), read with the lexer's `_lex_ps`: `&`, `.`,
-`terraform.exe`, a path, `Start-Process`, `pwsh -c`, `bash -c`, `Invoke-Expression`, `$(...)`.
+(`:2380`, per command `_ps_argv_trigger` `:2294`), read with the lexer's `_lex_ps`: `&`, `.`,
+`terraform.exe`, a path, `Start-Process`, `pwsh -c`, `bash -c`, `Invoke-Expression` (its
+parameters read by `ps_eval_script` `:2257`; a script that is not a literal string, or a
+parameter it does not know, is unseen), `$(...)`, and since T-0047 the same listed wrappers bash strips, through
+the same `_unwrap`; a quoted or grouped first word with no `&` is expression mode, never run
+(the lexer marks `called`, `opens` and `groups` on each `_Cmd`). Since the third review of
+#347 a structural backstop, `_ps_backstop` (`:2212`, counting through `_ps_accounted` `:2187`),
+makes a PowerShell line could-not-tell unless every mention of a guarded tool in its raw text is
+accounted for: the command word of a command the guard judged, a literal script given to
+Invoke-Expression, or -- with no runner (launcher, eval, alias definition, `return`/`throw`/
+`exit`, a command word that is not a plain name) on the line -- a literal argument of a plainly
+named command or a string only printed or assigned; a group or a bare array among terraform's
+own arguments is could-not-tell too.
 The trigger returns `(word, unseen)`: `unseen` marks a command the lexer is not known to read (an
 opaque script runner such as `flock` or `ssh` whose own words name terraform, `find -exec`'s found
 path, zsh's `=terraform`, the reader's give-up, an alias, and the name a line copies or links
-terraform to, run with a destroy/apply/workspace operand - `_copies_terraform` `:1720`), and an
+terraform to, run with a destroy/apply/workspace operand - `_copies_terraform` `:2028`, and an
+option a listed `xargs`/`parallel`/`aws-vault`/`unbuffer` does not know, recorded on the gate's
+`GateFed` (`:1776`), which names that wrapper and option in the reason), and an
 unseen line is could-not-tell even when every word is plain. Since Step 10 there is no
 unknown-wrapper fallback and no data-command exemption: an argument naming terraform is data
 unless the command word is terraform (README "What the guard does not catch" lists what that
-leaves out). A read-only terraform/tofu subcommand (`_tf_read_only`, `:1585`, which reads terragrunt past its options and `run-all`) does not trigger.
+leaves out). A read-only terraform/tofu subcommand (`_tf_read_only`, `:1861`, which reads terragrunt past its options and `run-all`, and `workspace select` with no `-or-create` that is not false, `_selects_only` `:1894`; a select `xargs`/`parallel` may append `-or-create` to is unseen) does not trigger.
 The helpers live in `crew_guards.py` because `cloud_guard.py` sits at `.pylintrc`'s
-max-module-lines (3380 of 3400 at `02d1513b`); `cloud_guard._GATE_HELPERS` (`:2781`) passes the
+max-module-lines (3385 of 3400 at `e2d2f9f0`); `cloud_guard._GATE_HELPERS` (`:2785`) passes the
 lexer's `_unwrap`, `_shell_args`, `_pwsh_payload`, `_ps_normalise`, `_head_name` and `_lex_ps` in,
 so `crew_guards` still imports nothing from it. The lexer's own terraform reading skips options
-before the subcommand (`crew_guards.tf_skip_options` `:1541`, used by `_terraform_destructive`
-`:1541`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
-wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1560`). DERIVED from the code cited.
+before the subcommand (`crew_guards.tf_skip_options` `:1559`, terragrunt's boolean options in
+`_TF_GLOBAL_FLAG_OPTS` `:1545` taking no value; used by `_terraform_destructive` `:1548`, which also reads terragrunt's `apply-all`,
+`destroy-all`, `stack run`, `graph` and `backend delete` through `crew_guards.tg_other_op`
+`:1579`; `terragrunt exec` is unwrapped as a wrapper by `tg_exec_rest` `:1602`), so
+`terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed wrapper's
+options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1619`, through `wrapper_rest`
+`:1788`): `xargs`, `parallel` and `sem` with complete tables (`WRAPPER_TABLES` `:1771`),
+`aws-vault exec` and `unbuffer` by `unwrap_listed` (`:1825`). DERIVED from the code cited.
 
 **The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2541-2653`)
 now holds 14 keys**, built in seven steps (a literal dict of two at `:2541`, four `.update()`
@@ -634,6 +652,33 @@ Read in full on `T-0016-build` after review round 1 and the merge of main ce2354
   `:1357` (`bind_session`), which T-0017 builds on.
 - JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
   sabotage anchors); `prove_target` is the stricter proof and the one that decides.
+
+### Auto wrap-up before the clear (T-0017, crew 1.0.334)
+
+Read in full on `T-0017-build` (stacked on `T-0016-build` d7eb9fbd) before its version commit; line
+citations taken with `grep -n` there.
+
+- DERIVED: `context.autoClear.wrapUp` is read by `settings` with `enabled`'s machine-opt-in rule
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:215`) and arms only through `wrapup_armed`
+  (`:407`: `enabled`, `wrapUp` and `in_scope`). Its default is `None`
+  (`plugin/crew/hooks/scripts/crew_state.py:717`) and a repo may only veto it
+  (`plugin/crew/hooks/scripts/crew_config.py:3015`).
+- DERIVED: `plan` runs `wrapup_check` (`crew_autocycle.py:460`) after `verify_handoff` and before
+  `resolve_method` (`:1157`), so a refusal (reason prefixed `wrap-up: `, `:402`) never reaches the
+  binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:260` also prints it as a
+  `systemMessage`. `plugin/crew/hooks/scripts/auto-clear.ps1:727` reads `wrapUp` natively and runs
+  the same check through `crew_autocycle.py wrapup-check` (`:734`); no python refuses.
+- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:514`) instead of either
+  `autoWrapUp` text when armed (`plugin/crew/hooks/scripts/context-watch.sh:597`,
+  `plugin/crew/hooks/scripts/context-watch.ps1:630`), and in the marker branch escalates a failed
+  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:528`,
+  `context-watch.ps1:515`); the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1381`).
+  SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`,
+  `plugin/crew/hooks/scripts/handoff-read.ps1:200`).
+- DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:36`) is the one wrap-up
+  procedure; `/crew:autopilot`'s context-watch step names it (`plugin/crew/commands/autopilot.md:106`).
+- JUDGEMENT: the only enforcement is the clear. Crew checks the commit and the handoff's fields,
+  never that the step's test passed (verify-gate stands down on `stop_hook_active`).
 
 ## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43)
 
@@ -1597,41 +1642,90 @@ instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
 Added after this note's anchor; read in full at the T-0084 build head. Read-only: nothing here
 writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, migration L-0678).
 
-- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:66` - the pointer grammar, one line
-  `vault: <name> | note: <path>`; `:111` `_path_problem` refuses an absolute, backslash, `:`
-  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:80`
-  `_invisible`); `:173` `classify` - a pointer attempt (`:134` `_attempt`: the first non-blank
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:92` - the pointer grammar, one line
+  `vault: <name> | note: <path>`; `:137` `_path_problem` refuses an absolute, backslash, `:`
+  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:106`
+  `_invisible`); `:199` `classify` - a pointer attempt (`:160` `_attempt`: the first non-blank
   line, Cf removed and stripped, starts `vault` + optional whitespace + `:` in any case, and
-  `note:`/`|` (`:71` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
-  non-blank line starts `|` or `note:` (`:72` `_WRAPPED`), or the line is a bare vault name or nothing after the colon
-  (`:75` `_BARE`)) must be the whole body and match exactly (`:152` `_grammar`), else
+  `note:`/`|` (`:97` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
+  non-blank line starts `|` or `note:` (`:98` `_WRAPPED`), or the line is a bare vault name or nothing after the colon
+  (`:101` `_BARE`)) must be the whole body and match exactly (`:178` `_grammar`), else
   `malformed`; any other body, a prose line starting `Vault:` included, is `full-text`.
-- DERIVED `crew_memory.py:99` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
+- DERIVED `crew_memory.py:125` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
   is split on its first two `---` lines and never parsed as YAML.
-- DERIVED `crew_memory.py:230` `_config` - a config is absent only when `os.lstat` raises
-  FileNotFoundError; anything else must read (at most `CONFIG_CAP`, 1 MiB, `:76`), parse as a
-  JSON object with no duplicate key (`:220` `_no_duplicates`) and no RecursionError, and pass
-  its schema (`:188` `_obsidian_problem`: `vaults` an object of objects with a string `path`,
-  `vaultPath` a string; `:206` `_crew_problem`: `memory` an object, `memory.vaultPath` a string
+- DERIVED `crew_memory.py:256` `_config` - a config is absent only when `os.lstat` raises
+  FileNotFoundError; anything else must read (at most `CONFIG_CAP`, 1 MiB, `:102`), parse as a
+  JSON object with no duplicate key (`:246` `_no_duplicates`) and no RecursionError, and pass
+  its schema (`:214` `_obsidian_problem`: `vaults` an object of objects with a string `path`,
+  `vaultPath` a string; `:232` `_crew_problem`: `memory` an object, `memory.vaultPath` a string
   or null), or it is `config unreadable: <path>: <field>`.
-- DERIVED `crew_memory.py:291` `vault_path` - schema-checks the Obsidian config
-  (`crew_recall.obsidian_config_path()`, `:297`) and both crew layers (`:262-263`) before
+- DERIVED `crew_memory.py:317` `vault_path` - schema-checks the Obsidian config
+  (`crew_recall.obsidian_config_path()`, `:323`) and both crew layers (`:288-289`) before
   resolving; a bad Obsidian config stops every name, a bad crew config stops `memory` (and any
   name when there is no Obsidian config); `role: ignore` is `vault-unknown`; only the name
-  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:267`) and
-  then, only with no `vaults` block, the top-level `vaultPath`. `:272` `_vault_dir` stats and
+  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:293`) and
+  then, only with no `vaults` block, the top-level `vaultPath`. `:298` `_vault_dir` stats and
   lists the vault.
-- DERIVED `crew_memory.py:339` `note_path` - `os.lstat` per component: a link is
+- DERIVED `crew_memory.py:365` `note_path` - `os.lstat` per component: a link is
   `outside-vault`, a missing component `note-missing`, any other OSError `unreadable`; the real
   path must stay under the vault's real path, be a regular file (a directory or FIFO there is
-  `unreadable`) and open (`:86` `_open_regular`, non-blocking with an fstat `S_ISREG` check).
-- DERIVED `crew_memory.py:402` `_check_one` - `check` lists every `*.md` (suffix in any case)
-  but the exact name `MEMORY.md` (`:393`; on a case-insensitive filesystem `memory.md` is that file); `os.stat` follows links and only a regular file is
+  `unreadable`) and open (`:112` `_open_regular`, non-blocking with an fstat `S_ISREG` check).
+- DERIVED `crew_memory.py:438` `_check_one` - `check` lists every `*.md` (suffix in any case)
+  but the exact name `MEMORY.md` (`:429`; on a case-insensitive filesystem `memory.md` is that file); `os.stat` follows links and only a regular file is
   opened, so a dangling link, FIFO, device or directory is `unreadable` unopened.
-- DERIVED `crew_memory.py:436` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+- DERIVED `crew_memory.py:1106` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
   1 for any other state, 2 for usage, a missing `--file`/`--memory-dir` or an unlistable folder.
 - JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
   because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
+
+## Native-memory save, the writer (L-0677)
+
+Added after this note's anchor; read in full at the L-0677 build head. The only writer in
+`crew_memory.py`; the read side above is unchanged except that `resolve_file` now calls
+`resolve_pointer` (`plugin/crew/hooks/scripts/crew_memory.py:416`), which `save` reuses.
+
+- DERIVED `crew_memory.py:521` `writer_vault` - obsidian-vault's writer rule restated: with roles
+  the single `primary` (none or several refused), without roles `default: true` else the first,
+  with no `vaults` block the name `memory`; the name is resolved by `vault_path`, so writer and
+  resolver agree, and the folder must hold `.obsidian/`. Nothing configured is
+  `no vault configured`, exit 0; a non-boolean `guard.asciiOnly` is `config unreadable`.
+- DERIVED `crew_memory.py:643` `plan_save` - reads the native bytes once, classifies them
+  (`already-pointer` / a resolve state / `malformed`), derives title, note path (through
+  `_path_problem`), ASCII rule, containment (`:562` `_contained`: lstat walk, a symlink is
+  `outside-vault`) and `create` / `append` / `unchanged` / `collision` (`:598`
+  `_existing_action`, matching `memory_id`), and computes the full note text and the new native
+  bytes before anything is opened for write. `:476` `today` is the only clock read.
+- DERIVED `crew_memory.py:970` `apply_note` - create = temp file (`:724` `_write_temp`, fsynced)
+  then `os.link` to the name (never over an existing file); append = re-read, compare, temp and
+  `os.replace`; containment re-checked after `makedirs`. `:997` `apply_pointer` re-reads the
+  native file, refuses if it changed, writes a temp beside it with the mode copied, then
+  `os.replace`. `:1025` `apply_save` orders them: note, read-back (bytes equal AND
+  `resolve_pointer` resolved), pointer; each failure is `kept-full-text: <reason>` with the native
+  file byte-identical. `:1079` `_save_cli` is the `save` subcommand (dry run unless `--apply`).
+- DERIVED (review rounds 2-3) `crew_memory.py:929` `_locked` - `apply_save` takes kernel
+  locks, the note's then the native file's (one or two each), for the whole write, one non-blocking try each;
+  a busy lock is `another save is running now`, any OSError `lock failed`, and every lock
+  already held is released (`:915` `_release`). `:892` `_take_lock` opens (never deletes)
+  `<sha256 of each key>.lock` - `:851` `_lock_keys`: the case-folded real path, plus `dev:ino`
+  when the file exists - in `:831` `_lock_dir` (no absolute base is `lock failed: no cache
+  folder`) (`$XDG_CACHE_HOME` or `~/.cache`,
+  `%LOCALAPPDATA%` on Windows, then `crew/memory-locks`) and locks it with `:793`
+  `_posix_try_lock` (`flock LOCK_EX|LOCK_NB`) or `:806` `_windows_try_lock`
+  (`msvcrt.locking LK_NBLCK`, byte 0); the OS drops the lock when its holder dies. Round 1's
+  TTL lock files beside the files are gone. `:626` `_is_index` refuses `MEMORY.md`, and a
+  case variant only when it is the same file. `:1038` `_apply_locked` re-checks the native bytes under the locks
+  (`:1015` `_now_pointer`: `already-pointer` when another save won); `apply_note` and
+  `apply_pointer` re-compare right before each `os.replace`. `:947` `_create_exclusive`
+  falls back to an `O_EXCL` create, never `os.replace`, when hard links are refused;
+  `:761` `_fsync_dir`; `:746` `_new_mode` (0644 less the umask).
+- JUDGEMENT: the locks exclude only other `save` runs by the same user on the same machine
+  (not a save on another machine syncing the vault, nor Claude Code or Obsidian, which never
+  take them); an edit by another program in the
+  instant between the last compare and the rename is not detected (a rename is not a
+  compare-and-swap).
+- JUDGEMENT: Claude Code 2.1.289 kept a one-line pointer body across three new sessions in a
+  probe (it rewrote the frontmatter on an update and kept the body); a later version that
+  rewrites it shows as `full-text` in `check`, and `save` can be run again.
 
 ## Entry points
 
@@ -3866,7 +3960,17 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
 
+**Re-anchored `42effe14` -> `174b6613` on 2026-10-04 (T-0047, the round-8 terraform guard spellings).** Changed since the anchor, among the paths this map cites: `cloud_guard.py` (the PowerShell lexer marks `called`/`opens`, `_unwrap` reads listed wrappers through `crew_guards.wrapper_rest`; still 3380 lines) and `crew_guards.py` (the wrapper tables, `GateFed`, `unwrap_listed`, `_TF_GLOBAL_FLAG_OPTS`, `_selects_only`, and the PowerShell trigger's unwrap and expression rule, 1887 -> 2170 lines). The literal-word allowlist paragraph was re-taken by content (`grep -n` at `174b6613`) and describes the new reading; the environment-layer paragraph's `_terraform_verdict` moved one line. The earlier citations into `crew_guards.py` above `:1206` did not move. Other paths changed since `42effe14` came in with origin/main and were not re-derived here.
+
+**Re-anchored `174b6613` -> `c642a355` on 2026-10-04 (T-0047, first review of #347).** `cloud_guard.py` (3380 -> 3381 lines: the PowerShell lexer's call rule, `sem`, `tg_other_op`'s call, the fed `workspace select` in `_fed_finding`) and `crew_guards.py` (2170 -> 2250: `ps_eval_script`, `tg_other_op`, the fed-select branch) changed; the allowlist paragraph's citations were re-taken by content (`grep -n` at `c642a355`). No other claim changed.
+
+**Re-anchored `c642a355` -> `30f25211` on 2026-10-04 (T-0047, second review of #347).** `cloud_guard.py` (3381 -> 3385 lines: `_Cmd.groups`, the lexer's assignment slot, `terragrunt exec` unwrapped in `_unwrap`) and `crew_guards.py` (2250 -> 2324: `_ps_backstop`/`_ps_unplain`, `ps_head_slot`, `tg_exec_rest`, `tg_other_op`'s stack/backend reading) changed; the allowlist paragraph's citations were re-taken by content (`grep -n` at `30f25211`). origin/main `baf193aa` (merged at `ee9dbe81`) changed none of this paragraph. No other claim changed.
+
+**Re-anchored `30f25211` -> `5a13ff97` on 2026-10-04 (T-0047, second review, sabotage follow-through).** Only `crew_guards.py` changed (2324 -> 2325: the backstop also flags a bare array; two subsumed checks removed); the allowlist paragraph's citations were re-taken by content. No other claim changed.
+
 **Re-anchored to `51b2222b` on 2026-10-03 (T-0066, crew 1.0.185: `git.forbiddenTrailers` and the `/crew:done` trailer report; `51b2222b` merges origin/main `4f6ef540`, crew 1.0.162, into `T-0066-build`).** Main's maps were taken at the merge and T-0066's edits re-applied on them. T-0066 changes, among the paths these maps cite: `.crew/verify.json` (one rule appended, `:539-546`), `plugin/crew/CONFIG.md` (section 10/11 headings, one section 10 row, new section 22), `plugin/crew/commands/done.md` (a report section after check 4, `:68-79`), `plugin/crew/commands/implement.md` (step 2 `:46-52`; still 120 lines), `plugin/crew/hooks/scripts/crew_config.py` (the `git` block, +6 after main's `:380` and +4 after its `:595`), `plugin/crew/skills/crew-setup/SKILL.md`, the two templates, `plugin/crew/tests/test_crew_config.py`, the new `crew_trailers.py` and its suite, and release bookkeeping (`CHANGELOG.md`, `TODO.md` +11 at `:241`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, both version files). Body `path:N` citations into those files were re-mapped by a difflib line diff from main `4f6ef540` to the merged tree; a bare `:N` was re-mapped only where T-0066's earlier pass (`f7fd2e78`) had read the sentence and applied it. History notes were not re-mapped. No other claim was re-derived and no suite was executed for this note.
+
+**Re-anchored `5a13ff97` (and main's `51b2222b`) -> `e2d2f9f0` on 2026-10-04 (T-0047, third review of #347, merging origin/main `86d96fa1`).** Only `crew_guards.py` changed among this paragraph's paths (2325 -> 2422: the shape backstop replaced by `_ps_accounted`/`_ps_backstop`, `graph run`); main changed neither guard file. The allowlist paragraph's citations were re-taken by content at `e2d2f9f0`; main's own re-anchor note above stands for the paths T-0066 changed.
 
 ## Shell and PowerShell repo-config readers in a linked worktree (T-0096, slice 0)
 

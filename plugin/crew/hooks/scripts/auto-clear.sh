@@ -30,6 +30,10 @@
 #     never clears.
 #   - the handoff was written after that request, is not a stub, and is not
 #     PreCompact's automatic skeleton.
+#   - with context.autoClear.wrapUp armed (T-0017), the wrap-up's results
+#     are on disk: the handoff's head: is HEAD, its branch: is the checkout,
+#     no tracked file is modified, and its resume: line parses (or is
+#     `resume: none`). This refusal is also printed as a systemMessage.
 #   - this session is bound to its OWN process (T-0016): the nearest ancestor
 #     named by a Claude Code session record (${CLAUDE_CONFIG_DIR:-~/.claude}/
 #     sessions/<pid>.json) with this session's id and that process's start
@@ -55,6 +59,10 @@
 #   bash auto-clear.sh --session ID --dry-run  # print the plan, send nothing
 #   bash auto-clear.sh --force                 # skip the handoff conditions (testing)
 #   bash auto-clear.sh --resume --session ID --source clear|compact [--dry-run]
+#
+# --force skips the handoff conditions AND the T-0017 wrap-up check. It is for
+# testing by hand only: hooks.json and context-watch never pass it, and no
+# repo or machine config key can turn it on.
 #
 # Called from context-watch.sh with this session's id and root. `--resume`
 # (T-0013) is called from the context hook on SessionStart: see the resume
@@ -246,6 +254,13 @@ SENT_MARKER=".crew/.autoclear-sent-${KEY}"
 [ "$STATUS" = "off" ] && exit 0
 if [ "$STATUS" != "send" ]; then
   note "refusing - $REASON"
+  # T-0017: a wrap-up refusal is also SHOWN, on stdout, which context-watch
+  # forwards: an armed session that is not cleared says why.
+  case "$REASON" in
+    "wrap-up: "*)
+      "$PY" -c 'import json,sys; print(json.dumps({"systemMessage": "crew wrap-up: not clearing - " + sys.argv[1]}))' \
+        "${REASON#wrap-up: }" 2>/dev/null ;;
+  esac
   exit 0
 fi
 
