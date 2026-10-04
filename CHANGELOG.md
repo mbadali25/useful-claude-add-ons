@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.197: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
+### Changed — `crew` 1.0.235: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
 
 - **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always
   exits 0) replaces the send logic that `notify.sh` and `notify.ps1` each carried. The two are now thin
@@ -38,6 +38,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   global templates now write `provider: null`, so notifications stay off until a provider is set. The notify
   skill's `telegram.bot_token_env` / `chat_id` fill a null `tokenEnv` / `chatId`, read-only; its example chat
   id counts as unset. New keys `notify.realertHours` and `notify.questionTypes` (131 repo / 74 global leaves).
+- **Review hardening.** `CREW_NOTIFY_TELEGRAM_BASE` (the test server's address) is honoured only for an
+  http(s) URL whose host is exactly `127.0.0.1`, `::1` or `localhost`; anything else is ignored and the send goes
+  to `api.telegram.org`, since the bot token rides in the URL path and a cloned repo's settings `env` could
+  otherwise send it elsewhere. `notify.tokenEnv` counts only from the machine-global layer (a repo's is ignored
+  with a notice), and `crew_notify.py config` prints `chatId` masked. A deploy with no `--outcome` whose reason
+  names neither pass nor fail is `Promotion outcome unknown` (loud), never `Promotion passed`.
+  `/crew:promote` sends through `notify.sh deploy ... --outcome` (its python resolver: Git Bash has no
+  `python3`), and `notify.ps1`'s direct call forwards `--outcome` too. Approving a permission prompt does not
+  start a new waiting episode; only your next typed message does.
 - **Tests.** `test_crew_notify.py` (a local HTTP server stands in for `api.telegram.org`; no test reads the
   machine's global config or reaches the network), `test_crew_notify_hooks.py` (including a bash-only
   must-block/must-allow case for the twin claim), and the updated twin tests. `.crew/verify.json` maps the
