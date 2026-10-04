@@ -27,11 +27,20 @@ tried up to 30 GiB (measured, Linux, 2026-10-04), which made 1121 unmutated
 crew tests fail under a 4 GiB address-space cap. Under a 4 GiB data limit pwsh
 starts, and a python process reading without bound still hits MemoryError.
 
-A harness killed by SIGKILL cannot stop its child; any other exit the harness
-sees (its signal handler's SystemExit, Ctrl-C) stops the group before it
-unwinds, because the group is outside the caller's own process group.
+RLIMIT_DATA covers private anonymous memory (heap, mmap'd private pages) from
+Linux 4.7; below that kernel, or when the release cannot be read, the cap is
+reported `absent`. It never covers MAP_SHARED mappings or files written to a
+tmpfs: a mutation that grows either is bounded only by the timeout.
+
+The entry's process group is KILLed when `run` returns, on every path, so a
+test that backgrounds a process and exits leaves nothing running. Known
+limits: a process that calls setsid (or setpgid) leaves the group and is out
+of reach; a harness killed by SIGKILL cannot stop its child. Any other exit
+the harness sees (its signal handler's SystemExit, Ctrl-C) stops the group
+before it unwinds, because the group is outside the caller's own.
 """
 import os
+import platform
 import re
 import signal
 import subprocess
@@ -87,6 +96,11 @@ def _absent(mem_mib):
         return f"{MEM_VAR}=0"
     if not sys.platform.startswith("linux"):
         return f"not enforced on {sys.platform}"
+    found = re.match(r"(\d+)\.(\d+)", platform.release())
+    if found is None:
+        return f"kernel release {platform.release()!r} unreadable"
+    if (int(found.group(1)), int(found.group(2))) < (4, 7):
+        return f"kernel {found.group(0)} predates RLIMIT_DATA covering mmap (4.7)"
     if resource is None:
         return "no resource module"
     return None
@@ -153,15 +167,21 @@ def run(argv, cwd, env, mem_mib, timeout_s):
         argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL, text=True, **kwargs)
     try:
-        out, err = proc.communicate(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        _stop(proc)
         try:
-            out, err = proc.communicate(timeout=_GRACE_S)
+            out, err = proc.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:
-            out, err = "", "(output not read: a process outside the group holds it)"
-        return TIMED_OUT, (out or "") + (err or "")
-    except BaseException:
-        _stop(proc)
-        raise
-    return proc.returncode, out + err
+            _stop(proc)
+            try:
+                out, err = proc.communicate(timeout=_GRACE_S)
+            except subprocess.TimeoutExpired:
+                out, err = "", "(output not read: a process outside the group holds it)"
+            return TIMED_OUT, (out or "") + (err or "")
+        return proc.returncode, out + err
+    finally:
+        # Every path - a normal return, a timeout, the harness's own
+        # SystemExit or Ctrl-C raised inside the wait: whatever is left in
+        # the entry's group goes with it.
+        if os.name == "posix":
+            _signal_group(proc.pid, signal.SIGKILL)
+        elif proc.poll() is None:
+            _stop(proc)

@@ -41,10 +41,16 @@ _PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
 
-_FLAVOURS = [
+_NEEDS_PS1 = pytest.mark.skipif(_PWSH is None or _BASH is None, reason="needs pwsh and bash")
+# F1: the [ps1] halves are `slow` (the gate's own rule 4 stays inside a Stop
+# budget); a smoke set of three keeps the .ps1 table on the default path.
+_SMOKE_FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(_PWSH is None or _BASH is None,
-                                                 reason="needs pwsh and bash")),
+    pytest.param("ps1", marks=_NEEDS_PS1),
+]
+_FLAVOURS = [
+    _SMOKE_FLAVOURS[0],
+    pytest.param("ps1", marks=[_NEEDS_PS1, pytest.mark.slow]),
 ]
 _NOT_POSIX_PROC = not os.path.isdir("/proc/self")
 
@@ -114,7 +120,7 @@ def _wrapper_pid(flavour):
 
 # --- must allow --------------------------------------------------------------
 
-@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("flavour", _SMOKE_FLAVOURS)
 def test_a_rule_that_exits_0_passes(flavour, tmp_path):
     root = _repo(tmp_path, ["echo all-good"])
 
@@ -155,7 +161,7 @@ def test_a_rule_with_its_own_exit_or_trap_passes(flavour, tmp_path):
 # --- must block --------------------------------------------------------------
 
 @pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
-@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("flavour", _SMOKE_FLAVOURS)
 def test_a_rule_killed_mid_run_could_not_tell(flavour, tmp_path):
     cmd = "echo started; kill -KILL $BASHPID; echo never"
     root = _repo(tmp_path, [cmd])
@@ -200,7 +206,8 @@ def test_no_completion_record_could_not_tell(flavour, how, tmp_path):
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs mkfifo")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-@pytest.mark.parametrize("value", ["", "abc\\n", "256\\n"], ids=["empty", "text", "256"])
+@pytest.mark.parametrize("value", ["", "abc\\n", "256\\n", "007\\n", "0\\n0\\n"],
+                         ids=["empty", "text", "256", "leading-zero", "two-lines"])
 def test_unreadable_record_could_not_tell(flavour, value, tmp_path):
     """The record path is a shell variable the rule can see. The rule points
     it at a FIFO and leaves a background job that outlives it: the job drains
@@ -218,6 +225,9 @@ def test_unreadable_record_could_not_tell(flavour, value, tmp_path):
 
 
 @pytest.mark.skipif(_PWSH is None or _BASH is None, reason="needs pwsh and bash")
+@pytest.mark.skipif(sys.platform.startswith("win"),
+                    reason="Resolve-CrewBash takes Git's own bash.exe there (walked up from "
+                           "git.exe), so the fixture cannot remove the bash the gate resolved")
 def test_ps1_launch_failure_does_not_inherit_the_previous_status(tmp_path):
     """The first rule passes and removes the bash the gate resolved; the second
     rule's `& $bashExe` cannot start. Before T-0082 `$rc` still held the first
@@ -237,13 +247,15 @@ def test_ps1_launch_failure_does_not_inherit_the_previous_status(tmp_path):
     assert _marker(root) is None
 
 
-@pytest.mark.skipif(_NOT_POSIX_PROC or shutil.which("timeout") is None,
-                    reason="needs /proc and timeout(1)")
+@pytest.mark.skipif(_NOT_POSIX_PROC, reason="needs /proc")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 @pytest.mark.parametrize("where", ["rule-child", "wrapper"])
 def test_a_rule_timed_out_from_outside_is_failed(flavour, where, tmp_path):
     if where == "rule-child":
-        cmd = "timeout -s KILL 1 sleep 10"
+        # A timer outside the child KILLs it; the rule exits with the child's
+        # status. (`timeout -s KILL` is not used: newer coreutils report 124,
+        # its own "timed out", not the child's 137 - measured on CI.)
+        cmd = "sleep 10 & p=$!; ( sleep 1; kill -KILL $p ) & wait $p"
         reason = "exit status 137: ended by signal 9, or the rule's own status"
     else:
         cmd = _wrapper_pid(flavour) + '( sleep 1; kill -KILL "$w" ) & sleep 4'
@@ -366,8 +378,8 @@ def test_a_signalled_gate_with_no_rule_in_flight_names_nothing(tmp_path):
 
 def _leftovers(root, tmpdir):
     crew = [n for n in os.listdir(root / ".crew") if n.startswith(".verify-rule-")]
-    temp = [n for n in os.listdir(tmpdir) if os.path.isfile(os.path.join(tmpdir, n))
-            and n.startswith("tmp")] if os.path.isdir(tmpdir) else []
+    temp = ([n for n in os.listdir(tmpdir) if n.startswith("tmp")]
+            if os.path.isdir(tmpdir) else [])
     return crew + temp
 
 
@@ -402,9 +414,68 @@ def test_a_signalled_gate_leaves_no_record_file(tmp_path):
     tmpdir = tmp_path / "tmpdir"
     tmpdir.mkdir()
     flag = tmp_path / "started"
-    root = _repo(tmp_path, [f": > {flag.as_posix()}; sleep 8"])
+    root = _repo(tmp_path, [f": > {flag.as_posix()}; sleep 2"])
 
     code, _, err = _signal_gate_when(root, flag, {"TMPDIR": str(tmpdir)})
 
     assert code == 143, err
     assert _leftovers(root, tmpdir) == []
+    # N3: the rule the gate left running ends later and its wrapper then
+    # tries to write the record; it must find nowhere to write it.
+    time.sleep(3.5)
+    assert _leftovers(root, tmpdir) == []
+
+
+# --- review round 1 (H2a) ------------------------------------------------------
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_255_record_is_not_called_a_signal(flavour, tmp_path):
+    """N5: 255 - 128 is no signal number, so the reason must not name one."""
+    root = _repo(tmp_path, ["exit 255"])
+
+    res = _run(flavour, root)
+
+    assert res.returncode == 2, res.stderr
+    assert (f"{_TELL}exit status 255, above 128 and not a signal number - the rule's "
+            "own status): exit 255") in res.stderr
+    assert "signal 127" not in res.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_the_record_lives_in_a_private_directory(flavour, tmp_path):
+    """F4: never a delete-then-recreate name in shared /tmp - a fresh 0700
+    directory per rule run, the record at `$dir/rc`."""
+    log = tmp_path / "where.log"
+    cmd = (f'basename "$RULE_DONE_FILE" > {log.as_posix()}; '
+           f'stat -c %a "$(dirname "$RULE_DONE_FILE")" >> {log.as_posix()}')
+    root = _repo(tmp_path, [cmd])
+
+    res = _run(flavour, root)
+
+    assert res.returncode == 0, res.stderr
+    lines = log.read_text(encoding="utf-8").split()
+    assert lines[0] == "rc", lines
+    if not sys.platform.startswith("win"):
+        assert lines[1] == "700", lines
+
+
+@pytest.mark.skipif(_PWSH is None or _BASH is None, reason="needs pwsh and bash")
+def test_ps1_fallback_record_from_a_subdirectory_passes(tmp_path):
+    """F3: TMPDIR unusable, so both files fall back under `.crew/`; the gate is
+    started from a subdirectory. .NET resolves a relative path against the
+    process directory, not PowerShell's location, so the paths must be made
+    absolute from the repo root or the record is never found."""
+    root = _repo(tmp_path, ["echo ok"])
+    sub = root / "sub"
+    sub.mkdir()
+    gone = tmp_path / "no-such-tmp"
+    pin = crew_fixtures.gate_bash(_PWSH, _PS1) if sys.platform.startswith("win") else _BASH
+    env = dict(_env("ps1", root), TMPDIR=str(gone), TMP=str(gone), TEMP=str(gone))
+
+    with crew_fixtures.msys_tmp_pinned(pin, env):
+        res = crew_fixtures.run_gate(_cmd("ps1"), input="{}", cwd=str(sub), env=env,
+                                     capture_output=True, text=True, check=False,
+                                     timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert res.returncode == 0, res.stderr
+    assert "COULD NOT TELL" not in res.stderr

@@ -2019,28 +2019,42 @@ foreach ($ident in $cmds) {
     # carrying it to this flavour.
     $ruleOutFile = $null
     try { $ruleOutFile = [System.IO.Path]::GetTempFileName() } catch { $ruleOutFile = $null }
+    # The `.crew/` fallbacks are ABSOLUTE, from $root (T-0082 review F3):
+    # `[System.IO.File]::Open` below resolves a relative path against the
+    # process directory, not PowerShell's location, so a gate started from a
+    # subdirectory never found a relative fallback file.
+    $crewDir = Join-Path $root ".crew"
     if (-not $ruleOutFile) {
       try {
-        if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
-        $candidate = Join-Path ".crew" (".verify-rule-out." + [System.IO.Path]::GetRandomFileName())
+        if (-not (Test-Path -LiteralPath $crewDir)) { New-Item -ItemType Directory -Path $crewDir -Force -ErrorAction Stop | Out-Null }
+        $candidate = Join-Path $crewDir (".verify-rule-out." + [System.IO.Path]::GetRandomFileName())
         New-Item -ItemType File -Path $candidate -ErrorAction Stop | Out-Null
         $ruleOutFile = $candidate
       } catch { $ruleOutFile = $null }
     }
     # T-0082: the COMPLETION RECORD - twin of RULE_DONE_FILE in
-    # verify-gate.sh, where the full rationale lives. Made the same way as
-    # the capture file, then removed, so its absence means "not written".
-    $ruleDoneFile = $null
-    try { $ruleDoneFile = [System.IO.Path]::GetTempFileName() } catch { $ruleDoneFile = $null }
-    if (-not $ruleDoneFile) {
+    # verify-gate.sh, where the full rationale lives. A fresh private
+    # directory per rule run (review F4), the record at `<dir>/rc`: never a
+    # delete-then-recreate name in a shared temp dir. New-Item refuses a name
+    # that already exists, so the directory is ours; off Windows it is then
+    # narrowed to 0700. Removed whole after the rule, so a wrapper left
+    # running that writes late finds nowhere to write.
+    $ruleDoneDir = $null
+    foreach ($doneBase in @([System.IO.Path]::GetTempPath(), $crewDir)) {
       try {
-        if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
-        $candidate = Join-Path ".crew" (".verify-rule-done." + [System.IO.Path]::GetRandomFileName())
-        New-Item -ItemType File -Path $candidate -ErrorAction Stop | Out-Null
-        $ruleDoneFile = $candidate
-      } catch { $ruleDoneFile = $null }
+        if (-not (Test-Path -LiteralPath $doneBase -PathType Container)) { continue }
+        $candidate = Join-Path $doneBase (".verify-rule-done." + [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType Directory -Path $candidate -ErrorAction Stop | Out-Null
+        if ((Test-Path variable:IsWindows) -and -not $IsWindows) {
+          [System.IO.File]::SetUnixFileMode($candidate, [System.IO.UnixFileMode]'UserRead, UserWrite, UserExecute')
+        }
+        $ruleDoneDir = $candidate
+        break
+      } catch {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) { Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue }
+      }
     }
-    if ($ruleDoneFile) { Remove-Item -Path $ruleDoneFile -Force -ErrorAction SilentlyContinue }
+    $ruleDoneFile = if ($ruleDoneDir) { Join-Path $ruleDoneDir "rc" } else { $null }
     if (-not $bashExe) {
       # Resolve-CrewBash found no natively-launchable candidate for THIS
       # rule (re-checked above, per-rule, in case PATH changed mid-run) -
@@ -2049,6 +2063,7 @@ foreach ($ident in $cmds) {
       # rc-ne-0 / "VERIFY FAILED" branch below as any other rule failure, so
       # this reason is what prints, not a hang with no output at all.
       if ($ruleOutFile) { Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue }
+      if ($ruleDoneDir) { Remove-Item -LiteralPath $ruleDoneDir -Recurse -Force -ErrorAction SilentlyContinue }
       $out = @("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim and hang")
       $ruleWhy = $out[0]
       $rc = 1
@@ -2107,14 +2122,14 @@ foreach ($ident in $cmds) {
           $recBuf = [byte[]]::new(8)
           $recLen = $recFs.Read($recBuf, 0, 8)
           $recText = [System.Text.Encoding]::ASCII.GetString($recBuf, 0, $recLen)
-          if ($recText -match '\A[0-9]{1,3}\n\z' -and [int]$recText.Trim() -le 255) { $ruleRec = [int]$recText.Trim() }
+          if ($recText -cmatch '\A(0|[1-9][0-9]{0,2})\n\z' -and [int]$recText.Trim() -le 255) { $ruleRec = [int]$recText.Trim() }
         } finally {
           $recFs.Dispose()
         }
       } catch {
         $ruleRec = $null
       }
-      Remove-Item -Path $ruleDoneFile -Force -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath $ruleDoneDir -Recurse -Force -ErrorAction SilentlyContinue
       # 1 MiB; twin of RULE_OUT_CAP in verify-gate.sh. The env override is
       # test-only (proving the cap is enforced without writing gigabytes to
       # prove it) - no operator-facing doc names it, and it must never be
@@ -2209,6 +2224,7 @@ foreach ($ident in $cmds) {
       # as every other rule failure, so "VERIFY FAILED: $c" and this
       # message both print.
       if ($ruleOutFile) { Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue }
+      if ($ruleDoneDir) { Remove-Item -LiteralPath $ruleDoneDir -Recurse -Force -ErrorAction SilentlyContinue }
       $out = @("verify-gate: cannot create an output-capture file or a completion-record file (temp dir and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever")
       $ruleWhy = $out[0]
       $rc = 1
@@ -2224,6 +2240,8 @@ foreach ($ident in $cmds) {
       $ruleWhy = "the rule's runner ended with status $rc before it recorded a result"
     } elseif ($null -eq $ruleRec) {
       $ruleWhy = "no completion record"
+    } elseif ($ruleRec -gt 192) {
+      $ruleWhy = "exit status ${ruleRec}, above 128 and not a signal number - the rule's own status"
     } elseif ($ruleRec -gt 128) {
       $ruleWhy = "exit status ${ruleRec}: ended by signal $($ruleRec - 128), or the rule's own status"
     } else {

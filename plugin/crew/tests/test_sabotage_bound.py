@@ -90,6 +90,8 @@ def test_a_timeout_stops_the_whole_group_and_returns_124(tmp_path):
 
     assert code == sabotage_bound.TIMED_OUT == 124
     assert time.monotonic() - started < 60
+    if os.name != "posix":
+        return  # the grandchild check below reads POSIX process state
     grandchild = int(pidfile.read_text(encoding="utf-8"))
     deadline = time.monotonic() + 10
     while not _gone(grandchild) and time.monotonic() < deadline:
@@ -186,3 +188,44 @@ def test_the_harness_dying_stops_a_running_child(tmp_path, monkeypatch):
     while not _gone(pid) and time.monotonic() < deadline:
         time.sleep(0.1)
     assert _gone(pid), f"child {pid} outlived the harness"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups")
+def test_a_same_group_child_left_behind_is_stopped_after_a_normal_exit(tmp_path):
+    """F5: the entry's group is KILLed on every path, not only on a timeout or
+    an exception - a test that backgrounds a process and exits 0 leaves
+    nothing running. (A child that calls setsid leaves the group and is out
+    of reach: the documented limit.)"""
+    pidfile = tmp_path / "left.pid"
+    child = ("import subprocess, sys; "
+             "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'], "
+             "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+             f"open({str(pidfile)!r}, 'w').write(str(p.pid))")
+
+    code, output = _run(_py(child))
+
+    assert code == 0, output
+    left = int(pidfile.read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 10
+    while not _gone(left) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert _gone(left), f"same-group child {left} outlived its entry"
+
+
+@pytest.mark.parametrize("release, enforced", [
+    ("6.8.0-45-generic", True), ("4.7.0", True), ("4.19.112", True),
+    ("4.6.7", False), ("3.10.0-1160.el7", False), ("not-a-version", False), ("", False),
+])
+def test_the_cap_is_absent_below_linux_4_7(monkeypatch, release, enforced):
+    """F6: RLIMIT_DATA covers mmap'd anonymous memory only from Linux 4.7; an
+    older or unreadable kernel version says absent, never enforced."""
+    monkeypatch.setattr(sabotage_bound.sys, "platform", "linux")
+    monkeypatch.setattr(sabotage_bound.platform, "release", lambda: release)
+
+    line = sabotage_bound.describe(4096, 600)
+
+    if enforced:
+        assert line == "bound: memory 4096 MiB per process (RLIMIT_DATA), 600 s per entry"
+    else:
+        assert line.startswith("bound: memory cap absent ("), line
+        assert "kernel" in line

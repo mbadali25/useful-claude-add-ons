@@ -2974,7 +2974,12 @@ fails on its own assertion, so the entry is `RED (good)` for real; a timeout
 stops the whole group and reads `RED BUT UNPROVEN -- timed out`, failing the
 suite. An unreadable value refuses the run rather than meaning the default.
 The cap is enforced on Linux only: elsewhere the `bound:` line the run prints
-first says `memory cap absent`, and only the timeout applies.
+first says `memory cap absent`, and only the timeout applies; the same below Linux
+4.7, where `RLIMIT_DATA` does not cover mmap. It never covers `MAP_SHARED` memory or
+files written to a tmpfs - those are bounded by the timeout alone. When an entry
+returns, on every path, its whole process group is KILLed, so a test that
+backgrounds a process leaves nothing running; a process that calls `setsid`
+leaves the group and is out of reach.
 
 `run-tests.sh` printed `RESULT: 177 passed, 0 failed` at `61af85cb`. It covers
 what the guard must block and must allow, the promotion gate, the emergency lane

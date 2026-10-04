@@ -1092,9 +1092,25 @@ TOOLING_MUTATIONS += (
     (
         "sabotage bound: the harness dying leaves its child running",
         BOUND,
-        "    except BaseException:\n        _stop(proc)\n        raise\n",
-        "    except BaseException:\n        raise\n",
+        '        if os.name == "posix":\n            _signal_group(proc.pid, signal.SIGKILL)\n'
+        "        elif proc.poll() is None:\n            _stop(proc)\n",
+        "        pass\n",
         _BOUND + "test_the_harness_dying_stops_a_running_child",
+    ),
+    (
+        "sabotage bound: a same-group child outlives a normal exit",
+        BOUND,
+        '        if os.name == "posix":\n            _signal_group(proc.pid, signal.SIGKILL)\n'
+        "        elif proc.poll() is None:\n            _stop(proc)\n",
+        "        pass\n",
+        _BOUND + "test_a_same_group_child_left_behind_is_stopped_after_a_normal_exit",
+    ),
+    (
+        "sabotage bound: a pre-4.7 kernel reads as enforced",
+        BOUND,
+        "    if (int(found.group(1)), int(found.group(2))) < (4, 7):\n",
+        "    if False:\n",
+        _BOUND + "test_the_cap_is_absent_below_linux_4_7[4.6.7-False]",
     ),
 )
 
@@ -1159,6 +1175,34 @@ TOOLING_MUTATIONS += (
         _DONE + "test_a_signalled_gate_with_no_rule_in_flight_names_nothing",
     ),
     (
+        "sh: the record sits beside other files, not in a private dir",
+        GATE_SH,
+        '  [ -n "$RULE_DONE_DIR" ] && RULE_DONE_FILE="$RULE_DONE_DIR/rc"\n',
+        '  [ -n "$RULE_DONE_DIR" ] && RULE_DONE_FILE="$RULE_DONE_DIR.rc"\n',
+        _DONE + "test_the_record_lives_in_a_private_directory[sh]",
+    ),
+    (
+        "sh: the record directory survives a signalled gate",
+        GATE_SH,
+        '  [ -n "${RULE_DONE_DIR:-}" ] && rm -rf -- "$RULE_DONE_DIR"\n',
+        "  :\n",
+        _DONE + "test_a_signalled_gate_leaves_no_record_file",
+    ),
+    (
+        "sh: a record with a leading zero is read",
+        GATE_SH,
+        "      0$'\\n'|[1-9]$'\\n'|[1-9][0-9]$'\\n'|[1-9][0-9][0-9]$'\\n') RULE_REC=${RULE_REC%$'\\n'} ;;\n",
+        "      [0-9]$'\\n'|[0-9][0-9]$'\\n'|[0-9][0-9][0-9]$'\\n') RULE_REC=${RULE_REC%$'\\n'} ;;\n",
+        _DONE + "test_unreadable_record_could_not_tell[leading-zero-sh]",
+    ),
+    (
+        "sh: 255 is called a signal",
+        GATE_SH,
+        '    elif [ "$RULE_REC" -gt 192 ]; then\n',
+        "    elif false; then\n",
+        _DONE + "test_a_255_record_is_not_called_a_signal[sh]",
+    ),
+    (
         "sh: a signalled gate leaves the rule's temp files",
         GATE_SH,
         "_crew_gate_register_cleanup _crew_gate_rule_files_cleanup\n",
@@ -1195,6 +1239,49 @@ if shutil.which("pwsh"):
             "    } elseif ($ruleRec -gt 128) {\n",
             "    } elseif ($false) {\n",
             _DONE + "test_a_rule_killed_mid_run_could_not_tell[ps1]",
+        ),
+        (
+            "ps1: the .crew/ fallbacks are relative to the process directory",
+            GATE_PS1,
+            '    $crewDir = Join-Path $root ".crew"\n',
+            '    $crewDir = ".crew"\n',
+            _DONE + "test_ps1_fallback_record_from_a_subdirectory_passes",
+        ),
+        (
+            "ps1: the record directory is left world-readable",
+            GATE_PS1,
+            "          [System.IO.File]::SetUnixFileMode($candidate, "
+            "[System.IO.UnixFileMode]'UserRead, UserWrite, UserExecute')\n",
+            "",
+            _DONE + "test_the_record_lives_in_a_private_directory[ps1]",
+        ),
+        (
+            "ps1: a record with a leading zero is read",
+            GATE_PS1,
+            "'\\A(0|[1-9][0-9]{0,2})\\n\\z'",
+            "'\\A[0-9]{1,3}\\n\\z'",
+            _DONE + "test_unreadable_record_could_not_tell[leading-zero-ps1]",
+        ),
+        (
+            "ps1: 255 is called a signal",
+            GATE_PS1,
+            "    } elseif ($ruleRec -gt 192) {\n",
+            "    } elseif ($false) {\n",
+            _DONE + "test_a_255_record_is_not_called_a_signal[ps1]",
+        ),
+        (
+            "ps1: pass on the record alone (wrapper status not read)",
+            GATE_PS1,
+            "    } elseif ($rc -ne 0) {\n      $ruleWhy = \"the rule's runner",
+            "    } elseif ($false) {\n      $ruleWhy = \"the rule's runner",
+            _DONE + "test_no_completion_record_could_not_tell[wrapper-killed-ps1]",
+        ),
+        (
+            "ps1: a record above 255 is read as a status",
+            GATE_PS1,
+            " -and [int]$recText.Trim() -le 255)",
+            ")",
+            _DONE + "test_unreadable_record_could_not_tell[256-ps1]",
         ),
         (
             "ps1: unknown is logged as pass",

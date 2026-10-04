@@ -1840,8 +1840,12 @@ UNKNOWN_N=0
 # otherwise leave both behind. (A rule left running by a signalled gate can
 # still write its record afterwards - the descoped orphan limitation below.)
 RULE_OUT_FILE=""
+RULE_DONE_DIR=""
 RULE_DONE_FILE=""
-_crew_gate_rule_files_cleanup() { rm -f "${RULE_OUT_FILE:-}" "${RULE_DONE_FILE:-}"; }
+_crew_gate_rule_files_cleanup() {
+  rm -f "${RULE_OUT_FILE:-}"
+  [ -n "${RULE_DONE_DIR:-}" ] && rm -rf -- "$RULE_DONE_DIR"
+}
 _crew_gate_register_cleanup _crew_gate_rule_files_cleanup
 # NDJSON accumulator: one line per command actually run this turn, with its
 # outcome and elapsed time, fed to verify_record.py sync below. Built from
@@ -2035,17 +2039,21 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   if [ -z "$RULE_OUT_FILE" ]; then
     RULE_OUT_FILE=$(mktemp ".crew/.verify-rule-out.XXXXXX" 2>/dev/null) || RULE_OUT_FILE=""
   fi
-  # T-0082: the COMPLETION RECORD. A second path, made the same way and then
-  # removed, so its absence means "not written". The wrapper below writes the
-  # rule's exit status to it AFTER the rule ends; a rule passes only when the
-  # wrapper ended 0 AND this record exists AND it says 0. A wrapper that was
-  # killed, or ended 0 without a record (the shape a native Windows kill
-  # reporting 0 leaves), is "could not tell", never a pass.
-  RULE_DONE_FILE=$(mktemp 2>/dev/null) || RULE_DONE_FILE=""
-  if [ -z "$RULE_DONE_FILE" ]; then
-    RULE_DONE_FILE=$(mktemp ".crew/.verify-rule-done.XXXXXX" 2>/dev/null) || RULE_DONE_FILE=""
+  # T-0082: the COMPLETION RECORD, `<dir>/rc` in a fresh private directory
+  # (`mktemp -d`, 0700) per rule run - never a delete-then-recreate name in
+  # a shared temp dir (review F4) - so its absence means "not written". The
+  # wrapper below writes the rule's exit status to it AFTER the rule ends; a
+  # rule passes only when the wrapper ended 0 AND this record exists AND it
+  # says 0. A wrapper that was killed, or ended 0 without a record (the
+  # shape a native Windows kill reporting 0 leaves), is "could not tell",
+  # never a pass. The directory is removed whole after the rule, so a
+  # wrapper a signalled gate left running finds nowhere to write later.
+  RULE_DONE_DIR=$(mktemp -d 2>/dev/null) || RULE_DONE_DIR=""
+  if [ -z "$RULE_DONE_DIR" ]; then
+    RULE_DONE_DIR=$(mktemp -d ".crew/.verify-rule-done.XXXXXX" 2>/dev/null) || RULE_DONE_DIR=""
   fi
-  [ -n "$RULE_DONE_FILE" ] && rm -f "$RULE_DONE_FILE"
+  RULE_DONE_FILE=""
+  [ -n "$RULE_DONE_DIR" ] && RULE_DONE_FILE="$RULE_DONE_DIR/rc"
   RULE_WHY=""
   if [ -n "$RULE_OUT_FILE" ] && [ -n "$RULE_DONE_FILE" ]; then
     # `( ... )`, not a bare `eval "$c"`: `$(...)` (the old form) forks a
@@ -2099,10 +2107,12 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # at something endless. Exactly 1-3 digits and a newline, or no record.
     RULE_REC=$(head -c 8 "$RULE_DONE_FILE" 2>/dev/null; printf x)
     RULE_REC=${RULE_REC%x}
-    rm -f "$RULE_DONE_FILE"
+    rm -rf -- "$RULE_DONE_DIR"
+    RULE_DONE_DIR=""
     RULE_DONE_FILE=""
+    # Exactly `0|[1-9][0-9]{0,2}` and a newline (review N4): no leading zero.
     case "$RULE_REC" in
-      [0-9]$'\n'|[0-9][0-9]$'\n'|[0-9][0-9][0-9]$'\n') RULE_REC=$((10#${RULE_REC%$'\n'})) ;;
+      0$'\n'|[1-9]$'\n'|[1-9][0-9]$'\n'|[1-9][0-9][0-9]$'\n') RULE_REC=${RULE_REC%$'\n'} ;;
       *) RULE_REC="" ;;
     esac
     [ -n "$RULE_REC" ] && [ "$RULE_REC" -gt 255 ] && RULE_REC=""
@@ -2111,6 +2121,9 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
       RULE_WHY="the rule's runner ended with status $RULE_WRAP_RC before it recorded a result"
     elif [ -z "$RULE_REC" ]; then
       RULE_WHY="no completion record"
+    elif [ "$RULE_REC" -gt 192 ]; then
+      # Signals stop at 64 (review N5): 193-255 names no signal.
+      RULE_WHY="exit status $RULE_REC, above 128 and not a signal number - the rule's own status"
     elif [ "$RULE_REC" -gt 128 ]; then
       RULE_WHY="exit status $RULE_REC: ended by signal $((RULE_REC - 128)), or the rule's own status"
     fi
@@ -2176,6 +2189,10 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # "VERIFY FAILED: $c" header and this message both print below, through
     # the same RC-ne-0 branch every other rule failure goes through.
     rm -f "$RULE_OUT_FILE"
+    [ -n "$RULE_DONE_DIR" ] && rm -rf -- "$RULE_DONE_DIR"
+    RULE_OUT_FILE=""
+    RULE_DONE_DIR=""
+    RULE_DONE_FILE=""
     OUT="verify-gate: cannot create an output-capture file or a completion-record file (TMPDIR and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever"
     RULE_WHY="$OUT"
     RC=1
