@@ -39,6 +39,7 @@ Next free untracked ID: **L-1504**.
 | L-1501 | #393 | baf193aa | 1.0.325 |
 | L-0522 | #377 | f3f319d1 | 1.0.326 (L-0522 slice 1 of 3) |
 | T-0069 | #352 | b863b773 | 1.0.327 |
+| T-0066 (part 1 of 2) | #351 | 86d96fa1 | 1.0.328 |
 
 ## Closed without merging (your instruction)
 
@@ -51,11 +52,10 @@ Next free untracked ID: **L-1504**.
 
 | Ticket | PR | Head | Status | Notes |
 |---|---|---|---|---|
-| T-0066 | #351 | 75a0d5db | landing now | Merged main b863b773, crew 1.0.328; review clean; CI red (done.md 123 > 120 lines after merge) being fixed. Part 1 of 2. |
 | T-0017 | #356 | 5e37f872 | ready to land | Stacked on #396 (T-0016). Carry NIT: stdout backslashreplace for non-ASCII refusal reasons. |
 | T-0059 | #366 | e14b5a45 | ready to land | Stacked on T-0052 (#364). |
 | T-0058 | #365 | 16228584 | ready to land | Stacked on #364/#354. Carry: `_gate_stage` must pick stage like `_phase`; `split_report current=` from `_not_current`. Decision: absent sources read as unmeasured (owner-approved). |
-| L-0688 | #405 | 760691de | ready to land | Carry NIT: unmerged (U) record reason. Lands before L-0540. |
+| L-0688 | #405 | 760691de | landing now | Carry NIT: unmerged (U) record reason. Lands before L-0540. |
 | T-0096 | #398 | dfe113ab | ready to land | Slice 0. Follow-ups in TODO.md: could-not-tell treated as absent for stand-down/veto across all flavours. |
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
 | T-0045 | #407 | 3e2afb49 | fixing | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
