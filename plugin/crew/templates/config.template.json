@@ -209,6 +209,9 @@
     "jiraIssueType": "Change",
     "category": null
   },
+  "git": {
+    "forbiddenTrailers": []
+  },
   "scope": {
     "mode": "off",
     "allowCliApproval": false
@@ -218,7 +221,12 @@
     "maxPhases": 12,
     "deploy": "none",
     "approval": "risk",
-    "questions": "risk"
+    "questions": "risk",
+    "sleep": {
+      "schedule": null,
+      "approval": null,
+      "questions": null
+    }
   },
   "tickets": {
     "baseBranch": null

@@ -130,6 +130,9 @@
     "jiraIssueType": "Change",
     "category": null
   },
+  "git": {
+    "forbiddenTrailers": []
+  },
   "route": {
     "enabled": false
   },
