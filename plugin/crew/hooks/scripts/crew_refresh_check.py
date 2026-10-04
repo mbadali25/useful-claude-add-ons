@@ -836,10 +836,16 @@ def _on_disk(top, base, rel, deleted):
             return (None, f"{COULD_NOT_TELL}: {name} of {rel} {why}"), None
         for record in out.split(b"\0"):
             if record.startswith(b":"):
-                old, new = record[1:].decode("ascii", "replace").split(" ")[:2]
+                fields = record[1:].decode("ascii", "replace").split(" ")
+                old, new = fields[:2]
                 if cached and new == "000000" and old != "000000":
-                    # L-0688: the base holds it, the index does not, the disk
-                    # does (lstat proved it above) -- `git rm --cached`.
+                    # L-0688: the base holds it and the index has no stage-0
+                    # entry while the disk does (lstat proved it above).
+                    # `U` is a conflicted merge's unmerged path, which prints
+                    # the same modes; anything else is `git rm --cached`.
+                    if fields[4:5] == ["U"]:
+                        return (False, "unmerged in the index (resolve the conflict "
+                                       "first); not a re-anchor or a regeneration"), None
                     return (False, "removed from the index, so the commit deletes it; "
                                    "not a re-anchor or a regeneration"), None
                 if "000000" not in (old, new) and old != new:

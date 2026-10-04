@@ -22,6 +22,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   diagram source and a graph file (red on main) and two must-allow cases (a
   new untracked rendered file, a new staged one). The permanent sabotage
   entry lands with L-0540; the refusal was hand-run red here.
+- **Review NIT.** A conflicted merge's unmerged artifact prints the same
+  `:100644 000000 ... U` modes in the `--cached` pass; it is still refused,
+  now as "unmerged in the index (resolve the conflict first)" rather than as
+  a deletion. `test_an_artifact_unmerged_in_the_index_is_refused_as_unmerged`
+  (a map and a diagram, each from a real merge conflict) was red before.
 
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 

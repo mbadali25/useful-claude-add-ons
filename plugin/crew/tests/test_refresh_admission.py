@@ -1312,6 +1312,31 @@ def test_a_new_staged_artifact_is_still_admitted(anchored):
             got[FLOW][0], got[png][0]) == (["A", png], True, True), got
 
 
+@pytest.mark.parametrize("kind", ["map", "diagram"])
+def test_an_artifact_unmerged_in_the_index_is_refused_as_unmerged(anchored, kind):
+    """L-0688 review NIT: a conflicted merge leaves the artifact unmerged, and
+    the `--cached` pass prints `:100644 000000 ... U` for it -- the same modes
+    as a `git rm --cached`. It is still refused, but not as a deletion."""
+    root, base = anchored
+    rel = APP if kind == "map" else FLOW
+    trunk = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    git(root, "checkout", "-q", "-b", "side")
+    write(root, rel, "side\n")
+    git(root, "commit", "-qam", "side")
+    git(root, "checkout", "-q", trunk)
+    write(root, rel, "trunk\n")
+    git(root, "commit", "-qam", "trunk")
+    git(root, "merge", "-q", "side", check=False)
+    rel, data, companions = _admitted_shape(root, kind)
+    root.joinpath(*rel.split("/")).write_bytes(data)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (git(root, "diff", "--name-only", "--diff-filter=U"), got[rel][0],
+            "unmerged" in got[rel][1], "removed from the index" in got[rel][1]) == \
+        (rel, False, True, False), got
+
+
 def _cfg(**dirs):
     cfg = {}
     if "diagrams" in dirs:
