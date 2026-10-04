@@ -42,7 +42,7 @@ it merges if its number has been passed.
 | #375 | row 4 | in review | | 1.0.205 |
 | #372 | L-0562 | in review | | 1.0.203 |
 | #352 | T-0069 | ready to build | | 1.0.189 |
-| #357 | T-0020 | ready to build | | 1.0.343 |
+| #357 | T-0020 | ready to build | | 1.0.365 |
 | #358 | T-0022 | ready to build | | 1.0.191 |
 | #359 | T-0025 | ready to build | | 1.0.192 |
 | #361 | T-0050 | ready to build | | 1.0.193 |

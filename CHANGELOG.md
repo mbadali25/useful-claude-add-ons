@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.343: `/crew:autopilot focus`, a scope lock on one ticket (T-0020)
+### Added — `crew` 1.0.365: `/crew:autopilot focus`, a scope lock on one ticket (T-0020)
 
 - **Why.** The owner's standing ask: roles "drifting into unrelated rabbit holes". Focus locks
   autopilot onto one ticket so it cannot wander to another, cannot carry an unrelated change past
