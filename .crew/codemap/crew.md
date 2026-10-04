@@ -782,8 +782,14 @@ T-0021's tracker rule 30, T-0023's routing rule 31 and T-0024's group-approval r
 
 **T-0020 (`/crew:autopilot focus`, a scope lock on one ticket, crew 1.0.339).** DERIVED at
 `a715032d` (T-0020's merge of origin/main `7846261c`). Focus is this worktree's active-ticket
-pointer and nothing else: no new state file, no new hook, and `crew_ticket.py`, `scope_guard.py`,
+pointer: no state file of its own, no new hook, and `crew_ticket.py`, `scope_guard.py`,
 `completion_audit.py` and `plugin/crew/hooks/hooks.json` unchanged (module docstring `:38-54`).
+It is not the only file `focus --ticket` writes: since main's T-0061, `crew_ticket.activate`
+(`plugin/crew/hooks/scripts/crew_ticket.py:926`) also calls `scope_base.record` (`:941`), so it
+records `.crew/.scope-base` as well, and `focus_set` passes activate's scope-base line -- a
+could-not-tell or fallback included -- into the `focus` output (PR #357 review fix; from `a715032d`
+it moves this paragraph's `crew_autopilot.py` citations down 3 lines through `focus_set`'s
+`:1494`, and 6 from its `activate` call on: `:1522`, `focus_off` `:1526`, `deactivate` `:1534`).
 `focus_state` (`plugin/crew/hooks/scripts/crew_autopilot.py:1449`) is `resolve_active`'s ticket
 only when its source is `active-ticket`, never the `.work/INDEX.md` fallback. `focus_set`
 (`:1494`) refuses a broken pointer, a ticket with no `.work/tickets/<id>/` (`activate` checks

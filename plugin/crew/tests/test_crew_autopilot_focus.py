@@ -2,9 +2,9 @@
 
     python3 -m pytest plugin/crew/tests/test_crew_autopilot_focus.py -q
 
-Focus is this worktree's active-ticket pointer and nothing else
+Focus is this worktree's active-ticket pointer
 (`crew_ticket.activate` / `deactivate` / `resolve_active`): `focus <id>` sets
-it, `focus off` clears it, `focus` shows it. While it is set, the router
+it (and `activate` records `.crew/.scope-base`, whose line focus shows), `focus off` clears it, `focus` shows it. While it is set, the router
 refuses another ticket, `assign` and `goal`; once the plan is approved, `next`
 runs the completion audit read-only and stops as `drift` on any changed path
 outside Touch. Every repository is built under tmp_path; nothing touches the
@@ -256,6 +256,37 @@ def test_focus_cli_set_off_and_exit_codes(tmp_path, capsys):
             (switch_code, switch_out.splitlines()[0].startswith("refused: focus is on T-1")),
             (off_code, off_out.splitlines()[0])) == (
         (0, True), (1, True), (0, f"focus=none (released {T})"))
+
+
+def test_focus_set_records_the_scope_base_and_says_so(tmp_path, capsys):
+    """`crew_ticket.activate` records `.crew/.scope-base` too (T-0061), so
+    focus writes two files, and the scope-base line reaches the caller."""
+    root = _two(tmp_path)
+
+    code, out = _cli(root, capsys, "--ticket", T)
+
+    with open(root / ".crew" / ".scope-base", encoding="utf-8") as handle:
+        record = json.load(handle)
+    head = git(root, "rev-parse", "HEAD")
+    assert (code, record.get(T, {}).get("base"), out.splitlines()[0].startswith(f"focus={T} "),
+            f"scope-base: recorded {head[:12]} as the start of {T}" in out) == (
+        0, head, True, True)
+
+
+def test_focus_set_shows_a_scope_base_could_not_tell(tmp_path, capsys):
+    """An unknown base is said, never dropped: focus still succeeds (the
+    pointer is set), and the could-not-tell line is in its output."""
+    root = _two(tmp_path)
+    (root / ".crew" / "config.json").write_text(json.dumps(
+        {"scope": {"mode": "off"}, "tickets": {"baseBranch": "no-such-branch"}}),
+        encoding="utf-8")
+
+    code, out = _cli(root, capsys, "--ticket", T)
+
+    assert (code, crew_autopilot.focus_state(str(root))["focus"],
+            f"scope-base: could not tell {T}'s scope base" in out,
+            "nothing recorded" in out, out.splitlines()[-1]) == (
+        0, T, True, True, f"reminder: {REMINDER}")
 
 
 def test_focus_cli_refuses_off_with_a_ticket(tmp_path, capsys):

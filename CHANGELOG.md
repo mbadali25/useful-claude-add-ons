@@ -10,8 +10,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   autopilot onto one ticket so it cannot wander to another, cannot carry an unrelated change past
   the next phase, and has somewhere to put what it noticed.
 - **What.** `/crew:autopilot focus <id>` / `focus off` / `focus` set, release or show this
-  worktree's active-ticket pointer (`crew_ticket.activate` / `deactivate`); no new state, no new
-  hook. `focus <id>` refuses a ticket with no `.work/tickets/<id>/`, a broken pointer, or a pointer
+  worktree's active-ticket pointer (`crew_ticket.activate` / `deactivate`); no state file of
+  its own, no new hook. `focus <id>` writes the pointer and, through `activate`'s
+  `scope_base.record` (T-0061), `.crew/.scope-base`, and prints the scope-base line, a
+  could-not-tell or fallback included. `focus <id>` refuses a ticket with no `.work/tickets/<id>/`, a broken pointer, or a pointer
   on another ticket, writing nothing. While focused the router refuses `run` of another ticket
   (named, or from the handoff), `assign` and `goal`, naming `/crew:autopilot focus off`; a broken
   pointer refuses all but `status` and `focus off`; the `.work/INDEX.md` fallback is never a focus.

@@ -31,15 +31,18 @@ NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
 keeps its own bytecode setting. T-0020's `focus` is a script subcommand that
-writes too, and approves nothing: `focus --ticket` and `focus --off` write only
-this worktree's entry in `<git-common-dir>/crew/active-ticket`, through
-`crew_ticket.activate` and `crew_ticket.deactivate` (below).
+writes too, and approves nothing: `focus --ticket` writes this worktree's entry
+in `<git-common-dir>/crew/active-ticket` and the ticket's start in
+`.crew/.scope-base` (`crew_ticket.activate`, which calls `scope_base.record`);
+`focus --off` drops only the entry (`crew_ticket.deactivate`) (below).
 
 ## focus -- a scope lock on one ticket (T-0020)
 
-Focus is this worktree's active-ticket pointer and nothing else: no new state,
-no new hook. `focus_state` reads it; only `resolve_active`'s source
-`active-ticket` is a focus, never the `.work/INDEX.md` fallback. `focus_set`
+Focus is this worktree's active-ticket pointer: no state file of its own, no
+new hook; setting it also records `.crew/.scope-base`, whose line `focus` shows
+(a could-not-tell or fallback included). `focus_state` reads the pointer;
+only `resolve_active`'s source `active-ticket` is a focus, never the
+`.work/INDEX.md` fallback. `focus_set`
 activates a ticket that has a `.work/tickets/<id>/` folder, refusing a broken
 pointer or one already naming a different ticket; `focus_off` is the module's
 one `crew_ticket.deactivate` call, reached only from the `--off` the owner's
@@ -1496,7 +1499,8 @@ def focus_set(root, ticket):
     `crew_ticket.activate`, which checks the id's shape only, so the folder is
     checked here: a pointer at a folderless ticket is a broken pointer. Refuses,
     writing nothing, a broken pointer and a focus on another ticket; the same
-    ticket again writes nothing."""
+    ticket again writes nothing. On success `line` also carries activate's
+    scope-base line, an unknown or a fallback included, never dropped."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root)
     if not top:
@@ -1513,8 +1517,10 @@ def focus_set(root, ticket):
     if state["focus"]:
         return False, (f"refused: focus is on {state['focus']}; type {FOCUS_RELEASE} "
                        "first")
-    crew_ticket.activate(top, ticket)
-    return True, f"focus={ticket} (this worktree only: {top})"
+    # activate also records `.crew/.scope-base` (T-0061); its line -- a
+    # could-not-tell or a fallback included -- is the caller's to see.
+    message = crew_ticket.activate(top, ticket)[2]
+    return True, f"focus={ticket} (this worktree only: {top})\n{message}".rstrip("\n")
 
 
 def focus_off(root):
@@ -1570,7 +1576,7 @@ def focus_text(root, ticket="", off=False, findings=False):
         else:
             ok, line = focus_show(root)
         mode = focus_state(root)["scope_mode"]
-        lines = [line, _scope_line(mode)]
+        lines = line.splitlines() + [_scope_line(mode)]
     except Exception as exc:  # pylint: disable=broad-except
         ok, lines = False, [f"refused: {_failure(exc)}"]
     return (0 if ok else 1), "\n".join(_one_line(text) for text in lines + [FOCUS_REMINDER])
