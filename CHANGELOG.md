@@ -4,6 +4,30 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.329: refresh admission refuses an artifact removed from the index (L-0688)
+
+- **What changed.** `crew_refresh_check._on_disk` refuses an artifact whose
+  base copy exists and which the index no longer holds while the file stays
+  on disk (`git rm --cached`): `artifact_verdicts` returns `False` with
+  "removed from the index, so the commit deletes it". The `--cached` raw diff
+  prints `:100644 000000 ... D` for it, which the mode check skipped. A new
+  artifact with no base copy, untracked or staged, is judged as before. The
+  module docstring stops naming L-0540 as pending: `completion_audit.audit`
+  is the caller and its docstring states what it admits.
+- **Why.** T-0094 review round 8 (BLOCK, accepted 2026-09-30): the verdict
+  called a re-anchor what the commit records as a deletion. No hook calls
+  `artifact_verdicts` yet; this lands before L-0540 wires it into the
+  completion audit.
+- **Tests.** `test_refresh_admission.py` gains the refusal for a map, a
+  diagram source and a graph file (red on main) and two must-allow cases (a
+  new untracked rendered file, a new staged one). The permanent sabotage
+  entry lands with L-0540; the refusal was hand-run red here.
+- **Review NIT.** A conflicted merge's unmerged artifact prints the same
+  `:100644 000000 ... U` modes in the `--cached` pass; it is still refused,
+  now as "unmerged in the index (resolve the conflict first)" rather than as
+  a deletion. `test_an_artifact_unmerged_in_the_index_is_refused_as_unmerged`
+  (a map and a diagram, each from a real merge conflict) was red before.
+
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds
