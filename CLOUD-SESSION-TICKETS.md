@@ -28,7 +28,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | L-1503 | HIGH: `promote-gate.ps1` gives no gate on PowerShell when an environment's `deploy` string holds a `[set]` (e.g. `jq .items[0]` never matches itself) or an unreadable pattern (`[`, `[]`, `[z-a]` throws, iteration skipped). Pre-existing; found reviewing #407. | #489 | in review |
 
-Next free untracked ID: **L-1504**.
+| L-1504 | Harness-only: approval hook / scope guard accept only the owner's typed `/crew:autopilot sleep`, then unlock loosening in manual sleep (L-0652 ships tighten-only until then). Owner decision 2026-10-04. | none yet | needs ticket in your tracker |
+
+Next free untracked ID: **L-1505**.
 
 ## Merged this session
 
