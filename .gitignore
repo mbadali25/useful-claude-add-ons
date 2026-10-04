@@ -350,6 +350,9 @@ __marimo__/
 # and a 2.6 MB graph.html, and the set grows with the tool. Enumerating them
 # means the next new artifact lands untracked-but-visible and gets committed by
 # accident. Ignore the directory and re-admit the one file that must be tracked.
+# Rendered diagrams: build output of crew-diagrams' render.sh. The .mmd sources and the
+# generated docs/diagrams/README.md and index.html are what is committed.
+docs/diagrams/out/
 graphify-out/*
 !graphify-out/graph.json
 

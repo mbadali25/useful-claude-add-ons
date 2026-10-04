@@ -348,7 +348,21 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `resume.readyTimeoutSeconds`, measured by running this test after
     # merging main 4f6ef540 for crew 1.0.186.
     assert {"resume.typeDelaySeconds", "resume.readyTimeoutSeconds"} <= declared
-    assert len(declared) == 131
+    # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
+    # merging main 34d9f267.
+    assert "tickets.baseBranch" in declared
+    # 132 with both, measured after merging main into T-0013.
+    assert len(declared) == 132
+
+
+def test_tickets_base_branch_is_repo_only_and_null_by_default():
+    """T-0061. Which branch ticket branches are cut from is a fact about one
+    repository, so a machine-global file may not set it, and `null` keeps
+    today's origin/HEAD default for every repo that never names it."""
+    assert crew_config.default_config()["tickets"] == {"baseBranch": None}
+    assert "tickets.baseBranch" not in set(
+        crew_config.leaf_paths(crew_config.default_global_config()))
+    assert not crew_config.is_global_path("tickets.baseBranch")
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

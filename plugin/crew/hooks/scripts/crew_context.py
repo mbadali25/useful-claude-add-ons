@@ -333,15 +333,36 @@ def _prefix(path):
     return "/".join(parts[:2]) if len(parts) > 2 else path
 
 
-def derive_paths(root, body):
+def tracked_dirs(tracked):
+    """Every directory holding a tracked file, for derive_paths."""
+    return {f.rsplit("/", i)[0] for f in tracked for i in range(1, f.count("/") + 1)}
+
+
+def derive_paths(root, body, tracked=None, dirs=None):
     """`paths:` globs for a code-map note. An explicit `paths:` line near the
-    top wins; otherwise the directories its citations cluster in."""
+    top wins; otherwise the directories its citations cluster in. `tracked`,
+    a set of git-tracked paths, replaces the disk as the judge of what exists,
+    so a committed file derived from this is the same in every clone."""
+    if tracked is None:
+        def exists(rel):
+            return os.path.exists(os.path.join(root, rel))
+
+        def isdir(rel):
+            return os.path.isdir(os.path.join(root, rel))
+    else:
+        dirs = tracked_dirs(tracked) if dirs is None else dirs
+
+        def exists(rel):
+            return rel.rstrip("/") in tracked or rel.rstrip("/") in dirs
+
+        def isdir(rel):
+            return rel.rstrip("/") in dirs
     head = "\n".join(body.splitlines()[:15])
     explicit = _PATHS_LINE_RE.search(head)
     if explicit:
         return [p.strip().strip("`\"'") for p in explicit.group(1).split(",") if p.strip()]
     cited = [c for c in _CITED_RE.findall(body)
-             if not c.startswith(".crew/") and os.path.exists(os.path.join(root, c))]
+             if not c.startswith(".crew/") and exists(c)]
     # A two-segment citation (`dir/file`) scopes to its file, unless the note
     # cites three or more distinct files in that directory -- then the
     # directory is what the note is about.
@@ -361,7 +382,7 @@ def derive_paths(root, body):
     floor = max(3, total * 0.15)
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     keep = [p for p, n in ranked if n >= floor][:5] or [ranked[0][0]]
-    return [p + "/**" if os.path.isdir(os.path.join(root, p)) else p for p in keep]
+    return [p + "/**" if isdir(p) else p for p in keep]
 
 
 def _section(body, heading):
@@ -405,21 +426,23 @@ def index_covers(root):
     return covers
 
 
-def subsystems(root):
-    """[{name, file, body, paths, anchor}] for every code-map note."""
+def subsystems(root, tracked=None):
+    """[{name, file, body, paths, anchor}] for every code-map note; `tracked`
+    as derive_paths takes it."""
     mapdir = os.path.join(root, ".crew", "codemap")
     try:
         names = sorted(os.listdir(mapdir))
     except OSError:
         return []
     found = []
+    dirs = tracked_dirs(tracked) if tracked is not None else None
     for name in names:
         if not name.endswith(".md") or name in _NOT_SUBSYSTEMS:
             continue
         body = read_text(os.path.join(mapdir, name)) or ""
         anchor = _ANCHOR_RE.search(body)
         found.append({"name": name[:-3], "file": f".crew/codemap/{name}", "body": body,
-                      "paths": derive_paths(root, body),
+                      "paths": derive_paths(root, body, tracked, dirs),
                       "anchor": anchor.group(1) if anchor else ""})
     return found
 

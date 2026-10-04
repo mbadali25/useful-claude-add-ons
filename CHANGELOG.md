@@ -24,7 +24,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   (the spike's paste rule). Windows: the existing child, delay, focus check, tab recheck, inhibit.
 - New machine keys `resume.typeDelaySeconds` (2, from the T-0013 spike: input ready by 0.134 s on
   Claude Code 2.1.282) and `resume.readyTimeoutSeconds` (15), in both templates and crew-setup's copy;
-  read from the machine file only. Repo leaf count 129 -> 131.
+  read from the machine file only. Repo leaf count 130 -> 132.
 - `test_resume_typing.py` (must-fire and must-not-fire for each rule, sh and ps1, the hook entry
   point) and `test_resume_typing_structure.py` (gate order in both senders' source). Every case sets
   `CREW_AUTOCLEAR_INHIBIT`, a recording tmux stub and a stub window list. `.crew/verify.json` gains
@@ -32,6 +32,462 @@ All notable changes to this repository are documented here. Format follows [Keep
   their own PR (TODO.md).
 - Docs: README, CONFIG.md §14b, crew-context SKILL.md, the auto-cycle guide source: the typing path,
   every refusal, the delay and its limit (a delay is a guess; Windows has no probe).
+
+### Changed — `crew` 1.0.256: `tickets.baseBranch`, the branch ticket branches are cut from (T-0061)
+
+- New repo-only config key `tickets.baseBranch` (default `null`, meaning `origin/HEAD`'s target,
+  then `origin/main`, then `main`, as before), declared in `crew_config.default_config()`, the
+  config template and `crew-setup`'s prose template, after `autopilot`. It is absent from
+  `default_global_config()`: which branch a repo integrates on is a fact about that repo. The
+  declared-leaf count is 130 (`test_crew_config.py`), 58 of them repo-only.
+- `CONFIG.md` §11 documents it: candidate order (`<value>` as given when it contains `/`, then
+  `origin/<value>`, then `<value>`) and "could not tell" when none names a commit or the config
+  does not parse - `scope_base.py --record` exits 1 and writes nothing, `--base`/`--changed` exit 3
+  with nothing on stdout, the completion audit fails, and nothing falls back to `origin/HEAD`.
+- `/crew:implement` step 1 says a record `crew_ticket.py activate` already made is kept and an exit
+  1 means fix `tickets.baseBranch`; step 3 stops on `--base`'s exit 3 instead of diffing against an
+  empty string. `crew-execute` names the same.
+- The reader of the key - `scope_base.read_base_branch` / `base_branch`, `--base`'s exit 3,
+  `activate` recording at branch cut, and the re-derivation of a fallback entry guessed against
+  another ref - is T-0061's harness half. Those files are on the review/gate harness list
+  (`scripts/check-tooling-pr.py`), so they land in their own PR, before this one.
+
+### Changed — `crew` 1.0.254: the upgrade-doc sabotage entry follows whichever doc this tree ships (tooling)
+
+- `plugin/crew/tests/sabotage.py`: `UPGRADE_DOC` is crew-setup's `upgrade-report.md` when that file exists,
+  else `commands/upgrade.md`, and the entry's target test follows it. T-0038 (#370) moves the per-hop
+  migration text into `upgrade-report.md` and leaves `upgrade.md` a removal stub; with this, the harness
+  edit lands alone first (CLAUDE.md, T-0087) and both trees keep the anchor exact. No behaviour change.
+
+### Added — `crew` 1.0.252: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
+
+- **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
+  (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
+  [--direction-file <f>]`) is the one way code creates a ticket: one past the
+  highest `T-` number over `.work/tickets/` folders and `.work/INDEX.md` rows,
+  claimed with an exclusive `os.mkdir`, direction.md written complete or not at
+  all (temp file, fsync, `os.replace`), and only then the INDEX row (and, under
+  `obsidian`, the note and Kanban card) through `crew_tracker.create`, then
+  `move` to `ready`. A tracker `id taken` takes the next id; any other failure
+  releases the folder and refuses; `jira`, `sdp`, no tracker and could-not-tell
+  refuse before anything is claimed. `crew_ticket.py assign --root .
+  --direction-file .work/autopilot/<f>` checks a staging file (under
+  `.work/autopilot/`, symlinks resolved; `title:`, `risk:`, and the four
+  `/crew:brainstorm` sections, none empty) and that autopilot is armed, then
+  mints exactly one `ready` ticket whose direction.md starts with an
+  `origin: /crew:autopilot assign` provenance line.
+- **Split (owner's tooling-PR rule, 2026-09-30).** `crew_ticket.py` is review
+  harness to `scripts/check-tooling-pr.py`, so the `/crew:autopilot assign`
+  route - the router change in `crew_autopilot.py`, `autopilot.md`'s assign
+  lines and their tests - lands separately as L-0611. Until it does,
+  `/crew:autopilot assign` still stops with "arrives with T-0019", and
+  `crew_ticket.py assign` is reachable from the command line: stage the file,
+  run it, then `/crew:autopilot run <id>`.
+- **Approval.** An assigned ticket is approved under `autopilot.approval` like
+  any other (the owner's 2026-09-26 "Follow the policy"); the origin line
+  changes no policy answer (`test_origin_line_changes_no_policy`, and a
+  sabotage entry that puts an origin rule back). `crew_autopilot.py` stays
+  read-only but for `approve`: `assign` and `mint` are `crew_ticket.py`'s.
+- **Concurrency.** The tracker's replace re-reads before it writes, but a write
+  that lands between that re-read and the replace is lost; `mint` therefore
+  holds `.work/INDEX.md.lock` across both its tracker calls, `create` and the
+  `move` to `ready`, and 8 concurrent mints give 8 distinct ids, folders and
+  rows (measured on Linux). A `create` that raises anything (a `KeyError`, a
+  `KeyboardInterrupt`) releases the claimed folder unless its INDEX row is
+  already written; then the folder is kept and the refusal says so. A `move`
+  that raises leaves the ticket at `direction` with a warning.
+- **Review round 1.** A staging file or `mint --direction-file` with a BOM is read as
+  `utf-8-sig`; `mint --status` outside `ready|direction` prints `refused:` and
+  exits 1 instead of an argparse exit 2; `assign --direction-file` resolves a
+  relative path against `--root`, not the current directory.
+- **Unchanged.** `crew_tracker.py`; `/crew:brainstorm`'s and `/crew:fix`'s prose
+  id pick (moving them onto `mint` is a follow-up); T-0010's policies;
+  `crew_autopilot.py` and `autopilot.md` (L-0611's).
+- **Review round 2 (Codex: 1 BLOCK, 5 FIX), fixed test-first.** A `move` to
+  `ready` whose board half fails after the INDEX half landed puts the row back
+  to `direction`, and mint's reported status is always the INDEX row's (the
+  BLOCK: it said `direction` while the row was `ready`, so autopilot could go
+  past the stop). A `create` whose row lands but whose card does not refuses,
+  keeping the ticket at `direction`. Any failure taking `INDEX.md.lock`
+  releases the claimed folder. A `create` that wrote the obsidian note but no
+  row removes that note. `assign` and `mint --direction-file` refuse a file
+  that is not regular (a FIFO no longer hangs them). `assign` refuses
+  `--title` and `--status` instead of ignoring them.
+- **Sabotage.** 34 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
+  appended to `AUTOPILOT_MUTATIONS` (7 for review round 2).
+- Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes,
+  then `1.0.115 -> 1.0.123` after merging main `8d84786d` (crew 1.0.115);
+  1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
+  after merging main `2a2d6e07` (crew 1.0.139); 1.0.140-1.0.143 are held by
+  other lanes. Re-set at 1.0.144 after the L-0611 split and the merge of main
+  `8123fe74` (crew 1.0.140, L-0574). Then `1.0.154 -> 1.0.157` after merging
+  main `f808e5f0` (crew 1.0.154; #328 shipped 1.0.144, so T-0019's number was
+  spent), allocated by the coordinator; L-0611 is 1.0.161. Then `1.0.242 -> 1.0.302`
+  after merging main `38adba44` (crew 1.0.242), allocated by the coordinator.
+- Windows: the staged-file read restores blocking mode only where it set `O_NONBLOCK`. Windows has no
+  `O_NONBLOCK` and its `os.set_blocking` works on pipes only, so every `assign` and `mint --direction-file`
+  refused there with `[WinError 87]` (seen on Windows CI). Pinned by
+  `test_a_staged_file_reads_where_there_is_no_o_nonblock`.
+
+### Added — crew 1.0.248: sabotage entries for L-0516's deadline polls (L-0563)
+
+- `plugin/crew/tests/sabotage_qa.py`: six mutations against the deadline polls L-0516 added -
+  `poll_until` probing once and never waiting, reporting success at the deadline, probing once more
+  after it; `wait_for_pidfile` accepting an existing empty file; child cleanup reaping with an
+  unbounded wait; and `completion-audit.ps1`'s probe killing only the launcher. Each goes red
+  against its test. The ps1 entry needs `pwsh`: on a host without it the target test skips and
+  `sabotage.py` reports it STILL GREEN, as the other pwsh-only entries already do.
+
+### Changed — `crew` 1.0.247: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
+
+- `scope_base.py` measures a ticket against the repo-only key `tickets.baseBranch` in
+  `.crew/config.json` (read straight from the file by `read_base_branch` / `base_branch`): the value
+  as given when it contains `/`, then `origin/<value>`, then `<value>`. Unset or `null` keeps the old
+  chain (`origin/HEAD`'s target, `origin/main`, `main`). TSS-510's repro: a branch cut from
+  `development` with origin/HEAD on `main` recorded the merge-base with `main`, 492 files for a
+  19-file ticket; with the key it records HEAD, exact.
+- "Could not tell" is its own answer. A configured branch naming no commit, or a config that does
+  not parse, gives `resolve` source `unknown` and no base; `--record` writes nothing and exits 1;
+  **`scope_base.py --base` and `--changed` print nothing and exit 3** (they used to print `HEAD` and
+  exit 0 only outside a repository, which is unchanged). It never falls back to `origin/HEAD`. A
+  base branch that resolves but shares no merge-base with HEAD (a shallow clone, unrelated history)
+  is "could not tell" too, configured or default: it used to fall to HEAD, and `--record` wrote that
+  as an exact start that was never moved (QA review F1). The
+  completion audit, the refresh check, `scope_report` and `webtest_guard` already treat no base as
+  unmeasured or failed; tests pin each.
+- `crew_ticket.py activate` records the scope base at branch cut (an existing record is kept; a
+  failure or "could not tell" is printed to stderr and the pointer is still set).
+- A fallback entry guessed against another ref than today's base branch (`merge-base with
+  origin/main` once the key names `development`) is re-derived by the first-record rule, the old
+  provenance kept as `was`; an exact entry (`from: HEAD`) is never re-derived, and a fallback
+  against the same ref is kept. The gone and not-ancestor reasons now start "could not tell where
+  <ticket> started".
+- `/crew:review` step 1a stops on exit 3 instead of bundling; `/crew:autopilot` says activate also
+  records. Six new sabotage entries (`sabotage_scope.py`; `sabotage.py` is at max-module-lines), each RED on its named test; three existing anchors
+  re-pointed onto the same lines' new text. `test_scope_base_branch.py` joins verify rules 11 and
+  25. The verify gate's own fallback base is unchanged and filed to `TODO.md`.
+
+### Added — `crew` 1.0.242: a measured readability standard for every diagram crew draws
+
+- `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
+  source: lines crossing, a line through a box that is not one of its ends, an edge label covering
+  a box, another label or another edge's line, and more than 15 boxes all FAIL; a box or edge label
+  over 6 lines of text is a warning. Shapes drawn with relative paths (cylinders) are measured, and
+  a box it cannot measure makes the diagram UNKNOWN, never a quiet PASS. Sequence, state and ER
+  diagrams are NOT CHECKED.
+- `crew-diagrams/scripts/diagram_doc.py` writes `docs/diagrams/README.md` and `index.html`: every
+  diagram embedded beside its `%% Purpose:`, its anchors, its readability verdict (from the render,
+  never guessed) and a "Box details" table built from `%% Note <id>:` lines, so a short box loses
+  no detail. Refuses to overwrite a page it did not generate.
+- `crew-diagrams` SKILL.md and `/crew:diagram`: render, check (a FAIL is not done), then the page;
+  the standard locations are `docs/diagrams/*.mmd`, the generated page beside them, renders in the
+  ignored `out/`.
+- This repo's diagrams: five that failed (63, 54, 40, 31 and 18 boxes; 32 and 10 crossings) are
+  split into overviews plus parts, and wordy boxes are shortened with their detail moved to notes.
+  All 33 pass, re-measured with the fixed checker on fresh renders (Mermaid 11.17.2 in headless
+  Chromium; the seven whose `.mmd` changed in the main merge were re-rendered first).
+  Every original box, line and comment is accounted for (checked by script per file).
+- No verdict passes without measuring (PR #375 review): a drawing with no measured box, path data
+  or a transform (scale, rotate, matrix, skew) the checker cannot read, or a checker error is
+  UNKNOWN; every SVG path command is read (S/T reflect their control point, arcs are sampled along
+  the curve, arc flags by the grammar, each subpath as its own line); a line outside the boxes that
+  is not a recognised edge is UNKNOWN; `render.sh` records each SVG's source sha256 in
+  `out/<name>.svg.src` and the page shows a render whose hash is not the `.mmd`'s as "render out of
+  date" (file times only when there is no `.src`, said as "(freshness by mtime only)"); tables
+  escape `<`, `>` and `&` so GitHub keeps text like `<repo>`.
+
+### Added — crew 1.0.233: crew-setup ships `crew-verify.yml`, the verify gate as a pull-request workflow
+
+- `plugin/crew/skills/crew-setup/templates/github/crew-verify.yml`: a GitHub Actions workflow for the
+  consumer repo. It runs on `pull_request` and `workflow_dispatch`, with `permissions: contents: read`,
+  no secrets, cancel-superseded `concurrency` and a 30-minute timeout. It checks the repo out
+  (`actions/checkout@v4`, `persist-credentials: false`), then fetches crew with plain git, no
+  credentials, at a pinned commit (`CREW_SHA: __CREW_SHA__`, never a branch) into `$RUNNER_TEMP/crew`,
+  OUTSIDE the workspace. A recursive map command (`pytest`, `ruff .`, `eslint .`) therefore never
+  collects crew's files, which a checkout inside the workspace could not avoid, since
+  `actions/checkout` cannot write outside it. It sets up Python 3.12 (`actions/setup-python@v5`),
+  leaves a marked step for the repo's own check tools (with a `fetch-depth: 0` hint), and runs
+  `bash "$RUNNER_TEMP/crew/plugin/crew/hooks/scripts/verify-gate.sh" --ci < /dev/null` on
+  `ubuntu-latest`. The header also says: Ubuntu only (Windows would need `verify-gate.ps1 -Ci`);
+  actions are pinned by major tag, an accepted trade; and a PR can edit its own map AND this workflow
+  file, which only CODEOWNERS review or a ruleset on `.github/workflows/` prevents.
+- crew-setup `SKILL.md` §3 lists it in the Create tree as opt-in, and says how to install it: copy the
+  template, then resolve the SHA through five checks in order. (a) The marketplace checkout is its
+  own git top level, never a parent repo's. (b) Its `origin` is `mbadali25/useful-claude-add-ons`.
+  (c) `HEAD` is 40 hex characters. (d) The commit is on a remote branch. (e) The commit's crew is
+  a gate that has `--ci` (checked by grepping that commit's `verify-gate.sh`, not by version). If any check fails, ask the user; never write a branch.
+  `phases.md` Phase 5 offers the workflow once the map exists. `commands/verify.md` and the crew
+  README mention `--ci` and the workflow.
+- `plugin/crew/tests/test_crew_verify_workflow.py` covers the template's shape: triggers,
+  permissions, the checkout and setup-python versions, Python 3.12, credentials, no secrets, the
+  pinned SHA and the `$RUNNER_TEMP` paths. It runs the fetch script, parsed from the YAML with the
+  URL pointed at this repository, and checks the commit and the gate it leaves. It runs the gate
+  command from a fixture repo with crew in a `RUNNER_TEMP` outside it, `"unmapped": "fail"` and a
+  recursive map rule that fails on crew's files: exit 0. With crew inside the workspace (the old
+  layout) the same command exits 2.
+- Install step 0 checks that the map runs unattended before the workflow is offered. `--ci` excludes
+  every rule with no `reach` that the scanner cannot clear, so a map of `bash _verify/cases/*.sh`
+  rules exits 2 on every PR with "zero commands to run". This was measured on a real consumer map:
+  16 rules, 15 excluded for reach, and one with an empty `run`. The step runs
+  `/crew:verify --stamp-reach` as a dry run, has the user declare each wrapper rule's reach, writes
+  the result with `--apply --set N=...`, commits the stamped map, and offers the workflow only once a local `--ci` run executes commands.
+- The job only reports until it is made a required status check (branch protection or a ruleset on
+  the default branch). Setup cannot set that, and its install steps now tell the user so.
+- A feature PR: no harness path changes (T-0087).
+
+### Added — crew 1.0.232: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
+
+- **Scope is the whole map, over tracked files:** every file `git ls-files` lists (staged deletions
+  and renames included), no Stop budget, no fingerprint skip. Untracked files are left out, so a crew
+  checkout, a `.venv` or build output in the CI workspace cannot trip `"unmapped": "fail"`.
+- **Reach is Stop's:** a `network`/`host` rule, an undeclared one the scan cannot clear, and an
+  `always`/`default` command the same scan excludes are not run on a CI runner. Each is named as on
+  Stop, and one `verify-gate --ci:` line counts them and says they run only under `--all`. They do not
+  fail the run. A new `REACH_FILTER` (`$reachFilter` in the `.ps1`) carries this, so the budget, the
+  tree-pass cache and `requiresCleanTree` stay Stop-only. A `requiresCleanTree` rule **runs** under
+  `--ci`, because a CI checkout is clean.
+- **The verdict is stricter:** a failing command exits 2 as before; a command exiting 77 now exits 2
+  (`N command(s) exited 77 (SKIP) - a skip is not a pass in CI`), and so does any deferral.
+- **Nothing checked is never green under `--ci`.** Every path that would end having checked nothing
+  exits 2 with a named `verify-gate --ci:` reason, where Stop exits 0: `verifyGate: false`; no
+  `.crew/verify.json` and no `_verify/smoke.sh`; a project directory the gate cannot enter; no tracked
+  files (not a git work tree, git refusing the checkout, or nothing tracked); zero commands to run
+  (every matched rule reach-excluded, no rule matching anything with `always`/`default` adding
+  nothing, or every command blank); a lock held by another gate run; and the `.ps1` called with `-Ci`
+  off Windows, where its flavour guard used to stand down silently. With no map, a passing smoke
+  harness still passes (unscoped, as on Stop).
+- **Stop-only stand-downs are skipped:** `--ci` reads no stdin, so a `stop_hook_active` payload cannot
+  end it; the emergency lane does not stand it down (an `.crew/incident.json` is named and the rules
+  run); and the `.deploy-in-flight` check neither runs nor removes the marker.
+- **The verified marker and the fingerprint are never written.** `.crew/.verify-verified-at` and
+  `.crew/.verify-gate.fingerprint` stay as they were, even on a full pass. The pass line says why: some
+  reach-excluded rules did not run, or, when none were excluded, that `--ci` never writes them by
+  design. The gate's other machine-local files are still written: the per-rule record (synced with
+  `all` false, since the matcher and the sync receive `--ci`, never `--all`), and the timings and
+  tree-pass caches, updated as on any other run.
+- **Arguments are checked strictly in every mode:** the `.sh` accepts only `--all` and `--ci` (in any
+  position) and `--price` (first only); anything else (`-ci`, `--CI`, `--ci=1`) exits 2, so a misspelt
+  `--ci` cannot run as a Stop gate in CI. The `.ps1` has no `[CmdletBinding()]`, so PowerShell itself
+  let an unknown argument through (into `$args`, or a bare word into `-PriceTarget`) and the gate ran
+  as Stop; that now exits 2 too. `--all` with `--ci`, `--ci` with `--price` (both orders), `-All -Ci`
+  and `-Ci -Price` are usage errors. The Stop hook passes no argument and `/crew:verify` passes
+  `--all`.
+- `plugin/crew/tests/test_verify_gate_ci_mode.py`: must-block and must-allow cases for each behaviour
+  above, in both flavours. The `.ps1` cases run wherever `pwsh` exists, past the flavour guard with
+  `OS=Windows_NT`. The suite joins `.crew/verify.json`'s gate rule. `sabotage_tooling.py` registers 22
+  `--ci` mutations against the `.sh` and 19 against the `.ps1` (appended where `pwsh` exists); each one
+  turns the suite red.
+- Review (Sonnet 5.5): round 1, 2 BLOCK (zero commands and an empty file list both passed) and 6 FIX;
+  round 2, 1 BLOCK (`.ps1 -Ci` off Windows stood down green; `pwsh` ships on ubuntu runners), 2 FIX
+  (blank commands passed; a false doc example), 4 NIT. All fixed but two lock-reclaim paths that
+  no test can reach.
+- The `.ps1` refuses `-Ci` off Windows at parameter binding (`ValidateScript`, exit 1), not with a
+  statement: `hooks/scripts/_test/test_flavour_guard.py` requires the flavour guard to stay the first
+  executable statement and the hook pair's stand-down to run nothing past it. CI caught the first
+  placement.
+- A harness change under T-0087, so it lands alone.
+
+### Added — `crew` 1.0.230: QA standards for repositories crew sets up (L-0618)
+
+- E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
+  `n`, `false` are no), a live credential's reach must name a known or declared environment
+  (`production only` is production; `not prod` or `prod replica` is unknown, not production), and
+  acceptance is a strict grammar over the cell in its own case: an ISO date, or `accepted` / `yes`
+  with an optional `by <Name>` (1-3 capitalised ASCII words) and date, either order; a name
+  without `by` is UNKNOWN. A refusal word or stem (`no`, `not`, `revok`, `cancel`, `maybe`,
+  `draft`, ...) is not an acceptance, and the GAP names that word; inside a `by` name only a whole
+  refusal word counts (`no`, `revoked`, `withdrew`, ..., also through `-` and apostrophes), so `accepted by Denise` is a name and
+  `accepted by No One` is not, and any other text (`accepted Under Review`,
+  `approved`, `ok`) is UNKNOWN, never accepted. An unparseable `.crew/verify.json` makes E5 UNKNOWN. Header columns match whole words,
+  so "Delivered" is not `live`. An unreadable runbook, `.gitignore` or inventory is UNKNOWN, not
+  missing; `qa_doc.py --write` refuses an unreadable file instead of overwriting it; a failed
+  `git ls-files` makes G4 UNKNOWN. Found in review of PR #337.
+
+- On Windows, E4 read CI paths as `.github\workflows\...` and so never asked a GitHub deploy
+  workflow for its `concurrency:` group; every comparison and every printed path is now `/`
+  separated (`qa_audit_env.posix`). Found by `crew-windows-default`.
+- G1 asks the Stop gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) which
+  undeclared rules it defers, and names only those as skipped: a plain local command without
+  `reach` still runs on Stop, so the review's "every rule without `reach` is skipped" overstated
+  D10. `--all-repos` reports D10 only for a deferred rule. Its `reach` references cite §19, not §18.
+- `qa_doc.py`'s diagrams draw without crossing lines: a red result ends in its own fix node
+  instead of looping back to the gate, and the audit loop is its own straight-line diagram
+  (`docs/diagrams/process-qa-audit.mmd`). `test_the_gate_diagram_has_no_back_edge` holds it.
+- `crew-qa-standards` gains `references/environments.md` (G1-G5, E1-E7) and `qa_audit_env.py`,
+  whose items join `qa_audit.py`'s report under the same PASS / GAP / N/A / UNKNOWN answers: rules
+  without `reach` (D10, the Stop gate that runs nothing), fire-and-forget commands, the `_verify`
+  template's known bugs in the repo's copy, unignored build directories, the `.crew/*` ignore block,
+  non-production data provenance, rollback rehearsed on every rung, deploys of
+  `$(git rev-parse HEAD)`, deploy workflows that swallow exit codes, the credential inventory's
+  reaches and live columns, verifiers under a web root, and `_verify` entry points CI never runs.
+  Report-only; it never deploys, reads a secret value or calls a remote host.
+- `qa_audit.py --stamp` records the audited HEAD in `.crew/.qa-audit-at`; `--all-repos DIR` prints
+  one line per crew checkout (setup phase, GAP and UNKNOWN counts, D10 live or not).
+- New session trigger `qaAuditStale` (`crew_state.py`): no stamp yet, or `.crew/verify.json`,
+  `_verify/`, CI or `.gitignore` moved since it; an unanswerable diff fires. Every existing crew
+  repo hears it once after this update.
+- `qa_doc.py` documents a repo's QA process: `docs/qa/README.md` with the gate-flow and promotion
+  ladder diagrams embedded as Mermaid, `docs/qa/qa-process.html`, and the `.mmd` sources under
+  `docs/diagrams/`. Dry run by default; never overwrites a file it did not generate.
+- `/crew:init --audit [--all-repos DIR]`; `/crew:upgrade` step 5c re-runs the audit as a report;
+  setup Phase 8 audits the `environments` block it just wrote.
+- Follows the owner decisions in the review's section 6: a setup phase with an open GAP is
+  `partial`, never `done`, and no hook is added; a live credential outside production is a GAP
+  until an owner acceptance is recorded; review validity (D8) moves to the QA-rounds stream.
+- Not in this change: slice b (corrected `_verify` templates, `--audit --fix`, a GitHub Actions CI
+  template first), slice c (the sabotage entries, a separate tooling PR), and L-0562's
+  `--stamp-reach`, which G1's GAP text no longer points to.
+
+### Added — `crew` 1.0.229: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
+
+- `hooks/scripts/verify_reach.py`: for each rule without `reach`, proposes `local` when the Stop
+  gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) already runs it and `network`
+  when it defers it for a remote verb. `--apply` writes those, then moves each stamped rule's
+  entries in `.crew/.verify-gate.timings.json` and `.crew/.verify-gate.record.json` to its new
+  `rule_key` (which hashes `reach`), so in that checkout it changes neither what Stop runs nor what
+  it costs (another checkout, whose caches are local, runs `/crew:verify --all` once); an
+  unreadable cache is named and left alone. A `"reach": null` rule counts as undeclared, as in
+  the gate. It classifies from `--root` as its cwd, as the gate does (there is no `--map`). The
+  table shows a `requiresCleanTree` rule as skipped on Stop.
+  A rule deferred for shell syntax or a wrapper script is listed as undecided and written only by
+  `--set N=local|network|host`. The map is edited as text in place and refused unless it parses
+  back to the original plus exactly the new keys. This is the fix half of D10
+  (`docs/review/09-qa-standards-crew.md`).
+- `commands/verify.md` documents it and its `reach` citation now names CONFIG.md §19, not §18
+  (`guards.roleWrites`).
+- `verify_reach.py` reads the map with `newline=""`, so a CRLF `verify.json` keeps its line
+  endings when stamped (QA finding; a CRLF round-trip test covers it).
+
+### Changed — `crew` 1.0.169: setup, onboard and verify generate `AGENTS.md`, and the gate keeps it current
+
+- `crew_instructions.py agents` had no caller: only `rules` was run, so a crew repo told Codex and
+  other agents nothing about how to verify a change. `crew-setup` (step 4), `/crew:onboard` (step 6)
+  and `/crew:verify` (step 7) now run it; a hand-written `AGENTS.md` is still left alone.
+- `/crew:verify` adds the rule `crew_instructions.py agents-rule` prints: `agents --check` whenever
+  `AGENTS.md`, `CLAUDE.md`, `.crew/verify.json`, `.crew/codemap/**` or `_verify/smoke.sh` changes, so
+  the file cannot drift from the map. Exit 77 (SKIP) when `CLAUDE_PLUGIN_ROOT` is absent; the gate
+  sets it itself from 1.0.166 on. A map without that rule gets a `note:` line from `agents`, which is
+  never counted as drift. A stale `--check` names the command that regenerates the file.
+- What `AGENTS.md` says: `bash _verify/smoke.sh` first when it exists; how to pick the commands that
+  apply and that exit 77 is SKIP; how many commands past the first six were left out; and, when a
+  shown command needs `$CLAUDE_PLUGIN_ROOT`, what it is. The line claiming Claude Code reads the file
+  through `@AGENTS.md` is printed only when a line of `CLAUDE.md` is that import; otherwise the file
+  says Claude Code does not load it. `docs/review/04-redesign.md` targets a `CLAUDE.md` of
+  `@AGENTS.md` plus ten lines; setup's template does not do that today, and this change does not
+  either.
+- Two inputs no longer differ between clones. The title keeps the repo name from the existing file
+  instead of the checkout directory's name. The "where things are" scopes are judged against
+  `git ls-files`, not the disk (`crew_context.subsystems(root, tracked)`; the rules generator and the
+  hooks keep the disk), so a gitignored file a note cites cannot make a committed `AGENTS.md` stale in
+  CI. The cost: a cited file counts only once it is tracked, so on a fresh repo the first `--check`
+  after the first commit reads stale; regenerate once. Where `git ls-files` fails (no git, a
+  dubious-ownership refusal), `agents` says so in a `note:` and the disk decides.
+- `test_crew_instructions.py` gains cases for each of these, including one running the rule's own
+  shell command unset (77), set (0) and stale (1), one per rule source proving it changes the output,
+  one proving an untracked cited file does not, and the tracked branch's positive scope, cited
+  directories and non-git fallback. The behaviours were sabotaged by hand, round 2's surviving
+  mutants included, and each turned a test red; none is registered, because every mutation registry
+  is a harness path under T-0087.
+- Review (Sonnet 5.5): round 1, 0 BLOCK, 2 FIX (the disk-dependent scopes; a circular step 7 in
+  `/crew:verify`), 7 NIT; all taken but a false positive on a command that merely echoes the rule.
+  Round 2, 0 BLOCK, 1 FIX (step 7 named a directory an LLM could take as the working directory, and
+  could add the rule twice), 5 NIT; all taken.
+- CI (Windows) caught the non-git test deleting `.git` with `shutil.rmtree`, which git's read-only
+  object files refuse there (WinError 5); it now copies the repo without `.git` instead.
+
+### Added — `VERIFYING.md`: how to verify a change, for people and any AI agent
+
+- A root page mapping every verification layer to its command, when to run it and what it costs,
+  with a "which layers do I need?" table first: the marketplace gate, smoke, crew's verify gate (by
+  hand with `--all`, since without it the gate defers every rule over the Stop budget, and in the
+  background for an agent), `scripts/gate-runner.py`, `_verify/run-all.sh`, CI and its receipts,
+  the test suites run directly, and what no automated layer runs. Linked from the README's
+  Documentation table and from `AGENTS.md`'s "How to verify a change".
+- `check-marketplace.py`'s new `check_verifying_doc` fails when the page names a repository path that
+  does not exist: inline spans, fenced blocks (backtick or tilde, also opened on a list item), link
+  targets (anchors stripped) and bare root docs (`AGENTS.md`). It does not skip a path whose first
+  segment is missing, so a misspelt top-level directory is caught. Absolute paths, URLs,
+  `<placeholders>`, globs and `$VARS` are skipped. A missing page fails only when README.md or
+  AGENTS.md links to it, so other suites' fixture roots are unaffected.
+- `scripts/_test/verifying-doc.py` (must-fail and must-pass cases, and a check that `main()` calls the
+  check) runs in `marketplace.yml`, `gate-runner.py` and `.crew/verify.json`'s `scripts/**` rule;
+  `VERIFYING.md` joins the docs rule's paths. Each behaviour was sabotaged by hand and turned the
+  suite red. None is registered: every mutation registry is a harness path under T-0087.
+- Review (Sonnet 5.5): 0 BLOCK, 8 FIX, 6 NIT. FIX: no `main()` wiring test, the AGENTS.md link
+  untested, three false or incomplete claims (when `.ps1` cases skip, what triggers CI, when a receipt
+  is accepted), no warning that an agent must background `--all`, a "minimum" that disagreed with
+  `AGENTS.md`, and list-item fences misread. All taken, as were the NITs except reference links,
+  HTML `href` and wrapped spans, which the docstring now names as known limits. Round 2: 0 BLOCK,
+  3 FIX (a fence that never closes silenced everything after it, now a failure of its own; run-all
+  claimed to cover all of smoke; untested fence and link edge cases), 5 NIT; all taken but a
+  stronger `main()` wiring test.
+### Fixed — `crew` 1.0.167: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
+
+- A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
+  ran under the Stop hook, which Claude Code gives that variable, but under `/crew:verify --all` the
+  Bash tool substitutes it into the command text and is not documented to export it to the gate's
+  children. That rule could then fail, or exit 77 and leave the verified baseline frozen, depending on
+  which path ran the gate. `verify-gate.sh` and `verify-gate.ps1` now set it to the plugin's own root
+  (two levels above the script) when the caller left it unset or empty, and never replace a value the
+  caller set. The `.sh` resolves that root at its first line, before it `cd`s into the project, so a
+  gate started by a relative path still finds it (resolved later, it came out as `/`), and on Git Bash
+  it takes `pwd -W`'s native `D:/...` form, which a native python can open (`CDPATH` emptied, so
+  `cd` cannot echo into the value). Unresolvable, the variable stays unset, so a
+  `${CLAUDE_PLUGIN_ROOT:?}` rule fails loudly; that branch is untested, since no way was found to
+  make the `cd` fail. Groundwork for a rule that
+  checks `AGENTS.md` against `verify.json` with crew's own generator.
+- `test_verify_gate_plugin_root.py` runs the real gate with a rule that reads the variable from its own
+  process environment (a value visible only to the gate's shell, and not exported, does not pass):
+  unset and empty → the gate's own plugin root, a relative-path start → the same, set → kept. Four
+  mutations against `verify-gate.sh` registered in `sabotage_tooling.py`, one per behaviour, and one
+  against `verify-gate.ps1`, registered only on native Windows with pwsh, the one place its cases run.
+  The file joins `.crew/verify.json`'s verify-gate rule. Review (Sonnet 5.5): 0 BLOCK, 3 FIX (Git
+  Bash's `/d/...` form, the relative start, the untested empty value), 3 NIT; all fixed but the
+  `.ps1` cases running off Windows, which the gate's own Windows-only guard rules out. Round 2: 0
+  BLOCK, 0 FIX, 3 NIT (`CDPATH`, a mutation comment, the untested unresolvable branch), all taken.
+- `test_verify_gate_rule_env_leak.py` lists `CLAUDE_PLUGIN_ROOT` among the variables the gate exports
+  on purpose; it still watches `GATE_PLUGIN_ROOT`, the shell variable the value is copied from.
+  CI caught this on Linux and Windows; the review rounds and the mapped rules did not run that file.
+
+### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
+
+- `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
+  `review_run.py` had reserved on a verified CI receipt for HEAD (`review_gate.accepted_state`, crew
+  1.0.153): the prompt read the local marker only. Unless the marker shows HEAD clean, it now asks the
+  local gate ONCE (`gate_state`): a dirty tree its fingerprint covers reads `Local gate: VERIFIED`,
+  and a repo with no gate reads `No verify gate: <why>` instead of MISSING (`review_run.py` proceeds
+  on both). Only a local UNVERIFIED or UNKNOWN asks the CI receipt, through `ci_receipt.check` itself
+  -- the upgrade `accepted_state` makes, without its second `gate_state` call, so a local pass that
+  lands mid-build can never be printed as a receipt. A receipt VERIFIED reads
+  `CI receipt: VERIFIED for HEAD - <reason>`, with the local record's rows marked superseded (a
+  receipt is a `--all` run with nothing outstanding); any other answer keeps the local lines and adds
+  `Gate answer for HEAD: <local>: <why>; CI receipt <state>: <why>`; a question that raises is
+  `UNKNOWN`, never a pass. Every reason and the marker's own text are folded to one line
+  (`review_checks.one_line`), and each reason is capped at 400 characters on its own, so gh or git
+  stderr cannot open lines of its own in the prompt and a long local reason cannot hide the
+  receipt's answer. Building the prompt on a tree the marker does not cover can now make the
+  receipt's `gh api` calls, as `review_run.py` already does.
+- Defect 2 (`recurring_findings.review_block` had no caller) was fixed independently by L-0601 (#327,
+  crew 1.0.162), which landed first; this change keeps its one call, its tests and its mutation, and
+  drops the duplicates this branch had. `README.md` and `review.md` name the receipt wording.
+- `test_review_prompt.py` gains 18 receipt-block cases; four were red on main before the fix. The rest
+  pin what three Sonnet 5.5 review rounds found (round 1: 1 BLOCK, 4 FIX, 3 NIT, the BLOCK a local
+  pass on a dirty tree printed as a receipt; round 2: 0 BLOCK, 2 FIX, 3 NIT, the same label reached
+  by a race; round 3: 0 BLOCK, 0 FIX, 4 NIT). `test_build_states_every_missing_piece` now expects
+  `No verify gate` for its gate-less fixture. Three mutations are registered in `sabotage_tooling.py`,
+  all red; each mutation a review round found surviving was re-run by hand and is red.
+
+### Changed — repository: `_verify/smoke.sh` runs in CI, and a missing `pwsh` is a SKIP
+
+- `marketplace.yml` runs `_verify/smoke.sh` after the Claude Code CLI install. Two of its checks
+  ran nowhere in CI: the crew-setup `canon()` round-trip, and version agreement across
+  `pyproject.toml`, `plugin.json`, `marketplace.json` and the Python-source copies. Found by
+  crew's QA audit (L-0618, item E7). `scripts/gate-runner.py`'s table lists it, so
+  `--check-ci` holds the two in step.
+- `smoke.sh`'s PowerShell check reports SKIP (NOT VERIFIED) when `pwsh` is absent instead of
+  FAIL, as its `claude plugin validate` check already does: a missing tool is not a broken check.
+  CI is unaffected: the runner carries `pwsh`, and the "PowerShell static checks" step fails if
+  it ever does not.
 
 ### Added - `crew` 1.0.162: the recurring-findings checklist in the review prompt (L-0601, L-0592 PR 2)
 

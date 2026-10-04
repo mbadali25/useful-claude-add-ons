@@ -219,6 +219,9 @@
     "approval": "risk",
     "questions": "risk"
   },
+  "tickets": {
+    "baseBranch": null
+  },
   "route": {
     "enabled": false
   }
