@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 14:37 UTC
+Last updated: 2026-10-04 14:44 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:44: WAVE1 #405 L-0688 built -> 760691de (crew 1.0.397; refusal for cached record -> 000000; 5 tests, 3 sabotages red; decisions Q1-Q3 = recommended). Review started. Harness follow-up for L-0540/H2: sabotage_refresh entry on the 000000 line.
 - 14:37: #365 round-3 16228584: 0/0/2 CLEAN. Carry at landing (stacked, lands after #364/#354): NIT1 _gate_stage must pick stage like _phase (spec gate stop wins) - else autopilot stops at owner instead of applying approved split (probe P4, pin in test); NIT2 split_report current= from _not_current.
 - 14:36: Cancelled 50 CI runs on spec-only drafts (owner OK). #366 e14b5a45: 0/0/1 CLEAN (fuzzed 62k pairs). #365 -> 16228584, round-3 review started. #347 round-2: 6 BLOCK/2 FIX/1 NIT (PS iex/group/assignment/glued-call bypasses, terragrunt exec wrappers) -> builder told to add fail-closed PS backstop. WAVE 1 started (v1.0.394-399): #403 T-0053, #407 T-0045, #398 T-0096, #405 L-0688, #450 T-0084, #416 T-0057. Plan: WAVES.md (64 feature/27 harness; H1-H4 bundles; 23 blocked incl. by #336 T-0009, #354, #394, missing T-0029/T-0030/L-0541).
 - 14:22: #347 T-0047 round-1 fixes pushed -> d4ec3aa6 (merged main baf193aa, crew 1.0.393; 35 must-block + 8 must-allow rows; 17 mutations red). Round-2 review started. Harness follow-up: 38 mutations into sabotage_cloud.py, r7 entry retarget.
