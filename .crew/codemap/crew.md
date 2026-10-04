@@ -793,10 +793,10 @@ T-0021's tracker rule 30, T-0023's routing rule 31 and T-0024's group-approval r
 `plugin/crew/hooks/scripts/crew_sleep.py` is pure and read-only: `parse_schedule` (`:55`) full-matches
 `_SCHEDULE_RE` (`:47`, ASCII `[0-9]` classes), refuses an hour past 23 and a start equal to its end;
 `in_window` (`:71`) is start-inclusive, end-exclusive, crossing midnight when start > end; `resolve`
-(`:123`) answers `off|awake|asleep|unknown` from a block and a naive local datetime, and names any key
+(`:128`) answers `off|awake|asleep|unknown` from a block and a naive local datetime, and names any key
 outside `KEYS` "not available in this crew version". `read_overrides` (`:90`) reads each key on its
-own through `_override` (`:111`): a value outside `POLICIES` is None with a warning, one that cannot be
-read is `STRICTEST` (`:41`, `human`), and a non-object block gives `human` for both; `render` (`:79`)
+own through `_override` (`:112`): a non-null value outside `POLICIES` is `STRICTEST` with a warning
+(landing decision; it was None, keeping the day value), so is one that cannot be read (`:41`, `human`), and a non-object block gives `human` for both; `render` (`:79`)
 bounds every config value in a warning with `reprlib`. The clock is `crew_sleep.now` (`:50`) alone,
 local time in the process's `TZ`; crew reads no variable or flag of its own for it.
 `crew_autopilot._settings_at` (`plugin/crew/hooks/scripts/crew_autopilot.py:794`) calls `_sleep_at`

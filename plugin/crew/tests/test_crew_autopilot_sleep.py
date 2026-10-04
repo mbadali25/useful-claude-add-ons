@@ -136,11 +136,11 @@ def test_resolve_states(block, now, state):
     assert (got["state"], bool(got["warnings"])) == (state, state == "unknown")
 
 
-def test_resolve_drops_a_bad_override_and_keeps_the_other():
+def test_resolve_reads_a_bad_override_as_strictest_and_keeps_the_other():
     got = crew_sleep.resolve(_night(approval="always"), NIGHT, crew_autopilot.POLICIES)
 
     assert (got["overrides"], any("autopilot.sleep.approval" in w for w in got["warnings"])) == (
-        {"approval": None, "questions": "self"}, True)
+        {"approval": crew_sleep.STRICTEST, "questions": "self"}, True)
 
 
 @pytest.mark.parametrize("key", ["deploy", "reviewPolicy", "notifyHold"])
@@ -222,13 +222,34 @@ def test_a_malformed_schedule_is_unknown_and_warns(tmp_path, clock, schedule):
         (False, "stop", "risk", "risk", "unknown"), True)
 
 
-@pytest.mark.parametrize("value", ["always", True, ["self"], "Self", 1])
-def test_a_bad_approval_override_keeps_the_day_value(tmp_path, clock, value):
+@pytest.mark.parametrize("value", ["Human", "always", True, ["self"], "Self", 1])
+def test_a_bad_night_value_reads_strictest_while_asleep(tmp_path, clock, value):
+    """Landing decision (owner-consistent with N7): a non-null night value
+    that is not a policy is an override crew cannot read, so it counts as
+    human, the strictest, instead of keeping the looser day value."""
     clock(NIGHT)
     got = _day_values(_repo(tmp_path, sleep=_night(approval=value)))
 
-    assert (got[:5], any("autopilot.sleep.approval" in w for w in got[5])) == (
-        (False, "take", "risk", "self", "asleep"), True)
+    assert (got[:5], any("autopilot.sleep.approval" in w and "counts as human" in w
+                         for w in got[5])) == ((False, "take", "human", "self", "asleep"), True)
+
+
+@pytest.mark.parametrize("value", ["Human", "always", True, 1])
+def test_a_bad_night_value_reads_strictest_while_unknown(tmp_path, clock, value):
+    clock(NIGHT)
+    got = _day_values(_repo(tmp_path, approval="self", questions="self",
+                            sleep=_night(schedule="22", approval=value, questions=None)))
+
+    assert (got[:5], any("autopilot.sleep.approval" in w and "counts as human" in w
+                         for w in got[5])) == ((False, "take", "human", "self", "unknown"), True)
+
+
+def test_a_bad_night_value_is_ignored_while_awake(tmp_path, clock):
+    """Must-allow: outside the window no night value applies, readable or not."""
+    clock(DAY)
+    got = _day_values(_repo(tmp_path, sleep=_night(approval="Human")))
+
+    assert got[2:5] == ("risk", "risk", "awake")
 
 
 @pytest.mark.parametrize("value", ["22:00-07:00", ["22:00-07:00"], 1, True])
@@ -487,7 +508,7 @@ def test_unknown_sleep_keeps_a_stricter_override(tmp_path, clock, monkeypatch, s
 @pytest.mark.parametrize("day,night,want", [
     ("self", "risk", "risk"), ("self", "human", "human"), ("risk", "human", "human"),
     ("risk", "self", "risk"), ("human", "self", "human"), ("human", "risk", "human"),
-    ("risk", None, "risk"), ("self", "Human", "self"),
+    ("risk", None, "risk"), ("self", "Human", "human"),
 ])
 def test_unknown_sleep_takes_the_strictest_per_key(tmp_path, clock, day, night, want):
     clock(NIGHT)
@@ -593,10 +614,10 @@ def test_a_deeply_nested_override_drops_no_other_override(tmp_path, clock, deep_
             continue
         break
 
-    # The deep value itself is not a policy: it keeps the day value when it
-    # can be rendered, and counts as human when even that cannot be done at
-    # this depth. Either way the OTHER key's tightening stands.
-    assert (conf["sleep"]["state"], conf[other], conf[deep_key] in ("self", "human"),
+    # The deep value itself is not a policy, so it counts as human whether or
+    # not it can be rendered at this depth, and the OTHER key's tightening
+    # stands.
+    assert (conf["sleep"]["state"], conf[other], conf[deep_key] == "human",
             crew_autopilot.approval_policy(str(root), T)["allow"]) == (
         "unknown", "human", True, False)
 

@@ -27,8 +27,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   override (`human` over `risk` over `self`) — never a looser value, and never
   a tightening dropped. Each override is read on its own and rendered bounded;
   one that cannot be read counts as `human`, and a non-object
-  `autopilot.sleep` reads `human` for both keys. An override that is not a policy keeps that key's day
-  value. A key this version does not have (`deploy`, `reviewPolicy`, held
+  `autopilot.sleep` reads `human` for both keys. An override that is not a policy (`"Human"`,
+  `"always"`, `true`) counts as `human` too, asleep and under unknown (landing decision; it used
+  to keep the day value). A key this version does not have (`deploy`, `reviewPolicy`, held
   pings) is named "not available in this crew version" and has no effect.
   There is no environment variable or flag that moves the clock.
 - **Unchanged.** `scope.allowCliApproval` exactly `true`, autopilot armed and a
@@ -40,8 +41,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Manual `sleep` / `wake`, the sleep log and morning summary, the
   `deploy` override, and the committed sabotage mutations for this slice are
   L-0652, L-0653, L-0654 and L-0651.
-- **Tests.** `plugin/crew/tests/test_crew_autopilot_sleep.py` (111 cases);
-  `test_crew_config.py` (135 declared leaves), `test_config_menu.py`,
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_sleep.py` (117 cases; the landing decision's
+  must-block cases asleep and unknown were red before it);
+  `test_crew_config.py` (136 declared leaves after main's `git.forbiddenTrailers`), `test_config_menu.py`,
   `test_crew_keys.py` and `test_crew_autopilot.py` cover the config surface.
   `.crew/verify.json`'s policy rule maps `crew_sleep.py` and the new file.
 

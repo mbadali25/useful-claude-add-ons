@@ -434,12 +434,12 @@ KEY_META = {
                                      since="1.0.394", source=_S + "crew_sleep.py",
                                      type_="HH:MM-HH:MM or null"),
     "autopilot.sleep.approval": _row("`autopilot.approval` inside the sleep window; null "
-                                     "keeps the day value, and so does anything else, with "
-                                     "a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                     "keeps the day value; anything else counts as human, "
+                                     "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
                                      "1.0.394", _S + "crew_sleep.py"),
     "autopilot.sleep.questions": _row("`autopilot.questions` inside the sleep window; null "
-                                      "keeps the day value, and so does anything else, "
-                                      "with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                      "keeps the day value; anything else counts as human, "
+                                      "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
                                       "1.0.394", _S + "crew_sleep.py"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
