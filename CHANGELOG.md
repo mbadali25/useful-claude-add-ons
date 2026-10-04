@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.301: global defaults for the personal autopilot keys, a backup before every config write, and a rebuild from the owner's profile (T-0050)
+### Added — `crew` 1.0.307: global defaults for the personal autopilot keys, a backup before every config write, and a rebuild from the owner's profile (T-0050)
 
 - **Behaviour change: a global value can hold a repo value down.** `autopilot.mode`, `maxPhases`,
   `deploy`, `approval` and `questions` are personal (`crew_guards.PERSONAL_KEYS`): settable in
