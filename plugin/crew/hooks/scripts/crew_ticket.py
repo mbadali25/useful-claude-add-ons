@@ -1062,7 +1062,15 @@ def _mint_taken(top):
     """The `T-` numbers held by `.work/tickets/T-*` folders and by the first
     `T-<n>` of every INDEX line. An INDEX or tickets folder that exists but
     cannot be read raises: could not tell is a refusal, never "nothing
-    taken". An absent one holds nothing (the tracker creates INDEX)."""
+    taken". An absent one holds nothing (the tracker creates INDEX).
+
+    INDEX is read under the INDEX lock every mint's `create` and `move` hold
+    (L-1510): Windows refuses to open a file another process is `os.replace`ing
+    (a sharing violation), which read as unreadable and killed a concurrent
+    mint. The lock is taken and released here, before the folder claim, and
+    `_mint_claim` takes it again; it is never nested, and is the only lock mint
+    holds. A lock held past the wait, or one that cannot be created, refuses."""
+    import crew_config_files  # pylint: disable=import-outside-toplevel
     taken = set()
     tickets = os.path.join(top, ".work", "tickets")
     try:
@@ -1077,7 +1085,15 @@ def _mint_taken(top):
         if found:
             taken.add(int(found.group(1)))
     index = os.path.join(top, ".work", "INDEX.md")
-    text = crew_common.read_text(index)
+    try:
+        with crew_config_files.Lock(index, _MINT_LOCK_WAIT):
+            text = crew_common.read_text(index)
+    except crew_config_files.Busy as exc:
+        raise TicketError(f".work/INDEX.md could not be read under its lock ({exc}); which "
+                          "ids are taken cannot be told") from exc
+    except OSError as exc:
+        raise TicketError(f".work/INDEX.md's lock could not be taken ({exc}); which ids are "
+                          "taken cannot be told") from exc
     if text is None and os.path.lexists(index):
         raise TicketError(".work/INDEX.md exists but could not be read; which ids are "
                           "taken cannot be told")
