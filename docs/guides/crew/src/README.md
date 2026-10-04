@@ -53,5 +53,6 @@ than shipped as separate linked files:
 
 `build.py --check` rebuilds every guide's HTML in memory and exits 1 naming any
 committed HTML that differs (2 when it cannot run). DOCX and PDF are not
-compared, because LibreOffice's output is not byte-stable. CI cannot run it
-(no `markdown` there); `.crew/verify.json` does.
+compared, because LibreOffice's output is not byte-stable. `.crew/verify.json`
+runs it, and so does CI's verify-gate.yml (its venv installs `markdown`); the
+other workflows do not.

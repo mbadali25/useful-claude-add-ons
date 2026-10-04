@@ -36,7 +36,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   global-settable keys", 123/55) are gone; its prose sections are unchanged.
 - `docs/guides/crew/src/guide.md`, "crew 1.0 - the full guide", and both new documents built as
   HTML, DOCX and PDF. `build.py --check` rebuilds every guide's HTML in memory (exit 1 stale, 2
-  did not run); it is local-only, since CI has no `markdown`. The troubleshooting guide's HTML was
+  did not run); CI runs it only in verify-gate.yml, whose venv installs `markdown`. The troubleshooting guide's HTML was
   already current against its source, so its built files are unchanged.
 - Suites: `scripts/_test/config-reference.py` and `scripts/_test/crew-guide.py` (must-block and
   must-allow cases on temp copies), and a `.crew/verify.json` rule running both, the pytest file

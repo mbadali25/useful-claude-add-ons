@@ -47,8 +47,9 @@ does and compares it with the committed `crew-1.0-<name>.html`: exit 0 when
 all match, 1 naming each stale guide, and 2 when the build cannot run at all
 (no `markdown` module, or doc-builder fails to import) -- never 0, because a
 check that compared nothing is not "current". DOCX and PDF are not compared:
-LibreOffice's output is not byte-stable. CI does not run it (CI's Python has
-no `markdown`); `.crew/verify.json` does.
+LibreOffice's output is not byte-stable. `.crew/verify.json` runs it, and so
+does CI's verify-gate.yml (its venv installs `markdown`); the other workflows
+do not.
 """
 
 from __future__ import annotations
