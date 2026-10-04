@@ -871,7 +871,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
 | `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
 | `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
-| `tickets.baseBranch` | repo | branch name or null (coerced in `hooks/scripts/scope_base.py`) | `null` |
+| `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the

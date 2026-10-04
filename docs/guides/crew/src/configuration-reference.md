@@ -352,7 +352,7 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `tickets.baseBranch` | repo | `null` | branch name or null (coerced in `plugin/crew/hooks/scripts/scope_base.py`) | 1.0.158 | The branch ticket branches are cut from; null tries origin/HEAD's target, then origin/main, then main. A value that is not a branch name, or names no commit, makes the scope base could not tell. |
+| `tickets.baseBranch` | repo | `null` | branch name or null (checked in `plugin/crew/hooks/scripts/scope_base.py`) | 1.0.158 | The branch ticket branches are cut from; null tries origin/HEAD's target, then origin/main, then main. A value that is not a branch name, or names no commit, makes the scope base could not tell. |
 
 ### `route`
 

@@ -406,7 +406,7 @@ KEY_META = {
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
                                "value that is not a branch name, or names no commit, "
-                               "makes the scope base could not tell.", "type",
+                               "makes the scope base could not tell.", "branch",
                                since="1.0.158", source=_S + "scope_base.py",
                                type_="branch name or null"),
     # --- route

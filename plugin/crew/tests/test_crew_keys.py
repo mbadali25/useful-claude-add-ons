@@ -121,11 +121,15 @@ def test_values_agree_with_the_writers_enum_values():
     assert covered >= 15
 
 
+# `branch` rows whose reader checks a shape rather than a closed value list.
+_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "tickets.baseBranch")
+
+
 def test_every_row_has_a_summary_and_a_values_kind():
     for key, row in crew_keys.KEY_META.items():
         assert row["summary"].strip(), key
         assert row["kind"] in crew_keys.KINDS, key
-        if row["kind"] in ("tuple", "prose", "branch") and key != "autopilot.maxPhases":
+        if row["kind"] in ("tuple", "prose", "branch") and key not in _OPEN_BRANCH_ROWS:
             assert row["values"], key
         if row["kind"] in ("unvalidated", "prose", "type", "branch", "open-table"):
             assert row["source"], key
@@ -192,6 +196,26 @@ def test_autopilot_max_phases_agrees_with_the_reader(tmp_path, value, kept):
     assert got["maxPhases"] == (value if kept else 12)
     assert kept == (not any("maxPhases" in w for w in got["warnings"]))
     assert crew_keys.KEY_META["autopilot.maxPhases"]["type"] == "positive integer"
+
+
+@pytest.mark.parametrize("value, kept", [
+    (None, True), ("main", True), ("release/2.x", True),
+    ("", False), ("   ", False), (7, False), (True, False), (["main"], False),
+])
+def test_tickets_base_branch_is_checked_not_coerced(tmp_path, value, kept):
+    # scope_base.read_base_branch refuses a non-string or blank value, and the
+    # scope base becomes "could not tell": nothing is coerced, so the row is
+    # kind `branch` ("checked in"), never `type` ("coerced in").
+    import scope_base
+    got, problem = scope_base.read_base_branch(
+        _repo(tmp_path, {"tickets": {"baseBranch": value}}))
+    assert (problem is None) == kept, (value, problem)
+    if not kept:
+        assert got is None
+    row = crew_keys.KEY_META["tickets.baseBranch"]
+    assert row["kind"] == "branch"
+    assert row["type"] == "branch name or null"
+    assert row["source"] == "hooks/scripts/scope_base.py"
 
 
 def _machine(tmp_path, cfg):
