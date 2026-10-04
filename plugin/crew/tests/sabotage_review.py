@@ -45,9 +45,9 @@ REVIEW_FIX_MUTATIONS = (
         # of generated JSON and the Claude fallback comes back INCOMPLETE.
         "the bundle diff no longer excludes graphify-out",
         REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
-        '":(exclude).crew/metrics.md"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work"] + crew_ticket.bookkeeping_excludes()\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -56,10 +56,49 @@ REVIEW_FIX_MUTATIONS = (
         # with the graph left out and nothing records that it was.
         "the manifest stops saying graphify-out is excluded",
         REVIEW_PATCH,
-        'EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")\n',
-        'EXCLUDED = (".work/", ".crew/metrics.md")\n',
+        'EXCLUDED = (".work/", "graphify-out/") + crew_ticket.CREW_BOOKKEEPING_PATHS\n',
+        'EXCLUDED = (".work/",) + crew_ticket.CREW_BOOKKEEPING_PATHS\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
+    ),
+    # T-0068: crew's own bookkeeping (crew_ticket.CREW_BOOKKEEPING_PATHS)
+    # leaves the bundle, so the gate's record, a metrics row or the scope
+    # base written after acceptance never stales the receipt (TSS-510).
+    (
+        "bookkeeping enters the bundle",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        ("tests/test_review_patch.py::"
+         "test_bookkeeping_never_enters_the_bundle"),
+    ),
+    (
+        "bookkeeping written after acceptance stales the receipt",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        ("tests/test_review_ledger.py::"
+         "test_bookkeeping_written_after_acceptance_keeps_the_receipt"),
+    ),
+    (
+        "the bundle exclusion is not root-anchored",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        '[s.replace("top,glob)", "glob)**/") for s in crew_ticket.bookkeeping_excludes()]\n',
+        ("tests/test_review_patch.py::"
+         "test_a_crew_content_path_still_enters_the_bundle"),
+    ),
+    (
+        "the manifest stops naming the bookkeeping exclusions",
+        REVIEW_PATCH,
+        'EXCLUDED = (".work/", "graphify-out/") + crew_ticket.CREW_BOOKKEEPING_PATHS\n',
+        'EXCLUDED = (".work/", "graphify-out/")\n',
+        ("tests/test_review_patch.py::"
+         "test_bookkeeping_never_enters_the_bundle"),
     ),
     (
         # The prompt stops naming the excluded paths: a reviewer can report

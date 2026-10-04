@@ -409,6 +409,123 @@ def in_touch(path, touch):
     return any(path_matches(path, glob) for glob in touch)
 
 
+# --- crew's own bookkeeping (T-0068) ------------------------------------------
+#
+# Every path a crew script writes for ITSELF under `.crew/`: records, logs,
+# markers, locks, caches. None of it is a change a ticket makes, so the review
+# bundle and its receipt (`review_patch`), the completion audit, the scope
+# guard's Touch judgement and the verify gate's changed-path list leave it out
+# whatever the repository's `.gitignore` says, as they leave out `.work/`.
+# Without that, a repository that does not ignore `.crew/*` deadlocks
+# `/crew:done`: the gate's own record stales the accepted receipt, and the
+# scope base fails the audit (TSS-510).
+#
+# Root-relative globs in git's `:(glob)` dialect: `*` stays inside one
+# segment, a `/**` tail is everything below. A directory needs its own `/**`
+# entry -- git's glob never matches a leading directory (measured, git 2.43),
+# and `is_crew_bookkeeping` agrees with it. Each entry names its writer. Here,
+# not in crew_common, because these four consumers are the review/gate
+# harness (scripts/check-tooling-pr.py HARNESS) and this module already is.
+CREW_BOOKKEEPING_PATHS = (
+    ".crew/.scope-base",                  # scope_base.py:80 (RECORD)
+    ".crew/.verify-verified-at",          # crew_state.py:557, verify-gate.sh
+    ".crew/.verify-gate.*",               # verify_record.py, verify_fingerprint.py:172-177
+    ".crew/.verify-gate.lock/**",         # verify-gate.sh:535 (LOCK, a directory)
+    ".crew/.verify-rule-out.*",           # verify-gate.sh:2014 (mktemp fallback)
+    ".crew/guard.log",                    # scope_guard.py:111, crew_guards.py:346
+    ".crew/metrics.md",                   # review_run.py, commands/review.md step 6
+    ".crew/metrics.jsonl",                # crew_metrics.py:139
+    ".crew/.autoclear.log",               # crew_autocycle.py:207, auto-clear.sh:81
+    ".crew/.autoclear-sent",              # handoff-read.sh:20 (pre-session-key marker)
+    ".crew/.autoclear-sent-*",            # crew_autocycle.py:68, auto-clear.sh:111
+    ".crew/.handoff-requested",           # handoff-read.sh:20 (pre-session-key marker)
+    ".crew/.handoff-requested-*",         # crew_autocycle.py:67, context-watch.sh:59
+    ".crew/.hook-*",                      # hook_once.py:83
+    ".crew/incident.json",                # crew_incident.py:36
+    ".crew/incident-skips.log",           # crew_incident.py:37
+    ".crew/.cloud-guard-unpinned-noted",  # cloud_guard.py:3226
+    ".crew/.deploy-in-flight",            # promote-gate.sh:511
+    ".crew/.qa-audit-at",                 # crew_state.py:601 (QA_AUDIT_STAMP)
+    ".crew/config.json.bak-*",            # crew_config_menu.py:566 (BACKUP_PREFIX)
+    ".crew/*.lock",                       # lock files
+    ".crew/*.oslock",                     # crew_endpoints.py:291
+    ".crew/event-claims/**",              # event_claim.py:106
+    ".crew/transcripts/**",               # handoff-write.sh:67
+    ".crew/handoffs/**",                  # crew_state.py:807 (HANDOFF_ARCHIVE_DIR)
+    ".crew/incidents/**",                 # crew_incident.py:38 (ARCHIVE_DIR)
+    ".crew/backups/**",                   # crew_migrate.py:140 (BACKUP_DIR)
+    ".crew/tfplan/**",                    # cloud_guard.py:1858, crew_tfplan.py
+)
+
+# What crew READS as configuration, policy, approval or a map. It stays
+# reviewable and judged, never bookkeeping. `test_crew_bookkeeping` requires
+# every `.crew/` name a crew script spells to be in exactly one of the two.
+CREW_CONTENT_PATHS = (
+    ".crew/config.json",
+    ".crew/crew.json",
+    ".crew/verify.json",
+    ".crew/endpoints.json",
+    ".crew/standards.md",
+    ".crew/pm-journal.md",
+    ".crew/pm-standing.md",
+    ".crew/state.json",
+    ".crew/.approved-*",
+    ".crew/codemap/**",
+    ".crew/archive/**",
+)
+
+
+def _glob_segments_match(names, pat):
+    """git's `:(glob)` over whole segments: `*` never crosses `/`, a `**`
+    segment spans zero or more segments, and a TRAILING `**` one or more
+    (everything inside, never the directory itself)."""
+    @functools.lru_cache(maxsize=None)
+    def walk(i, j):
+        if i == len(pat):
+            return j == len(names)
+        if pat[i] == "**":
+            first = j + 1 if i == len(pat) - 1 else j
+            return any(walk(i + 1, k) for k in range(first, len(names) + 1))
+        return j < len(names) and fnmatch.fnmatchcase(names[j], pat[i]) and walk(i + 1, j + 1)
+
+    return walk(0, 0)
+
+
+def _crew_listed(rel, entries):
+    """`rel` matches one of `entries` segment by segment from the repository
+    root. Anything not already normalised (`/`-separated, no empty, `.` or
+    `..` segment, not absolute, no backslash) matches nothing: an
+    unnormalised path is no evidence of where a write lands
+    (`crew_refresh_check.is_refresh_artifact`'s rule). Case folds only where
+    the filesystem does (`os.path.normcase`)."""
+    if not isinstance(rel, str) or not rel or "\\" in rel or rel.startswith("/") \
+            or os.path.isabs(rel):
+        return False
+    names = rel.split("/")
+    if any(n in ("", ".", "..") for n in names):
+        return False
+    folded = tuple(os.path.normcase(n) for n in names)
+    return any(_glob_segments_match(folded, tuple(os.path.normcase(p) for p in e.split("/")))
+               for e in entries)
+
+
+def is_crew_bookkeeping(rel):
+    """True when repo-relative `rel` is on `CREW_BOOKKEEPING_PATHS`."""
+    return _crew_listed(rel, CREW_BOOKKEEPING_PATHS)
+
+
+def is_crew_content(rel):
+    """True when repo-relative `rel` is on `CREW_CONTENT_PATHS`."""
+    return _crew_listed(rel, CREW_CONTENT_PATHS)
+
+
+def bookkeeping_excludes():
+    """The git pathspecs that leave bookkeeping out of a diff or a listing,
+    one per entry: `:(exclude,top,glob)`, anchored at the repository root
+    whatever the cwd, so `sub/.crew/.scope-base` is never excluded."""
+    return [":(exclude,top,glob)" + entry for entry in CREW_BOOKKEEPING_PATHS]
+
+
 def _is_glob(text):
     return any(c in text for c in _GLOB_CHARS)
 

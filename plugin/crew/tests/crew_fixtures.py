@@ -1388,3 +1388,25 @@ def commit_with_date(root, path, iso_date):
     subprocess.run(("git", "commit", "-q", "-m", f"backdated {path}"),
                    cwd=root, check=True, capture_output=True, text=True,
                    env=env, stdin=subprocess.DEVNULL, timeout=30)
+
+
+def bookkeeping_samples():
+    """One concrete repo-relative path per `crew_ticket.CREW_BOOKKEEPING_PATHS`
+    entry (each `*`/`**` made a name), plus the gate's real record names --
+    what a TSS-shaped repository, whose `.gitignore` does not ignore
+    `.crew/`, collects untracked after a gate run and a review (T-0068)."""
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    out = [entry.replace("**", "x").replace("*", "x")
+           for entry in crew_ticket.CREW_BOOKKEEPING_PATHS]
+    out += [".crew/.verify-gate.record.json", ".crew/.verify-gate.timings.json"]
+    return sorted(set(out))
+
+
+def write_bookkeeping(root, text="written by crew\n"):
+    """Write every `bookkeeping_samples()` path under `root`; return them."""
+    paths = bookkeeping_samples()
+    for rel in paths:
+        target = pathlib.Path(root, *rel.split("/"))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    return paths

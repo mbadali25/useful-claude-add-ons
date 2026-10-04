@@ -33,6 +33,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_ticket
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "review_patch.py")
@@ -330,7 +331,8 @@ def test_work_dir_is_excluded_and_says_so(repo, tmp_path):
     assert result.returncode == 0, result.stderr
     manifest = _manifest(tmp_path)
     assert manifest["untracked_files"] == ["real.txt"]
-    assert manifest["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
+    assert manifest["excluded"] == [".work/", "graphify-out/"] + list(
+        crew_ticket.CREW_BOOKKEEPING_PATHS)
     assert b"scratch" not in (tmp_path / "diff.txt").read_bytes()
 
 
@@ -402,7 +404,7 @@ def test_generated_graph_dir_is_excluded_and_says_so(repo, tmp_path):
     assert b"graphify-out/" not in patch
     assert b'"nodes": 2' not in patch
     m = _manifest(tmp_path)
-    assert m["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
+    assert m["excluded"] == [".work/", "graphify-out/"] + list(crew_ticket.CREW_BOOKKEEPING_PATHS)
     listed = (m["committed_files"] + m["unstaged_files"] + m["untracked_files"]
               + [e["path"] for e in m["entries"]])
     assert not [p for p in listed if p.startswith("graphify-out/")]
@@ -471,3 +473,61 @@ def test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in(repo,
     assert result.returncode == 0, result.stderr
     assert (_manifest(tmp_path)["untracked_files"],
             b"(r1)" in (tmp_path / "diff.txt").read_bytes()) == ([".crew/verify.json"], False)
+
+
+# ---- T-0068: crew's own bookkeeping never enters the bundle -----------------
+
+def test_bookkeeping_never_enters_the_bundle(repo, tmp_path):
+    """Must-allow. A repository that does not ignore `.crew/` (TSS-510's
+    shape): every path a crew script writes for itself, written untracked
+    after the bundle was built, leaves `bundle_sha256` unchanged, and the
+    manifest names each exclusion."""
+    import crew_fixtures  # pylint: disable=import-outside-toplevel
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "src.txt").write_text("real change\n", encoding="utf-8")
+    _git(repo, "add", "src.txt")
+    _git(repo, "commit", "-qm", "real")
+
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    before = _manifest(tmp_path)["bundle_sha256"]
+    crew_fixtures.write_bookkeeping(repo)
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    m = _manifest(tmp_path)
+    assert before is not None and m["bundle_sha256"] == before
+    assert m["untracked_files"] == []
+    assert ".work/" in m["excluded"]
+    assert set(crew_ticket.CREW_BOOKKEEPING_PATHS) <= set(m["excluded"])
+
+
+@pytest.mark.parametrize("rel,tracked", [
+    (".crew/verify.json", True),
+    (".crew/codemap/x.md", False),
+    ("sub/.crew/.scope-base", False),
+    ("sub/.crew/metrics.md", False),
+])
+def test_a_crew_content_path_still_enters_the_bundle(repo, tmp_path, rel, tracked):
+    """Must-block. What crew reads as config or a map, and a nested
+    look-alike of a bookkeeping file, still change the hash and reach the
+    patch: the exclusion is the named list, root-anchored, nothing wider."""
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if tracked:
+        target.write_text("{}\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "content")
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "src.txt").write_text("real change\n", encoding="utf-8")
+    _git(repo, "add", "src.txt")
+    _git(repo, "commit", "-qm", "real")
+
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    before = _manifest(tmp_path)["bundle_sha256"]
+    target.write_text('{"changed": "by the ticket"}\n', encoding="utf-8")
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    assert _manifest(tmp_path)["bundle_sha256"] != before
+    patch = (tmp_path / "diff.txt").read_bytes()
+    assert rel.encode() in patch and b"by the ticket" in patch

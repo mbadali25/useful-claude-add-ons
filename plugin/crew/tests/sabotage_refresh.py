@@ -47,6 +47,8 @@ _UNTRACKED = ("        untracked = {p for p in completion_audit._git_fields(  "
 _DEMOTE = '        if item["status"] in (FRESH, STALE):\n'
 _RECORD_DOUBT = "        doubt = _named_behind(top, base, ticket)\n"
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
+TICKET = os.path.join(_S, "crew_ticket.py")
+_BK = "tests/test_crew_bookkeeping.py::"
 
 
 def _scope_guard_rule_span():
@@ -271,6 +273,24 @@ REFRESH_MUTATIONS = (
      "    if not path.startswith('\"'):\n        return path\n",
      "    if True:\n        return path\n",
      _CAI + "test_a_stat_dirty_file_whose_name_starts_with_a_quote_is_not_a_change"),
+    # T-0068: crew's own bookkeeping (crew_ticket.CREW_BOOKKEEPING_PATHS).
+    ("the gate records are not bookkeeping", TICKET,
+     '    ".crew/.verify-gate.*",               # verify_record.py, verify_fingerprint.py:172-177\n',
+     "",
+     _BK + "test_every_crew_state_path_is_classified"),
+    ("bookkeeping matches below the root", TICKET,
+     "and walk(i + 1, j + 1)\n\n    return walk(0, 0)\n\n\ndef _crew_listed",
+     "and walk(i + 1, j + 1)\n\n    return any(walk(0, k) for k in range(len(names)))"
+     "\n\n\ndef _crew_listed",
+     _BK + "test_is_crew_bookkeeping_matches_whole_segments_at_the_root"),
+    ("a config path is bookkeeping", TICKET,
+     '    ".crew/*.lock",                       # lock files\n',
+     '    ".crew/*.lock",                       # lock files\n    ".crew/*.json",\n',
+     _BK + "test_every_crew_state_path_is_classified"),
+    ("the matcher and git disagree on a directory", TICKET,
+     "            first = j + 1 if i == len(pat) - 1 else j\n",
+     "            first = j\n",
+     _BK + "test_is_crew_bookkeeping_matches_whole_segments_at_the_root"),
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE,
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
