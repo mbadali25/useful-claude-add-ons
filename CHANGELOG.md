@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.398: native memories as vault pointers, read side (T-0084)
+### Added — `crew` 1.0.331: native memories as vault pointers, read side (T-0084)
 
 - `plugin/crew/hooks/scripts/crew_memory.py` (new): a native Claude Code memory file may hold one
   line in place of its body, `vault: <name> | note: <vault-relative path>`. `resolve --file`
