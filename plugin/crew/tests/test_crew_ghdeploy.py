@@ -202,6 +202,13 @@ def test_entry_problem(tmp_path, label):
     github, reason = _PROBLEMS[label]
     root = _repo(tmp_path, _doc(github, deploy=[_PREFIX]))
 
+    if isinstance(github, dict):
+        assert crew_ghdeploy.entry_problem(github, "staging")[0] == reason, label
+    # Two `inputs` keys equal ignoring case are a JSON object both promote
+    # gates refuse, so in a file the map is refused before the entry is read.
+    if label == "input names equal by case":
+        reason = "gate-refuses-map"
+
     proc = _check(root)
 
     assert proc.returncode == 2, f"{label}: exit {proc.returncode}\n{proc.stdout}{proc.stderr}"
@@ -220,8 +227,10 @@ def test_correlation_needs_an_env_name_in_the_value_grammar(tmp_path):
 
 def test_an_env_name_is_never_printed_raw(tmp_path):
     """A detail line names the environment by repr, so a newline in its name
-    cannot forge a second line, least of all a `result=` one."""
-    env = "a\nresult=ok github=none"
+    cannot forge a second line, least of all a `result=` one. U+2028 is a
+    line break to `splitlines` and not a control character, so the gates
+    read the map (a `\\n` in a name refuses it: gate-refuses-map)."""
+    env = "a\u2028result=ok github=none"
     root = _repo(tmp_path, _doc(_with(inputs={"n": "a b"}), deploy=[_PREFIX], env=env))
 
     proc = _check(root, env=env)
@@ -237,7 +246,7 @@ def test_check_refuses_deploy_prefix_mismatch(tmp_path):
     second = _with(inputs={"target": "staging", "mode": "migrate"})
     both = [_ENTRY, second]
     p1, p2 = crew_ghdeploy.prefix(_ENTRY), crew_ghdeploy.prefix(second)
-    for deploy in ([p1], [p1, p2, "./deploy.sh"], "./deploy.sh", [p2, 7]):
+    for deploy in ([p1], [p1, p2, "./deploy.sh"], "./deploy.sh", [p2]):
         sub = tmp_path / str(abs(hash(json.dumps(deploy))))
         sub.mkdir()
         root = _repo(sub, _doc(both, deploy=deploy))
@@ -391,16 +400,17 @@ def test_branch_refs_are_accepted(ref):
     assert crew_ghdeploy.entry_problem(_with(ref=ref), "staging") is None
 
 
-# --- two environments: the gates' first substring match ----------------------
+# --- several environments: the gates' union rule (L-1503) --------------------
 #
-# Both promote-gate flavours take the FIRST environment, in file order, one of
-# whose `deploy` strings is a substring of the command (the .ps1 with -like,
-# which ignores case). So an environment whose dispatch contains another
-# environment's `deploy` string is gated as that other environment. `check`
-# refuses either side of such a pair as `ambiguous-environment`.
+# Both promote-gate flavours apply EVERY environment one of whose `deploy`
+# strings matches the command (literally, ignoring case, either way round):
+# the union of their requires, rollback and requireHuman. `check` therefore
+# refuses no overlap; it prints, under each dispatch, `gated-as:` with the
+# exact set both gates apply. A map the gates refuse to read is refused.
 
 _PROD = {"workflow": "deploy.yml", "ref": "main", "inputs": {"target": "prod"},
          "shaInput": "sha"}
+_PROD_PREFIX = "gh workflow run deploy.yml --ref main -f target=prod"
 
 
 def _envs(*pairs, human=()):
@@ -419,109 +429,161 @@ def _envs(*pairs, human=()):
     return {"environments": out}
 
 
+def _raw(envs_text):
+    return '{"environments": {' + envs_text + '}}\n'
+
+
+_RB = '"rollback": "none", "rollbackReason": "f"'
+_GH_PROD = json.dumps(_PROD)
+
+# label -> (map: a doc or raw JSON text, {github env: what check decides}).
+# The decision is the `gated-as` set, or "refused" for `gate-refuses-map`.
 _CONFIGS = {
     # The review's repro: an input-less staging entry is a prefix of
-    # production's dispatch, so production went out as staging, with no human.
+    # production's dispatch. First-match gated production as staging; the
+    # union gates it as both, so production's requireHuman holds.
     "inputless staging before production": (_envs(
         ("staging", {"workflow": "deploy.yml", "ref": "main"}, None),
-        ("production", _PROD, None), human=("production",)), set()),
-    # The other direction: staging's own dispatch overlaps no deploy string,
-    # but its `deploy` is inside production's dispatch.
+        ("production", _PROD, None), human=("production",)),
+        {"staging": "staging,production", "production": "staging,production"}),
     "shaInput-only staging before production": (_envs(
         ("staging", {"workflow": "deploy.yml", "ref": "main", "shaInput": "sha"}, None),
-        ("production", _PROD, None), human=("production",)), set()),
-    # -like ignores case: `target=Prod` matches `target=prod` in the .ps1 only.
+        ("production", _PROD, None), human=("production",)),
+        {"staging": "staging", "production": "staging,production"}),
+    # Case variants: `target=Prod` and `target=prod` match each other.
     "qa/Prod before production/prod": (_envs(
         ("qa", _with(inputs={"target": "Prod"}, shaInput="sha",
                      correlationInput=_DROP), None),
-        ("production", _PROD, None), human=("production",)), set()),
-    # A plain deploy string inside a github environment's dispatch.
+        ("production", _PROD, None), human=("production",)),
+        {"qa": "qa,production", "production": "qa,production"}),
     "plain deploy contained in a dispatch": (_envs(
         ("legacy", None, ["gh workflow run deploy.yml"]),
-        ("production", _PROD, None), human=("production",)), {"legacy"}),
-    # Review round 2, B2: a PLAIN production string that contains staging's
-    # prefix. Production's own command is gated as staging, with no human.
+        ("production", _PROD, None), human=("production",)),
+        {"production": "legacy,production"}),
     "B2 plain production string contains staging's prefix": (_envs(
         ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
         ("production", None, ["gh workflow run deploy.yml --ref main -f target=staging"
-                              " -f promote=prod"]), human=("production",)), set()),
-    # B2 with production listed first: staging's own prefix is inside
-    # production's string, which both gates also match (`cmd in d`).
-    "B2 with production listed first": (_envs(
-        ("production", None, ["gh workflow run deploy.yml --ref main -f target=staging"
-                              " -f promote=prod"]),
-        ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
-        human=("production",)), {"production"}),
-    # Only a dispatch for an all-f sha matches this earlier string: the reason
-    # `check` renders more than one sample sha.
-    "an earlier string matching only an all-f sha": (_envs(
-        ("legacy", None, ["-f sha=ffff"]),
-        ("production", _PROD, None), human=("production",)), {"legacy"}),
-    # F4: -like reads `*`, `?` and `[...]` in an earlier environment's string
-    # as wildcards, so the .ps1 gates production's dispatch as `legacy`.
-    "F4 star in an earlier plain string": (_envs(
-        ("legacy", None, ["gh workflow run deploy.yml --ref main -f target=*"]),
-        ("production", _PROD, None), human=("production",)), {"legacy"}),
-    "F4 question mark in an earlier plain string": (_envs(
-        ("legacy", None, ["gh workflow run deploy.yml --ref main -f target=pro?"]),
-        ("production", _PROD, None), human=("production",)), {"legacy"}),
-    "F4 bracket set in an earlier plain string": (_envs(
-        ("legacy", None, ["gh workflow run [d]eploy.yml --ref main"]),
-        ("production", _PROD, None), human=("production",)), {"legacy"}),
-    # A chain: each later plain string extends the one before, so qa's and
-    # production's own commands are all gated as dev.
+                              " -f promote=prod"]), human=("production",)),
+        {"staging": "staging"}),
     "three-environment chain": (_envs(
-        ("dev", _with(inputs={"target": "dev"}, correlationInput=_DROP), None),
+        ("dev", _with(inputs={"target": "dev"}, shaInput=_DROP,
+                      correlationInput=_DROP), None),
         ("qa", None, ["gh workflow run deploy.yml --ref main -f target=dev -f stage=qa"]),
         ("production", None, ["gh workflow run deploy.yml --ref main -f target=dev"
                               " -f stage=qa -f go=prod"]), human=("production",)),
-        {"qa", "production"}),
-    "a plain environment beside a github one": (_envs(
-        ("legacy", None, ["./deploy.sh legacy"]),
-        ("production", _PROD, None), human=("production",)), {"legacy", "production"}),
-    # Round 3, FIX2: PowerShell reads `$p.Value.deploy` case-insensitively, so
-    # a `Deploy` key is a deploy string to the .ps1 and invisible to the .sh.
-    "a Deploy key only the .ps1 reads": ({"environments": {
-        "preview": {"Deploy": "gh workflow run deploy.yml --ref main",
-                    "rollback": "none", "rollbackReason": "fixture"},
+        {"dev": "dev,qa,production"}),
+    # `*`, `?` and `[...]` are text to both gates: no wildcard claims a dispatch.
+    "a star in an earlier plain string": (_envs(
+        ("legacy", None, ["gh workflow run deploy.yml --ref main -f target=*"]),
+        ("production", _PROD, None), human=("production",)),
+        {"production": "production"}),
+    "a bracket set in an earlier plain string": (_envs(
+        ("legacy", None, ["gh workflow run [d]eploy.yml --ref main"]),
+        ("production", _PROD, None), human=("production",)),
+        {"production": "production"}),
+    # Round 4 low FIX: `[!-[]` is a range pwsh's -like threw on; the gates no
+    # longer read wildcards, so it is four characters and check accepts it.
+    "a [!-[] deploy beside a github one": (_envs(
+        ("legacy", None, ["ship [!-[]", "jq .items[0]"]),
+        ("production", _PROD, None), human=("legacy",)),
+        {"production": "production"}),
+    # The `deploy` key, `environments` and per-environment keys in any case.
+    "a Deploy key on another environment": ({"environments": {
+        "preview": {"Deploy": "gh workflow run deploy.yml --ref main", "rollback": "none",
+                    "rollbackReason": "fixture"},
         **_envs(("production", _PROD, None), human=("production",))["environments"]}},
-        {"preview"}),
-    # Round 3, NIT3: promote-gate.sh strips every CR from the command, so
-    # `carriage`'s own command reaches the .sh as `./deploy.sh`, inside x's.
-    "a CR the .sh gate strips": (_envs(
-        ("x", None, ["./deploy.sh x"]), ("carriage", None, ["./deploy.sh\r"]),
-        ("production", _PROD, None), human=("production",)), {"x", "carriage"}),
+        {"production": "preview,production"}),
+    "an upper-case DEPLOY key and Environments on the github one": (
+        '{"Environments": {"production": {"DEPLOY": ["' + _PROD_PREFIX + '"], '
+        '"github": ' + _GH_PROD + ', "RequireHuman": true, ' + _RB + '}}}\n',
+        {"production": "production"}),
+    # A CRLF map, and a CR inside another environment's deploy string.
+    "a CRLF map": (_raw(
+        '\r\n"production": {"deploy": ["' + _PROD_PREFIX + '"],\r\n"github": '
+        + _GH_PROD + ', ' + _RB + '},\r\n"cr": {"deploy": "gh workflow run deploy.yml\\r", '
+        + _RB + '}\r\n'), {"production": "production"}),
+    "empty deploy lists declare nothing": (_envs(
+        ("empty", None, []), ("blank", None, [""]), ("production", _PROD, None)),
+        {"production": "production"}),
     "distinct targets": (_envs(
         ("staging", _with(inputs={"target": "staging"}, correlationInput=_DROP), None),
         ("production", _PROD, None), human=("production",)),
-        {"staging", "production"}),
+        {"staging": "staging", "production": "production"}),
+    # Maps both gates refuse: every command blocks, so check refuses too.
+    "a comma in an environment name": (_envs(
+        ("a,b", None, ["./deploy.sh x"]), ("production", _PROD, None)),
+        {"production": "refused"}),
+    "a newline in an environment name": (_envs(
+        ("a\nb", None, ["./deploy.sh x"]), ("production", _PROD, None)),
+        {"production": "refused"}),
+    "an empty environment name": (_envs(
+        ("", None, ["./deploy.sh x"]), ("production", _PROD, None)),
+        {"production": "refused"}),
+    "a null deploy elsewhere": (_envs(
+        ("broken", None, None), ("production", _PROD, None)),
+        {"production": "refused"}),
+    "a numeric deploy elsewhere": (_envs(
+        ("broken", None, 7), ("production", _PROD, None)),
+        {"production": "refused"}),
+    "a list requireHuman elsewhere": ({"environments": {
+        "odd": {"deploy": "./deploy.sh odd", "requireHuman": [0], "rollback": "none",
+                "rollbackReason": "fixture"},
+        **_envs(("production", _PROD, None))["environments"]}},
+        {"production": "refused"}),
+    "an object requireHuman on the github one": ({"environments": {"production": dict(
+        _envs(("production", _PROD, None))["environments"]["production"],
+        requireHuman={})}}, {"production": "refused"}),
+    "an environment that is not an object elsewhere": ({"environments": {
+        "odd": "./deploy.sh odd",
+        **_envs(("production", _PROD, None))["environments"]}},
+        {"production": "refused"}),
+    "an exact duplicate key": (_raw(
+        '"production": {"deploy": ["' + _PROD_PREFIX + '"], "github": ' + _GH_PROD
+        + ', "requireHuman": true, "requireHuman": false, ' + _RB + '}'),
+        {"production": "refused"}),
+    "keys differing only by case": (_raw(
+        '"preview": {"deploy": "./deploy.sh preview", "Deploy": "./deploy.sh x", '
+        + _RB + '}, "production": {"deploy": ["' + _PROD_PREFIX + '"], "github": '
+        + _GH_PROD + ', ' + _RB + '}'), {"production": "refused"}),
+    "duplicate environments": (_raw(
+        '"production": {"deploy": "x", ' + _RB + '}, "production": {"deploy": ["'
+        + _PROD_PREFIX + '"], "github": ' + _GH_PROD + ', ' + _RB + '}'),
+        {"production": "refused"}),
 }
 
 
+def _config_repo(tmp_path, label):
+    doc, expect = _CONFIGS[label]
+    if isinstance(doc, str):
+        return _repo(tmp_path, None, raw=doc), expect
+    return _repo(tmp_path, doc), expect
+
+
+def _decision(proc):
+    """What `check` decided: its `gated-as` names, or "refused"."""
+    if _last(proc) == "result=refused reason=gate-refuses-map":
+        assert proc.returncode == 2, proc.stdout
+        return "refused"
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    gated = {ln for ln in proc.stdout.splitlines() if ln.startswith("gated-as: ")}
+    assert len(gated) == 1, proc.stdout
+    return gated.pop()[len("gated-as: "):].strip("'")
+
+
 @pytest.mark.parametrize("label", sorted(_CONFIGS))
-def test_check_refuses_an_environment_another_one_matches(tmp_path, label):
-    doc, accepted = _CONFIGS[label]
-    root = _repo(tmp_path, doc)
-    for env, cfg in doc["environments"].items():
-        proc = _check(root, env=env)
-        if env in accepted:
-            assert proc.returncode == 0, f"{label}/{env}: {proc.stdout}"
-        elif "github" in cfg:
-            assert proc.returncode == 2, f"{label}/{env}: {proc.stdout}"
-            assert _last(proc) == "result=refused reason=ambiguous-environment", proc.stdout
+def test_check_applies_the_gates_union_rule(tmp_path, label):
+    root, expect = _config_repo(tmp_path, label)
+    for env, decided in expect.items():
+        assert _decision(_check(root, env=env)) == decided, f"{label}/{env!r}"
 
 
-def test_another_unreadable_environment_is_could_not_tell(tmp_path):
-    """The gates exit 4 on any malformed environment, so `check` cannot say
-    which environment a dispatch would be gated as either."""
-    doc = _envs(("staging", _PROD, None))
-    doc["environments"]["broken"] = {"deploy": 7}
-    root = _repo(tmp_path, doc)
-
-    proc = _check(root)
-
-    assert proc.returncode == 3, proc.stdout
-    assert _last(proc) == "result=could-not-tell reason=verify-json-unreadable"
+def test_check_names_the_union_and_says_it_is_one(tmp_path):
+    root, _expect = _config_repo(tmp_path, "inputless staging before production")
+    proc = _check(root, env="production")
+    assert proc.returncode == 0, proc.stdout
+    lines = proc.stdout.splitlines()
+    assert lines[0].startswith("dispatch: " + _PROD_PREFIX + " -f sha=")
+    assert lines[1] == "gated-as: 'staging,production'"
 
 
 _PWSH = crew_fixtures.resolve_pwsh()
@@ -529,6 +591,8 @@ _GATE_PS1 = os.path.join(_HOOKS, "promote-gate.ps1")
 
 
 def _gate(flavour, root, command):
+    """What the real promote-gate.<flavour> decides for `command`: the names
+    it gates it as (blocked or allowed), "map" for a refused map, or None."""
     if flavour == "sh":
         if _BASH is None:
             pytest.skip("no MSYS/POSIX bash - the .sh flavour was NOT run")
@@ -543,133 +607,94 @@ def _gate(flavour, root, command):
         marker.unlink()
     payload = json.dumps({"tool_name": tool, "tool_input": {"command": command}})
     proc = subprocess.run(argv, input=payload, capture_output=True, text=True,
-                          check=False, cwd=str(root),
+                          check=False, cwd=str(root), timeout=120,
                           env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root), **extra))
     if proc.returncode == 0:
         return marker.read_text(encoding="utf-8").split()[0] if marker.exists() else None
-    found = re.search(r"PROMOTION BLOCKED \(([^,)]+)", proc.stderr)
-    return found.group(1) if found else "unparsed: " + proc.stderr
+    assert proc.returncode == 2, f"{flavour} exited {proc.returncode}: {proc.stderr}"
+    named = re.search(r"PROMOTION BLOCKED \((.+?)(?:, sha |\):)", proc.stderr)
+    return named.group(1) if named else "map"
 
 
-# The .ps1 halves start one pwsh per command, which a 60s Stop cannot afford:
-# they are `slow` (pytest-crew.yml runs that set with pwsh) except one smoke
-# map that keeps the .ps1 flavour in the default rule.
-_PS1_SMOKE = "F4 bracket set in an earlier plain string"
-_BY_FLAVOUR = [pytest.param(label, flavour, id=f"{label}-{flavour}",
-                            marks=() if flavour == "sh" or label == _PS1_SMOKE
-                            else crew_fixtures.SLOW)
-               for label in sorted(_CONFIGS) for flavour in ("sh", "ps1")]
+# One pwsh start per command is too slow for a 60s Stop: the .ps1 halves are
+# `slow` (pytest-crew.yml runs that set with pwsh) except one smoke map each.
+def _by_flavour(labels, smoke):
+    return [pytest.param(label, flavour, id=f"{label}-{flavour}",
+                         marks=() if flavour == "sh" or label == smoke
+                         else crew_fixtures.SLOW)
+            for label in labels for flavour in ("sh", "ps1")]
 
 
-@pytest.mark.parametrize("label, flavour", _BY_FLAVOUR)
-def test_every_accepted_dispatch_is_gated_as_its_own_environment(tmp_path, label, flavour):
-    """For each environment `check` accepts, both real gates attribute its
-    printed dispatch to that environment - blocked or allowed, never another
-    environment's gates and never none."""
-    doc, accepted = _CONFIGS[label]
-    root = _repo(tmp_path, doc)
-    gated = set()
-    for env, cfg in doc["environments"].items():
-        if "github" not in cfg:
-            continue
+@pytest.mark.parametrize("label, flavour", _by_flavour(
+    sorted(_CONFIGS), "a [!-[] deploy beside a github one"))
+def test_check_agrees_with_the_real_gate(tmp_path, label, flavour):
+    """For each github environment, `check`'s decision equals the real
+    gate's on the dispatch it printed: the same `gated-as` set, or a map the
+    gate refuses (it then blocks the dispatch without naming anyone)."""
+    root, expect = _config_repo(tmp_path, label)
+    for env in expect:
         proc = _check(root, env=env)
-        if proc.returncode != 0:
+        decided = _decision(proc)
+        if decided == "refused":
+            command = "gh workflow run deploy.yml --ref main -f target=prod"
+            assert _gate(flavour, root, command) == "map", f"{label}/{env!r}"
             continue
         for line in proc.stdout.splitlines():
             if line.startswith("dispatch: "):
-                assert _gate(flavour, root, line[len("dispatch: "):]) == env, (
-                    f"{label}: {env}'s dispatch is gated as another environment")
-        gated.add(env)
-    assert gated == {e for e in accepted if "github" in doc["environments"][e]}
+                real = _gate(flavour, root, line[len("dispatch: "):])
+                assert real == decided, f"{label}/{env!r}: gate {real}, check {decided}"
 
 
-def _commands(doc):
-    """Every command `check` reasons about for this map: each github entry's
-    dispatch for both sample shas, and every deploy string."""
-    out = []
-    for env, cfg in doc["environments"].items():
-        if "github" in cfg:
-            for entry in crew_ghdeploy.entries(cfg):
-                if crew_ghdeploy.entry_problem(entry, env) is None:
-                    out += [crew_ghdeploy.dispatch(entry, env, sha)
-                            for sha in crew_ghdeploy.SAMPLE_SHAS]
-        for key, value in cfg.items():
-            if key.lower() == "deploy":
-                out += [d for d in ([value] if isinstance(value, str) else value) if d]
-    return out
+# --- the agreement table: simulate_gate against both real gates --------------
+#
+# L-1503's own agreement maps (test_promote_gate_literal_match.py, the source
+# of truth for gate behaviour) plus this module's: every command of every map
+# goes to the real promote-gate.sh, the real promote-gate.ps1 and
+# `simulate_gate`, and all three must decide the same.
+
+import test_promote_gate_literal_match as gate_tests  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
+
+_EXTRA = [
+    # the round-4 FIX: `[!-[]` and other sets are literal text
+    ({"legacy": gate_tests._env(["ship [!-[]"], human=True),  # pylint: disable=protected-access
+      "prod": _PROD_PREFIX},
+     ["ship [!-[]", "ship [!-[] now", "SHIP [!-[]", "ship !", "ship ["]),
+    # union with a dispatch, case variants in values
+    ({"staging": "gh workflow run deploy.yml --ref main",
+      "Prod": _PROD_PREFIX, "qa": "GH WORKFLOW RUN deploy.yml --ref main -f target=PROD"},
+     [_PROD_PREFIX + " -f sha=" + "0" * 40, "gh workflow run deploy.yml",
+      "gh workflow run deploy.yml --ref main -f target=staging"]),
+    # CRLF map text, and CRs inside a deploy string and the command
+    (_raw('\r\n"a": {"deploy": "./deploy.sh a\\r", ' + _RB + '},\r\n'
+          '"b": {"deploy": ["./deploy.sh b", "./deploy.sh"], ' + _RB + '}\r\n'),
+     ["./deploy.sh a", "./deploy.sh a\r\n", "./deploy.sh\r", "./deploy.sh b\r\r\n"]),
+    # bad names, duplicates, null / [] / [""] deploys, non-scalar requireHuman
+    ({"x": "deploy-x", "a\u0085b": "deploy-y"}, ["deploy-x"]),
+    (_raw('"a": {"deploy": "deploy-a", ' + _RB + '}, "A": {"deploy": "deploy-b", '
+          + _RB + '}'), ["deploy-a", "echo hi"]),
+    ({"none": {"deploy": None, "rollback": "none", "rollbackReason": "f"},
+      "x": "deploy-x"}, ["deploy-x"]),
+    ({"e": gate_tests._env([]), "b": gate_tests._env(["", "deploy-b"]),  # pylint: disable=protected-access
+      "x": "deploy-x"}, ["deploy-x", "deploy-b", "deploy-"]),
+    ({"h": dict(gate_tests._env("deploy-h"), requireHuman=["yes"])},  # pylint: disable=protected-access
+     ["deploy-h"]),
+    ({"h": dict(gate_tests._env("deploy-h"), requireHuman=1)},  # pylint: disable=protected-access
+     ["deploy-h", "git status"]),
+]
+_TABLE = list(gate_tests._AGREEMENT) + _EXTRA  # pylint: disable=protected-access
 
 
-@pytest.mark.parametrize("label, flavour", _BY_FLAVOUR)
-def test_gate_pick_agrees_with_the_real_gate(tmp_path, label, flavour):
-    """The simulation is only as good as its agreement with the real hooks:
-    for every command of every map above, `_gate_pick` names the environment
-    the real promote-gate.<flavour> gates it as (None for no match)."""
-    doc, _accepted = _CONFIGS[label]
-    root = _repo(tmp_path, doc)
-    for command in _commands(doc):
-        real = _gate(flavour, root, command)
-        assert crew_ghdeploy._gate_pick(command, doc["environments"], flavour) == real, (  # pylint: disable=protected-access
-            f"{label}: {command!r}")
-
-
-@pytest.mark.parametrize("text, pattern, hit", [
-    ("abc", "*B*", True), ("abc", "a?c", True), ("ac", "a?c", False),
-    ("deploy", "[d]eploy", True), ("eploy", "[d]eploy", False),
-    ("x", "[a-z]", True), ("5", "[a-z]", False), ("a*b", "a`*b", True),
-    ("axb", "a`*b", False), ("ab", "a*", True), ("ba", "a*", False),
-    # Sets as pwsh 7.4 reads them (measured with -like on 2026-10-04): a
-    # backtick escapes inside a set, a leading `]` is literal, `-` makes a
-    # range only between two members, and `!`/`^` do not negate.
-    ("]", "[`]]", True), ("a", "[`]]", False), ("-", "[a`-c]", True),
-    ("b", "[a`-c]", False), ("a", "[a`-c]", True), ("]", "[]]", True),
-    ("a", "[]a]", True), ("]", "[]a]", True), ("b", "[]a]", False),
-    ("b", "[`a-c]", True), ("b", "[a-`c]", True), ("-", "[a-c-e]", True),
-    ("d", "[a-c-e]", False), ("e", "[a-c-e]", True), ("-", "[-a]", True),
-    ("-", "[a-]", True), ("!", "[!a]", True), ("b", "[!a]", False),
-    ("^", "[^a]", True), ("b", "[^a]", False), ("a]", "[a]]", True),
-    ("]", "[a-]]", False), ("*", "[*]", True), ("a", "[*]", False),
-    ("`", "[``]", True), ("B", "[a-c]", True),
-])
-def test_like_is_powershell_wildcard_matching(text, pattern, hit):
-    assert crew_ghdeploy._like(text, pattern) is hit  # pylint: disable=protected-access
-
-
-@pytest.mark.parametrize("pattern", ["[z-a]", "[`]", "[]", "[a"])
-def test_like_refuses_what_pwsh_cannot_read(pattern):
-    """pwsh 7.4 throws on each of these; `_like` raises ValueError, never re.error."""
-    with pytest.raises(ValueError):
-        crew_ghdeploy._like("a", pattern)  # pylint: disable=protected-access
-
-
-@pytest.mark.parametrize("deploy", ["gh workflow run [deploy.yml", "./deploy.sh [z-a]",
-                                    "./deploy.sh [`]"])
-def test_an_unreadable_wildcard_set_is_refused(tmp_path, deploy):
-    doc = _envs(("legacy", None, [deploy]), ("production", _PROD, None))
-    root = _repo(tmp_path, doc)
-
-    proc = _check(root, env="production")
-
-    assert proc.returncode == 2, proc.stdout
-    assert _last(proc) == "result=refused reason=ambiguous-environment"
-
-
-def test_deploy_keys_that_collide_by_case_are_refused(tmp_path):
-    """ConvertFrom-Json refuses an object whose keys differ only in case, so
-    the .ps1 gate could not read this map at all."""
-    doc = _envs(("preview", None, ["./deploy.sh preview"]), ("production", _PROD, None))
-    doc["environments"]["preview"]["Deploy"] = "./deploy.sh other"
-    root = _repo(tmp_path, doc)
-
-    proc = _check(root, env="production")
-
-    assert proc.returncode == 2, proc.stdout
-    assert _last(proc) == "result=refused reason=ambiguous-environment"
-
-
-@pytest.mark.parametrize("command, picked", [
-    ("./deploy.sh\r", "x"), ("./deploy.sh\n\n", "x"), ("\r\n", None)])
-def test_the_sh_simulation_cleans_the_command_as_the_gate_does(command, picked):
-    """promote-gate.sh strips every CR and `$(...)` strips trailing newlines;
-    an empty command then exits 0 before any match."""
-    envs = {"x": {"deploy": ["./deploy.sh x"]}}
-    assert crew_ghdeploy._gate_pick(command, envs, "sh") == picked  # pylint: disable=protected-access
+@pytest.mark.parametrize("index, flavour", [
+    pytest.param(i, flavour, id=f"map{i}-{flavour}",
+                 marks=() if flavour == "sh" or i == len(gate_tests._AGREEMENT)  # pylint: disable=protected-access
+                 else crew_fixtures.SLOW)
+    for i in range(len(_TABLE)) for flavour in ("sh", "ps1")])
+def test_simulate_gate_agrees_with_the_real_gate(tmp_path, index, flavour):
+    deploys, commands = _TABLE[index]
+    repo = gate_tests.Repo(tmp_path / "r", deploys if isinstance(deploys, str) else
+                           {n: gate_tests._cfg(d) for n, d in deploys.items()})  # pylint: disable=protected-access
+    text = (repo.root / ".crew" / "verify.json").read_text(encoding="utf-8")
+    for command in commands:
+        real = _gate(flavour, repo.root, command)
+        assert crew_ghdeploy.simulate_gate(text, command) == real, (
+            f"map {index}, {command!r}: promote-gate.{flavour} decided {real!r}")

@@ -339,15 +339,17 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 `environments.*` section, not re-derived here.
 
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
-environment's `github` entry out of `.crew/verify.json` (`_environment`, `:375`; `entries`, `:199`),
-validates each against a closed key set (`KEYS`, `:72`) and value grammar (`VALUE`, `:69`;
-`entry_problem`, `:161`; the ref as a branch name, `_ref_problem`, `:100`), requires `deploy` to be
-exactly the entries' prefixes (`check`, `:409`; `prefix`, `:212`), and simulates both promote-gate
-flavours' first-match environment pick (`_gate_pick`, `:316`: `.sh` substrings after CR stripping,
-`.ps1` `-like` with sets read as pwsh 7.4 reads them, `_like_set`, `:249`, and the `deploy` key
-matched ignoring case, `_deploys`, `:231`) so every command it or another environment declares is
-gated as its own environment (`_ambiguity`, `:340`). It prints the dispatch for HEAD (`dispatch`,
-`:220`), runs only `git rev-parse HEAD` (`_head`, `:396`) and writes nothing; no hook calls it yet,
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:339`; `entries`, `:209`),
+validates each against a closed key set (`KEYS`, `:84`) and value grammar (`VALUE`, `:81`;
+`entry_problem`, `:171`; the ref as a branch name, `_ref_problem`, `:110`), requires `deploy` to be
+exactly the entries' prefixes (`check`, `:380`; `prefix`, `:222`), and applies L-1503's promote-gate
+rule exactly: a map both gates refuse (case or exact twin keys, `_no_twins`, `:256`; bad names,
+null or non-string `deploy`, list or object `requireHuman`, `gate_problem`, `:283`) is refused as
+`gate-refuses-map`, and each dispatch is printed with `gated-as:` - the union of every environment
+whose `deploy` matches it literally, ignoring case, either way round, after CR stripping
+(`gate_matches`, `:300`; keys read ignoring case, `_get_ci`, `:266`; `simulate_gate`, `:328`, is the
+agreement table's entry point). It prints the dispatch for HEAD (`dispatch`,
+`:230`), runs only `git rev-parse HEAD` (`_head`, `:367`) and writes nothing; no hook calls it yet,
 and promote-gate ignores the `github` key. DERIVED from the definitions cited. Its unwired
 mutations are `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after
 the anchor; the anchor was not moved for it.

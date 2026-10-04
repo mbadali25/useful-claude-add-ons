@@ -34,26 +34,37 @@ must not start with `-` or `@` (PowerShell splats `@name`), and must not be
 tag given by its bare name is NOT detected: telling it from a branch needs
 the remote, and `check` asks nothing.
 
-ONE ENVIRONMENT PER COMMAND: THE GATES ARE SIMULATED. Both promote-gate
-flavours gate a command as the FIRST environment, in file order, with a
-`deploy` string `d` that matches it either way round: promote-gate.sh with
-plain substrings (`d in cmd or cmd in d`), promote-gate.ps1 with
-`$cmd -like "*$d*" -or $d -like "*$cmd*"`, which ignores case and reads `*`,
-`?` and `[...]` in `d` (or in the command) as wildcards. `_gate_pick` mirrors
-both. `check <env>` refuses as `ambiguous-environment` unless both flavours
-pick `<env>` for every dispatch it prints (rendered for two sample shas),
-for every `deploy` string it lists, and pick each OTHER environment for each
-of that environment's `deploy` strings. Pairwise overlap rules missed a plain
-string that contains `<env>`'s prefix, and wildcards. Only the clean-map path
-is simulated: with the map dirty the gates block before any deploy. Known
-gap: `-like` folds case by the current culture (tr-TR maps `I` to dotless
-`i`); this simulation folds culture-invariantly.
+THE GATES ARE SIMULATED, EXACTLY (L-1503). Both promote-gate flavours read
+the map and pick environments by one shared rule, and `check` applies the
+same rule (`gate_problem`, `gate_matches`):
+  - every key the gates read (`environments`, `deploy`, `requireHuman`, ...)
+    is read ignoring case; a map with two keys equal or equal ignoring case,
+    an environment name that is empty or holds a control character or `,`,
+    an environment that is not an object, a `deploy` that is null or not a
+    command or list of commands, or a `requireHuman` that is a list or an
+    object is REFUSED by the gates, so `check` refuses it too
+    (`gate-refuses-map`); `"deploy": []` and `[""]` declare nothing;
+  - the command loses every CR and its trailing newlines, and a blank one
+    deploys nothing; a declared command matches when either one contains the
+    other, literally, ignoring case (`*`, `?`, `[` are text: `[!-[]` is four
+    characters, never a wildcard set);
+  - EVERY matching environment applies, in file order, joined `staging,prod`:
+    the union of their `requires`, `rollback` and `requireHuman`.
+So a dispatch matching several environments is not a refusal: `check`
+prints `gated-as: <names>` under each dispatch, the exact set both gates
+apply to that literal command. `<env>` is always in it, because `deploy`
+lists the entry's prefix and the dispatch starts with it. Only the working
+map is simulated: a dirty map is also matched against the committed one.
+Known gap: case folding is per character (Python's simple upper case, as
+promote-gate.sh); the .ps1's OrdinalIgnoreCase differs on 29 non-ASCII BMP
+characters (#489 N1), so the gates themselves disagree there. A dispatch is
+ASCII by the value grammar; another environment's deploy string need not be.
 
 Exit codes, with the last stdout line always `result=...`:
-  0  `result=ok entries=N sha=<sha>` after one `dispatch: <command>` per entry,
-     or `result=ok github=none` for an environment without a `github` key.
+  0  `result=ok entries=N sha=<sha>` after a `dispatch: <command>` and a
+     `gated-as: '<names>'` line per entry, or `result=ok github=none` for an environment without a `github` key.
   2  `result=refused reason=<code>`: an entry problem, `deploy-prefix-mismatch`
-     or `ambiguous-environment`.
+     or `gate-refuses-map` (both gates refuse the map, so every command blocks).
   3  `result=could-not-tell reason=<code>`: the map is absent or unreadable,
      the environment is not in it, or HEAD cannot be read. Never read as
      "no github entry".
@@ -65,14 +76,13 @@ import re
 import secrets
 import subprocess
 import sys
+import unicodedata
 
 VALUE = re.compile(r"[A-Za-z0-9._/@:+-]+")
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 WORKFLOW = re.compile(r"[A-Za-z0-9._][A-Za-z0-9._-]*\.ya?ml")
 KEYS = ("workflow", "ref", "inputs", "shaInput", "correlationInput",
         "deployJob", "watchMinutes", "identifySeconds")
-SAMPLE_SHAS = ("0" * 40, "f" * 40)
-FLAVOURS = ("sh", "ps1")
 RANGES = {"watchMinutes": (1, 360, 60, "watch-minutes-range"),
           "identifySeconds": (10, 900, 120, "identify-seconds-range")}
 
@@ -228,17 +238,41 @@ def dispatch(entry, env, sha):
     return line
 
 
-def _deploys(cfg, flavour="sh"):
-    """An environment's `deploy` as a list of strings, or None when malformed.
-    The .ps1 reads `$p.Value.deploy`, which matches the key ignoring case; two
-    keys that collide that way are a map ConvertFrom-Json refuses (ValueError)."""
-    if flavour == "ps1":
-        keys = [key for key in cfg if key.lower() == "deploy"]
-        if len(keys) > 1:
-            raise ValueError(f"keys {keys} differ only in case")
-        declared = cfg[keys[0]] if keys else []
-    else:
-        declared = cfg.get("deploy", [])
+class _MapRefused(Exception):
+    """A map both gates refuse to read: every command then blocks."""
+
+
+def _fold(text):
+    """promote-gate.sh's case fold: per-character simple upper case, a
+    character whose upper case is longer than one character kept as is."""
+    return "".join(c.upper() if len(c.upper()) == 1 else c for c in text)
+
+
+def _blank(text):
+    """.NET's String.IsNullOrWhiteSpace, as promote-gate.sh spells it."""
+    return all(c.isspace() and c not in "\x1c\x1d\x1e\x1f" for c in text)
+
+
+def _no_twins(pairs):
+    """json object hook: two keys equal, or equal ignoring case, refuse."""
+    seen = set()
+    for key, _value in pairs:
+        if _fold(key) in seen:
+            raise _MapRefused(f"two keys equal or differing only by case ({key!r})")
+        seen.add(_fold(key))
+    return dict(pairs)
+
+
+def _get_ci(obj, name, default):
+    """`obj[name]` with the key matched ignoring case (twins never get here)."""
+    keys = [key for key in obj if _fold(key) == _fold(name)]
+    return obj[keys[0]] if keys else default
+
+
+def _deploys(cfg):
+    """An environment's `deploy` as a list of strings, the key read ignoring
+    case; None when it is neither a command nor a list of commands."""
+    declared = _get_ci(cfg, "deploy", [])
     if isinstance(declared, str):
         declared = [declared]
     if not isinstance(declared, list) or not all(isinstance(d, str) for d in declared):
@@ -246,142 +280,75 @@ def _deploys(cfg, flavour="sh"):
     return declared
 
 
-def _like_set(pattern, start):
-    """The `[set]` opening at `start`, as (regex class, index past it), read
-    the way pwsh 7.4 reads it: a `]` first in the set is a member, a backtick
-    makes the next character a plain member, `-` between two members is a
-    range (a backtick-escaped `-` is not), and `!`/`^` are plain members.
-    ValueError where pwsh throws: unclosed, empty, or a reversed range."""
-    members, j = [], start + 1
-    while True:
-        if j >= len(pattern):
-            raise ValueError(f"unclosed wildcard set in {pattern!r}")
-        char = pattern[j]
-        if char == "]" and members:
-            break
-        if char == "`":
-            if j + 1 >= len(pattern):
-                raise ValueError(f"unclosed wildcard set in {pattern!r}")
-            members.append((pattern[j + 1], True))
-            j += 2
-        else:
-            members.append((char, False))
-            j += 1
-    parts, k = [], 0
-    while k < len(members):
-        if k + 2 < len(members) and members[k + 1] == ("-", False):
-            # A reversed range is left to `re`, whose error `_like_regex` turns
-            # into the ValueError pwsh's throw corresponds to.
-            parts.append(re.escape(members[k][0]) + "-" + re.escape(members[k + 2][0]))
-            k += 3
-        else:
-            parts.append(re.escape(members[k][0]))
-            k += 1
-    return "[" + "".join(parts) + "]", j + 1
-
-
-def _like_regex(pattern):
-    """PowerShell's `-like` pattern as a regex: `*`, `?`, `[set]` (see
-    `_like_set`) and a backtick escaping the next character. ValueError when
-    PowerShell could not read it -- never re.error."""
-    out, i = [], 0
-    while i < len(pattern):
-        char = pattern[i]
-        if char == "`" and i + 1 < len(pattern):
-            out.append(re.escape(pattern[i + 1]))
-            i += 2
-        elif char == "*":
-            out.append(".*")
-            i += 1
-        elif char == "?":
-            out.append(".")
-            i += 1
-        elif char == "[":
-            regex, i = _like_set(pattern, i)
-            out.append(regex)
-        else:
-            out.append(re.escape(char))
-            i += 1
-    try:
-        return re.compile("".join(out), re.IGNORECASE | re.DOTALL)
-    except re.error as exc:
-        raise ValueError(f"unreadable wildcard pattern {pattern!r}: {exc}") from exc
-
-
-def _like(text, pattern):
-    """`$text -like $pattern`, culture-invariant (see the docstring's gap)."""
-    return _like_regex(pattern).fullmatch(text) is not None
-
-
-def _gate_pick(command, envs, flavour):
-    """The environment promote-gate.<flavour> gates `command` as, or None.
-    Raises ValueError where the .ps1 could not read a pattern or the map.
-    The command is cleaned as each gate cleans it first: the .sh strips every
-    CR and `$(...)` strips trailing newlines; both exit 0 on an empty one."""
-    if flavour == "sh":
-        command = command.replace("\r", "").rstrip("\n")
-        if not command:
-            return None
-    elif not command.strip():
-        return None
+def gate_problem(envs):
+    """Why both promote gates refuse this map of environments, or None."""
+    for name in envs:
+        if not name or "," in name or any(unicodedata.category(c) == "Cc" for c in name):
+            return (f"environment name {name!r} is empty or holds a control "
+                    "character or a comma")
     for name, cfg in envs.items():
-        for dep in _deploys(cfg, flavour) or []:
-            if not dep:
-                continue
-            if flavour == "sh":
-                hit = dep in command or command in dep
-            else:
-                hit = _like(command, f"*{dep}*") or _like(dep, f"*{command}*")
-            if hit:
-                return name
+        if not isinstance(cfg, dict):
+            return f"environment {name!r} is not an object"
+        if isinstance(_get_ci(cfg, "requireHuman", None), (list, dict)):
+            return f"environment {name!r} has a `requireHuman` that is a list or an object"
+        if _deploys(cfg) is None:
+            return (f"environment {name!r} has a `deploy` that is not a command "
+                    "or a list of commands")
     return None
 
 
-def _ambiguity(envs, env, mine):
-    """Refuse unless both simulated gates pick `env` for each of its own
-    commands and each other environment for each of that one's."""
-    views = {}
-    for other, cfg in envs.items():
-        try:
-            views[other] = ([] if not isinstance(cfg, dict) else
-                            [_deploys(cfg, flavour) for flavour in FLAVOURS])
-        except ValueError as exc:
-            raise Refused("ambiguous-environment",
-                          f"promote-gate.ps1 cannot read environment {other!r}: {exc}") from exc
-        if not views[other] or None in views[other]:
-            raise CouldNotTell("verify-json-unreadable",
-                               f"environment {other!r} is not an object with a `deploy` "
-                               "command or list of commands")
-    wanted = [(dispatch(e, env, sha), env) for sha in SAMPLE_SHAS
-              for e in entries(envs[env])]
-    wanted += [(dep, env) for dep in dict.fromkeys(mine + views[env][1]) if dep]
-    # Each other environment's strings as either gate reads them.
-    wanted += [(dep, other) for other in envs if other != env
-               for dep in dict.fromkeys(views[other][0] + views[other][1]) if dep]
-    for command, owner in wanted:
-        for flavour in FLAVOURS:
-            try:
-                picked = _gate_pick(command, envs, flavour)
-            except ValueError as exc:
-                raise Refused("ambiguous-environment",
-                              f"promote-gate.ps1 cannot read a deploy pattern: {exc}") from exc
-            if picked != owner:
-                raise Refused("ambiguous-environment",
-                              f"promote-gate.{flavour} would gate {command!r} as {picked!r}, "
-                              f"not {owner!r}: a gate takes the first environment whose deploy "
-                              "string matches the command")
+def gate_matches(command, envs):
+    """Every environment, in file order, both promote gates apply to
+    `command` on this (gate_problem-free) map: [] when none."""
+    command = command.replace("\r", "").rstrip("\n")
+    if _blank(command):
+        return []
+    folded = _fold(command)
+    return [name for name, cfg in envs.items()
+            if any(dep and (_fold(dep) in folded or folded in _fold(dep))
+                   for dep in _deploys(cfg))]
+
+
+def load_map(text):
+    """The environments object of map `text`, read as the gates read it.
+    Raises _MapRefused where both gates refuse it."""
+    try:
+        doc = json.loads(text, object_pairs_hook=_no_twins)
+    except ValueError as exc:
+        raise _MapRefused(f"not JSON: {exc}") from exc
+    envs = _get_ci(doc, "environments", {}) if isinstance(doc, dict) else None
+    if not isinstance(envs, dict):
+        raise _MapRefused("no object of environments")
+    problem = gate_problem(envs)
+    if problem:
+        raise _MapRefused(problem)
+    return envs
+
+
+def simulate_gate(text, command):
+    """What promote-gate.sh and .ps1 decide for `command` on a clean,
+    committed map `text`: "map" (refused), None (no match) or the matched
+    names joined by `,` - the agreement table's comparison."""
+    try:
+        envs = load_map(text)
+    except _MapRefused:
+        return "map"
+    return ",".join(gate_matches(command, envs)) or None
 
 
 def _environment(root, env):
+    """The map's environments, read as the gates read them."""
     path = os.path.join(root, ".crew", "verify.json")
     if not os.path.lexists(path):
         raise CouldNotTell("verify-json-absent", f"{path} does not exist")
     try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
+            doc = json.loads(fh.read(), object_pairs_hook=_no_twins)
+    except _MapRefused as exc:
+        raise Refused("gate-refuses-map", f"both promote gates refuse {path}: {exc}") from exc
     except (OSError, ValueError) as exc:
         raise CouldNotTell("verify-json-unreadable", f"{path}: {exc}") from exc
-    envs = doc.get("environments") if isinstance(doc, dict) else None
+    envs = _get_ci(doc, "environments", None) if isinstance(doc, dict) else None
     if not isinstance(envs, dict):
         raise CouldNotTell("verify-json-unreadable",
                            "`environments` is not an object in .crew/verify.json")
@@ -390,6 +357,10 @@ def _environment(root, env):
                            f"no environment {env!r} in .crew/verify.json")
     if not isinstance(envs[env], dict):
         raise CouldNotTell("verify-json-unreadable", f"environment {env!r} is not an object")
+    problem = gate_problem(envs)
+    if problem:
+        raise Refused("gate-refuses-map", "both promote gates refuse .crew/verify.json, "
+                                          f"so every command would block: {problem}")
     return envs
 
 
@@ -423,10 +394,13 @@ def check(root, env):
         raise Refused("deploy-prefix-mismatch",
                       f"{env!r}: `deploy` must list exactly these prefixes, and nothing "
                       f"else: {sorted(wanted)}")
-    _ambiguity(envs, env, declared)
     sha = _head(root)
-    return ([f"dispatch: {dispatch(e, env, sha)}" for e in found]
-            + [f"result=ok entries={len(found)} sha={sha}"])
+    lines = []
+    for entry in found:
+        command = dispatch(entry, env, sha)
+        lines += [f"dispatch: {command}",
+                  f"gated-as: {','.join(gate_matches(command, envs))!r}"]
+    return lines + [f"result=ok entries={len(found)} sha={sha}"]
 
 
 def main(argv=None):

@@ -1969,10 +1969,10 @@ linked worktree (whose HEAD and cleanliness are what the gate then checks);
 
 A `.crew/verify.json` environment's `github` entry is not config, and no key
 here reads it (crew-verification skill, section 4). `crew_ghdeploy.py check`
-simulates both promote-gate flavours to prove each command is gated as its
-own environment. Known gap: promote-gate.ps1's `-like` folds case by the
-current culture (under tr-TR, `I` and `i` are not one letter), while the
-simulation folds culture-invariantly. Nothing in the code handles it.
+applies promote-gate's own rule (L-1503): it refuses a map both gates refuse
+and prints, under each dispatch, `gated-as:` - every environment whose
+`deploy` matches it, the union of whose requirements the gates apply. A test
+table runs both real gates beside it on the same maps and commands.
 
 ### The ratchet is one table, not five copies
 

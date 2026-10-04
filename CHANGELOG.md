@@ -17,15 +17,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   validates it against a closed key set and the value grammar
   `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
   requires `deploy` to list exactly the entries' canonical prefixes so
-  promote-gate's existing match fires on the real dispatch, and simulates
-  both gates (`.sh` substrings after the gate's CR stripping, `.ps1` `-like`
-  with case folding, `*`, `?` and `[...]` sets read as pwsh 7.4 reads them,
-  and a `deploy` key matched ignoring case; first environment in file order;
-  a pattern pwsh cannot read is refused, never a traceback): it refuses as
-  `ambiguous-environment` unless each dispatch (two sample shas) and each of
-  its `deploy` strings is gated as this environment, and each other
-  environment's `deploy` strings as that one. Known gap: `-like`'s
-  current-culture case folding (tr-TR) is not simulated. It prints the one
+  promote-gate's existing match fires on the real dispatch, and applies
+  both gates' one rule as L-1503 left it: a map the gates refuse (exact or
+  case twin keys, an empty, comma or control-character environment name, a
+  null or non-string `deploy`, a list or object `requireHuman`) is refused
+  as `gate-refuses-map`, and each dispatch is printed with `gated-as:
+  '<names>'`, every environment whose `deploy` matches it literally,
+  ignoring case, either way round, after CR stripping - the union whose
+  requirements the gates apply. A multi-environment match is not refused.
+  It prints the one
   literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
   (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
   HEAD unreadable - never "no github entry"). It writes nothing and runs no
@@ -33,10 +33,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Nothing dispatches, identifies, watches or records a run
   (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
   does not deploy (L-0649).
-- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 207 cases. Multi-
-  environment maps feed every command to the real `promote-gate.sh` and
-  `promote-gate.ps1` and assert the simulation names the same environment;
-  the `.ps1` halves but one smoke map are `slow`. The 79
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 229 cases. An
+  agreement table (L-1503's 26 maps from test_promote_gate_literal_match.py
+  plus 9: 35 maps, 95 commands) feeds every command to the real
+  `promote-gate.sh`, the real `promote-gate.ps1` and `simulate_gate`, and 25
+  github maps compare `check`'s decision with both real gates on the dispatch
+  it printed; the `.ps1` halves but one smoke map each are `slow`. A
+  `[!-[]` deploy (a range pwsh's `-like` threw on) is literal text and
+  accepted (#407 round-4 FIX). The 73
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 
