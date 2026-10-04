@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 01:13 UTC
+Last updated: 2026-10-03 01:14 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 01:14: #375 merge-only review on a8752c4e: CLEAN (0 BLOCK, 0 FIX, 2 NIT: process-qa-gates.mmd says 49 rules (main's file); README only reproducible with local renders, by design). Waiting on CI.
 - 01:13: #367 r4 review on 00910e28: CLEAN (0 BLOCK, 0 FIX, 3 NIT: stale codemap prose cites, backslashreplace untested, in-process coverage() exception). Waits its turn.
 - 01:12: #375 re-merged main 3473f08f -> a8752c4e (crew 1.0.239; verify.json conflict = keep both rules; BUDGETS 22,411/139 in version commit; rendered 3 new QA diagrams, all PASS, README/index regenerated; gates + 67 tests green). #362 r3 CLEAN on 0920f1eb. Merge-only review of #375 next.
 - 01:11: MERGED #337 (L-0618) at d9e75c15 -> main 3473f08f (CI 23 ok/1 skipped, merge-only review clean, owner approved scope). Next: re-merge main into #375 -> 1.0.239. Batch 3 (T-0050/T-0044/T-0038) now unblocked.
