@@ -66,6 +66,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -158,13 +159,15 @@ class Repo:
             path.unlink()
 
 
-def run_gate(flavour, repo, command):
+def run_gate(flavour, repo, command, path_prefix=None):
     """One flavour, as Claude Code runs it: payload on stdin, project dir in
     the environment. `command` is sent as given, so a non-string reaches the
-    gate as JSON would carry it."""
+    gate as JSON would carry it. `path_prefix` goes in front of PATH."""
     payload = {"tool_name": "Bash" if flavour == "sh" else "PowerShell",
                "tool_input": {"command": command}, "cwd": str(repo.root)}
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo.root))
+    if path_prefix:
+        env["PATH"] = str(path_prefix) + os.pathsep + env["PATH"]
     if flavour == "sh":
         argv = [_BASH, _SH.as_posix()]
     else:
@@ -451,6 +454,40 @@ def test_json_only_powershell_reads_refuses_the_map(flavour, text, tmp_path):
     assert code == 2, err
     assert "PROMOTION BLOCKED" in err, err
     assert repo.in_flight() is None
+
+
+def _crlf_python(tmp_path):
+    """A `python3`/`python` that writes what Windows python writes to a pipe:
+    every newline but the last as CRLF (Git Bash's command substitution drops
+    the final CRLF, and Linux bash only the final LF, so the last one is left
+    alone to keep every other single-line read in the gate as it is)."""
+    real = sys.executable
+    shim = tmp_path / "crlf-bin"
+    shim.mkdir()
+    body = ("#!/usr/bin/env bash\nset -o pipefail\n"
+            f"'{real}' \"$@\" | '{real}' -c 'import sys; d = sys.stdin.buffer.read(); "
+            "t = d.endswith(b\"\\n\"); d = d[:-1] if t else d; "
+            "sys.stdout.buffer.write(d.replace(b\"\\n\", b\"\\r\\n\") + (b\"\\n\" if t else b\"\"))'\n")
+    for name in ("python3", "python"):
+        (shim / name).write_text(body, encoding="utf-8", newline="\n")
+        (shim / name).chmod(0o755)
+    return shim
+
+
+@needs_bash
+@pytest.mark.skipif(sys.platform.startswith("win"),
+                    reason="Windows python already writes CRLF; the agreement "
+                           "maps there are this case for real")
+@pytest.mark.parametrize("command", ["deploy target=prod", "./deploy.sh"])
+def test_a_union_survives_python_writing_crlf(command, tmp_path):
+    """The Windows pre-flight on 9dba8652: python's text-mode stdout wrote the
+    matched names as `qa\r\nprod`, the .sh split them on LF, and `qa\r`
+    named no environment - every multi-environment match blocked as a
+    malformed map on Windows. The .sh now strips CRs from the names."""
+    repo = Repo(tmp_path / "r", {"qa": _env(command), "prod": _env(command + " --x")})
+    code, err = run_gate("sh", repo, command, path_prefix=_crlf_python(tmp_path))
+    assert code == 0, err
+    assert repo.in_flight() == f"qa,prod {repo.sha}"
 
 
 # --- must-allow -------------------------------------------------------------
