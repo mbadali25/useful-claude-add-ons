@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:39: #358 re-review on 68611aed: PASS, 0 BLOCK, 2 FIX (corrupt base marketplace.json collapses to 'added'; cat-file-only + README GitFailed paths untested, sabotage green) + 1 NIT (CHANGELOG blank line). Fix agent started; target 1.0.232. Next free: 1.0.233.
 - 00:39: #352 re-review on 26c18d41: PASS, 0 BLOCK, 1 FIX (author-record residual not in CONFIG.md Accepted risks) + 2 NIT. Fix agent started; target crew 1.0.231 (1.0.230 reserved for #337 re-merge). Next free: 1.0.232.
 - 00:38: #372 merge-only Sonnet review on 860db77f: PASS (0 BLOCK/0 FIX/0 NIT). Waiting on CI.
 - 00:37: Recovered 6 results lost to the restart: ports pushed #353 8e63b3aa (1.0.196, incl. round-2 fixes), #362 e4bf90f9 (1.0.197), #367 70533df5 (1.0.198); fixes pushed #352 26c18d41 (1.0.224), #358 68611aed (1.0.226); #337 merge-only review CLEAN on 55cb1c47 (main has moved since). Started 5 Sonnet reviews: #353, #362, #367 (first), #352, #358 (re-review). #372 merge-only review on 860db77f running.
