@@ -4,6 +4,42 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.372: `/crew:reference --integrations`, linted before it is written, judged by the refresh check (T-0036)
+
+- **What changed.** `/crew:reference --integrations` writes `docs/reference/integrations.md`: every
+  outbound call, one `##` per external system, one `###` entry per call with a `path:line` anchor
+  and an `Auth:` line naming where the credential comes from (env var, secret name, config key,
+  `none`, or `undocumented - needs a human`), never its value. The format and the draft-lint-copy
+  steps are `plugin/crew/skills/crew-docs/integrations.md`. A new standard-library script,
+  `plugin/crew/hooks/scripts/crew_reference.py lint --root . --kind integrations <file>`, must exit
+  0 before the draft is copied in: it refuses a doc with no `> Generated from <repo>@<sha> on
+  <date>` header, an entry with no anchor or no `Auth:` line, an anchor to a missing file, outside
+  the repo (symlinks resolved), at line 0 or past the file's end, a doc with no entry (a repo with
+  no outbound calls writes no file), and eight secret pattern classes (AWS access key id,
+  private-key block, GitHub token, GitHub PAT, Slack token, `sk-` key, JWT, a quoted literal
+  assigned to a password/secret/token/API-key name), naming the pattern and line but never the
+  value. Exit 2 for a usage error or an unreadable file, never 0. `--audit` gains calls with no
+  entry and entries whose anchor no longer holds.
+- **Behaviour change at `/crew:implement` step 6 and `/crew:done` check 4.** `crew_refresh_check.py`
+  judges `docs/reference/integrations.md` as a `reference` artifact against its header sha when a
+  path it cites changed: `stale` with `refresh with /crew:reference --integrations`; no header or
+  no citation is `unknown` and refreshable; an unreadable doc, or one whose presence cannot be told,
+  is `unknown` and a stop. `api.md`, `features.md` and `flows/` are not judged.
+  `docs/reference` joins `REFRESH_ARTIFACT_PATHS`, so an approved ticket may write it without Touch
+  (the same approval conditions as the other four dirs, pinned by the scope-guard and
+  completion-audit must-block cases, now including `docs/referenceX/a.md`), and a refresh commit
+  there stales nothing.
+- **Split out (L-0549).** `--flows [<name>]`, the flow-doc lint and the flow parts of the docs.
+  The refresh check judges no `docs/reference/flows/` doc until a command writes one.
+- **Tests and sabotage.** `plugin/crew/tests/test_reference_docs.py` (must-allow and must-block,
+  every secret class asserting the value never reaches stdout, stderr or the problem list, the CLI
+  exit codes) and nine new `test_refresh_check.py` cases. 24 mutations of the new guards were
+  applied by hand, each red on its named test; the `sabotage*.py` registrations are harness paths
+  and are filed in `TODO.md`.
+- **Docs.** `reference.md`, `implement.md` step 6, `onboard.md`, the crew-docs skill, the crew
+  README (7b, the CLI row, "Artifacts stay current", "What the guard judges", the command row),
+  `plugin/PLUGINS.md`, the code map and the crew guide (rebuilt).
+
 ### Added — `crew` 1.0.362: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`

@@ -4,6 +4,18 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0036 follow-ups (`/crew:reference --integrations`).** (a) Judge `docs/reference/api.md` and
+  `features.md` in the refresh check (`plugin/crew/hooks/scripts/crew_refresh_check.py::_references`
+  judges `integrations.md` only, so done is not refused in consumer repos whose existing docs are
+  stale). (b) An outbound-call candidate detector over a ticket's diff; today `/crew:docs` judges it
+  at `/crew:implement` step 6 and `--audit` is the backstop. (c) T-0035's embeds adopting the
+  inline flow diagrams once L-0549 (`--flows`, the flow-doc lint) lands. (d) Harness follow-ups
+  (tooling-PR rule, T-0087): `plugin/crew/tests/sabotage_reference.py` with `REFERENCE_MUTATIONS`
+  and the four new `sabotage_refresh.py` entries (reference kind not called, a no-header doc read
+  as fresh, `docs/reference` dropped from `REFRESH_ARTIFACT_PATHS`, `api.md` judged) - each was
+  sabotaged by hand and went red - and a `reference` kind in `artifact_verdicts`, without which a
+  refreshed `integrations.md` needs Touch once L-0540 wires the verdicts into the audit.
+
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
