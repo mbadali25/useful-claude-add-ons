@@ -46,6 +46,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 
@@ -331,15 +333,36 @@ def _prefix(path):
     return "/".join(parts[:2]) if len(parts) > 2 else path
 
 
-def derive_paths(root, body):
+def tracked_dirs(tracked):
+    """Every directory holding a tracked file, for derive_paths."""
+    return {f.rsplit("/", i)[0] for f in tracked for i in range(1, f.count("/") + 1)}
+
+
+def derive_paths(root, body, tracked=None, dirs=None):
     """`paths:` globs for a code-map note. An explicit `paths:` line near the
-    top wins; otherwise the directories its citations cluster in."""
+    top wins; otherwise the directories its citations cluster in. `tracked`,
+    a set of git-tracked paths, replaces the disk as the judge of what exists,
+    so a committed file derived from this is the same in every clone."""
+    if tracked is None:
+        def exists(rel):
+            return os.path.exists(os.path.join(root, rel))
+
+        def isdir(rel):
+            return os.path.isdir(os.path.join(root, rel))
+    else:
+        dirs = tracked_dirs(tracked) if dirs is None else dirs
+
+        def exists(rel):
+            return rel.rstrip("/") in tracked or rel.rstrip("/") in dirs
+
+        def isdir(rel):
+            return rel.rstrip("/") in dirs
     head = "\n".join(body.splitlines()[:15])
     explicit = _PATHS_LINE_RE.search(head)
     if explicit:
         return [p.strip().strip("`\"'") for p in explicit.group(1).split(",") if p.strip()]
     cited = [c for c in _CITED_RE.findall(body)
-             if not c.startswith(".crew/") and os.path.exists(os.path.join(root, c))]
+             if not c.startswith(".crew/") and exists(c)]
     # A two-segment citation (`dir/file`) scopes to its file, unless the note
     # cites three or more distinct files in that directory -- then the
     # directory is what the note is about.
@@ -359,7 +382,7 @@ def derive_paths(root, body):
     floor = max(3, total * 0.15)
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     keep = [p for p, n in ranked if n >= floor][:5] or [ranked[0][0]]
-    return [p + "/**" if os.path.isdir(os.path.join(root, p)) else p for p in keep]
+    return [p + "/**" if isdir(p) else p for p in keep]
 
 
 def _section(body, heading):
@@ -403,21 +426,23 @@ def index_covers(root):
     return covers
 
 
-def subsystems(root):
-    """[{name, file, body, paths, anchor}] for every code-map note."""
+def subsystems(root, tracked=None):
+    """[{name, file, body, paths, anchor}] for every code-map note; `tracked`
+    as derive_paths takes it."""
     mapdir = os.path.join(root, ".crew", "codemap")
     try:
         names = sorted(os.listdir(mapdir))
     except OSError:
         return []
     found = []
+    dirs = tracked_dirs(tracked) if tracked is not None else None
     for name in names:
         if not name.endswith(".md") or name in _NOT_SUBSYSTEMS:
             continue
         body = read_text(os.path.join(mapdir, name)) or ""
         anchor = _ANCHOR_RE.search(body)
         found.append({"name": name[:-3], "file": f".crew/codemap/{name}", "body": body,
-                      "paths": derive_paths(root, body),
+                      "paths": derive_paths(root, body, tracked, dirs),
                       "anchor": anchor.group(1) if anchor else ""})
     return found
 
@@ -685,13 +710,114 @@ def resume_decision(root, payload, handoff, archived, stale=False):
         return {"action": "wait", "prompt": "", "reason": "internal error"}
 
 
+_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+# The sender returns once it has spawned its detached child; this bounds a
+# hung interpreter, never the delay or the ready probe.
+RESUME_TYPING_TIMEOUT = 10
+
+
+def _resume_typing_cmd(root, session, source, flavour):
+    """This flavour's sender in resume mode, or None when it has no
+    interpreter. Each flavour starts its OWN sender: on Windows both run, and
+    the per-handoff marker lets exactly one of them type."""
+    if flavour == "sh":
+        bash = shutil.which("bash")
+        return None if not bash else [bash, os.path.join(_SCRIPTS, "auto-clear.sh"), "--resume",
+                                      "--session", session, "--source", source, "--root", root]
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    return None if not shell else [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                                   "-File", os.path.join(_SCRIPTS, "auto-clear.ps1"), "-Resume",
+                                   "-Session", session, "-Source", source, "-Root", root,
+                                   "-Python", sys.executable]
+
+
+def start_resume_typing(root, payload, flavour, harness="claude"):
+    """T-0013: on SessionStart clear|compact, run this flavour's auto-clear
+    sender in resume mode and return {status, text} from its one
+    `autoresume:` line (status typing | refused | notify | failed), or None
+    when nothing was started. Runs BEFORE the per-event context claim, so
+    each flavour's sender runs whichever flavour emits the context. Only an
+    ARMED machine pays for a sender at all. Never raises: a failure is a
+    `failed` result, and the context is emitted as before."""
+    if harness != "claude" or flavour not in ("sh", "ps1"):
+        return None
+    if payload.get("hook_event_name") != "SessionStart":
+        return None
+    source = payload.get("source") or "startup"
+    if source not in ("clear", "compact"):
+        return None
+    try:
+        import crew_resume  # pylint: disable=import-outside-toplevel
+        if not crew_resume.settings(root)["armed"]:
+            return None
+        session = payload.get("session_id")
+        cmd = _resume_typing_cmd(root, session if isinstance(session, str) else "", source, flavour)
+        if cmd is None:
+            return {"status": "failed", "text": f"no interpreter for the {flavour} sender"}
+        done = subprocess.run(cmd, cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                              timeout=RESUME_TYPING_TIMEOUT, check=False)
+    except Exception as exc:  # pylint: disable=broad-except
+        return {"status": "failed", "text": f"the sender did not run ({exc.__class__.__name__})"}
+    lines = [line[len("autoresume: "):] for line in (done.stdout or "").splitlines()
+             if line.startswith("autoresume: ")]
+    if not lines:
+        return None
+    text = lines[-1].strip()
+    status = text.split(" ", 1)[0]
+    if status not in ("typing", "refused", "notify"):
+        status = "failed"
+    return {"status": status, "text": text}
+
+
+def _resume_typing_logged(root, payload, flavour, harness):
+    """start_resume_typing, logged when it ran; never raises."""
+    try:
+        typing = start_resume_typing(root, payload, flavour, harness)
+    except Exception as exc:  # pylint: disable=broad-except
+        typing = {"status": "failed", "text": f"internal error: {exc.__class__.__name__}"}
+    if typing is not None:
+        append_log(root, {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "harness": harness,
+                          "event": "SessionStart", "session": payload.get("session_id") or "", "chars": 0,
+                          "resumeTyping": typing["status"], "flavour": flavour, "reason": typing["text"]})
+    return typing
+
+
+# A refusal that only means "the other flavour types this method": the sh
+# sender declining sendkeys (crew_autocycle.resolve_method) or the ps1 sender
+# declining tmux (auto-clear.ps1). On Windows both flavours run, so this one
+# saying "not typed" would be false whenever the other one types.
+_OTHER_FLAVOURS_JOB = re.compile(r"^refused - method (\S+) is auto-clear\.(sh|ps1)'s job\b")
+_FLAVOUR_HOOK = {"sh": "bash", "ps1": "PowerShell"}
+
+
+def not_typed_line(typing):
+    """The context line for a sender that refused or failed a `run`: why it
+    was not typed, or -- when the refusal names the other flavour's job -- that
+    it was left to that flavour's hook, which may be typing it right now."""
+    elsewhere = _OTHER_FLAVOURS_JOB.match(typing["text"])
+    if typing["status"] == "refused" and elsewhere:
+        method, flavour = elsewhere.groups()
+        return (f"Auto-resume was left to the {_FLAVOUR_HOOK[flavour]} hook (auto-clear.{flavour}): "
+                f"this flavour does not type method {method}.")
+    return f"Auto-resume was not typed: {typing['text'].split(' - ', 1)[-1]}."
+
+
+def typing_line(prompt, typing):
+    """The context line for a sender that is typing `prompt`."""
+    detail = typing["text"][len("typing "):] if typing["text"].startswith("typing ") else typing["text"]
+    _cmd, _sep, rest = detail.partition(" in ")
+    return (f"Auto-resume: typing {prompt} into this session in {rest or 'a moment'}; if it does not "
+            "arrive, type it yourself.")
+
+
 def resume_line(decision, has_handoff=True):
     """The one line the injected context carries about auto-resume; "" when off.
     A `wait` points at the handoff only when one was injected with it.
 
     Never `initialUserMessage`: the 2026-09-25 spike (Claude Code 2.1.282)
     proved an interactive SessionStart drops it, so the command is named and
-    the human starts it."""
+    the human starts it -- or T-0013's sender types it, which `build` says
+    instead (`typing_line`)."""
     if decision.get("action") == "run":
         return (f"Auto-resume: ready to run {decision['prompt']}. This Claude Code build does not start "
                 "a turn from a hook (spike 2026-09-25): press Enter to accept it, or type it; T-0013 "
@@ -867,8 +993,9 @@ def route_item(root, prompt, harness, extra):
 # --------------------------------------------------------------------------
 # the hook
 
-def build(root, payload, cfg, state, harness):
-    """(event, items, budget, max_lines, context, extra-log) for one payload."""
+def build(root, payload, cfg, state, harness, typing=None):
+    """(event, items, budget, max_lines, context, extra-log) for one payload.
+    `typing` is this flavour's T-0013 sender result (start_resume_typing)."""
     event = payload.get("hook_event_name") or ""
     head = git_out(root, "rev-parse", "--short=8", "HEAD")
     subs = subsystems(root)
@@ -900,6 +1027,18 @@ def build(root, payload, cfg, state, harness):
         # because the move failed. `off` adds nothing to the output.
         resume = resume_decision(root, payload, handoff, archived, stale and bool(handoff and handoff.strip()))
         resume_text = resume_line(resume, bool(handoff and handoff.strip()))
+        # T-0013: this flavour's sender ran before the claim. Typing recorded
+        # the run, so the decision above now reads "already resumed": the
+        # sender's own line wins. A sender that refused a `run` keeps T-0006's
+        # line and says why after the handoff -- unless it refused only because
+        # the method is the other flavour's (not_typed_line).
+        not_typed = ""
+        if typing and typing["status"] == "typing":
+            prompt = typing["text"][len("typing "):].partition(" in ")[0]
+            resume = {"action": "typed", "prompt": prompt, "reason": ""}
+            resume_text = typing_line(prompt, typing)
+        elif typing and typing["status"] in ("refused", "failed") and resume["action"] == "run":
+            not_typed = "\n" + not_typed_line(typing)
         if resume["action"] != "off":
             extra["resume"] = {"action": resume["action"], "reason": resume.get("reason") or "",
                                "prompt": resume.get("prompt") or ""}
@@ -920,7 +1059,7 @@ def build(root, payload, cfg, state, harness):
                 lead += f"{resume_text}\n" if resume_text else ""
                 body = handoff.strip()[: RESUME_CHARS - 600 - len(lead)]
                 items.append({"id": "", "text": f"## Handoff from the previous session ({rel})\n{lead}{body}\n"
-                              "The working tree is the source of truth; verify against git diff.",
+                              f"The working tree is the source of truth; verify against git diff.{not_typed}",
                               "source": {"kind": "handoff", "path": rel}})
         elif resume_text:
             items.append({"id": "", "text": resume_text, "source": {"kind": "resume"}})
@@ -988,13 +1127,18 @@ def build(root, payload, cfg, state, harness):
     return event, [], 0, None, "main", {"skipped": "unknown-event"}, ""
 
 
-def run(payload, raw, harness="claude"):
-    """Returns the additionalContext text ("" for nothing). Never raises."""
+def run(payload, raw, harness="claude", flavour=None):
+    """Returns the additionalContext text ("" for nothing). Never raises.
+    `flavour` (sh|ps1) is the wrapper that ran this; only a named flavour
+    starts T-0013's resume typing."""
     root = find_root(payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     if not os.path.isdir(os.path.join(root, ".crew")):
         return ""
     cfg = load_crew_config(root)
     _record_author_logged(root, cfg, payload, harness)
+    # T-0013: before the memory.inject gate and the per-event claim, so this
+    # flavour's sender runs whichever flavour emits the context.
+    typing = _resume_typing_logged(root, payload, flavour, harness)
     # ON unless the repo says `memory.inject: false`. handoff-read reads the
     # same flag (`inject_enabled`) and stops printing the handoff when it is
     # on, so a session gets the handoff from one emitter, never both.
@@ -1014,7 +1158,7 @@ def run(payload, raw, harness="claude"):
                           "chars": 0, "skipped": "state-lock-timeout"})
         return ""
     try:
-        return _run_locked(root, payload, cfg, session, harness)
+        return _run_locked(root, payload, cfg, session, harness, typing)
     finally:
         release_lock(lock)
 
@@ -1033,9 +1177,9 @@ def _record_author_logged(root, cfg, payload, harness):
                           "resumeAuthor": "failed", "reason": result[1]})
 
 
-def _run_locked(root, payload, cfg, session, harness):
+def _run_locked(root, payload, cfg, session, harness, typing=None):
     state = load_session(root, session)
-    event, items, budget, max_lines, context, extra, query = build(root, payload, cfg, state, harness)
+    event, items, budget, max_lines, context, extra, query = build(root, payload, cfg, state, harness, typing)
     if event == "SessionStart":
         prune_claims(root)
         prune_precompact(root)
@@ -1183,6 +1327,7 @@ def slice_for_subagent(root, query, paths):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--harness", default="claude", choices=("claude", "codex"))
+    parser.add_argument("--flavour", default=None, choices=("sh", "ps1"))
     parser.add_argument("--stats", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--slice-for-subagent", action="store_true")
@@ -1213,7 +1358,7 @@ def main(argv=None):
     if not isinstance(payload, dict):
         return 0
     try:
-        text = run(payload, raw, args.harness)
+        text = run(payload, raw, args.harness, args.flavour)
         emit(payload.get("hook_event_name") or "", text)
     except Exception:  # pylint: disable=broad-except
         # A context hook that raises must cost the session nothing: no

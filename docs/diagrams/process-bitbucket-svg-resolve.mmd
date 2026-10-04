@@ -1,0 +1,48 @@
+%% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
+%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/SKILL.md
+%% Purpose: The three things located before anything runs: the Mermaid config, an optional Puppeteer config, and the mmdc launcher, including the Windows WinError 2 fix in resolve_mmdc().
+%% Part of process-bitbucket-svg.mmd (the overview, which keeps the provenance history).
+%% Every bare :NNN is a line in skills/mermaid-svg-bitbucket/scripts/render_mermaid.py; other files are cited in full.
+%% THE PRIOR FIX, unchanged in substance, renumbered only:
+%%   resolve_mmdc() called shutil.which("mmdc") for its TRUTHINESS and then
+%%   passed the bare string "mmdc" to subprocess. On Windows mermaid-cli
+%%   installs as mmdc.cmd; `which` finds it because it consults PATHEXT, and
+%%   `subprocess` without a shell does not, because CreateProcess searches for
+%%   the literal name and name+.exe only. So on a machine where mermaid-cli WAS
+%%   installed, the call raised an uncaught WinError 2 - and MMDC_MISSING,
+%%   the message written for exactly that moment, never printed, because
+%%   `which` had already succeeded. The resolved path is now the return value
+%%   :239-241 for the mmdc branch and :242-244 for the npx fallback - both
+%%   branches had it and both are fixed. SKILL.md carries the same
+%%   explanation in prose (its "On Windows the launcher is mmdc.cmd..."
+%%   paragraph, added in the same range) so whichever a reader hits first is
+%%   enough.
+%%   SECOND HALF, also unchanged in substance: subprocess.run is wrapped in
+%%   try/except OSError :262-273, and an OSError - a shim pointing at a
+%%   deleted install, a wrong-architecture binary, a lost execute bit -
+%%   sys.exits with MMDC_MISSING plus the resolved path, rather than escaping
+%%   as a traceback that loses it.
+%%   MMDC_MISSING is NEW as a module-level constant (:220-224) as of this
+%%   diff's range; previously it was a literal string written out twice
+%%   (once inline in resolve_mmdc's old sys.exit call, and the render()-side
+%%   OSError handler did not exist at all - the whole handler at :262-273 is
+%%   part of the same fix). Both call sites (resolve_mmdc's fallthrough
+%%   :245, and render's except-OSError :273) now share the one string, so an
+%%   editor changing the install instructions cannot update one and miss the
+%%   other.
+%% Note FC: then the script's own neighbours. Exits with the list it tried, and says WHY defaults are not acceptable
+%%    :206-207: mmdc's defaults emit foreignObject labels
+%% Note RM: - :239-241 for the mmdc branch, :242-244 for npx - not the bare name. It used to test if shutil.which("mmdc")
+%%    for truthiness and then hand subprocess the literal string "mmdc". which consults PATHEXT; CreateProcess does
+%%    not - it searches for the literal name and name+.exe only - so Windows' mmdc.cmd was FOUND and then could not
+%%    be SPAWNED: WinError 2 on a machine where mermaid-cli was installed. Both branches had the bug; the npx
+%%    fallback is fixed too. Falling through exits with MMDC_MISSING :220-224 at :245 - MMDC_MISSING is now a shared
+%%    module-level constant, reused by render()'s OSError handler too
+flowchart TB
+
+    subgraph Resolve["Three things located before anything runs"]
+        direction TB
+        FC["find_config() :180-208<br/>tries assets/, .mermaid/,<br/>repo root, then neighbours"]
+        FP["find_puppeteer_config() :211-217<br/>optional - returns None and the render simply<br/>omits the flag"]
+        RM["<b>resolve_mmdc() :227-245</b><br/>returns the path<br/><i>which</i> RESOLVED"]
+    end

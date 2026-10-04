@@ -1,0 +1,15 @@
+%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py
+%% Purpose: The platform-sync SessionStart hook: silent without a crew config, otherwise it heals a broken config and records the machine it is running on.
+%% Part of process-crew-brief.mmd (the overview, which keeps the re-anchoring history).
+%% crew_platform.py:507-530 silent without a config or .crew/; :537 claim;
+%%   :547-563 heal_config (refuses without .crew/, :229); :566-584 writes
+%%   changed platform fields, prints only on change.
+flowchart TB
+    PS[platform-sync]
+    subgraph platformSync["platform-sync (crew_platform.py)"]
+        PS --> ps1{"config or .crew/?<br/>:507-530"}
+        ps1 -- no --> psx([exit 0, silent])
+        ps1 -- yes --> ps2["heal_config if broken<br/>:547-563"]
+        ps2 --> ps3["detect machine,<br/>write changed platform fields<br/>:566-584"]
+    end

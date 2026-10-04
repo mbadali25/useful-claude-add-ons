@@ -1,6 +1,6 @@
 ---
 name: crew-diagrams
-description: Author architecture, process, sequence, ER and data-flow diagrams as Mermaid, render them to PNG or SVG, and produce Visio files when Visio is installed. Use when the user says draw a diagram, make an architecture diagram, show the data flow, diagram this process, export to PNG, or asks for a Visio version.
+description: Author architecture, process, sequence, ER and data-flow diagrams as Mermaid that pass a measured readability check (no crossing lines, nothing drawn through a box, at most 15 boxes), embed them in a generated Markdown and HTML page, render them to PNG or SVG, and produce Visio files when Visio is installed. Use when the user says draw a diagram, make an architecture diagram, show the data flow, diagram this process, export to PNG, or asks for a Visio version.
 ---
 
 # Diagrams
@@ -20,16 +20,27 @@ docs/diagrams/
   architecture.mmd        # source, committed
   data-flow-orders.mmd
   process-refund.mmd
+  README.md               # generated: every diagram embedded with its purpose (diagram_doc.py)
+  index.html              # generated: the same page as HTML
   out/                    # rendered, gitignored unless a doc embeds it
-    architecture.png
+    architecture.svg
 ```
 
-Every source file starts with a provenance comment:
+These are the standard locations, for every diagram crew draws. A topic page
+that explains a process (`docs/qa/README.md`, say) embeds its diagrams as
+fenced `mermaid` blocks and keeps their sources here, so one directory holds
+every diagram the repo has and one page shows them all.
+
+Every source file starts with a provenance comment and a purpose line:
 
 ```
 %% Generated from <repo>@<short-sha> on <date>. Verify before trusting.
 %% Anchors: src/api/orders.ts, src/domain/refund.ts
+%% Purpose: How a refund moves from request to ledger, and where it can be refused.
 ```
+
+`%% Purpose:` is what the generated page prints above the diagram. One or two
+plain sentences: what a reader learns from it.
 
 Anchors are the same idea as the code map: a diagram nobody can re-verify is a
 diagram that rots into confident inaccuracy.
@@ -81,10 +92,54 @@ order: fix the input before regenerating the output.
 Data-flow diagrams are `flowchart` with edge labels naming **what** moves, not
 just that something does: `-->|order id, line items|` beats `-->`.
 
+## The readability standard: measured, not hoped for
+
+A diagram is done when `diagram_check.py` says PASS on its render. It measures
+the drawing Mermaid actually produced, so a layout that looked fine in the
+source and crossed in the picture is caught:
+
+| Measured | Limit |
+|---|---|
+| Lines crossing outside a box | 0 |
+| A line drawn through a box that is not one of its ends | 0 |
+| An edge label covering a box or another label | 0 |
+| Boxes | 15 |
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/render.sh docs/diagrams
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_check.py docs/diagrams/out
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_doc.py --dir docs/diagrams --write
+```
+
+Only flowcharts are measured; a sequence, state or ER diagram is reported NOT
+CHECKED, never PASS. Without `mmdc` nothing is rendered, so nothing is
+measured: say NOT VERIFIED and give the install line, never "looks fine".
+A drawing the checker cannot fully read (no box measured, a line outside the
+boxes that is not a recognised edge, a scale/rotate transform, path data it
+cannot parse) is UNKNOWN, also never PASS.
+
+The page trusts a render only when it came from the current source:
+`render.sh` writes `out/<name>.svg.src`, the sha256 of the `.mmd` it rendered,
+and `diagram_doc.py` compares it with the `.mmd` now. A different hash reads
+"render out of date (run render.sh ...)". A render with no `.src` (made by
+hand, or where neither `sha256sum` nor `shasum` exists) falls back to file
+times, and its verdict says "(freshness by mtime only)".
+
+**How a FAIL is usually fixed:**
+
+- **A loop back to an earlier step** (a red check returning to the gate) is the
+  commonest crossing. End the red branch in its own box instead: "fix, then the
+  gate runs again". The reader understands the loop; the layout stops crossing.
+- **Over 15 boxes**: split along the `subgraph` boundaries. Keep the original
+  file name for a short overview whose boxes are the parts, so links still
+  work, and name the parts `<name>-<part>.mmd`.
+- **Long labels**: break them with `<br/>`, three lines at most.
+
 ## Rules that keep them readable
 
-- **One screen, one idea.** Over roughly 12 nodes, split by subsystem and link
-  the diagrams instead. A diagram nobody can read is documentation theatre.
+- **One screen, one idea.** Over 15 boxes the checker fails it: split by
+  subsystem and link the diagrams instead. A diagram nobody can read is
+  documentation theatre.
 - `subgraph` for boundaries — service, network zone, team ownership.
 - Label every edge in a data-flow or sequence diagram. Unlabelled arrows carry
   no information beyond "these things are connected," which the reader assumed.
@@ -108,7 +163,8 @@ bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/render.sh docs/diagrams
 ```
 
 That script renders every `.mmd` to `out/*.png` and `out/*.svg`, skipping files
-whose source has not changed.
+whose source has not changed: for an SVG, whose recorded `out/<name>.svg.src`
+hash still matches the `.mmd` (file times only when there is no `.src`).
 
 Notes that will otherwise cost you time:
 
