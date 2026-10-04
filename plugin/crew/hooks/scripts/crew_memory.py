@@ -60,12 +60,14 @@ Exit 0 for `resolved` / `full-text`, 1 for every other state, 2 for usage.
 """
 import argparse
 import datetime
+import errno
 import json
 import os
 import re
 import stat
 import sys
 import tempfile
+import time
 import unicodedata
 
 import crew_common
@@ -450,6 +452,12 @@ _NAME_LINE = re.compile(r"name:[ \t]*(.+?)[ \t]*")
 _MEMORY_ID = re.compile(r"memory_id:[ \t]*(.+?)[ \t]*")
 _UPDATED = re.compile(r"^updated:[^\r\n]*", re.MULTILINE)
 _UPDATE_HEAD = re.compile(r"^## Update \d{4}-\d{2}-\d{2}[ \t]*$", re.MULTILINE)
+# A save holds two lock files, `.<name>.crew-save.lock` beside the note and
+# beside the native memory, for its whole write sequence. A lock older than
+# this many seconds is taken to be left by a save that died, and is removed;
+# a real save finishes in well under a second.
+LOCK_TTL = 600
+BUSY = "another save is in progress"
 
 
 def today():
@@ -485,7 +493,13 @@ def _field(frontmatter, pattern):
         match = pattern.fullmatch(line)
         if match:
             value = match.group(1)
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            if len(value) >= 2 and value[0] == value[-1] == '"':
+                try:
+                    decoded = json.loads(value)
+                except ValueError:
+                    decoded = None
+                return decoded if isinstance(decoded, str) else value[1:-1]
+            if len(value) >= 2 and value[0] == value[-1] == "'":
                 value = value[1:-1]
             return value
     return None
@@ -569,9 +583,15 @@ def _note_text(kind, title, tags, project, memory_id, body, day):
 
 
 def _existing_action(existing, memory_id, body, day):
-    """`(action, new note text or None, problem)` for a note already there."""
-    text = existing.decode("utf-8", errors="replace").lstrip("﻿")
-    frontmatter, rest = _split_raw(text)
+    """`(action, new note text or None, problem)` for a note already there.
+    The existing bytes are never rewritten: only the `updated:` value
+    changes and the passage is appended; a BOM and CRLF stay as they are."""
+    try:
+        text = existing.decode("utf-8")
+    except UnicodeDecodeError:
+        return None, None, "the existing note is not UTF-8; it is not rewritten"
+    bom = "\ufeff" if text.startswith("\ufeff") else ""
+    frontmatter, rest = _split_raw(text[len(bom):])
     found = _field(frontmatter, _MEMORY_ID)
     if found != memory_id:
         return None, None, (f"collision: the note belongs to memory_id {found!r}, not "
@@ -581,7 +601,8 @@ def _existing_action(existing, memory_id, body, day):
     if _LINE_BREAK.sub("\n", last).strip("\n") == body:
         return "unchanged", None, None
     frontmatter = _UPDATED.sub(f"updated: {day}", frontmatter, count=1)
-    return "append", (frontmatter + rest.rstrip("\r\n") + "\n" +
+    joint = "" if rest.endswith(("\n", "\r")) else "\n"
+    return "append", (bom + frontmatter + rest + joint +
                       f"\n## Update {day}\n\n{body}\n"), None
 
 
@@ -593,12 +614,20 @@ def plan_save(path, root, tags, title=None, note=None, kind="concept", project=N
     """The whole save, decided and computed before anything is opened for
     write. `state` is `pending` when writes are due (with the note text and
     the new native bytes), else the final state; `exit` is its exit code."""
+    if os.path.basename(path).lower() == "memory.md":
+        return _kept("MEMORY.md is the index, not a memory; it is never saved")
+    try:
+        if stat.S_ISLNK(os.lstat(path).st_mode):
+            return _kept("the memory file is a symlink; replacing it would leave the link "
+                         "and its target out of step")
+    except OSError as exc:
+        return {"state": "unreadable", "reason": f"cannot examine it: {exc}", "exit": 1}
     try:
         raw = _read_bytes(path)
         text = raw.decode("utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return {"state": "unreadable", "reason": f"cannot read as UTF-8: {exc}", "exit": 1}
-    bom = "﻿" if text.startswith("﻿") else ""
+    bom = "\ufeff" if text.startswith("\ufeff") else ""
     frontmatter, body = _split_raw(text[len(bom):])
     found, vname, vnote, reason = classify(split_body(text[len(bom):]))
     if found == "pointer":
@@ -623,6 +652,9 @@ def plan_save(path, root, tags, title=None, note=None, kind="concept", project=N
     problem = _path_problem(note)
     if problem:
         return _kept(f"bad-note-path: {problem}")
+    if any(segment.startswith(".") for segment in note.split("/")):
+        return _kept(f"bad-note-path: a segment of {note!r} starts with '.' (hidden, or "
+                     "Obsidian's own folder)")
     title = note.rsplit("/", 1)[-1][:-3]
     body = _LINE_BREAK.sub("\n", body).strip("\n")
     if not body.strip():
@@ -659,14 +691,17 @@ def plan_save(path, root, tags, title=None, note=None, kind="concept", project=N
     return plan
 
 
-def _write_temp(directory, data):
-    """A new temp file in `directory` holding `data`, flushed to disk."""
+def _write_temp(directory, data, mode=None):
+    """A new temp file in `directory` holding `data`, flushed to disk, with
+    `mode` when given."""
     handle, temp = tempfile.mkstemp(dir=directory, prefix=".crew-memory-", suffix=".tmp")
     try:
         with os.fdopen(handle, "wb") as out:
             out.write(data)
             out.flush()
             os.fsync(out.fileno())
+        if mode is not None:
+            os.chmod(temp, mode)
     except BaseException:
         os.unlink(temp)
         raise
@@ -678,58 +713,200 @@ def _drop(temp):
         os.unlink(temp)
 
 
+def _new_mode():
+    """0644 less this process's umask: what an ordinary editor creates. Read
+    from /proc where it exists, so no other thread ever sees a changed umask."""
+    try:
+        with open("/proc/self/status", encoding="ascii") as status:
+            for line in status:
+                if line.startswith("Umask:"):
+                    return 0o644 & ~int(line.split()[1], 8)
+    except (OSError, ValueError):
+        pass
+    mask = os.umask(0o022)
+    os.umask(mask)
+    return 0o644 & ~mask
+
+
+def _fsync_dir(directory):
+    """Put a rename or link in `directory` on disk. Windows cannot open a
+    directory; a file system that refuses directory fsync says EINVAL."""
+    if os.name == "nt":
+        return
+    handle = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(handle)
+    except OSError as exc:
+        if exc.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EBADF):
+            raise
+    finally:
+        os.close(handle)
+
+
+def _lock_path(path):
+    return os.path.join(os.path.dirname(os.path.abspath(path)),
+                        f".{os.path.basename(path)}.crew-save.lock")
+
+
+def _take_lock(path):
+    """The lock file's path, or None when another save holds it. A lock
+    older than LOCK_TTL is removed once and taken again."""
+    lock = _lock_path(path)
+    for _ in range(2):
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            try:
+                if time.time() - os.stat(lock).st_mtime > LOCK_TTL:
+                    os.unlink(lock)
+                    continue
+            except FileNotFoundError:
+                continue
+            return None
+        with os.fdopen(handle, "w", encoding="ascii") as out:
+            out.write(f"pid {os.getpid()} at {int(time.time())}\n")
+        return lock
+    return None
+
+
+def _release(locks):
+    for lock in reversed(locks):
+        try:
+            os.unlink(lock)
+        except FileNotFoundError:
+            pass
+
+
+def _locked(plan):
+    """`(locks, problem)`: the note's lock, then the native file's - always
+    in that order, so two saves cannot deadlock. On a refusal no lock is
+    left held."""
+    held = []
+    for path in (plan["note_path"], plan["file"]):
+        lock = _take_lock(path)
+        if lock is None:
+            _release(held)
+            return None, f"{BUSY} ({_lock_path(path)} exists)"
+        held.append(lock)
+    return held, None
+
+
+def _create_exclusive(temp, dest, data, mode):
+    """Put `data` at `dest`, which must not exist: a hard link of the temp
+    file (atomic, never over a file), else - no hard links on this file
+    system - an O_EXCL create written in place, a partial write there being
+    caught by the read-back. Never `os.replace`."""
+    try:
+        os.link(temp, dest)
+        return
+    except FileExistsError as exc:
+        raise OSError("the note appeared during save") from exc
+    except OSError:
+        pass
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
+    try:
+        handle = os.open(dest, flags, mode)
+    except FileExistsError as exc:
+        raise OSError("the note appeared during save") from exc
+    with os.fdopen(handle, "wb") as out:
+        out.write(data)
+        out.flush()
+        os.fsync(out.fileno())
+
+
 def apply_note(plan):
-    """Write the note: create through a temp file linked to its name (never
-    over an existing file), append through a temp file and `os.replace` after
-    re-reading it. Raises OSError; never touches the native memory."""
+    """Write the note, under the save's locks: create through a temp file
+    and `_create_exclusive`; append through a temp file and `os.replace`,
+    the note re-read and compared right before the replace. Raises OSError;
+    never touches the native memory."""
     if plan["action"] == "unchanged":
         return
     dest, data = plan["note_path"], plan["text"].encode("utf-8")
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    folder = os.path.dirname(dest)
+    os.makedirs(folder, exist_ok=True)
     existing, problem = _contained(plan["vault_path"], plan["note"])
     if problem or (existing is None) != (plan["existing"] is None):
-        raise OSError(problem or "the note appeared or vanished during save")
-    if existing is not None and _read_bytes(dest) != plan["existing"]:
-        raise OSError("the note changed during save")
-    temp = _write_temp(os.path.dirname(dest), data)
+        raise OSError(problem or "the note changed during save (it appeared or vanished)")
+    mode = _new_mode() if existing is None else stat.S_IMODE(os.stat(dest).st_mode)
+    temp = _write_temp(folder, data, mode)
     try:
-        if existing is not None:
-            os.replace(temp, dest)
-            return
-        try:
-            os.link(temp, dest)
-        except FileExistsError as exc:
-            raise OSError("the note appeared during save") from exc
-        except OSError:
-            if os.path.lexists(dest):  # no hard links here: the closest equivalent
-                raise
+        if existing is None:
+            _create_exclusive(temp, dest, data, mode)
+        else:
+            if _read_bytes(dest) != plan["existing"]:
+                raise OSError("the note changed during save")
             os.replace(temp, dest)
     finally:
         _drop(temp)
+    _fsync_dir(folder)
 
 
 def apply_pointer(plan):
     """Replace the native memory's body with the pointer: frontmatter bytes
-    kept, temp file in the same folder, mode copied, `os.replace`. Raises
-    OSError; refuses a file that changed since it was planned."""
+    kept, temp file in the same folder, mode copied, the file re-read and
+    compared right before `os.replace`. Raises ValueError when it changed,
+    OSError when a write fails."""
     path = plan["file"]
     if _read_bytes(path) != plan["native"]:
         raise ValueError("the memory file changed during save")
-    temp = _write_temp(os.path.dirname(os.path.abspath(path)), plan["new_native"])
+    temp = _write_temp(os.path.dirname(os.path.abspath(path)), plan["new_native"],
+                       stat.S_IMODE(os.stat(path).st_mode))
     try:
-        os.chmod(temp, stat.S_IMODE(os.stat(path).st_mode))
+        if _read_bytes(path) != plan["native"]:
+            raise ValueError("the memory file changed during save")
         os.replace(temp, path)
     finally:
         _drop(temp)
 
 
+def _now_pointer(plan):
+    """`already-pointer` for a native file that changed under a save and now
+    holds a pointer that resolves (a second save of the same memory won),
+    else None."""
+    if resolve_file(plan["file"], plan["root"])["state"] == "resolved":
+        return {"state": "already-pointer", "exit": 0,
+                "reason": "already a pointer (another save wrote it first)"}
+    return None
+
+
 def apply_save(plan):
-    """Note first, read back, then the pointer. Returns the final row."""
+    """Note first, read back, then the pointer, all under two lock files
+    (`_locked`). Returns the final row."""
     row = {k: plan[k] for k in ("file", "vault", "note", "pointer", "action")}
+    folder, made = os.path.dirname(plan["note_path"]), []
+    while not os.path.lexists(folder) and _inside(folder, plan["vault_path"]):
+        made.append(folder)
+        folder = os.path.dirname(folder)
+    try:
+        os.makedirs(os.path.dirname(plan["note_path"]), exist_ok=True)
+    except OSError as exc:
+        return dict(row, **_kept(f"note write failed: {exc}"))
+    locks, problem = _locked(plan)
+    if problem:
+        for path in made:  # the folders this save made for its lock, deepest first
+            try:
+                os.rmdir(path)
+            except OSError:
+                break
+        return dict(row, **_kept(problem))
+    try:
+        return dict(row, **_apply_locked(plan))
+    finally:
+        _release(locks)
+
+
+def _apply_locked(plan):
+    try:
+        if _read_bytes(plan["file"]) != plan["native"]:
+            return _now_pointer(plan) or _kept("the memory file changed during save")
+    except OSError as exc:
+        return _kept(f"the memory file cannot be read again: {exc}")
     try:
         apply_note(plan)
     except OSError as exc:
-        return dict(row, **_kept(f"note write failed: {exc}"))
+        if "changed during save" in str(exc):
+            return _kept(str(exc))
+        return _kept(f"note write failed: {exc}")
     want = plan["text"].encode("utf-8") if plan["text"] is not None else plan["existing"]
     try:
         same = _read_bytes(plan["note_path"]) == want
@@ -738,14 +915,14 @@ def apply_save(plan):
     state, reason, _real = resolve_pointer(plan["vault"], plan["note"], plan["root"])
     if not same or state != "resolved":
         why = reason if state != "resolved" else "its bytes are not what was written"
-        return dict(row, **_kept(f"note not readable after write ({state}: {why})"))
+        return _kept(f"note not readable after write ({state}: {why})")
     try:
         apply_pointer(plan)
     except ValueError as exc:
-        return dict(row, **_kept(str(exc)))
+        return _now_pointer(plan) or _kept(str(exc))
     except OSError as exc:
-        return dict(row, **_kept(f"pointer write failed (the note is saved): {exc}"))
-    return dict(row, state="pointer-written", reason=None, exit=0)
+        return _kept(f"pointer write failed (the note is saved): {exc}")
+    return {"state": "pointer-written", "reason": None, "exit": 0}
 
 
 def _emit(text):
@@ -762,6 +939,9 @@ def _row_text(row):
 def _save_cli(args, root):
     if not os.path.isfile(args.file):
         print(f"crew_memory: no such file: {args.file}", file=sys.stderr)
+        return 2
+    if os.path.basename(args.file).lower() == "memory.md":
+        print("crew_memory save: MEMORY.md is the index, not a memory", file=sys.stderr)
         return 2
     plan = plan_save(args.file, root, args.tag, args.title, args.note, args.type, args.project)
     if plan["state"] == "usage":

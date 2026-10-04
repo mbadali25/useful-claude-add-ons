@@ -435,8 +435,7 @@ def test_note_link_failure_leaves_native_unchanged_and_no_temp(host, capsys, mon
     def boom(*_args, **_kwargs):
         raise OSError(5, "Input/output error")
 
-    monkeypatch.setattr(crew_memory.os, "link", boom)
-    monkeypatch.setattr(crew_memory.os, "replace", boom)
+    monkeypatch.setattr(crew_memory, "_create_exclusive", boom)
     code, out = save(host, mem, capsys)
     assert code == 1, out
     assert "kept-full-text: note write failed" in out
@@ -665,3 +664,299 @@ def test_save_from_bash_and_pwsh(tmp_path, monkeypatch, shell):
         assert proc.returncode == 0, out + proc.stderr.decode("utf-8")
         results.append(((vault / NOTE).read_bytes(), mem.read_bytes()))
     assert results[0] == results[1]
+
+
+# --- review round 1: concurrency, locks and edge cases ----------------------------
+#
+# The invariant every test below asserts: no byte of a memory is lost. Each
+# native file either still holds its full text, or its body is in the note.
+
+def _keeps_every_byte(native, body, note_path):
+    text = native.read_text(encoding="utf-8")
+    note = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+    assert body.strip() in text or body.strip() in note, (text, note)
+
+
+def _locks(base):
+    return [p for p in tree(base) if p.endswith(".crew-save.lock")]
+
+
+def test_native_edit_while_the_pointer_temp_is_written_is_kept(host, capsys, monkeypatch):
+    """Reviewer race A: another session appends to the memory after the
+    first compare, while the pointer's temp file is being written."""
+    host.work()
+    mem = host.memory(body="v1 text\n")
+    real = crew_memory._write_temp  # pylint: disable=protected-access
+
+    def temp(directory, data, *rest):
+        if b"vault: work" in data and data.startswith(b"---"):
+            with open(mem, "ab") as handle:
+                handle.write(b"v2 added by another session\n")
+        return real(directory, data, *rest)
+
+    monkeypatch.setattr(crew_memory, "_write_temp", temp)
+    code, out = save(host, mem, capsys)
+    assert code == 1, out
+    assert "the memory file changed during save" in out
+    assert mem.read_bytes().endswith(b"v1 text\nv2 added by another session\n")
+
+
+def _second_memory(host, label, body):
+    directory = host.base / label
+    directory.mkdir()
+    path = directory / "fact.md"
+    path.write_bytes((FRONTMATTER + body).encode("utf-8"))
+    return path
+
+
+def test_two_saves_appending_to_one_note_keep_every_byte(host, capsys, monkeypatch):
+    """Reviewer race B, on real threads: save S2 is inside its note write
+    when save S1 of another memory with the same stem runs. S1 must not
+    write a pointer whose body S2's replace then drops."""
+    import threading  # pylint: disable=import-outside-toplevel
+    vault = host.work()
+    assert save(host, host.memory(body="base\n"), capsys)[0] == 0
+    one = _second_memory(host, "m1", "text ONE\n")
+    two = _second_memory(host, "m2", "text TWO\n")
+    plan_one = crew_memory.plan_save(str(one), str(host.root), ["memory"])
+    plan_two = crew_memory.plan_save(str(two), str(host.root), ["memory"])
+    inside, done, results = threading.Event(), threading.Event(), {}
+    real = crew_memory._write_temp  # pylint: disable=protected-access
+
+    def temp(directory, data, *rest):
+        if b"text TWO" in data and not inside.is_set():
+            inside.set()
+            done.wait(20)
+        return real(directory, data, *rest)
+
+    monkeypatch.setattr(crew_memory, "_write_temp", temp)
+    worker = threading.Thread(target=lambda: results.update(two=crew_memory.apply_save(plan_two)))
+    worker.start()
+    assert inside.wait(20)
+    results["one"] = crew_memory.apply_save(plan_one)
+    done.set()
+    worker.join(20)
+    note = vault / NOTE
+    _keeps_every_byte(one, "text ONE", note)
+    _keeps_every_byte(two, "text TWO", note)
+    assert "base" in note.read_text(encoding="utf-8")
+    assert results["one"]["state"].startswith("kept-full-text: another save is in progress")
+    assert not _locks(host.base)
+
+
+def test_a_plan_made_before_another_save_is_refused(host, capsys):
+    vault = host.work()
+    assert save(host, host.memory(body="base\n"), capsys)[0] == 0
+    one = _second_memory(host, "m1", "text ONE\n")
+    two = _second_memory(host, "m2", "text TWO\n")
+    plan_one = crew_memory.plan_save(str(one), str(host.root), ["memory"])
+    assert crew_memory.apply_save(
+        crew_memory.plan_save(str(two), str(host.root), ["memory"]))["exit"] == 0
+    row = crew_memory.apply_save(plan_one)
+    assert row["exit"] == 1
+    assert "the note changed during save" in row["state"]
+    _keeps_every_byte(one, "text ONE", vault / NOTE)
+    _keeps_every_byte(two, "text TWO", vault / NOTE)
+
+
+@pytest.mark.parametrize("which", ["note", "native"])
+def test_a_held_lock_refuses_and_writes_nothing(host, capsys, which):
+    vault = host.work()
+    mem = host.memory()
+    folder = vault / "memories" / "repo" if which == "note" else host.mem
+    folder.mkdir(parents=True, exist_ok=True)
+    name = "Example fact.md" if which == "note" else "fact.md"
+    (folder / f".{name}.crew-save.lock").write_text("held\n", encoding="utf-8")
+    out = kept(host, mem, capsys, 1, "another save is in progress")
+    assert "crew-save.lock" in out
+
+
+def test_a_stale_lock_is_cleared_after_the_ttl(host, capsys):
+    vault = host.work()
+    mem = host.memory()
+    lock = host.mem / ".fact.md.crew-save.lock"
+    lock.write_text("stale\n", encoding="utf-8")
+    old = os.stat(lock).st_mtime - crew_memory.LOCK_TTL - 60
+    os.utime(lock, (old, old))
+    code, out = save(host, mem, capsys)
+    assert code == 0, out
+    assert (vault / NOTE).is_file()
+    assert not _locks(host.base)
+
+
+def test_locks_are_released_after_a_failed_save(host, capsys, monkeypatch):
+    host.work()
+    monkeypatch.setattr(crew_memory, "resolve_pointer",
+                        lambda *_a: ("note-missing", "simulated", None))
+    assert save(host, host.memory(), capsys)[0] == 1
+    assert not _locks(host.base)
+
+
+def test_no_hard_links_never_replaces_over_a_note(host, capsys, monkeypatch):
+    """FIX3: `os.link` refused (EPERM, a file system without hard links):
+    the note is created with O_EXCL, never `os.replace`d into place."""
+    vault = host.work()
+    mem = host.memory()
+    replaced = []
+    real_replace = os.replace
+
+    def no_link(*_args, **_kwargs):
+        raise OSError(1, "Operation not permitted")
+
+    def replace(src, dst):
+        replaced.append(os.path.abspath(dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(crew_memory.os, "link", no_link)
+    monkeypatch.setattr(crew_memory.os, "replace", replace)
+    code, out = save(host, mem, capsys)
+    assert code == 0, out
+    assert os.path.abspath(str(vault / NOTE)) not in replaced
+    assert (vault / NOTE).read_text(encoding="utf-8") == expected_note()
+    assert sorted(os.listdir(vault / "memories" / "repo")) == ["Example fact.md"]
+
+
+def test_no_hard_links_and_a_note_appearing_is_refused(host, capsys, monkeypatch):
+    vault = host.work()
+    mem = host.memory()
+    original = mem.read_bytes()
+
+    def no_link(_src, dst):
+        with open(dst, "wb") as handle:
+            handle.write(b"someone else's note\n")
+        raise OSError(1, "Operation not permitted")
+
+    monkeypatch.setattr(crew_memory.os, "link", no_link)
+    code, out = save(host, mem, capsys)
+    assert code == 1, out
+    assert "kept-full-text: note write failed" in out
+    assert (vault / NOTE).read_bytes() == b"someone else's note\n"
+    assert mem.read_bytes() == original
+
+
+def test_an_existing_note_that_is_not_utf8_is_refused(host, capsys):
+    vault = host.work()
+    note = _existing(vault, "---\ntitle: \"Example fact\"\nupdated: 2026-01-01\n"
+                            "memory_id: \"fact\"\n---\n\nold\n")
+    note.write_bytes(note.read_bytes() + b"\xff\xfe latin-1 \xe9\n")
+    before = note.read_bytes()
+    kept(host, host.memory(), capsys, 1, "not UTF-8")
+    assert note.read_bytes() == before
+
+
+def test_an_append_keeps_every_existing_byte_bom_and_crlf_included(host, capsys):
+    vault = host.work()
+    old = ("﻿---\r\ntitle: \"Example fact\"\r\ncreated: 2026-01-01\r\nupdated: 2026-01-01"
+           "\r\nmemory_id: \"fact\"\r\n---\r\n\r\nold body\r\n\r\n\r\n")
+    note = _existing(vault, old)
+    assert save(host, host.memory(), capsys)[0] == 0
+    want = old.replace("updated: 2026-01-01", f"updated: {DAY1}") + (
+        f"\n## Update {DAY1}\n\n{BODY.strip()}\n")
+    assert note.read_bytes() == want.encode("utf-8")
+
+
+def test_memory_md_is_refused(host, capsys):
+    """FIX5: the index is not a memory, in any case."""
+    host.work()
+    for name in ("MEMORY.md", "memory.MD"):
+        mem = host.memory(name=name)
+        before = tree(host.base)
+        assert save(host, mem, capsys)[0] == 2
+        assert tree(host.base) == before
+        row = crew_memory.plan_save(str(mem), str(host.root), ["memory"])
+        assert row["state"].startswith("kept-full-text: ") and "index" in row["state"]
+
+
+def test_the_note_folder_is_fsynced_before_the_pointer(host, capsys, monkeypatch):
+    """N1: the note's directory entry is on disk before the pointer is."""
+    if os.name == "nt":
+        pytest.skip("directories cannot be fsynced on Windows")
+    host.work()
+    mem = host.memory()
+    events = []
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(fd):
+        if os.path.isdir(f"/proc/self/fd/{fd}") or os.fstat(fd).st_mode & 0o040000:
+            events.append("dir")
+        return real_fsync(fd)
+
+    def replace(src, dst):
+        events.append("replace:" + os.path.basename(dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(crew_memory.os, "fsync", fsync)
+    monkeypatch.setattr(crew_memory.os, "replace", replace)
+    assert save(host, mem, capsys)[0] == 0
+    assert "dir" in events
+    assert events.index("dir") < events.index("replace:fact.md")
+
+
+def test_note_modes(host, capsys, monkeypatch):
+    """N2: a new note is 0644 less the umask; an appended note keeps its mode."""
+    if os.name == "nt":
+        pytest.skip("POSIX modes only")
+    vault = host.work()
+    old_umask = os.umask(0o027)
+    try:
+        assert save(host, host.memory(), capsys)[0] == 0
+    finally:
+        os.umask(old_umask)
+    note = vault / NOTE
+    assert (os.stat(note).st_mode & 0o777) == 0o640
+    os.chmod(note, 0o604)
+    monkeypatch.setattr(crew_memory, "today", lambda: DAY2)
+    assert save(host, _second_memory(host, "m1", "newer\n"), capsys)[0] == 0
+    assert (os.stat(note).st_mode & 0o777) == 0o604
+
+
+def test_a_symlinked_memory_is_refused(host, capsys):
+    """N3: replacing a link would leave the link and its target out of step."""
+    host.work()
+    target = host.memory(name="real.md")
+    link = host.mem / "fact.md"
+    try:
+        os.symlink(str(target), str(link))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks cannot be made here: {exc}")
+    kept(host, link, capsys, 1, "symlink")
+    assert os.path.islink(link)
+
+
+def test_a_double_save_of_one_memory_reports_already_pointer(host, capsys):
+    """N4: the second of two saves of the same memory finds it a pointer."""
+    host.work()
+    mem = host.memory()
+    first = crew_memory.plan_save(str(mem), str(host.root), ["memory"])
+    second = crew_memory.plan_save(str(mem), str(host.root), ["memory"])
+    assert crew_memory.apply_save(first)["state"] == "pointer-written"
+    row = crew_memory.apply_save(second)
+    assert row["state"] == "already-pointer"
+    assert row["exit"] == 0
+
+
+@pytest.mark.parametrize("title", [".hidden", ".obsidian"])
+def test_a_title_starting_with_a_dot_is_refused(host, capsys, title):
+    host.work()
+    kept(host, host.memory(), capsys, 1, "bad-note-path", "--title", title)
+
+
+def test_a_note_path_into_a_dot_folder_is_refused(host, capsys):
+    host.work()
+    kept(host, host.memory(), capsys, 1, "bad-note-path", "--note", ".obsidian/x.md")
+
+
+def test_memory_id_is_json_decoded_when_compared(host, capsys, monkeypatch):
+    """N6: a stem holding a quote is written JSON-escaped and must match
+    itself on the next save, not read as a collision."""
+    vault = host.work()
+    assert save(host, host.memory(name='fact "x".md'), capsys)[0] == 0
+    monkeypatch.setattr(crew_memory, "today", lambda: DAY2)
+    other = host.base / "m1"
+    other.mkdir()
+    again = other / 'fact "x".md'
+    again.write_bytes((FRONTMATTER + "newer\n").encode("utf-8"))
+    code, out = save(host, again, capsys)
+    assert code == 0, out
+    assert "action: append" in out
+    assert (vault / NOTE).read_text(encoding="utf-8").endswith("\n\nnewer\n")
