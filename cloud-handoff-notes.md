@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:46 UTC
+Last updated: 2026-10-04 15:50 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:50: Created CLOUD-SESSION-TICKETS.md at repo root on the notes branch (PR #391) - per-ticket hand-back status; refresh it on every merge/state change. WAVES plan copied to docs/handoff/cloud/WAVES-2026-10-04.md.
 - 15:46: #416 round-3 fixes -> 2eaac674 (leading-dash asks; ' out of allowlist, dead _SHELL branch removed; approv before allowlist; 390 route tests; 39 mutations). Round-4 review started. Behind main b863b773 - merge at land-prep.
 - 15:45: OWNER: untracked work gets L-1500+ (next free L-1502). #392 -> L-1500, #393 -> L-1501 (titles+Tickets: line patched). #351 land-prep -> 75a0d5db (1.0.328, Tickets: T-0066 added), merge-only review started, subscribed. CLEAN: #398 r2 dfe113ab 0/0/4 (follow-up: promote-gate.sh fail-open w/o _common.sh pre-existing -> L-1502 candidate); H1 #418 r2 ea9dcc10 0/0/5 (name: tightening of --accept/plain --reject for owner). #450 r5: 0/1/1 over-block -> narrowed fix sent. Re-reviews started: #407 3e2afb49 (_gate_pick), #403 610deaea, #347 877ef4b8 (PS backstop). #481 T-0074 built b573d4c9 -> review (Q4 security-adjacent flagged).
 - 15:38: OWNER RULE: every PR title starts with its ticket id(s) and body has a 'Tickets:' line (bundles list all). Audit: all 128 open PRs carry ids except #391 (notes, docs-only). Merged #392/#393 (Windows CI fixes) have NO ticket id - asked owner. Added rule to BUILD.md/LANDPREP.md.
