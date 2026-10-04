@@ -652,4 +652,12 @@ CONFIG_MENU_MUTATIONS = (
      '                os.close(fd)\n                try:\n                    os.remove(self.path)\n',
      '                os.close(fd)\n                try:\n                    pass\n',
      _F + "test_lock_removes_its_file_when_the_pid_write_fails"),
+    ("a delete-pending lock name refuses instead of waiting", FILES,
+     '            except PermissionError as exc:\n',
+     '            except PermissionError as exc:\n                raise\n',
+     _F + "test_lock_waits_out_a_delete_pending_name_instead_of_failing"),
+    ("a lock stat that cannot tell reads as absent", FILES,
+     '    except OSError:\n        return False\n    return False\n',
+     '    except OSError:\n        return True\n    return False\n',
+     _F + "test_lock_a_stat_that_cannot_tell_waits_like_a_held_lock"),
 )
