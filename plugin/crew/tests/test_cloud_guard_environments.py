@@ -2951,6 +2951,82 @@ R8_MUST_BLOCK = _normalise([
     ("r8-tg-graph-destroy", "Bash", "terragrunt graph destroy", _o(**_STAGING)),
     ("r8-tg-exec-destroy", "Bash", "terragrunt exec -- terraform destroy",
      _o(**_STAGING)),
+    # Review of #347, round 2: each measured ALLOWED at d4ec3aa6.
+    # B1: an Invoke-Expression script computed by a group.
+    ("r8-ps-iex-group-join", "PowerShell",
+     'iex ("terraform", "destroy" -join " ")', _o(**_STAGING)),
+    ("r8-ps-iex-group-format", "PowerShell",
+     'iex ("{0} {1}" -f "terraform","destroy")', _o(**_STAGING)),
+    # B2: a splat.
+    ("r8-ps-iex-splat", "PowerShell",
+     "$p=@{Command='terraform destroy'}; iex @p", _o(**_STAGING)),
+    # B3: a call after an assignment.
+    ("r8-ps-assign-iex-paren", "PowerShell", '$x = iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-assign-invoke-expression-paren", "PowerShell",
+     '$x = Invoke-Expression("terraform destroy")', _o(**_STAGING)),
+    ("r8-ps-append-iex-paren", "PowerShell", '$x += iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-env-assign-iex-paren", "PowerShell",
+     '$env:X = iex("terraform destroy")', _o(**_STAGING)),
+    ("r8-ps-assign-terraform-paren", "PowerShell", '$x = terraform("destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-assign-dot-quoted", "PowerShell", "$x = .'terraform' destroy",
+     _o(**_STAGING)),
+    ("r8-ps-assign-call-quoted", "PowerShell", '$x = & "terraform" destroy',
+     _o(**_STAGING)),
+    # B4: a call operator glued to its command word, or a computed one.
+    ("r8-ps-amp-single-glued", "PowerShell", "&'terraform'destroy",
+     _o(**_STAGING)),
+    ("r8-ps-amp-double-glued", "PowerShell", '&"terraform"destroy',
+     _o(**_STAGING)),
+    ("r8-ps-amp-group-glued", "PowerShell", '&("terraform")destroy',
+     _o(**_STAGING)),
+    ("r8-ps-dot-group-glued", "PowerShell", ".('terraform')destroy",
+     _o(**_STAGING)),
+    ("r8-ps-amp-gcm", "PowerShell", "& (gcm terraform) destroy", _o(**_STAGING)),
+    # B5: `workspace select` given a group.
+    ("r8-ps-ws-select-group-concat", "PowerShell",
+     "terraform workspace select ('-or-'+'create') production", _o(**_STAGING)),
+    ("r8-ps-ws-select-group-gc", "PowerShell",
+     "terraform workspace select (gc f)", _o(**_STAGING)),
+    # B6: terragrunt exec's command, unwrapped like any wrapper's.
+    ("r8-tg-exec-env", "Bash", "terragrunt exec -- env terraform destroy",
+     _o(**_STAGING)),
+    ("r8-tg-exec-nice", "Bash", "terragrunt exec -- nice terraform destroy",
+     _o(**_STAGING)),
+    ("r8-tg-exec-timeout", "Bash",
+     "terragrunt exec -- timeout 5 terraform destroy", _o(**_STAGING)),
+    ("r8-tg-exec-command", "Bash",
+     "terragrunt exec -- command terraform destroy", _o(**_STAGING)),
+    ("r8-tg-exec-sudo", "Bash", "terragrunt exec -- sudo terraform destroy",
+     _o(**_STAGING)),
+    ("r8-tg-exec-nested", "Bash",
+     "terragrunt exec -- terragrunt exec -- env terraform destroy",
+     _o(**_STAGING)),
+    # An option before exec's command with no `--`: where it starts is not
+    # known.
+    ("r8-tg-exec-opt-no-dashdash", "Bash",
+     "terragrunt exec --frob terraform destroy", _unseen()),
+    # F1: options between `stack` and `run`.
+    ("r8-tg-stack-opt-run-apply", "Bash",
+     "terragrunt stack --non-interactive run apply", _o(**_STAGING)),
+    ("r8-tg-stack-opt-run-destroy", "Bash",
+     "terragrunt stack --no-color run destroy", _o(**_STAGING)),
+    # F2: an alias for Invoke-Expression.
+    ("r8-ps-set-alias-iex", "PowerShell",
+     'Set-Alias x iex; x "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-sal-invoke-expression", "PowerShell",
+     'sal y Invoke-Expression; y("terraform destroy")', _o(**_STAGING)),
+    # Round 1 allowed `iex("terraform plan")`; round 2's backstop makes any
+    # group given to Invoke-Expression could-not-tell, plan included.
+    ("r8-ps-iex-paren-plan", "PowerShell", 'iex("terraform plan")',
+     _o(**_STAGING)),
+    # N1: terragrunt's state backend delete.
+    ("r8-tg-backend-delete", "Bash", "terragrunt backend delete",
+     _o(**_STAGING)),
+    ("r8-tg-backend-delete-all", "Bash", "terragrunt backend delete --all",
+     _o(**_STAGING)),
 ])
 
 R8_MUST_ALLOW = _normalise([
@@ -3000,8 +3076,6 @@ R8_MUST_ALLOW = _normalise([
      'iex -ErrorAction Stop "terraform plan"', _o(**_STAGING)),
     ("r8a-ps-iex-verbose-plan", "PowerShell",
      'Invoke-Expression -Verbose "terraform plan"', _o(**_STAGING)),
-    ("r8a-ps-iex-paren-plan", "PowerShell", 'iex("terraform plan")',
-     _o(**_STAGING)),
     ("r8a-ws-select-literal-after-xargs-plan", "Bash",
      "ls *.tf | xargs terraform fmt && terraform workspace select staging",
      _o(**_STAGING)),
@@ -3009,6 +3083,16 @@ R8_MUST_ALLOW = _normalise([
     ("r8a-tg-graph-plan", "Bash", "terragrunt graph plan", _o(**_STAGING)),
     ("r8a-tg-exec-plan", "Bash", "terragrunt exec -- terraform plan",
      _o(**_STAGING)),
+    # Round 2's neighbours: plain forms the PowerShell backstop still reads.
+    ("r8a-ps-plain-plan", "PowerShell", "terraform plan", _o(**_STAGING)),
+    ("r8a-ps-assign-plan", "PowerShell", "$x = terraform plan", _o(**_STAGING)),
+    ("r8a-ps-call-plain-plan", "PowerShell", "& terraform plan", _o(**_STAGING)),
+    ("r8a-ps-ws-select-plain", "PowerShell", "terraform workspace select staging",
+     _o(**_STAGING)),
+    ("r8a-tg-exec-env-plan", "Bash", "terragrunt exec -- env terraform plan",
+     _o(**_STAGING)),
+    ("r8a-tg-stack-opt-run-plan", "Bash",
+     "terragrunt stack --non-interactive run plan", _o(**_STAGING)),
 ])
 
 
@@ -3093,3 +3177,13 @@ def test_round8_fed_workspace_select_is_judged_by_the_lexer():
         ["terraform", "workspace", "select"], {}, "xargs", ("{}",),
         {"engaged": True})
     assert found is not None and found.scope["op"] == "ws-create", found
+
+
+@pytest.mark.parametrize("command, rule", [
+    ("terragrunt exec -- aws s3 rm s3://b --recursive", "cloudDestructive"),
+    ("terragrunt exec -- az group delete -n rg", "cloudDestructive"),
+])
+def test_round8_terragrunt_exec_runs_what_it_is_given(command, rule):
+    """`terragrunt exec -- <cmd>` is unwrapped like any listed wrapper, so
+    every rule judges the command it runs (review of #347, round 2)."""
+    assert rule in [f.rule for f in cloud_guard.scan("bash", command)], command

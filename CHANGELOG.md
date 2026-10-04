@@ -31,6 +31,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   --semaphore`) as a listed wrapper; and terragrunt's `apply-all`,
   `destroy-all`, `stack run apply|destroy`, `graph apply|destroy` and `exec --
   terraform destroy`.
+- **Second review of #347: a structural backstop.** On a PowerShell line
+  whose raw text names terraform, tofu or terragrunt, a command the guard
+  does not read whole is could-not-tell whatever else it found: a splat, a
+  call by `&`/`.` whose command word is not a plain name (`&'terraform'destroy`,
+  `& (gcm terraform) destroy`), a command word a group makes, an alias
+  definition (`Set-Alias x iex`), Invoke-Expression given a group or a
+  variable (`iex ("terraform","destroy" -join " ")`, `iex("terraform plan")`
+  included), and a group among terraform's own arguments (`workspace select
+  (gc f)`). A call after an assignment (`$x = iex("...")`, `$x = & "terraform"
+  destroy`) is read as one. `terragrunt exec [--] cmd` is a wrapper: what it
+  runs goes back through every rule (`env`/`sudo` before terraform, `aws s3
+  rm`, `az group delete`), and an option before the command with no `--` is
+  could-not-tell. `terragrunt stack [opts] run apply|destroy` and `terragrunt
+  backend delete` are judged.
 - **No longer refused.** `terragrunt --non-interactive plan -out="p.tfplan"`
   (terragrunt's boolean options take no value), `terraform workspace select
   "staging"` (read-only unless an `-or-create` on it is anything but false),
@@ -46,7 +60,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   `test_cloud_guard_environments.py`, each with bash and pwsh samples, and
   `test_round8_unknown_option_is_could_not_tell`; 79 of them failed before
   the fix, and the 35 rows the first review added were all allowed before
-theirs. Each fix was sabotaged (21 + 17 mutations, every one RED) through
+theirs, and so were the second review's 30. Each fix was sabotaged (21 + 17
+  + the second review's, every one RED) through
   `sabotage.py`'s own `run_test`; the entries are not committed, because
   `plugin/crew/tests/sabotage*.py` is review harness (T-0087) and lands in
   its own PR.

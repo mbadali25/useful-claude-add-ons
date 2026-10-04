@@ -1579,23 +1579,41 @@ def tf_skip_options(args, index):
 def tg_other_op(head, args, index, judge):
     """terragrunt's other commands that run terraform's apply or destroy
     (review of #347), as `_terraform_destructive` names an operation:
-    `apply-all`/`destroy-all` (the pre-`run-all` spellings), `stack run
-    apply|destroy`, `graph apply|destroy` (the module and its dependents),
-    and `exec -- terraform destroy` (the command it runs, judged by
-    `judge`). None for anything else."""
+    `apply-all`/`destroy-all` (the pre-`run-all` spellings), `stack [opts]
+    run [opts] apply|destroy`, `graph apply|destroy` (the module and its
+    dependents), and `backend delete` (the state itself, so a destroy).
+    `exec` is a wrapper (`tg_exec_rest`), unwrapped before this runs. None
+    for anything else; `judge` is kept for the caller's signature."""
+    del judge
     sub = args[index] if head == "terragrunt" and index < len(args) else None
     if sub in ("apply-all", "destroy-all"):
         return f"terragrunt run-all {sub[:-4]}"
-    if sub in ("stack", "graph"):
-        start = index + 1 + (args[index + 1:index + 2] == ["run"])
-        nxt = tf_skip_options(args, start)
-        if nxt < len(args) and args[nxt] in ("apply", "destroy"):
-            return f"terragrunt {sub} run {args[nxt]}"
-    if sub == "exec":
-        rest = args[tf_skip_options(args, index + 1):]
-        if rest and _head_name(rest[0]) in ("terraform", "tofu", "terragrunt"):
-            return judge(_head_name(rest[0]), rest[1:])
+    nxt = tf_skip_options(args, index + 1)
+    if sub == "stack" and args[nxt:nxt + 1] == ["run"]:
+        nxt = tf_skip_options(args, nxt + 1)
+    if sub in ("stack", "graph") and args[nxt:nxt + 1] in (["apply"],
+                                                         ["destroy"]):
+        return f"terragrunt {sub} run {args[nxt]}"
+    if sub == "backend" and args[nxt:nxt + 1] == ["delete"]:
+        return "terragrunt backend delete, a destroy"
     return None
+
+
+def tg_exec_rest(words, fed=None):
+    """The argv `terragrunt [opts] exec [opts] [--] cmd...` runs, or None
+    when `words` is not a terragrunt exec (review of #347, round 2): it is
+    a wrapper, so what it runs goes back through every rule. An option
+    before the command with no `--` to end them is one crew cannot place
+    (`note_unknown`)."""
+    if _head_name(words[0]) != "terragrunt":
+        return None
+    index = tf_skip_options(words, 1)
+    if words[index:index + 1] != ["exec"]:
+        return None
+    start = tf_skip_options(words, index + 1)
+    if "--" not in words[index + 1:start] and start > index + 1:
+        note_unknown(fed, "terragrunt exec", words[index + 1])
+    return words[start:]
 
 
 def skip_wrapper_options(args, takes, optional=frozenset(), flags=None,
@@ -2054,6 +2072,64 @@ _PS_LAUNCHERS = frozenset((
     "start-process", "saps", "start", "invoke-command", "icm", "start-job",
     "sajb", "start-threadjob", "invoke-item", "ii"))
 _PS_EVAL = frozenset(("invoke-expression", "iex"))
+_PS_ALIASERS = frozenset(("set-alias", "sal", "new-alias", "nal",
+                          "import-alias", "ipal"))
+_PS_ASSIGN_OPS = ("=", "+=", "-=", "*=", "/=", "??=")
+# The guard's own tool names, as they appear anywhere in a line's raw text.
+_PS_TOOL_RE = re.compile("|".join(sorted({n.split(".")[0] for n in _TF_NAMES})),
+                         re.IGNORECASE)
+
+
+def ps_head_slot(words):
+    """True where a PowerShell command word may start: no word yet, or
+    just after `$x =` (`$x = iex("...")`, `$x = & "terraform" destroy`)."""
+    return not words or len(words) == 2 and str(words[0]).startswith("$") \
+        and words[1] in _PS_ASSIGN_OPS
+
+
+def _ps_unplain(cmd, head_name):
+    """Why one PowerShell command, on a line whose raw text names a guarded
+    tool, is not a plain command the guard reads whole -- or None. The
+    structural backstop (review of #347, round 2): a splat; a call by `&`/
+    `.` whose command word is not a plain name; a command word a group
+    makes; an alias definition; Invoke-Expression given a group or a
+    variable; a group among terraform's own arguments. Each is could not
+    tell, whatever the rest of the reading found."""
+    words = [str(w) for w in cmd.words]
+    groups, called = getattr(cmd, "groups", set()), getattr(cmd, "called",
+                                                            False)
+    if any(w.startswith("@") and len(w) > 1 for w in words):
+        return "a splat"
+    start = 2 if len(words) > 2 and ps_head_slot(words[:2]) else 0
+    if words[start:start + 1] in (["&"], ["."]):
+        called, start = True, start + 1
+    if start >= len(words):
+        return None
+    head = head_name(words[start]).lower()
+    later = {i for i in groups if i > start}
+    found = None
+    if called and (type(cmd.words[start]).__name__ != "_Bare"
+                   or not _PS_NAME_RE.match(words[start])):
+        found = "a call whose command word is not a plain name"
+    elif start in groups:
+        found = "a command word a group makes"
+    elif head in _PS_ALIASERS:
+        found = "an alias definition"
+    elif head in _PS_EVAL and (later or any("$" in w for w in words)):
+        found = "Invoke-Expression given a group or a variable"
+    elif _names_tool(words[start]) and later:
+        found = "a group among its arguments"
+    return found
+
+
+def _ps_backstop(cmds, normal, head_name):
+    """`_ps_unplain`'s hits for a line naming a guarded tool anywhere."""
+    tool = _PS_TOOL_RE.search(normal)
+    if tool is None:
+        return []
+    named = names_terraform(normal, "powershell") or tool.group(0).lower()
+    return [(named, f"a PowerShell form it does not read plainly: {why}")
+            for why in (_ps_unplain(c, head_name) for c in cmds) if why]
 # Words that start a PowerShell statement, never a wrapper `_unwrap` strips.
 _PS_KEYWORDS = frozenset(("if", "elseif", "else", "while", "do", "until",
                           "for", "foreach", "switch", "try", "trap", "{",
@@ -2224,6 +2300,7 @@ def ps_trigger(normal, helpers, depth=0):
     hits = [ps_trigger(sub, helpers, depth + 1) for sub in subs]
     hits += [_ps_argv_trigger(c.words, normal, helpers, depth, copies, c)
              for c in cmds]
+    hits += _ps_backstop(cmds, normal, helpers[4])
     hits = [h for h in hits if h is not None]
     if not hits:
         return None

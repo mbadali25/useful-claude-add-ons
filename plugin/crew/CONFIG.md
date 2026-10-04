@@ -1727,7 +1727,10 @@ line `could-not-tell`, and so does a `workspace select` that `xargs` or
 `bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
 PowerShell's `&`, `.`, `terraform.exe`, `Start-Process` and `Invoke-Expression`
 (a script that is not a literal string, or a parameter crew does not know,
-is `could-not-tell`). It does not try to
+is `could-not-tell`, and on a line naming terraform so is any PowerShell form
+it does not read whole: a splat, a call whose command word is not a plain name,
+an alias definition, or a group given to Invoke-Expression or to terraform).
+`terragrunt exec -- cmd` is unwrapped like any listed wrapper. It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
 -e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),

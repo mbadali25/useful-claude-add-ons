@@ -1426,8 +1426,12 @@ wrappers. An option a listed `xargs`, `parallel`, `sem`, `aws-vault` or
 `unbuffer` does not know makes a line that names terraform could-not-tell:
 crew cannot tell where the command starts. So does an `Invoke-Expression`
 whose script is not a literal string. terragrunt's `apply-all`,
-`destroy-all`, `stack run`, `graph` and `exec -- terraform ...` are read as
-the apply or destroy they run. It does not try to catch a program renamed or
+`destroy-all`, `stack run`, `graph` and `backend delete` are read as the
+apply or destroy they run, and `terragrunt exec -- cmd` is unwrapped like any
+listed wrapper. On a PowerShell line naming terraform, a form crew does not
+read whole (a splat, a call whose command word is not a plain name, an alias
+definition, a group given to Invoke-Expression or to terraform) is
+could-not-tell. It does not try to catch a program renamed or
 started some other way. Each of these runs unjudged:
 
 - a rename by alias, function, symlink or copy, unless the same line makes a

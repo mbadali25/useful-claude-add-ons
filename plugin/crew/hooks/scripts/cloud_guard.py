@@ -129,7 +129,7 @@ import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
     tf_skip_options as _tf_skip_options, WRAPPER_TABLES, option_words, \
-    wrapper_rest, tg_other_op
+    wrapper_rest, tg_other_op, ps_head_slot, tg_exec_rest
 
 
 def _head_name(token):
@@ -219,7 +219,7 @@ class _Cmd:
         # which no in-sequence reading of this one can account for.
         self.or_next = False
         # PowerShell: run by `&`; the words opening with a quote or group.
-        self.called, self.opens = False, set()
+        self.called, self.opens, self.groups = False, set(), set()
 
     def has_content(self):
         return bool(self.words) or self.stdin is not None or self.writes
@@ -868,7 +868,7 @@ def _lex_ps(text):
             i = n if j < 0 else j
             continue
         call = state["bare"] if c == "(" else c in "'\"" and state["word"] == ["."]
-        if call and state["word"] is not None and not state["cur"].words:
+        if call and state["word"] is not None and ps_head_slot(state["cur"].words):
             end_word()  # `iex("...")`, `terraform('x')`, `.'terraform'`: a call
         if c == "@" and text[i + 1:i + 2] in ("'", '"'):
             here = _read_ps_herestring(text, i, subs)
@@ -890,6 +890,7 @@ def _lex_ps(text):
             inner = text[start + 1:k]
             subs.append(inner)
             add(_ps_group_value(inner), opens=True)
+            state["cur"].groups.add(len(state["cur"].words))
             i = k + 1
             continue
         if c in "{}":
@@ -922,7 +923,7 @@ def _lex_ps(text):
                 add(text[i:i + 2], bare=True)
                 i += 2
                 continue
-            if state["word"] is None and not state["cur"].words:
+            if state["word"] is None and ps_head_slot(state["cur"].words):
                 # The call operator: `& 'C:\tools\terraform.exe' apply`.
                 state["cur"].called = True
                 i += 1
@@ -1393,6 +1394,9 @@ def _unwrap(words, env, fed=None, ctx=None):
             if "*" in moves or any(name in moves for name, _value in opts):
                 _moved(ctx)
             words = rest[operands:]
+            continue
+        if head == "terragrunt" and tg_exec_rest(words) is not None:
+            words = tg_exec_rest(words, fed)  # `exec -- cmd`: a wrapper
             continue
         if head in _WRAPPER_VALUE_OPTS:
             rest = wrapper_rest(head, words[1:], _WRAPPER_VALUE_OPTS[head], fed, env)
