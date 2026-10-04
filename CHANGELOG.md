@@ -4,6 +4,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — crew 1.0.244: sabotage entries for L-0516's deadline polls (L-0563)
+
+- `plugin/crew/tests/sabotage_qa.py`: six mutations against the deadline polls L-0516 added -
+  `poll_until` probing once and never waiting, reporting success at the deadline, probing once more
+  after it; `wait_for_pidfile` accepting an existing empty file; child cleanup reaping with an
+  unbounded wait; and `completion-audit.ps1`'s probe killing only the launcher. Each goes red
+  against its test. The ps1 entry needs `pwsh`: on a host without it the target test skips and
+  `sabotage.py` reports it STILL GREEN, as the other pwsh-only entries already do.
+
 ### Added — crew 1.0.233: crew-setup ships `crew-verify.yml`, the verify gate as a pull-request workflow
 
 - `plugin/crew/skills/crew-setup/templates/github/crew-verify.yml`: a GitHub Actions workflow for the
