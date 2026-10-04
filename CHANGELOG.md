@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.308: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
+### Added — `crew` 1.0.370: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
 
 - **The rule.** `explorer`, `researcher`, `security` and `crew-best-practices` carry "Verify
   before you state": a claim about code, config, history or state is verified this session (a
