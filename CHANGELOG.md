@@ -4,6 +4,53 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` VERSION_TBD: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
+
+Stacked on T-0052 (#364, which carries T-0037) and T-0011 (#353).
+
+- **What changed.** `crew_split.parse_slices(plan_text)` reads a plan's
+  `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`,
+  `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices
+  (`SLICES_MIN`/`SLICES_MAX`, the children's bounds), slices out of
+  sequence, a step in two slices, in none or not in the plan, a
+  non-contiguous or out-of-order slice, `Base: slice <k>` for a k not
+  earlier, and `Base: main` when the slice's `Files:` share a path (equal
+  or glob-matching) with an earlier slice's, or when a step names no
+  `Files:` (cannot tell is not "shares nothing"). No section is a valid
+  plan. `/crew:autopilot` runs a sliced plan one slice at a time:
+  `next` stops a refused section at `plan` (`PR slices: ...`), names
+  `implement` with `slice n of m (<name>): steps a-b only`, and keeps the
+  state in `<git-common-dir>/crew/tickets/<id>/slices.json` (an unreadable
+  or out-of-shape file stops as `slices`). `/crew:done` on a non-final
+  slice sets the header `in-progress` (T-0037 kept it in `STATUS_VALUES`,
+  so the approval stands) and runs `crew_autopilot.py slice-done`; only the
+  last slice sets `done`, and a `done` header before then stops. `ship`
+  opens one PR per slice (`--base` per `slice_base`: the default branch, or
+  the stacked predecessor's branch; title `<id> slice n/m: <name>`), never
+  ships slice n before slice n-1 is merged (or opened, under `ship: pr`),
+  merges only through `merge_argv`, and records each PR and merge commit.
+  A merged non-final slice names `next-slice`, which creates
+  `<branch>-s<n>` off its base and opens the slice's review budget.
+- **Why.** The owner's 2026-09-26 direction (T-0052's split): a large
+  ticket that holds together stays one ticket and ships in ordered slices,
+  each with its own review budget, so a review is bounded to a few steps
+  (r = 0.73 between plan steps and findings).
+- **Not in this PR (harness follow-ups, CLAUDE.md T-0087).**
+  `review_ledger.open_slice` and `_spent` counting slice rows (the
+  per-slice budget reset), `crew_ticket.validate` appending `PR slices:`
+  problems, `review_ledger.summary` carrying `slices`, and
+  `sabotage_split.py` with the four T-0059 mutations are HARNESS paths.
+  Until they land, `next-slice` refuses with nothing written, so a sliced
+  ticket stops after its first slice ships; autopilot's own plan check
+  stands in for `validate`.
+- **Tests.** 19 `parse_slices` cases in `test_crew_split.py` and 43 in the
+  new `test_crew_autopilot_slices.py` (stubbed gh, tmp_path repos). Four
+  mutations hand-run, each red on its named test: the `Base: main` overlap
+  check, the contiguity check, the predecessor-merged check, and
+  `_current_rounds` ignoring slice rows. `.crew/verify.json`'s `crew_split`
+  rule gains `test_crew_autopilot_slices.py`, `test_crew_ticket.py` and
+  `test_review_ledger.py`.
+
 ### Added — `crew` 1.0.374: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds

@@ -1223,26 +1223,26 @@ Obsidian vault). A CLI the commands call, not a hook.
 
 ## The split rulebook (T-0052)
 
-- DERIVED (T-0052; measured on this tree, anchors not moved):
+- DERIVED (T-0052; measured on this tree, anchors not moved; line numbers re-read after T-0059's insertions):
   `plugin/crew/hooks/scripts/crew_split.py` holds `/crew:split`'s judgement as code; its module docstring is the
   API T-0058 and T-0059 build on. The thresholds are constants, each with its
-  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:80`),
-  `ACCEPTANCE_LOOK` (`:84`), `SUBSYSTEMS_LOOK` (`:87`), `CHILDREN_MIN,
-  CHILDREN_MAX` (`:90`); `EVIDENCE_KEYS` (`:92`), `VIAS` (`:100`, `command`
-  only; T-0058 appends `autopilot`), `SDP_STOP` (`:101`). `measure`
-  (`:208`) returns None, never 0, for a measure it cannot read, and
-  `triggers` (`:232`) reports it as `unknown:<name>`. `check_proposal`
-  (`:361`) over `parse_proposal` (`:294`) is the placement rule (every parent
+  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:82`),
+  `ACCEPTANCE_LOOK` (`:86`), `SUBSYSTEMS_LOOK` (`:89`), `CHILDREN_MIN,
+  CHILDREN_MAX` (`:92`); `EVIDENCE_KEYS` (`:101`), `VIAS` (`:109`, `command`
+  only; T-0058 appends `autopilot`), `SDP_STOP` (`:110`). `measure`
+  (`:221`) returns None, never 0, for a measure it cannot read, and
+  `triggers` (`:245`) reports it as `unknown:<name>`. `check_proposal`
+  (`:374`) over `parse_proposal` (`:307`) is the placement rule (every parent
   criterion exactly once, whitespace-collapsed equality). `tracker_mode`
-  (`:406`) reads `crew_tracker.resolve`. `check` (`:469`) records the
-  proposal's sha256 (`_proposal_sha`, `:436`, cut at `## Minted`) and the
-  current turn (`current_turn`, `:444`, which reads the context hook's
+  (`:419`) reads `crew_tracker.resolve`. `check` (`:482`) records the
+  proposal's sha256 (`_proposal_sha`, `:449`, cut at `## Minted`) and the
+  current turn (`current_turn`, `:457`, which reads the context hook's
   per-session state through `crew_context._session_file`,
   `plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1072`, keyed
-  by `CLAUDE_CODE_SESSION_ID`, `plugin/crew/hooks/scripts/crew_split.py:102`); `confirm` (`:499`) passes only on a
+  by `CLAUDE_CODE_SESSION_ID`, `plugin/crew/hooks/scripts/crew_split.py:111`); `confirm` (`:512`) passes only on a
   different turn for the same session and an unchanged proposal. `apply`
-  (`:644`) refuses through `_refuse_mode` (`:585`), then writes
-  `spec.pre-split.md`, mints through `_mint_children` (`:617`, calling
+  (`:657`) refuses through `_refuse_mode` (`:598`), then writes
+  `spec.pre-split.md`, mints through `_mint_children` (`:630`, calling
   `crew_ticket.mint`, `plugin/crew/hooks/scripts/crew_ticket.py:1355`,
   unedited: it takes no risk, so the child's `risk:` rides in its direction
   body), and only then sets the parent `superseded`.
@@ -1256,6 +1256,35 @@ Obsidian vault). A CLI the commands call, not a hook.
   JUDGEMENT: no `sabotage_split.py` yet - `plugin/crew/tests/sabotage*.py` is
   HARNESS, so its ten mutations were run by hand and are registered by a
   separate tooling PR.
+
+## PR slices (T-0059)
+
+- DERIVED (T-0059; measured on this tree, anchors not moved). `crew_split.parse_slices`
+  (`plugin/crew/hooks/scripts/crew_split.py:834`) reads a plan's `## PR slices` section into
+  `{n, name, steps, base, files}` per slice; `SLICES_MIN, SLICES_MAX` (`:97`) are the children's
+  bounds. `_slice_problems` (`:779`) holds the count, numbering, partition, contiguity and order
+  rules; `_base_problems` (`:809`) the `Base:` rule, through `_overlaps` (`:772`, equality or
+  `crew_ticket.path_matches` either way) over each step's `Files:` from `_step_blocks` (`:714`)
+  and `crew_ticket.parse_plan`; a step with no `Files:` is "cannot tell", never independent.
+- `plugin/crew/hooks/scripts/crew_autopilot.py` consumes it (all lines at this tree):
+  `_slice_context` (`:1158`) and `slices_path` (`:1116`, `<git-common-dir>/crew/tickets/<id>/slices.json`,
+  written by `_write_slice_state` `:1147` through temp + `os.replace`); `slice_base` (`:1185`);
+  `_slice_order_stop` (`:1238`) and `_slice_branch_stop` (`:1259`); `_record_shipped` (`:1270`);
+  `slice_done` (`:1292`) and `next_slice` (`:1325`), which refuses with nothing written while
+  `review_ledger.open_slice` is absent. `_phase` (`:1386`) stops a refused section at `plan`,
+  an unreadable state or an early `done` header as `slices`, and routes a non-final slice in
+  `done` through `_ship_phase` (`:645`), whose `finished` names `next-slice`. `ship` splits into
+  the slice-aware wrapper and `_ship`; `_slice_create_argv` builds the per-slice `gh pr create`.
+  `_current_rounds` counts from the later of the successor and slice boundaries, reading the
+  ledger's raw `slices` rows through `_ledger_status` because `review_ledger.summary` does not
+  carry them.
+- JUDGEMENT: the per-slice budget reset (`review_ledger.open_slice` and `_spent` counting slice
+  rows), `crew_ticket.validate` reporting `PR slices:` problems, and `sabotage_split.py` are HARNESS
+  paths (CLAUDE.md, T-0087) and land in a separate tooling PR; until then a sliced ticket stops
+  after its first slice ships.
+- Tests: `plugin/crew/tests/test_crew_split.py` (parse_slices),
+  `plugin/crew/tests/test_crew_autopilot_slices.py`; the T-0052 `crew_split` rule in
+  `.crew/verify.json` runs both.
 
 ## The artifact refresh check (T-0008, crew 1.0.36)
 

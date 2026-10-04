@@ -920,3 +920,154 @@ def test_check_record_holds_sha_and_turn(tmp_path):
 
     assert (record["proposal_sha256"], record["turn"], record["session"]) == (
         hashlib.sha256(path.read_bytes().rstrip()).hexdigest(), "turn-1", SESSION)
+
+
+# --- T-0059: the plan's `## PR slices` section (parse_slices) ------------------------
+
+def _plan_with_slices(slices, files=None):
+    """A five-step plan (step N touches `src/sN.py` unless `files` says
+    otherwise) followed by `slices`, the `## PR slices` body verbatim."""
+    files = files or {}
+    steps = "".join(f"### Step {n}: step {n}\nFiles: {files.get(n, f'src/s{n}.py')}\n"
+                    f"Test: pytest\nRisk: low\n- [ ] do {n}\n\n" for n in range(1, 6))
+    tail = f"## PR slices\n\n{slices}" if slices is not None else ""
+    return f"# T-1 plan\n\n{steps}{tail}"
+
+
+def _slice(n, steps, base="main", name=None):
+    return f"### Slice {n}: {name or f'part {n}'}\nSteps: {steps}\nBase: {base}\n\n"
+
+
+GOOD_SLICES = _slice(1, "1, 2") + _slice(2, "3-4") + _slice(3, "5", base="slice 2")
+
+
+def test_slice_bounds_match_the_child_bounds():
+    assert (crew_split.SLICES_MIN, crew_split.SLICES_MAX) == (
+        crew_split.CHILDREN_MIN, crew_split.CHILDREN_MAX)
+
+
+def test_no_slices_section_valid():
+    assert crew_split.parse_slices(_plan_with_slices(None)) == ([], [])
+
+
+def test_slices_partition_ok():
+    slices, problems = crew_split.parse_slices(_plan_with_slices(GOOD_SLICES))
+
+    assert (problems, [(s["n"], s["name"], s["steps"], s["base"]) for s in slices]) == (
+        [], [(1, "part 1", [1, 2], "main"), (2, "part 2", [3, 4], "main"),
+             (3, "part 3", [5], 2)])
+
+
+def test_slices_carry_each_slices_files():
+    slices, _ = crew_split.parse_slices(_plan_with_slices(GOOD_SLICES))
+
+    assert slices[1]["files"] == ["src/s3.py", "src/s4.py"]
+
+
+def test_step_in_two_slices_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2, 3") + _slice(2, "3, 4, 5")))
+
+    assert any("step 3 is in slices 1 and 2" in p for p in problems), problems
+
+
+def test_step_in_no_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3, 4")))
+
+    assert any("step 5 is in no slice" in p for p in problems), problems
+
+
+def test_unknown_step_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-6")))
+
+    assert any("step 6" in p and "no such step" in p for p in problems), problems
+
+
+def test_non_contiguous_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 3") + _slice(2, "2, 4, 5")))
+
+    assert any("slice 1" in p and "not one contiguous run" in p for p in problems), problems
+
+
+def test_slices_out_of_order_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "3-5") + _slice(2, "1, 2")))
+
+    assert any("out of order" in p for p in problems), problems
+
+
+def test_base_main_with_shared_files_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"), files={4: "src/s1.py"}))
+
+    assert any("slice 2" in p and "Base: main" in p and "src/s1.py" in p
+               for p in problems), problems
+
+
+def test_base_main_with_a_glob_overlap_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"), files={1: "src/**"}))
+
+    assert any("slice 2" in p and "Base: main" in p for p in problems), problems
+
+
+def test_base_slice_with_shared_files_allowed():
+    slices, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5", base="slice 1"), files={4: "src/s1.py"}))
+
+    assert (problems, slices[1]["base"]) == ([], 1)
+
+
+def test_base_later_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2", base="slice 2") + _slice(2, "3-5")))
+
+    assert any("slice 1" in p and "Base: slice 2" in p for p in problems), problems
+
+
+def test_base_unreadable_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5", base="develop")))
+
+    assert any("slice 2" in p and "Base:" in p for p in problems), problems
+
+
+def test_one_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(_slice(1, "1-5")))
+
+    assert any("1 slice" in p and "2-5" in p for p in problems), problems
+
+
+def test_six_slices_refused():
+    many = "".join(_slice(n, str(n)) for n in range(1, 6)) + _slice(6, "5")
+    _, problems = crew_split.parse_slices(_plan_with_slices(many))
+
+    assert any("6 slices" in p for p in problems), problems
+
+
+def test_slices_numbered_out_of_sequence_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(3, "3-5")))
+
+    assert any("numbered" in p for p in problems), problems
+
+
+def test_slice_without_steps_line_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + "### Slice 2: rest\nBase: main\n"))
+
+    assert any("slice 2" in p and "Steps:" in p for p in problems), problems
+
+
+def test_base_main_with_a_step_of_unknown_files_refused():
+    """Could not tell is not "shares nothing": a step whose Files line is
+    missing cannot prove slice 2 independent."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("Files: src/s4.py\n", "")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("slice 2" in p and "cannot tell" in p for p in problems), problems

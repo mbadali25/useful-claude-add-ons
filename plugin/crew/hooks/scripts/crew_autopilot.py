@@ -14,6 +14,7 @@
     python3 crew_autopilot.py approve --root . --ticket <id>
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
     python3 crew_autopilot.py ship --root . --ticket <id> [--json]
+    python3 crew_autopilot.py slice|slice-done|next-slice --root . --ticket <id>
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -22,7 +23,9 @@ phase is visible and a phase that cannot be told stops. Read-only except
 `approve`, and only when `approval_policy` allows under the configured policy;
 it never accepts a review. That is the single file it writes (T-0010, below):
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
-T-0072's `deploy-allowed` and T-0011's `ship` write no file. `ship` is the one
+T-0072's `deploy-allowed` and T-0011's `ship` write no file -- but for a sliced
+plan's `<git-common-dir>/crew/tickets/<id>/slices.json` (T-0059), which `ship`,
+`slice-done` and `next-slice` write. `ship` is the one
 action outside the checkout: it pushes the ticket's branch, opens its PR and
 may run `gh pr merge <n> --merge --match-head-commit <HEAD>` (below). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
@@ -69,6 +72,7 @@ force says `take`. Exit 0 valid, 1 not.
   INDEX status done/cancelled/superseded closed              stop (and merged/closed/...)
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
   spec header cancelled/superseded       closed              stop (quotes split-into:)
+  spec header `done`, slice n < m current slices            stop (later slices unbuilt)
   spec header `status: done`, unarmed    closed              stop
   ... armed, detached HEAD or gh failure ship                stop (cannot tell)
   ... PR merged at this HEAD (full SHA)  closed              stop
@@ -83,7 +87,11 @@ force says `take`. Exit 0 valid, 1 not.
   spec fails crew_ticket.validate        spec                stop
   no plan.md                             plan                /crew:plan <id>
   plan fails crew_ticket.validate        plan                stop
+  plan's `## PR slices` refused          plan                stop (T-0059, PR slices: ...)
   approval not accepted                  approve             stop, unless the policy allows
+  slices.json unreadable/out of shape    slices              stop (cannot tell the slice)
+  non-final slice in `done`              (the ship rows above; merged, or open under
+                                          `ship: pr`, names next-slice instead of closed)
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop
   no review round under this plan        implement           /crew:implement <id>
@@ -95,6 +103,9 @@ force says `take`. Exit 0 valid, 1 not.
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+A sliced plan's other rows carry `slice` and prefix the reason with `slice n
+of m (<name>): steps a-b only`. See "PR slices" above `_phase`.
 
 ## ship (T-0011)
 
@@ -115,6 +126,17 @@ the merge to the HEAD it checked, and dequeues a PR gh queued anyway.
 `_run_gh` is the only code here that runs gh; gh 2.46's `gh pr checks` has no
 --json, so `read_checks` parses its text, names and buckets verbatim, and a row
 that is not exactly five fields makes the whole read unreadable.
+
+PR slices (T-0059). On a plan with a valid `## PR slices`, `ship` opens one PR
+per slice: `gh pr create --head <slice branch> --base <slice_base> --title
+"<id> slice n/m: <name>" --body ...` instead of `--fill`, refuses (nothing
+pushed) unless slice n-1 shipped and is merged, or open under `ship: pr`, and
+slice n >= 2 ships only from `<slice 1's branch>-s<n>`. The merge is still
+`merge_argv` only. The PR (and merge commit) is recorded in slices.json.
+`slice-done` records a non-final slice done after `/crew:done` set its header
+`in-progress`; `next-slice` creates the next branch off `slice_base` and opens
+its review budget through `review_ledger.open_slice`, refusing with nothing
+written until that harness function lands.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -559,7 +581,7 @@ def _ledger_hash(top, ticket):
 def _families(top, ticket):
     """The `model_family` of every completed round under the current plan,
     or None when the ledger cannot be read."""
-    ledger = review_ledger.status(top, ticket)
+    ledger = _ledger_status(top, ticket)
     if ledger["state"] == review_ledger.UNKNOWN:
         return None
     return [r.get("model_family") for r in _current_rounds(ledger)
@@ -600,7 +622,7 @@ def _full_sha(value):
     return value if _SHA.fullmatch(value) else None
 
 
-def _merged_phase(top, branch, pr, answer):
+def _merged_phase(top, branch, pr, answer, finished=None):
     """A MERGED PR closes the ticket only when it merged this checkout's HEAD
     (full SHAs). A later commit on the branch, or a head either side cannot
     read, stops: autopilot never ships a merged branch again, and "could not
@@ -608,7 +630,8 @@ def _merged_phase(top, branch, pr, answer):
     merged = _full_sha(pr.get("headRefOid"))
     local = _full_sha(git_out(top, "rev-parse", "HEAD"))
     if merged and local and merged == local:
-        return answer("closed", True, f"PR #{pr['number']} is merged ({pr.get('url')})")
+        why = f"PR #{pr['number']} is merged ({pr.get('url')})"
+        return finished(why) if finished else answer("closed", True, why)
     if merged and local:
         return answer("ship", True, f"{branch} has commits after PR #{pr['number']} merged "
                       f"(merged head {merged}, HEAD {local}) - ship them on a new branch "
@@ -619,12 +642,26 @@ def _merged_phase(top, branch, pr, answer):
                   "the merge remain cannot be told - a human looks")
 
 
-def _ship_phase(top, ticket, answer, why):
+def _ship_phase(top, ticket, answer, why, ctx=None):
     """`next` for a ticket `/crew:done` closed: `closed` once its PR merged
     this HEAD (or, under `ship: pr`, once one is open), `ship` while there is work
     left, and a stop for every state that cannot be read. Unarmed, it is
-    `closed` without asking gh: shipping is autopilot's alone."""
+    `closed` without asking gh: shipping is autopilot's alone. `ctx` is a
+    sliced ticket's (T-0059): a non-final slice whose PR merged (or opened,
+    under `ship: pr`) names `next-slice` instead of `closed`."""
     config = settings(top)
+    final = ctx is None or ctx["piece"]["n"] == ctx["m"]
+
+    def finished(reason):
+        if final:
+            return answer("closed", True, reason)
+        return dict(answer("next-slice", False, f"{_slice_label(ctx)} shipped: {reason}",
+                           slice_command(ticket)), slice=ctx["piece"]["n"])
+
+    if not config["armed"] and not final:
+        return answer("ship", True, f"{_slice_label(ctx)} done. Shipping is "
+                      "/crew:autopilot's and autopilot.mode is off: a person ships this "
+                      "slice; armed, autopilot ships it and opens the next")
     if not config["armed"]:
         return answer("closed", True, f"{why}: closed by /crew:done. Shipping is "
                       "/crew:autopilot's and autopilot.mode is off, so a person pushes and "
@@ -633,6 +670,9 @@ def _ship_phase(top, ticket, answer, why):
     if not branch:
         return answer("ship", True, "cannot tell which branch ships: HEAD is detached or "
                       "unreadable - a human checks out the ticket's branch")
+    wrong = _slice_branch_stop(ctx, branch) if ctx else ""
+    if wrong:
+        return answer("ship", True, wrong)
     pr = read_pr(top, branch)
     if pr is None:
         return answer("ship", True, f"could not read the PR state for {branch} (gh pr view "
@@ -640,10 +680,10 @@ def _ship_phase(top, ticket, answer, why):
                       "is not a PR) - a human looks")
     state = pr["state"]
     if state == "MERGED":
-        return _merged_phase(top, branch, pr, answer)
+        return _merged_phase(top, branch, pr, answer, finished)
     if state == "OPEN" and config["ship"] != "merge":
-        return answer("closed", True, f"PR #{pr['number']} open, merge by hand "
-                      f"({pr.get('url')}; autopilot.ship is {config['ship']})")
+        return finished(f"PR #{pr['number']} open, merge by hand "
+                        f"({pr.get('url')}; autopilot.ship is {config['ship']})")
     if state not in ("NONE", "OPEN"):
         return answer("ship", True, f"PR #{pr.get('number')} for {branch} is {state}, not "
                       "open or merged - a person decides")
@@ -651,10 +691,15 @@ def _ship_phase(top, ticket, answer, why):
     if tree:
         return answer("ship", True, f"{tree}: a push carries only commits, so what was "
                       "reviewed would not be what ships - a human decides")
+    order = _slice_order_stop(top, ctx, branch, config["ship"]) if ctx else ""
+    if order:
+        return answer("ship", True, order)
     ok, message = review_ledger.check_receipt(top, ticket)
     if not ok:
         return answer("ship", True, f"the review receipt no longer stands ({message}): "
                       "shipping would put unreviewed commits in the PR - a human decides")
+    if ctx:
+        why = f"{_slice_label(ctx)}: {why}"
     return answer("ship", False, f"{why}; " + ("no PR yet" if state == "NONE" else
                                                f"PR #{pr['number']} open, merging when green"),
                   ship_command(ticket))
@@ -778,6 +823,42 @@ def ship(root, ticket):
         return _ship_result(ticket, "stop", True, f"will not push {branch or '(no branch)'}: "
                             f"the default branch is {default or 'unreadable'}, and ship "
                             "pushes only a ticket branch that is not it")
+    ctx = _slice_context(top, ticket)
+    create = ["pr", "create", "--head", branch, "--fill"]
+    if ctx:
+        # T-0059: one PR per slice, in order, based per the plan's Base: rule.
+        if ctx["error"]:
+            return _ship_result(ticket, "stop", True, ctx["error"])
+        order = _slice_order_stop(top, ctx, branch, settings(top)["ship"])
+        merged, _ = _merged_slices(top, ctx, ctx["piece"]["n"])
+        branches = _slice_branches(ctx) or {1: branch}
+        if order or merged is None:
+            return _ship_result(ticket, "stop", True, (order or "could not read an earlier "
+                                                       "slice's PR state") + " - nothing pushed")
+        base = slice_base(ctx["piece"]["n"], ctx["slices"], merged, branches, default)
+        create = _slice_create_argv(ticket, ctx, branch, base)
+        result = _ship(top, ticket, branch, create)
+        if result["action"] in ("open-pr", "merged"):
+            _record_shipped(top, ticket, ctx, branch, base)
+        return result
+    return _ship(top, ticket, branch, create)
+
+
+def _slice_create_argv(ticket, ctx, branch, base):
+    """`gh pr create` for one slice: its base, a `<id> slice n/m:` title and
+    a body naming the steps and the PR it stacks on."""
+    piece = ctx["piece"]
+    below = next((e for e in ctx["state"]["shipped"] if e.get("branch") == base), None)
+    body = (f"{ticket} slice {piece['n']} of {ctx['m']} ({piece['name']}): plan steps "
+            f"{_steps_text(piece['steps'])}."
+            + (f" Stacked on #{below.get('pr')} ({base}): merge that first." if below else ""))
+    return ["pr", "create", "--head", branch, "--base", base, "--title",
+            f"{ticket} slice {piece['n']}/{ctx['m']}: {piece['name']}", "--body", body]
+
+
+def _ship(top, ticket, branch, create):
+    """`ship` from the clean-tree check on, with `create` the `gh pr create`
+    argv when the branch has no PR."""
     tree = _tree_stop(top)
     if tree:
         return _ship_result(ticket, "stop", True, f"{tree} - nothing pushed")
@@ -793,7 +874,7 @@ def ship(root, ticket):
                             "after pushing")
     pr = read_pr(top, branch)
     if pr is not None and pr["state"] == "NONE":
-        created = _run_gh(top, ["pr", "create", "--head", branch, "--fill"])
+        created = _run_gh(top, create)
         if created is None or created[0] != 0:
             return _ship_result(ticket, "stop", True, "gh pr create failed: "
                                 + ((created[2] or created[1]).strip() if created else
@@ -1017,6 +1098,291 @@ def _header_only_change(contract, receipt):
     return None
 
 
+# --- PR slices (T-0059) ---------------------------------------------------------------
+#
+# A plan with a `## PR slices` section (crew_split.parse_slices) runs one slice at a
+# time: implement, review, done and ship, as its own PR. Where the run stands is
+# `<git-common-dir>/crew/tickets/<id>/slices.json`:
+#   {"current": n, "done": [k, ...], "shipped": [{"slice", "pr", "branch", "base",
+#    "merge_sha"}]}
+# Absent means slice 1 with nothing done; anything else unreadable or out of shape
+# is a stop, never slice 1. Each slice's review budget is a fresh one opened by
+# `review_ledger.open_slice` (a HARNESS change, landed separately): until it exists,
+# `next-slice` refuses and writes nothing.
+
+SLICES_FILE = "slices.json"
+
+
+def slices_path(root, ticket):
+    state = crew_ticket.state_dir(root)
+    if not state:
+        raise crew_ticket.TicketError(f"{root} is not a git repository; there is nowhere "
+                                      "to keep the slice state")
+    return os.path.join(state, "tickets", crew_ticket.check_ticket(ticket), SLICES_FILE)
+
+
+def _is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _slice_state(top, ticket, count):
+    """The slice state for a plan of `count` slices, or (None, why)."""
+    path = slices_path(top, ticket)
+    if not os.path.exists(path):
+        return {"current": 1, "done": [], "shipped": []}, ""
+    data = _read_json(path)
+    shipped = data.get("shipped") if isinstance(data, dict) else None
+    done = data.get("done") if isinstance(data, dict) else None
+    current = data.get("current") if isinstance(data, dict) else None
+    lists = (isinstance(done, list) and all(_is_int(k) for k in done)
+             and isinstance(shipped, list)
+             and all(isinstance(e, dict) and _is_int(e.get("slice")) for e in shipped))
+    if not lists or not _is_int(current) or not 1 <= current <= count:
+        return None, (f"{_rel(top, path)} is unreadable or out of shape (current 1-{count}, "
+                      "done and shipped lists): cannot tell which slice is current - a "
+                      "human looks")
+    return data, ""
+
+
+def _write_slice_state(top, ticket, data):
+    """Temp file then os.replace: a crash leaves the old state or the new."""
+    path = slices_path(top, ticket)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    text = json.dumps(data, indent=2) + "\n"
+    temp = f"{path}.{os.getpid()}.tmp"
+    with open(temp, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    os.replace(temp, path)
+
+
+def _slice_context(top, ticket, plan_text=None):
+    """None for a plan with no `## PR slices`; else {"slices", "state", "piece",
+    "m", "error"}: `piece` is the current slice, `error` a reason to stop."""
+    import crew_split  # pylint: disable=import-outside-toplevel
+    if plan_text is None:
+        plan_text = read_text(os.path.join(crew_ticket.ticket_dir(top, ticket), "plan.md"))
+    slices, problems = crew_split.parse_slices(plan_text or "")
+    if not slices and not problems:
+        return None
+    if problems:
+        return {"error": "PR slices: " + "; ".join(problems), "slices": slices}
+    state, why = _slice_state(top, ticket, len(slices))
+    if state is None:
+        return {"error": why, "slices": slices}
+    return {"error": "", "slices": slices, "state": state, "m": len(slices),
+            "piece": slices[state["current"] - 1]}
+
+
+def _steps_text(steps):
+    return (f"{steps[0]}-{steps[-1]}" if len(steps) > 1 else str(steps[0])) if steps else "none"
+
+
+def _slice_label(ctx):
+    piece = ctx["piece"]
+    return f"slice {piece['n']} of {ctx['m']} ({piece['name']})"
+
+
+def slice_base(n, slices, merged, branches, default):
+    """The branch slice `n`'s PR is based on: `default` for slice 1, for a
+    `Base: main` slice, and once every earlier slice is merged; otherwise the
+    branch of the latest unmerged slice down its `Base: slice <k>` chain
+    (stacked). `merged` is the set of merged slice numbers, `branches` maps
+    a slice number to its branch."""
+    if n == 1 or all(k in merged for k in range(1, n)):
+        return default
+    by_n = {s["n"]: s for s in slices}
+    base = by_n[n]["base"]
+    while base != "main" and base is not None:
+        if base not in merged:
+            return branches[base]
+        base = by_n[base]["base"]
+    return default
+
+
+def _slice_branches(ctx):
+    """{slice: branch}: slice 1's is the branch it shipped from, slice n's
+    `<that>-s<n>`; empty when slice 1 has not shipped."""
+    first = next((e.get("branch") for e in ctx["state"]["shipped"] if e.get("slice") == 1),
+                 None)
+    if not isinstance(first, str) or not first:
+        return {}
+    return {s["n"]: first if s["n"] == 1 else f"{first}-s{s['n']}" for s in ctx["slices"]}
+
+
+def _shipped_entry(ctx, n):
+    return next((e for e in ctx["state"]["shipped"] if e.get("slice") == n), None)
+
+
+def _merged_slices(top, ctx, upto):
+    """(set of merged slice numbers below `upto`, {slice: PR state}), or
+    (None, why) when a shipped slice's PR state cannot be read."""
+    merged, states = set(), {}
+    for k in range(1, upto):
+        entry = _shipped_entry(ctx, k)
+        if entry is None:
+            continue
+        if _full_sha(entry.get("merge_sha")):
+            merged.add(k)
+            states[k] = "MERGED"
+            continue
+        pr = read_pr(top, entry.get("branch") or "")
+        if pr is None:
+            return None, (f"could not read slice {k}'s PR state ({entry.get('branch')}) - a "
+                          "human looks")
+        states[k] = pr["state"]
+        if pr["state"] == "MERGED":
+            merged.add(k)
+    return merged, states
+
+
+def _slice_order_stop(top, ctx, branch, policy):
+    """The reason slice n may not ship from `branch` yet, or "": slice n-1 must
+    have shipped and be merged (or open, under `ship: pr`), and slice n >= 2
+    ships only from `<slice 1's branch>-s<n>`."""
+    n = ctx["piece"]["n"]
+    if n == 1:
+        return ""
+    if _shipped_entry(ctx, n - 1) is None:
+        return (f"slice {n - 1} has not shipped: slice {n} never ships before it - run "
+                f"slice {n - 1} first")
+    merged, states = _merged_slices(top, ctx, n)
+    if merged is None:
+        return states
+    prior = states.get(n - 1)
+    if prior != "MERGED" and not (policy == "pr" and prior == "OPEN"):
+        return (f"slice {n - 1}'s PR is {prior}, not merged" + (
+            "" if policy == "pr" else " (autopilot.ship is merge, so it must merge first)")
+            + f": slice {n} never ships before it")
+    return _slice_branch_stop(ctx, branch)
+
+
+def _slice_branch_stop(ctx, branch):
+    """The reason `branch` is not the current slice's, or "". Slice 1 ships
+    from the ticket's branch; slice n >= 2 only from `<slice 1's>-s<n>`."""
+    n = ctx["piece"]["n"]
+    expected = _slice_branches(ctx).get(n) if n > 1 else branch
+    if branch != expected:
+        return (f"slice {n} ships from {expected or '(unknown: slice 1 recorded no branch)'}, "
+                f"not {branch} - run crew_autopilot.py next-slice to open it")
+    return ""
+
+
+def _record_shipped(top, ticket, ctx, branch, base):
+    """Record slice n's PR (and merge commit, when gh reports one)."""
+    n = ctx["piece"]["n"]
+    pr = read_pr(top, branch) or {}
+    view = _gh(top, ["pr", "view", branch, "--json", "mergeCommit"])
+    commit = view.get("mergeCommit") if isinstance(view, dict) else None
+    sha = _full_sha(commit.get("oid")) if isinstance(commit, dict) else None
+    state = dict(ctx["state"])
+    state["shipped"] = [e for e in state["shipped"] if e.get("slice") != n] + [{
+        "slice": n, "pr": pr.get("number"), "branch": branch, "base": base,
+        "merge_sha": sha if pr.get("state") == "MERGED" else None}]
+    _write_slice_state(top, ticket, state)
+
+
+def slice_command(ticket):
+    return f"crew_autopilot.py next-slice --ticket {ticket}"
+
+
+def _slice_result(ok, reason):
+    return {"ok": ok, "reason": reason}
+
+
+def slice_done(root, ticket):
+    """`/crew:done` on a non-final slice: records slice n done, so `next`
+    names its ship. Refuses an unsliced plan, the last slice (that one sets
+    `status: done`), a header that is not `in-progress`, and a receipt that
+    no longer stands. Writes nothing on refusal."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    crew_ticket.check_ticket(ticket)
+    ctx = _slice_context(top, ticket)
+    if ctx is None:
+        return _slice_result(False, "no ## PR slices in plan.md: /crew:done sets "
+                             "`status: done` and closes the ticket")
+    if ctx["error"]:
+        return _slice_result(False, ctx["error"])
+    n, m = ctx["piece"]["n"], ctx["m"]
+    if n >= m:
+        return _slice_result(False, f"slice {n} is the last slice: /crew:done sets "
+                             "`status: done` and closes the ticket")
+    header = _header_status(read_text(os.path.join(crew_ticket.ticket_dir(top, ticket),
+                                                   "spec.md")) or "")
+    if header != "in-progress":
+        return _slice_result(False, f"spec.md's header is `status: {header}`: a non-final "
+                             "slice sets it to `in-progress` (which keeps the approval) "
+                             "before this")
+    ok, message = review_ledger.check_receipt(top, ticket)
+    if not ok:
+        return _slice_result(False, f"the review receipt does not stand ({message})")
+    state = dict(ctx["state"])
+    state["done"] = sorted(set(state["done"]) | {n})
+    _write_slice_state(top, ticket, state)
+    return _slice_result(True, f"slice {n} of {m} done; the ticket stays open at "
+                         f"`in-progress` and slice {n} ships next")
+
+
+def next_slice(root, ticket):
+    """Open slice n+1 once slice n shipped: its branch off `slice_base`, then
+    a fresh review budget (`review_ledger.open_slice`), then the state. A
+    branch made before a refusing `open_slice` is removed again."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    phase = next_phase(top, ticket)
+    if phase["phase"] != "next-slice" or phase["stop"]:
+        return _slice_result(False, f"next names {phase['phase']}"
+                             f"{' (stop)' if phase['stop'] else ''}, not next-slice: "
+                             f"{phase['reason']}")
+    opener = getattr(review_ledger, "open_slice", None)
+    if not callable(opener):
+        return _slice_result(False, "review_ledger.open_slice is not landed (a harness "
+                             "change, T-0087): the next slice would be reviewed on this "
+                             "slice's spent budget - nothing written, a human looks")
+    ctx = _slice_context(top, ticket)
+    n = ctx["piece"]["n"] + 1
+    tree = _tree_stop(top)
+    default = _default_branch(top)
+    merged, states = _merged_slices(top, ctx, n)
+    branches = _slice_branches(ctx)
+    if tree or not default or merged is None or not branches:
+        return _slice_result(False, tree or (states if merged is None else
+                                             "could not read the default branch or slice "
+                                             "1's branch") + " - nothing written")
+    base = slice_base(n, ctx["slices"], merged, branches, default)
+    start = base
+    if base == default:
+        if git_out(top, "fetch", "-q", "origin", default) is None:
+            return _slice_result(False, f"git fetch origin {default} failed - nothing written")
+        start = f"origin/{default}"
+    previous, new = _branch(top), branches[n]
+    if git_out(top, "checkout", "-q", "-b", new, start) is None:
+        return _slice_result(False, f"git checkout -b {new} {start} failed - nothing written")
+    try:
+        opener(top, ticket, n)  # pylint: disable=not-callable
+    except Exception as exc:  # pylint: disable=broad-except
+        git_out(top, "checkout", "-q", previous or "-")
+        git_out(top, "branch", "-q", "-D", new)
+        return _slice_result(False, f"review_ledger.open_slice refused slice {n}: {exc} - "
+                             f"{new} removed, nothing else written")
+    state = dict(ctx["state"])
+    state["current"] = n
+    _write_slice_state(top, ticket, state)
+    return _slice_result(True, f"slice {n} of {ctx['m']} opened on {new} (base {base}) with "
+                         "a fresh review budget")
+
+
+def slice_text(top, ticket):
+    """`slice` CLI: one line for /crew:implement and /crew:done."""
+    ctx = _slice_context(top, ticket)
+    if ctx is None:
+        return 0, "slice=none"
+    if ctx["error"]:
+        return 1, _one_line(f"slice=unknown reason={ctx['error']}")
+    piece = ctx["piece"]
+    return 0, (f"slice={piece['n']} of={ctx['m']} "
+               f"final={'yes' if piece['n'] == ctx['m'] else 'no'} "
+               f"steps={_steps_text(piece['steps'])} name={piece['name']}")
+
+
 def _phase(root, ticket, policy=True):
     """`next`'s phase table (module docstring), with no session guard.
     `policy=False` is `status`'s read: the approve and open-questions reasons
@@ -1068,7 +1434,18 @@ def _phase(root, ticket, policy=True):
     header = None if contract["spec.md"] is None else _header_status(
         crew_ticket._text(contract["spec.md"]))  # pylint: disable=protected-access
     if header == "done":
-        return _ship_phase(top, ticket, answer, "spec.md header is `status: done`")
+        ctx = _slice_context(top, ticket, None if contract["plan.md"] is None
+                             else crew_ticket._text(contract["plan.md"]))  # pylint: disable=protected-access
+        if ctx and ctx["error"]:
+            return answer("slices", True, ctx["error"])
+        if ctx and ctx["piece"]["n"] != ctx["m"]:
+            return answer("slices", True, f"spec.md header is `status: done` while "
+                          f"{_slice_label(ctx)} is current: closing now would leave the "
+                          "later slices unbuilt. A non-final slice's /crew:done sets "
+                          "`in-progress` and runs crew_autopilot.py slice-done - a human "
+                          "puts the header back")
+        return _with_slice(ctx, _ship_phase(top, ticket, answer,
+                                            "spec.md header is `status: done`", ctx))
     if header in HEADER_CLOSED:
         return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
                       "in this ticket" + _successor(folder))
@@ -1092,6 +1469,9 @@ def _phase(root, ticket, policy=True):
     if problems:
         return answer("plan", True, "plan.md fails crew_ticket.validate: "
                       + "; ".join(problems), f"/crew:plan {ticket}")
+    ctx = _slice_context(top, ticket, crew_ticket._text(contract["plan.md"]))  # pylint: disable=protected-access
+    if ctx and ctx["error"].startswith("PR slices:"):
+        return answer("plan", True, f"plan.md's {ctx['error']}", f"/crew:plan {ticket}")
     approval = crew_ticket.accepted(top, ticket)
     evidence.append(_rel(top, crew_ticket.approval_path(top, ticket)))
     if approval["status"] != "approved":
@@ -1105,19 +1485,51 @@ def _phase(root, ticket, policy=True):
         hint = (_approval_hint(top, ticket) if policy
                 else POLICY_FREE_APPROVE.format(ticket=ticket))
         return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
-    return _review_phase(top, ticket, evidence, answer)
+    if ctx and ctx["error"]:
+        return answer("slices", True, ctx["error"])
+    if ctx and ctx["piece"]["n"] in ctx["state"]["done"] and ctx["piece"]["n"] < ctx["m"]:
+        return _with_slice(ctx, _ship_phase(top, ticket, answer, "done by /crew:done "
+                                            "(crew_autopilot.py slice-done)", ctx))
+    found = _review_phase(top, ticket, evidence, answer)
+    if ctx:
+        piece = ctx["piece"]
+        found = dict(found, reason=f"{_slice_label(ctx)}: steps "
+                     f"{_steps_text(piece['steps'])} only - {found['reason']}")
+    return _with_slice(ctx, found)
+
+
+def _with_slice(ctx, found):
+    """`found` carrying the current slice's number on a sliced ticket."""
+    return dict(found, slice=ctx["piece"]["n"]) if ctx and not ctx.get("error") else found
 
 
 def _current_rounds(ledger):
-    """Rounds reserved under the current plan: after the latest successor."""
+    """Rounds reserved under the current plan and slice: after the later of
+    the latest successor's and the latest slice's (T-0059) boundary."""
     rounds = ledger.get("rounds") or []
-    successors = ledger.get("successors") or []
-    after = successors[-1].get("after_round", 0) if successors else 0
-    return rounds[after:] if isinstance(after, int) else rounds
+    marks = []
+    for key in ("successors", "slices"):
+        rows = ledger.get(key) or []
+        marks.append(rows[-1].get("after_round", 0) if rows and isinstance(rows[-1], dict)
+                     else 0)
+    if not all(_is_int(m) for m in marks):
+        return rounds
+    return rounds[max(marks):]
+
+
+def _ledger_status(top, ticket):
+    """`review_ledger.status` plus the ledger's `slices` rows (T-0059), which
+    its summary does not carry: `_current_rounds` counts from them."""
+    ledger = review_ledger.status(top, ticket)
+    if ledger["state"] != review_ledger.UNKNOWN and "slices" not in ledger:
+        data, state = review_ledger.load(ledger["path"])
+        if state == "ok" and isinstance(data, dict):
+            ledger = dict(ledger, slices=data.get("slices") or [])
+    return ledger
 
 
 def _review_phase(top, ticket, evidence, answer):
-    ledger = review_ledger.status(top, ticket)
+    ledger = _ledger_status(top, ticket)
     evidence.append(_rel(top, ledger["path"]))
     if ledger["state"] == review_ledger.UNKNOWN:
         return answer("review", True, f"review ledger {_rel(top, ledger['path'])} is "
@@ -1999,8 +2411,9 @@ def route_args(root, text):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done", NEEDS_OWNER)}
+    "done", NEEDS_OWNER, "slices")}
 WAITING["ship"] = "owner"
+WAITING["next-slice"] = "owner"
 WAITING["closed"] = "nobody"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
@@ -2323,6 +2736,25 @@ def _ship_text(result):
                                   else "(none)"))])
 
 
+def _slice_main(args):
+    """`slice`, `slice-done` and `next-slice` (T-0059): exit 0 ok, 1 refused
+    or could not tell."""
+    try:
+        if args.action == "slice":
+            code, text = slice_text(crew_ticket.toplevel(args.root) or
+                                    os.path.abspath(args.root), args.ticket)
+        else:
+            result = (slice_done if args.action == "slice-done" else next_slice)(
+                args.root, args.ticket)
+            code, text = (0 if result["ok"] else 1), _one_line(
+                _line(ok=int(result["ok"]), reason=result["reason"]))
+    except Exception as exc:  # pylint: disable=broad-except
+        # A crash cannot tell where the slices stand: a refusal, never silence.
+        code, text = 1, _one_line(_line(ok=0, reason=_failure(exc)))
+    sys.stdout.write(text + "\n")
+    return code
+
+
 def main(argv):
     # `next` quotes the ledger's auto-accept refusal, which can quote reviewer
     # text: write UTF-8 whatever the console code page (review_ledger.utf8_stdio).
@@ -2338,7 +2770,10 @@ def main(argv):
     ship_action = sub.add_parser("ship")
     ship_action.add_argument("--json", action="store_true")
     ship_action.add_argument("--root", default=".")
-    for name in ("next", "approve", "questions-check", "ship"):
+    for name in ("slice", "slice-done", "next-slice"):
+        sub.add_parser(name).add_argument("--root", default=".")
+    for name in ("next", "approve", "questions-check", "ship", "slice", "slice-done",
+                 "next-slice"):
         sub.choices[name].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
@@ -2369,6 +2804,8 @@ def main(argv):
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check"):
         return _policy_main(args)
+    if args.action in ("slice", "slice-done", "next-slice"):
+        return _slice_main(args)
     if args.action == "ship":
         try:
             result = ship(args.root, args.ticket)

@@ -67,6 +67,11 @@ commit, then `/crew:review $1` again, then rerun this command. Documents read
 
 ## On all four passing
 
+0. A sliced plan (T-0059): `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py slice --root . --ticket "$1"`.
+   On `final=no`, set the header to `status: in-progress` instead (it keeps the
+   approval), run the same script's `slice-done --root . --ticket "$1"`, say
+   "slice <n> of <m> done" and stop here: the ticket stays open, and steps 1-4
+   wait for the last slice. `slice=none` or `final=yes` goes on; exit 1 stops.
 1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
    that value keeps the approval, so the checks above stay true. Then move the
    tracker: `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket "$1" --to done`.

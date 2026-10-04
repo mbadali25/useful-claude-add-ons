@@ -64,8 +64,8 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
 No output, a traceback or a non-zero exit is a stop.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
-  named and commit it. Then `LAST=<c>`, `N+=1`, again. `phase=ship` (T-0011): print the lines of
-  `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py ship --root . --ticket <ticket>`; `stop=1` stops.
+  named and commit it. Then `LAST=<c>`, `N+=1`, again. `phase=ship` (T-0011) or `next-slice` (T-0059): print
+  `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py <p> --root . --ticket <ticket>`; `stop=1`/`ok=0` stops.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
 - any other `stop=1` - print the phase, the reason and the command the human types (may be
   empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer
