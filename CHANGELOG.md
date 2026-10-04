@@ -58,6 +58,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   3 FIX (a fence that never closes silenced everything after it, now a failure of its own; run-all
   claimed to cover all of smoke; untested fence and link edge cases), 5 NIT; all taken but a
   stronger `main()` wiring test.
+
 ### Fixed — `crew` 1.0.167: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
 
 - A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`

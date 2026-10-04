@@ -377,11 +377,11 @@ def test_docs_json_misshapen_unknown(tmp_path, body):
 
 # --- git that cannot answer is unknown, never "absent" (review round 1 FIX) --------
 
-def _git_fails_at_base(monkeypatch):
+def _git_fails_at_base(monkeypatch, commands=("ls-tree", "cat-file")):
     real = crew_docs_check._git_bytes  # pylint: disable=protected-access
 
     def failing(top, *args):
-        if args and args[0] in ("ls-tree", "cat-file"):
+        if args and args[0] in commands:
             return None
         return real(top, *args)
     monkeypatch.setattr(crew_docs_check, "_git_bytes", failing)
@@ -413,6 +413,44 @@ def test_changelog_base_unreadable_is_unknown_not_updated(tmp_path, monkeypatch)
 
     assert (got["status"], _verdict(got, "CHANGELOG.md (crew 1.0.0)")[0]) == ("unknown", "unknown")
     assert crew_docs_check.exit_code(got) == 1
+
+
+def test_changelog_base_listed_but_unreadable_is_unknown(tmp_path, monkeypatch):
+    # ls-tree finds the file, cat-file cannot read it: still unknown, never "absent".
+    root = _repo(tmp_path)
+    _write(root, "plugin/crew/hooks/scripts/app.py", "x = 2\n")
+    _changelog(root, "- `crew` 1.0.0: already released")
+    _git_fails_at_base(monkeypatch, commands=("cat-file",))
+
+    got = _check(root)
+
+    assert (got["status"], _verdict(got, "CHANGELOG.md (crew 1.0.0)")[0]) == ("unknown", "unknown")
+
+
+@pytest.mark.parametrize("commands", [("ls-tree", "cat-file"), ("cat-file",)])
+def test_readme_base_marketplace_unreadable_is_unknown(tmp_path, monkeypatch, commands):
+    # Only the README row reads git here: CHANGELOG has no touched entry, TODO
+    # nothing deferred. A None base would read `crew` as an added entry.
+    root = _repo(tmp_path)
+    _write(root, "src/lib.py", "y = 2\n")
+    _git_fails_at_base(monkeypatch, commands=commands)
+
+    got = _check(root)
+
+    assert (got["status"], _verdict(got, "README.md")[0]) == ("unknown", "unknown")
+
+
+def test_readme_base_marketplace_corrupt_is_unknown(tmp_path):
+    root = _repo(tmp_path)
+    _write(root, ".claude-plugin/marketplace.json", "{not json\n")
+    _git(root, "commit", "-qam", "corrupt marketplace")
+    scope_base.record(str(root), "T-3")
+    _write(root, ".claude-plugin/marketplace.json", _market(("crew", "1.0.0")))
+
+    got = crew_docs_check.ticket_docs(str(root), "T-3")
+
+    rows = {d["doc"]: d["verdict"] for d in got["documents"]}
+    assert (got["status"], rows["README.md"]) == ("unknown", "unknown")
 
 
 def test_todo_absent_at_base_counts_every_line_added(tmp_path):

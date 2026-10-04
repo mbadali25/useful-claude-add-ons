@@ -307,7 +307,11 @@ def _readme_rows(top, base, changed, changed_raw, entries, reasons):
         except GitFailed as exc:
             return rows + [_unknown_row(README, exc)]
         old_entries = _entries(old) if old is not None else []
-        before = {e["name"] for e in old_entries or []}
+        if old_entries is None:
+            # Present but unparseable is not "no entries": every current one
+            # would read as added (review round 2 FIX).
+            return rows + [_unknown_row(README, f"{MARKETPLACE} at {base[:12]} does not parse")]
+        before = {e["name"] for e in old_entries}
         after = {e["name"] for e in entries}
         if before != after and not any(r["doc"] == README for r in rows):
             if not os.path.isfile(os.path.join(top, README)):
