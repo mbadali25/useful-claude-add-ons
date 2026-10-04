@@ -43,6 +43,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   `.sh` verdict reading keys case-sensitively; the `.sh` reading only `environments`; the `.ps1`
   skipping a null `deploy`; the `.sh` accepting case twins. Earlier rounds: `-like` back in the
   `.ps1`, and the `.ps1` swallowing a comparison exception.
+- Rule time: the promote/verify rule in `.crew/verify.json` was chronic before this change (over
+  60s). Its `.ps1` cases in `test_verify_gate_ci_mode.py`, `test_promote_gate_effective_tree.py` and
+  the new file are now `slow`, except one parity case per file; every `.sh` case stays in the
+  default run, and CI's `-m slow` jobs run the rest. Declared 45s (29-45s measured, was 65-84s).
+- After a union deploy the PROMOTIONS row names `staging,prod`, which does not satisfy a later
+  `requires: [prod]`: that environment needs an unambiguous deploy record first. L-1505 (harness)
+  is to write one row per matched environment.
 - Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
   and #407 adopts this rule, the union included (not a block on several matches).
 
