@@ -700,8 +700,12 @@ def plan_save(path, root, tags, title=None, note=None, kind="concept", project=N
         return _kept(problem)
     memory_id = os.path.splitext(os.path.basename(path))[0]
     day = today()
+    # The note is "/"-separated (it is also the pointer's); the path built
+    # from it is native, so a refusal naming it reads as one Windows path,
+    # not a vault path with "/memories/..." glued on.
     plan = {"state": "pending", "exit": 1, "file": path, "root": root, "vault": vault["name"],
-            "note": note, "pointer": pointer, "note_path": os.path.join(vault["path"], note),
+            "note": note, "pointer": pointer,
+            "note_path": os.path.join(vault["path"], *note.split("/")),
             "vault_path": vault["path"], "native": raw, "existing": None}
     if existing is None:
         plan.update(action="create", text=_note_text(kind, title, tags, project, memory_id,

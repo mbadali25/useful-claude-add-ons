@@ -644,7 +644,15 @@ def _shell_argv(shell, mem, host):
         bash = crew_fixtures.resolve_bash()
         if not bash:
             pytest.skip("no bash on this machine - the bash flavour is SKIPPED")
-        return [bash, "-c", '"$@"', "save", *args]
+        # A script file, not `-c '"$@"'`: on Windows Python writes that
+        # argument's quotes as \" (MSVCRT rules), which Git Bash's MSYS
+        # command-line parser does not read that way. The quoting fell out
+        # of step, "memory dir\fact.md" lost its backslash and bash failed
+        # with "unexpected EOF while looking for matching `"'". No argument
+        # here carries a quote.
+        script = host.root.parent / "save-from-bash.sh"
+        script.write_text('exec "$@"\n', encoding="ascii", newline="\n")
+        return [bash, str(script).replace("\\", "/"), *args]
     pwsh = crew_fixtures.resolve_pwsh()
     if not pwsh:
         pytest.skip("no pwsh 7 on this machine - the pwsh flavour is SKIPPED")
@@ -990,6 +998,23 @@ def test_a_note_path_into_a_dot_folder_is_refused(host, capsys):
     kept(host, host.memory(), capsys, 1, "bad-note-path", "--note", ".obsidian/x.md")
 
 
+def test_a_json_escaped_memory_id_matches_itself():
+    """N6, with no file named for it, so it runs on Windows too: the
+    memory_id a note was written with, JSON-escaped, compares equal to
+    itself on the next save -- an append, not a collision."""
+    stem = 'fact "x"'
+    written = crew_memory._note_text(  # pylint: disable=protected-access
+        "concept", "t", ["memory"], "p", stem, "first", "2026-01-01").encode("utf-8")
+    assert b'memory_id: "fact \\"x\\""' in written
+    action, _new, problem = crew_memory._existing_action(  # pylint: disable=protected-access
+        written, stem, "newer", "2026-01-02")
+    assert (action, problem) == ("append", None)
+
+
+# NTFS forbids '"' in a file name, so this stem cannot exist there; the
+# comparison itself is pinned on every OS by the case above.
+@pytest.mark.skipif(os.name == "nt", reason="NTFS forbids a '\"' in a file name - "
+                    "test_a_json_escaped_memory_id_matches_itself covers it on Windows")
 def test_memory_id_is_json_decoded_when_compared(host, capsys, monkeypatch):
     """N6: a stem holding a quote is written JSON-escaped and must match
     itself on the next save, not read as a collision."""
