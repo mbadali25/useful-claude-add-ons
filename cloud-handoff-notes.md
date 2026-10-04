@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 01:09 UTC
+Last updated: 2026-10-03 01:11 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 01:11: MERGED #337 (L-0618) at d9e75c15 -> main 3473f08f (CI 23 ok/1 skipped, merge-only review clean, owner approved scope). Next: re-merge main into #375 -> 1.0.239. Batch 3 (T-0050/T-0044/T-0038) now unblocked.
 - 01:09: #362 r2 fixes pushed 0920f1eb (crew 1.0.238; urlEnv global-only, _NoRedirect for all sends, short chatId masked). Sonnet r3 started.
 - 01:09: #367 r3 fixes pushed 00910e28 (crew 1.0.237; shown()/listed() used by status + refresh-check + reasons, backslashreplace stdout, crash -> exit 2, ! + unjudgeable test). Sonnet r4 started.
 - 01:05: Check-in 2 (01:05): #337 CI 20 ok/2 running; #375 conflicted (expected - re-merged after #337 lands); #374 behind (merges last). #372/#373 merged. Re-armed check-in 3 (+4h).
