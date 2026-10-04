@@ -123,8 +123,8 @@
 %% handles, inserted from :299 and :1061); no node cites a line in it, so nothing was redrawn.
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
-%% AFTER approval - plan.md:60 (`planned`), implement.md:112 (`review`) and
-%% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
+%% AFTER approval - plan.md:60 (`planned`), implement.md:111 (`review`) and
+%% done.md:70 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
 %% (plugin/crew/hooks/scripts/crew_ticket.py:534-575), which normalises only line
