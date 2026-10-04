@@ -402,6 +402,13 @@ KEY_META = {
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),
+    # --- tickets
+    "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
+                               "origin/HEAD's target, then origin/main, then main. A "
+                               "value that is not a branch name, or names no commit, "
+                               "makes the scope base could not tell.", "type",
+                               since="1.0.158", source=_S + "scope_base.py",
+                               type_="branch name or null"),
     # --- route
     "route.enabled": _row("Route plain-text prompts to `/crew:` commands; only the JSON "
                           "value `true` arms it.", "branch", (False, True), "1.0.42",

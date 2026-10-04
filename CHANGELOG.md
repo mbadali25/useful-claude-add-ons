@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added — `crew` 1.0.212: the full crew 1.0 guide and a generated configuration reference (T-0048)
 
-- `plugin/crew/hooks/scripts/crew_keys.py`: one row per config leaf (129 today), each with a
+- `plugin/crew/hooks/scripts/crew_keys.py`: one row per config leaf (130 today), each with a
   summary, its allowed values, the file that reads it, and the version it arrived in. A value tuple
   a validator reads is referenced, never copied: the ratchet tiers in `crew_guards.RATCHETED_KEYS`,
   `QA_PROVIDERS`/`DEV_PROVIDERS`, `AUTHORITIES`, `TICKET_GRANULARITIES`, `crew_ticket.MODES`,

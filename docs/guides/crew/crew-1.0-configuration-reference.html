@@ -139,7 +139,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>129 keys</strong>: 72 settable in the machine-global file, 57 repo-only.</p>
+<p><strong>130 keys</strong>: 72 settable in the machine-global file, 58 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1597,6 +1597,29 @@ the plugin.</p>
 <td><code>human</code> | <code>self</code> | <code>risk</code></td>
 <td>1.0.42</td>
 <td>Who answers a ticket's open questions under autopilot; anything else reads as <code>human</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tickets"><code>Tickets</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tickets.baseBranch</code></td>
+<td>repo</td>
+<td><code>null</code></td>
+<td>branch name or null (coerced in <code>plugin/crew/hooks/scripts/scope_base.py</code>)</td>
+<td>1.0.158</td>
+<td>The branch ticket branches are cut from; null tries origin/HEAD's target, then origin/main, then main. A value that is not a branch name, or names no commit, makes the scope base could not tell.</td>
 </tr>
 </tbody>
 </table>
