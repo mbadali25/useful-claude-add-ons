@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5479ac05
+anchor: useful-claude-add-ons@e4f17af4
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -149,10 +149,12 @@ Notable rules, re-read directly:
 - **Rule 6**, new at `fc54def6` (`.crew/verify.json:146-157`, T-0005): `paths` `cloud_guard.py`,
   `crew_guards.py` (since T-0005 Step 8), both `cloud-guard` flavours, `crew_tfplan.py`,
   `test_cloud_guard*.py` and `test_crew_tfplan.py` → `python3 -m pytest` over
-  `test_cloud_guard.py`, `test_cloud_guard_environments.py` and `test_crew_tfplan.py`, priced 41s
-  (its `why` records 40.5s and 512 passed on 2026-09-25 — a claim read, not re-timed here). Its
-  mutations live in `plugin/crew/tests/sabotage_cloud.py` (`CLOUD_GUARD_MUTATIONS`), imported by
-  `plugin/crew/tests/sabotage.py:67`.
+  `test_cloud_guard.py`, `test_cloud_guard_environments.py` and `test_crew_tfplan.py`, priced 47s
+  since T-0047 (its `why` records 40.5s on 2026-09-25, 29s through `pytest_rule.py` on 2026-10-03,
+  and 46.8s / 1667 passed on 2026-10-04 after the round-8 tables). Its mutations live in
+  `plugin/crew/tests/sabotage_cloud.py` (`CLOUD_GUARD_MUTATIONS`), imported by
+  `plugin/crew/tests/sabotage.py:67`; T-0047's 21 round-8 mutations, 17 more for the first review of #347, 20 for the second and 16 for the third, were run but not added there
+  (that file is review harness, T-0087), so they are a harness follow-up.
 - **Rule 11**, new at `8ebbdedc` (`.crew/verify.json:226-232`, T-0026; rule 10 until T-0005's rule 6
   merged in above it): `paths`
   `plugin/crew/hooks/scripts/crew_ticket.py` and `plugin/crew/tests/test_approval_digest.py`
@@ -630,18 +632,28 @@ executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
 (`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
-hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
-parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+hook matrix.
+
+**DERIVED** (read at `e4f17af4` by `grep -n`; L-0577, L-1506, L-1507). On
+Windows, L-0577 replaced the one serial leg (p50 37.1 min) with parallel jobs
+(`.github/workflows/pytest-crew.yml:211-487`): `crew-windows-decide` (`:276`, T-0110's rule: on a
 pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
-`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
-parity-sample set split in 3 by pytest-split, since the `test` job above only runs
-that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
-(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
-`crew-shell-matrix (windows-latest)` so the required check name is unchanged.
-The gate runs `if: always()` and passes only through
-`scripts/check-windows-shards.py`: every Windows job succeeded, every shard
-collected the identical default set, the shards' JUnit name each collected test
-exactly once, and slow and wallclock ran what they collected (suite
+`pytest-crew.yml`), `crew-windows-default` (`:310`, crew's default
+parity-sample set split in 6 by pytest-split since L-1506, matrix `group` at
+`:322`, since the `test` job above only runs that set on Ubuntu),
+`crew-windows-slow` (`:362`, the `-m slow` set split in 3 by pytest-split since
+L-1507, matrix `group` at `:374`, each shard collecting the whole slow set),
+`crew-windows-wallclock` (`:414`, one serial job), and the fan-in
+`crew-windows-gate` (`:457`), named `crew-shell-matrix (windows-latest)` so the
+required check name is unchanged; it calls the checker with `--shards 6
+--slow-shards 3` (`:487`). The gate runs `if: always()` and passes only through
+`scripts/check-windows-shards.py`: every Windows job succeeded; for each split
+set (`SPLIT_SETS`, `scripts/check-windows-shards.py:74`) the one
+`check_partition` (`scripts/check-windows-shards.py:150`) finds every shard
+collected the identical set, the shards' JUnit name each collected test exactly
+once, a missing or extra shard directory named, and an unsplit
+`crew-windows-<set>/` artifact a stale layout (`:178-181`); and wallclock ran
+what it collected (`check_whole_set`, `:223`; suite
 `scripts/_test/windows-shards.py`). Each Windows `run:` step carries
 `if: runner.os == 'Windows'`, the `WINDOWS_ONLY_IFS` condition
 `scripts/gate-runner.py`'s drift check excludes. The Windows jobs take `runs-on` from one
@@ -2362,6 +2374,8 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `0620587f` -> `5479ac05` on 2026-10-03 (T-0048 merges origin/main `4f6ef540` (L-0601 #327, crew 1.0.162) at `5479ac05`; crew 1.0.183 kept).** Main's maps were taken and T-0048's body edits re-applied at merged-tree lines: `scripts/check-marketplace.py` `main()` `:1679-1715` with seventeen checks (`check_config_reference` at `:1701`, defined `:1375`), the plugins derivation `:1705-1706`, `plugin/crew/CONFIG.md:2478-2485` (main's `:2451-2458`, moved by the generated key tables of sections 10 and 11), `scripts/_test/self-claims.py:1228`. Citations inside earlier re-anchor notes are history and were not moved. Re-anchor only; no claim was re-derived and no suite was executed for this note.
 
+**Re-anchored `5479ac05` -> `174b6613` on 2026-10-04 (T-0047).** Rule 6's `seconds` (29 -> 47) and `why` were re-timed; its account above says so. `sabotage.py:67` still imports `CLOUD_GUARD_MUTATIONS` (`grep -n`). Other paths this map cites that differ from `5479ac05` came in with origin/main and were not re-derived here.
+
 **Re-anchored to `51b2222b` on 2026-10-03 (T-0066, crew 1.0.185: `git.forbiddenTrailers` and the `/crew:done` trailer report; `51b2222b` merges origin/main `4f6ef540`, crew 1.0.162, into `T-0066-build`).** Main's maps were taken at the merge and T-0066's edits re-applied on them. T-0066 changes, among the paths these maps cite: `.crew/verify.json` (one rule appended, `:539-546`), `plugin/crew/CONFIG.md` (section 10/11 headings, one section 10 row, new section 22), `plugin/crew/commands/done.md` (a report section after check 4, `:68-79`), `plugin/crew/commands/implement.md` (step 2 `:46-52`; still 120 lines), `plugin/crew/hooks/scripts/crew_config.py` (the `git` block, +6 after main's `:380` and +4 after its `:595`), `plugin/crew/skills/crew-setup/SKILL.md`, the two templates, `plugin/crew/tests/test_crew_config.py`, the new `crew_trailers.py` and its suite, and release bookkeeping (`CHANGELOG.md`, `TODO.md` +11 at `:241`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, both version files). Body `path:N` citations into those files were re-mapped by a difflib line diff from main `4f6ef540` to the merged tree; a bare `:N` was re-mapped only where T-0066's earlier pass (`f7fd2e78`) had read the sentence and applied it. History notes were not re-mapped. No other claim was re-derived and no suite was executed for this note.
 
 ## T-0096's verify rule (added 2026-10-04 on `T-0096-build`)
@@ -2372,3 +2386,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
   `pytest_rule.py`, priced 13s (41 passed in 12.5s with pwsh on PATH on an idle 4-CPU container; 43 after review round 1). It is
   appended, so no earlier rule number moves. This section does not move the file's
   `anchor:`.
+
+**Re-anchored `5479ac05` -> `b7b37e12` on 2026-10-04 (L-1507: crew's Windows slow set split into 3 shards, on `L-1507-build` from origin/main `f1cace4a`).** Per-path: `git diff --name-only 5479ac05..b7b37e12 -- .github/workflows/pytest-crew.yml scripts/check-windows-shards.py scripts/_test/windows-shards.py .crew/verify.json` returns all four (L-1506 #491 and L-1507 on the workflow and checker; L-1507 on the suite and the windows-shards rule's `why`, in place, line count unchanged). The Windows-jobs paragraph under `.github/workflows/` was re-derived at `b7b37e12` by `grep -n`: the job lines it cites (`:276`, `:310`, `:322`, `:362`, `:374`, `:414`, `:457`, `:487`) had already drifted under L-1506's comment lines and were re-read, the default set's 3 shards became L-1506's 6, the slow job became 3 shards, and the checker's partition code is cited by line. No other claim in this map cites those files by line. `b7b37e12` is the last commit touching a cited path; the commit adding this note changes only docs and generated rules. Suites run for it: `scripts/_test/windows-shards.py` (44 passed).
+
+**Re-anchored `b7b37e12` -> `e4f17af4` on 2026-10-04 (L-1507 review FIX: suite cases for the unsplit default layout and an empty slow set; the checker's docstring names both stale layouts).** Per-path: `git diff --name-only b7b37e12..e4f17af4 -- .github/workflows/pytest-crew.yml scripts/check-windows-shards.py scripts/_test/windows-shards.py` returns the checker and its suite. The docstring edit keeps its line count, so `scripts/check-windows-shards.py:74`, `:150`, `:178-181` and `:223` were re-read by `grep -n` and are unmoved. The Windows-jobs paragraph now opens with its own DERIVED marker (review NIT) and names `.github/workflows/pytest-crew.yml` on its first cite. Suites run for it: `scripts/_test/windows-shards.py` (46 passed).

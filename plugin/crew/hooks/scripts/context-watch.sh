@@ -58,6 +58,7 @@ session_markers() {
   SESSION_KEY="${key:-nosession}"
   MARKER=".crew/.handoff-requested-${SESSION_KEY}"
   SENT_MARKER=".crew/.autoclear-sent-${SESSION_KEY}"
+  ESCALATED=".crew/.wrapup-escalated-${SESSION_KEY}"  # T-0017
 }
 SESSION_ID=""
 SESSION_RE='"session_id"[[:space:]]*:[[:space:]]*"([^"]*)"'
@@ -515,8 +516,22 @@ if [ -f "$MARKER" ]; then
     # A measured reading back under the threshold means the window shrank
     # (a compaction) since the wrap-up: that crossing is over, so re-arm for
     # the next one. Measured only -- an estimate must not re-arm a nag.
-    rm -f "$MARKER" "$SENT_MARKER"
+    rm -f "$MARKER" "$SENT_MARKER" "$ESCALATED"
     exit 0
+  fi
+  # T-0017: an armed wrap-up whose results are not on disk is fed back to
+  # the model ONCE -- this is never the stop_hook_active turn (that exits
+  # far above), so it always follows a human turn and adds no loop. The
+  # noclobber claim makes exactly one flavour escalate when both run, and a
+  # session whose clear was already sent is not nagged about it.
+  if [ ! -f "$SENT_MARKER" ] &&
+     [ "$("$PY" "$(dirname "$0")/crew_autocycle.py" wrapup-armed --root "$PWD" --session "$SESSION_ID" 2>/dev/null | tr -d '\r')" = "on" ]; then
+    WRAP_WHY=$("$PY" "$(dirname "$0")/crew_autocycle.py" wrapup-check --root "$PWD" 2>/dev/null | tr -d '\r')
+    if [ "$WRAP_WHY" != "ok" ] && ( set -o noclobber; : > "$ESCALATED" ) 2>/dev/null; then
+      printf 'crew wrap-up incomplete: %s. Fix exactly that, run /crew:handoff --wrap-up again, end the turn.\n' \
+        "${WRAP_WHY:-the wrap-up check gave no answer}" >&2
+      exit 2
+    fi
   fi
   # This crossing was already asked about. Never block twice for it; the
   # handoff may have been written since, which is all auto-clear wants to
@@ -574,6 +589,15 @@ else
   THRESH_NOTE="Threshold: ${THRESH_H} tokens - the later of warnAt ${WARN_PCT}% and the
 last ${RESERVE_H} tokens (context.reserveTokens), so a large window is not cut
 short by a percentage tuned for a small one."
+fi
+
+# T-0017: armed, the warning IS the wrap-up procedure, and supersedes both
+# messages below. Unarmed (or any error), crew_autocycle prints nothing and
+# today's message goes out unchanged.
+WRAP_MSG=$("$PY" "$(dirname "$0")/crew_autocycle.py" wrapup-message --root "$PWD" --session "$SESSION_ID" --pct "$PCT_H" 2>/dev/null | tr -d '\r')
+if [ -n "$WRAP_MSG" ]; then
+  printf '%s\n' "$WRAP_MSG" >&2
+  exit 2
 fi
 
 if [ "$AUTO_WRAP_UP" = "true" ]; then

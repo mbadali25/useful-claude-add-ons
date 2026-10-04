@@ -818,19 +818,24 @@ cleanly, clear, and pick up where it stopped.</p>
 <li><strong>Wrap-up.</strong> When the context window crosses its threshold, the <code>Stop</code> hook blocks once. It asks
    the session to finish or park the change in flight, write <code>.work/HANDOFF.md</code>, and update the
    ticket. This happens once for each threshold crossing in each session. It never happens on the
-   forced continuation that follows a block.</li>
+   forced continuation that follows a block. With <code>context.autoClear.wrapUp</code> armed (below), the
+   block carries the wrap-up procedure instead, and the clear waits for its results.</li>
 <li><strong>Clear, or notify.</strong> After the handoff is written, auto-clear acts on it. What it does depends
    on <code>method</code> (below): <code>notify</code> (the default on native Windows) prints a message telling you the
    handoff is written and it is safe to run <code>/clear</code> (or <code>/compact</code>) yourself — it types nothing.
    <code>tmux</code>, <code>xdotool</code> and <code>sendkeys</code> actually type the configured command into the terminal that runs
-   this session. Whichever method is in force, it acts only when all four of these hold:
+   this session. Whichever method is in force, it acts only when all five of these hold:
    - this machine opted in;
    - the handoff was written by this session after the wrap-up request, is longer than a stub, and
      is not the automatic PreCompact skeleton;
    - the context reading that caused the wrap-up was a real measurement (see "When it will not
      clear");
+   - this session is bound to its own Claude Code process, and that process has a terminal of its
+     own (see "Which window gets the keystroke") — a headless session, such as a <code>claude -p</code> child,
+     gets one message instead, naming its handoff and saying the process that started it must
+     start a new one;
    - for a method that types (<code>tmux</code>/<code>xdotool</code>/<code>sendkeys</code>), the target window can be identified
-     exactly — <code>notify</code> needs none of this, since it identifies no window.</li>
+     exactly, from that process — <code>notify</code> needs none of this, since it identifies no window.</li>
 </ol>
 <p><strong>Crew neither causes nor tunes Claude Code's own auto-compact.</strong> That is a separate, built-in
    behaviour that fires whenever Claude Code itself decides to; this cycle only reacts to a handoff
@@ -937,10 +942,16 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 <td>vetoes auto-resume in this repo. <code>true</code> here does not switch it on.</td>
 </tr>
 <tr>
+<td><code>~/.claude/crew/config.json</code></td>
+<td><code>context.autoClear.wrapUp</code></td>
+<td><code>true</code></td>
+<td>turns the wrap-up into the wrap-up procedure and makes the clear wait for its results (off by default; acts only where <code>enabled</code> is armed). A repo <code>false</code> vetoes it; a repo <code>true</code> does nothing.</td>
+</tr>
+<tr>
 <td><code>.crew/config.json</code></td>
 <td><code>context.autoWrapUp</code></td>
 <td><code>false</code></td>
-<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once.</td>
+<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once. Armed <code>wrapUp</code> supersedes both wordings.</td>
 </tr>
 <tr>
 <td><code>.crew/config.json</code></td>
@@ -962,6 +973,25 @@ before anything is written. To turn the cycle off on a machine, set <code>contex
 <code>false</code> or delete the key. In a repo the menu offers only the veto (<code>false</code>) or <code>null</code> for
 <code>context.autoClear.enabled</code> and <code>resume.auto</code>, and shows <code>onlyRepos</code>/<code>onlySessions</code> read-only,
 because only the machine file can arm or narrow them.</p>
+<h4 id="armed-wrap-up-contextautoclearwrapup">Armed wrap-up (<code>context.autoClear.wrapUp</code>)</h4>
+<p>A hook cannot make the session do anything; it can only refuse to clear. So with <code>wrapUp</code> armed the
+threshold block sends one procedure — start no new step; run the step's <code>Test:</code> command (the
+active ticket's plan step, or the checks for the tracked diff with no ticket); commit only if it
+passes; if it cannot pass, leave the tree and write <code>resume: none</code> with the reason under <strong>Verify
+first</strong>; run <code>/crew:handoff --wrap-up</code>; end the turn — and auto-clear acts only when, beside the
+checks above:</p>
+<ul>
+<li>the handoff's <code>head:</code> is HEAD, so it was written after the commit;</li>
+<li>its <code>branch:</code> is the checked-out branch;</li>
+<li>no tracked file is modified (untracked files, and the handoff itself, do not count);</li>
+<li>its <code>resume:</code> line parses, or is <code>resume: none</code>.</li>
+</ul>
+<p>Anything crew cannot tell — git failing, no <code>crew_resume</code>, on native Windows no python — refuses.
+A refusal is logged, shown to you as <code>crew wrap-up: not clearing - &lt;reason&gt;</code>, and handed back to
+the session once, at its next ordinary Stop. Crew checks that the commit happened, not that the
+test passed: the verify gate stands down on the turn the commit is made on.</p>
+<p>The chain end to end: wrap-up (T-0017) → the target proven from this session's own process
+(T-0016) → clear → <code>resume.auto</code> decides (T-0006) → the command is typed (T-0013).</p>
 <h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
 <p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
 are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal
@@ -1026,12 +1056,12 @@ arm only that repo without anyone noticing.</p>
 <tbody>
 <tr>
 <td><code>tmux</code></td>
-<td>Types the command into the <code>$TMUX_PANE</code> that is an ancestor of the hook. No focus involved — the most reliable method.</td>
+<td>Types the command into the <code>$TMUX_PANE</code> whose process is this session's own process or an ancestor of it. No focus involved — the most reliable method.</td>
 <td>Linux, macOS, WSL, Git Bash on Windows, when <code>$TMUX</code> names a pane and <code>tmux</code> is on PATH</td>
 </tr>
 <tr>
 <td><code>xdotool</code></td>
-<td>Types into the one X11 window owned by the nearest ancestor process (or matching <code>windowTitle</code>).</td>
+<td>Types into the one X11 window owned by the nearest ancestor of this session's own process, when that window hosts no other terminal (or matching <code>windowTitle</code>).</td>
 <td>Linux with <code>xdotool</code> on PATH and <code>$DISPLAY</code> set</td>
 </tr>
 <tr>
@@ -1041,7 +1071,7 @@ arm only that repo without anyone noticing.</p>
 </tr>
 <tr>
 <td><code>sendkeys</code></td>
-<td><code>System.Windows.Forms.SendKeys</code> against the one window owned by an ancestor process (or matching <code>windowTitle</code>), confirmed still in the foreground right before typing. <strong><code>auto</code> never picks this</strong> — typing into a window this hook found itself is a risk <code>auto</code> does not get to accept on your behalf. Set <code>method: "sendkeys"</code> explicitly to opt in. Even then, it declines and falls back to <code>notify</code> — logging why — when the target window is owned by Windows Terminal, because that host puts every tab in one window and nothing outside it can confirm which tab is active.</td>
+<td><code>System.Windows.Forms.SendKeys</code> against the one window owned by an ancestor of this session's own process (or matching <code>windowTitle</code>), confirmed still in the foreground right before typing. <strong><code>auto</code> never picks this</strong> — typing into a window this hook found itself is a risk <code>auto</code> does not get to accept on your behalf. Set <code>method: "sendkeys"</code> explicitly to opt in. Even then, it declines and falls back to <code>notify</code> — logging why — when the target window is owned by Windows Terminal, because that host puts every tab in one window and nothing outside it can confirm which tab is active.</td>
 <td>never (opt-in only)</td>
 </tr>
 <tr>
@@ -1093,8 +1123,36 @@ fallback), just not a keystroke.</p>
 <td>the window is ambiguous, so nothing is typed (<code>sendkeys</code>/<code>xdotool</code> only)</td>
 </tr>
 <tr>
-<td><code>no window belongs to any ancestor of this hook</code></td>
+<td><code>no window belongs to any ancestor of this hook</code> / <code>... of this session's process</code></td>
 <td>the terminal's window could not be found by process id, and no <code>windowTitle</code> is set (<code>sendkeys</code>/<code>xdotool</code> only)</td>
+</tr>
+<tr>
+<td><code>sent - method notify-headless: crew: this session has no terminal of its own (...)</code></td>
+<td>a headless session (<code>claude -p</code>: entrypoint <code>sdk-cli</code>, or no controlling terminal): nothing was typed, and the message names the handoff and its <code>resume:</code> line. The process that started the session restarts it</td>
+</tr>
+<tr>
+<td><code>could not identify this session's process (...)</code></td>
+<td>no Claude Code session record names a process above the hook with this session's id and start time (or the record is unreadable, or names another session). Nothing is typed; <code>auto</code> falls back to <code>notify</code></td>
+</tr>
+<tr>
+<td><code>could not tell whether this session has a terminal of its own (entrypoint '...' ...)</code></td>
+<td>the session record's entrypoint is not one measured to have a terminal (only <code>cli</code> is). Nothing is typed; <code>auto</code> falls back to <code>notify</code></td>
+</tr>
+<tr>
+<td><code>passes through another Claude Code session (pid N)</code></td>
+<td>this session is a child of another session, and the pane or window above it is the parent's</td>
+</tr>
+<tr>
+<td><code>the window's owner (pid N) also hosts another terminal</code> / <code>another Claude Code session</code></td>
+<td>the terminal that owns the window also runs another tab or session, so the window is not provably this one's</td>
+</tr>
+<tr>
+<td><code>could not be listed</code> / <code>the parent of pid N could not be read</code> / <code>deeper than 16 processes</code></td>
+<td>the process tree could not be read far enough to prove anything</td>
+</tr>
+<tr>
+<td><code>found by its title alone, and another Claude Code session is live</code> / <code>has no owning process</code></td>
+<td>a <code>windowTitle</code> match (or a window with no process) cannot tell two sessions apart</td>
 </tr>
 <tr>
 <td><code>tmux pane %N could not be confirmed</code></td>
@@ -1123,12 +1181,23 @@ fallback), just not a keystroke.</p>
 <h3 id="which-window-gets-the-keystroke">Which Window Gets the Keystroke</h3>
 <p>Applies only to the methods that type — <code>tmux</code>, <code>xdotool</code>, <code>sendkeys</code>. <code>notify</code> identifies no window
 and needs none of this.</p>
+<p>First, the session is bound to its own process: the nearest ancestor of the hook named by a Claude
+Code session record (<code>${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/&lt;pid&gt;.json</code>) carrying this session's
+id and that process's start time. Only a session whose record says kind <code>interactive</code> and
+entrypoint <code>cli</code>, with a controlling terminal (native Windows has none to read), is typed into.
+Every rule below walks up from that process, not from the hook, and refuses when the walk passes
+through another Claude Code session — a child started from a session's Bash tool inherits <code>$TMUX</code>,
+and without this its parent's pane is the one that got <code>/clear</code>. CONFIG.md §14 has the full rules and
+their limits (Windows' entrypoint is unmeasured; macOS cannot check the start time).</p>
 <ul>
-<li><strong>tmux (Linux, macOS, WSL):</strong> the pane in <code>$TMUX_PANE</code>, and only when that pane's process is an
-  ancestor of the hook. No title is needed. This is the most reliable method.</li>
-<li><strong>X11 (<code>xdotool</code>):</strong> the one visible window owned by the nearest ancestor process of the hook. If
+<li><strong>tmux (Linux, macOS, WSL):</strong> the pane in <code>$TMUX_PANE</code>, and only when that pane's process is this
+  session's own process or an ancestor of it. No title is needed. This is the most reliable method.</li>
+<li><strong>X11 (<code>xdotool</code>):</strong> the one visible window owned by the nearest ancestor of the session's process,
+  and only when no other terminal (another tab's tty, another session) runs under that window's
+  owner. If
   that process owns more than one window, <code>windowTitle</code> has to narrow the choice to one. If no
-  ancestor owns a window, exactly one window must match <code>windowTitle</code>. The keystroke goes to that
+  ancestor owns a window, exactly one window must match <code>windowTitle</code>, and no other session may be
+  live, since a title cannot tell two apart. The keystroke goes to that
   window id after it is activated and confirmed active.</li>
 <li><strong>Windows (<code>sendkeys</code>):</strong> chosen the same way, by owner process first and then by title. Declines
   outright, before any of that matters, when the resolved window is owned by Windows Terminal — see

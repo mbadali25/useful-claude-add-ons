@@ -14,8 +14,9 @@ its parent's conversation. Anything promising otherwise is guessing.
 `context.autoClear` (experimental, off by default) does not contradict that. It
 does not clear the conversation; it drives the **terminal**, typing `/clear` at
 the prompt the way a human would. Different mechanism, different failure mode —
-it depends on knowing which terminal, which is why `tmux` (exact, by pane id) is
-the only method that needs no window title and the rest refuse without one. See
+it depends on knowing which terminal: only this session's own, bound through its
+Claude Code session record (a headless `claude -p` child is told instead), with
+`tmux` exact by pane id and the rest refusing without one window. See
 `hooks/scripts/auto-clear.sh` and the crew README's Auto-clear section.
 
 You do not need it to. The lifecycle already provides the whole cycle:
@@ -231,7 +232,7 @@ existed.
   "budgetTokens": null,
   "reserveTokens": 100000,
   "handoffPath": ".work/HANDOFF.md",
-  "autoWrapUp": false,
+  "autoWrapUp": true,
   "keepTranscripts": 5,
   "staleHandoff": {
     "maxAgeHours": 72,
@@ -248,7 +249,13 @@ session reasonably picks a handoff back up after a quiet weekend.
 
 `keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
 kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` is
-off by default. So is `autoClear`, which is
+on by default (`true`) and only chooses the warning's wording. `autoClear` is
+off by default, and so is its `wrapUp` (T-0017, machine opt-in): armed, the
+warning becomes the wrap-up procedure — finish the step, commit only if its
+`Test:` passes, run `/crew:handoff --wrap-up`, end the turn — and the clear
+waits until the handoff's `head:` is HEAD, its `branch:` matches, no tracked
+file is modified and its `resume:` line parses (or is `resume: none`). Crew
+checks the commit, not the test (CONFIG.md §14). `autoClear` is
 experimental and presses a key on the user's behalf; its own block is
 `context.autoClear` and it refuses rather than guessing whenever it cannot
 identify what it would be typing into.

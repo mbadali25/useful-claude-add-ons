@@ -361,7 +361,11 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     assert "git.forbiddenTrailers" in declared
     assert {"autopilot.sleep.schedule", "autopilot.sleep.approval",
             "autopilot.sleep.questions"} <= declared
-    assert len(declared) == 136
+    # 137 with T-0017's `context.autoClear.wrapUp` on top of those 136,
+    # measured by running this test on T-0017-build after merging main
+    # a27c5e38 through T-0016-build.
+    assert "context.autoClear.wrapUp" in declared
+    assert len(declared) == 137
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
@@ -1718,7 +1722,8 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
                               "context.autoClear.delaySeconds",
                               "context.autoClear.minHandoffLines",
                               "context.autoClear.onlyRepos",
-                              "context.autoClear.onlySessions"]
+                              "context.autoClear.onlySessions",
+                              "context.autoClear.wrapUp"]
     assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 
@@ -2033,6 +2038,7 @@ def _repo_bytes(root):
     ("context.autoClear.onlySessions", ["y"]),
     ("autopilot.frobnicate", 1),
     ("context.autoClear.enabled", True),
+    ("context.autoClear.wrapUp", True),
     ("resume.auto", True),
     # `0 == False` in Python; the readers test `is False`, so 0 vetoes nothing.
     ("context.autoClear.enabled", 0),

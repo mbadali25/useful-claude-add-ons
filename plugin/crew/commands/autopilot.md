@@ -104,7 +104,6 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 
 ## 5. Context runs low, and the report
 
-When context-watch asks for a handoff: finish the step in hand, run `/crew:handoff` with
-`resume: /crew:autopilot <ticket>` (T-0006's grammar) and `branch:`/`head:` on their own lines,
-then stop. Report the ticket and its source, each phase run with its command, every
+When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with
+`resume: /crew:autopilot <ticket>` as its resume line, then stop. Report the ticket and its source, each phase run with its command, every
 `self-approved` and `taken:` line, where `next` stopped, why, and the command the human types next.
