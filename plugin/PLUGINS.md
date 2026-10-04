@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.93<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.233<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -58,6 +58,8 @@ Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (the g
 **The `Stop` gate is additionally inert until you build its map.** `verify-gate.sh` reads `.crew/verify.json`; with no such file there is nothing to run. `/crew:verify` builds it. Set `verifyGate: false` in `.crew/config.json` to disable the gate without uninstalling.
 
 **Windows — fixed in 0.2.0, corrected in 0.3.0.** In 0.2.0 `guard.sh` and `verify-gate.sh` exited 0 on MSYS/MINGW to "defer" to `.ps1` twins that nothing ever invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — which reads as "the gate passed" rather than "the gate never ran". 0.3.0 registers **both flavours on every matcher-less event on purpose**, not because each one fires — `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one is expected to fail; `PreToolUse` is the exception, where `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are registered on separate `Bash` and `PowerShell` matchers instead, so the branch is by *which tool Claude used*, not by OS. The PowerShell side carries `shell: powershell`, a field Claude Code documents and reads — it runs that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. What is not configurable is the *default* interpreter for a bare `command` string with no `shell` field: that goes to `sh -c` on macOS/Linux and to **Git Bash** on Windows (PowerShell only when Git Bash isn't installed) — so a `bash` resolved from some non-MSYS parent process is not necessarily what runs it. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all; on a machine where a non-MSYS parent process resolved `bash` to the WSL launcher, the `.sh` side exited 127 on every script while the `.ps1` twin exited 0. **One flavour failing is expected behavior, not a bug** — it is not evidence the hook itself didn't run. What is genuinely unverified is the opposite combination, real hook-runner behavior with **no `pwsh` on Linux**; that was never exercised, so treat it as unconfirmed rather than assumed fine. The remaining requirement on Windows is that Git Bash (or WSL) is on `PATH` for the `.sh` half to have any chance; without any bash at all, that half never fires, and the plugin does not pretend otherwise.
+
+**Windows shell route (T-0040).** On native Windows, crew's long-running jobs (per-step tests and verify-map checks in `/crew:implement`, graphify builds) run through `crew_shell.py run`, which picks the shell from `shellRoute.mode` (`auto`, `wsl`, `powershell`, `gitbash`) and prints one `crew-shell:` line naming the route and why. `auto` uses WSL2 when it is usable and either the repo lives inside WSL or a measurement showed WSL faster; otherwise plain argv runs directly and bash syntax in Git Bash, never pwsh. `wsl` refuses with exit 3 rather than fall back, and a bash string never goes to pwsh. `/crew:status` gains a Windows-only `shell` line. No hook changed, and nothing changes on Linux, macOS or inside WSL.
 
 **`python3` is no longer required.** The scripts resolve `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when it is present. With none of them available the affected hook says so on stderr and exits 0 rather than failing open in silence.
 
@@ -439,17 +441,17 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 
 ---
 
-## `gizmoduck` — Nuclei scans, diffed and triaged into tickets
+## `gizmoduck` — Nuclei and a multi-tool scan routine, diffed and triaged into tickets
 
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.3<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.5.6<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
 
-Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets after one batch confirmation. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
+Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, or the whole scanner routine (checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto, and sqlmap only when confirmed by name) from one manifest, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets after one batch confirmation. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
 
 **Only scan assets you own or have written permission to test.** The bundled skill says so in its first paragraph and tells the session to confirm authorisation when a target does not look like the user's. That is a prompt, not an enforcement mechanism: nothing here can tell whose host an IP is, so the check is yours to actually make.
 
@@ -468,7 +470,9 @@ Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and webs
 
 ### The CLI underneath
 
-Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop.
+Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `routine`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop. `routine <manifest.yaml>` runs every scanner the manifest resolves and exits 4 when any cell did not run, so a scheduler can tell a partial run from a clean one without reading the report.
+
+With `--scan-root <module-dir>` a routine run lands in `<module-dir>/docs/security-scans/<YYYY-MM-DD>/`: `findings.jsonl`, `run-manifest.json`, `report.md`, `report.html`, `report.pdf` when a renderer is present, and `scan-meta.json` (gizmoduck's own schema 1: version, timestamps, the authorization statement, targets, coverage counts and whether coverage was complete, finding counts). A directory that already holds a `scan-meta.json` is refused unless `--replace` is named, and `report --run-manifest` re-renders a routine run with its coverage table. That dated layout is separate from crew's endpoint ledger path, `docs/security-scans/<ep-id>.md`.
 
 `tickets` does not call ServiceDesk Plus itself, and it is gated: without `--yes` it prints a preview of the candidate tickets (severity + subject, one per line), a digest over that exact batch, and the rerun command carrying it, then exits 3 with a `GIZMODUCK_CONFIRMATION_REQUIRED` marker, emitting no records at all. Only with `--yes <digest>` — the digest the preview just printed, passed after the batch has been shown to and approved by the user — does it emit one ticket payload per finding: subject prefixed `[Nuclei <template-id>]`, severity, CVSS, CVE, affected hosts, remediation. A `--yes` whose digest does not match what `tickets` recomputes right now — a different findings file, a different `--min-severity`, findings that changed in between — is refused with `GIZMODUCK_APPROVAL_MISMATCH` rather than silently creating whatever the current batch turns out to be. The session then opens or updates the approved records through the ServiceDesk Plus tools it already has. The template-id prefix is what makes the second run idempotent: a finding whose ticket is still open gets a note instead of a duplicate.
 
@@ -594,7 +598,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.4.15<!-- claim: plugin-version:obsidian-vault --> |
+| **Version** | 0.4.16<!-- claim: plugin-version:obsidian-vault --> |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |

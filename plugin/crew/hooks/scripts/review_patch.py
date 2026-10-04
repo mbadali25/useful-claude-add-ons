@@ -65,6 +65,13 @@ a Claude review of a bundle carrying it came back INCOMPLETE on 77 of 80
 parts. The pathspec is root-anchored, so a look-alike such as
 `docs/graphify-out/` or `graphify-out-notes/` stays in the bundle.
 
+`.crew/metrics.md` is excluded the same way since L-0578, for `.work/`'s
+reason: `review_run.py` appends a row to it after every round, between
+building this bundle and checking its receipt, so in a repository that does
+not gitignore `.crew/` a CLEAN receipt would stop checking the moment it was
+written. Only that one file: the rest of `.crew/` (config, verify map,
+standards) is reviewable.
+
 CLI: --root <repo> --base <sha> --out <patch-file> --manifest <json-file>
      [--parts-dir <dir>] [--max-part-bytes N]
 
@@ -101,8 +108,8 @@ DEFAULT_MAX_PART_BYTES = 200 * 1024
 # Pathspecs excluding crew's scratch space and the generated graph from every
 # diff and listing. Never passed to `git add`: there it fails outright when
 # `.work` is gitignored.
-EXCLUDED = (".work/", "graphify-out/")
-_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]
+EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")
+_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", ":(exclude).crew/metrics.md"]
 
 # Flags every diff here runs with, so a user's own git config cannot change
 # the bytes: no colour codes, no external diff driver, no textconv filter,

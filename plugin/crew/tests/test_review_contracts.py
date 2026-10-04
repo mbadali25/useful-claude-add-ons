@@ -24,6 +24,7 @@ import crew_autopilot
 import crew_resume
 import crew_status
 import crew_ticket
+import review_checks
 import review_ledger
 import review_patch
 import review_prompt
@@ -324,6 +325,7 @@ HARNESS_SUITES = (
     "plugin/crew/tests/test_review_refund.py",
     "plugin/crew/tests/test_external_tool_formats.py",
     "plugin/crew/tests/test_status.py",
+    "plugin/crew/tests/test_review_metrics.py",
 )
 
 
@@ -359,3 +361,65 @@ def test_tooling_alone_checker_passes_its_must_block_must_allow_suite():
                           stdin=subprocess.DEVNULL, check=False)
 
     assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-2000:]
+
+
+def test_prereview_reads_only_manifest_keys(tmp_path, monkeypatch):
+    """L-0574: review_checks reads the manifest review_patch really wrote, and
+    only the keys (and entry fields) that producer writes."""
+    repo = init_repo(tmp_path / "r")
+    (repo / "gone.py").write_text("x = 1\n", encoding="utf-8")
+    (repo / "ruff.toml").write_text("[lint]\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "base")
+    base = git(repo, "rev-parse", "HEAD")
+    (repo / "gone.py").unlink()
+    (repo / "m.py").write_text("x = 2\n", encoding="utf-8")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "verify.json").write_text(json.dumps({review_checks.CONFIG_KEY: {"linters": [
+        {"tool": "ruff", "command": [sys.executable, "-c", "print('[]')"]}]}}), encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    manifest, _ = review_patch.build(str(repo), base, str(scratch / "diff.txt"),
+                                     str(scratch / "manifest.json"))
+    produced_entry_keys = set().union(*(set(e) for e in manifest["entries"]))
+    seen = []
+
+    # The manifest is read through read_regular and parsed by strict_json
+    # (json.loads with a duplicate-key object_pairs_hook, review round 9): the
+    # parse of exactly its text is the one recorded, each object still passing
+    # through the strict hook before it is wrapped.
+    manifest_text = (scratch / "manifest.json").read_text(encoding="utf-8")
+
+    def loads(text, **kw):
+        if text != manifest_text or seen:
+            return json.loads(text, **kw)
+        strict = kw.pop("object_pairs_hook", dict)
+        rec = json.loads(text, object_pairs_hook=lambda pairs: Recording(strict(pairs)), **kw)
+        seen.append(rec)
+        return rec
+
+    monkeypatch.setattr(review_checks, "json", types.SimpleNamespace(
+        load=json.load, loads=loads, dumps=json.dumps))
+    Recording.log = []
+    results, configured = review_checks.run_checks(str(repo), str(scratch / "manifest.json"))
+    top = _keys(Recording.log, seen[0])
+    entry_keys = set().union(*(_keys(Recording.log, e) for e in seen[0]["entries"]))
+    Recording.log = None
+
+    assert (configured, [r["status"] for r in results]) == (True, [review_checks.PASS]), results
+    assert top and top <= set(review_patch.MANIFEST_KEYS), top
+    assert entry_keys and entry_keys <= produced_entry_keys, entry_keys - produced_entry_keys
+
+
+def test_the_install_scripts_rule_loads_for_the_install_scripts():
+    """Review round 8 FIX .claude/rules/install-scripts.md:3: the rule's paths
+    were derived from citation counts, and other tickets' re-anchor notes
+    pushed `scripts/` under the 15% floor. The map names its paths, and the
+    generated rule carries them."""
+    import crew_context  # pylint: disable=import-outside-toplevel
+    with open(os.path.join(REPO, ".crew", "codemap", "install-scripts.md"), encoding="utf-8") as fh:
+        derived = crew_context.derive_paths(REPO, fh.read())
+    with open(os.path.join(REPO, ".claude", "rules", "install-scripts.md"), encoding="utf-8") as fh:
+        rule = fh.read().split("\n---\n", 1)[0]
+
+    assert ("scripts/**" in derived, '  - "scripts/**"' in rule) == (True, True), (derived, rule)

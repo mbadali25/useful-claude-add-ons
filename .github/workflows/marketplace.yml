@@ -64,6 +64,10 @@ jobs:
       # kills every negation below it - each get a case here.
       - name: crew ignore-policy suite
         run: python3 scripts/_test/crew-ignore-policy.py
+      # check_verifying_doc: every path VERIFYING.md names exists. Must-fail cases
+      # include a misspelt top-level directory and a path inside a fenced block.
+      - name: VERIFYING.md path suite
+        run: python3 scripts/_test/verifying-doc.py
       # The version-drift check resolves "when was this version set" by walking
       # marketplace.json's history, and that walk is only monotonic on a linear
       # one. Across a merge it can stop at the merge commit, which then diffs
@@ -74,6 +78,12 @@ jobs:
       # different half of the fix.
       - name: Version-drift commit-shape suite
         run: python3 scripts/_test/version-drift.py
+      # The fan-in behind the required `crew-shell-matrix (windows-latest)`
+      # check (pytest-crew.yml's crew-windows-gate). Each case is one way a
+      # test could be lost, or a Windows job not run, while that check went
+      # green (L-0577).
+      - name: Windows shard fan-in suite
+        run: python3 scripts/_test/windows-shards.py
       # The UPDATE.md mirrors are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check
       # mode is a check nobody runs, which is worse than no check: the blocks
@@ -82,6 +92,14 @@ jobs:
         run: python3 scripts/sync-updates.py --check
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
+      # An own-line `# shellcheck` comment ShellCheck cannot parse is SC1073, and
+      # ShellCheck then stops checking the WHOLE file. install-prerequisites.sh
+      # and scripts/_test/lsp-stack-tools.sh were unchecked that way until L-0587.
+      # The suite's grammar check is stdlib; its cross-check uses the runner
+      # image's own shellcheck (0.9.0 on ubuntu-24.04) and prints SKIPPED only
+      # where shellcheck is absent.
+      - name: ShellCheck directive suite
+        run: python3 scripts/_test/shellcheck-directives.py
       # Runs here because it needs nothing but bash: the end-to-end cases use --dry-run
       # or a stub 'claude'. The drift suite is the one that cannot - it drives the real
       # Claude Code CLI.
@@ -169,6 +187,13 @@ jobs:
       # up as a version bump here, not a silent behaviour change.
       - name: Install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code@2.1.278
+      # _verify/smoke.sh holds two checks no other step runs: the crew-setup
+      # canon() round-trip and version agreement across pyproject.toml,
+      # plugin.json, marketplace.json and every Python-source copy. It runs
+      # after the CLI install so its own `claude plugin validate` check runs
+      # rather than skipping. Found by crew's QA audit (L-0618, item E7).
+      - name: Smoke checks (_verify/smoke.sh)
+        run: bash _verify/smoke.sh
       - name: claude plugin validate --strict
         run: |
           claude plugin validate --strict .

@@ -206,6 +206,9 @@ def test_the_holder_removes_its_own_lock_on_exit(tmp_path):
     assert not _lock(root).exists(), "the holder leaked its lock"
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): not seen failing; the ps1 twin of test_verify_gate_lock_sh's, same 10s wait.
+@pytest.mark.wallclock
 def test_the_lock_never_records_a_pid(tmp_path):
     """Guards the property directly rather than only its consequences: if a
     future change reintroduces a PID file, this fails even on a machine with

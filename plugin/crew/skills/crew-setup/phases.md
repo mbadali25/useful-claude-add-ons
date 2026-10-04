@@ -87,9 +87,18 @@ credentials do not cross the boundary (a Windows `aws` is not the WSL `aws`) -
 and offer moving the clone inside WSL, which removes the problem rather than
 wrapping it.
 
+**On native Windows, pick the shell route.** Run
+`crew_shell.py probe --write`. When the state is `usable`, also run
+`crew_shell.py measure --write`. Report the state and the numbers, then ask
+which `shellRoute.mode` I want (`auto`, `wsl`, `powershell` or `gitbash`) and
+whether I want the in-WSL clone it offers. On `not-installed`, print the
+recommendation it gives and never run it. See "Choosing the shell route on
+Windows" in `crew-setup/platform.md`.
+
 **Done when:** platform recorded, every tool the repo needs resolved to a form
-that runs on this machine, and any CRLF or filesystem issue either fixed or
-explicitly accepted by me.
+that runs on this machine, any CRLF or filesystem issue either fixed or
+explicitly accepted by me, and on native Windows the shell route probed,
+measured when WSL is usable, and its mode chosen.
 
 ## Phase 1 — Config and structure
 
@@ -346,8 +355,8 @@ them is half the value of this phase.
   that starts red never becomes a gate.
 - **QA and harness standards.** Run the `crew-qa-standards` audit (report-only):
   `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-qa-standards/scripts/qa_audit.py --root .`.
-  For each GAP, apply the rule it names (measure first, per H1), or record in
-  `.crew/STATUS.md` why not. Report UNKNOWN rows as unknown. A new repo also gets
+  For each GAP, apply the rule it names (measure first, per H1). A GAP left open
+  makes this phase `partial`, with the GAP named in `.crew/STATUS.md`, never `done`. Report UNKNOWN rows as unknown. A new repo also gets
   a steward skill from that skill's `references/steward-template.md`.
 - **Terraform.** If there are `.tf` files, set up terraform-docs and tflint per
   `crew-terraform`. Put the **`--output-check`** form in the gate, never the
@@ -356,6 +365,11 @@ them is half the value of this phase.
   writing form mutates the tree mid-gate, which makes `README.md` a changed file
   on the next run and trips `unmapped: fail` in a loop. Run the writing form by
   hand, or from `/crew:docs`.
+- **CI job (opt-in).** Once the map exists, offer the pull-request workflow,
+  `.github/workflows/crew-verify.yml`, and install it only on a yes - the steps
+  (declare `reach` on the map's rules first, or `--ci` checks nothing; pin
+  `__CREW_SHA__` to the installed crew's commit, never a branch) are in
+  `SKILL.md` §3.
 
 **Re-run the resolver once the map exists**, because now it can read the map
 rather than being told:
@@ -372,7 +386,8 @@ someone needed it. Fix them now, or delete the rule and record in
 
 **Done when:** rules cover the hot paths, each is verified, `"unmapped": "fail"`,
 `resolve-tools.sh` reports no MISSING tool, linters run green on the current
-tree, and every `qa_audit.py` GAP is fixed or recorded in `.crew/STATUS.md`.
+tree, and `qa_audit.py` reports no GAP. Any GAP still open: mark the phase `partial`
+and name it in `.crew/STATUS.md`. The audit never adds a hook; this is the only block.
 
 ## Phase 6 — Browser tests
 
@@ -442,11 +457,19 @@ not the gate, which only looks for it. And the rollback runbook
 needs a literal `last verified: YYYY-MM-DD` line, because that is what the hook
 greps for.
 
+**Then audit what you declared.** `qa_audit.py --root .` (see Phase 5) now answers its E items
+against this block: data provenance per non-production environment, a rehearsed rollback on every
+rung, no deploy of `$(git rev-parse HEAD)`, deploy workflows that fail loudly, the credential
+inventory's reaches and live columns. Ask me about each GAP rather than filling the key yourself.
+Then `qa_doc.py --root . --write` documents the process under `docs/qa/` with its diagrams, and
+`qa_audit.py --root . --stamp` records the audit.
+
 **Done when:** the `environments` block matches how this repo genuinely ships,
 `.work/PROMOTIONS.md` exists with its header, production has a `rollback` path
 pointing at a runbook that carries a fresh `last verified` line, `.gitignore`
 carries the §3c block (`.crew/*`, the un-ignore list, `.crew/.approved-*` and
-`.work/` below it), and `--dry-run` prints a sequence I recognise.
+`.work/` below it), `--dry-run` prints a sequence I recognise, and no E-item GAP is open. An open
+one makes the phase `partial`, named in `.crew/STATUS.md`, never `done`.
 
 ## Phase 7 — First real ticket
 

@@ -14,6 +14,9 @@ the large one: many agents, commands, skills, and hooks in one plugin.
 
 ## How to verify a change
 
+`VERIFYING.md` is the map: every layer, its command, when to run it and what
+no automated layer runs. The detail on the pytest sets and CI jobs is below.
+
 Run in order: `python3 scripts/check-marketplace.py` (the gate — checks
 registration completeness, version drift, self-stated numeric claims, and
 that each plugin's declared licence matches the repo's `LICENSE`), then
@@ -41,18 +44,22 @@ report a skipped pass so the required check names stay satisfied; the nightly ru
 at 07:17 UTC; a newer push to a pull request cancels its older run, and a main run
 is never cancelled), alongside
 gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
-on `ubuntu-latest` — the full hook matrix the `test` job deselects; its
-`windows-latest` leg is disabled by #277 until win-repo-2's fix re-enables it, and
-when enabled it also re-runs the plain default command
-(`test` already covers that set, but only on ubuntu, so the PowerShell
-parity-sample cases never run natively anywhere else). Neither job
-substitutes for the other: a change to `conftest.py`'s slow-marker logic,
-or to a hook only the matrix exercises, can pass one and still be wrong.
+on `ubuntu-latest` — the full hook matrix the `test` job deselects. On Windows the
+same suite runs as parallel `crew-windows-*` jobs (L-0577): the plain default
+command split in three by pytest-split (`test` already covers that set, but only on
+ubuntu, so the PowerShell parity-sample cases run natively nowhere else), `-m slow`,
+and `-m wallclock` serially. Their fan-in, `crew-windows-gate`, carries the required
+check name `crew-shell-matrix (windows-latest)` and passes only when every Windows job
+succeeded and `scripts/check-windows-shards.py` finds every collected default test in
+exactly one shard's JUnit. On a pull request the Windows jobs do work only when the PR
+changes `plugin/crew/**` or `pytest-crew.yml` (T-0110), and otherwise the gate reports
+a skipped pass. Neither job substitutes for the other: a change to `conftest.py`'s
+slow-marker logic, or to a hook only the matrix exercises, can pass one and still be wrong.
 
 Both jobs' `ubuntu-latest` placement is the default, not a fixed fact: when the
 repo variable `CREW_RUNNER` is `self-hosted`, the `test` job and the
 `crew-shell-matrix` ubuntu leg run on the owner's self-hosted pool
-(`[self-hosted, linux, x64, crew]`) instead; a `windows-latest` leg and every
+(`[self-hosted, linux, x64, crew]`) instead; the `windows-latest` jobs and every
 other job and workflow stay GitHub-hosted. Fork pull requests never reach the
 pool: this repo is public, so only non-PR events (push, schedule, manual
 dispatch) and pull requests from branches of this repo use it. The owner's runner playbook

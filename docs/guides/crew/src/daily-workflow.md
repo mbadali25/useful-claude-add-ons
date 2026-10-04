@@ -54,7 +54,11 @@ approving it, it refuses here and tells you which. Assuming it passes, it
 records the scope base (`scope_base.py --record`), works the plan step by
 step — test first, watch it fail, implement, watch it pass — and the
 **plan-approval + scope guard hook** blocks any write outside the spec's
-Touch globs before it happens, not after.
+Touch globs before it happens, not after. Before the first step it prints the
+recurring-findings checklist (`recurring_findings.py --ticket T-0091`): the
+defect classes earlier reviews kept finding on paths like the spec's Touch
+list, a few probes each, kept open while the plan is worked and handed to
+whichever developer types.
 
 **5–6. Tests and docs.** Coverage lands as part of implementing the plan's
 steps. `/crew:docs` runs next and usually says "none" — most tickets touch no
@@ -83,7 +87,10 @@ Before the review round, `crew_train.py acquire --ticket T-0091` takes the train
 Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
 order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
 T-0091` - a `git merge` of the base, never a rebase, with git rerere on so a conflict resolved
-once replays next time (the replayed files are staged and listed; show them to the reviewer).
+once replays next time. A replay is left unstaged and listed: inspect it, `git add` it, and show
+it to the reviewer. crew never turns on `rerere.autoupdate`, and the version files
+(`plugin.json`, `marketplace.json`, `PLUGINS.md`, `CHANGELOG.md`) are never replayed - they come
+back conflicted, named as forgotten, for you to resolve by hand.
 
 **8. Done.** You type `/crew:done T-0091`. Three checks, all required: the
 review receipt rebuilds clean, the verify gate is clean, and the completion

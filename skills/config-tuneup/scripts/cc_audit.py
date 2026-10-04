@@ -664,7 +664,7 @@ def main(argv=None):
             findings.extend(check(inv))
         except Exception as exc:  # a broken check must not lose the other findings
             findings.append(finding("LOW", f"check {check.__name__} failed", [repr(exc)],
-                                    "Report this as a bug in the claude-code-tuneup skill."))
+                                    "Report this as a bug in the config-tuneup skill."))
 
     floor = SEV_ORDER[args.min_severity.upper()]
     findings = [f for f in findings if SEV_ORDER[f["severity"]] <= floor]

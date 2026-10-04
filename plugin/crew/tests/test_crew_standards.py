@@ -1177,7 +1177,7 @@ def test_stamp_refuses_an_unreadable_scope_record_without_naming_record(tmp_path
 _INCOMPLETE_OUTPUTS = {
     "empty": "",
     "bullet": "READ|part-001-of-001.patch\n- BLOCK|a.py:1|first breaks|run it\n",
-    "fenced": "READ|part-001-of-001.patch\n```\nBLOCK|a.py:1|first breaks|run it\n```\n",
+    "fenced-clean": "READ|part-001-of-001.patch\n```\nCLEAN\n```\n",
     "neither": "READ|part-001-of-001.patch\n",
 }
 
@@ -1199,6 +1199,26 @@ def test_proposals_refuses_an_incomplete_output_and_writes_nothing(tmp_path, sha
 
     assert (first.returncode, "INCOMPLETE" in first.stderr, written, second.returncode) == (
         1, True, False, 0), (first.stdout, first.stderr, second.stderr)
+
+
+def test_proposals_writes_the_findings_of_a_recovered_round(tmp_path):
+    """A fence around well-formed findings is a harmless stray line; the
+    parser recovers the round as FINDINGS (L-0576), so its BLOCK is proposed."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "out.txt").write_text(
+        "READ|part-001-of-001.patch\n```\nBLOCK|a.py:1|first breaks|run it\n```\n",
+        encoding="utf-8")
+    root = tmp_path / "root"
+    root.mkdir()
+
+    result = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch",
+                  str(scratch), "--round", "1")
+
+    text = (root / ".work" / "tickets" / "T-1" / "standards-proposals-r1.md").read_text(
+        encoding="utf-8")
+    assert (result.returncode, "BLOCK|a.py:1|first breaks|run it" in text) == (
+        0, True), result.stderr
 
 
 @pytest.mark.parametrize("out", ["READ|part-001-of-001.patch\nCLEAN\n",

@@ -120,6 +120,18 @@ def test_golden_corpus_covers_the_shapes_that_broke():
     assert any(e["failure_class"] == "reviewer" for e in expected)
 
 
+def test_golden_corpus_holds_a_round_recovered_despite_stray_prose():
+    """T-0100 round 2 scored INCOMPLETE for one trailing paragraph beside four
+    well-formed findings and full READ coverage; L-0576 recovers it."""
+    recovered = []
+    for folder in FIXTURES:
+        result = rv.parse(_text(folder, "out.txt"), 0, False, _json(folder, "parts.json"))
+        if result["ignored"]:
+            recovered.append((os.path.basename(os.path.dirname(folder)), result["verdict"]))
+
+    assert ("uca-t0100--T-0100-build--nqUaqO", rv.FINDINGS) in recovered, recovered
+
+
 def _files(root=GOLDEN):
     return [p for p in glob.glob(os.path.join(root, "**", "*"), recursive=True)
             if os.path.isfile(p)]
@@ -164,6 +176,17 @@ def test_corpus_leak_check_refuses_a_planted_host_name(tmp_path):
     leaks = _corpus_leaks(str(tmp_path))
 
     assert ("out.txt", "host name") in leaks, leaks
+
+
+@pytest.mark.parametrize("text, leaked", [
+    ("fixture-vmVkDU/parts.json", False), ("unvmed", False), ("ran on vm today", True),
+    ("vm.local", True), ("user@vm prompt", True)])
+def test_leak_finds_the_host_name_only_as_a_whole_word(monkeypatch, text, leaked):
+    """A short host name (`vm`) inside an unrelated word is not a leak; the
+    same name standing alone, or as a domain label, is."""
+    monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "vm")
+
+    assert (golden_build.leak(text) == "host name") is leaked, golden_build.leak(text)
 
 
 def test_golden_corpus_stays_under_its_size_bound():

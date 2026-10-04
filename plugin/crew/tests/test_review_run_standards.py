@@ -233,17 +233,21 @@ def test_run_with_a_corrupt_approval_receipt_still_gates(repo, tmp_path):
     assert (result.returncode, "review-run: self-check" in result.stderr) == (2, True)
 
 
-def test_run_refuses_an_unreadable_manifest(repo, tmp_path):
+@pytest.mark.parametrize("extra, code", [((), 5), (("--allow-unverified",), 2)])
+def test_run_refuses_an_unreadable_manifest(repo, tmp_path, extra, code):
+    """L-0574 review round 5: the pre-review checks read the config from the
+    bundle, so an unreadable manifest refuses there first (exit 5); past an
+    --allow-unverified the standards gate still refuses it (exit 2)."""
     _selfcheck(repo)
     scratch = tmp_path / "scratch"
     _bundle(repo, scratch)
     (scratch / "manifest.json").write_text("{", encoding="utf-8")
     fakes = fake_reviewer_bin(tmp_path / "bin")
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", *extra)
 
     assert (result.returncode, "manifest" in result.stderr,
-            rl.status(str(repo), TICKET)["rounds_used"]) == (2, True, 0)
+            rl.status(str(repo), TICKET)["rounds_used"]) == (code, True, 0)
 
 
 _REFUSING_EDITS = sorted(k for k, v in _EDITS_AFTER_STAMPING.items() if v[1])

@@ -16,19 +16,19 @@
     "reason": "raised: item 5 under 'Then make the knowledge executable' runs crew_autoclear_setup.py so a standalone /crew:onboard configures context.autoClear the same way /crew:init does"
   },
   "plugin/crew/commands/promote.md": {
-    "lines": 335,
-    "reason": "T8: to trim"
+    "lines": 380,
+    "reason": "raised: T-0505 adds 'When the gate blocks' (fix the precondition, never hand the owner a deploy so it skips the hook) and names which tree gate 1 judges"
   },
   "plugin/crew/commands/review.md": {
     "lines": 551,
     "reason": "T8: to trim"
   },
   "plugin/crew/commands/upgrade.md": {
-    "lines": 375,
-    "reason": "T8: to trim"
+    "lines": 384,
+    "reason": "raised: L-0618 adds step 5c, the QA audit re-run as a report on every upgrade, so a repo set up before an audit item existed is judged by it"
   },
   "plugin/crew/commands/verify.md": {
-    "lines": 211,
-    "reason": "T8: to trim"
+    "lines": 226,
+    "reason": "raised: L-0618/L-0562 adds the --stamp-reach section, the one-step fix for a Stop gate that defers undeclared rules (D10), and corrects the reach citation to CONFIG.md \u00a719"
   }
 }

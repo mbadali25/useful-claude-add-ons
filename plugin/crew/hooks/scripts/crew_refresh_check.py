@@ -818,19 +818,25 @@ def _on_disk(top, base, rel, deleted):
         if why == "absent":
             return (False, deleted), None
         return (None, f"{COULD_NOT_TELL}: could not read {rel}: {why}"), None
-    # The mode git sees against the base (the working tree, under
-    # core.fileMode), then the mode it stages: a `core.symlinks=false`
-    # checkout leaves a link as a regular file that git stores as 120000.
-    code, out = _git_out(top, "diff", "--no-ext-diff", "--raw", "--no-renames", "-z",
-                         base, "--", rel)
-    if code != 0:
-        why = "could not run" if code is None else f"exited {code}"
-        return (None, f"{COULD_NOT_TELL}: git diff --raw of {rel} {why}"), None
-    for record in out.split(b"\0"):
-        if record.startswith(b":"):
-            old, new = record[1:].decode("ascii", "replace").split(" ")[:2]
-            if "000000" not in (old, new) and old != new:
-                return (False, f"mode changed from {old} to {new}, which no refresh does"), None
+    # The mode git sees against the base in the working tree, then in the
+    # index, which is what `git commit` records: under core.fileMode=true the
+    # worktree diff reads the mode from the disk, so a mode staged with
+    # `update-index --chmod=+x` while the file stayed 644 reached only the
+    # index and was admitted (W-0117). Then the mode it stages: a
+    # `core.symlinks=false` checkout leaves a link as a regular file that git
+    # stores as 120000.
+    for cached in ((), ("--cached",)):
+        code, out = _git_out(top, "diff", "--no-ext-diff", "--raw", "--no-renames", "-z",
+                             *cached, base, "--", rel)
+        if code != 0:
+            why = "could not run" if code is None else f"exited {code}"
+            name = " ".join(("git diff --raw",) + cached)
+            return (None, f"{COULD_NOT_TELL}: {name} of {rel} {why}"), None
+        for record in out.split(b"\0"):
+            if record.startswith(b":"):
+                old, new = record[1:].decode("ascii", "replace").split(" ")[:2]
+                if "000000" not in (old, new) and old != new:
+                    return (False, f"mode changed from {old} to {new}, which no refresh does"), None
     code, out = _git_out(top, "ls-files", "-s", "-z", "--", rel)
     if code != 0:
         why = "could not run" if code is None else f"exited {code}"
