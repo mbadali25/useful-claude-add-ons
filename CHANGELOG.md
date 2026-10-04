@@ -4,28 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.353: in-flight markers, one runner drives a ticket at a time (T-0049)
+### Added — `crew` 1.0.360: in-flight markers, one runner drives a ticket at a time (T-0049)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one
   marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by
   every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a
-  token, the holder (`CLAUDE_CODE_SESSION_ID`, the long-lived Claude Code
-  process's pid and start time, pid namespace, boot id, host), worktree, branch,
-  `since` and `heartbeat_at`. `holds(root, ticket)` answers `free`, `mine`,
-  `live`, `stale`, `elsewhere` or `unknown` and writes nothing; anything it
-  cannot read, parse, probe or trust is `unknown`, never `free`. `claim`
+  token, the holder, worktree, branch, `since` and `heartbeat_at`. The holder is
+  `CLAUDE_CODE_SESSION_ID` plus the long-lived Claude Code process (`CLAUDE_PID`
+  when it is an ancestor of the claiming command, else the nearest `claude`
+  ancestor; a Claude Code session where neither is found records no pid and is
+  matched by its session id; a lane's script records its own shell), with that
+  process's start time, pid namespace, boot id and host. `holds(root, ticket)`
+  answers `free`, `mine`, `live`, `stale`, `elsewhere` or `unknown` and writes
+  nothing; anything it cannot read, parse, probe or trust is `unknown`, never
+  `free`. The pid is measured with `/proc` on Linux, `kill -0` plus `ps` on other
+  POSIX systems, and the exit code and creation time on Windows. `claim`
   publishes with `os.link` (one of six racing claimers wins) and starts one
   detached heartbeat keyed by the token, rewriting `heartbeat_at` every 600 s
-  against a 30-minute TTL; `release` is the holder's; `clear --by --reason`
-  is the owner's, refuses anything but stale or unknown, and is logged.
-  Nothing clears a marker by age. `crew_autopilot.py next --runner autopilot`
-  stops as `in-flight` on live, stale and unknown (stale and unknown carry the
-  clear command) and as `handover-elsewhere` on a fresh holder in another
-  worktree; free and mine change nothing, and without `--runner` `next` is
-  unchanged. `/crew:autopilot` claims after resume/activate, passes
-  `--runner autopilot`, and releases at every stop (autopilot.md stays at 109
-  lines). `crew_state.AUTONOMOUS_STOPS` gains `clear-inflight`. `/crew:status`
-  prints one `in-flight:` line per marker (at most five).
+  against a 30-minute TTL. The heartbeat stops by itself once its holder has
+  gone more than the TTL without being confirmed alive, so where the pid cannot
+  be measured the TTL still decides. `release` is the holder's; `clear --by
+  --reason` is the owner's and refuses anything but stale or unknown. All three
+  write their event first and do nothing if it cannot be written. Nothing clears
+  a marker by age. `crew_autopilot.py next --runner autopilot` stops as
+  `in-flight` on live, stale and unknown (stale and unknown carry the clear
+  command) and as `handover-elsewhere` on a fresh holder in another worktree;
+  free and mine change nothing, and without `--runner` `next` is unchanged.
+  `/crew:autopilot` claims after resume/activate, passes `--runner autopilot`,
+  and releases at every stop (autopilot.md stays at 109 lines).
+  `crew_state.AUTONOMOUS_STOPS` gains `clear-inflight`. `/crew:status` prints
+  one `in-flight:` line per marker (at most five).
 - **Why.** An autopilot session, a workflow lane and a person's session could
   all drive one ticket and nothing recorded who was driving it, so two could
   double-drive it, and a lane that died left nothing to say so. T-0060's stall
@@ -37,20 +45,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   `autopilot`/`lane`/`session`; autopilot.md net 0 lines, never raising
   `AUTOPILOT_MAX_LINES`; the holder identity fields; and the tooling-PR split
   for `sabotage_inflight.py` while `sabotage*.py` is harness.
+- **Review round 1.** Without /proc the holder was the per-call tool shell (a
+  later Bash call read `live` against itself) and a dead holder was never
+  measured, so its heartbeat beat forever: fixed by the identity and probe above
+  and the heartbeat's TTL bound. A transient `os.replace` refusal (Windows) now
+  skips one beat instead of ending the heartbeat; marker, token and holder are
+  checked before the lock, so a leftover lock never keeps a dead holder's loop
+  alive; events are written before the effect.
 - **Measured.** A child started with `start_new_session=True` from a Claude
   Code Bash tool call outlived the call: reparented to pid 1, it beat every
   second for 128 s across five later calls (Claude Code 2.1.42, Linux cloud
-  container, no pid namespace or bubblewrap). Not measured: Windows, macOS, or
-  a sandboxed (bubblewrap) Linux session; there the TTL alone decides, which
-  reads a lost heartbeat as stale, never live.
-- **Sabotage.** 13 mutations (stale read as live, a dead pid read as alive, an
-  unreadable marker read as free, an unmeasured probe read as gone, a future
-  heartbeat read as fresh, mine by session alone, elsewhere proceeding, next
-  ignoring stale, an import error passing, holds() creating the directory,
-  clear accepting live, an old heartbeat beating a new holder's marker, status
-  reading an unreadable directory as none), each RED on its named test by
-  hand. `sabotage_inflight.py` and its `sabotage.py` registration land in a
-  separate harness-only PR (T-0087 rule).
+  container, no pid namespace or bubblewrap). The no-/proc paths are tested by
+  hiding /proc (and `ps`) from the CLI on Linux. Not measured: Windows, macOS,
+  or a sandboxed (bubblewrap) Linux session. Where the holder cannot be
+  measured, a dead holder reads stale within about an hour (the heartbeat's TTL
+  bound plus the TTL), and a live run there longer than that reads stale too,
+  stopping autopilot, never double-driving.
+- **Sabotage.** 21 mutations, each RED on its named test by hand (the table is
+  in the PR). `sabotage_inflight.py` and its `sabotage.py` registration land in
+  a separate harness-only PR (T-0087 rule).
 
 ### Added — `crew` 1.0.323: the full crew 1.0 guide and a generated configuration reference (T-0048)
 
