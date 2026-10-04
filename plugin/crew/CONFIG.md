@@ -2639,7 +2639,7 @@ driven is a fact about that checkout.
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
-| `autopilot.maxAutoReplans` | `0` | `crew_autopilot.auto_replan_policy` (T-0074): how many successor plans one ticket may have before an out-of-rounds BLOCK round stops for the owner again; `0` is off | Anything but a non-negative integer (`true`, `"2"`, `2.5`, `-1`, `null`) reads as `0`, with a warning naming the value; an unreadable config or non-object block reads as `0`. |
+| `autopilot.maxAutoReplans` | `0` | `crew_autopilot.auto_replan_policy` (T-0074): how many successor plans one ticket may have before an out-of-rounds BLOCK round stops for the owner again; `0` is off | Anything but a non-negative integer (`true`, `"2"`, `2.5`, `-1`, `null`) reads as `0`, with a warning naming the value; an unreadable config or non-object block reads as `0`. The limit is `5`: a larger value reads as `5`, with a warning. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2695,8 +2695,12 @@ that quotes each of them, the approve phase approves it under
 writing nothing, on an INCOMPLETE round, a same-family or unknown reviewer
 (`review_ledger`'s own family rule), counts and finding lines that disagree, a
 round still left, or anything it cannot tell. The cap counts every successor
-plan on the ledger, owner-approved ones included; at the cap `next` stops at
-`accept-review` (`auto-replan-cap`), naming the cap and each successor plan.
+plan on the ledger, owner-approved ones included, and is at most `5` (a larger
+value reads as `5`, with a warning); at the cap `next` stops with phase
+`auto-replan-cap`, naming the cap and each successor plan. The non-stop
+`replan` after a reject asks again whether the rejected round is the current
+plan's and still passes the round checks above, so the reject name typed by
+hand with `review_ledger.py --reject --by` gives the owner's stop, as before.
 A BLOCK is never accepted by autopilot at any setting. The recommended value
 when you turn it on is `2`.
 

@@ -423,7 +423,7 @@ def test_cap_reached_stops_and_lists_successors(tmp_path):
         "autopilot.maxAutoReplans (2) reached"), "b" * 12 in got["reason"],
             "c" * 12 in got["reason"], "after round 4" in got["reason"],
             "autopilot:self" in got["reason"]) == (
-        "accept-review", True, True, True, True, True, True)
+        "auto-replan-cap", True, True, True, True, True, True)
 
 
 def _rejected(root, by=None, number=2, **ledger):
@@ -519,8 +519,55 @@ def test_stops_list_the_cap_stop_and_reword_review_acceptance():
             "autopilot.maxAutoReplans" in human["review-acceptance"]) == (True, True, True)
 
 
-def test_status_maps_the_auto_replan_phase():
-    assert crew_autopilot.WAITING.get("auto-replan") not in (None, crew_autopilot.UNKNOWN)
+def test_status_maps_the_auto_replan_phases():
+    assert [crew_autopilot.WAITING.get(p) for p in ("auto-replan", "auto-replan-cap")] == [
+        "owner", "owner"]
+
+
+def test_the_cap_stop_is_its_fixed_stop_id():
+    """Review NIT 2: the cap stop's phase is the FIXED_STOPS id, so the
+    procedure reads it from `phase=` rather than from the reason text."""
+    assert "auto-replan-cap" in [slug for slug, _text in crew_autopilot.FIXED_STOPS]
+
+
+# --- review round 1: the non-stop replan re-checks the rejected round ---------
+# F1: `rejected.by` is a string anyone can type with `review_ledger.py --reject
+# --by`, so the name alone never makes a replan non-stop: the rejected round
+# must still pass conditions 5-8. N3: and it must be the current plan's round.
+
+FORGED = [
+    ("a-round-left", {"rounds": [_row(1)]}, 1),
+    ("same-family", {"rounds": [_row(1), _row(2, provider="claude")]}, 2),
+    ("same-family-name", {"rounds": [_row(1), _row(2, model_family="claude")]}, 2),
+    ("clean-latest", {"rounds": [_row(1), _row(2, verdict="CLEAN",
+                                                counts={"BLOCK": 0, "FIX": 0, "NIT": 0},
+                                                findings=[])]}, 2),
+    ("no-block", {"rounds": [_row(1), _row(2, counts={"BLOCK": 0, "FIX": 1, "NIT": 1},
+                                             findings=[FIX_LINE, NIT_LINE])]}, 2),
+    ("incomplete", {"rounds": [_row(1), _row(2, verdict="INCOMPLETE")]}, 2),
+    ("older-plan", {"rounds": [_row(1), _row(2)], "successors": [_successor("b", 2)]}, 2),
+]
+
+
+@pytest.mark.parametrize("ledger,number", [f[1:] for f in FORGED], ids=[f[0] for f in FORGED])
+def test_a_typed_auto_reject_name_is_todays_replan_stop(tmp_path, ledger, number):
+    root = _repo(tmp_path)
+    _rejected(root, number=number, **ledger)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["reason"]) == ("replan", True, TODAYS_REPLAN)
+
+
+# --- review round 1 N1: the cap has an upper bound ------------------------------
+
+@pytest.mark.parametrize("value,read,warned", [(5, 5, False), (6, 5, True), (99, 5, True)])
+def test_setting_above_five_reads_five_with_warning(tmp_path, value, read, warned):
+    got = crew_autopilot.settings(str(_repo(tmp_path, replans=value)))
+    warnings = [w for w in got["warnings"] if "maxAutoReplans" in w]
+
+    assert (got["maxAutoReplans"], warnings) == (read, [
+        f"autopilot.maxAutoReplans is {value}, above the limit of 5; using 5"] if warned else [])
 
 
 def test_command_names_the_auto_replan_procedure():

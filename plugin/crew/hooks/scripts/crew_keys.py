@@ -416,8 +416,8 @@ KEY_META = {
                                 crew_autopilot.POLICIES, "1.0.42"),
     "autopilot.maxAutoReplans": _row("Successor plans autopilot may start by rejecting an "
                                      "out-of-rounds BLOCK review itself; 0 is off, and "
-                                     "anything but a non-negative integer reads as 0, with "
-                                     "a warning.", "branch", None, "1.0.402",
+                                     "anything but a non-negative integer reads as 0, and "
+                                     "above 5 as 5, with a warning.", "branch", None, "1.0.402",
                                      _S + "crew_autopilot.py", type_="non-negative integer"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "

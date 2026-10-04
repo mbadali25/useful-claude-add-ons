@@ -16,8 +16,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   name `autopilot (policy: autopilot.maxAutoReplans)` and prints every BLOCK
   and FIX line; `next` then names `/crew:plan` without stopping, and the
   existing approve phase and fresh rounds follow. At the cap (every successor
-  plan on the ledger counts) `next` stops at `accept-review`, naming the cap
-  and each successor plan (`auto-replan-cap`). `settings` prints
+  plan on the ledger counts; the cap is at most 5) `next` stops with phase
+  `auto-replan-cap`, naming the cap and each successor plan. The non-stop
+  `replan` re-checks the rejected round (current plan, FINDINGS, a BLOCK, no
+  round left, another family), so a hand-typed reject name is the owner's stop. `settings` prints
   `maxAutoReplans=` on its first line.
 - **Never.** Autopilot accepts no round with a BLOCK at any setting. An
   INCOMPLETE round, a same-family or unknown reviewer, counts and finding

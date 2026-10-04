@@ -88,8 +88,9 @@ force says `take`. Exit 0 valid, 1 not.
 T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off):
 an out-of-rounds FINDINGS round with a BLOCK that `auto_replan_policy` allows
 is `auto-replan`, whose command is `auto-reject`; refused only by the cap it
-stays `accept-review` and names every successor plan. A NEEDS_REPLAN that
-autopilot's own reject of the latest round wrote, still allowed, is `replan`
+is the `auto-replan-cap` stop and names every successor plan. A NEEDS_REPLAN
+that autopilot's own reject of the current plan's latest round wrote, whose
+round still passes the policy's round checks and is still allowed, is `replan`
 without a stop. `status` reads neither route (`policy=False`).
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
@@ -505,6 +506,8 @@ def _current_rounds(ledger):
 
 # T-0074: the one name `auto-reject` writes as `rejected.by`. No flag sets it.
 AUTO_REJECT_BY = "autopilot (policy: autopilot.maxAutoReplans)"
+# Review round 1 N1: the highest cap a setting can ask for; more reads as this.
+MAX_AUTO_REPLANS = 5
 AUTO_REJECT = ("python3 -B ${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew_autopilot.py "
                "auto-reject --root . --ticket {ticket}")
 
@@ -556,44 +559,10 @@ def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-stat
     if data.get("state") != review_ledger.REVIEWED:
         return {"cap": cap, "reason": (f"the review ledger is {data.get('state') or 'EMPTY'}, "
                                        f"not {review_ledger.REVIEWED}")}
-    rounds = _current_rounds(data)
-    row = rounds[-1] if rounds else None
-    if not isinstance(row, dict) or row.get("status") != "completed":
-        return {"cap": cap, "reason": "no completed review round under the current plan"}
-    number = row.get("round")
-    if row.get("verdict") != "FINDINGS":
-        return {"cap": cap, "round": number, "reason": (
-            f"round {number} is {row.get('verdict')!r}, not FINDINGS")}
-    counts, findings = row.get("counts"), row.get("findings")
-    if not isinstance(counts, dict) or not all(_count(counts.get(s))
-                                               for s in ("BLOCK", "FIX", "NIT")):
-        return {"cap": cap, "round": number, "reason": (
-            f"round {number}'s counts are {counts!r}, not three non-negative integers: "
-            "could not tell")}
-    if counts["BLOCK"] < 1:
-        return {"cap": cap, "round": number, "reason": (
-            f"round {number} has no BLOCK; the 0-BLOCK case is review_ledger.py "
-            "--auto-accept's")}
-    if not isinstance(findings, list) or not all(
-            isinstance(f, str) and "\n" not in f and "\r" not in f for f in findings):
-        return {"cap": cap, "round": number, "reason": (
-            f"round {number} carries no single-line finding lines: could not tell")}
-    blocks = [f for f in findings if f.strip().startswith("BLOCK|")]
-    fixes = [f for f in findings if f.strip().startswith("FIX|")]
-    if len(blocks) != counts["BLOCK"]:
-        return {"cap": cap, "round": number, "reason": (
-            f"round {number} lists {len(blocks)} BLOCK line(s) for a BLOCK count of "
-            f"{counts['BLOCK']}: could not tell")}
-    left = review_ledger.summary(data, state, ticket, path).get("rounds_left")
-    if not _count(left):
-        return {"cap": cap, "round": number, "reason": (
-            f"rounds left is {left!r}: could not tell")}
-    if left:
-        return {"cap": cap, "round": number, "reason": (
-            f"{left} review round(s) left: fix, then /crew:review")}
-    family = review_ledger._family_problem(row)  # pylint: disable=protected-access
-    if family:
-        return {"cap": cap, "round": number, "reason": family}
+    found = _block_round(data, state, ticket, path)
+    if "reason" in found:
+        return dict(found, cap=cap)
+    number, blocks, fixes = found["round"], found["blocks"], found["fixes"]
     successors = data.get("successors") or []
     used = len(successors)
     if used >= cap:
@@ -603,9 +572,58 @@ def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-stat
                     "on the ledger")}
     return {"allow": True, "cap": cap, "round": number, "used": used, "blocks": blocks,
             "fixes": fixes, "successors": successors, "reason": (
-                f"round {number} is FINDINGS with {counts['BLOCK']} BLOCK and no round "
+                f"round {number} is FINDINGS with {len(blocks)} BLOCK and no round "
                 f"left; autopilot.maxAutoReplans is {cap} ({used} used) and "
                 f"{approval.get('reason')}")}
+
+
+def _block_round(data, state, ticket, path):  # pylint: disable=too-many-return-statements
+    """Conditions 5-8 of `auto_replan_policy` on a loaded ledger: the latest
+    round under the current plan is a completed FINDINGS round whose counts
+    and single-line finding lines agree on at least one BLOCK, no round is
+    left, and the reviewer is another family (`review_ledger`'s own rule).
+    `{"round", "blocks", "fixes"}`, or a dict with the `reason` it fails. The
+    non-stop `replan` asks it again of the round it rejected (review round 1
+    F1: the reject name alone is a string anyone can type)."""
+    rounds = _current_rounds(data)
+    row = rounds[-1] if rounds else None
+    if not isinstance(row, dict) or row.get("status") != "completed":
+        return {"reason": "no completed review round under the current plan"}
+    number = row.get("round")
+    if row.get("verdict") != "FINDINGS":
+        return {"round": number, "reason": (
+            f"round {number} is {row.get('verdict')!r}, not FINDINGS")}
+    counts, findings = row.get("counts"), row.get("findings")
+    if not isinstance(counts, dict) or not all(_count(counts.get(s))
+                                               for s in ("BLOCK", "FIX", "NIT")):
+        return {"round": number, "reason": (
+            f"round {number}'s counts are {counts!r}, not three non-negative integers: "
+            "could not tell")}
+    if counts["BLOCK"] < 1:
+        return {"round": number, "reason": (
+            f"round {number} has no BLOCK; the 0-BLOCK case is review_ledger.py "
+            "--auto-accept's")}
+    if not isinstance(findings, list) or not all(
+            isinstance(f, str) and "\n" not in f and "\r" not in f for f in findings):
+        return {"round": number, "reason": (
+            f"round {number} carries no single-line finding lines: could not tell")}
+    blocks = [f for f in findings if f.strip().startswith("BLOCK|")]
+    fixes = [f for f in findings if f.strip().startswith("FIX|")]
+    if len(blocks) != counts["BLOCK"]:
+        return {"round": number, "reason": (
+            f"round {number} lists {len(blocks)} BLOCK line(s) for a BLOCK count of "
+            f"{counts['BLOCK']}: could not tell")}
+    left = review_ledger.summary(data, state, ticket, path).get("rounds_left")
+    if not _count(left):
+        return {"round": number, "reason": (
+            f"rounds left is {left!r}: could not tell")}
+    if left:
+        return {"round": number, "reason": (
+            f"{left} review round(s) left: fix, then /crew:review")}
+    family = review_ledger._family_problem(row)  # pylint: disable=protected-access
+    if family:
+        return {"round": number, "reason": family}
+    return {"round": number, "blocks": blocks, "fixes": fixes}
 
 
 def _successor_rows(successors):
@@ -626,8 +644,9 @@ def _auto_replan_route(top, ticket, found, answer):
                           f"itself (replan {got['used'] + 1} of {got['cap']})",
                           AUTO_REJECT.format(ticket=ticket))
         if got["capped"]:
-            return dict(found, reason=(f"{got['reason']} ({_successor_rows(got['successors'])}"
-                                       f") - the owner decides. {found['reason']}"))
+            return dict(found, phase="auto-replan-cap", reason=(
+                f"{got['reason']} ({_successor_rows(got['successors'])}) - the owner "
+                f"decides. {found['reason']}"))
     if found["phase"] == "replan" and found["stop"]:
         why = _auto_rejected(top, ticket)
         if why:
@@ -637,18 +656,25 @@ def _auto_replan_route(top, ticket, found, answer):
 
 def _auto_rejected(top, ticket):
     """The non-stop `replan` reason, or "" for today's stop: the ledger's
-    `rejected.by` is AUTO_REJECT_BY for its latest round, and autopilot is still
-    armed, under the cap, and allowed to approve the successor plan."""
+    `rejected.by` is AUTO_REJECT_BY for its latest round, that round is the
+    current plan's (after the last successor's `after_round`) and still passes
+    conditions 5-8 (`_block_round`), and autopilot is still armed, under the
+    cap, and allowed to approve the successor plan. The name alone proves
+    nothing: `review_ledger.py --reject --by` can type it (review round 1)."""
     try:
-        data, state = review_ledger.load(review_ledger.ledger_path(top, ticket))
+        path = review_ledger.ledger_path(top, ticket)
+        data, state = review_ledger.load(path)
         rejected = data.get("rejected") if state == "ok" else None
         rounds = data.get("rounds") or []
         latest = rounds[-1].get("round") if rounds and isinstance(rounds[-1], dict) else None
+        current = _current_rounds(data) if state == "ok" else []
         conf = settings(top)
         cap, used = conf.get("maxAutoReplans"), len(data.get("successors") or [])
         if not (isinstance(rejected, dict) and rejected.get("by") == AUTO_REJECT_BY
                 and _count(latest) and rejected.get("round") == latest
                 and type(rejected.get("round")) is int  # pylint: disable=unidiomatic-typecheck
+                and current and current[-1].get("round") == latest
+                and "reason" not in _block_round(data, state, ticket, path)
                 and conf["armed"] and _count(cap) and used < cap
                 and approval_policy(top, ticket).get("allow") is True):
             return ""
@@ -955,7 +981,8 @@ def settings(root):
     exactly the string `plan`; `maxPhases` must be a positive int, else 12;
     `deploy` is exactly one of DEPLOY_VALUES, else `none`; `approval` and
     `questions` must be one of POLICIES, else `human`; `maxAutoReplans` (T-0074)
-    must be a non-negative int, else 0 (off).
+    must be a non-negative int, else 0 (off), and reads at most
+    MAX_AUTO_REPLANS.
 
     A `.crew/config.json` that is present but unreadable, or an `autopilot`
     value that is not an object, is could-not-tell: both policies read
@@ -999,6 +1026,10 @@ def _settings_at(top):
         warnings.append(f"autopilot.maxAutoReplans is {replans!r}, not a non-negative "
                         "integer; using 0 (off: a BLOCK round stops for the owner)")
         replans = 0
+    if replans > MAX_AUTO_REPLANS:
+        warnings.append(f"autopilot.maxAutoReplans is {replans}, above the limit of "
+                        f"{MAX_AUTO_REPLANS}; using {MAX_AUTO_REPLANS}")
+        replans = MAX_AUTO_REPLANS
     deploy_saw = block.get("deploy", "none")
     deploy = deploy_saw if _exact(deploy_saw, DEPLOY_VALUES) else "none"
     if deploy != deploy_saw:
@@ -1548,7 +1579,7 @@ def route_args(root, text):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done", "auto-replan")}
+    "done", "auto-replan", "auto-replan-cap")}
 WAITING["closed"] = "nobody"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
