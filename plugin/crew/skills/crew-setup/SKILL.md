@@ -97,7 +97,62 @@ _verify/                   # from template, NOT filled in
   cases/                   # one file per concern
 docs/adr/0001-adopt-crew.md
 CLAUDE.md                  # created if absent; if present, sections APPENDED, never overwritten
+AGENTS.md                  # generated (step 4); a hand-written one is left alone
+.github/workflows/crew-verify.yml  # OPT-IN, only once .crew/verify.json exists (below)
 ```
+
+`.github/workflows/crew-verify.yml` — the verify gate as a pull-request job
+(`verify-gate.sh --ci`: the whole map, network/host rules named but not run, a
+SKIP or an empty run fails). It is opt-in: offer it, and write it only when the
+user says yes. It is meaningful only once `.crew/verify.json` exists, so on a
+fresh repo offer it after `/crew:verify` has built the map (Phase 5), not now.
+To install it:
+
+0. Check the map can run unattended FIRST. `--ci` runs only rules it can
+   prove local: a rule with no `reach` that the scanner cannot clear (any
+   `bash script.sh`, wrapper or inline shell) is excluded, and a map of
+   nothing but those exits 2 on every PR ("zero commands to run ... nothing
+   was checked"). Run `/crew:verify --stamp-reach` (a dry run) and show its
+   table: the classifier proposes `local`/`network` where it can tell, and
+   each wrapper rule needs the user to say `--set N=local` (or `network`/`host`)
+   - never choose for them. Re-run with `--apply` and those `--set N=...`
+   choices to write the map, commit that diff on its own, then run
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --ci < /dev/null`
+   (in the background: it is the whole map). Offer the workflow only once
+   that run executes commands; if it still exits 2 for "zero commands", say
+   why and stop.
+1. Copy `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/templates/github/crew-verify.yml`
+   to `.github/workflows/crew-verify.yml`.
+2. Replace `__CREW_SHA__` with the full commit of the crew the user installed.
+   Let `C` be `${CLAUDE_PLUGIN_ROOT}/../..` (the marketplace checkout) and run
+   these checks in order. If ANY fails or cannot be run - a plugin cache has no
+   `.git` - ask the user for the SHA instead. Never write a branch or tag: the
+   gate judging a PR must not move under it.
+   - (a) `git -C "$C" rev-parse --show-toplevel` equals `C` resolved
+     (`cd "$C" && pwd -P`), so a parent repository is never trusted;
+   - (b) `git -C "$C" remote get-url origin` names `mbadali25/useful-claude-add-ons`;
+   - (c) `git -C "$C" rev-parse HEAD` is the SHA, and is exactly 40 hex characters;
+   - (d) the commit is pushed: after `git -C "$C" fetch -q origin`,
+     `git -C "$C" branch -r --contains <sha>` prints something - a local-only
+     commit cannot be fetched by the job;
+   - (e) that commit's gate has `--ci`: `git -C "$C" show
+     <sha>:plugin/crew/hooks/scripts/verify-gate.sh | grep -q -- '--ci) CI_MODE=1'`
+     succeeds. Test the feature, not a version number: versions are bumped
+     on every merge, and comparing them as strings gets 1.0.99 > 1.0.231.
+   A SHA the user gives you must pass (c) and, where you can fetch, (d) and (e).
+3. Fill in the marked install step with the tools the map's commands call, or
+   delete it (add `fetch-depth: 0` to the checkout if a command needs history).
+   Tell the user the job checks only what the map maps, and that a PR controls
+   more than its code: it can edit its own `.crew/verify.json`, and it can edit
+   or delete this workflow file. Only CODEOWNERS review, or a ruleset, on
+   `.crew/verify.json` and `.github/workflows/` prevents a PR switching its own
+   gate off, so suggest one.
+4. Tell the user the job only REPORTS until they make it required: in the repo's
+   branch protection or ruleset for the default branch, add the status check
+   `verify` (the job id; GitHub may show it as `crew verify / verify`). GitHub
+   lists a check there only after it has run once, so open one PR first. Setup
+   cannot set that - it is a repository setting - so say it plainly; until
+   then a red job does not block a merge.
 
 `config.json` — this JSON is a COPY, kept here for a human reading the skill.
 It is not the source of truth: `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json`
@@ -176,6 +231,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "git": { "forbiddenTrailers": [] },
   "scope": { "mode": "off", "allowCliApproval": false },
   "autopilot": { "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk" },
+  "tickets": { "baseBranch": null },
   "route": { "enabled": false }
 }
 ```
@@ -431,6 +487,11 @@ shows up as noise in every `git status` rather than as a failure.
 Read `claude-md-authoring.md` before writing a line of it. It covers
 the triage question (does this rule belong here at all), what to do
 when the repo already has a CLAUDE.md, and the files to read first.
+
+Then `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" agents --root .`
+writes `AGENTS.md`, what Codex and other agents read: how to verify a change, and where things
+are. `/crew:verify` and `/crew:onboard` regenerate it. Report its output; never replace a
+hand-written one.
 
 ## 5. Stop and say this out loud
 

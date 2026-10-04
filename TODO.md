@@ -5148,3 +5148,9 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
 
 - **gizmoduck/crew: the routine's dated `docs/security-scans/<date>/` layout does not satisfy crew's endpoint ledger.** The ledger reads a flat `docs/security-scans/<ep-id>.md` (`plugin/crew/hooks/scripts/crew_endpoints.py:1008-1012`) and confirms it through `_artifact_confirms_scan` (`:1163`). A bridge - the ledger accepting a dated directory holding `report.md` with the `**Total finding instances:**` marker, or the routine also writing `<ep-id>.md` - is a crew change with its own bump.
 - **`docs/guides/gizmoduck/*.{html,docx,pdf}` describe gizmoduck with no routine CLI** (`docs/guides/gizmoduck/gizmoduck-technical-reference.html:146` still says the routine "has no slash command or skill entry point") and have no tracked source. Rebuild them with doc-builder from `plugin/gizmoduck/README.md` once the routine has been used in anger.
+- **The verify gate's fallback base ignores `tickets.baseBranch`** (T-0061, open question 1). With no
+  `.crew/.verify-verified-at` marker, `plugin/crew/hooks/scripts/verify-gate.sh:211-214` and
+  `plugin/crew/hooks/scripts/verify-gate.ps1:484-489` take the merge-base with `origin/HEAD`'s target
+  (else `main`), not with the repo's configured base branch. It is a superset, the safe direction, and
+  answers "what has not been verified" rather than "what did this ticket change", so T-0061 left it.
+  Follow-up: read the key (both flavours) or call `scope_base.base_branch`, a harness change on its own.

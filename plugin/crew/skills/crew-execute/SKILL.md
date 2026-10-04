@@ -16,7 +16,8 @@ Stop-hook scope audit doing that job, so this rewrite defers to those instead
 of building a second ledger.
 
 Backs `/crew:implement` and `/crew:fix`'s implementation phase. Both commands
-own the approval check, the scope-base record and the changed-file print;
+own the approval check, the scope-base record (which `crew_ticket.py activate`
+may already have made at branch cut, against `tickets.baseBranch`) and the changed-file print;
 this skill is the per-step discipline in between.
 
 ## Core principle

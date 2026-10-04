@@ -344,10 +344,13 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # by running this test on T-0040-land after merging main 844bfc36.
     assert "qa.kimi.model" in declared
     assert "dev.kimi.model" in declared
-    # 130 with T-0066: `git.forbiddenTrailers`, measured by running this test
-    # after merging main 34d9f267.
+    # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
+    # merging main 34d9f267.
+    assert "tickets.baseBranch" in declared
+    # 131 with T-0066: `git.forbiddenTrailers` on top of T-0061's 130,
+    # measured by running this test after merging main c9263465.
     assert "git.forbiddenTrailers" in declared
-    assert len(declared) == 130
+    assert len(declared) == 131
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
@@ -358,6 +361,16 @@ def test_forbidden_trailers_is_global_settable_and_defaults_empty():
     assert crew_config.is_global_path("git.forbiddenTrailers")
     assert crew_config.default_config()["git"] == {"forbiddenTrailers": []}
     assert crew_config.default_global_config()["git"] == {"forbiddenTrailers": []}
+
+
+def test_tickets_base_branch_is_repo_only_and_null_by_default():
+    """T-0061. Which branch ticket branches are cut from is a fact about one
+    repository, so a machine-global file may not set it, and `null` keeps
+    today's origin/HEAD default for every repo that never names it."""
+    assert crew_config.default_config()["tickets"] == {"baseBranch": None}
+    assert "tickets.baseBranch" not in set(
+        crew_config.leaf_paths(crew_config.default_global_config()))
+    assert not crew_config.is_global_path("tickets.baseBranch")
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
