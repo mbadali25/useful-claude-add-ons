@@ -2761,6 +2761,9 @@ tool, or a request to ask the user which ticket. The hook runs nothing and
 blocks nothing; the command's own checks still decide. The table of phrases,
 the three outcomes and what never routes are in the plugin README's
 "Plain-text lifecycle" section; `crew_route.PHRASES` is the single definition.
+Since 1.0.399 (T-0057) the table also names five `/crew:autopilot` phrases
+(status, assign, goal, goal resume, focus); this same key arms them, and one
+whose subcommand has not landed gets a line that runs nothing.
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|

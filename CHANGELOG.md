@@ -4,6 +4,30 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.399: plain-text routing for the autopilot commands the router knows (T-0057)
+
+- **What changed.** `crew_route.PHRASES` gains five rows after `status`:
+  `autopilot status [<id>]` / `what's autopilot doing?` -> `/crew:autopilot status`;
+  `take care of <work>` / `handle <work>` -> `assign <work>`; `work toward(s) <goal>` /
+  `make it so <goal>` -> `goal <goal>`; `pick the goal back up` / `resume the goal`
+  (always asks: routing never picks a goal slug, T-0056); `focus on <id>` -> `focus <id>`.
+  Same switch (`route.enabled`), same whole-prompt matcher, same route / ask / none.
+- **Availability is read, not copied.** Each row asks `crew_autopilot.route` at decide
+  time. A subcommand that stops (today `assign`, `goal`, `focus`, `run --goal`) gets a line
+  that runs nothing, says it is not available yet and tells Claude to answer the prompt as
+  written; a router that raises or answers an unknown shape asks; a name the router does
+  not know produces no line. A row goes live the day its ticket adds the name to
+  `crew_autopilot.AVAILABLE`, with no edit to `crew_route.py`.
+- **What never routes.** A bare pronoun as the work (`handle it`), work naming approve,
+  any `?` except on the two status questions; work holding a quote, `$`, a backtick or a
+  backslash asks the user to rephrase (`/crew:autopilot` refuses those characters). A
+  `goal` route also asks Claude to say what changed and how to undo it. Every decision
+  carries `unavailable`, and a non-ticket ask no longer says "which ticket".
+- **Tests.** `test_crew_route.py` and `test_crew_route_hook.py` (both wrappers): one case
+  per gate branch, must-route and must-not-route prompts, shell characters, the undo line,
+  bounded lines. Fourteen local sabotage mutations of the new branches each went red; they
+  are committed separately as L-0661, because `sabotage*.py` is harness.
+
 ### Changed — `crew` 1.0.325: sabotage covers Lock's delete-pending branch
 
 - `plugin/crew/tests/sabotage_config.py` gains three mutations against the

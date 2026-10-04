@@ -932,6 +932,13 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 | `close it`, `close it out`, `mark it done` | `/crew:done <ticket>` |
 | `continue`, `keep going`, `carry on` | whatever `crew_autopilot.next_phase` names from disk for the ticket |
 | `status`, `crew status` | `/crew:status` |
+| `autopilot status`, `autopilot status <id>`, `what's autopilot doing?` | `/crew:autopilot status [<ticket>]` |
+| `take care of <work>`, `handle <work>` | `/crew:autopilot assign <work>`, in your words |
+| `work toward <goal>`, `work towards <goal>`, `make it so <goal>` | `/crew:autopilot goal <goal>`, in your words; the line also asks Claude to say what changed and how to undo it |
+| `pick the goal back up`, `resume the goal` | never routes: asks you to type `/crew:autopilot run --goal <slug>` |
+| `focus on <id>` (an explicit id only) | `/crew:autopilot focus <ticket>` |
+
+**Autopilot rows** (since 1.0.399, T-0057). Whether each `/crew:autopilot` subcommand runs yet is read from `crew_autopilot.route` when the prompt arrives, so a row goes live the day its command lands with no edit here. Until then (today `assign`, `goal`, `focus` and `run --goal`) the matched prompt gets a line that runs nothing: it says the command is not available yet and tells Claude to answer your prompt as written, so "handle the merge conflict" is still an ordinary instruction. A router that cannot be read asks; a subcommand the router does not know produces no line. `take care of it`, `handle this` and the like (a bare pronoun as the work), work that names approve, and work holding a quote, `$`, a backtick or a backslash never route (the last asks you to rephrase, because `/crew:autopilot` refuses those characters). The two status questions are the only rows that accept a trailing `?`.
 
 `it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
 
