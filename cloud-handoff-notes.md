@@ -14,7 +14,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - Harness paths (`HARNESS` in scripts/check-tooling-pr.py) land ALONE (T-0087). Docs-only PRs need no gates.
 - PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets L-15xx ids (next free: **L-1515**).
 - **Batches of 5-6** (raised 2026-10-04 evening).
-- **Version: ONE bump per batch** during cloud sessions (2026-10-04 late): only the last PR of a batch carries the version-only commit. See `procedures/LANDPREP.md` "Version rule".
+- **Version: one bump per PR (main+N within a batch).** The owner briefly chose one-per-batch (2026-10-04 late) but check-marketplace refuses any PR with plugin content and no bump, so the owner REVERTED to per-PR bumps (2026-10-04 23:1x). Do not work around the checker.
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
 - Notes after every action; present decisions with a recommendation and tables (owner has ADHD: concise).
 

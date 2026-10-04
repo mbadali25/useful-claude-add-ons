@@ -33,5 +33,5 @@ A PR joins a batch only when ITS OWN head has a green Windows run (crew-windows-
 ## Merge-resolution review
 Any REAL content conflict in a land-prep merge gets a review agent (`git show --remerge-diff <merge>`); version/CHANGELOG/BUDGETS/rules/guide-binary/codemap-anchor conflicts are reviewed by the coordinator.
 
-## Version rule during cloud sessions (owner decision 2026-10-04, late)
+## Version rule during cloud sessions - WITHDRAWN 2026-10-04 23:1x (check-marketplace requires a bump per PR; owner kept per-PR bumps). Historical text below
 ONE crew version bump per BATCH, not per PR. Land the batch's PRs without their own bump (each PR's placeholder version commit is reverted at land-prep, no new one), then the LAST PR of the batch carries the single version-only commit (main + 1, covering every PR in the batch; its CHANGELOG heading lists all of them). PRs in a batch no longer stack on each other for version numbers, so they can be land-prepped and CI'd in parallel; merge order still matters only for real content dependencies. Any other plugin a batch touches (obsidian-vault, localgpu, ...) also gets one bump in that last PR. check-marketplace's version-drift check runs per PR: if it refuses an intermediate PR for content-without-bump, put the bump on that PR instead and tell the owner; never work around the checker.
