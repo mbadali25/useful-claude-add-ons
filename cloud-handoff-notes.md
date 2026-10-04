@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:00 UTC
+Last updated: 2026-10-04 15:03 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:03: #403 T-0053 review d7a51dd6: 0/1/5. F1 (sleep=unknown applies day values -> looser than a tightening night override) -> owner-decision taken per rec: unknown = strictest of day+valid overrides. NITs N1-N3,N5 + N4 doc note (window up to 23h59). Sent to builder.
 - 15:00: #450 fixes pushed -> da00137e (B1+F1-F7+6 NITs; 74 tests, 23 red-before; 13 new sabotages). Round-2 review started.
 - 15:00: H1 #418 built -> 24cb235c (ledger supersede-accepted + correct-acceptance + prompt override line; 86 tests, 17 sabotage RED; tooling-pr OK 4 harness paths; 1.0.400). Review started. Owner-confirm item: T-0109 Q3 (name + refuse auto:, no owner auth) - builder says posture unchanged vs --reserve.
 - 14:57: WAVE1 #403 T-0053 built -> d7a51dd6 (crew_sleep.py, night settings in _settings_at; 81 tests, 15 mutations red; 1.0.394; crew_keys since re-bump at landing). Review started. All 6 wave-1 builds done.
