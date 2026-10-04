@@ -52,6 +52,6 @@ Options:
 3. **Crew hooks only, as first written.** Leaves three bare-git calls inside crew's own plugin unfixed.
    - Not recommended: same plugin, same bump, no reason to defer.
 
-Taken unless the owner says otherwise: option 1.
+**Owner decided 2026-10-04: option 1.** The repo-docs follow-up is L-1509.
 ## Next
 /crew:spec is done (spec.md beside this file). /crew:plan by the implementing session.

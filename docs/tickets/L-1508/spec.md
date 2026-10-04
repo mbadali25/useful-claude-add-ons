@@ -11,7 +11,7 @@ Every subprocess call in crew's hook scripts runs the executable that `shutil.wh
 ## Exclusions
 - No change to *what* any tool is asked, only to which binary runs.
 - No `shell=True` anywhere.
-- Outside crew's hook scripts (owner option 1, see direction.md): the three `plugin/crew/skills/crew-qa-standards/scripts/` git sites (`qa_audit.py:331`, `qa_audit_env.py:273`, `qa_doc.py:45`) ARE fixed in PR A (same crew bump). `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:857` (`ps`, macOS-only function) and `skills/notify/scripts/notifyd.py:264` (`tasklist.exe`, Windows-only) are allowlisted with those reasons, unchanged. `skills/repo-docs/scripts/git_changelog.py:71` is a follow-up ticket (its own bump). `skills/intune-graph/scripts/auth.py` already does it right (`_find_az`).
+- Outside crew's hook scripts (owner decided 2026-10-04: option 1, see direction.md): the three `plugin/crew/skills/crew-qa-standards/scripts/` git sites (`qa_audit.py:331`, `qa_audit_env.py:273`, `qa_doc.py:45`) ARE fixed in PR A (same crew bump). `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:857` (`ps`, macOS-only function) and `skills/notify/scripts/notifyd.py:264` (`tasklist.exe`, Windows-only) are allowlisted with those reasons, unchanged. `skills/repo-docs/scripts/git_changelog.py:71` is follow-up ticket L-1509 (its own bump). `skills/intune-graph/scripts/auth.py` already does it right (`_find_az`).
 - Not the Windows test-skip audit (#399 F-A, native Python probing `/proc` to skip tests). That is its own concern; note it in the done report.
 
 ## Evidence (origin/main `f1cace4a`, read 2026-10-04)
