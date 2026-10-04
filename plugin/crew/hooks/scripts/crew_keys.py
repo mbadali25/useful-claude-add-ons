@@ -250,7 +250,7 @@ KEY_META = {
                                      "becomes the wrap-up procedure and the clear waits for "
                                      "its results. Only the machine file arms it (exactly "
                                      "`true`), only where `enabled` is armed; a repo `false` "
-                                     "vetoes it.", "branch", (None, True, False), "1.0.334",
+                                     "vetoes it.", "branch", (None, True, False), "1.0.390",
                                      _S + "crew_autocycle.py"),
     "context.autoWrapUp": _unv("Ask for a wrap-up when the budget runs low.", "0.19.10",
                                _S + "context-watch.sh", "boolean"),
