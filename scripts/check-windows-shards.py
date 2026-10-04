@@ -36,9 +36,9 @@ It passes when either
     (a testcase recorded twice is a failure), and no shard's
     JUnit names a test the collection does not have.
 
-  The unsplit `crew-windows-slow/` artifact of the layout before L-1507 is
-  unexpected: a stale slow job uploading it fails the gate rather than being
-  ignored beside the shards.
+  An unsplit `crew-windows-default/` or `crew-windows-slow/` artifact (the
+  layouts before each set was split) is unexpected: a stale job uploading one
+  fails the gate rather than being ignored beside the shards.
 
 JUnit records (classname, name), not node ids. A node id is mapped the way
 pytest's junitxml does it (`_pytest.junitxml.mangle_test_address`): the file

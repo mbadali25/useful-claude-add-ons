@@ -198,6 +198,26 @@ def case_old_slow_artifact_beside_complete_shards_fails(root):
     return run(root), (1, "unexpected artifact crew-windows-slow: the slow set is split")
 
 
+def case_old_single_default_layout_fails(root):
+    # An unsplit crew-windows-default/ beside complete default shards: main
+    # before L-1507 ignored it, the shared partition code rejects it.
+    build(root, good_groups())
+    d = os.path.join(root, "crew-windows-default")
+    write(os.path.join(d, "collected.txt"), collected_text(IDS, deselected=3))
+    write(os.path.join(d, "junit.xml"), junit_text(IDS))
+    return run(root), (1, "unexpected artifact crew-windows-default: the default set is split")
+
+
+def case_slow_set_empty_fails(root):
+    # Every slow shard collected nothing: an empty slow set is a failure, not
+    # a vacuous pass.
+    empty = "\nno tests collected (40 deselected) in 0.5s\n"
+    build(root, good_groups(), slow_groups=[[], [], []], slow_collected=[empty] * 3)
+    rc, text = run(root)
+    ok = all(f"slow shard {k}: " in text and "collected no tests" in text for k in (1, 2, 3))
+    return (rc if ok else 98, text), (1, "no slow shard produced a usable collection")
+
+
 def case_slow_shards_flag_missing_is_usage_error(root):
     build(root, good_groups())
     argv = [sys.executable, CHECKER, "--shards", "3", "--artifacts", root,
