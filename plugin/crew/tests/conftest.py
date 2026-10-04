@@ -47,6 +47,11 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     unused = str(tmp_path / "unused-global-config.json")
     monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
+    # T-0050: every crew config write takes a backup first. An ENVIRONMENT
+    # variable rather than a patched attribute, so a test's subprocess (a
+    # hook, the CLI) inherits it too and never writes under the real
+    # `~/.claude/crew/backups`.
+    monkeypatch.setenv("CREW_BACKUP_DIR", str(tmp_path / "crew-backups"))
 
     # Same rule, second environment channel. `pm_brief.main` resolves its root
     # as `payload["cwd"] or $CLAUDE_PROJECT_DIR or os.getcwd()`, so a test that

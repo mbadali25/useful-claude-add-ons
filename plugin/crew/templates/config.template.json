@@ -210,13 +210,6 @@
     "mode": "off",
     "allowCliApproval": false
   },
-  "autopilot": {
-    "mode": "off",
-    "maxPhases": 12,
-    "deploy": "none",
-    "approval": "risk",
-    "questions": "risk"
-  },
   "route": {
     "enabled": false
   }

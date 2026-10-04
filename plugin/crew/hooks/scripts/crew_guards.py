@@ -590,6 +590,97 @@ def effective_ratcheted(dotted, repo_value, global_value):
     return tiers[min(rank(repo_value), rank(global_value))]
 
 
+# T-0050. The owner's PERSONAL keys: settable in the machine-global file as a
+# default for every repo, and combined per key by a rule of their own. A
+# second table, not rows in `RATCHETED_KEYS`, because the rules differ in the
+# one place that matters here: `effective_ratcheted` reads an ABSENT layer as
+# the floor, so a global `autopilot.approval: self` over a repo that says
+# nothing would resolve to the floor and could never carry a personal
+# default. Here a layer that is silent imposes nothing.
+#
+# `kind` is `tiers` (order strictest first; exact match, so `1` is not
+# `True`), `int-min` (a positive int, the smaller is stricter) or `value`
+# (plain precedence, for a key that grants nothing). No key is in both tables.
+#
+# `scope.allowCliApproval` is NOT here yet. Its reader is
+# `crew_ticket.cli_approval_allowed`, which reads the repo file alone, and
+# that module is review harness (CLAUDE.md, T-0087), so its row lands with the
+# reader change in a harness-only PR. A global value the guard does not read
+# would be a report that contradicts the run.
+PERSONAL_KEYS = {
+    "autopilot.mode": ("tiers", ("off", "plan")),
+    "autopilot.maxPhases": ("int-min", None),
+    "autopilot.deploy": ("tiers", ("none", "nonprod", "all")),
+    "autopilot.approval": ("tiers", ("human", "risk", "self")),
+    "autopilot.questions": ("tiers", ("human", "risk", "self")),
+}
+
+# Autopilot keys that are never global: each names one checkout's facts.
+# Every key in `crew_state.AUTOPILOT_DEFAULTS` is a `PERSONAL_KEYS` row or a
+# member here, and a test fails until a new key picks one.
+REPO_ONLY_AUTOPILOT = frozenset()
+
+
+def personal_rank(dotted, value):
+    """The rank of `value` at the personal key `dotted`: its index in the
+    tiers by exact match (type too), the int itself for `int-min`, and -1 for
+    anything unrecognised -- BELOW the floor, so it can only narrow."""
+    kind, order = PERSONAL_KEYS[dotted]
+    if kind == "int-min":
+        return value if _valid_phase_limit(value) else -1
+    if kind != "tiers":
+        return 0
+    for index, allowed in enumerate(order):
+        if value == allowed and type(value) is type(allowed):
+            return index
+    return -1
+
+
+def _valid_phase_limit(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def effective_personal(dotted, repo_value, global_value, default):
+    """`(value, held_down_by)` for a personal key, given both layers.
+
+    A layer SETS the key when its value is not None (callers pass an absent
+    key as None, and a `null` is silent too). Neither sets it: the default.
+    One sets it: that value, whatever it is -- its reader validates it.
+
+    Both set it:
+      * `tiers` -- the LOWER rank wins, the repo's value on a tie. An
+        unrecognised value ranks below the floor, so it wins and is returned
+        RAW; the reader reads it as its floor and warns. `held_down_by` names
+        the layer whose higher-ranked value lost.
+      * `int-min` -- the smaller valid value. A layer whose value is not a
+        positive int is ignored when the other is valid; neither valid
+        returns the repo's raw value, which the reader warns about.
+      * `value` -- the repo's.
+
+    An unknown `dotted` raises KeyError: falling back to precedence would be
+    the rule silently not happening.
+    """
+    kind, _order = PERSONAL_KEYS[dotted]
+    if repo_value is None and global_value is None:
+        return default, None
+    if global_value is None:
+        return repo_value, None
+    if repo_value is None:
+        return global_value, None
+    if kind == "int-min" and not (_valid_phase_limit(repo_value)
+                                  and _valid_phase_limit(global_value)):
+        return (global_value if _valid_phase_limit(global_value)
+                and not _valid_phase_limit(repo_value) else repo_value), None
+    if kind in ("tiers", "int-min"):
+        repo_rank = personal_rank(dotted, repo_value)
+        global_rank = personal_rank(dotted, global_value)
+        if global_rank < repo_rank:
+            return global_value, "global"
+        if repo_rank < global_rank:
+            return repo_value, "repo"
+    return repo_value, None
+
+
 def effective_install_policy(repo_value, global_value):
     """`effective_ratcheted` for `install.policy`. Kept as its own name.
 

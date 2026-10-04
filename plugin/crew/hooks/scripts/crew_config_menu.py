@@ -39,6 +39,7 @@ import shlex
 import sys
 import tempfile
 
+import crew_backup
 import crew_config
 import crew_config_files
 import crew_state
@@ -558,7 +559,22 @@ def save(root, changes, apply, global_path=None, expect=None):
             return 2 if conflict and not written else 1
         written.append(layer)
         print(f"{layer} layer: written")
+        _refresh_profile(root, layer, global_path)
     return 0
+
+
+def _refresh_profile(root, layer, global_path):
+    """T-0050: the owner's saved profile follows each layer Save wrote. A
+    refresh that fails is a warning: the config write already landed."""
+    try:
+        paths = crew_config.refresh_profile(layer, root, global_path)
+        print("profile refreshed: " + ", ".join(paths))
+    except (crew_config.ProfileUnreadable, crew_backup.BackupError,
+            crew_config.RepoWriteRefused, crew_config.GlobalWriteRefused,
+            OSError) as exc:
+        print(f"warning: {layer} layer written, but the profile was NOT "
+              f"refreshed ({exc}); /crew:config --save-profile once it is "
+              "fixed", file=sys.stderr)
 
 
 # --- Delete and restore -----------------------------------------------------
@@ -594,17 +610,20 @@ def _free_backup(root, now):
 def _post_heal_rows(root, global_path):
     """`explain_config` rows as they will read once platform-sync has healed
     the deleted file with the built-in defaults: the same resolver, run on a
-    scratch repo holding exactly what `heal_config` writes."""
+    scratch repo holding exactly what `heal_config` writes
+    (`crew_config.template_config()`, T-0050)."""
     with tempfile.TemporaryDirectory() as scratch:
         os.makedirs(os.path.join(scratch, ".crew"))
         with open(os.path.join(scratch, ".crew", "config.json"), "w",
                   encoding="utf-8") as handle:
-            handle.write(json.dumps(crew_config.default_config(), indent=2) + "\n")
+            handle.write(json.dumps(crew_config.template_config(), indent=2) + "\n")
         return {row["path"]: row for row in
                 crew_config.explain_config(scratch, global_path)}
 
 
 def _widens(dotted, before, after):
+    if dotted in crew_state.PERSONAL_KEYS:
+        return crew_config._widens(dotted, before, after)  # pylint: disable=protected-access
     spec = crew_state.ratchet_spec(dotted)
     if spec is not None:
         return spec[2](after) > spec[2](before)
@@ -982,13 +1001,14 @@ def restore_repo_config(root, backup, apply, now=None):
     try:
         with crew_config_files.Lock(path):
             if os.path.lexists(path):
+                crew_backup.backup(path)       # T-0050: no backup, no write
                 saved = _free_backup(root, now)
                 crew_config_files.move_aside(path, saved)
                 print(f"moved the current file aside to {saved}")
             crew_config_files.create_bytes(path, data)
             with open(path, "rb") as handle:
                 back = handle.read()
-    except crew_config_files.Busy as exc:
+    except (crew_config_files.Busy, crew_backup.BackupError) as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
     except crew_config_files.Displaced as exc:

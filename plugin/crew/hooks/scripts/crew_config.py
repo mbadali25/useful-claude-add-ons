@@ -89,6 +89,7 @@ import shutil
 import sys
 import time
 
+import crew_backup
 import crew_common
 import crew_config_files
 import crew_state
@@ -388,9 +389,14 @@ def default_config():
         "scope": {"mode": "off", "allowCliApproval": False},
         # `/crew:autopilot` (T-0004). `off` by default: a driver that runs
         # phase commands in-session starts disarmed, and only the exact
-        # string `plan` arms it (crew_autopilot.settings). REPO ONLY, absent
-        # from `default_global_config()`: whether one checkout may be driven
-        # is a fact about that checkout.
+        # string `plan` arms it (crew_autopilot.settings). Every key here is
+        # PERSONAL since T-0050 (`crew_state.PERSONAL_KEYS`): settable in
+        # the machine-global file too, combined per key (the stricter of the
+        # layers that set it wins; a silent layer imposes nothing). This
+        # block is the defaults layer and the prune shape; `template_config`
+        # omits it, so a new repo's file does not shadow the owner's global
+        # values. A key added here without a row (or a place in
+        # `crew_state.REPO_ONLY_AUTOPILOT`) fails a test.
         "autopilot": copy.deepcopy(crew_state.AUTOPILOT_DEFAULTS),
         # Plain-text lifecycle routing (T-0023). `false` by default: only the
         # JSON value `true` arms the one context line `crew_route.decide`
@@ -498,6 +504,13 @@ def default_global_config():
         crew may run HERE. Like `install.policy` and unlike everything else
         above, a repo cannot override these UPWARD -- see
         `crew_state.effective_ratcheted`, and `resolve_ratcheted` below.
+      * `autopilot` -- the PERSONAL keys only (`crew_state.PERSONAL_KEYS`,
+        T-0050): how far the owner lets autopilot run is a standing answer
+        by the person, so it is set once here. Each key combines per key:
+        the stricter of the layers that set it wins, and a layer that is
+        silent imposes nothing (`crew_state.effective_personal`). Neither
+        template spells these keys (`template_config`), so no template
+        default shadows the owner's choice.
 
     `qa.roles` and `dev.roles` are empty dicts, which `leaf_paths` treats as
     LEAVES -- so the whole per-role table is one settable path and a pin for
@@ -587,6 +600,17 @@ def default_global_config():
         # here whose two layers do not combine by precedence: see
         # `crew_state.CHANGE_REQUIREMENTS` and `resolve_ratcheted`.
         "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
+        # T-0050: the owner's personal autopilot defaults, every key that has
+        # a `crew_state.PERSONAL_KEYS` row. They do not resolve by precedence:
+        # `resolve_config` combines the two layers per key (the stricter of
+        # the layers that set it wins, a silent layer imposes nothing), so a
+        # global `approval: self` is the default for every repo that says
+        # nothing and never widens one that said `human`.
+        "autopilot": {
+            key: copy.deepcopy(value)
+            for key, value in crew_state.AUTOPILOT_DEFAULTS.items()
+            if f"autopilot.{key}" in crew_state.PERSONAL_KEYS
+        },
         # T-0023's routing switch, settable machine-wide (see the comment in
         # `default_config()` for why a repo file can still veto it).
         "route": {"enabled": False},
@@ -595,6 +619,64 @@ def default_global_config():
         # the shell route is settable here; a repo may still override it.
         "shellRoute": {"mode": "auto", "distro": None},
     }
+
+
+# T-0050. The personal keys a config file can hold: every `PERSONAL_KEYS` row
+# whose path is a leaf of `default_config()`. A row for a key this release's
+# shape does not carry yet is simply not a path here.
+def _is_leaf_of(cfg, dotted):
+    node = cfg
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False
+        node = node[part]
+    return not isinstance(node, dict)
+
+
+PERSONAL_PATHS = tuple(dotted for dotted in crew_state.PERSONAL_KEYS
+                       if _is_leaf_of(default_config(), dotted))
+
+
+def _without_paths(cfg, paths):
+    """`cfg` minus each dotted path in `paths`, dropping a block left empty.
+    Builds a new object; `cfg` is not mutated."""
+    out = copy.deepcopy(cfg)
+    for dotted in paths:
+        parts = dotted.split(".")
+        chain = [out]
+        for part in parts[:-1]:
+            node = chain[-1].get(part) if isinstance(chain[-1], dict) else None
+            if not isinstance(node, dict):
+                break
+            chain.append(node)
+        else:
+            chain[-1].pop(parts[-1], None)
+            for depth in range(len(chain) - 1, 0, -1):
+                if not chain[depth]:
+                    chain[depth - 1].pop(parts[depth - 1], None)
+    return out
+
+
+def template_config():
+    """What a NEW `.crew/config.json` holds: `default_config()` minus the
+    personal keys (`PERSONAL_PATHS`), a block left empty dropped.
+
+    The committed `templates/config.template.json`, crew-setup's inline copy
+    and `crew_platform.heal_config` all equal this, not `default_config()`.
+    A repo file that spells a personal key at its default would hold the
+    owner's global value down (`autopilot.mode: off` is the strictest tier,
+    so a global `plan` could never reach a repo initialised from it).
+    `default_config()` stays the defaults layer and the shape every reader
+    walks."""
+    return _without_paths(default_config(), PERSONAL_PATHS)
+
+
+def global_template_config():
+    """`default_global_config()` minus the personal keys: the committed
+    `templates/global.template.json`. The global file may set them, and the
+    walkthrough asks about each; a template that spelled them would set the
+    owner's personal defaults to crew's on a copy."""
+    return _without_paths(default_global_config(), PERSONAL_PATHS)
 
 
 def leaf_paths(node, prefix=()):
@@ -842,7 +924,47 @@ def resolve_config(root):
         merged["schema"] = repo_cfg["schema"]
     else:
         merged.pop("schema", None)
+    # T-0050: the personal keys do not resolve by precedence. Each is
+    # recomputed from the two raw layers by `effective_personal`.
+    for dotted in PERSONAL_PATHS:
+        parts = dotted.split(".")
+        block = merged.get(parts[0])
+        if isinstance(block, dict) and len(parts) == 2:
+            block[parts[1]] = copy.deepcopy(
+                _personal_row(repo_cfg, global_cfg, dotted)["effective"])
     return merged
+
+
+def _personal_row(repo_cfg, global_cfg, dotted):
+    """`{"path", "effective", "repo", "global", "heldDownBy"}` for one personal
+    key from two already-read layers (the repo after `without_null_shadows`,
+    the global after `filter_global`). An absent value and a `null` are both
+    None: silent."""
+    parts = tuple(dotted.split("."))
+    repo_value = _dig(repo_cfg, parts)
+    global_value = _dig(global_cfg, parts)
+    repo_value = None if repo_value is _MISSING else repo_value
+    global_value = None if global_value is _MISSING else global_value
+    default = _dig(_default_template(), parts)
+    effective, held = crew_state.effective_personal(
+        dotted, repo_value, global_value,
+        None if default is _MISSING else default)
+    return {"path": dotted, "effective": effective, "repo": repo_value,
+            "global": global_value, "heldDownBy": held}
+
+
+def resolve_personal(root, dotted, path=None):
+    """The value in force at the personal key `dotted` for the repo at `root`,
+    and where it came from: `{"path", "effective", "repo", "global",
+    "heldDownBy"}`, the shape `resolve_ratcheted` returns. `repo` and
+    `global` are the raw layer values (None when silent). `heldDownBy` names
+    the layer whose stricter value beat the other's wider one. Raises
+    KeyError for a key with no `PERSONAL_KEYS` row."""
+    if dotted not in crew_state.PERSONAL_KEYS:
+        raise KeyError(f"{dotted} is not a personal key")
+    global_cfg, _ = filter_global(read_global_config(path))
+    repo_cfg = without_null_shadows(crew_state.load_config(root), global_cfg)
+    return _personal_row(repo_cfg, global_cfg, dotted)
 
 
 def resolve_ratcheted(root, dotted, path=None):
@@ -1655,8 +1777,12 @@ _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
 
 
-def explain_config(root, path=None):
+def explain_config(root, path=None, all_keys=False):
     """Every globally-settable key, with its effective value and its source.
+
+    With `all_keys` (`--explain --all`, T-0050), every leaf of
+    `default_config()` instead, in that order: a key the global file may not
+    set carries `"repoOnly": True` and a source of `repo` or `default`.
 
     Returns a list of `{"path", "value", "source"}` in template order, where
     `source` is `"repo"`, `"global"`, `"repo+global"` or `"default"`.
@@ -1699,11 +1825,40 @@ def explain_config(root, path=None):
         crew_state.merge_defaults(defaults, global_cfg), repo_cfg)
 
     rows = []
-    for dotted in leaf_paths(default_global_config()):
+    for dotted in leaf_paths(defaults if all_keys else default_global_config()):
         parts = tuple(dotted.split("."))
         from_repo = _layer_supplies(repo_cfg, parts, defaults)
+        if all_keys and not is_global_path(dotted):
+            # Repo-only: the global layer is pruned of it, so it is the
+            # repo's value or the default. `schema` is the repo file's own
+            # raw value, as `resolve_config` reports it.
+            value = (repo_cfg.get("schema") if dotted == "schema"
+                     else _dig(resolved, parts))
+            rows.append({"path": dotted,
+                         "value": None if value is _MISSING else value,
+                         "source": "repo" if from_repo else "default",
+                         "repoOnly": True})
+            continue
         from_global = _layer_supplies(global_cfg, parts, defaults)
         value = _dig(resolved, parts)
+        if dotted in crew_state.PERSONAL_KEYS:
+            # T-0050: a personal key does not resolve by precedence either,
+            # so the merged value is the wrong one to print -- the same
+            # contradiction the ratchet rows below were fixed for.
+            personal = _personal_row(repo_cfg, global_cfg, dotted)
+            rows.append({
+                "path": dotted,
+                "value": personal["effective"],
+                "source": personal["heldDownBy"] or (
+                    "repo" if personal["repo"] is not None
+                    else "global" if personal["global"] is not None
+                    else "default"),
+                "personal": True,
+                "heldDownBy": personal["heldDownBy"],
+                "repo": personal["repo"],
+                "global": personal["global"],
+            })
+            continue
         if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS:
             # `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos
             # / onlySessions from the machine file ONLY -- a repo's own copy
@@ -1774,6 +1929,36 @@ def explain_config(root, path=None):
             "source": source,
         })
     return rows
+
+
+def explain_findings(root, path=None):
+    """Findings `--explain --all` prints under its table (T-0050). Reporting
+    only; nothing here writes.
+
+    `shadow`: a personal key whose repo value equals the built-in default and
+    is holding a wider global value down -- the signature of a file written
+    from a template that spelled the key. A deliberate repo value looks
+    exactly the same, so it is named, never removed: `--unset <path> --repo
+    --apply` is the owner's route. `profile drift`: a leaf whose value in a
+    config file differs from the owner's saved profile for that layer.
+
+    Each finding is `{"kind", "path", "detail"}`.
+    """
+    global_cfg, _ = filter_global(read_global_config(path))
+    repo_raw = crew_state.load_config(root)
+    repo_cfg = without_null_shadows(repo_raw, global_cfg)
+    out = []
+    for dotted in PERSONAL_PATHS:
+        row = _personal_row(repo_cfg, global_cfg, dotted)
+        default = _dig(_default_template(), tuple(dotted.split(".")))
+        if row["heldDownBy"] == "repo" and _unchanged(default, row["repo"]):
+            out.append({"kind": "shadow", "path": dotted, "detail": (
+                f"shadow: {dotted} = {json.dumps(row['repo'])} in "
+                ".crew/config.json equals the built-in default and hides your "
+                f"global {json.dumps(row['global'])}; remove it with "
+                f"/crew:config --unset {dotted} --repo --apply")})
+    out.extend(profile_drift(root, path))
+    return out
 
 
 # --- What is wrong with the global file? -----------------------------------
@@ -2356,6 +2541,8 @@ def _widens(dotted, before, after):
     above it correctly reads as a widening. A key that does not ratchet never
     widens.
     """
+    if dotted in crew_state.PERSONAL_KEYS:
+        return _personal_widens(dotted, before, after)
     spec = _RATCHETED.get(dotted)
     if spec is None:
         return False
@@ -2639,6 +2826,57 @@ _RATCHETED["environments.prodUnattended"] = (
 )
 
 
+# T-0050. The `! widens to` notes for the personal keys, total over each
+# tier tuple for the reason every note table here is total. `maxPhases` is an
+# int, so its note is written per value by `personal_widening_note`.
+_PERSONAL_NOTES = {
+    "autopilot.mode": {
+        "off": ("autopilot is disarmed. This is the narrowest value and "
+                "nothing widens into it."),
+        "plan": ("/crew:autopilot may drive this repo's tickets through the "
+                 "lifecycle in-session, running phase commands until a human "
+                 "is needed"),
+    },
+    "autopilot.deploy": {
+        "none": ("autopilot asks before every deploy. This is the narrowest "
+                 "value and nothing widens into it."),
+        "nonprod": ("autopilot may deploy to a non-production environment "
+                    "without asking"),
+        "all": ("autopilot may deploy to PRODUCTION without asking, where "
+                "environments.prodUnattended is true in both layers and "
+                "guards.cloudGuard is block"),
+    },
+}
+for _key in ("approval", "questions"):
+    _act = ("approve a plan" if _key == "approval"
+            else "take its own recommended answer to an open question")
+    _PERSONAL_NOTES[f"autopilot.{_key}"] = {
+        "human": ("autopilot always stops for a person. This is the "
+                  "narrowest value and nothing widens into it."),
+        "risk": f"autopilot may {_act} itself on a ticket whose spec says "
+                "risk: low",
+        "self": f"autopilot may {_act} itself on EVERY ticket, whatever its "
+                "risk",
+    }
+
+
+def personal_widening_note(dotted, after):
+    """The `!` line's text for a personal key widening to `after`."""
+    if crew_state.PERSONAL_KEYS[dotted][0] == "int-min":
+        return (f"autopilot may run up to {after} phases in one run before "
+                "it stops for a person")
+    return _PERSONAL_NOTES[dotted].get(after, "")
+
+
+def _personal_widens(dotted, before, after):
+    """True when `after` ranks above `before` at a personal key, an absent or
+    null `before` being the built-in default."""
+    if before is None or before is _MISSING:
+        before = _dig(_default_template(), tuple(dotted.split(".")))
+    return (crew_state.personal_rank(dotted, after)
+            > crew_state.personal_rank(dotted, before))
+
+
 def enum_values(dotted):
     """The values `dotted` may take, as a tuple, or None for an open key: the
     tuple its READER normalises against, never a second list, so both writers
@@ -2646,6 +2884,9 @@ def enum_values(dotted):
     spec = crew_state.ratchet_spec(dotted)
     if spec is not None:
         return tuple(spec[0])
+    personal = crew_state.PERSONAL_KEYS.get(dotted)
+    if personal is not None and personal[0] == "tiers":
+        return tuple(personal[1])
     if dotted == "pm.authority":
         return tuple(crew_state.AUTHORITIES)
     if dotted == "pm.ticketGranularity":
@@ -2773,10 +3014,30 @@ def _layer_path_refusal(dotted, layer, value):
     return reason
 
 
+class _Unset:
+    """`--unset`'s value (T-0050): remove the leaf from the file. A sentinel,
+    never JSON, so no `--set` value can spell it."""
+
+    def __repr__(self):
+        return "<unset>"
+
+
+UNSET = _Unset()
+
+
 def value_allowed(dotted, layer, value):
     """None when `layer` accepts `value` at the LEAF `dotted`, else why not:
     the layer's path rule, a block emptied or replaced by a scalar, the null
-    rule, then `enum_values` membership. Both planners and the menu use it."""
+    rule, then `enum_values` membership. Both planners and the menu use it.
+    `UNSET` (remove the leaf) is judged by the path rule and the shape only:
+    removing a value is never a value outside the key's tuple."""
+    if value is UNSET:
+        reason = (_layer_path_refusal(dotted, layer, None)
+                  if not (layer == "repo" and dotted in REPO_VETO_ONLY)
+                  else _repo_refusal(dotted))
+        if reason is None and _shape(dotted) not in ("leaf", "open"):
+            reason = "not a leaf; --unset removes one key at a time"
+        return None if reason is None else f"{dotted} - {reason}"
     reason = _layer_path_refusal(dotted, layer, value)
     if reason is not None:
         return f"{dotted} - {reason}"
@@ -2896,6 +3157,11 @@ def _plan_on(base, updates, layer, label, global_cfg=None):
     for dotted, value in units:
         parts = dotted.split(".")
         before = _dig(merged, parts)
+        if value is UNSET:
+            if before is not _MISSING:
+                changes.append(_unset_change(dotted, before, layer, global_cfg))
+                _del_path(merged, parts)
+            continue
         if _unchanged(before, value):
             continue
         change = {"path": dotted,
@@ -2917,6 +3183,43 @@ def _plan_on(base, updates, layer, label, global_cfg=None):
         error = GlobalWriteRefused if layer == "machine" else RepoWriteRefused
         raise error(f"refused at the {layer} layer: " + "; ".join(problems))
     return merged, changes
+
+
+def _del_path(target, parts):
+    """Remove the leaf at `parts`, then each block the removal left empty."""
+    chain = [target]
+    for part in parts[:-1]:
+        chain.append(chain[-1][part])
+    chain[-1].pop(parts[-1], None)
+    for depth in range(len(parts) - 1, 0, -1):
+        if chain[depth] == {}:
+            chain[depth - 1].pop(parts[depth - 1], None)
+
+
+def _unset_change(dotted, before, layer, global_cfg):
+    """The change line for removing `dotted` from `layer`'s file. Removing a
+    value can widen: a repo `off` removed under a global `plan` hands the key
+    to the global layer, so the mark compares what is IN FORCE before and
+    after, and `widensTo` carries the value the `!` line describes."""
+    change = {"path": dotted, "before": before, "after": None, "unset": True}
+    default = _dig(_default_template(), tuple(dotted.split(".")))
+    default = None if default is _MISSING else default
+    if layer == "machine":
+        change["widens"] = _widens(dotted, before, default)
+        change["widensTo"] = default
+        return change
+    held = _dig(global_cfg, tuple(dotted.split(".")))
+    held = None if held is _MISSING else held
+    change["globalValue"] = held
+    if dotted in crew_state.PERSONAL_KEYS:
+        now = crew_state.effective_personal(dotted, None, held, default)[0]
+        was = crew_state.effective_personal(dotted, before, held, default)[0]
+        change.update(widens=_personal_widens(dotted, was, now), widensTo=now,
+                      heldDownBy=None, heldAt=None)
+        return change
+    change.update(repo_widens(dotted, before, None, held))
+    change["widensTo"] = held if held is not None else default
+    return change
 
 
 def plan_global_write(updates, path=None, snapshot=None):
@@ -2956,7 +3259,9 @@ def write_global_config(updates, path=None, expect=None):
         return out["plan"][0] if out["plan"][1] else None
     try:
         crew_config_files.update_json(real_path, _mutate, expect=expect,
-                                      create=True)
+                                      create=True, backup=crew_backup.backup)
+    except crew_backup.BackupError as exc:
+        raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
         raise GlobalWriteConflict(str(exc)) from exc
     except (crew_config_files.Busy, crew_config_files.Unreadable) as exc:
@@ -2977,6 +3282,12 @@ class RepoWriteRefused(Exception):
 
 class RepoWriteConflict(RepoWriteRefused):
     """`.crew/config.json` changed since the caller read it; nothing written."""
+
+
+class WriteBackupRefused(GlobalWriteRefused, RepoWriteRefused):
+    """T-0050: the pre-write backup (`crew_backup.backup`) failed, so nothing
+    was written. Either layer's refusal, so every caller that already refuses
+    on those refuses on this; the CLI maps it to exit 4."""
 
 
 # Paths the repo writer refuses, by prefix, each with the reason it prints.
@@ -3018,15 +3329,13 @@ def is_repo_veto(value):
     compare with `is False`, so a written `0` vetoes nothing."""
     return value is False or value is None
 
-# Repo-layer values that grant something, beside the ratchet. Keyed on
-# (path, value); the note is the `!` line's text.
+# Repo-layer values that grant something, beside the ratchet and the personal
+# keys (`_PERSONAL_NOTES`, by rank). Keyed on (path, value); the note is the
+# `!` line's text.
 _REPO_WIDENING = {
     ("context.autoClear.unsafeFocus", True): (
         "auto-clear may send its keystroke to a window it could not confirm "
         "is this session's -- consent, not a preference"),
-    ("autopilot.mode", "plan"): (
-        "/crew:autopilot may drive this repo's tickets through the lifecycle "
-        "in-session, running phase commands until a human is needed"),
     ("verifyGate", False): (
         "the verify gate stops holding the session at Stop for unverified "
         "changed paths"),
@@ -3062,6 +3371,15 @@ def repo_widens(dotted, before, after, global_value):
     only when `(dotted, after)` is in `_REPO_WIDENING`.
     """
     out = {"widens": False, "heldDownBy": None, "heldAt": None}
+    if dotted in crew_state.PERSONAL_KEYS:
+        default = _dig(_default_template(), tuple(dotted.split(".")))
+        default = None if default is _MISSING else default
+        was = crew_state.effective_personal(dotted, before, global_value, default)[0]
+        now, held = crew_state.effective_personal(dotted, after, global_value, default)
+        out["widens"] = _personal_widens(dotted, was, now)
+        if held == "global":
+            out["heldDownBy"], out["heldAt"] = "global", now
+        return out
     spec = crew_state.ratchet_spec(dotted)
     if spec is not None:
         _tiers, _normalise, rank = spec
@@ -3169,7 +3487,10 @@ def write_repo_config(root, updates, global_path=None, expect=None,
         return out["plan"][0] if out["plan"][1] else None
     try:
         with crew_config_files.machine_lock(_global_label(global_path)):
-            crew_config_files.update_json(real_path, _mutate, expect=expect)
+            crew_config_files.update_json(real_path, _mutate, expect=expect,
+                                          backup=crew_backup.backup)
+    except crew_backup.BackupError as exc:
+        raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
         raise RepoWriteConflict(str(exc)) from exc
     except crew_config_files.Unreadable as exc:
@@ -3184,6 +3505,8 @@ def write_repo_config(root, updates, global_path=None, expect=None,
 
 def widening_note(dotted, after):
     """The `!` line's text for a widening change at `dotted`."""
+    if dotted in crew_state.PERSONAL_KEYS:
+        return personal_widening_note(dotted, after)
     if dotted in _RATCHETED:
         _, normalise, notes = _RATCHETED[dotted]
         return notes[normalise(after)]
@@ -3193,13 +3516,14 @@ def widening_note(dotted, after):
 def print_changes(changes):
     """The change lines both writers' CLIs print, `!` and held-down included."""
     for change in changes:
-        print(f"  {change['path']}: {json.dumps(change['before'])} -> "
-              f"{json.dumps(change['after'])}"
+        after = "(removed)" if change.get("unset") else json.dumps(change["after"])
+        print(f"  {change['path']}: {json.dumps(change['before'])} -> {after}"
               + (f"  (null {change['null']})" if change.get("null") else ""))
         if change["widens"]:
+            granted = change.get("widensTo", change["after"])
             print(f"  ! {change['path']} widens to "
-                  f"`{json.dumps(change['after']).strip(chr(34))}`: "
-                  + widening_note(change["path"], change["after"]))
+                  f"`{json.dumps(granted).strip(chr(34))}`: "
+                  + widening_note(change["path"], granted))
         if change.get("heldDownBy"):
             unset = (" (unset there, and unset is the floor)"
                      if change.get("globalValue") is None else "")
@@ -3216,17 +3540,385 @@ CREW_JSON_NOTICE = (
     "may not be the one they use")
 
 
+# --- The profile, rebuild and restore (T-0050) ------------------------------
+#
+# The profile is the owner's non-default values, per layer, kept OUTSIDE the
+# files it describes: `profile.json` beside the machine-global config, and a
+# copy at `<memory.vaultPath>/crew/profile.json` when the global layer names an
+# existing vault directory, so it syncs to the owner's other machines. A lost
+# or corrupt config is rebuilt from the template plus that profile.
+#
+# Who writes it: `/crew:config --set` / `--unset` with `--apply` refresh the
+# layer they wrote, and `--save-profile --apply` captures on demand. Nothing
+# else -- not `heal_config`, platform-sync, `crew_upgrade`, the autoclear setup,
+# a rebuild or a restore -- because each of those writes defaults or old bytes,
+# and refreshing from them would overwrite the owner's values with crew's.
+
+PROFILE_SCHEMA = 1
+
+
+class ProfileUnreadable(Exception):
+    """A profile copy is present and cannot be read, and no readable copy can
+    stand in for it: could not tell, never "no profile" (exit 3)."""
+
+
+class ProfileAbsent(Exception):
+    """No profile copy exists at all."""
+
+
+class RebuildRefused(Exception):
+    """A rebuild, restore or profile write that cannot be planned (exit 2)."""
+
+
+def profile_path(global_path=None):
+    """`profile.json` beside the machine-global config in use."""
+    return os.path.join(os.path.dirname(os.path.abspath(_global_label(global_path))),
+                        "profile.json")
+
+
+def vault_profile_path(global_path=None):
+    """`<memory.vaultPath>/crew/profile.json`, or None when the resolved
+    global `memory.vaultPath` is unset or not an existing directory."""
+    kept, _ = filter_global(read_global_config(global_path))
+    vault = _dig(kept, ("memory", "vaultPath"))
+    if not isinstance(vault, str) or not vault or not os.path.isdir(vault):
+        return None
+    return os.path.join(vault, "crew", "profile.json")
+
+
+_SCP_RE = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):(?!//)(.+)$")
+
+
+def normalise_origin(url):
+    """`host/path` for a remote URL: credentials and port stripped, scheme and
+    host lower-cased, a trailing `.git` and `/` removed, and the scp form
+    `host:path` read as `host/path`. None for an empty URL."""
+    import urllib.parse  # pylint: disable=import-outside-toplevel
+    url = (url or "").strip()
+    if not url:
+        return None
+    match = None if "://" in url else _SCP_RE.match(url)
+    if match:
+        host, path = match.group(1), match.group(2)
+    else:
+        parts = urllib.parse.urlsplit(url)
+        host, path = parts.hostname or "", parts.path
+    path = path.strip("/")
+    while path.endswith(".git"):
+        path = path[:-4].rstrip("/")
+    return f"{host.lower()}/{path}" if host else f"path:{path}"
+
+
+def profile_key(top):
+    """The profile's key for the repo at `top`: its normalised `origin`, or
+    `path:<main worktree realpath>` when it has none."""
+    origin = crew_common.git_out(top, "config", "--get", "remote.origin.url")
+    key = normalise_origin(origin)
+    if key:
+        return key
+    main_root, _problem = crew_common._main_checkout(top)  # pylint: disable=protected-access
+    return "path:" + os.path.realpath(main_root or top)
+
+
+def profile_section(cfg, template):
+    """`{dotted: value}`: every leaf of `cfg` that is absent from `template`
+    or differs from it. `schema` and `platform.*` are never kept (one is the
+    file's layout, the other is re-detected); unknown keys are."""
+    out = {}
+    for dotted in leaf_paths(cfg):
+        if dotted == "schema" or dotted == "platform" or dotted.startswith("platform."):
+            continue
+        value = _dig(cfg, tuple(dotted.split(".")))
+        if not _unchanged(_dig(template, tuple(dotted.split("."))), value):
+            out[dotted] = copy.deepcopy(value)
+    return out
+
+
+def _read_profile_copy(path):
+    """`("ok", profile)`, `("absent", None)` or `("unreadable", why)`."""
+    try:
+        parsed, _raw = crew_config_files.read_strict(path, allow_empty=True)
+    except crew_config_files.Unreadable as exc:
+        return ("absent", None) if exc.kind == "absent" else ("unreadable", str(exc))
+    if parsed.get("schema") != PROFILE_SCHEMA:
+        return "unreadable", f"{path} is not a crew profile (schema {parsed.get('schema')!r})"
+    return "ok", parsed
+
+
+def read_profile(global_path=None):
+    """`(profile, note)` from the home copy and the vault copy.
+
+    Both read and agree: the home copy. They differ: the newer `saved_at`,
+    and the note names both. One unreadable: the other, and the note says
+    so. Present but unreadable with the other absent (or unreadable too):
+    `ProfileUnreadable` -- could not tell is never "no profile". Neither
+    present: `ProfileAbsent`."""
+    home = profile_path(global_path)
+    vault = vault_profile_path(global_path)
+    copies = [(home, *_read_profile_copy(home))]
+    if vault:
+        copies.append((vault, *_read_profile_copy(vault)))
+    good = [(path, data) for path, state, data in copies if state == "ok"]
+    bad = [(path, data) for path, state, data in copies if state == "unreadable"]
+    if not good:
+        if bad:
+            raise ProfileUnreadable("; ".join(why for _p, why in bad))
+        raise ProfileAbsent(f"no profile at {home}" + (f" or {vault}" if vault else ""))
+    notes = [f"{path} is unreadable ({why}); used {good[0][0]}" for path, why in bad]
+    if len(good) == 2 and good[0][1] != good[1][1]:
+        newest = max(good, key=lambda item: str(item[1].get("saved_at") or ""))
+        notes.append("the profile copies differ: " + ", ".join(
+            f"{path} saved_at {data.get('saved_at')}" for path, data in good)
+            + f"; used the newer, {newest[0]}")
+        return newest[1], "; ".join(notes)
+    return good[0][1], "; ".join(notes) or f"profile: {good[0][0]}"
+
+
+def _now_stamp():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def write_profile(profile, global_path=None):
+    """Write `profile` to the home copy and, when configured, the vault copy.
+    The text is computed first; every existing copy is backed up before any
+    is replaced (`crew_backup.BackupError` refuses all of them). Returns the
+    paths written."""
+    text = (json.dumps(profile, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    targets = [profile_path(global_path)]
+    vault = vault_profile_path(global_path)
+    if vault:
+        targets.append(vault)
+    for target in targets:
+        crew_backup.backup(target)
+    for target in targets:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        crew_config_files.replace_bytes(target, text)
+    return targets
+
+
+def _layer_file(root, layer, global_path=None):
+    return repo_config_path(root) if layer == "repo" else _global_label(global_path)
+
+
+def _layer_template(layer):
+    return template_config() if layer == "repo" else global_template_config()
+
+
+def plan_profile(root, layers, global_path=None):
+    """`(profile, sections)`: the profile with each layer in `layers` captured
+    from its file now. Refuses a repo file that is absent or unreadable --
+    there is nothing to capture -- and a present profile it cannot read, so a
+    capture never replaces a profile it could not see."""
+    try:
+        profile, _note = read_profile(global_path)
+        profile = copy.deepcopy(profile)
+    except ProfileAbsent:
+        profile = {"schema": PROFILE_SCHEMA, "global": None, "repos": {}}
+    sections = {}
+    for layer in layers:
+        if layer == "repo":
+            parsed = repo_snapshot(root)[0]
+        else:
+            parsed = global_snapshot(global_path)[0]
+        values = profile_section(parsed, _layer_template(layer))
+        entry = {"saved_at": _now_stamp(), "values": values}
+        if layer == "repo":
+            key = profile_key(root)
+            entry["path"] = os.path.realpath(root)
+            profile.setdefault("repos", {})[key] = entry
+            sections[f"repo {key}"] = values
+        else:
+            profile["global"] = entry
+            sections["global"] = values
+    profile["schema"] = PROFILE_SCHEMA
+    profile["saved_at"] = _now_stamp()
+    return profile, sections
+
+
+def refresh_profile(layer, root, global_path=None):
+    """After a `/crew:config` write at `layer`: re-capture that layer's
+    section. Returns the paths written."""
+    profile, _sections = plan_profile(root, [layer], global_path)
+    return write_profile(profile, global_path)
+
+
+def profile_drift(root, path=None):
+    """`profile drift` findings: a leaf whose value in a config file differs
+    from the owner's saved profile for that layer. An absent profile has no
+    drift; an unreadable one is named."""
+    try:
+        profile, _note = read_profile(path)
+    except ProfileAbsent:
+        return []
+    except ProfileUnreadable as exc:
+        return [{"kind": "profile drift", "path": None,
+                 "detail": f"profile drift: could not tell, the profile is unreadable ({exc})"}]
+    out = []
+    repo_entry = (profile.get("repos") or {}).get(profile_key(root))
+    for layer, entry in (("global", profile.get("global")), ("repo", repo_entry)):
+        if not isinstance(entry, dict) or not isinstance(entry.get("values"), dict):
+            continue
+        if layer == "repo":
+            cfg = crew_state.load_config(root)
+        else:
+            cfg = read_global_config(path)
+        now = profile_section(cfg, _layer_template(layer))
+        saved = entry["values"]
+        for dotted in sorted(set(now) | set(saved)):
+            file_value = now.get(dotted, _dig(_layer_template(layer), tuple(dotted.split("."))))
+            saved_value = saved.get(dotted, _dig(_layer_template(layer), tuple(dotted.split("."))))
+            if _unchanged(file_value, saved_value):
+                continue
+            show = ["(absent)" if v is _MISSING else json.dumps(v)
+                    for v in (file_value, saved_value)]
+            out.append({"kind": "profile drift", "path": dotted, "detail": (
+                f"profile drift ({layer}): {dotted} file={show[0]} profile={show[1]}")})
+    return out
+
+
+def _file_state(path):
+    """`(state, parsed, raw)`: `ok`, `absent` or `corrupt (N bytes)`."""
+    try:
+        parsed, raw = crew_config_files.read_strict(path, allow_empty=True)
+    except crew_config_files.Unreadable as exc:
+        if exc.kind == "absent":
+            return "absent", {}, None
+        try:
+            with open(path, "rb") as handle:
+                size = len(handle.read())
+        except OSError:
+            size = "?"
+        return f"corrupt ({size} bytes)", {}, None
+    return "ok", parsed, raw
+
+
+def _diff_changes(before_cfg, after_cfg, layer, global_cfg):
+    """Every leaf that differs between two whole files, as planner changes."""
+    changes = []
+    paths = list(dict.fromkeys(leaf_paths(before_cfg) + leaf_paths(after_cfg)))
+    for dotted in paths:
+        parts = tuple(dotted.split("."))
+        before, after = _dig(before_cfg, parts), _dig(after_cfg, parts)
+        if before is not _MISSING and _unchanged(before, after):
+            continue
+        change = {"path": dotted, "before": None if before is _MISSING else before,
+                  "after": None if after is _MISSING else after}
+        if after is _MISSING:
+            change["unset"] = True
+        if layer == "machine":
+            change["widens"] = _widens(dotted, before, change["after"])
+        else:
+            held = _dig(global_cfg, parts)
+            change.update(repo_widens(dotted, change["before"], change["after"],
+                                      None if held is _MISSING else held))
+        changes.append(change)
+    return changes
+
+
+def plan_rebuild(root, layer, use_profile=True, global_path=None):
+    """`(target_text, changes, notes)` for `--rebuild --repo|--global`. Pure:
+    reads, never writes.
+
+    The target is the layer's template plus the profile's values for it (a
+    repo by `profile_key`). A readable current repo file's `platform` block
+    is carried over. `notes` names the current file's state (ok, absent, or
+    corrupt with its size) and where the profile came from. Raises
+    `ProfileUnreadable` (exit 3), `ProfileAbsent` without `--no-profile`, and
+    `RebuildRefused` for a repo with no `.crew/` or a target crew would
+    refuse to write."""
+    if layer not in ("repo", "machine"):
+        raise RebuildRefused("--rebuild needs --repo or --global")
+    if layer == "repo" and not os.path.isdir(os.path.join(root, ".crew")):
+        raise RebuildRefused(f"{root} has no .crew/ directory; run /crew:init to set it up")
+    path = _layer_file(root, layer, global_path)
+    state, current, _raw = _file_state(path)
+    target = _layer_template(layer)
+    notes = [f"current {path}: {state}"]
+    if use_profile:
+        profile, source = read_profile(global_path)
+        notes.append(source)
+        if layer == "repo":
+            key = profile_key(root)
+            entry = (profile.get("repos") or {}).get(key)
+            if entry is None:
+                notes.append(f"the profile holds no values for {key}; the template alone")
+        else:
+            entry = profile.get("global")
+        values = (entry or {}).get("values") or {}
+        for dotted, value in values.items():
+            _set_path(target, dotted.split("."), copy.deepcopy(value))
+    else:
+        notes.append("--no-profile: the template alone")
+    if layer == "repo" and isinstance(current.get("platform"), dict):
+        target["platform"] = copy.deepcopy(current["platform"])
+    global_cfg = machine_view(global_path)[0]
+    problems = merged_problems(target, set(), "the rebuilt file", layer)
+    if problems:
+        raise RebuildRefused("the rebuilt file would be refused: " + "; ".join(problems))
+    text = json.dumps(target, indent=2) + "\n"
+    return text, _diff_changes(current, target, layer, global_cfg), notes
+
+
+def _replace_layer_file(root, layer, data, global_path=None):
+    """Back up, then replace, the layer's file with `data`, under its lock.
+    `crew_backup.BackupError` refuses with nothing written."""
+    path = _layer_file(root, layer, global_path)
+    if layer == "machine":
+        lock = crew_config_files.machine_lock(path)
+    else:
+        lock = crew_config_files.Lock(path)
+    with lock:
+        stamp = crew_backup.backup(path)
+        crew_config_files.replace_bytes(path, data)
+    return path, stamp
+
+
+def apply_rebuild(root, layer, use_profile=True, global_path=None):
+    """Write `plan_rebuild`'s target: the old bytes (corrupt ones included)
+    are backed up first. Returns `(path, stamp, changes, notes)`."""
+    text, changes, notes = plan_rebuild(root, layer, use_profile, global_path)
+    path, stamp = _replace_layer_file(root, layer, text.encode("utf-8"), global_path)
+    return path, stamp, changes, notes
+
+
+def plan_restore(root, layer, stamp, global_path=None):
+    """`(data, changes)` for `--restore <stamp>`: the stamped bytes and what
+    they change. `crew_backup.BackupError` for an unknown or malformed stamp."""
+    if layer == "repo" and not os.path.isdir(os.path.join(root, ".crew")):
+        raise RebuildRefused(f"{root} has no .crew/ directory")
+    path = _layer_file(root, layer, global_path)
+    data = crew_backup.read_backup(path, stamp)
+    try:
+        restored = json.loads(data.decode("utf-8-sig"))
+    except ValueError:
+        restored = None
+    _state, current, _raw = _file_state(path)
+    if not isinstance(restored, dict):
+        return data, []
+    return data, _diff_changes(current, restored, layer, machine_view(global_path)[0])
+
+
+def apply_restore(root, layer, stamp, global_path=None):
+    """Back up the current file, then write the stamped bytes. Returns
+    `(path, stamp_of_the_current_file)`."""
+    data, _changes = plan_restore(root, layer, stamp, global_path)
+    return _replace_layer_file(root, layer, data, global_path)
+
+
 # --- CLI -------------------------------------------------------------------
 
 
-def _print_explain(rows, root="."):
+def _print_explain(rows, root=".", all_keys=False, findings=None):
     print(_repo_layer_line(root))
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
     narrowed, ignored = [], []
     for row in rows:
+        marks = (["repo-only"] if row.get("repoOnly") else []) + (
+            [f"held down by {row['heldDownBy']}"] if row.get("heldDownBy") else [])
         print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  "
-              f"{json.dumps(row['value'])}")
+              f"{json.dumps(row['value'])}"
+              + (f"  ({', '.join(marks)})" if marks else ""))
         if row.get("heldDownBy"):
             narrowed.append(row)
         if "repoIgnored" in row:
@@ -3256,6 +3948,14 @@ def _print_explain(rows, root="."):
               "the machine-global file's value is ever read for this key")
         print(f"  -> `{row['value']}` is in force. A repo cannot narrow or "
               "widen auto-clear's onlyRepos/onlySessions for itself.")
+    if all_keys:
+        print()
+        print("Every key. `repo-only` keys are never read from the global "
+              "file; personal and")
+        print("ratcheted keys take the stricter of the layers that set them.")
+        for finding in findings or ():
+            print(f"- {finding['detail']}")
+        return
     # Say what this table is NOT, or it reads as the whole resolved config and
     # a reader concludes their `tracker` or `jira.project` is unset.
     print()
@@ -3285,6 +3985,9 @@ def _set_layer(root, updates, args):
                 expect_global=args.expect_global) if repo else
                           write_global_config(updates, args.global_path,
                                               expect=args.expect))
+    except WriteBackupRefused as exc:
+        print(f"refused, nothing written: the backup failed ({exc})", file=sys.stderr)
+        return 4
     except (RepoWriteRefused, GlobalWriteRefused) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -3296,6 +3999,135 @@ def _set_layer(root, updates, args):
     print_changes(changes)
     if repo and os.path.exists(os.path.join(root, ".crew", "crew.json")):
         print(CREW_JSON_NOTICE)
+    if args.apply and changes:
+        # T-0050: the owner's saved values follow the write they just made.
+        try:
+            written = refresh_profile("repo" if repo else "machine", root,
+                                      args.global_path)
+            print("profile refreshed: " + ", ".join(written))
+        except (ProfileUnreadable, crew_backup.BackupError, RepoWriteRefused,
+                GlobalWriteRefused, OSError) as exc:
+            print(f"warning: the config was written, but the profile was NOT "
+                  f"refreshed ({exc}); fix it, then /crew:config --save-profile",
+                  file=sys.stderr)
+    return 0
+
+
+def _layer_arg(args):
+    """`repo`, `machine`, or None (neither flag given)."""
+    return "repo" if args.repo else "machine" if args.global_layer else None
+
+
+def _print_rebuild(verb, path, changes, notes):
+    print(f"{verb}: {path}")
+    for note in notes:
+        print(f"  {note}")
+    print_changes(changes)
+
+
+def _rebuild(args):
+    layer = _layer_arg(args)
+    if layer is None:
+        print("--rebuild needs --repo or --global", file=sys.stderr)
+        return 2
+    try:
+        if args.apply:
+            path, stamp, changes, notes = apply_rebuild(
+                args.root, layer, not args.no_profile, args.global_path)
+            _print_rebuild("rebuilt", path, changes, notes)
+            print(f"backup of the previous file: {stamp or 'none (there was no file)'}")
+            return 0
+        _text, changes, notes = plan_rebuild(args.root, layer, not args.no_profile,
+                                             args.global_path)
+        _print_rebuild("would rebuild (dry run; add --apply)",
+                       _layer_file(args.root, layer, args.global_path), changes, notes)
+        return 0
+    except ProfileUnreadable as exc:
+        print(f"refused, nothing written: could not tell what your saved values "
+              f"are, the profile is unreadable ({exc})", file=sys.stderr)
+        return 3
+    except ProfileAbsent as exc:
+        print(f"refused, nothing written: {exc}. Save one with --save-profile, or "
+              "rebuild from the template alone with --no-profile", file=sys.stderr)
+        return 2
+    except crew_backup.BackupError as exc:
+        print(f"refused, nothing written: the backup failed ({exc})", file=sys.stderr)
+        return 4
+    except (RebuildRefused, crew_config_files.Busy) as exc:
+        print(f"refused, nothing written: {exc}", file=sys.stderr)
+        return 2
+
+
+def _restore(args):
+    layer = _layer_arg(args)
+    if layer is None:
+        print("--restore needs --repo or --global", file=sys.stderr)
+        return 2
+    path = _layer_file(args.root, layer, args.global_path)
+    try:
+        data, changes = plan_restore(args.root, layer, args.restore, args.global_path)
+    except (crew_backup.BackupError, RebuildRefused) as exc:
+        print(f"refused, nothing written: {exc}", file=sys.stderr)
+        return 2
+    if not args.apply:
+        print(f"would restore {args.restore} to {path} (dry run; add --apply)")
+        print_changes(changes)
+        return 0
+    try:
+        _path, stamp = _replace_layer_file(args.root, layer, data, args.global_path)
+    except crew_backup.BackupError as exc:
+        print(f"refused, nothing written: the backup of the current file failed "
+              f"({exc})", file=sys.stderr)
+        return 4
+    except crew_config_files.Busy as exc:
+        print(f"refused, nothing written: {exc}", file=sys.stderr)
+        return 2
+    print(f"restored {args.restore} to {path}")
+    print_changes(changes)
+    print(f"backup of the file it replaced: {stamp or 'none (there was no file)'}")
+    return 0
+
+
+def _backups(args):
+    layer = _layer_arg(args)
+    if layer is None:
+        print("--backups needs --repo or --global", file=sys.stderr)
+        return 2
+    path = _layer_file(args.root, layer, args.global_path)
+    stamps = crew_backup.list_backups(path)
+    print(f"backups of {path} (newest first) in {crew_backup.target_dir(path)}:")
+    for stamp in stamps:
+        print(f"  {stamp}")
+    if not stamps:
+        print("  none")
+    return 0
+
+
+def _save_profile(args):
+    layer = _layer_arg(args)
+    layers = [layer] if layer else ["machine", "repo"]
+    if not layer and not os.path.isfile(repo_config_path(args.root)):
+        layers = ["machine"]
+    try:
+        profile, sections = plan_profile(args.root, layers, args.global_path)
+        if args.apply:
+            written = write_profile(profile, args.global_path)
+    except ProfileUnreadable as exc:
+        print(f"refused, nothing written: the profile is unreadable ({exc}); "
+              "fix or remove it by hand first", file=sys.stderr)
+        return 3
+    except crew_backup.BackupError as exc:
+        print(f"refused, nothing written: the backup failed ({exc})", file=sys.stderr)
+        return 4
+    except (RepoWriteRefused, GlobalWriteRefused) as exc:
+        print(f"refused, nothing written: {exc}", file=sys.stderr)
+        return 2
+    print(("saved profile: " + ", ".join(written)) if args.apply
+          else f"would save profile (dry run; add --apply): {profile_path(args.global_path)}")
+    for name, values in sections.items():
+        print(f"  {name}: {len(values)} value(s)")
+        for dotted, value in values.items():
+            print(f"    {dotted} = {json.dumps(value)}")
     return 0
 
 
@@ -3312,6 +4144,10 @@ def main(argv=None):
                         help="override ~/.claude/crew/config.json (testing)")
     parser.add_argument("--explain", action="store_true",
                         help="every globally-settable key, value and source")
+    parser.add_argument("--all", action="store_true",
+                        help="with --explain, every key of .crew/config.json, "
+                             "repo-only ones marked, and the shadow and "
+                             "profile-drift findings")
     parser.add_argument("--check-global", action="store_true",
                         help="findings about the machine-global config")
     parser.add_argument("--check", action="store_true",
@@ -3328,8 +4164,26 @@ def main(argv=None):
     parser.add_argument("--apply", action="store_true",
                         help="actually write; without it --set is a dry run")
     parser.add_argument("--repo", action="store_true",
-                        help="with --set, write the repo's .crew/config.json "
-                             "instead of the machine-global file")
+                        help="with --set, --unset, --rebuild, --restore, "
+                             "--backups or --save-profile: the repo's "
+                             ".crew/config.json instead of the machine-global "
+                             "file")
+    parser.add_argument("--global", dest="global_layer", action="store_true",
+                        help="the machine-global file (the default for --set)")
+    parser.add_argument("--unset", action="append", default=[], metavar="PATH",
+                        help="remove PATH from the file (a dry run without --apply)")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="regenerate a lost or corrupt config from the "
+                             "template plus your saved profile")
+    parser.add_argument("--no-profile", action="store_true",
+                        help="with --rebuild, the template alone")
+    parser.add_argument("--restore", metavar="STAMP", default=None,
+                        help="put a backup back (see --backups)")
+    parser.add_argument("--backups", action="store_true",
+                        help="list the layer's backups, newest first")
+    parser.add_argument("--save-profile", action="store_true",
+                        help="capture your non-default values into "
+                             "~/.claude/crew/profile.json")
     parser.add_argument("--expect", metavar="DIGEST", default=None,
                         help="with --set --apply, refuse unless the file's "
                              "sha256 is still DIGEST, or it is still absent "
@@ -3427,13 +4281,30 @@ def main(argv=None):
                   "cannot have it")
         return 0
 
-    if args.set:
+    if args.repo and args.global_layer:
+        print("--repo and --global are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.rebuild:
+        return _rebuild(args)
+    if args.restore is not None:
+        return _restore(args)
+    if args.backups:
+        return _backups(args)
+    if args.save_profile:
+        return _save_profile(args)
+
+    if args.set or args.unset:
         problem = (crew_config_files.expectation_problem("--expect", args.expect)
                    or crew_config_files.expectation_problem(
                        "--expect-global", args.expect_global))
         if problem is None and args.expect_global is not None and not args.repo:
             problem = "--expect-global goes with --repo"
         updates, parse_problem = crew_config_files.parse_assignments(args.set)
+        for dotted in args.unset:
+            if not crew_config_files.is_dotted(dotted):
+                parse_problem = parse_problem or f"--unset: {dotted!r} is not a dotted path (a.b.c)"
+            elif updates is not None:
+                updates[dotted] = UNSET
         if problem or parse_problem:
             print(problem or parse_problem, file=sys.stderr)
             return 2
@@ -3465,11 +4336,13 @@ def main(argv=None):
                 print(f"- [{finding['kind']}] {finding['detail']}")
         return 0
 
-    rows = explain_config(args.root, args.global_path)
+    rows = explain_config(args.root, args.global_path, all_keys=args.all)
+    findings = explain_findings(args.root, args.global_path) if args.all else None
     if args.json or not args.explain:
-        print(json.dumps(rows, indent=2))
+        print(json.dumps({"rows": rows, "findings": findings} if args.all
+                         else rows, indent=2))
     else:
-        _print_explain(rows, args.root)
+        _print_explain(rows, args.root, all_keys=args.all, findings=findings)
     return 0
 
 
