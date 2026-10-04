@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 23:15 UTC
+Last updated: 2026-10-04 23:16 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 23:16: #407 T-0045 reworked at 25734d19, CI all green: gate simulation now mirrors L-1503 (union, refusals, literal match), 35x95 agreement table vs real sh+ps1 gates, [!-[] literal, _head via require_tool. Substantial change -> fresh adversarial re-review spawned before batch 5.
 - 23:15: #407 T-0045 land-prep 25734d19: merged main (L-1503); check applies union rule exactly (gated-as, gate-refuses-map); agreement table 35 maps/95 cmds vs real sh+ps1 + 25 github maps; [!-[] FIX literal; 73 mutations RED; crew 1.0.343 version-only last; CI all green (6+3 Windows shards, gate) -> ready to land
 - 23:07: Owner: one bump per batch via a single batch PR (merge PR branches into batch-<n>-build, versions reset to main, one version commit last). Procedure in LANDPREP 'Batch PR'. #394 lands alone as prepped (1.0.344).
 - 23:05: Owner: keep one version bump per PR (the checker requires it). Rule and procedures updated.
