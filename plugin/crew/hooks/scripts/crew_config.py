@@ -3367,7 +3367,8 @@ def is_repo_path(dotted):
 
 
 def repo_widens(dotted, before, after, global_value):
-    """`{"widens", "heldDownBy", "heldAt"}` for a repo-layer change.
+    """`{"widens", "heldDownBy", "heldAt"}` for a repo-layer change, plus
+    `widensTo` (the value in force after) for a personal key.
 
     A ratcheted key compares what is IN FORCE before and after, by rank: a
     repo `block` -> `allow` under a machine `allow` widens, and the same edit
@@ -3383,6 +3384,9 @@ def repo_widens(dotted, before, after, global_value):
         was = crew_state.effective_personal(dotted, before, global_value, default)[0]
         now, held = crew_state.effective_personal(dotted, after, global_value, default)
         out["widens"] = _personal_widens(dotted, was, now)
+        # What takes effect, which a `null` (silent) repo value is not: the
+        # `!` line names this, as `_unset_change` does for a removal.
+        out["widensTo"] = now
         if held == "global":
             out["heldDownBy"], out["heldAt"] = "global", now
         return out
@@ -3527,7 +3531,7 @@ def print_changes(changes):
         after = "(removed)" if change.get("unset") else json.dumps(change["after"])
         print(f"  {change['path']}: {json.dumps(change['before'])} -> {after}"
               + (f"  (null {change['null']})" if change.get("null") else ""))
-        if change["widens"] and change.get("unset"):
+        if change["widens"] and (change.get("unset") or "widensTo" in change):
             granted = change.get("widensTo")
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(granted).strip(chr(34))}`: "
@@ -3893,9 +3897,14 @@ def apply_rebuild(root, layer, use_profile=True, global_path=None):
     return path, stamp, changes, notes
 
 
-def plan_restore(root, layer, stamp, global_path=None):
+def plan_restore(root, layer, stamp, global_path=None, force_invalid=False):
     """`(data, changes)` for `--restore <stamp>`: the stamped bytes and what
-    they change. `crew_backup.BackupError` for an unknown or malformed stamp."""
+    they change. `crew_backup.BackupError` for an unknown or malformed stamp.
+
+    Stamped bytes that are not a JSON object have no diff to show, and an
+    empty one would read "nothing to change" over a write that breaks the
+    file: `RebuildRefused` unless `force_invalid`, and then `changes` is
+    `None` -- "could not tell", never `[]`."""
     if layer == "repo" and not os.path.isdir(os.path.join(root, ".crew")):
         raise RebuildRefused(f"{root} has no .crew/ directory")
     path = _layer_file(root, layer, global_path)
@@ -3906,14 +3915,22 @@ def plan_restore(root, layer, stamp, global_path=None):
         restored = None
     _state, current, _raw = _file_state(path)
     if not isinstance(restored, dict):
-        return data, []
+        if not force_invalid:
+            raise RebuildRefused(
+                f"backup {stamp}: {INVALID_STAMP}; restoring it would replace "
+                f"{path} with a file nothing can read. Pass --force-invalid to "
+                "restore it anyway")
+        return data, None
     return data, _diff_changes(current, restored, layer, machine_view(global_path)[0])
 
 
-def apply_restore(root, layer, stamp, global_path=None):
+INVALID_STAMP = "the stamped file is not valid JSON (or not a JSON object)"
+
+
+def apply_restore(root, layer, stamp, global_path=None, force_invalid=False):
     """Back up the current file, then write the stamped bytes. Returns
     `(path, stamp_of_the_current_file)`."""
-    data, _changes = plan_restore(root, layer, stamp, global_path)
+    data, _changes = plan_restore(root, layer, stamp, global_path, force_invalid)
     return _replace_layer_file(root, layer, data, global_path)
 
 
@@ -4077,13 +4094,14 @@ def _restore(args):
         return 2
     path = _layer_file(args.root, layer, args.global_path)
     try:
-        data, changes = plan_restore(args.root, layer, args.restore, args.global_path)
+        data, changes = plan_restore(args.root, layer, args.restore,
+                                     args.global_path, args.force_invalid)
     except (crew_backup.BackupError, RebuildRefused) as exc:
         print(f"refused, nothing written: {exc}", file=sys.stderr)
         return 2
     if not args.apply:
         print(f"would restore {args.restore} to {path} (dry run; add --apply)")
-        print_changes(changes)
+        _print_restore_changes(changes)
         return 0
     try:
         _path, stamp = _replace_layer_file(args.root, layer, data, args.global_path)
@@ -4095,9 +4113,17 @@ def _restore(args):
         print(f"refused, nothing written: {exc}", file=sys.stderr)
         return 2
     print(f"restored {args.restore} to {path}")
-    print_changes(changes)
+    _print_restore_changes(changes)
     print(f"backup of the file it replaced: {stamp or 'none (there was no file)'}")
     return 0
+
+
+def _print_restore_changes(changes):
+    if changes is None:
+        print(f"  ! {INVALID_STAMP}: --force-invalid puts it back byte for "
+              "byte; no change list can be shown")
+        return
+    print_changes(changes)
 
 
 def _backups(args):
@@ -4191,6 +4217,9 @@ def main(argv=None):
                         help="with --rebuild, the template alone")
     parser.add_argument("--restore", metavar="STAMP", default=None,
                         help="put a backup back (see --backups)")
+    parser.add_argument("--force-invalid", action="store_true",
+                        help="with --restore, put back a backup that is not "
+                             "valid JSON (refused without it)")
     parser.add_argument("--backups", action="store_true",
                         help="list the layer's backups, newest first")
     parser.add_argument("--save-profile", action="store_true",

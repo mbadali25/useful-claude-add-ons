@@ -105,6 +105,43 @@ def test_backup_dirs_private(tmp_path):
     assert stat.S_IMODE(mode) == 0o600
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes; Windows ACLs are not 0700/0600")
+def test_backup_leaves_an_existing_backup_root_mode_alone(tmp_path, monkeypatch):
+    """Review of e6c5fa6a: a `CREW_BACKUP_DIR` the owner already made (0755)
+    was chmod'ed to 0700. Only a directory this call created is made private."""
+    mine = tmp_path / "owners-dir"
+    mine.mkdir()
+    os.chmod(mine, 0o755)
+    monkeypatch.setenv("CREW_BACKUP_DIR", str(mine))
+    target = tmp_path / "g.json"
+    target.write_text("{}", encoding="utf-8")
+    crew_backup.backup(str(target), now=NOW)
+    assert stat.S_IMODE(os.stat(mine).st_mode) == 0o755
+    directory = crew_backup.target_dir(str(target))
+    for path in (os.path.dirname(directory), directory):
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o700, path
+
+
+def test_backup_reads_back_and_refuses_a_mismatch(tmp_path, monkeypatch):
+    """Must-block: a backup whose bytes on disk are not the bytes read is
+    refused (the caller then refuses its write), and the bad copy is not left
+    behind as a stamp `--restore` would offer."""
+    target = tmp_path / "g.json"
+    target.write_bytes(b'{"a": 1}')
+    real = crew_backup._write_private
+
+    def torn(where, data):
+        real(where, data[:-1] if where.endswith(".json") else data)
+
+    monkeypatch.setattr(crew_backup, "_write_private", torn)
+    with pytest.raises(crew_backup.BackupError, match="read back"):
+        crew_backup.backup(str(target), now=NOW)
+    assert crew_backup.list_backups(str(target)) == []
+    monkeypatch.setattr(crew_backup, "_write_private", real)
+    stamp = crew_backup.backup(str(target), now=NOW)
+    assert crew_backup.read_backup(str(target), stamp) == b'{"a": 1}'
+
+
 @pytest.mark.parametrize("stamp", ["../x", "latest", "", "20261004T120000Z/../../x",
                                    "20261004T120000"])
 def test_read_backup_refuses_bad_stamp(tmp_path, stamp):

@@ -24,9 +24,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `crew_backup.py`: every crew writer of either config file (`write_global_config`,
   `write_repo_config`, rebuild, restore, the menu's restore, `heal_config`, `apply_changes`, the
   autoclear setup's repo writes, `crew_upgrade`) saves the pre-write bytes, corrupt ones included,
-  under `~/.claude/crew/backups/` (0600 files, 0700 directories, newest 20 kept) and refuses the
-  write when the backup fails (exit 4). `--backups` lists them; `--restore <stamp>` backs up the
-  current file, then writes the stamped bytes.
+  under `~/.claude/crew/backups/` (0600 files, 0700 for the directories it creates, each copy
+  read back and compared, newest 20 kept) and refuses the write when the backup fails (exit 4).
+  `--backups` lists them; `--restore <stamp>` backs up the current file, then writes the stamped
+  bytes, and refuses (exit 2) a stamp that is not valid JSON unless `--force-invalid`.
 - The profile: `~/.claude/crew/profile.json`, plus `<memory.vaultPath>/crew/profile.json` when a
   vault is set, holds each layer's non-template values (repos keyed by normalised `origin`).
   Refreshed by `--set`/`--unset --apply` and Save, captured by `--save-profile`; never by heal,
@@ -36,8 +37,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `--explain --all` prints every key with its layer, marks `repo-only`, `held down by <layer>`,
   and the `shadow:` and `profile drift:` findings. CONFIG.md §10, §11 re-measured (77 / 52), new
   §20a and §20b; README, `commands/config.md` and `global-config.md` updated.
-- Tests: `test_crew_config_personal.py` (54), `test_crew_config_rebuild.py` (40),
-  `test_crew_backup.py` (26), must-block and must-allow; 21 hand sabotages, each red.
+- Tests: `test_crew_config_personal.py` (55), `test_crew_config_rebuild.py` (42),
+  `test_crew_backup.py` (28), must-block and must-allow; 25 hand sabotages, each red.
 - **Harness follow-ups (left out under the T-0087 rule):** `scope.allowCliApproval` as a personal
   key needs `crew_ticket.cli_approval_allowed` to read the global layer (review harness), with
   its must-block tests in `test_crew_ticket.py` / `test_scope_guard.py`; and registering the 21

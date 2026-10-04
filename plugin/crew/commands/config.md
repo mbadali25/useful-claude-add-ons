@@ -23,8 +23,8 @@ Arguments: $ARGUMENTS
   (`~/.claude/crew/profile.json`; the vault copy when `memory.vaultPath` is
   set, the newer one when they differ). Exit 3 when a profile copy is there
   and unreadable (could not tell), 2 when none exists without `--no-profile`.
-- `--restore <stamp> --repo|--global` — put a backup back; `--backups
-  --repo|--global` lists the stamps, newest first.
+- `--restore <stamp> --repo|--global` — put a backup back (not valid JSON:
+  refused, exit 2, unless `--force-invalid`); `--backups` lists the stamps.
 - `--save-profile [--repo|--global]` — capture the non-default values of
   either layer (both when neither is named) into the profile.
 - `--models` — the per-role table only: which provider, model and family back

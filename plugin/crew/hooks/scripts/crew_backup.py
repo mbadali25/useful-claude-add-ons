@@ -16,7 +16,10 @@ Layout, under `backup_root()` (`$CREW_BACKUP_DIR`, else
     file/<basename>-<sha256(realpath)[:10]>/...        anything else (the vault copy)
 
 A stamp is UTC `YYYYMMDDTHHMMSSZ`, `-2`, `-3` on a same-second collision.
-Directories are 0700 and files 0600. The newest `KEEP` per file are kept.
+Directories crew creates are 0700 (one that already exists, such as an
+owner-made `$CREW_BACKUP_DIR`, keeps its mode) and files 0600. Each copy is
+read back after its fsync and compared with the bytes it was given. The newest
+`KEEP` per file are kept.
 
 THE RULE for every writer: `backup(path)` runs immediately before the write
 replaces `path`, and when it raises `BackupError` the write is refused and the
@@ -141,7 +144,14 @@ def read_backup(path, stamp):
 
 
 def _private_dir(directory):
-    os.makedirs(directory, mode=0o700, exist_ok=True)
+    """Create `directory` 0700. One that already exists is not this call's
+    to re-mode: an owner-made `$CREW_BACKUP_DIR` keeps the mode it was given."""
+    try:
+        os.makedirs(directory, mode=0o700)
+    except FileExistsError:
+        if not os.path.isdir(directory):
+            raise
+        return
     if os.name != "nt":
         os.chmod(directory, 0o700)
 
@@ -163,6 +173,21 @@ def _write_private(where, data):
             os.remove(tmp)
         except OSError:
             pass
+
+
+def _read_back(where, data, path):
+    """`BackupError` (the bad copy removed) unless `where` holds `data`."""
+    with open(where, "rb") as handle:
+        got = handle.read()
+    if got == data:
+        return
+    try:
+        os.remove(where)
+    except OSError:
+        pass
+    raise BackupError(f"the backup of {path} did not read back as written "
+                      f"(read {len(got)} bytes, wrote {len(data)}); "
+                      "nothing written")
 
 
 def _rotate(directory):
@@ -205,6 +230,8 @@ def backup(path, now=None):
                 continue
             stamp = candidate
             break
+        if stamp is not None:
+            _read_back(os.path.join(directory, f"{stamp}.json"), data, path)
         if stamp is None:
             raise BackupError(f"999 backups of {path} in one second; nothing written")
         source = os.path.join(directory, SOURCE_NAME)

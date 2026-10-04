@@ -461,3 +461,22 @@ def test_menu_post_heal_rows_read_the_template(tmp_path, monkeypatch):
     root = _repo(tmp_path, crew_config.default_config())
     rows = crew_config_menu._post_heal_rows(root, crew_config.GLOBAL_CONFIG_PATH)
     assert rows["autopilot.mode"]["value"] == "plan"
+
+
+def test_repo_null_over_human_names_the_global_value_it_loosens_to(tmp_path, monkeypatch):
+    """Must-block (review of e6c5fa6a): `--set autopilot.approval=null --repo`
+    over a repo `human` under a global `self` hands the gate to `self`. The
+    `!` line printed "widens to `null`: " with no note; it must name the value
+    that takes effect and say why that loosens the gate."""
+    root = _layers(tmp_path, monkeypatch, {"approval": "human"}, {"approval": "self"})
+    out = subprocess.run([sys.executable, CREW_CONFIG, "--root", root,
+                          "--global-path", crew_config.GLOBAL_CONFIG_PATH,
+                          "--set", "autopilot.approval=null", "--repo"],
+                         capture_output=True, text=True, check=False)
+    assert out.returncode == 0, out.stderr
+    line = next(l for l in out.stdout.splitlines()
+                if l.startswith("  ! autopilot.approval"))
+    assert "widens to `self`" in line, out.stdout
+    assert "`null`" not in line
+    note = crew_config.widening_note("autopilot.approval", "self")
+    assert note and line.endswith(note), out.stdout

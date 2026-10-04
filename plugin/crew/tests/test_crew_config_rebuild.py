@@ -504,6 +504,48 @@ def test_restore_refuses_when_backup_fails_exit_4(tmp_path, home, capsys, monkey
     assert _bytes(_config(root)) == current != data
 
 
+def _corrupt_stamp_over_healthy(tmp_path, home, capsys):
+    """A healthy repo file whose newest backup holds corrupt bytes: the
+    corrupt file is backed up by a rebuild, which then writes a healthy one."""
+    root = _corrupt_repo(tmp_path)
+    code, _out, err = _cli(capsys, "--root", root, "--global-path", str(home),
+                           "--rebuild", "--repo", "--no-profile", "--apply")
+    assert code == 0, err
+    stamp = crew_backup.list_backups(_config(root))[0]
+    assert crew_backup.read_backup(_config(root), stamp) == b"{ corrupt"
+    return root, stamp
+
+
+def test_restore_of_a_corrupt_stamp_refuses_exit_2(tmp_path, home, capsys):
+    """Must-block (review of e6c5fa6a): `--restore` of a corrupt backup over a
+    healthy file said "nothing to change", then wrote the corrupt bytes."""
+    root, stamp = _corrupt_stamp_over_healthy(tmp_path, home, capsys)
+    healthy = _bytes(_config(root))
+    for extra in ((), ("--apply",)):
+        code, out, err = _cli(capsys, "--root", root, "--global-path", str(home),
+                              "--restore", stamp, "--repo", *extra)
+        assert code == 2, (extra, out)
+        assert "stamped file is not valid JSON" in err and "--force-invalid" in err
+        assert "nothing to change" not in out
+    assert _bytes(_config(root)) == healthy
+
+
+def test_restore_of_a_corrupt_stamp_with_force_invalid(tmp_path, home, capsys):
+    """The explicit flag path: the dry run says what it would write, and
+    `--apply` writes the stamped bytes as they are."""
+    root, stamp = _corrupt_stamp_over_healthy(tmp_path, home, capsys)
+    healthy = _bytes(_config(root))
+    code, out, err = _cli(capsys, "--root", root, "--global-path", str(home),
+                          "--restore", stamp, "--repo", "--force-invalid")
+    assert code == 0, err
+    assert "stamped file is not valid JSON" in out and "nothing to change" not in out
+    assert _bytes(_config(root)) == healthy
+    code, out, err = _cli(capsys, "--root", root, "--global-path", str(home),
+                          "--restore", stamp, "--repo", "--force-invalid", "--apply")
+    assert code == 0, err
+    assert _bytes(_config(root)) == b"{ corrupt"
+
+
 def _fail(*_args, **_kwargs):
     raise crew_backup.BackupError("the backup root is unwritable")
 
