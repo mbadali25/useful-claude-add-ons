@@ -39,6 +39,26 @@ approval is the human's to type (T-0024 owns group approval).
   continue: next_phase a stop, raises, or names
             /crew:approve                         ask    with the reason
 
+## T-0057 -- the autopilot rows
+
+Five rows name `/crew:autopilot` subcommands. Whether a subcommand runs is
+`crew_autopilot.route`'s answer at decide time; the table holds no copy, so a
+row goes live the day its ticket adds the name to `crew_autopilot.AVAILABLE`.
+
+  route raises or answers an unknown shape        ask    "could not be read"
+  route does not know the name (sub empty)        none   (no line at all)
+  route stops (not landed yet)                    ask    unavailable: answer the
+                                                         prompt as written
+  autopilot status [<id>]                         route  (an id resolves as above)
+  focus on <id>                                   route, or ask with no folder
+  take care of / handle / work toward <text>      route  `<command> <text>`, or ask
+                                                         on a quote, $, ` or \\
+  pick the goal back up                           ask    never picks a slug (T-0056)
+
+A bare pronoun as the text ("handle it"), or text naming approve, never
+matches, and `?` is accepted only where a pattern spells it (the two status
+questions).
+
 `crew_ticket.resolve_active`'s own INDEX fallback takes the FIRST open line,
 so it is never the answer here: `crew_autopilot.open_index_tickets` (T-0004)
 is, and only when it holds exactly one ticket. Every branch that cannot tell
@@ -74,6 +94,8 @@ FIELD_CHARS = {"intent": 32, "ticket": 64, "source": 80, "phase": 48, "command":
 
 _ID = r"(?P<id>[a-z][a-z0-9]*-\d+)"
 _REF = rf"(?:it|this|{_ID})"
+# T-0057: an autopilot row's free text. No `?`: a question is never a command.
+_TEXT = r"(?P<topic>[^?]+)"
 
 # (intent, command, ticket_rule, patterns). `command` None: the disk names it
 # (`continue`). Rules: `topic` -- the rest of the prompt is the argument;
@@ -91,6 +113,19 @@ PHRASES = (
      (rf"close {_REF}(?: out)?", rf"mark {_REF} (?:as )?done")),
     ("continue", None, "continue", (r"continue", r"keep going", r"carry on")),
     ("status", "/crew:status", "none", (r"status", r"crew status")),
+    # T-0057. Rules: `autopilot` -- an optional id; `autopilot-text` -- the
+    # user's words are the argument; `autopilot-ticket` -- an explicit id;
+    # `autopilot-resume` -- always asks. The subcommand is the command's last
+    # word, and `crew_autopilot.route` says whether it runs.
+    ("autopilot-status", "/crew:autopilot status", "autopilot",
+     (rf"autopilot status(?: {_ID})?", r"what(?:'s|\u2019s| is) autopilot doing\??")),
+    ("assign", "/crew:autopilot assign", "autopilot-text",
+     (rf"take care of {_TEXT}", rf"handle {_TEXT}")),
+    ("goal", "/crew:autopilot goal", "autopilot-text",
+     (rf"work towards? {_TEXT}", rf"make it so {_TEXT}")),
+    ("goal-resume", "/crew:autopilot run --goal", "autopilot-resume",
+     (r"pick the goal back up", r"resume the goal")),
+    ("focus", "/crew:autopilot focus", "autopilot-ticket", (rf"focus on {_ID}",)),
 )
 
 AMBIGUOUS = ("do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it")
@@ -98,6 +133,15 @@ _PREFIXES = ("please ", "ok ", "now ", "let's ")
 _WS = re.compile(r"\s+")
 _CREW_COMMAND = re.compile(r"^/crew:([a-z][a-z0-9-]*)(?:\s+(.*))?$")
 _APPROVE = re.compile(r"approve", re.IGNORECASE)
+# T-0057: an `autopilot-text` capture that is only one of these, or names
+# approve, is no match.
+_PRONOUNS = ("it", "this", "that", "them", "these", "those", "everything")
+# The characters `commands/autopilot.md` section 0 refuses in its arguments.
+_SHELL = re.compile(r"['\"$`\\]")
+_ROUTE_SHAPE = ("sub", "stop", "reason")
+# Intents whose ask is about which ticket; any other ask never says "which ticket".
+_TICKETED = ("spec", "plan", "implement", "review", "done", "continue", "focus")
+GOAL_UNDO = "After it runs, tell the user in one line what changed and how to undo it."
 
 
 def compile_table(phrases):
@@ -143,6 +187,9 @@ def match(prompt):
             groups = found.groupdict()
             ticket = groups.get("id")
             topic = (groups.get("topic") or "").strip() or None
+            if rule == "autopilot-text" and ((topic or "").casefold() in _PRONOUNS
+                                             or _APPROVE.search(topic or "")):
+                continue
             return {"intent": intent, "command": command, "rule": rule,
                     "ticket_arg": ticket.upper() if ticket else None, "topic": topic}
     return None
@@ -150,9 +197,10 @@ def match(prompt):
 
 def command_for(found, ticket):
     """The `/crew:` command line a match renders to for `ticket`."""
-    if found["rule"] == "topic":
+    if found["rule"] in ("topic", "autopilot-text"):
         return f"{found['command']} {found['topic']}"
-    if found["rule"] == "none" or not found["command"]:
+    if found["rule"] in ("none", "autopilot-resume") or not found["command"] \
+            or (found["rule"] == "autopilot" and not ticket):
         return found["command"]
     return f"{found['command']} {ticket}"
 
@@ -161,7 +209,7 @@ def _answer(outcome, found, **fields):
     """One decision dict; every key present whatever the outcome."""
     answer = {"outcome": outcome, "intent": found["intent"] if found else None,
               "command": None, "ticket": None, "source": "", "reason": "", "candidates": [],
-              "phase": None}
+              "phase": None, "unavailable": False}
     answer.update(fields)
     answer["candidates"] = list(answer["candidates"] or [])
     return answer
@@ -208,13 +256,59 @@ def _continue(found, top, ticket, source):
                    phase=phase.get("phase"), reason=phase.get("reason") or "")
 
 
+def _gate(top, found):
+    """None when `crew_autopilot.route` says the row's subcommand runs, else
+    the decision: ask when it cannot be read, none when the router does not
+    know the name, an `unavailable` ask when it stops."""
+    sub = found["command"].split()[-1]
+    try:
+        got = crew_autopilot.route(top, sub)
+        if not isinstance(got, dict) or any(key not in got for key in _ROUTE_SHAPE) \
+                or not isinstance(got["stop"], bool):
+            raise TypeError(f"route answered {got!r:.80}")
+    except Exception as exc:  # pylint: disable=broad-except
+        why = f"whether /crew:autopilot {sub} is available could not be read " \
+              f"({type(exc).__name__}: {exc})"
+        return _answer("ask", found, reason=why)
+    if not got["sub"]:
+        return _answer("none", None)
+    if got["stop"]:
+        return _answer("ask", found, reason=str(got["reason"]), unavailable=True)
+    return None
+
+
+def _autopilot(found, top):
+    """decide for the T-0057 rows, after the gate."""
+    gate = _gate(top, found)
+    if gate is not None:
+        return gate
+    if found["rule"] == "autopilot-resume":
+        return _answer("ask", found, reason="routing does not pick a goal; the user types "
+                                            "/crew:autopilot run --goal <slug>")
+    if found["rule"] == "autopilot-text":
+        if _SHELL.search(found["topic"]):
+            return _answer("ask", found, reason="autopilot's router refuses those characters "
+                                                "(a quote, $, a backtick or a backslash); ask "
+                                                "the user to rephrase or type the command")
+        return _answer("route", found, command=command_for(found, None))
+    if not found["ticket_arg"]:
+        return _answer("route", found, command=command_for(found, None))
+    ticket, source, reason, candidates = _resolve(top, found["ticket_arg"])
+    if ticket is None:
+        return _answer("ask", found, reason=reason, candidates=candidates)
+    return _answer("route", found, command=command_for(found, ticket), ticket=ticket,
+                   source=source)
+
+
 def decide(root, prompt):
     """`{"outcome": route|ask|none, "intent", "command", "ticket", "source",
-    "reason", "candidates", "phase"}`. Read-only."""
+    "reason", "candidates", "phase", "unavailable"}`. Read-only."""
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     found = match(prompt)
     if found is None:
         return _answer("none", None)
+    if found["rule"].startswith("autopilot"):
+        return _autopilot(found, crew_ticket.toplevel(root) or os.path.abspath(root))
     if found["rule"] in ("none", "topic"):
         return _answer("route", found, command=command_for(found, None))
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
@@ -271,14 +365,20 @@ def render(decision):
             head = f"the user's prompt asks for {intent} on {ticket} ({source}). "
         else:
             head = f"the user's prompt asks for {intent}. "
+        undo = f" {GOAL_UNDO}" if intent == "goal" else ""
         return (PREFIX + head + run
-                + " Its own checks still decide; if the user plainly meant something else, ask.")
+                + " Its own checks still decide; if the user plainly meant something else, ask."
+                + undo)
     if outcome == "ask":
         on = f" on {ticket}" if ticket else ""
         candidates = decision.get("candidates") or []
         which = f"which ticket ({_candidates(candidates)}) " if candidates else \
-            ("which ticket " if not ticket else "")
+            ("which ticket " if not ticket and intent in _TICKETED else "")
         reason = _clip(decision.get("reason"), "reason")
+        if decision.get("unavailable"):
+            return (f"{PREFIX}the user's prompt reads as {intent}, but {reason}; do not run it. "
+                    "If the user meant autopilot, say so in one line; otherwise answer the "
+                    "prompt as written.")
         return (f"{PREFIX}the user's prompt reads as {intent}{on}, but {reason}; "
                 f"ask the user {which}before running anything.")
     return ""

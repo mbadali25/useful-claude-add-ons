@@ -43,6 +43,17 @@ EXAMPLES = {
     "continue": [("continue", None, None), ("keep going", None, None),
                  ("Carry on.", None, None), ("please continue", None, None)],
     "status": [("status", None, None), ("crew status", None, None), ("Status.", None, None)],
+    # T-0057: the autopilot rows, after the lifecycle ones.
+    "autopilot-status": [("autopilot status", None, None), ("autopilot status T-12", "T-12", None),
+                         ("What's autopilot doing?", None, None),
+                         ("what is autopilot doing", None, None), ("Autopilot status.", None, None)],
+    "assign": [("please take care of the login audit.", None, "the login audit"),
+               ("handle the Flaky Retry test", None, "the Flaky Retry test")],
+    "goal": [("work toward zero flaky tests", None, "zero flaky tests"),
+             ("work towards zero flaky tests", None, "zero flaky tests"),
+             ("make it so the docs build in CI", None, "the docs build in CI")],
+    "goal-resume": [("pick the goal back up", None, None), ("Resume the goal.", None, None)],
+    "focus": [("focus on t-0012", "T-0012", None), ("Focus on T-3.", "T-3", None)],
 }
 
 AMBIGUOUS_PROMPTS = ["do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it",
@@ -51,8 +62,9 @@ APPROVE_PROMPTS = ["approve T-1", "approve it", "lgtm", "LGTM!", "/crew:approve 
                    "approve", "approved", "ship it", "approve the plan", "i approve T-0023"]
 
 
-def test_the_table_names_exactly_the_lifecycle_intents():
-    assert [row[0] for row in crew_route.PHRASES] == list(EXAMPLES)
+def test_the_table_names_exactly_the_lifecycle_and_autopilot_intents():
+    assert ([row[0] for row in crew_route.PHRASES], {len(row) for row in crew_route.PHRASES}) == \
+        (list(EXAMPLES), {4})
 
 
 @pytest.mark.parametrize("intent, prompt, ticket, topic",
@@ -582,6 +594,17 @@ _ROUTE_TAIL = "if the user plainly meant something else, ask."
       "command": "/crew:" + _HUGE}, _ROUTE_TAIL),
     ({"outcome": "route", "intent": "brainstorm", "ticket": None,
       "command": "not a crew command " + _HUGE}, _ROUTE_TAIL),
+    # T-0057: the soft not-available ask and the goal route's undo sentence.
+    ({"outcome": "ask", "intent": _HUGE, "ticket": _HUGE, "reason": _HUGE, "unavailable": True,
+      "candidates": [_HUGE] * 20}, "otherwise answer the prompt as written."),
+    ({"outcome": "ask", "intent": "assign", "reason": "line one\nline two " + _HUGE,
+      "unavailable": True}, "otherwise answer the prompt as written."),
+    ({"outcome": "route", "intent": "goal", "ticket": None,
+      "command": "/crew:autopilot goal " + _HUGE}, "what changed and how to undo it."),
+    ({"outcome": "route", "intent": "autopilot-status", "ticket": _HUGE, "source": _HUGE,
+      "command": "/crew:autopilot status " + _HUGE}, _ROUTE_TAIL),
+    ({"outcome": "route", "intent": "assign", "ticket": None,
+      "command": "/crew:autopilot assign " + _HUGE}, _ROUTE_TAIL),
 ])
 def test_render_is_one_bounded_line_whatever_the_fields(decision, tail):
     line = crew_route.render(decision)
@@ -605,3 +628,207 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
 
     assert (crew_autopilot.SUBCOMMANDS, got) == (
         ("status", "run", "assign", "goal", "focus"), [True, True])
+
+
+# --- T-0057: plain-text routing for the autopilot commands the router knows -----
+
+_RESERVED = ["take care of the login audit", "work toward zero flaky tests", "focus on T-1",
+             "pick the goal back up"]
+_NEW_ROWS = ["autopilot status", "take care of the login audit",
+             "work toward zero flaky tests", "focus on T-1", "pick the goal back up"]
+_UNDO = "After it runs, tell the user in one line what changed and how to undo it."
+
+
+def _all_available(monkeypatch):
+    monkeypatch.setattr(crew_autopilot, "AVAILABLE", frozenset(crew_autopilot.SUBCOMMANDS))
+
+
+def test_autopilot_status_routes(tmp_path):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-12", activate=False)
+
+    got = [crew_route.decide(str(root), p) for p in
+           ("autopilot status", "What's autopilot doing?", "autopilot status t-12",
+            "autopilot status T-99")]
+
+    assert [(g["outcome"], g["command"], g["ticket"], g["unavailable"]) for g in got] == [
+        ("route", "/crew:autopilot status", None, False),
+        ("route", "/crew:autopilot status", None, False),
+        ("route", "/crew:autopilot status T-12", "T-12", False),
+        ("ask", None, None, False)]
+
+
+def test_autopilot_status_route_line_names_the_skill(tmp_path):
+    root = _repo(tmp_path)
+
+    line = crew_route.render(crew_route.decide(str(root), "autopilot status"))
+
+    assert line == ("crew route: the user's prompt asks for autopilot-status. Run the "
+                    "/crew:autopilot procedure: invoke the Skill tool with skill crew:autopilot, "
+                    "args status. Its own checks still decide; if the user plainly meant "
+                    "something else, ask.")
+
+
+@pytest.mark.parametrize("prompt", _RESERVED)
+def test_a_reserved_subcommand_asks_softly(tmp_path, prompt):
+    """origin/main's AVAILABLE is status and run: every other row asks, says
+    the command is not available yet, and leaves the prompt to be answered."""
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+
+    got = crew_route.decide(str(root), prompt)
+    line = crew_route.render(got)
+
+    assert (got["outcome"], got["unavailable"], got["command"], "arrives with" in got["reason"],
+            "answer the prompt as written" in line, "which ticket" in line,
+            "do not run it" in line, "\n" in line) == \
+        ("ask", True, None, True, True, False, True, False)
+
+
+def test_an_available_subcommand_routes(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    _all_available(monkeypatch)
+
+    got = [crew_route.decide(str(root), p) for p in
+           ("take care of the login audit", "work toward zero flaky tests", "focus on t-1",
+            "focus on T-9")]
+
+    assert [(g["outcome"], g["command"], g["unavailable"]) for g in got] == [
+        ("route", "/crew:autopilot assign the login audit", False),
+        ("route", "/crew:autopilot goal zero flaky tests", False),
+        ("route", "/crew:autopilot focus T-1", False),
+        ("ask", None, False)]
+
+
+def test_a_subcommand_the_router_does_not_know_is_none(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    monkeypatch.setattr(crew_autopilot, "SUBCOMMANDS", ("status", "run", "assign", "goal"))
+
+    got = crew_route.decide(str(root), "focus on T-1")
+
+    assert (got["outcome"], crew_route.render(got)) == ("none", "")
+
+
+def _raise(*_args, **_kwargs):
+    raise RuntimeError("router on fire")
+
+
+@pytest.mark.parametrize("fake", [_raise, lambda *_a, **_k: None,
+                                  lambda *_a, **_k: {"sub": "assign"},
+                                  lambda *_a, **_k: ["assign", False, ""]])
+@pytest.mark.parametrize("prompt", _NEW_ROWS)
+def test_an_unreadable_router_asks(tmp_path, monkeypatch, prompt, fake):
+    """"Could not tell" is its own value: a router that raises or answers in a
+    shape this module does not know is an ask, never a route and never none."""
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    monkeypatch.setattr(crew_autopilot, "route", fake)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (got["outcome"], got["command"], "could not be read" in got["reason"]) == \
+        ("ask", None, True)
+
+
+def test_goal_resume_never_picks_a_slug(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    _all_available(monkeypatch)
+    monkeypatch.setattr(crew_autopilot, "route",
+                        lambda _top, first: {"sub": "run", "stop": False, "reason": ""})
+
+    got = [crew_route.decide(str(root), p) for p in ("pick the goal back up", "resume the goal")]
+
+    assert [(g["outcome"], g["command"], g["ticket"], "--goal <slug>" in g["reason"])
+            for g in got] == [("ask", None, None, True)] * 2
+
+
+@pytest.mark.parametrize("prompt", [
+    "take care of it", "handle this", "handle that.", "Handle Them", "take care of everything",
+    "work toward it", "make it so", "make it so.", "can you take care of the login audit?",
+    "take care of the login audit?", "I will handle the login audit later", "focus on this",
+    "focus on the tests", "focus on T-1?", "autopilot status please tell me", "work toward",
+    "is autopilot status working?", "autopilot status?", "pick the goal back up?",
+    "handle " + "x" * 90, "handle the login\naudit", "`handle the login audit`",
+    "/crew:autopilot assign x", "autopilot T-3", "run autopilot", "approve T-1 via autopilot",
+    "handle approve T-1", "take care of the Approve step", "work toward approve all"])
+def test_autopilot_phrases_that_must_not_route(tmp_path, monkeypatch, prompt):
+    """With every subcommand available, so a match would be a route."""
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    _all_available(monkeypatch)
+
+    assert crew_route.decide(str(root), prompt)["outcome"] == "none"
+
+
+@pytest.mark.parametrize("prompt", ["handle the O'Brien ticket", 'handle the "retry" bug',
+                                    "take care of $HOME", "handle the x`y` bug",
+                                    "handle C:\\temp", "work toward 'zero' flakes"])
+def test_free_text_with_shell_characters_asks(tmp_path, monkeypatch, prompt):
+    root = _repo(tmp_path)
+    _all_available(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (got["outcome"], got["command"], got["unavailable"],
+            "refuses those characters" in got["reason"]) == ("ask", None, False, True)
+
+
+def test_goal_route_line_names_the_undo(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    _all_available(monkeypatch)
+
+    lines = {p: crew_route.render(crew_route.decide(str(root), p)) for p in
+             ("work toward zero flaky tests", "take care of the login audit", "focus on T-1",
+              "autopilot status", "implement T-1", "status")}
+
+    assert {p: line.endswith(_UNDO) for p, line in lines.items()} == {
+        "work toward zero flaky tests": True, "take care of the login audit": False,
+        "focus on T-1": False, "autopilot status": False, "implement T-1": False,
+        "status": False}
+
+
+def test_every_decision_has_every_key(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    prompts = ["hello", "implement T-1", "implement T-99", "status", "continue",
+               "autopilot status", "take care of the login audit", "focus on T-1",
+               "pick the goal back up", "handle the O'Brien ticket"]
+    got = [crew_route.decide(str(root), p) for p in prompts]
+    _all_available(monkeypatch)
+    got += [crew_route.decide(str(root), p) for p in prompts]
+
+    assert ({frozenset(g) for g in got}, {g["unavailable"] for g in got}) == (
+        {frozenset({"outcome", "intent", "command", "ticket", "source", "reason", "candidates",
+                    "phase", "unavailable"})}, {True, False})
+
+
+def test_autopilot_decide_writes_nothing(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+    before = _snapshot(root)
+
+    for available in (False, True):
+        if available:
+            _all_available(monkeypatch)
+        for prompt in _NEW_ROWS + ["autopilot status T-1", "handle $x"]:
+            crew_route.decide(str(root), prompt)
+
+    assert _snapshot(root) == before
+
+
+@pytest.mark.parametrize("prompt", ["handle the O'Brien ticket", "pick the goal back up"])
+def test_an_autopilot_ask_that_is_not_about_a_ticket_never_says_which_ticket(
+        tmp_path, monkeypatch, prompt):
+    root = _repo(tmp_path)
+    monkeypatch.setattr(crew_autopilot, "route",
+                        lambda _top, first: {"sub": "run", "stop": False, "reason": ""})
+
+    got = crew_route.decide(str(root), prompt)
+    line = crew_route.render(got)
+
+    assert (got["outcome"], "which ticket" in line, line.endswith("before running anything.")) \
+        == ("ask", False, True)
