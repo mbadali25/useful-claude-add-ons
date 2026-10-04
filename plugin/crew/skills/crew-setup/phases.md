@@ -355,8 +355,8 @@ them is half the value of this phase.
   that starts red never becomes a gate.
 - **QA and harness standards.** Run the `crew-qa-standards` audit (report-only):
   `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-qa-standards/scripts/qa_audit.py --root .`.
-  For each GAP, apply the rule it names (measure first, per H1), or record in
-  `.crew/STATUS.md` why not. Report UNKNOWN rows as unknown. A new repo also gets
+  For each GAP, apply the rule it names (measure first, per H1). A GAP left open
+  makes this phase `partial`, with the GAP named in `.crew/STATUS.md`, never `done`. Report UNKNOWN rows as unknown. A new repo also gets
   a steward skill from that skill's `references/steward-template.md`.
 - **Terraform.** If there are `.tf` files, set up terraform-docs and tflint per
   `crew-terraform`. Put the **`--output-check`** form in the gate, never the
@@ -381,7 +381,8 @@ someone needed it. Fix them now, or delete the rule and record in
 
 **Done when:** rules cover the hot paths, each is verified, `"unmapped": "fail"`,
 `resolve-tools.sh` reports no MISSING tool, linters run green on the current
-tree, and every `qa_audit.py` GAP is fixed or recorded in `.crew/STATUS.md`.
+tree, and `qa_audit.py` reports no GAP. Any GAP still open: mark the phase `partial`
+and name it in `.crew/STATUS.md`. The audit never adds a hook; this is the only block.
 
 ## Phase 6 — Browser tests
 
@@ -451,11 +452,19 @@ not the gate, which only looks for it. And the rollback runbook
 needs a literal `last verified: YYYY-MM-DD` line, because that is what the hook
 greps for.
 
+**Then audit what you declared.** `qa_audit.py --root .` (see Phase 5) now answers its E items
+against this block: data provenance per non-production environment, a rehearsed rollback on every
+rung, no deploy of `$(git rev-parse HEAD)`, deploy workflows that fail loudly, the credential
+inventory's reaches and live columns. Ask me about each GAP rather than filling the key yourself.
+Then `qa_doc.py --root . --write` documents the process under `docs/qa/` with its diagrams, and
+`qa_audit.py --root . --stamp` records the audit.
+
 **Done when:** the `environments` block matches how this repo genuinely ships,
 `.work/PROMOTIONS.md` exists with its header, production has a `rollback` path
 pointing at a runbook that carries a fresh `last verified` line, `.gitignore`
 carries the §3c block (`.crew/*`, the un-ignore list, `.crew/.approved-*` and
-`.work/` below it), and `--dry-run` prints a sequence I recognise.
+`.work/` below it), `--dry-run` prints a sequence I recognise, and no E-item GAP is open. An open
+one makes the phase `partial`, named in `.crew/STATUS.md`, never `done`.
 
 ## Phase 7 — First real ticket
 

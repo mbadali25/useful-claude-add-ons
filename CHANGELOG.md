@@ -33,6 +33,168 @@ All notable changes to this repository are documented here. Format follows [Keep
   date" (file times only when there is no `.src`, said as "(freshness by mtime only)"); tables
   escape `<`, `>` and `&` so GitHub keeps text like `<repo>`.
 
+### Added — `crew` 1.0.230: QA standards for repositories crew sets up (L-0618)
+
+- E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
+  `n`, `false` are no), a live credential's reach must name a known or declared environment
+  (`production only` is production; `not prod` or `prod replica` is unknown, not production), and
+  acceptance is a strict grammar over the cell in its own case: an ISO date, or `accepted` / `yes`
+  with an optional `by <Name>` (1-3 capitalised ASCII words) and date, either order; a name
+  without `by` is UNKNOWN. A refusal word or stem (`no`, `not`, `revok`, `cancel`, `maybe`,
+  `draft`, ...) is not an acceptance, and the GAP names that word; inside a `by` name only a whole
+  refusal word counts (`no`, `revoked`, `withdrew`, ..., also through `-` and apostrophes), so `accepted by Denise` is a name and
+  `accepted by No One` is not, and any other text (`accepted Under Review`,
+  `approved`, `ok`) is UNKNOWN, never accepted. An unparseable `.crew/verify.json` makes E5 UNKNOWN. Header columns match whole words,
+  so "Delivered" is not `live`. An unreadable runbook, `.gitignore` or inventory is UNKNOWN, not
+  missing; `qa_doc.py --write` refuses an unreadable file instead of overwriting it; a failed
+  `git ls-files` makes G4 UNKNOWN. Found in review of PR #337.
+
+- On Windows, E4 read CI paths as `.github\workflows\...` and so never asked a GitHub deploy
+  workflow for its `concurrency:` group; every comparison and every printed path is now `/`
+  separated (`qa_audit_env.posix`). Found by `crew-windows-default`.
+- G1 asks the Stop gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) which
+  undeclared rules it defers, and names only those as skipped: a plain local command without
+  `reach` still runs on Stop, so the review's "every rule without `reach` is skipped" overstated
+  D10. `--all-repos` reports D10 only for a deferred rule. Its `reach` references cite §19, not §18.
+- `qa_doc.py`'s diagrams draw without crossing lines: a red result ends in its own fix node
+  instead of looping back to the gate, and the audit loop is its own straight-line diagram
+  (`docs/diagrams/process-qa-audit.mmd`). `test_the_gate_diagram_has_no_back_edge` holds it.
+- `crew-qa-standards` gains `references/environments.md` (G1-G5, E1-E7) and `qa_audit_env.py`,
+  whose items join `qa_audit.py`'s report under the same PASS / GAP / N/A / UNKNOWN answers: rules
+  without `reach` (D10, the Stop gate that runs nothing), fire-and-forget commands, the `_verify`
+  template's known bugs in the repo's copy, unignored build directories, the `.crew/*` ignore block,
+  non-production data provenance, rollback rehearsed on every rung, deploys of
+  `$(git rev-parse HEAD)`, deploy workflows that swallow exit codes, the credential inventory's
+  reaches and live columns, verifiers under a web root, and `_verify` entry points CI never runs.
+  Report-only; it never deploys, reads a secret value or calls a remote host.
+- `qa_audit.py --stamp` records the audited HEAD in `.crew/.qa-audit-at`; `--all-repos DIR` prints
+  one line per crew checkout (setup phase, GAP and UNKNOWN counts, D10 live or not).
+- New session trigger `qaAuditStale` (`crew_state.py`): no stamp yet, or `.crew/verify.json`,
+  `_verify/`, CI or `.gitignore` moved since it; an unanswerable diff fires. Every existing crew
+  repo hears it once after this update.
+- `qa_doc.py` documents a repo's QA process: `docs/qa/README.md` with the gate-flow and promotion
+  ladder diagrams embedded as Mermaid, `docs/qa/qa-process.html`, and the `.mmd` sources under
+  `docs/diagrams/`. Dry run by default; never overwrites a file it did not generate.
+- `/crew:init --audit [--all-repos DIR]`; `/crew:upgrade` step 5c re-runs the audit as a report;
+  setup Phase 8 audits the `environments` block it just wrote.
+- Follows the owner decisions in the review's section 6: a setup phase with an open GAP is
+  `partial`, never `done`, and no hook is added; a live credential outside production is a GAP
+  until an owner acceptance is recorded; review validity (D8) moves to the QA-rounds stream.
+- Not in this change: slice b (corrected `_verify` templates, `--audit --fix`, a GitHub Actions CI
+  template first), slice c (the sabotage entries, a separate tooling PR), and L-0562's
+  `--stamp-reach`, which G1's GAP text no longer points to.
+
+### Added — `crew` 1.0.229: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
+
+- `hooks/scripts/verify_reach.py`: for each rule without `reach`, proposes `local` when the Stop
+  gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) already runs it and `network`
+  when it defers it for a remote verb. `--apply` writes those, then moves each stamped rule's
+  entries in `.crew/.verify-gate.timings.json` and `.crew/.verify-gate.record.json` to its new
+  `rule_key` (which hashes `reach`), so in that checkout it changes neither what Stop runs nor what
+  it costs (another checkout, whose caches are local, runs `/crew:verify --all` once); an
+  unreadable cache is named and left alone. A `"reach": null` rule counts as undeclared, as in
+  the gate. It classifies from `--root` as its cwd, as the gate does (there is no `--map`). The
+  table shows a `requiresCleanTree` rule as skipped on Stop.
+  A rule deferred for shell syntax or a wrapper script is listed as undecided and written only by
+  `--set N=local|network|host`. The map is edited as text in place and refused unless it parses
+  back to the original plus exactly the new keys. This is the fix half of D10
+  (`docs/review/09-qa-standards-crew.md`).
+- `commands/verify.md` documents it and its `reach` citation now names CONFIG.md §19, not §18
+  (`guards.roleWrites`).
+- `verify_reach.py` reads the map with `newline=""`, so a CRLF `verify.json` keeps its line
+  endings when stamped (QA finding; a CRLF round-trip test covers it).
+
+### Changed — `crew` 1.0.169: setup, onboard and verify generate `AGENTS.md`, and the gate keeps it current
+
+- `crew_instructions.py agents` had no caller: only `rules` was run, so a crew repo told Codex and
+  other agents nothing about how to verify a change. `crew-setup` (step 4), `/crew:onboard` (step 6)
+  and `/crew:verify` (step 7) now run it; a hand-written `AGENTS.md` is still left alone.
+- `/crew:verify` adds the rule `crew_instructions.py agents-rule` prints: `agents --check` whenever
+  `AGENTS.md`, `CLAUDE.md`, `.crew/verify.json`, `.crew/codemap/**` or `_verify/smoke.sh` changes, so
+  the file cannot drift from the map. Exit 77 (SKIP) when `CLAUDE_PLUGIN_ROOT` is absent; the gate
+  sets it itself from 1.0.166 on. A map without that rule gets a `note:` line from `agents`, which is
+  never counted as drift. A stale `--check` names the command that regenerates the file.
+- What `AGENTS.md` says: `bash _verify/smoke.sh` first when it exists; how to pick the commands that
+  apply and that exit 77 is SKIP; how many commands past the first six were left out; and, when a
+  shown command needs `$CLAUDE_PLUGIN_ROOT`, what it is. The line claiming Claude Code reads the file
+  through `@AGENTS.md` is printed only when a line of `CLAUDE.md` is that import; otherwise the file
+  says Claude Code does not load it. `docs/review/04-redesign.md` targets a `CLAUDE.md` of
+  `@AGENTS.md` plus ten lines; setup's template does not do that today, and this change does not
+  either.
+- Two inputs no longer differ between clones. The title keeps the repo name from the existing file
+  instead of the checkout directory's name. The "where things are" scopes are judged against
+  `git ls-files`, not the disk (`crew_context.subsystems(root, tracked)`; the rules generator and the
+  hooks keep the disk), so a gitignored file a note cites cannot make a committed `AGENTS.md` stale in
+  CI. The cost: a cited file counts only once it is tracked, so on a fresh repo the first `--check`
+  after the first commit reads stale; regenerate once. Where `git ls-files` fails (no git, a
+  dubious-ownership refusal), `agents` says so in a `note:` and the disk decides.
+- `test_crew_instructions.py` gains cases for each of these, including one running the rule's own
+  shell command unset (77), set (0) and stale (1), one per rule source proving it changes the output,
+  one proving an untracked cited file does not, and the tracked branch's positive scope, cited
+  directories and non-git fallback. The behaviours were sabotaged by hand, round 2's surviving
+  mutants included, and each turned a test red; none is registered, because every mutation registry
+  is a harness path under T-0087.
+- Review (Sonnet 5.5): round 1, 0 BLOCK, 2 FIX (the disk-dependent scopes; a circular step 7 in
+  `/crew:verify`), 7 NIT; all taken but a false positive on a command that merely echoes the rule.
+  Round 2, 0 BLOCK, 1 FIX (step 7 named a directory an LLM could take as the working directory, and
+  could add the rule twice), 5 NIT; all taken.
+- CI (Windows) caught the non-git test deleting `.git` with `shutil.rmtree`, which git's read-only
+  object files refuse there (WinError 5); it now copies the repo without `.git` instead.
+
+### Added — `VERIFYING.md`: how to verify a change, for people and any AI agent
+
+- A root page mapping every verification layer to its command, when to run it and what it costs,
+  with a "which layers do I need?" table first: the marketplace gate, smoke, crew's verify gate (by
+  hand with `--all`, since without it the gate defers every rule over the Stop budget, and in the
+  background for an agent), `scripts/gate-runner.py`, `_verify/run-all.sh`, CI and its receipts,
+  the test suites run directly, and what no automated layer runs. Linked from the README's
+  Documentation table and from `AGENTS.md`'s "How to verify a change".
+- `check-marketplace.py`'s new `check_verifying_doc` fails when the page names a repository path that
+  does not exist: inline spans, fenced blocks (backtick or tilde, also opened on a list item), link
+  targets (anchors stripped) and bare root docs (`AGENTS.md`). It does not skip a path whose first
+  segment is missing, so a misspelt top-level directory is caught. Absolute paths, URLs,
+  `<placeholders>`, globs and `$VARS` are skipped. A missing page fails only when README.md or
+  AGENTS.md links to it, so other suites' fixture roots are unaffected.
+- `scripts/_test/verifying-doc.py` (must-fail and must-pass cases, and a check that `main()` calls the
+  check) runs in `marketplace.yml`, `gate-runner.py` and `.crew/verify.json`'s `scripts/**` rule;
+  `VERIFYING.md` joins the docs rule's paths. Each behaviour was sabotaged by hand and turned the
+  suite red. None is registered: every mutation registry is a harness path under T-0087.
+- Review (Sonnet 5.5): 0 BLOCK, 8 FIX, 6 NIT. FIX: no `main()` wiring test, the AGENTS.md link
+  untested, three false or incomplete claims (when `.ps1` cases skip, what triggers CI, when a receipt
+  is accepted), no warning that an agent must background `--all`, a "minimum" that disagreed with
+  `AGENTS.md`, and list-item fences misread. All taken, as were the NITs except reference links,
+  HTML `href` and wrapped spans, which the docstring now names as known limits. Round 2: 0 BLOCK,
+  3 FIX (a fence that never closes silenced everything after it, now a failure of its own; run-all
+  claimed to cover all of smoke; untested fence and link edge cases), 5 NIT; all taken but a
+  stronger `main()` wiring test.
+### Fixed — `crew` 1.0.167: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
+
+- A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
+  ran under the Stop hook, which Claude Code gives that variable, but under `/crew:verify --all` the
+  Bash tool substitutes it into the command text and is not documented to export it to the gate's
+  children. That rule could then fail, or exit 77 and leave the verified baseline frozen, depending on
+  which path ran the gate. `verify-gate.sh` and `verify-gate.ps1` now set it to the plugin's own root
+  (two levels above the script) when the caller left it unset or empty, and never replace a value the
+  caller set. The `.sh` resolves that root at its first line, before it `cd`s into the project, so a
+  gate started by a relative path still finds it (resolved later, it came out as `/`), and on Git Bash
+  it takes `pwd -W`'s native `D:/...` form, which a native python can open (`CDPATH` emptied, so
+  `cd` cannot echo into the value). Unresolvable, the variable stays unset, so a
+  `${CLAUDE_PLUGIN_ROOT:?}` rule fails loudly; that branch is untested, since no way was found to
+  make the `cd` fail. Groundwork for a rule that
+  checks `AGENTS.md` against `verify.json` with crew's own generator.
+- `test_verify_gate_plugin_root.py` runs the real gate with a rule that reads the variable from its own
+  process environment (a value visible only to the gate's shell, and not exported, does not pass):
+  unset and empty → the gate's own plugin root, a relative-path start → the same, set → kept. Four
+  mutations against `verify-gate.sh` registered in `sabotage_tooling.py`, one per behaviour, and one
+  against `verify-gate.ps1`, registered only on native Windows with pwsh, the one place its cases run.
+  The file joins `.crew/verify.json`'s verify-gate rule. Review (Sonnet 5.5): 0 BLOCK, 3 FIX (Git
+  Bash's `/d/...` form, the relative start, the untested empty value), 3 NIT; all fixed but the
+  `.ps1` cases running off Windows, which the gate's own Windows-only guard rules out. Round 2: 0
+  BLOCK, 0 FIX, 3 NIT (`CDPATH`, a mutation comment, the untested unresolvable branch), all taken.
+- `test_verify_gate_rule_env_leak.py` lists `CLAUDE_PLUGIN_ROOT` among the variables the gate exports
+  on purpose; it still watches `GATE_PLUGIN_ROOT`, the shell variable the value is copied from.
+  CI caught this on Linux and Windows; the review rounds and the mapped rules did not run that file.
+
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round

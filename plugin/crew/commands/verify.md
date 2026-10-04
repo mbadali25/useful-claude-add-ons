@@ -1,23 +1,20 @@
 ---
 description: Build or refresh the verification map from evidence
-argument-hint: "[--refresh] [--price]"
+argument-hint: "[--refresh] [--price] [--stamp-reach [--apply] [--set N=REACH]]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
 Build `.crew/verify.json` — the map from changed paths to the checks they require.
 
-1. **Look for `_verify/` first**, then the repo's other conventions — `qa/`,
-   `spec/`, `_test*/`. If `_verify/` exists, read its `README.md` and the scripts
-   in it, and map every one of them into a rule. If **none** of them exists,
-   create `_verify/` from
-   `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/templates/_verify/` — `README.md`,
-   `smoke.sh`, `run-all.sh`, and a `cases/` directory — then fill in that
-   README's layout and status tables with what this repo actually needs. Do not
-   leave the template's commented-out examples as the whole file: either write
-   real checks or say plainly that the directory is a scaffold with none in it
-   yet. If a convention does exist, read it and ask me what runs it and
-   when. It will not be discovered for you, and it is usually the most valuable
-   thing in the repo for this purpose.
+1. **Look for `_verify/` first**, then the repo's other conventions — `qa/`, `spec/`, `_test*/`. If
+   `_verify/` exists, read its `README.md` and the scripts in it, and map every one of them into a
+   rule. If **none** of them exists, create `_verify/` from
+   `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/templates/_verify/` — `README.md`, `smoke.sh`,
+   `run-all.sh`, and a `cases/` directory — then fill in that README's layout and status tables with
+   what this repo actually needs. Do not leave the template's commented-out examples as the whole
+   file: either write real checks or say plainly that the directory is a scaffold with none in it
+   yet. If a convention does exist, read it and ask me what runs it and when. It will not be
+   discovered for you, and it is usually the most valuable thing in the repo for this purpose.
 2. Inventory what exists: test directories, test scripts in `package.json` /
    `*.csproj` / `Makefile` / `composer.json`, CI workflow steps, `e2e/` specs.
    Read the CI config carefully — it is the closest thing to an existing map.
@@ -28,7 +25,10 @@ Build `.crew/verify.json` — the map from changed paths to the checks they requ
    confirm red, revert. An unverified mapping is a guess written in JSON.
    Report any pairing that stayed green — that is a coverage hole worth knowing.
 6. Time each check. Anything over ~3 minutes belongs in CI, not the local gate.
-7. Write the map with a `why` on every rule and `"unmapped": "fail"`.
+7. Write the map with a `why` on every rule and `"unmapped": "fail"`. Then, from the repo root, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" agents --root .`. Unless it
+   printed `hand-written, left alone` or a rule already runs `agents --check`, add the rule that the
+   same script's `agents-rule` prints to `rules`, then run the `agents` command again.
 8. Report: rules created, paths left unmapped, and every pairing that failed
    step 4.
 
@@ -124,6 +124,20 @@ dirties a committed file. It is never reachable from the Stop hook and is
 never invoked automatically by this command either — run it by hand, review
 the diff, and commit the pricing separately.
 
+## `--stamp-reach` (operator only, L-0562)
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify_reach.py --root . [--apply] [--set N=local|network|host]
+
+Declares `reach` on every rule that has none (absent or `null`), from the gate's
+own classifier (below), run from `--root` as the gate runs from the project root:
+a rule the gate already runs gets `local`, one it defers for a remote verb gets
+`network`. `reach` is part of `rule_key`, so it then moves each stamped rule's
+measured timing and record entry to the new key: in this checkout `--apply` changes
+neither what Stop runs nor what it costs (another checkout re-measures: `--all` once
+there). Syntax-/wrapper-deferred rules: `--set N=...` only. Dry run; edits the map's text in
+place, refusing unless it parses back to the original plus exactly the new keys.
+Show the table, ask, then commit the diff on its own, as with `--price`.
+
 ## reach: `local` | `network` | `host`
 
 The Stop gate runs ONLY `local` rules. `network`/`host` rules run under
@@ -190,7 +204,8 @@ undeclared rule would be, never silently reintroduced through it.
 `--price` refuses to time a verb-, syntax-, or wrapper-classified rule
 outright, in both directions, same as the gate. The
 `verifyReachUndeclared` trigger in `crew_state.py` separately flags any rule
-with no `reach` at all — see `CONFIG.md` §18 for the full classification.
+with no `reach` at all — see `CONFIG.md` §19 for the full classification,
+and `--stamp-reach` above to declare them.
 
 ## Environment pinning
 
