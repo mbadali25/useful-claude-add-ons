@@ -6,7 +6,7 @@ Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at th
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
 ### State
-- **main = cab38cfa, crew 1.0.343, obsidian-vault 0.5.0.** 25 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
+- **main = 189c3b80, crew 1.0.344, obsidian-vault 0.5.0.** 26 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
 - Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
 
 ### Owner rules in force (all sessions)
