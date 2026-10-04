@@ -14,7 +14,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   checkout's; `unknown` (git cannot name it) inherits nothing. Routed through
   them: the `emergency.standDown` read (`crew_incident_active` for every bash
   gate, `promote-gate.ps1`), both cloud-guard no-python fallbacks, where
-  `unknown` now counts as armed, and `auto-clear.ps1`'s repo veto.
+  `unknown` now counts as armed, and `auto-clear.ps1`'s repo veto. The bash
+  fallback also counts a missing resolver (`_common.sh` failed to source) as
+  armed, and the PowerShell resolver pins UTF-8 around its git call so a
+  non-ASCII path does not read `unknown` on an OEM-code-page console.
 - **Why.** `.crew/*` is gitignored, so a lane has no config of its own. The
   cloud guard's fallback took an absent file as proof of off: in a lane whose
   main checkout says `cloudGuard: block`, a session with no usable python ran

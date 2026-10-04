@@ -3716,10 +3716,10 @@ commit. This section does not move the file's `anchor:`.
   and `plugin/crew/hooks/scripts/auto-clear.ps1:126`.
 - **DERIVED.** Routed readers: `crew_incident_active`'s `standDown` read
   (`plugin/crew/hooks/scripts/_common.sh:386`), `_cloud_guard_armed`
-  (`plugin/crew/hooks/scripts/cloud-guard.sh:38-51`, `unknown` armed at `:41`),
-  `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:242-243`),
-  promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:195`)
-  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:191`).
+  (`plugin/crew/hooks/scripts/cloud-guard.sh:40-53`, a missing resolver armed at `:42`, `unknown` at `:44`),
+  `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:248-249`),
+  promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:201`)
+  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:197`).
   `.crew/incident.json`, markers and logs stay in the worktree's own `.crew/`.
 - **DERIVED.** Held by `plugin/crew/tests/test_worktree_config_shell.py`: parity with the
   Python resolver on ten cases per flavour, the copies byte-identical, the cloud-guard

@@ -18,8 +18,8 @@
 %%    could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says
 %%    :339-345
 %% Note CG1: crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or
-%%    cloud_guard.py exits non-zero (cloud-guard.sh:52-75)
-%% Note CG2: _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:38. The repo file is
+%%    cloud_guard.py exits non-zero (cloud-guard.sh:55-78)
+%% Note CG2: _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is
 %%    crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's.
 %%    Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir.
 %% Note CG3: source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse).

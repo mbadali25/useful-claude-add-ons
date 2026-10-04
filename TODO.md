@@ -4,6 +4,17 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0096 follow-ups (review of #398, NITs deferred on purpose).** (1) The stand-down and the
+  auto-clear veto treat a could-not-tell resolver (`unknown`) as an absent file in every flavour:
+  `crew_incident_active` (`plugin/crew/hooks/scripts/_common.sh`), promote-gate.ps1's
+  `Test-CrewIncidentActive`, `auto-clear.ps1`'s `$repoCfg`, and their Python halves
+  (`crew_incident.py`, `crew_autocycle.py`) through `crew_common.repo_config_file`. Decide
+  fail-closed across Python and shell together, not one flavour at a time. (2) A `.crew/` that
+  cannot be searched (no execute permission, a broken mount) makes its files look absent, so it
+  reads as `own` with nothing or falls through to `main`, in all three resolvers:
+  `crew_common.repo_config_dir` (`os.path.lexists`), `_common.sh`'s `crew_repo_config_dir`
+  (`-e`/`-L`) and `Get-CrewRepoConfigDir` (`Get-Item -ErrorAction SilentlyContinue`). Decide
+  whether that is `unknown`, in all three at once.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and

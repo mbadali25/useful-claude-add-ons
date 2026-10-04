@@ -153,8 +153,12 @@ body copied verbatim into `cloud-guard.ps1`, `promote-gate.ps1` and
 `auto-clear.ps1`, is its PowerShell twin. `tests/test_worktree_config_shell.py`
 holds both to `crew_common.repo_config_dir` case by case and the copies
 byte-identical. Windows PowerShell 5.1 cannot resolve a symlink the way
-`realpath` does, so a link in either path the PowerShell resolver compares
-reads `unknown`, never `main`. Routed: the `emergency.standDown` read (`_common.sh`'s
+`realpath` does, so on every PowerShell (7 as well) a symlink, a junction, or an
+ancestor `Get-Item` cannot read (likely a UNC share's root) in either path the
+PowerShell resolver compares reads `unknown`, never `main`. It pins
+`[Console]::OutputEncoding` to UTF-8 around its git call, so a non-ASCII path
+survives a console on the OEM code page. In the cloud guard's bash fallback a
+missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
 `crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
 in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
 veto. Still own-file only: the session hooks (`notify`, `handoff-read`,

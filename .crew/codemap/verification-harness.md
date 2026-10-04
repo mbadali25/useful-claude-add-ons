@@ -2367,6 +2367,6 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 - **DERIVED.** `.crew/verify.json:606` (the last rule): `_common.sh`, both
   `cloud-guard` flavours, `promote-gate.ps1`, `auto-clear.ps1` and
   `plugin/crew/tests/test_worktree_config_shell.py` map to that test file through
-  `pytest_rule.py`, priced 12s (41 passed with pwsh on PATH, 4-CPU container). It is
+  `pytest_rule.py`, priced 13s (41 passed in 12.5s with pwsh on PATH on an idle 4-CPU container; 43 after review round 1). It is
   appended, so no earlier rule number moves. This section does not move the file's
   `anchor:`.
