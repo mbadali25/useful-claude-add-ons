@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:54: #356 T-0017 round-1 fixes pushed -> 2dd03d78 (BLOCK version 1.0.390, FIX1 subdir handoff exemption via porcelain -z + show-prefix, FIX2 TODO sabotage_wrapup, FIX3 --force docs). Round-2 review started.
 - 13:54: #377 merge-only review 3a1d0e75: 0/0/0 CLEAN (242 tests, gates pass). CI queued on 3a1d0e75; subscribed. Merge when green, then #352 land-prep at 1.0.327.
 - 13:52: #377 land-prep: merged main baf193aa, crew 1.0.326 -> 3a1d0e75 pushed; 186 tests + gates pass; merge-only review + CI next. #363 T-0060 re-review e62b3577: 0/0/2 CLEAN. #347 T-0047 review ffa8a9ab: 3 BLOCK (xargs --max-lines mis-tabled -> terraform destroy allowed; iex -Command:$var regression; workspace select with runtime args) + 3 FIX (iex value-taking common params; name( call syntax; sem unlisted) -> builder (test-first, 1.0.393).
 - 13:51: MERGED #393 (harness Lock sabotage) at baf193aa (crew 1.0.325; CI green). main = baf193aa. #363 fixes pushed e62b3577 (1.0.389) -> re-review started. Next: #377 land (merge main, 1.0.326).
