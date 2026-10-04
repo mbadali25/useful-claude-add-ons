@@ -2576,12 +2576,18 @@ working map and, when that is dirty, the committed map alike (L-1503):
   are one file). `*`, `?` and `[...]` are literal text, never wildcards
 - every key the gates read - `environments`, `deploy`, `requires`,
   `rollback`, `rollbackReason`, `requireHuman` - is read ignoring case
-  (`"RequireHuman": true` requires a human); a map with two keys that differ
-  only by case (`deploy` and `Deploy`) is refused and the command blocks
+  (`"RequireHuman": true` requires a human); a map with a key repeated in one
+  object - exactly, or differing only by case (`deploy` and `Deploy`) - is
+  refused and the command blocks
 - a `deploy` that is not a command or a list of commands - `null` included -
-  refuses the map and the command blocks
-- if more than one environment matches, the command blocks as ambiguous and
-  every matching environment is named - there is no first-match pick
+  or a `requireHuman` that is a list or an object refuses the map and the
+  command blocks; `"deploy": []` and `[""]` declare nothing
+- if more than one environment matches, the strictest union of their
+  requirements applies: every matched environment's `requires`, `rollback`
+  and `requireHuman` must hold. They are named together - `staging,prod` - in
+  the block message and in `.crew/.deploy-in-flight`, so the promotions row
+  that clears the Stop check names `staging,prod` too. So `git push`, inside
+  both `git push staging main` and `git push prod main`, needs prod's approval
 - if the comparison itself fails, the command blocks rather than skipping
   that environment
 

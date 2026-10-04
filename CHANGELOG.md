@@ -20,22 +20,31 @@ All notable changes to this repository are documented here. Format follows [Keep
   map alike: every CR and trailing newline is stripped from the command, and a whitespace-only
   command deploys nothing; a declared command matches when either contains the other, literally,
   ignoring case; the `deploy` key is read ignoring case, and keys differing only by case refuse the
-  map; `requires`, `rollback`, `rollbackReason`, `requireHuman` and `environments` are read
-  ignoring case too (the `.sh` read them case-sensitively, so `"RequireHuman": true` required a
-  human on PowerShell and nobody on bash); `"deploy": null` refuses the map in both (the `.ps1`
-  skipped the environment); more than one matching environment blocks as ambiguous, naming each (`.sh` status 5,
-  `Deny-AmbiguousDeploy`); a comparison that throws blocks instead of skipping the environment.
-  Before, a `deploy` that matched several environments silently took the first; it now blocks.
-- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 77 cases (49 by default; the
-  pwsh-heavy rest are `slow`): must-block, must-allow, and a sh/ps1 agreement table over 13 maps
-  run through both real gates. Sabotage, each confirmed red then restored: `-like` back in the
-  `.ps1` (23 red), the `.ps1` exception swallowed (1), first-match instead of ambiguity in the `.sh`
-  (8) and in the `.ps1` (8), the `.sh` reading only a lower-case `deploy` key (2), the `.sh`
-  accepting case-twin keys (2), the `.sh` verdict reading per-environment keys case-sensitively
-  again (3), the `.sh` reading only a lower-case `environments` (1), the `.ps1` skipping a null
-  `deploy` again (2).
+  map, and so does an exact duplicate key (both parsers kept the last, so `"requireHuman": true,
+  "requireHuman": false` read as gated and applied as not; the `.ps1` finds it with
+  `Find-DuplicateJsonKey`); `requires`, `rollback`, `rollbackReason`, `requireHuman` and
+  `environments` are read ignoring case too (the `.sh` read them case-sensitively, so
+  `"RequireHuman": true` required a human on PowerShell and nobody on bash); `"deploy": null` and
+  a list or object `requireHuman` refuse the map in both; `"deploy": []` and `[""]` declare nothing
+  (the `.ps1` unrolled `[]` to null and blocked every PowerShell command); a comparison that throws
+  blocks instead of skipping the environment.
+- Matched several environments: the strictest union of their requirements applies - every
+  matched environment's `requires`, `rollback` and `requireHuman` - named together (`staging,prod`)
+  in the block message and the in-flight marker, so the PROMOTIONS row that clears the Stop check
+  names `staging,prod`. Before, the first match won (prod's command could be gated as staging); a
+  short command inside two deploys (`git push`) is now gated by both, not locked out.
+- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 106 cases. 45 run by default:
+  every `.sh` case and one agreement map through both gates. The other `.ps1` cases are `slow`, and
+  CI runs them in `crew-shell-matrix (ubuntu-latest)` and `crew-windows-slow`. There are
+  must-block and must-allow cases, plus a sh/ps1 agreement table over 18 maps run through both
+  real gates. Each rule was sabotaged and confirmed red in the CI slow selection, then restored:
+  the `.ps1` unrolling `[]` again; first-match instead of the union (`.sh`, `.ps1`); exact
+  duplicates accepted (`.sh`, `.ps1`); a list or object `requireHuman` accepted (`.sh`, `.ps1`); the
+  `.sh` verdict reading keys case-sensitively; the `.sh` reading only `environments`; the `.ps1`
+  skipping a null `deploy`; the `.sh` accepting case twins. Earlier rounds: `-like` back in the
+  `.ps1`, and the `.ps1` swallowing a comparison exception.
 - Follow-up: #407's `crew_ghdeploy.py` `_gate_pick` simulation is not on main; L-1503 lands first
-  and #407 adapts it to this rule.
+  and #407 adopts this rule, the union included (not a block on several matches).
 
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
