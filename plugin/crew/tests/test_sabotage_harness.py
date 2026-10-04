@@ -11,8 +11,11 @@ target under `tmp_path`, because a test for a harness that corrupts files must
 not be able to corrupt the files it is testing against.
 """
 import atexit
+import importlib.util
 import os
+import shutil
 import signal
+import sys
 import time
 
 import pytest
@@ -520,10 +523,60 @@ def test_a_declared_entry_that_skips_on_its_own_platform_fails(
     assert "SABOTAGE SUITE: FAIL (0 platform-only" in printed
 
 
-def test_every_platform_only_label_names_exactly_one_shipped_mutation():
-    labels = [m[0] for m in sabotage.MUTATIONS]
+def _labels_with_pwsh(monkeypatch, present):
+    """`sabotage.MUTATIONS` labels as a host with or without pwsh builds them.
+
+    `sabotage_tooling` appends its .ps1 entries only `if shutil.which("pwsh")`,
+    so the shipped list depends on the host. Fresh copies are loaded under
+    their own names with `shutil.which` patched; the imported modules every
+    other test uses are not reloaded, and `sys.modules` is put back after.
+    """
+    real_which = shutil.which
+    monkeypatch.setattr(shutil, "which", lambda cmd, *a, **k: (
+        ("/fake/pwsh" if present else None) if cmd == "pwsh"
+        else real_which(cmd, *a, **k)))
+    fresh = {}
+    for name in ("sabotage_tooling", "sabotage"):
+        spec = importlib.util.spec_from_file_location(
+            f"_fresh_{name}", os.path.join(os.path.dirname(sabotage.__file__),
+                                           name + ".py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        monkeypatch.setitem(sys.modules, name, module)
+        fresh[name] = module
+    monkeypatch.setattr(shutil, "which", real_which)
+    return [m[0] for m in fresh["sabotage"].MUTATIONS]
+
+
+def test_every_platform_only_label_names_exactly_one_shipped_mutation(
+        monkeypatch):
+    """must-block: a host WITH pwsh ships every entry, so there each label
+    must name exactly one -- a typo'd label counts 0 and fails on every host,
+    pwsh or not. Without pwsh the .ps1 entries are absent, so a label may
+    count 0 there, never 2; that is checked on the simulated host and on
+    this one."""
+    with_pwsh = _labels_with_pwsh(monkeypatch, present=True)
     for label in sabotage_platform.PLATFORM_ONLY:
-        assert labels.count(label) == 1, label
+        assert with_pwsh.count(label) == 1, label
+    without_pwsh = _labels_with_pwsh(monkeypatch, present=False)
+    here = [m[0] for m in sabotage.MUTATIONS]
+    for label in sabotage_platform.PLATFORM_ONLY:
+        assert without_pwsh.count(label) <= 1, label
+        assert here.count(label) <= 1, label
+    # The pwsh branch was really taken: some declared label exists only there.
+    assert any(without_pwsh.count(label) == 0
+               for label in sabotage_platform.PLATFORM_ONLY)
+
+
+def test_a_typod_platform_only_label_fails_on_a_host_with_pwsh(monkeypatch):
+    """must-block for the check above: an unknown label must not collapse
+    into a pass because pwsh-gated labels are allowed to be missing."""
+    monkeypatch.setitem(sabotage_platform.PLATFORM_ONLY,
+                        "the PowerShell gate lets a dearer measurment replace",
+                        (frozenset({"win"}), "test"))
+    with pytest.raises(AssertionError):
+        test_every_platform_only_label_names_exactly_one_shipped_mutation(
+            monkeypatch)
 
 
 def _write_probe(tmp_path, body):
