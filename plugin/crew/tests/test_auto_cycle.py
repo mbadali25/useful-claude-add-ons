@@ -189,26 +189,37 @@ def _send_method(flavor):
 
 
 def _tmux_env(tmp_path, pane_pid=None):
-    """A fake tmux whose one pane reports `pane_pid` (default: this test
-    process, an ancestor of the script)."""
-    pane_pid = os.getpid() if pane_pid is None else pane_pid
+    """A fake tmux whose one pane reports `pane_pid` (default: the bound
+    session's terminal, `crew_fixtures.TERMINAL_PID` -- an ancestor of the
+    session's own process in `crew_fixtures.bind_session`'s process table)."""
+    pane_pid = crew_fixtures.TERMINAL_PID if pane_pid is None else pane_pid
     bindir = tmp_path / "fakebin"
     crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {pane_pid}\n",
                              f"@echo off\r\necho {pane_pid}\r\n")
     return crew_fixtures.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
 
 
-def _sendable(flavor, tmp_path, root):
-    """A target each flavour can identify uniquely: a tmux pane whose pid is
-    this test process (an ancestor of the script) for bash -- on native
-    Windows, the xdotool title fallback instead (see `_SH_VIA_XDOTOOL`) --
-    and one stubbed window owned by this test process for PowerShell."""
+def _bound(root, session=SESSION_A):
+    """T-0016: `session` bound to its own Claude Code process, which runs in
+    its own terminal (`crew_fixtures.bind_session`)."""
+    return crew_fixtures.bind_session(root.parent / "home", session)
+
+
+def _sendable(flavor, tmp_path, root, session=SESSION_A):
+    """A target each flavour can identify uniquely, for a session bound to
+    its own process (T-0016): a tmux pane whose pid is that session's
+    terminal for bash -- on native Windows, the xdotool title fallback
+    instead (see `_SH_VIA_XDOTOOL`) -- and one stubbed window owned by that
+    terminal for PowerShell."""
     _machine(root, **_send_method(flavor))
+    env = _bound(root, session)
     if flavor == "sh" and _SH_VIA_XDOTOOL:
-        return _xdotool_env(tmp_path, [{"id": 4242, "pid": 999999, "title": _SH_TITLE}])
-    if flavor == "sh":
-        return _tmux_env(tmp_path)
-    return _windows(tmp_path, [{"id": 4242, "pid": os.getpid(), "title": "Claude Code"}])
+        env.update(_xdotool_env(tmp_path, [{"id": 4242, "pid": 999999, "title": _SH_TITLE}]))
+    elif flavor == "sh":
+        env.update(_tmux_env(tmp_path))
+    else:
+        env.update(_windows(tmp_path, [{"id": 4242, "pid": crew_fixtures.TERMINAL_PID, "title": "Claude Code"}]))
+    return env
 
 
 def _xdotool_env(tmp_path, windows):
@@ -348,9 +359,10 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
         send_env = _xdotool_env(tmp_path, [{"id": 1, "pid": 999999, "title": _SH_TITLE}])
     else:
         bindir = tmp_path / "fakebin"
-        crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+        crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {crew_fixtures.TERMINAL_PID}\n")
         send_env = {"PATH": crew_fixtures.shell_path("sh", [bindir]),
                     "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%7"}
+    send_env.update(_bound(root))
     home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
                CLAUDE_PROJECT_DIR=str(root), **send_env)
@@ -791,11 +803,13 @@ def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, 
                     "branch for (_ppid, crew_autocycle.py); it fails closed there (T-0076)")
     del case
     root = _repo(tmp_path)
+    # T-0016: the owner is the bound session's terminal, not this process.
+    windows = [dict(w, pid=crew_fixtures.TERMINAL_PID) if w["pid"] == _ME else w for w in windows]
     if flavor == "sh":
-        env = _xdotool_env(tmp_path, windows)
+        env = dict(_bound(root), **_xdotool_env(tmp_path, windows))
         _machine(root, method="xdotool", windowTitle=title or None)
     else:
-        env = _windows(tmp_path, windows)
+        env = dict(_bound(root), **_windows(tmp_path, windows))
         # Explicit: `auto` now resolves to `notify` on native Windows and
         # never touches window resolution at all, so this window-targeting
         # matrix has to request `sendkeys` by name to exercise it.
@@ -902,7 +916,7 @@ def test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets(
 # The refusal case still runs on native Windows: it proves the pane check
 # fails closed there. Only the accepting case needs a parent-pid walk.
 @pytest.mark.parametrize("pane_pid,sent", [
-    pytest.param(os.getpid(), True, id="own-pid-True",
+    pytest.param(crew_fixtures.TERMINAL_PID, True, id="own-pid-True",
                  marks=pytest.mark.skipif(os.name == "nt", reason=_NO_NATIVE_TMUX)),
     pytest.param(999999, False, id="999999-False")])
 def test_a_tmux_pane_must_be_the_one_running_this_session(pane_pid, sent, tmp_path):
@@ -910,7 +924,7 @@ def test_a_tmux_pane_must_be_the_one_running_this_session(pane_pid, sent, tmp_pa
     on native Windows: the fake tmux and method are set here directly."""
     root = _repo(tmp_path)
     _machine(root, method="tmux")
-    env = _tmux_env(tmp_path, pane_pid)
+    env = dict(_bound(root), **_tmux_env(tmp_path, pane_pid))
     _write_marker(root)
     _write_handoff(root)
 
@@ -1061,7 +1075,7 @@ def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tm
     _write_marker(root)
     _write_handoff(root)
     bindir = tmp_path / "fakebin"
-    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {crew_fixtures.TERMINAL_PID}\n")
     sleep_log = tmp_path / "sleep-calls.log"
     crew_fixtures.write_shim(bindir, "bash", (
         "#!/bin/sh\n"
@@ -1075,7 +1089,7 @@ def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tm
                CLAUDE_PROJECT_DIR=str(root),
                PATH=crew_fixtures.shell_path("sh", [bindir]),
                CREW_TEST_REAL_BASH=_BASH,
-               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+               TMUX="/tmp/fake,1,0", TMUX_PANE="%7", **_bound(root))
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
 
     result = subprocess.run([_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
@@ -1197,7 +1211,7 @@ def test_sendkeys_declines_and_falls_back_to_notify_when_the_owner_is_windows_te
             assert _proc_comm(proc.pid) == "WindowsTerminal", (
                 "the renamed process never reported comm=WindowsTerminal on this host")
             _machine(root, method="sendkeys", windowTitle="Claude")
-            env = _windows(tmp_path, [{"id": 1, "pid": proc.pid, "title": "Claude - a tab"}])
+            env = dict(_bound(root), **_windows(tmp_path, [{"id": 1, "pid": proc.pid, "title": "Claude - a tab"}]))
             _write_marker(root)
             _write_handoff(root)
 

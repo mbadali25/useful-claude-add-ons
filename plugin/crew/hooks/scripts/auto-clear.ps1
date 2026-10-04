@@ -558,6 +558,226 @@ switch ($method) {
   default    { Stop-CrewAutoClear "method '$method' is not supported here (auto, notify, sendkeys, none)" }
 }
 
+# --- T-0016: bind this session to its OWN process ---------------------------
+#
+# The same rules as crew_autocycle.session_owner / classify / prove_target,
+# carried natively. The session is the nearest ancestor of this hook named by
+# a Claude Code session record (${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/
+# <pid>.json) whose sessionId is this session's and whose procStart matches
+# wherever a start time can be read. Native Windows has no tty, so
+# "terminal" rests on kind "interactive" plus an entrypoint on the measured
+# allowlist; Windows' entrypoint is unmeasured, so anything else is unknown
+# and never typed into. CREW_AUTOCLEAR_PROC_STUB, when set, is the WHOLE
+# process table (the suite's only way in, like the window stub): a pid it
+# does not name does not exist. No environment variable is evidence of which
+# process is this session.
+$script:crewTerminalEntrypoints = @("cli")
+$script:crewProcStub = $null
+$script:crewProcStubRead = $false
+
+function Get-CrewProcStub {
+  if ($script:crewProcStubRead) { return $script:crewProcStub }
+  $script:crewProcStubRead = $true
+  if (-not $env:CREW_AUTOCLEAR_PROC_STUB) { return $null }
+  # Unreadable: an empty table whose scans fail -- nothing in it is proven.
+  $table = @{}; $fails = $true; $self = [long]0
+  try {
+    $data = Get-Content -LiteralPath $env:CREW_AUTOCLEAR_PROC_STUB -Raw -ErrorAction Stop |
+      ConvertFrom-Json -ErrorAction Stop
+    if ($data -is [System.Management.Automation.PSCustomObject]) {
+      foreach ($prop in $data.PSObject.Properties) {
+        if ($prop.Name -match '^\d+$') { $table[[long]$prop.Name] = $prop.Value }
+      }
+      $fails = Test-CrewTrue (Get-CrewChild $data "scanFails")
+      $first = Get-CrewChild $data "self"
+      if ($first -is [ValueType] -and -not ($first -is [bool])) { $self = [long]$first }
+    }
+  } catch { }
+  $script:crewProcStub = @{ Table = $table; ScanFails = $fails; Self = $self }
+  return $script:crewProcStub
+}
+
+function Get-CrewParentId([int]$Id) {
+  # `.Parent` is PowerShell 6+. Windows PowerShell 5.1 has no such property,
+  # so fall back to WMI through its type accelerator (no cmdlet, so nothing
+  # the Linux static check cannot resolve).
+  try {
+    $parent = (Get-Process -Id $Id -ErrorAction Stop).Parent
+    if ($parent) { return [int]$parent.Id }
+  } catch { }
+  try { return [int]([wmi]"Win32_Process.Handle='$Id'").ParentProcessId } catch { return 0 }
+}
+
+function Get-CrewProcInfo([long]$Id) {
+  # @{ Ppid; Start; Comm }, or $null when the process cannot be read.
+  $stub = Get-CrewProcStub
+  if ($null -ne $stub) {
+    if (-not $stub.Table.ContainsKey($Id)) { return $null }
+    $entry = $stub.Table[$Id]
+    if ($null -eq $entry) { return $null }
+    $ppid = Get-CrewChild $entry "ppid"
+    return @{ Ppid = $(if ($ppid -is [ValueType] -and -not ($ppid -is [bool])) { [long]$ppid } else { [long]0 })
+              Start = (Get-CrewChild $entry "start"); Comm = [string](Get-CrewChild $entry "comm") }
+  }
+  try { $proc = Get-Process -Id $Id -ErrorAction Stop } catch { return $null }
+  # No start time: none is comparable to a record's procStart here, so a
+  # record is bound by pid and session id only (a stated limit).
+  return @{ Ppid = [long](Get-CrewParentId ([int]$Id)); Start = $null; Comm = [string]$proc.ProcessName }
+}
+
+function Get-CrewChain([long]$Start) {
+  # @{ Chain; Complete; Why }: $Start and its ancestors, nearest first.
+  $chain = New-Object System.Collections.Generic.List[long]
+  $walk = $Start
+  while ($true) {
+    if ($chain.Contains($walk)) { return @{ Chain = $chain; Complete = $false; Why = "the process chain loops back to pid $walk" } }
+    if ($chain.Count -ge 16) { return @{ Chain = $chain; Complete = $false; Why = "the process chain is deeper than 16 processes" } }
+    $chain.Add($walk)
+    $info = Get-CrewProcInfo $walk
+    if ($null -eq $info) {
+      # On native Windows a process's recorded parent has routinely exited:
+      # that is the top of the chain, not a failure. Under the stub, and for
+      # the walk's own first process, it is a failure.
+      if ($null -eq (Get-CrewProcStub) -and $chain.Count -gt 1) {
+        $chain.RemoveAt($chain.Count - 1)
+        return @{ Chain = $chain; Complete = $true; Why = "" }
+      }
+      return @{ Chain = $chain; Complete = $false; Why = "the parent of pid $walk could not be read" }
+    }
+    $walk = $info.Ppid
+    if ($walk -le 1) { return @{ Chain = $chain; Complete = $true; Why = "" } }
+  }
+}
+
+function Get-CrewConfigDir {
+  if ($env:CLAUDE_CONFIG_DIR) { return $env:CLAUDE_CONFIG_DIR }
+  return (Join-Path $userHome ".claude")
+}
+
+function Get-CrewSessionOwner {
+  # @{ Pid; Record; Info } or @{ Unknown = reason }.
+  if (-not $Session) { return @{ Unknown = "no session id, so no session record can be matched" } }
+  $sessions = Join-Path (Get-CrewConfigDir) "sessions"
+  $stub = Get-CrewProcStub
+  $start = if ($null -ne $stub -and $stub.Self -gt 0) { $stub.Self } else { [long]$PID }
+  $walk = Get-CrewChain $start
+  foreach ($candidate in $walk.Chain) {
+    $path = Join-Path $sessions "$candidate.json"
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $record = Read-CrewJsonFile $path
+    if ($null -eq $record) { return @{ Unknown = "the session record for pid $candidate is unreadable or not a JSON object" } }
+    # -cne: a session id is case-sensitive.
+    if ([string](Get-CrewChild $record "sessionId") -cne $Session) {
+      return @{ Unknown = "the session record for pid $candidate names another session" }
+    }
+    $info = Get-CrewProcInfo $candidate
+    $started = if ($null -ne $info) { $info.Start } else { $null }
+    if ($null -ne $started -and [string](Get-CrewChild $record "procStart") -cne [string]$started) {
+      return @{ Unknown = ("the session record for pid $candidate has procStart '$(Get-CrewChild $record "procStart")' " +
+                           "but that process started at $started - a reused pid is a different process") }
+    }
+    return @{ Pid = [long]$candidate; Record = $record; Info = $info }
+  }
+  if (-not $walk.Complete) { return @{ Unknown = "no session record names a process above this hook, and $($walk.Why)" } }
+  return @{ Unknown = "no session record under $sessions names a process above this hook" }
+}
+
+function Get-CrewSessionClass($Owner) {
+  # @{ Class = terminal|headless|unknown; Evidence }.
+  if ($Owner.ContainsKey("Unknown")) { return @{ Class = "unknown"; Evidence = $Owner.Unknown } }
+  $kind = Get-CrewChild $Owner.Record "kind"
+  $entry = Get-CrewChild $Owner.Record "entrypoint"
+  if ($entry -is [string] -and $entry.StartsWith("sdk", [StringComparison]::Ordinal)) {
+    return @{ Class = "headless"; Evidence = "entrypoint $entry" }
+  }
+  if ($kind -is [string] -and $kind -cne "interactive") { return @{ Class = "headless"; Evidence = "kind $kind" } }
+  if (-not ($kind -is [string])) {
+    return @{ Class = "unknown"; Evidence = "the session record for pid $($Owner.Pid) has no usable kind ($kind)" }
+  }
+  if (-not ($entry -is [string]) -or -not ($script:crewTerminalEntrypoints -ccontains $entry)) {
+    return @{ Class = "unknown"; Evidence = ("entrypoint '$entry' is not one measured to have a terminal (" +
+                                             ($script:crewTerminalEntrypoints -join ", ") + ")") }
+  }
+  return @{ Class = "terminal"; Evidence = "kind interactive, entrypoint $entry" }
+}
+
+function Get-CrewOtherSessions([long]$OwnerPid) {
+  # Pids of every OTHER live session record, or $null when they cannot be listed.
+  $sessions = Join-Path (Get-CrewConfigDir) "sessions"
+  try { $files = @(Get-ChildItem -LiteralPath $sessions -File -ErrorAction Stop) } catch { return $null }
+  $out = New-Object System.Collections.Generic.List[long]
+  foreach ($file in $files) {
+    if ($file.Name -notmatch '^(\d+)\.json$') { continue }
+    $other = [long]$Matches[1]
+    if ($other -eq $OwnerPid) { continue }
+    $record = Read-CrewJsonFile $file.FullName
+    $info = Get-CrewProcInfo $other
+    if ($null -eq $record -or $null -eq $info) { continue }
+    if ($null -ne $info.Start -and [string](Get-CrewChild $record "procStart") -cne [string]$info.Start) { continue }
+    $out.Add($other)
+  }
+  return ,$out
+}
+
+function Get-CrewHeadlessNotice([string]$Evidence) {
+  # The same text crew_autocycle.headless_notice builds: the handoff, its
+  # resume: line read as text, and that the starting process must restart.
+  $line = "(none in the handoff)"
+  try {
+    $base = (Get-Location).Path
+    $full = [System.IO.Path]::GetFullPath((Join-Path $base $handoffRel))
+    $text = Get-Content -LiteralPath $full -Raw -ErrorAction Stop
+    foreach ($row in ($text -split "`r?`n")) {
+      if ($row -cmatch '^resume:[ \t]*(.*?)[ \t]*$') {
+        if ($Matches[1]) { $line = $Matches[1] }
+        break
+      }
+    }
+  } catch { }
+  $written = if ($Force) { "Its handoff at $handoffRel was not checked (--force)" } else { "Its handoff is written and verified at $handoffRel" }
+  return ("crew: this session has no terminal of its own ($Evidence), so nothing was cleared or typed. " +
+          "$written; resume: $line. The process that started this session must start a new one to continue.")
+}
+
+# After the handoff checks and the method, before any claim (T-0017's order).
+$crewOwner = Get-CrewSessionOwner
+$crewClass = Get-CrewSessionClass $crewOwner
+if ($crewClass.Class -eq "headless" -and -not $Resume) {
+  # Whatever the method: nothing is typed, one notice is printed, claimed
+  # like notify so it fires once per session, and logged in full -- a
+  # `claude -p` parent may never show the systemMessage.
+  $msg = Get-CrewHeadlessNotice $crewClass.Evidence
+  if ($DryRun) {
+    Write-Output "autoclear: would send"
+    Write-Output "  method: notify-headless"
+    Write-Output "  command: $command"
+    Write-Output "  delay: n/a (nothing is typed)"
+    Write-Output "  message: $msg"
+    exit 0
+  }
+  if (-not $Force) {
+    try {
+      $claim = [System.IO.File]::Open(
+        (Join-Path (Get-Location).Path $sentMarker), [System.IO.FileMode]::CreateNew)
+      $claim.Close()
+    } catch { exit 0 }
+  }
+  Write-Output (@{ systemMessage = $msg } | ConvertTo-Json -Compress)
+  Write-CrewAutoClearNote "sent - method notify-headless: $msg"
+  exit 0
+}
+if ($method -ne "notify" -and $crewClass.Class -ne "terminal") {
+  $why = if ($crewClass.Class -eq "headless") {
+    "this session has no terminal of its own ($($crewClass.Evidence))"
+  } elseif ($crewOwner.ContainsKey("Unknown")) {
+    "could not identify this session's process ($($crewClass.Evidence))"
+  } else {
+    "could not tell whether this session has a terminal of its own ($($crewClass.Evidence))"
+  }
+  if ($Resume) { Stop-CrewAutoClear "auto-resume types only into this session's own terminal: $why" }
+  Stop-CrewAutoClear $why
+}
+
 if ($method -eq "notify" -and $Resume) {
   # Types nothing, so it neither claims the handoff nor records a run: the
   # human starts the command, and decide still sees the note as unused.
@@ -646,25 +866,29 @@ namespace CrewAC {
   })
 }
 
-function Get-CrewParentId([int]$Id) {
-  # `.Parent` is PowerShell 6+. Windows PowerShell 5.1 has no such property,
-  # so fall back to WMI through its type accelerator (no cmdlet, so nothing
-  # the Linux static check cannot resolve).
-  try {
-    $parent = (Get-Process -Id $Id -ErrorAction Stop).Parent
-    if ($parent) { return [int]$parent.Id }
-  } catch { }
-  try { return [int]([wmi]"Win32_Process.Handle='$Id'").ParentProcessId } catch { return 0 }
-}
-
-$ancestors = @()
-$walk = $PID
-while ($walk -gt 0 -and $ancestors.Count -lt 16 -and $ancestors -notcontains $walk) {
-  $ancestors += $walk
-  $walk = Get-CrewParentId $walk
-}
-
 try { $windows = @(Get-CrewWindows) } catch { Stop-CrewAutoClear "cannot list windows: $($_.Exception.Message)" }
+
+# T-0016: walked up from this SESSION's own process, not from this hook, and
+# excluding that process itself (claude owns no window). The walk stops at
+# the first process that owns a window; reaching another Claude Code session
+# first -- a child under its parent's window -- refuses, and so does a chain
+# that could not be read to the end with no window found on it.
+$crewOthers = Get-CrewOtherSessions $crewOwner.Pid
+if ($null -eq $crewOthers) { Stop-CrewAutoClear "the session records could not be listed, so another session cannot be ruled out" }
+$crewOwnerChain = Get-CrewChain $crewOwner.Pid
+$ancestors = @()
+$crewFoundOwner = $false
+foreach ($crewStep in @($crewOwnerChain.Chain | Select-Object -Skip 1)) {
+  $crewStepInfo = Get-CrewProcInfo $crewStep
+  if ($crewOthers -contains $crewStep -or ($null -ne $crewStepInfo -and $crewStepInfo.Comm -eq "claude")) {
+    Stop-CrewAutoClear "the way from this session (pid $($crewOwner.Pid)) up to its window passes through another Claude Code session (pid $crewStep)"
+  }
+  $ancestors += $crewStep
+  if (@($windows | Where-Object { $_.Pid -eq $crewStep }).Count -gt 0) { $crewFoundOwner = $true; break }
+}
+if (-not $crewFoundOwner -and -not $crewOwnerChain.Complete) {
+  Stop-CrewAutoClear "no window belongs to a process above this session (pid $($crewOwner.Pid)), and $($crewOwnerChain.Why)"
+}
 
 $needle = $windowTitle.ToLowerInvariant()
 $target = $null; $how = ""
@@ -685,13 +909,31 @@ foreach ($ancestor in $ancestors) {
 }
 if ($null -eq $target) {
   if (-not $needle) {
-    Stop-CrewAutoClear "no window belongs to any ancestor of this hook, and no context.autoClear.windowTitle is set to fall back on"
+    Stop-CrewAutoClear "no window belongs to any ancestor of this session's process (pid $($crewOwner.Pid)), and no context.autoClear.windowTitle is set to fall back on"
   }
   $hits = @($windows | Where-Object { $_.Title.ToLowerInvariant().Contains($needle) })
   if ($hits.Count -ne 1) {
     Stop-CrewAutoClear "$($hits.Count) windows have a title containing '$windowTitle' - refusing to guess which one is this session"
   }
+  # T-0016: a title cannot tell two sessions apart, and a window with no
+  # owning process is tied to nothing -- either refuses while another
+  # session is live.
+  if ($crewOthers.Count -gt 0) {
+    $crewSibling = ($crewOthers | Measure-Object -Minimum).Minimum
+    if ($hits[0].Pid -le 1) {
+      Stop-CrewAutoClear "window $($hits[0].Id) has no owning process, and another Claude Code session is live (pid $crewSibling), so nothing ties that window to this session"
+    }
+    Stop-CrewAutoClear "window $($hits[0].Id) was found by its title alone, and another Claude Code session is live (pid $crewSibling) - a title cannot tell two sessions apart"
+  }
   $target = $hits[0]; $how = "title fallback"
+} else {
+  # T-0016: one console host can serve more than one session. A window whose
+  # owner is also above another live session is not provably this one's.
+  foreach ($crewOther in $crewOthers) {
+    if ((Get-CrewChain $crewOther).Chain -contains [long]$target.Pid) {
+      Stop-CrewAutoClear "the window's owner (pid $($target.Pid)) also hosts another Claude Code session (pid $crewOther)"
+    }
+  }
 }
 $label = "$($target.Title) [window $($target.Id), pid $($target.Pid), $how]"
 
@@ -805,6 +1047,10 @@ try {
   $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName
   $ownerKnown = $true
 } catch { }
+# Under the process stub (the suite), the stub names the owner, as it does
+# every other process; a pid the stub does not name keeps the real answer.
+$crewStubOwner = if ($null -ne (Get-CrewProcStub)) { Get-CrewProcInfo $target.Pid } else { $null }
+if ($null -ne $crewStubOwner) { $ownerProcessName = $crewStubOwner.Comm; $ownerKnown = $true }
 
 # Carried to the detached child below so IT can re-run the SAME tab-safety
 # question at send time, after the delay -- this process's own answer, made
