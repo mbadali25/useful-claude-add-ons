@@ -25,6 +25,11 @@ rule both now share, on the working map and the committed map alike:
   ignoring case (`*`, `?`, `[` are text);
 - the `deploy` key is read ignoring case, and a map with two keys that differ
   only by case is refused (PowerShell's ConvertFrom-Json refuses it anyway);
+  so are `environments`, `requires`, `rollback`, `rollbackReason` and
+  `requireHuman` - the .sh read them case-sensitively, so `"RequireHuman":
+  true` demanded a human on PowerShell and nobody on bash;
+- `"deploy": null` in the working map is a malformed entry and refuses the
+  map in both (the .ps1 skipped it, the .sh refused it);
 - more than one matching environment is ambiguous and blocks, naming them all;
 - a comparison that throws blocks rather than skipping the environment.
 
@@ -41,6 +46,7 @@ matrix is marked `slow` (conftest deselects it unless `-m slow` or
 import json
 import os
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -271,6 +277,31 @@ def test_the_committed_map_is_ambiguous_too(flavour, tmp_path):
     assert _AMBIGUOUS in err, err
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_capitalised_require_human_still_requires_a_human(flavour, tmp_path):
+    """The .sh read `cfg.get("requireHuman")`, so `"RequireHuman": true`
+    deployed unapproved on bash while PowerShell refused it."""
+    cfg = _env("deploy-prod")
+    cfg["RequireHuman"] = True
+    repo = Repo(tmp_path / "r", {"prod": cfg})
+    code, err = run_gate(flavour, repo, "deploy-prod")
+    _blocked_as(code, err, "prod")
+    assert "requires explicit human approval" in err, err
+    assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_null_deploy_refuses_the_map(flavour, tmp_path):
+    """`"deploy": null` is neither a command nor a list of them. The .ps1
+    skipped the environment and let `deploy-qa` through; both refuse now."""
+    repo = Repo(tmp_path / "r", {"prod": _env(None, human=True),
+                                 "qa": _env("deploy-qa")})
+    code, err = run_gate(flavour, repo, "deploy-qa")
+    assert code == 2, err
+    assert "not a command or a list of commands" in err, err
+    assert repo.in_flight() is None
+
+
 # --- must-allow -------------------------------------------------------------
 
 @pytest.mark.parametrize("flavour,deploy", _cases([_JQ] + _UNPARSEABLE))
@@ -359,6 +390,23 @@ _AGREEMENT = [
     ({"prod": _env("deploy-prod", key="Deploy"),
       "qa": _env("deploy-qa", key="DEPLOY")},
      ["deploy-prod", "deploy-qa", "deploy-"]),
+    # per-environment keys in any case; `Environments` itself; null deploy
+    ({"prod": {"deploy": "deploy-prod", "rollback": "none",
+               "rollbackReason": "f", "RequireHuman": True},
+      "qa": {"deploy": "deploy-qa", "ROLLBACK": "none", "RollbackReason": "f"},
+      "eu": {"deploy": "deploy-eu", "Rollback": "none", "rollbackReason": "f",
+             "Requires": ["qa"]}},
+     ["deploy-prod", "deploy-qa", "deploy-eu"]),
+    ('{"Environments": {"prod": {"Deploy": "deploy-prod", '
+     '"Rollback": "none", "RollbackReason": "f"}}}\n',
+     ["deploy-prod", "deploy-qa"]),
+    ({"prod": {"deploy": None, "rollback": "none", "rollbackReason": "f"},
+      "qa": "deploy-qa"},
+     ["deploy-qa", "git status"]),
+    ('{"environments": {"prod": {"deploy": "deploy-prod", '
+     '"rollback": "none", "rollbackReason": "f", '
+     '"requireHuman": false, "RequireHuman": true}}}\n',
+     ["deploy-prod"]),
     # trailing newline / CR / whitespace (NIT1, NIT2)
     ({"prod": "deploy prod --force"},
      ["deploy prod\n", "deploy prod\r\n", "deploy prod\n\r", " ", "\n\t",
@@ -371,7 +419,11 @@ def _chosen(flavour, repo, command):
     code, err = run_gate(flavour, repo, command)
     if code == 2 and _AMBIGUOUS in err:
         return "AMBIGUOUS"
-    assert code == 0, f"{flavour} blocked {command!r}: {err}"
+    if code == 2:
+        # Which environment, or that the map was refused, is the comparison.
+        named = re.search(r"PROMOTION BLOCKED \(([^,)]+)", err)
+        return f"BLOCKED {named.group(1)}" if named else "BLOCKED: map"
+    assert code == 0, f"{flavour} exited {code} on {command!r}: {err}"
     marker = repo.in_flight()
     return marker.split()[0] if marker else None
 
@@ -388,7 +440,9 @@ def _agreement_params():
 def test_both_flavours_pick_the_same_environment(index, tmp_path):
     """Every map through both real gates; the choice must be identical."""
     deploys, commands = _AGREEMENT[index]
-    repo = Repo(tmp_path / "r", {n: _cfg(d) for n, d in deploys.items()})
+    # A str entry is raw map text, for maps a dict cannot hold.
+    repo = Repo(tmp_path / "r", deploys if isinstance(deploys, str) else
+                {n: _cfg(d) for n, d in deploys.items()})
     for command in commands:
         sh = _chosen("sh", repo, command)
         ps1 = _chosen("ps1", repo, command)
