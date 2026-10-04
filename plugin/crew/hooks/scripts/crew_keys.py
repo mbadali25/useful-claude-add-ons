@@ -431,16 +431,16 @@ KEY_META = {
                                      "(may cross midnight); inside it the two sleep "
                                      "overrides apply. Anything else is could not tell: "
                                      "only a stricter override applies.", "branch",
-                                     since="1.0.394", source=_S + "crew_sleep.py",
+                                     since="1.0.332", source=_S + "crew_sleep.py",
                                      type_="HH:MM-HH:MM or null"),
     "autopilot.sleep.approval": _row("`autopilot.approval` inside the sleep window; null "
                                      "keeps the day value; anything else counts as human, "
                                      "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
-                                     "1.0.394", _S + "crew_sleep.py"),
+                                     "1.0.332", _S + "crew_sleep.py"),
     "autopilot.sleep.questions": _row("`autopilot.questions` inside the sleep window; null "
                                       "keeps the day value; anything else counts as human, "
                                       "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
-                                      "1.0.394", _S + "crew_sleep.py"),
+                                      "1.0.332", _S + "crew_sleep.py"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
