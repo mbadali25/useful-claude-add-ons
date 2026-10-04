@@ -818,7 +818,7 @@ def test_keep_transcripts_reads_the_same_in_both_flavours(tmp_path, flavour, kee
     """F2/N2: an integer past Int32 keeps everything (the .ps1 used to fall back
     to 5 and delete what the user kept); a non-integer, as documented
     (CONFIG.md: expects integer), is ignored in both flavours, so 5 are kept."""
-    main, wt = _lane(tmp_path, {"context": {"keepTranscripts": keep}})
+    main, _wt = _lane(tmp_path, {"context": {"keepTranscripts": keep}})
     _seed_transcripts(main, 6)
     transcript = tmp_path / "session.jsonl"
     transcript.write_text("{}\n", encoding="utf-8")
