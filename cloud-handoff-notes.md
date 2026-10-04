@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:52: #394 T-0037 re-review b80f8cbf: 0/0/3 CLEAN. Joins train (before #364/#365/#366, which depend on it).
 - 11:52: #394 review 1ed50584: 0/1/3. FIX (README:832 /crew:approve precheck list lacked cancelled/superseded) fixed by hand + re-versioned 1.0.354 -> b80f8cbf; delta re-review started. NITs: needs-owner rows are 'open' so route/autopilot may pick one and stop (spec-consistent; mention in PR body); 19-mutation count unverified by reviewer.
 - 11:51: T-0039 BUILT on #346: T-0039-build c580f399 (crew 1.0.348; crew_gitignore.py; 42 tests; 16/16 hand sabotage red; harness follow-up sabotage_gitignore.py + sabotage.py registration; graphify not installed -> graph not refreshed; codemaps re-anchored bd72cd8a with bare :N cites unverified; diagrams README/index not regenerated). First review started. #346 is still a DRAFT PR - mark ready when clean.
 - 11:49: T-0037 BUILT -> PR #394 (T-0037-build 1ed50584, crew 1.0.352 placeholder; 19/19 hand sabotage red; harness follow-up PR B T-0037-sabotage NOT built: register mutations in sabotage_tracker/autopilot/scope.py). First review of #394 started.
