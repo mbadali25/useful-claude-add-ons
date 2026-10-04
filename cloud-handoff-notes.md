@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 19:23: #399 H2a round-2 fixes at ce4e4083, CI GREEN (27, incl 6 shards): F-A /proc skip removed (killed/unknown tests now run on Windows), MSYS SIGKILL = 2304 still could-not-tell, NULs rejected in sh, N7 done. Round-3 review sent to a308d8b.
 - 19:23: Batch 2 still red on Windows (3rd run, 6-shard layout): #356 default 2/6 + slow; #347 default 5/6; #456 default 2-5/6. Triage sent to builder a44cc15. #492 5607affe CI in progress (20 pass, 7 running).
 - 19:12: #492 L-1507 FIX done at 5607affe (2 new suite cases, red against scratch checkers; codemap DERIVED marker). Coordinator verified delta is tests+docstring+docs only, suite 46 passed. Review-clean; merges when its Windows CI is green.
 - 19:10: Owner: go with recommendations. L-1508 scope option 1 recorded in ticket (b753c698); minted L-1509 (repo-docs follow-up). L-1508 PR A builder spawned on #493, stacked on #356, crew placeholder 1.0.410.
