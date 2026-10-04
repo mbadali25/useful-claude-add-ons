@@ -5143,6 +5143,18 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
 - **`find ... -exec terraform destroy \;` / `-execdir terraform apply p.tfplan \;` are never judged.** `find` is not unwrapped, so the command behind `-exec`/`-execdir` is not read; `-execdir` also runs it in each match's directory.
 - **`terragrunt --working-dir DIR destroy` is never judged.** A terragrunt global flag before the subcommand hides the verb from `_terraform_destructive`; the flag after the verb is recognised.
 - **PowerShell `Start-Process terraform -ArgumentList destroy` (and `-WorkingDirectory`) is never judged.** `Start-Process` is not unwrapped.
+- **crew: the implement-time changed-file print still lists merged-in main paths** (follow-up to
+  T-0100). `scope_base.py --changed` (`plugin/crew/hooks/scripts/scope_base.py:273-286`) and
+  `plugin/crew/hooks/scripts/scope_report.py` diff from the ticket start alone, so after a merge of
+  main `/crew:implement` step 3 prints every file main changed. T-0100 narrowed only
+  `review_patch.compute` and `completion_audit.audit`, through `merged_main.resolve` / `keep`
+  (`plugin/crew/hooks/scripts/merged_main.py`); the same two calls would narrow this print.
+- **crew: `/crew:done` check 3's paragraph does not mention the merged-main verdict line** (follow-up
+  to T-0100). `plugin/crew/commands/done.md` check 3 should say that a path byte-identical to the
+  merged integration commit is not counted, that the verdict's `merged main` line names the commit
+  and the count, and that `merged main: could not tell` (on a pass too) means every path was
+  counted. T-0100 is a harness PR (owner rule T-0087) and `done.md` is a prompt outside `HARNESS`,
+  so that paragraph lands in its own PR; the README's `completion_audit.py` row already says it.
 
 ## gizmoduck: follow-ups filed by T-0107 (the routine CLI, 2026-09-29)
 
