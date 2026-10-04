@@ -727,24 +727,10 @@ AUTOCLEAR_DEFAULTS = {
 # and stays unread.
 RESUME_DEFAULTS = {"auto": None}
 
-# The `unattendedCloud` block (T-0044): which cloud identity an unattended run
-# is STARTED holding, read by `crew_unattended.py` from the machine file
-# (`~/.claude/crew/config.json`) ALONE. Machine-only in the strongest sense --
-# stronger than `resume.auto`, where a repo may at least veto: a repo copy is
-# ignored outright and reported, because a repo travels inside a clone written
-# by someone else and must never choose credentials on this machine. The
-# defaults name no identity, so every launch refuses until the owner names
-# one. `nonProd` maps an environment name to `{profile, identity, region}` and
-# is usable only for a name the repo's `environments.nonProd` also classifies
-# as nonProd (both layers agree). There is no production entry.
-UNATTENDED_CLOUD_DEFAULTS = {
-    "aws": {
-        "readOnly": {"profile": None, "identity": None, "region": None},
-        "nonProd": {},
-    },
-}
-UNATTENDED_CLOUD_MACHINE_ONLY = ("unattendedCloud",)
-UNATTENDED_CLOUD_PROVIDERS = ("aws",)
+# T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
+UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
+    "profile": None, "identity": None, "region": None}, "nonProd": {}}}
+UNATTENDED_CLOUD_MACHINE_ONLY, UNATTENDED_CLOUD_PROVIDERS = ("unattendedCloud",), ("aws",)
 
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
 # declared but never granted machine-wide. `unsafeFocus: true` accepts that
