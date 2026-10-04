@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:21: #394 merge review 96080457: 0/0/2 CLEAN (NIT: test_status_vocabulary doesn't cover memory-and-obsidian.md guide lane table - carry at landing).
 - 12:21: #394 land-prep onto e9364a70 done: 96080457 (1.0.367; CONFIG row text moved to crew_keys summaries; memory-and-obsidian guide lane table updated; guides rebuilt). Merge-only review started. NOTE /home/user/pr-t0037 local branch is behind remote.
 - 12:17: Land-prep onto e9364a70 started: #353 (1.0.366; add KEY_META rows for its 3 autopilot keys), #394 (1.0.367; fresh worktree pr-394b).
 - 12:17: #392 CI 136eaade: all finished checks green; Windows default 1-3 still running; verify-gate not yet listed. Re-check 12:23.
