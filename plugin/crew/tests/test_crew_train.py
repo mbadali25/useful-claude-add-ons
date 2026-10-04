@@ -553,6 +553,31 @@ def test_check_land_refuses_merge_tree_conflict(repo, capsys, monkeypatch):
     assert code == 1 and "conflict" in out and "f.txt" in out, out
 
 
+_LANDING_ORDER = ("bump the version one past the base, refresh artifacts, commit, gate the "
+                  "merged head, review it again if review_ledger.py --check-receipt reads "
+                  "stale, then check-land again")
+
+
+@pytest.mark.parametrize("refusal", ["conflict", "moved"])
+def test_check_land_refusal_names_bump_and_refresh_before_the_gate(repo, capsys, monkeypatch,
+                                                                    refusal):
+    """Both catch-up refusals name the landing order L-0522 fixes: bump and
+    refresh BEFORE the gate, so the gated tree is the tree that lands."""
+    if refusal == "conflict":
+        lane = _holding_lane(repo, capsys, touch=("f.txt",))
+        _commit(lane, "f.txt", "lane line\n")
+        _commit(repo, "f.txt", "main line\n")
+        hint = f"  run crew_train.py catch-up --ticket T-1, resolve, {_LANDING_ORDER}"
+    else:
+        lane = _holding_lane(repo, capsys)
+        _commit(repo, "a.txt", "main moved a\n")
+        hint = f"  run crew_train.py catch-up --ticket T-1, {_LANDING_ORDER}"
+    _passing_verdict(monkeypatch)
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
+    assert code == 1, out
+    assert hint in out.splitlines(), out
+
+
 def test_check_land_requires_the_hold(repo, capsys, monkeypatch):
     _passing_verdict(monkeypatch)
     _spec(repo, "T-1", ["a.txt"])
@@ -895,6 +920,30 @@ def test_done_quotes_the_plugin_root():
     assert "python3 ${CLAUDE_PLUGIN_ROOT}" not in section
     assert 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py"' in section
 
+
+
+_LANDING_STEPS = ("bump the version one past the base", "refresh the artifacts", "commit",
+                  "gate the merged head", "review it again", "--check-receipt` reads", "stale",
+                  " again")
+
+
+@pytest.mark.parametrize("doc, marker, count", [
+    ("daily-workflow.md", "land in this order: `crew_train.py catch-up`", 1),
+    ("troubleshooting.md", "`crew_train.py catch-up --ticket <id>`", 2),
+])
+def test_guides_state_landing_order_after_every_catch_up(doc, marker, count):
+    # Each catch-up fix in the guides names LANDING_ORDER's steps, in its order.
+    guides = os.path.join(context._ROOT, "..", "..", "docs", "guides", "crew", "src")  # pylint: disable=protected-access
+    with open(os.path.join(guides, doc), encoding="utf-8") as fh:
+        text = " ".join(fh.read().split())
+    starts = [i for i in range(len(text)) if text.startswith(marker, i)]
+    assert len(starts) == count, (doc, len(starts))
+    for start in starts:
+        window, pos = text[start:start + 700], 0
+        for step in _LANDING_STEPS:
+            found = window.find(step, pos)
+            assert found >= 0, f"{doc}: catch-up at {start} lacks {step!r} in order: {window[:300]}"
+            pos = found + len(step)
 
 # --- structure -----------------------------------------------------------------------
 

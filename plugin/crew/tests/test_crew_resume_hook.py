@@ -114,7 +114,13 @@ def _claude(tmp_path, name):
 
     On Windows the real bash, not a copy: Git's `bin\\bash.exe` launcher
     re-execs `..\\usr\\bin\\bash.exe` relative to itself, so a copy has nothing
-    to run, and `session_process` is None there whatever the name (T-0076)."""
+    to run, and `session_process` is None there whatever the name (T-0076).
+
+    No bash at all (a pwsh-only host) is a named skip, never a TypeError from
+    copying None: every caller that needs a `claude` ancestor goes through
+    here (T-0069, T-0042 review round 2)."""
+    if _BASH is None:
+        pytest.skip("bash not installed - the claude-process fixture copies bash - NOT run")
     if os.name == "nt":
         return _BASH
     home = tmp_path / f"claude-{name}"
@@ -426,21 +432,35 @@ def test_exactly_one_flavour_emits_for_one_payload(tmp_path):
     assert (sum(bool(o) for o in outs), _RUN_LINE in "".join(outs)) == (1, True)
 
 
-def test_never_emits_initial_user_message(tmp_path):
+@pytest.mark.parametrize("label, kwargs, author", [
+    ("run", {}, True),
+    ("wait", {"resume": "/crew:approve T-0001"}, False),
+    ("off", {"machine": None}, False)])
+def test_never_emits_initial_user_message(tmp_path, label, kwargs, author):
     """The spike (Claude Code 2.1.282) proved an interactive SessionStart drops
     `initialUserMessage`, so crew never sends it: not when armed and ready,
     not when refused, not when off. `test_auto_cycle.py`'s own assertion of
-    the same thing stays true beside this one."""
-    flavor = "sh" if _BASH else "ps1"
-    outs = []
-    for label, kwargs in (("run", {}), ("wait", {"resume": "/crew:approve T-0001"}), ("off", {"machine": None})):
-        base = tmp_path / label
-        base.mkdir()
-        outs.append(_context(flavor, _repo(base, **kwargs), author=True)[0])
+    the same thing stays true beside this one. Only `run` needs the `claude`
+    process fixture (it needs bash); `wait` and `off` run on either flavour,
+    so a pwsh-only host still runs them (T-0069)."""
+    flavor = "sh" if _BASH else "ps1" if _PWSH else None
+    if flavor is None:
+        pytest.skip("neither bash nor pwsh installed - the hook was NOT run")
+    base = tmp_path / label
+    base.mkdir()
+    out = _context(flavor, _repo(base, **kwargs), author=author)[0]
 
-    assert ([bool(o) for o in outs], [("initialUserMessage" in o) for o in outs],
-            [set(json.loads(o)["hookSpecificOutput"]) for o in outs]) == \
-        ([True] * 3, [False] * 3, [{"hookEventName", "additionalContext"}] * 3)
+    assert (bool(out), "initialUserMessage" in out, set(json.loads(out)["hookSpecificOutput"])) == \
+        (True, False, {"hookEventName", "additionalContext"}), label
+
+
+def test_the_claude_fixture_skips_by_name_without_bash(tmp_path, monkeypatch):
+    """T-0069 (T-0042 review round 2 FIX :433): on a pwsh-only host `_claude`
+    raised TypeError from `shutil.copy2(None, ...)` instead of skipping."""
+    monkeypatch.setattr(sys.modules[__name__], "_BASH", None)
+
+    with pytest.raises(pytest.skip.Exception, match="bash not installed"):
+        _claude(tmp_path, "x")
 
 
 @needs_proc
