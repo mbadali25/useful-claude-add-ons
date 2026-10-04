@@ -1196,29 +1196,36 @@ Obsidian vault). A CLI the commands call, not a hook.
 
 ## The split rulebook (T-0052)
 
-- DERIVED (T-0052; measured on this tree, anchors not moved):
+- DERIVED (T-0052, after review round 1; measured on this tree, anchors not moved):
   `plugin/crew/hooks/scripts/crew_split.py` holds `/crew:split`'s judgement as code; its module docstring is the
   API T-0058 and T-0059 build on. The thresholds are constants, each with its
-  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:80`),
-  `ACCEPTANCE_LOOK` (`:84`), `SUBSYSTEMS_LOOK` (`:87`), `CHILDREN_MIN,
-  CHILDREN_MAX` (`:90`); `EVIDENCE_KEYS` (`:92`), `VIAS` (`:100`, `command`
-  only; T-0058 appends `autopilot`), `SDP_STOP` (`:101`). `measure`
-  (`:208`) returns None, never 0, for a measure it cannot read, and
-  `triggers` (`:232`) reports it as `unknown:<name>`. `check_proposal`
-  (`:361`) over `parse_proposal` (`:294`) is the placement rule (every parent
-  criterion exactly once, whitespace-collapsed equality). `tracker_mode`
-  (`:406`) reads `crew_tracker.resolve`. `check` (`:469`) records the
-  proposal's sha256 (`_proposal_sha`, `:436`, cut at `## Minted`) and the
-  current turn (`current_turn`, `:444`, which reads the context hook's
-  per-session state through `crew_context._session_file`,
-  `plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1072`, keyed
-  by `CLAUDE_CODE_SESSION_ID`, `plugin/crew/hooks/scripts/crew_split.py:102`); `confirm` (`:499`) passes only on a
-  different turn for the same session and an unchanged proposal. `apply`
-  (`:644`) refuses through `_refuse_mode` (`:585`), then writes
-  `spec.pre-split.md`, mints through `_mint_children` (`:617`, calling
-  `crew_ticket.mint`, `plugin/crew/hooks/scripts/crew_ticket.py:1355`,
-  unedited: it takes no risk, so the child's `risk:` rides in its direction
-  body), and only then sets the parent `superseded`.
+  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:100`),
+  `ACCEPTANCE_LOOK` (`:104`), `SUBSYSTEMS_LOOK` (`:107`), `CHILDREN_MIN,
+  CHILDREN_MAX` (`:110`); `EVIDENCE_KEYS` (`:112`), `VIAS` (`:120`, `command`
+  only; T-0058 appends `autopilot`), `SDP_STOP` (`:121`). `measure`
+  (`:235`) returns None, never 0, for a measure it cannot read or a readable
+  section that yields nothing, and `triggers` (`:262`) reports it as
+  `unknown:<name>`. `check_proposal` (`:412`) over `parse_proposal` (`:346`)
+  is the placement rule (every parent criterion exactly once,
+  whitespace-collapsed equality); `minted_tail` (`:324`) accepts `## Minted`
+  only as a trailing block of `- Child N: <id>` lines, and `_proposal_sha`
+  (`:489`) hashes everything else. `tracker_mode` (`:459`) reads
+  `crew_tracker.resolve`. `check` (`:568`) records the proposal's sha256, the
+  current turn (`current_turn`, `:527`) and a hash of the prompt that set it
+  (`current_prompt`, `:542`), both read from the context hook's per-session
+  state through `crew_context._session_file`
+  (`plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1071-1072`),
+  keyed by `CLAUDE_CODE_SESSION_ID` (`plugin/crew/hooks/scripts/crew_split.py:122`); `confirm` (`:625`) passes
+  only on a different turn for the same session, an unchanged proposal, and a
+  readable prompt that is neither a `<`-envelope nor check's own. `apply`
+  (`:840`) refuses through `_refuse_mode` (`:748`) and `_verified_minted`
+  (`:826`: an apply record, `apply_record_path` `:500`, and each entry's
+  provenance, `_provenance` `:696`), then writes `spec.pre-split.md`, mints
+  through `_mint_children` (`:780`, adopting a provenance orphan, `_orphan`
+  `:708`, and calling `crew_ticket.mint`,
+  `plugin/crew/hooks/scripts/crew_ticket.py:1355`, unedited: it takes no
+  risk, so the child's `risk:` rides in its direction body), and only then
+  sets the parent `superseded`.
 - `plugin/crew/commands/split.md` is the procedure: a tracker switch (files
   and Obsidian through `apply --via command`, Jira's MCP steps kept, SDP
   stops), `check` before the confirmation, `confirm` before the first Jira
@@ -1227,8 +1234,8 @@ Obsidian vault). A CLI the commands call, not a hook.
   `plugin/crew/tests/split_fixtures/t0004_spec_pre_split.md` (reconstructed;
   see the test's docstring); its own `.crew/verify.json` rule (the last one).
   JUDGEMENT: no `sabotage_split.py` yet - `plugin/crew/tests/sabotage*.py` is
-  HARNESS, so its ten mutations were run by hand and are registered by a
-  separate tooling PR.
+  HARNESS, so its mutations were run by hand and a separate tooling PR
+  registers them (`TODO.md`).
 
 ## The artifact refresh check (T-0008, crew 1.0.36)
 
