@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:21: #365 re-review 9805fcb1: 0/1/1 (_unanswered drops unknown -> split --apply mints while next stops). Sent to builder. CI STARVED: 93 queued runs, mostly from the 91 docs-only handoff drafts (pytest + self-hosted verify-gate receipt); #377 queued 80+ min.
 - 14:21: OWNER DECISIONS: 91 new drafts -> build now in waves of 6 (parents first), land after current queue one-by-one; bundle 21 sabotage/harness tickets into 3-4 harness-only PRs. #356 round-3 5e37f872: 0/0/1 CLEAN (carry NIT at landing: stdout backslashreplace for non-ASCII refusal reasons). Wave planner started -> scratchpad/WAVES.md.
 - 14:18: #366 fixes -> e14b5a45 (one conservative overlap rule, step regex aligned; 1355 tests, 8 mutations). #365 fixes -> 9805fcb1 (policy try/except, _unanswered on --apply, docs; 1627 tests, 32 mutations). Both re-reviews started. NEW: owner opened 91 spec-only cloud-handoff drafts #397-#487 (12:32-12:42 UTC); plan pending owner decision.
 - 14:12: #366 re-review 1994b788: 0 BLOCK / 2 FIX (./ prefix not normalised; literal-vs-glob judged disjoint) / 3 NIT. Asked builder to replace overlap proof with one conservative rule (normalised, casefolded literal prefixes must diverge, else cannot-tell) instead of case patches.
