@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.157: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
+### Added — `crew` 1.0.302: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
   (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
@@ -48,8 +48,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Unchanged.** `crew_tracker.py`; `/crew:brainstorm`'s and `/crew:fix`'s prose
   id pick (moving them onto `mint` is a follow-up); T-0010's policies;
   `crew_autopilot.py` and `autopilot.md` (L-0611's).
-- **Sabotage.** 27 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
-  appended to `AUTOPILOT_MUTATIONS`.
+- **Review round 2 (Codex: 1 BLOCK, 5 FIX), fixed test-first.** A `move` to
+  `ready` whose board half fails after the INDEX half landed puts the row back
+  to `direction`, and mint's reported status is always the INDEX row's (the
+  BLOCK: it said `direction` while the row was `ready`, so autopilot could go
+  past the stop). A `create` whose row lands but whose card does not refuses,
+  keeping the ticket at `direction`. Any failure taking `INDEX.md.lock`
+  releases the claimed folder. A `create` that wrote the obsidian note but no
+  row removes that note. `assign` and `mint --direction-file` refuse a file
+  that is not regular (a FIFO no longer hangs them). `assign` refuses
+  `--title` and `--status` instead of ignoring them.
+- **Sabotage.** 34 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
+  appended to `AUTOPILOT_MUTATIONS` (7 for review round 2).
 - Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes,
   then `1.0.115 -> 1.0.123` after merging main `8d84786d` (crew 1.0.115);
   1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
@@ -57,7 +67,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   other lanes. Re-set at 1.0.144 after the L-0611 split and the merge of main
   `8123fe74` (crew 1.0.140, L-0574). Then `1.0.154 -> 1.0.157` after merging
   main `f808e5f0` (crew 1.0.154; #328 shipped 1.0.144, so T-0019's number was
-  spent), allocated by the coordinator; L-0611 is 1.0.161.
+  spent), allocated by the coordinator; L-0611 is 1.0.161. Then `1.0.242 -> 1.0.302`
+  after merging main `38adba44` (crew 1.0.242), allocated by the coordinator.
 
 ### Added — `crew` 1.0.242: a measured readability standard for every diagram crew draws
 
