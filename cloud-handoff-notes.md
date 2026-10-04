@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:10 UTC
+Last updated: 2026-10-04 10:11 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:11: #371 re-merged main edb2b8ff -> 00cdf632 crew 1.0.322 (version/CHANGELOG conflicts only; 157 tests + tooling-pr 17 pass); merge-only review + CI. #360 land-prep started (add KEY_META rows for #355's keys, 1.0.332).
 - 10:10: MERGED #355 at edb2b8ff (crew 1.0.321; CI 24/24 + review clean). Next: re-merge #371 (harness) -> 1.0.322; #360 land-prep (config conflicts with #355).
 - 10:09: #342 delta review f42ed026: 0/0/0 CLEAN. Waits CI.
 - 10:08: #342 CI red on 41b113c6: build (3.12) pylint C0302 test_crew_config.py 3401/3400 (merge-caused). Fixed by hand: comment rewrap -> 3400, crew 1.0.331, head f42ed026; delta review started. WATCH: #351/#355/#360 also grow test_crew_config.py - check line cap at each re-merge.
