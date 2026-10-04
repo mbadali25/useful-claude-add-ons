@@ -488,6 +488,60 @@ def test_an_unreadable_receipt_is_named_not_read_as_absent(tmp_path):
     assert (got["approved"], "could not be read" in got["reason"]) == (False, True)
 
 
+UNREADABLE = "the owner's split receipt is there but could not be read"
+STALE = "does not match the current proposal"
+
+
+def _bad_receipt(root, slug, how):
+    """A receipt the owner's prompt did not grant for THIS proposal: `unreadable`
+    (`{`), `stale` (another proposal's digest), `symlink-file` (approval.json a
+    symlink to a matching receipt) or `symlink-dir` (goals/<slug> a symlink to a
+    directory holding one). Returns the words the warning must carry."""
+    path = crew_autopilot.goal_receipt_path(str(root), slug)
+    digest = crew_autopilot.goal_digest(crew_autopilot.read_goal(str(root), slug))
+    if how == "unreadable":
+        _write(path, "{")
+        return UNREADABLE
+    if how == "stale":
+        _receipt(root, slug, "0" * 64)
+        return STALE
+    real = _receipt(root, "elsewhere", digest)
+    if how == "symlink-file":
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.symlink(real, path)
+    else:
+        os.makedirs(os.path.dirname(os.path.dirname(path)), exist_ok=True)
+        os.symlink(os.path.dirname(real), os.path.dirname(path))
+    return "not a regular file"
+
+
+@pytest.mark.parametrize("how", ["unreadable", "stale", "symlink-file", "symlink-dir"])
+@pytest.mark.parametrize("approval", ["self", "risk"])
+def test_a_bad_receipt_is_warned_when_the_policy_approves(tmp_path, approval, how):
+    root, slug, _got = _policy(tmp_path, risks=("low", "low"), approval=approval)
+    words = _bad_receipt(root, slug, how)
+
+    got = crew_autopilot.split_approved(str(root), slug)
+    text = crew_autopilot.split_approved_text(slug, got)
+
+    assert (got["approved"], got["via"],
+            crew_autopilot.read_goal(str(root), slug)["approval"]["via"],
+            any(words in w for w in got["warnings"]),
+            any(line.startswith("warning: ") and words in line
+                for line in text.splitlines())) == (
+        True, f"autopilot:{approval}", f"autopilot:{approval}", True, True)
+
+
+@pytest.mark.parametrize("how", ["symlink-file", "symlink-dir"])
+def test_a_symlinked_receipt_grants_nothing_and_is_named(tmp_path, how):
+    root, slug, _got = _policy(tmp_path, approval="human")
+    words = _bad_receipt(root, slug, how)
+
+    got = crew_autopilot.split_approved(str(root), slug)
+
+    assert (got["approved"], got["via"], words in got["reason"]) == (False, "", True)
+
+
 def test_split_refusal_names_the_owner_line_for_this_goal_only(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="human")
 

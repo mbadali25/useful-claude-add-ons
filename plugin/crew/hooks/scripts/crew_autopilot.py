@@ -164,6 +164,7 @@ import importlib
 import json
 import os
 import re
+import stat
 import sys
 
 if __name__ == "__main__":
@@ -1713,10 +1714,18 @@ def split_policy(root, slug):
 def _owner_receipt(top, slug, digest):
     """`(state, why)`: `match` (the owner's prompt approved THIS proposal),
     `absent`, `stale` (approved, then the proposal changed) or `unknown` (a
-    receipt is there and cannot be read) -- never read as absent."""
+    receipt is there and cannot be read) -- never read as absent. The
+    `goals/<slug>` directory must be a real one and approval.json a regular
+    file (lstat): a symlink, or anything else, is `unknown`."""
     path = goal_receipt_path(top, slug)
-    if not os.path.lexists(path):
-        return "absent", ""
+    for where, test in ((os.path.dirname(path), stat.S_ISDIR), (path, stat.S_ISREG)):
+        try:
+            mode = os.lstat(where).st_mode
+        except FileNotFoundError:
+            return "absent", ""
+        if not test(mode):
+            return "unknown", (f"the owner's split receipt at {where} is not a regular "
+                               "file or directory (a symlink?), so it is not read")
     data = _read_json(path)
     if not isinstance(data, dict):
         return "unknown", "the owner's split receipt is there but could not be read"
@@ -1754,7 +1763,8 @@ def split_approved(root, slug):
     if not policy["allow"]:
         return dict(base, reason="; ".join(r for r in (policy["reason"], why) if r))
     via = f"autopilot:{policy['policy']}"
-    warnings = list(policy["warnings"])
+    # A receipt that is there but unusable is named on the allow path too.
+    warnings = list(policy["warnings"]) + ([why] if why else [])
     try:
         _write_json_atomic(goal_path(top, slug), dict(goal, approval={
             "via": via, "proposal_sha256": digest}))
