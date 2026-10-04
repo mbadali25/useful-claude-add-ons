@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:17 UTC
+Last updated: 2026-10-04 16:18 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:18: OWNER DECISIONS: (1) land in stacked batches of 3-4 (each PR own merge commit; CI on every head in parallel); (2) no merge-only review agent for version/CHANGELOG-only catch-ups - coordinator checks remerge-diff. Batch 1: #405 (1.0.329), #398 (1.0.330), #450 (1.0.331), #403 (1.0.332). LANDPREP.md updated.
 - 16:17: OWNER: add more agents. WAVE 2 started (5 builds): #421 T-0083 (independent), stacked on review-clean parents: #400 L-0680 (on #398), #456 L-0677 (on #450), #420 L-0662 (on #416, incl. _route carry), #427 L-0652 (on #403). Versions 1.0.403-407.
 - 16:13: #407 round-3 fixes -> 6cada04c (merged main b863b773; pwsh-exact [set] parse; case-insensitive deploy key; ps1 agreement cases slow, rule 40s; sh CR strip; 207 tests, 79 mutations). Round-4 review started.
 - 16:12: MERGED #351 (T-0066 part 1) at 86d96fa1 (crew 1.0.328; CI 24/24 after done.md reflow; merge-only review clean). main = 86d96fa1. Next: #405 L-0688 land-prep at 1.0.329 (+ U-record reason carry). #481 r2 CLEAN.
