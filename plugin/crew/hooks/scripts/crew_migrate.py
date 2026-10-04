@@ -9,7 +9,7 @@ What moves, and what does not:
 | Source (0.20)                          | Target (1.0)                                  | Original      |
 |----------------------------------------|-----------------------------------------------|---------------|
 | `.crew/config.json` (schema <= 7)      | `.crew/crew.json` (schema 1, table below)     | kept, retireable |
-| `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above             | in the backup; rollback restores it |
+| `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above            | backed up, restored |
 | `.work/tickets/<ID>.md` (files mode)   | `.work/tickets/<ID>/ticket.md` + provenance   | kept          |
 | `.work/cache/<ID>.md` (jira/sdp/obsidian) | `.work/tickets/<ID>/ticket.md` + provenance | kept          |
 | `.crew/metrics.md`                     | `.crew/metrics.jsonl`, missing values UNKNOWN | kept          |
@@ -77,7 +77,8 @@ autopilot.mode: plan to enable".
 
 `MAPPING` below is this table as code; a test asserts the two agree.
 
-Standard library, plus crew's own `crew_upgrade` for a pre-0.20 config. Exit 0 on success (or a clean preview), 1 when the
+Standard library, plus crew's own `crew_upgrade` for a pre-0.20 config. Exit 0
+on success (or a clean preview), 1 when the
 migration cannot proceed (conflict, unreadable source, interrupted apply), 2 on
 a usage error.
 """
