@@ -4,6 +4,46 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.301: global defaults for the personal autopilot keys, a backup before every config write, and a rebuild from the owner's profile (T-0050)
+
+- **Behaviour change: a global value can hold a repo value down.** `autopilot.mode`, `maxPhases`,
+  `deploy`, `approval` and `questions` are personal (`crew_guards.PERSONAL_KEYS`): settable in
+  `~/.claude/crew/config.json` as the owner's default for every repo, combined per key by
+  `effective_personal` -- the stricter of the layers that set a key wins (`off` < `plan`,
+  `human` < `risk` < `self`, `none` < `nonprod` < `all`, the smaller `maxPhases`), and a silent
+  layer (absent or `null`) imposes nothing. `resolve_config` applies it, so `crew_autopilot.settings`
+  reads it with no change. A repo `self` under a global `human` reads `human`.
+- **Behaviour change: new repos no longer spell the personal keys.** `template_config()` and
+  `global_template_config()` are what the committed templates, crew-setup's inline copy and
+  `heal_config` write. Existing repos keep their explicit values (every repo `/crew:init` set up
+  before this says `"mode": "off"`): `crew_config.py --explain --all` names each `shadow:` and
+  `--unset <key> --repo --apply` removes it on the owner's yes; nothing removes one automatically.
+- **Behaviour change: `/crew:config` writes `.crew/config.json` by more routes, all `--apply`
+  only:** `--set`/`--unset --repo`, `--rebuild --repo`, `--restore <stamp> --repo` and the menu's
+  Save.
+- `crew_backup.py`: every crew writer of either config file (`write_global_config`,
+  `write_repo_config`, rebuild, restore, the menu's restore, `heal_config`, `apply_changes`, the
+  autoclear setup's repo writes, `crew_upgrade`) saves the pre-write bytes, corrupt ones included,
+  under `~/.claude/crew/backups/` (0600 files, 0700 directories, newest 20 kept) and refuses the
+  write when the backup fails (exit 4). `--backups` lists them; `--restore <stamp>` backs up the
+  current file, then writes the stamped bytes.
+- The profile: `~/.claude/crew/profile.json`, plus `<memory.vaultPath>/crew/profile.json` when a
+  vault is set, holds each layer's non-template values (repos keyed by normalised `origin`).
+  Refreshed by `--set`/`--unset --apply` and Save, captured by `--save-profile`; never by heal,
+  platform-sync, upgrade, the autoclear setup, a rebuild or a restore. `--rebuild --repo|--global`
+  writes the template plus the profile, a dry run until `--apply`; an unreadable profile copy
+  with no readable other is exit 3 (could not tell), none at all needs `--no-profile`.
+- `--explain --all` prints every key with its layer, marks `repo-only`, `held down by <layer>`,
+  and the `shadow:` and `profile drift:` findings. CONFIG.md §10, §11 re-measured (77 / 52), new
+  §20a and §20b; README, `commands/config.md` and `global-config.md` updated.
+- Tests: `test_crew_config_personal.py` (54), `test_crew_config_rebuild.py` (40),
+  `test_crew_backup.py` (26), must-block and must-allow; 21 hand sabotages, each red.
+- **Harness follow-ups (left out under the T-0087 rule):** `scope.allowCliApproval` as a personal
+  key needs `crew_ticket.cli_approval_allowed` to read the global layer (review harness), with
+  its must-block tests in `test_crew_ticket.py` / `test_scope_guard.py`; and registering the 21
+  sabotages as `sabotage_config_layers.py` in `sabotage.py` (harness paths). Until then a global
+  `approval: self` still needs the repo's own `scope.allowCliApproval: true`.
+
 ### Added — `crew` 1.0.242: a measured readability standard for every diagram crew draws
 
 - `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
