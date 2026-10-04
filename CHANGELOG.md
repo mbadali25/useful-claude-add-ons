@@ -4,6 +4,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` NEXTVER: `crew_memory.py save`, the vault note first and then the pointer (L-0677)
+
+- `crew_memory.py save --file <memory> --tag <tag> [--tag ...] [--title] [--note] [--type]
+  [--project] [--root] [--apply] [--json]` turns a native memory holding its full text into a
+  pointer. Dry run by default (prints vault, note, `create` / `append` / `unchanged` and the
+  pointer line; writes nothing; exit 1). The vault is the single writable one: the `role:
+  primary` entry (without roles `default: true`, else the first; with no `vaults` block the name
+  `memory`), resolved through the read side's `vault_path` and required to hold `.obsidian/`.
+  Never a `recall` or `ignore` vault, never a substitute for a primary that is not there.
+- Note: `memories/<project>/<title>.md` by default, the six-key frontmatter (`title` the file
+  name stem, JSON-quoted; `type: concept` by default) plus `project` and `memory_id`. An existing
+  note of the same `memory_id` gains `## Update <date>` and a bumped `updated:` (`unchanged` when
+  the body is already its last passage); any other existing note is a `collision`.
+- Order and crash safety: the full note text and new native bytes are computed first; the note
+  goes through a fsynced temp file and `os.link` (create, never over a file) or `os.replace`
+  (append, after a re-read); it is read back and the pointer resolved; only then is the native
+  body replaced (frontmatter bytes kept, mode kept) through a temp file and `os.replace`, after
+  checking the file did not change meanwhile. Every refusal and every failure prints
+  `kept-full-text: <reason>` and leaves the memory byte-identical; a dangling pointer is never
+  written. `MEMORY.md` is not edited; no hook, no config key.
+- Checked with the real `claude` CLI 2.1.289 (auto-memory on): a one-line pointer body survived
+  three new sessions byte-identical (a session updating that memory rewrote only its
+  frontmatter). The `crew-memory` skill, README section 14 and the memory guide carry the save
+  procedure and its state table.
+- **Tests.** `plugin/crew/tests/test_crew_memory_save.py`, 54 cases; the crew_memory verify rule
+  runs both files. Each failure ordering (note write, link, read-back, pointer temp write,
+  pointer replace, native changed meanwhile) has a test. Sabotaged by hand, each turned a named
+  test red: pointer before note, no read-back, no `memory_id` collision check, no symlink check,
+  falling back to a recall vault, no changed-meanwhile check, no ASCII rule, no temp cleanup, no
+  path grammar, no `.obsidian/` check, rewriting an unchanged note.
+
 ### Added — `crew` 1.0.398: native memories as vault pointers, read side (T-0084)
 
 - `plugin/crew/hooks/scripts/crew_memory.py` (new): a native Claude Code memory file may hold one

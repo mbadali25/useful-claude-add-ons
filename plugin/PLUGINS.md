@@ -205,7 +205,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-diagrams` | Architecture and data-flow diagrams, with a Visio path |
 | `crew-house-style` | House style for a document handed to a human — palette, headings, capitalization, and PDF vs DOCX vs HTML vs plain markdown. Routes generation to `anthropic-office-skills`, `ppt-master` and `visio-diagrams`; falls back to markdown and says so when none is installed |
 | `crew-providers` | Codex as reviewer, Gemini as design partner, and verifying either |
-| `crew-memory` | Obsidian-backed memory; resolves native-memory vault pointers (`crew_memory.py`) |
+| `crew-memory` | Obsidian-backed memory; resolves native-memory vault pointers and saves a memory as one, note first (`crew_memory.py`) |
 | `crew-notify` | Teams and Telegram payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
 | `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |

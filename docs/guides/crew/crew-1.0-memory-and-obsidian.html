@@ -427,8 +427,76 @@ only; <code>--json</code> gives the same rows as JSON.</p>
 </tbody>
 </table>
 <p>An unavailable vault is never replaced by another one that happens to hold a
-note at the same path. This crew version only reads pointers; writing them,
-and converting existing memories, arrive in later versions.</p>
+note at the same path.</p>
+<h3 id="saving-a-memory-as-a-pointer">Saving a Memory as a Pointer</h3>
+<p><code>save</code> turns one memory that holds its full text into a pointer, note first:</p>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py save --file &lt;memory file&gt; --tag &lt;tag&gt;
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file &lt;memory file&gt; --tag &lt;tag&gt; --apply
+</code></pre>
+<p>Without <code>--apply</code> it prints the plan (the vault, the note, <code>create</code>, <code>append</code>
+or <code>unchanged</code>, and the pointer line) and writes nothing. Read your vault's own
+<code>CLAUDE.md</code> for its folders and tags first; <code>--note</code>, <code>--title</code>, <code>--type</code>
+(<code>concept</code> by default) and <code>--project</code> change the defaults
+(<code>memories/&lt;project&gt;/&lt;title&gt;.md</code>, the title taken from the memory's <code>name:</code>
+line).</p>
+<p>It writes only to the one writable vault: the vault with role <code>primary</code>
+(without roles, the <code>default: true</code> vault, else the first; with no <code>vaults</code>
+block, <code>memory</code>). The folder must hold <code>.obsidian/</code>. A <code>recall</code> or <code>ignore</code>
+vault is never written, and a primary that is not mounted is reported, not
+replaced. The note gets the vault's six frontmatter keys plus <code>project</code> and
+<code>memory_id</code>; saving the same memory again appends a dated <code>## Update</code>
+passage, and a note that belongs to another memory is a <code>collision</code>.</p>
+<p>The order is the point. The note is written through a temp file, read back,
+and the pointer resolved; only then is the memory's body replaced, its
+frontmatter kept byte for byte, through a temp file and a rename. Any refusal
+or failure prints <code>kept-full-text: &lt;reason&gt;</code> and leaves the memory exactly as
+it was:</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>memory file</th>
+<th>exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pointer-written</code></td>
+<td>body replaced by the pointer</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>already-pointer</code></td>
+<td>untouched</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>kept-full-text: no vault configured</code></td>
+<td>untouched</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>kept-full-text: vault unavailable</code>, <code>no primary</code>, <code>several primaries</code>, <code>not a vault</code>, <code>config unreadable</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>kept-full-text: collision</code>, <code>ascii-required</code>, <code>outside-vault</code>, <code>bad-note-path</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>kept-full-text: note write failed</code>, <code>note not readable after write</code>, <code>pointer write failed</code>, <code>the memory file changed during save</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>Claude Code 2.1.289 was seen to keep a one-line pointer body across new
+sessions (it rewrites the frontmatter when it updates the memory, and kept
+the pointer). If a later version rewrites the body with full text, <code>check</code>
+shows it as <code>full-text</code> again; run <code>save</code> again. Converting existing
+memories in bulk arrives in a later version.</p>
 <h2 id="confirming-recall-reaches-your-sessions">Confirming Recall Reaches Your Sessions</h2>
 <p>(written by the context-hook ticket)</p>
 <h3 id="path-scoped-rules-from-the-code-map">Path-Scoped Rules from the Code Map</h3>

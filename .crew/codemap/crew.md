@@ -1527,41 +1527,69 @@ instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
 Added after this note's anchor; read in full at the T-0084 build head. Read-only: nothing here
 writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, migration L-0678).
 
-- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:66` - the pointer grammar, one line
-  `vault: <name> | note: <path>`; `:109` `_path_problem` refuses an absolute, backslash, `:`
-  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:78`
-  `_invisible`); `:170` `classify` - a pointer attempt (`:132` `_attempt`: the first non-blank
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:79` - the pointer grammar, one line
+  `vault: <name> | note: <path>`; `:122` `_path_problem` refuses an absolute, backslash, `:`
+  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:91`
+  `_invisible`); `:183` `classify` - a pointer attempt (`:145` `_attempt`: the first non-blank
   line, Cf removed and stripped, starts `vault` + optional whitespace + `:` in any case, and
-  `note:`/`|` (`:71` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
-  non-blank line starts `|` or `note:` (`:72` `_WRAPPED`), or the line is a bare vault name
-  (`:73` `_BARE`)) must be the whole body and match exactly (`:149` `_grammar`), else
+  `note:`/`|` (`:84` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
+  non-blank line starts `|` or `note:` (`:85` `_WRAPPED`), or the line is a bare vault name
+  (`:86` `_BARE`)) must be the whole body and match exactly (`:162` `_grammar`), else
   `malformed`; any other body, a prose line starting `Vault:` included, is `full-text`.
-- DERIVED `crew_memory.py:97` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
+- DERIVED `crew_memory.py:110` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
   is split on its first two `---` lines and never parsed as YAML.
-- DERIVED `crew_memory.py:227` `_config` - a config is absent only when `os.lstat` raises
-  FileNotFoundError; anything else must read (at most `CONFIG_CAP`, 1 MiB, `:74`), parse as a
-  JSON object with no duplicate key (`:217` `_no_duplicates`) and no RecursionError, and pass
-  its schema (`:185` `_obsidian_problem`: `vaults` an object of objects with a string `path`,
-  `vaultPath` a string; `:203` `_crew_problem`: `memory` an object, `memory.vaultPath` a string
+- DERIVED `crew_memory.py:240` `_config` - a config is absent only when `os.lstat` raises
+  FileNotFoundError; anything else must read (at most `CONFIG_CAP`, 1 MiB, `:87`), parse as a
+  JSON object with no duplicate key (`:230` `_no_duplicates`) and no RecursionError, and pass
+  its schema (`:198` `_obsidian_problem`: `vaults` an object of objects with a string `path`,
+  `vaultPath` a string; `:216` `_crew_problem`: `memory` an object, `memory.vaultPath` a string
   or null), or it is `config unreadable: <path>: <field>`.
-- DERIVED `crew_memory.py:288` `vault_path` - schema-checks the Obsidian config
-  (`crew_recall.obsidian_config_path()`, `:294`) and both crew layers (`:259-260`) before
+- DERIVED `crew_memory.py:301` `vault_path` - schema-checks the Obsidian config
+  (`crew_recall.obsidian_config_path()`, `:307`) and both crew layers (`:272-273`) before
   resolving; a bad Obsidian config stops every name, a bad crew config stops `memory` (and any
   name when there is no Obsidian config); `role: ignore` is `vault-unknown`; only the name
-  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:264`) and
-  then, only with no `vaults` block, the top-level `vaultPath`. `:269` `_vault_dir` stats and
+  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:277`) and
+  then, only with no `vaults` block, the top-level `vaultPath`. `:282` `_vault_dir` stats and
   lists the vault.
-- DERIVED `crew_memory.py:336` `note_path` - `os.lstat` per component: a link is
+- DERIVED `crew_memory.py:349` `note_path` - `os.lstat` per component: a link is
   `outside-vault`, a missing component `note-missing`, any other OSError `unreadable`; the real
   path must stay under the vault's real path, be a regular file (a directory or FIFO there is
-  `unreadable`) and open (`:84` `_open_regular`, non-blocking with an fstat `S_ISREG` check).
-- DERIVED `crew_memory.py:396` `_check_one` - `check` lists every `*.md` (suffix in any case)
-  but the exact name `MEMORY.md` (`:390`); `os.stat` follows links and only a regular file is
+  `unreadable`) and open (`:97` `_open_regular`, non-blocking with an fstat `S_ISREG` check).
+- DERIVED `crew_memory.py:419` `_check_one` - `check` lists every `*.md` (suffix in any case)
+  but the exact name `MEMORY.md` (`:413`); `os.stat` follows links and only a regular file is
   opened, so a dangling link, FIFO, device or directory is `unreadable` unopened.
-- DERIVED `crew_memory.py:430` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+- DERIVED `crew_memory.py:786` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
   1 for any other state, 2 for usage, a missing `--file`/`--memory-dir` or an unlistable folder.
 - JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
   because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
+
+## Native-memory save, the writer (L-0677)
+
+Added after this note's anchor; read in full at the L-0677 build head. The only writer in
+`crew_memory.py`; the read side above is unchanged except that `resolve_file` now calls
+`resolve_pointer` (`plugin/crew/hooks/scripts/crew_memory.py:400`), which `save` reuses.
+
+- DERIVED `crew_memory.py:491` `writer_vault` - obsidian-vault's writer rule restated: with roles
+  the single `primary` (none or several refused), without roles `default: true` else the first,
+  with no `vaults` block the name `memory`; the name is resolved by `vault_path`, so writer and
+  resolver agree, and the folder must hold `.obsidian/`. Nothing configured is
+  `no vault configured`, exit 0; a non-boolean `guard.asciiOnly` is `config unreadable`.
+- DERIVED `crew_memory.py:589` `plan_save` - reads the native bytes once, classifies them
+  (`already-pointer` / a resolve state / `malformed`), derives title, note path (through
+  `_path_problem`), ASCII rule, containment (`:532` `_contained`: lstat walk, a symlink is
+  `outside-vault`) and `create` / `append` / `unchanged` / `collision` (`:568`
+  `_existing_action`, matching `memory_id`), and computes the full note text and the new native
+  bytes before anything is opened for write. `:452` `today` is the only clock read.
+- DERIVED `crew_memory.py:678` `apply_note` - create = temp file (`:659` `_write_temp`, fsynced)
+  then `os.link` to the name (never over an existing file); append = re-read, compare, temp and
+  `os.replace`; containment re-checked after `makedirs`. `:708` `apply_pointer` re-reads the
+  native file, refuses if it changed, writes a temp beside it with the mode copied, then
+  `os.replace`. `:723` `apply_save` orders them: note, read-back (bytes equal AND
+  `resolve_pointer` resolved), pointer; each failure is `kept-full-text: <reason>` with the native
+  file byte-identical. `:759` `_save_cli` is the `save` subcommand (dry run unless `--apply`).
+- JUDGEMENT: Claude Code 2.1.289 kept a one-line pointer body across three new sessions in a
+  probe (it rewrote the frontmatter on an update and kept the body); a later version that
+  rewrites it shows as `full-text` in `check`, and `save` can be run again.
 
 ## Entry points
 

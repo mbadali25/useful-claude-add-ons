@@ -338,8 +338,52 @@ only; `--json` gives the same rows as JSON.
 | `unreadable` | the memory file is not a regular file readable as UTF-8 (`check` never opens a FIFO, device or directory), or a folder or note inside the vault cannot be read or opened | 1 |
 
 An unavailable vault is never replaced by another one that happens to hold a
-note at the same path. This crew version only reads pointers; writing them,
-and converting existing memories, arrive in later versions.
+note at the same path.
+
+### Saving a memory as a pointer
+
+`save` turns one memory that holds its full text into a pointer, note first:
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file <memory file> --tag <tag>
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file <memory file> --tag <tag> --apply
+```
+
+Without `--apply` it prints the plan (the vault, the note, `create`, `append`
+or `unchanged`, and the pointer line) and writes nothing. Read your vault's own
+`CLAUDE.md` for its folders and tags first; `--note`, `--title`, `--type`
+(`concept` by default) and `--project` change the defaults
+(`memories/<project>/<title>.md`, the title taken from the memory's `name:`
+line).
+
+It writes only to the one writable vault: the vault with role `primary`
+(without roles, the `default: true` vault, else the first; with no `vaults`
+block, `memory`). The folder must hold `.obsidian/`. A `recall` or `ignore`
+vault is never written, and a primary that is not mounted is reported, not
+replaced. The note gets the vault's six frontmatter keys plus `project` and
+`memory_id`; saving the same memory again appends a dated `## Update`
+passage, and a note that belongs to another memory is a `collision`.
+
+The order is the point. The note is written through a temp file, read back,
+and the pointer resolved; only then is the memory's body replaced, its
+frontmatter kept byte for byte, through a temp file and a rename. Any refusal
+or failure prints `kept-full-text: <reason>` and leaves the memory exactly as
+it was:
+
+| state | memory file | exit |
+|---|---|---|
+| `pointer-written` | body replaced by the pointer | 0 |
+| `already-pointer` | untouched | 0 |
+| `kept-full-text: no vault configured` | untouched | 0 |
+| `kept-full-text: vault unavailable`, `no primary`, `several primaries`, `not a vault`, `config unreadable` | untouched | 1 |
+| `kept-full-text: collision`, `ascii-required`, `outside-vault`, `bad-note-path` | untouched | 1 |
+| `kept-full-text: note write failed`, `note not readable after write`, `pointer write failed`, `the memory file changed during save` | untouched | 1 |
+
+Claude Code 2.1.289 was seen to keep a one-line pointer body across new
+sessions (it rewrites the frontmatter when it updates the memory, and kept
+the pointer). If a later version rewrites the body with full text, `check`
+shows it as `full-text` again; run `save` again. Converting existing
+memories in bulk arrives in a later version.
 
 ## Confirming recall reaches your sessions
 
