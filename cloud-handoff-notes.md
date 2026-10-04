@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:57: WAVE1 #403 T-0053 built -> d7a51dd6 (crew_sleep.py, night settings in _settings_at; 81 tests, 15 mutations red; 1.0.394; crew_keys since re-bump at landing). Review started. All 6 wave-1 builds done.
 - 14:57: WAVE1 #398 T-0096 built -> 968cf3a4 (bash+PS worktree config resolvers, readers routed, unknown=armed in no-python fallback; 41 tests, 6 sabotages red; 1.0.396). Review started. PRE-EXISTING fail-open: cloud-guard.sh exits 0 if _common.sh fails to source -> needs follow-up ticket.
 - 14:55: #416 T-0057 review 767966c2: 1 BLOCK (approval/approving/lookalikes route once rows go live) / 2 FIX (pronoun guard exact-match; gate ignores sub type/value) / 7 NIT. Sent to builder with structural pre-check (NFKC+casefold, non-ASCII letters ask, stem approv).
 - 14:53: CI hygiene: note.sh commits now carry [skip ci] (notes-branch pushes were queuing full CI on #391); cancelled 6 notes-branch runs. #377 down to 2 checks (test 3.12 running, crew-shell-matrix queued).
