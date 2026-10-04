@@ -1252,6 +1252,39 @@ Obsidian vault). A CLI the commands call, not a hook.
   refused with nothing written (`move`, `:1481`). `STATUS_ORDER` (`:91`) is
   read by `_backwards` (`:654`): a move backwards, or from a status crew does
   not know, is `could not update` unless `--reopen`.
+- DERIVED (T-0037; measured on this tree, anchors not moved):
+  the ticket status vocabulary's one owner is this table. `OWNER_STATUSES`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:101`, `needs-owner`: open,
+  Backlog lane) and `CLOSED_STATUSES`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:102`, `cancelled`,
+  `superseded`: Done lane, checked) sit beside `STATUS_ORDER`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:100`) as rows of
+  `LANE_FOR_STATUS` (`plugin/crew/hooks/scripts/crew_tracker.py:103`).
+  `_backwards` (`plugin/crew/hooks/scripts/crew_tracker.py:668`) refuses any
+  move out of a closed word, and `done` to a closed word or `needs-owner`,
+  without `--reopen`; `needs-owner` to or from an open word is never
+  backwards; `_PUSH_AT` (`plugin/crew/hooks/scripts/crew_tracker.py:129`) is
+  unchanged, so Jira/SDP push none of the three (`_push`,
+  `plugin/crew/hooks/scripts/crew_tracker.py:1477`). The closed words also sit
+  in `crew_state._DONE_RE` and `_TABLE_DONE_WORDS`
+  (`plugin/crew/hooks/scripts/crew_state.py:218`, `:238`), which
+  `crew_ticket._index_closed` (`plugin/crew/hooks/scripts/crew_ticket.py:831`)
+  reads, so approval precheck refuses them with `crew_ticket.py` unedited;
+  in autopilot's `INDEX_DONE` and the new `HEADER_CLOSED`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:185`, `:188`), used by
+  `_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:472`) and `_closed`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1470`), whose closed reason
+  quotes a `split-into:` / `superseded-by:` line (`_successor`,
+  `plugin/crew/hooks/scripts/crew_autopilot.py:295`). `_phase` stops an
+  INDEX `needs-owner` row as phase `needs-owner`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:454`), waiting on `owner`
+  (`WAITING`, `plugin/crew/hooks/scripts/crew_autopilot.py:1378`).
+  `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
+  prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
+  (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a
+  `cancelled`/`superseded`/`needs-owner` header edit stales an approval.
+  `plugin/crew/tests/test_status_vocabulary.py` holds every list to
+  `CLOSED_STATUSES`.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
   (`_files_create` `:666`, `_files_move` `:692`, `_files_read` `:720`); a row
   with no status cell is `could not update` / `could not read`; `create` on
