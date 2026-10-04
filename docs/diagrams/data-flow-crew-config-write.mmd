@@ -2,7 +2,7 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py
 %% Purpose: The two writers behind /crew:config --set: the machine-file planner and the repo-file planner, the per-leaf and merged-file checks both share, and where each refuses.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
-%% Re-pointed for T-0066 (crew 1.0.356, merging origin/main edb2b8ff, then 155fe6d8 and e9364a70): every crew_config.py line cite re-read with
+%% Re-pointed for T-0066 (crew 1.0.328, merging origin/main edb2b8ff, then 155fe6d8 and e9364a70): every crew_config.py line cite re-read with
 %%    grep -n; the `git` block in both default functions moved everything below :245 (main's edb2b8ff, 155fe6d8 and e9364a70 left crew_config.py unchanged).
 %% Note PLAN: plan_global_write() plugin/crew/hooks/scripts/crew_config.py:2936 <i>pure</i>; on
 %%    global_snapshot() :2887, which REFUSES an unparsable or non-object machine file instead of merging onto
