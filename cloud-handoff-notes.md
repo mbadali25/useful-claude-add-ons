@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 20:33 UTC
+Last updated: 2026-10-04 20:45 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 20:45: #494 L-1510 opened at 024cf515, CI green first push: _mint_taken reads INDEX under the same Lock _mint_claim uses (never nested); deterministic race test; 4 sabotage entries. Review spawned. Landing order: #399 (1.0.337) -> #494 (1.0.338) -> batch 3.
 - 20:33: Batch 3 pre-flight: Windows gate status on review-clean heads - green: #481, #493, #364; red: #427 (also test(3.12) + verify-gate red; sent back to builder with NIT carries + merge main); no run: #400, #416, #420, #421, #489, #407, #365, #366, #354. Dispatched pytest-crew on L-1503-build (#489), T-0083-build (#421), L-0680-build (#400) to get Windows signal without new commits.
 - 20:32: Correction to previous line: 16 PRs merged this session (not 17).
 - 20:32: BATCH 2 COMPLETE. MERGED #347 T-0047 (re-run green) -> 59fe7d84, 1.0.335; MERGED #456 L-0677 -> main 644adfc2, crew 1.0.336. 17 PRs merged this session. #399 land-prep as 1.0.337 (harness alone) spawned.
