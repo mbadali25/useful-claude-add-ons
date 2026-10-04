@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.305: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
+### Added — `crew` 1.0.311: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
 
 - New launcher `plugin/crew/hooks/scripts/crew_unattended.py` (`check` / `launch -- claude ...`).
   It starts an unattended Claude session with temporary AWS credentials for ONE identity the
