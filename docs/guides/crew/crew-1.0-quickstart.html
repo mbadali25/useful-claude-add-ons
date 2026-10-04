@@ -117,7 +117,7 @@ can write to. Every step says how to check that it worked before you move on.</p
 </tr>
 <tr>
 <td>4</td>
-<td>Existing 0.20 repos only: <code>/crew:migrate</code></td>
+<td>Existing 0.20 or older repos: <code>/crew:migrate</code></td>
 <td><code>/crew:status</code> shows <code>crew.json schema 1</code></td>
 <td>1</td>
 </tr>
@@ -168,7 +168,7 @@ asks before each change. Stop after the config phase if you are short on time;
 <p>Today <code>/crew:init</code> still writes the 0.20 <code>.crew/config.json</code>. Run step 4
 straight after it until init writes <code>.crew/crew.json</code> itself.</p>
 <h2 id="4-existing-repositories-migrate-once">4. Existing Repositories: Migrate Once</h2>
-<p>If the repository already used crew 0.20, or you just ran <code>/crew:init</code>:</p>
+<p>If the repository already used crew 0.20 or earlier (an older config is upgraded in the same run), or you just ran <code>/crew:init</code>:</p>
 <pre><code class="language-text">/crew:migrate
 </code></pre>
 <p>It previews first and writes nothing until you agree. The preview lists:</p>

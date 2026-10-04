@@ -134,7 +134,7 @@ GUIDE_HTML = os.path.join(
     "crew-progress-report-2026-09-20.html")
 # What each schema migration does. test_upgrade.py checks the entry for the
 # CURRENT hop exists, so the mutation below deletes exactly that entry.
-UPGRADE_DOC = os.path.join(CREW, "skills", "crew-setup", "upgrade-report.md")
+UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
 REVIEW_VERDICT = os.path.join(CREW, "hooks", "scripts", "review_verdict.py")
@@ -815,12 +815,12 @@ MUTATIONS = (
         # Every schema bump has to move this string; that edit is
         # the point, not an inconvenience, and the suite says so out loud
         # when it is forgotten.
-        "the current migration loses its entry in upgrade-report.md",
+        "the current migration loses its entry in upgrade.md section 5",
         UPGRADE_DOC,
         "- **Schema 6 \u2192 7**",
         "- **The change-request migration**",
         "tests/test_upgrade.py::"
-        "test_upgrade_report_documents_the_current_migration",
+        "test_upgrade_md_documents_the_current_migration",
     ),
     (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"
