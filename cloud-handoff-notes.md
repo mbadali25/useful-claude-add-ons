@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:50 UTC
+Last updated: 2026-10-04 16:52 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:52: Batch 1 CI: #405 + #398 GREEN (holding merge for batch merge review); #450 RED on Windows - 2 real test-portability bugs (case-insensitive FS MEMORY.md/memory.md; chmod 000 not enforced on Windows) -> fix on T-0084-build then re-merge into #403. #489 L-1503 review: 0/3/4 -> unify both gates (case-insensitive + ambiguous multi-match blocks + case-insensitive deploy key in BOTH sh and ps1); land L-1503 BEFORE #407.
 - 16:50: WAVE2 #427 L-0652 built -> b844b794 (manual sleep/wake; untrusted state=unknown(strict), allowCliApproval checked at read, wake keeps stricter night; ~37 tests; 8 sabotages). Review started.
 - 16:50: #421 fixes -> 76c85c03 (userIgnoreFilters removed per spec rule - follow-up to verify on owner vault; case-insensitive archive/kinds; realpath link checks; whole-word terms; obsidian-vault 0.5.0). Round-2 review started.
 - 16:47: #420 L-0662 review 76aba34a: 0/2/6. OWNER DECIDED: bare greetings (good night/morning) must ASK, not route to sleep/wake; explicit 'I'm heading to bed'/'I'm back' still route. Sent + rule time via pytest_rule.py, allow curly ’ in I’m.
