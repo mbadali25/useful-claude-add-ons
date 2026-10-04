@@ -730,8 +730,8 @@ def test_apply_refuses_via_other_than_command(tmp_path):
     ticket = _parent(root)
     _checked(root, ticket)
 
-    with pytest.raises(crew_split.SplitError, match="via autopilot"):
-        crew_split.apply(str(root), ticket, "autopilot", session=SESSION)
+    with pytest.raises(crew_split.SplitError, match="via robot is not one of command|autopilot"):
+        crew_split.apply(str(root), ticket, "robot", session=SESSION)
 
 
 def test_apply_refuses_when_confirm_refuses(tmp_path):
@@ -920,3 +920,216 @@ def test_check_record_holds_sha_and_turn(tmp_path):
 
     assert (record["proposal_sha256"], record["turn"], record["session"]) == (
         hashlib.sha256(path.read_bytes().rstrip()).hexdigest(), "turn-1", SESSION)
+
+
+# --- T-0058: the ticket split policy and apply --via autopilot ----------------------
+#
+# `ticket_split_policy` is T-0012's split rule (crew_autopilot._split_rule)
+# applied to the parent's spec risk, refused outright in jira and sdp mode.
+# `apply --via autopilot` asks it at apply time and needs no human turn;
+# `--via command` needs no policy.
+
+def _policy_repo(tmp_path, approval="self", allow=True, mode="plan", tracker="files",
+                 risk="high"):
+    root = make_repo(tmp_path)
+    config = {"tracker": tracker, "autopilot": {"mode": mode, "approval": approval}}
+    if allow is not None:
+        config["scope"] = {"allowCliApproval": allow}
+    (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    ticket = _parent(root) if tracker in ("files", "obsidian") else None
+    if ticket and risk != "high":
+        spec = root / ".work" / "tickets" / ticket / "spec.md"
+        text = spec.read_text(encoding="utf-8")
+        spec.write_text(text.replace("risk: high", risk, 1), encoding="utf-8", newline="\n")
+    _staged(root, ticket)
+    return root, ticket
+
+
+def _set_config(root, **changes):
+    path = root / ".crew" / "config.json"
+    config = json.loads(path.read_text(encoding="utf-8"))
+    for key, value in changes.items():
+        if key == "approval":
+            config["autopilot"]["approval"] = value
+        else:
+            config[key] = value
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+
+def test_policy_refuses_jira_even_under_self(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    _set_config(root, tracker="jira")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "/crew:split <KEY>" in got["reason"]) == (False, True), got
+
+
+def test_policy_refuses_sdp(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    _set_config(root, tracker="sdp")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], crew_split.SDP_STOP in got["reason"]) == (False, True), got
+
+
+def test_policy_refuses_unknown_tracker(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    (root / ".crew" / "crew.json").write_text("{torn", encoding="utf-8")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert got["allow"] is False, got
+
+
+def test_policy_refuses_human(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="human", risk="risk: low")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["policy"], "owner" in got["reason"]) == (False, "human", True)
+
+
+@pytest.mark.parametrize("risk", ["risk: med", "risk: high", "risk: maybe", ""])
+def test_policy_refuses_risk_not_low(tmp_path, risk):
+    root, ticket = _policy_repo(tmp_path, approval="risk", risk=risk)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["policy"]) == (False, "risk"), got
+    assert got["risk"] != "low" or got["known"] is False, got
+
+
+@pytest.mark.parametrize("allow", [None, False, "true", 1])
+def test_policy_refuses_without_allow_cli_approval(tmp_path, allow):
+    root, ticket = _policy_repo(tmp_path, allow=allow)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "allowCliApproval" in got["reason"]) == (False, True), got
+
+
+@pytest.mark.parametrize("mode", ["off", "Plan", None])
+def test_policy_refuses_unarmed(tmp_path, mode):
+    root, ticket = _policy_repo(tmp_path, mode=mode)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "not armed" in got["reason"]) == (False, True), got
+
+
+def test_policy_allows_self_any_risk(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["policy"], got["risk"]) == (True, "self", "high"), got
+
+
+def test_policy_allows_risk_low(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="risk", risk="risk: low")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["risk"], got["known"]) == (True, "low", True), got
+
+
+def test_policy_reasked_at_apply(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    assert crew_split.check(str(root), ticket)[1] == []
+    assert crew_split.ticket_split_policy(str(root), ticket)["allow"] is True
+    _set_config(root, approval="human")
+
+    with pytest.raises(crew_split.SplitError, match="autopilot.approval is human"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_apply_via_autopilot_refuses_jira_before_anything(tmp_path, monkeypatch):
+    root, ticket = _policy_repo(tmp_path)
+    _set_config(root, tracker="jira")
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    with pytest.raises(crew_split.SplitError, match="/crew:split <KEY>"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert minted == []
+
+
+def test_apply_self_files_mode_mints_children(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    before = _spec_bytes(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "autopilot")
+
+    kids = got["children"]
+    assert len(kids) == 3
+    spec = _spec_bytes(root, ticket).decode("utf-8").splitlines()
+    assert re.search(r"status: superseded(\s|$)", spec[0]), spec[0]
+    assert spec[1] == "split-into: " + ", ".join(kids)
+    assert _index_status(root, ticket) == "superseded"
+    assert (root / ".work" / "tickets" / ticket / "spec.pre-split.md").read_bytes() == before
+    crit = _criteria()
+    for kid, items in zip(kids, (crit[4:7], crit[7:10], crit[10:11])):
+        direction = (root / ".work" / "tickets" / kid / "direction.md").read_text(encoding="utf-8")
+        assert all(f"- {c}" in direction for c in items)
+        assert _index_status(root, kid) == "ready"
+
+
+def test_apply_risk_low_obsidian_mode(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = make_repo(tmp_path)
+    (root / ".crew" / "crew.json").write_text(json.dumps({"tracker": {
+        "kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo",
+                                         "board": "Board.md"}}}), encoding="utf-8")
+    (root / ".crew" / "config.json").write_text(json.dumps({
+        "autopilot": {"mode": "plan", "approval": "risk"},
+        "scope": {"allowCliApproval": True}}), encoding="utf-8")
+    (root / ".work" / "INDEX.md").write_text("T-0059 | done | - | r | old\n", encoding="utf-8")
+    ticket = _parent(root)
+    spec = root / ".work" / "tickets" / ticket / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("risk: high", "risk: low", 1),
+                    encoding="utf-8", newline="\n")
+    _staged(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "autopilot")
+
+    board = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+    assert len(got["children"]) == 3
+    assert all(_index_status(root, kid) == "ready" for kid in got["children"])
+    assert (_index_status(root, ticket), _lane_of(board, ticket)) == ("superseded", "Done")
+
+
+def test_apply_via_command_needs_no_policy(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="human", allow=None, mode="off")
+    _checked(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert len(got["children"]) == 3
+
+
+def test_apply_via_autopilot_needs_no_human_turn(tmp_path, monkeypatch):
+    root, ticket = _policy_repo(tmp_path)
+    monkeypatch.delenv(crew_split.SESSION_ENV, raising=False)
+    monkeypatch.setattr(crew_split, "confirm", lambda *a, **k: {"ok": False, "reason": "x"})
+
+    assert len(crew_split.apply(str(root), ticket, "autopilot")["children"]) == 3
+
+
+def test_apply_cli_via_autopilot_refused_names_crew_split(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="human")
+
+    run = subprocess.run([sys.executable, SCRIPT, "apply", "--root", str(root), "--ticket", ticket,
+                          "--via", "autopilot"], capture_output=True, text=True, check=False)
+
+    assert run.returncode == 1, run.stdout + run.stderr
+    assert "refused:" in run.stdout and "autopilot.approval is human" in run.stdout
+
+
+def test_split_policy_for_goals_unchanged_by_the_factored_rule():
+    """T-0012's goal split_policy and the ticket policy share one rule."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    assert callable(crew_autopilot._split_rule)  # pylint: disable=protected-access

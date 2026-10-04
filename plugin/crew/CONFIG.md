@@ -2627,7 +2627,12 @@ approval under the same `autopilot.approval`, with no key of its own: `self`
 approves the split, `risk` only when every proposed ticket is a known
 `risk: low`, `human` stops, and every setting needs `scope.allowCliApproval:
 true` and `mode: plan`; the owner's `/crew:approve goal:<slug>` receipt
-approves it at any setting (README, "Autopilot"). Its block is **repo only**: absent from `default_global_config()`, so
+approves it at any setting (README, "Autopilot"). Autopilot's size check after
+spec and after plan (T-0058) applies a ticket's split, `crew_autopilot.py split
+--apply`, under the same `autopilot.approval` and T-0012's rule on the
+parent's spec risk (`crew_split.ticket_split_policy`), with no key of its own;
+in `tracker: jira` it always stops for the owner's `/crew:split <KEY>`, and in
+`sdp` it stops. Its block is **repo only**: absent from `default_global_config()`, so
 `filter_global` prunes it from the machine file. Whether one checkout may be
 driven is a fact about that checkout.
 
@@ -2683,7 +2688,9 @@ group's hashes.
 only when `autopilot.approval` allows it (a ticket `assign` mints is written by
 `crew_ticket.py assign` and `mint`, not by this script; T-0012's `goal-propose`
 and `goal-approve` write only the working file `.work/autopilot/<slug>.json`,
-never a receipt). `approve` writes exactly what
+never a receipt; T-0058's `split --check` writes `crew_split.check`'s record and
+`split --apply` what `crew_split.apply` writes, only under
+`crew_split.ticket_split_policy`). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger

@@ -94,7 +94,8 @@ EXPECTED_CLI = {
                      "crew_autopilot.py status --root .",
                      "crew_autopilot.py goal-propose --root .",
                      "crew_autopilot.py goal-approve --root .",
-                     "route --root . --first goal"),
+                     "route --root . --first goal",
+                     "crew_autopilot.py split --root ."),
 }
 
 

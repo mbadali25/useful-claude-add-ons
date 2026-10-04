@@ -1,10 +1,10 @@
 ---
 description: Report a ticket's standing (status), or drive it through the lifecycle until a human is needed (run)
-argument-hint: "[status|run|assign|goal|focus] [ticket id | --goal <slug>]"
+argument-hint: "[status|run|assign|goal|focus|split] [ticket id | --goal <slug>]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
-Subcommands `status`, `run`, `assign`, `goal`, `focus`; a bare ticket id or nothing is `run`: drive one ticket through spec, plan, approval, implement, refresh, review and done, following each phase command's procedure here in the order `crew_autopilot.py next` names from disk, stopping when a phase needs a person. Nothing here accepts a review or skips a phase, and nothing approves except
+Subcommands `status`, `run`, `assign`, `goal`, `focus`, `split`; a bare ticket id or nothing is `run`: drive one ticket through spec, plan, approval, implement, refresh, review and done, following each phase command's procedure here in the order `crew_autopilot.py next` names from disk, stopping when a phase needs a person. Nothing here accepts a review or skips a phase, and nothing approves except
 section 3's `approve`, under the approval policy; it writes `approval.json`, `scope-tickets.json`
 on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move.
 
@@ -21,7 +21,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
 a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
 never read as a ticket; `assign`, `focus` arrive with T-0019, T-0020, `--goal` resume with L-0541). `sub=status`:
-section 1 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
+section 1 only. `sub=run`: sections 2 to 5. `sub=split`: section 3's `split-check` for `<ticket>`, then stop. `<ticket>` is route's `ticket=`, never re-read from the
 arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 
 ## 1. status
@@ -57,13 +57,17 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
 
 It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
 No output, a traceback or a non-zero exit is a stop.
-- `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
-  refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
-  named and commit it. Then `LAST=<c>`, `N+=1`, again.
+- `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as named and commit it. Then `LAST=<c>`, `N+=1`, again.
+- `phase=split-check` (the size check after spec or plan; a trigger means look, never split): run
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket>`
+judge the boundaries by the split rulebook (`crew_split.py`, crew:explorer), write `split.md` (`answered:` names every fired trigger), then
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --check`
+until `ok`, and back through `next`.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
-- any other `stop=1` - print the phase, the reason and the command the human types (may be
-  empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer
-  to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
+- `stop=1` with `phase=split-approval` - not yet a stop: run
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --apply`
+(it applies only under the approval policy, and in Jira mode always refuses); report each `child=`, or on `refused:` stop - the human types `/crew:split <ticket>`. Never run `/crew:split` yourself.
+- any other `stop=1` - print the phase, the reason and the command the human types (may be empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
 
 The policy (T-0010; `next`'s reason names it; `human` always stops) is the only writer here:
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>`
@@ -75,22 +79,13 @@ blocks, the first marked `(recommended)`, each with a `Cost:` line. Then run
 `valid=1 action=take` - add `taken: Option <id> by autopilot (<policy>)`, answer the item
 `none - <option> (autopilot)`, recheck, report each `taken:`; anything else stops.
 
-A review phase ends at its verdict: stop following `review.md` once the round is recorded, from
-`/crew:review` or inside `/crew:implement` step 6; never fix and rerun inside the phase. Report
-BLOCK and FIX lines verbatim; fixing, `review_ledger.py --accept` and `gh pr review`
-are the human's. Go back through `next`: it stops at FINDINGS or an unrefunded INCOMPLETE (a
-refunded one reruns, even straight after `/crew:review`). One extension, neither fixing nor rerunning (L-0510): after `review: auto-accept: eligible`, first run step 2d's control re-runs and, with no specialist or control BLOCK, step 3.3's `--auto-accept` and follow-up filing. A phase's own refusal - no approved plan, a red verify gate, a `/crew:done`
-check - stops here, reported verbatim; never retry around it or edit a gate. Implement's
-`status: review` edit keeps the approval (T-0026). Refresh runs after implement and before each
-later round, never after an accepted review (that stales the receipt): `next` enforces it.
+A review phase ends at its verdict: stop following `review.md` once the round is recorded, from `/crew:review` or inside `/crew:implement` step 6; never fix and rerun inside the phase. Report BLOCK and FIX lines verbatim; fixing, `review_ledger.py --accept` and `gh pr review` are the human's. Go back through `next`: it stops at FINDINGS or an unrefunded INCOMPLETE (a refunded one reruns, even straight after `/crew:review`). One extension, neither fixing nor rerunning (L-0510): after `review: auto-accept: eligible`, first run step 2d's control re-runs and, with no specialist or control BLOCK, step 3.3's `--auto-accept` and follow-up filing. A phase's own refusal - no approved plan, a red verify gate, a `/crew:done` check - stops here, reported verbatim; never retry around it or edit a gate. Implement's `status: review` edit keeps the approval (T-0026). Refresh runs after implement and before each later round, never after an accepted review (that stales the receipt): `next` enforces it.
 
 ## 4. Stops
 
 A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
-policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
-`unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
-`max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
-`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
+policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`, `max-phases`, `no-progress`, `split-approval` (unless section 3's `--apply` passes), `split-check-unknown`.
+This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up and `split --apply`'s children, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.

@@ -15,6 +15,7 @@
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
     python3 crew_autopilot.py goal-propose --root . --proposal-file <f> [--json]
     python3 crew_autopilot.py goal-approve --root . --goal <slug> [--json]
+    python3 crew_autopilot.py split --root . --ticket <id> [--check|--apply]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -24,7 +25,10 @@ phase is visible and a phase that cannot be told stops. Read-only except
 it never accepts a review. That is the single exception (T-0010, below), but
 for T-0012's goal file under `.work/autopilot/` (below), never a receipt:
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
-T-0072's `deploy-allowed` write no file. `approve` writes exactly what
+T-0072's `deploy-allowed` write no file. T-0058's `split --check` writes
+`crew_split.check`'s record and `split --apply` writes what `crew_split.apply`
+writes (the children, the parent's pre-split copy and status), only under
+`crew_split.ticket_split_policy`. `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
 all under `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
 ramp's list, on a ticket's first approval; and, when the review ledger is
@@ -76,6 +80,25 @@ ticket risk) re-asked on every call; a yes is noted in the goal file and the
 note grants nothing. It mints nothing: minting, `--goal` resume, backlog and
 caps are L-0541's, and recording the owner's receipt is approval_hook.py's.
 
+## split -- the size check after spec and after plan (T-0058)
+
+`_split_gate` runs T-0052's `crew_split.triggers` on `measure` once the spec
+validates (stage `spec`) and once the plan does (stage `plan`). Nothing fired
+continues. A measure whose source is there and cannot be read stops as
+`split-check-unknown`; a source the repo does not have at all
+(`crew_split.absent_sources`: no codemap, no review recorded) is named
+`unmeasured` and does not stop. A fired trigger with no current `split.md`
+(it fails the rulebook, or its `answered:` misses a fired trigger) is
+`split-check` (not a stop: autopilot looks, `/crew:autopilot split <id>`).
+`not-too-big` continues; `slices` continues at spec and, at plan, only when
+T-0059's `crew_split.parse_slices` passes (absent: `split-check-unknown`);
+`split` is `split-approval` (a stop; `split --apply` passes it only under
+`crew_split.ticket_split_policy`, never in Jira mode) until the parent is
+`superseded`, which reads `closed`. `split` prints the measures, `--check`
+runs `crew_split.check` plus the `answered:` rule, `--apply` runs
+`crew_split.apply(..., via="autopilot")`; a refusal ends `owner: the human
+types /crew:split <id>`.
+
 ## next -- the phase from disk, first match wins
 
   no direction.md                        brainstorm          stop
@@ -87,8 +110,10 @@ caps are L-0541's, and recording the owner's receipt is approval_hook.py's.
   `## Open questions` with an item       open-questions      stop
   no spec.md                             spec                /crew:spec <id>
   spec fails crew_ticket.validate        spec                stop
+  size check after spec (T-0058)         split-*             see below
   no plan.md                             plan                /crew:plan <id>
   plan fails crew_ticket.validate        plan                stop
+  size check after plan (T-0058)         split-*             see below
   approval not accepted                  approve             stop, unless the policy allows
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop
@@ -174,6 +199,7 @@ if __name__ == "__main__":
 
 import crew_common
 import crew_config
+import crew_split
 import crew_state
 import crew_ticket
 import review_ledger
@@ -229,6 +255,12 @@ FIXED_STOPS = (
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
+    # T-0058: the size check after spec and after plan.
+    ("split-approval", "split.md decides split: autopilot applies it only under "
+                       "autopilot.approval, never in Jira mode; else the owner runs "
+                       "/crew:split <id>"),
+    ("split-check-unknown", "a size measure whose source is there could not be read, or a "
+                            "slices decision whose ## PR slices cannot be checked yet"),
 )
 # Enforced by the command's procedure, not by `next` (which sees them only as
 # `no-progress` when the same command comes round again).
@@ -254,7 +286,8 @@ HUMAN_STOPS = (
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
-AVAILABLE = frozenset({"status", "run", "goal"})
+SUBCOMMANDS += ("split",)  # T-0058
+AVAILABLE = frozenset({"status", "run", "goal", "split"})
 ARRIVES = {"assign": "T-0019", "focus": "T-0020"}
 GOAL_FLAG = "--goal"
 GOAL_SUB = "goal"
@@ -507,6 +540,9 @@ def _phase(root, ticket, policy=True):
     if spec_only:
         return answer("spec", True, "spec.md fails crew_ticket.validate: "
                       + "; ".join(spec_only), f"/crew:spec {ticket}")
+    gate = _split_gate(top, ticket, "spec", answer, policy)
+    if gate:
+        return gate
     evidence.append(_rel(top, os.path.join(folder, "plan.md")))
     if contract["plan.md"] is None:
         return answer("plan", False, "no plan.md", f"/crew:plan {ticket}")
@@ -514,6 +550,9 @@ def _phase(root, ticket, policy=True):
     if problems:
         return answer("plan", True, "plan.md fails crew_ticket.validate: "
                       + "; ".join(problems), f"/crew:plan {ticket}")
+    gate = _split_gate(top, ticket, "plan", answer, policy)
+    if gate:
+        return gate
     approval = crew_ticket.accepted(top, ticket)
     evidence.append(_rel(top, crew_ticket.approval_path(top, ticket)))
     if approval["status"] != "approved":
@@ -528,6 +567,159 @@ def _phase(root, ticket, policy=True):
                 else POLICY_FREE_APPROVE.format(ticket=ticket))
         return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
     return _review_phase(top, ticket, evidence, answer)
+
+
+# --- T-0058: the size check after spec and after plan --------------------------------
+
+SLICES_ARRIVE = "T-0059"
+
+
+def _size_check(top, ticket, stage):
+    """`{"fired", "unknown", "unmeasured", "measures"}` from T-0052's rulebook.
+    `unknown`: `unknown:<name>` whose source is there and could not be read;
+    `unmeasured`: `{name: why}` for a source this repo does not have
+    (`crew_split.absent_sources`) -- named, never read as "not fired"."""
+    measures = crew_split.measure(top, ticket)
+    names = crew_split.triggers(measures, stage)
+    absent = crew_split.absent_sources(top)
+    blank = [n.split(":", 1)[1] for n in names if n.startswith("unknown:")]
+    return {"measures": measures, "fired": [n for n in names if ":" not in n],
+            "unknown": [n for n in blank if n not in absent],
+            "unmeasured": {n: absent[n] for n in blank if n in absent}}
+
+
+def _unmeasured_words(size):
+    return "".join(f"; unmeasured: {name} ({why})" for name, why in size["unmeasured"].items())
+
+
+def _decision_state(top, ticket, fired):
+    """`(decision, why_not_current)`: split.md's decision, current only when it
+    passes the rulebook and its `answered:` names every fired trigger."""
+    folder = crew_ticket.ticket_dir(top, ticket)
+    text = read_text(os.path.join(folder, crew_split.PROPOSAL))
+    if text is None:
+        return None, f"no {crew_split.PROPOSAL} decision yet"
+    criteria = crew_split.parent_criteria(read_text(os.path.join(folder, "spec.md")))
+    decision, problems = crew_split.check_proposal(criteria, text)
+    missing = [f for f in fired if f not in crew_split.parse_proposal(text)["answered"]]
+    if missing:
+        problems = problems + [f"answered: does not name {', '.join(missing)}"]
+    if problems:
+        return decision, f"{crew_split.PROPOSAL} is not current: " + "; ".join(problems)
+    return decision, ""
+
+
+def _slice_problems(top, ticket):
+    """T-0059's `parse_slices` on plan.md: its problems, or None when it is
+    absent or its answer cannot be read."""
+    parse = getattr(crew_split, "parse_slices", None)
+    if not callable(parse):
+        return None
+    plan = read_text(os.path.join(crew_ticket.ticket_dir(top, ticket), "plan.md")) or ""
+    got = parse(plan)  # pylint: disable=not-callable
+    problems = got[1] if isinstance(got, tuple) and len(got) == 2 else (
+        got.get("problems") if isinstance(got, dict) else None)
+    return list(problems) if isinstance(problems, (list, tuple)) else None
+
+
+def _split_gate(top, ticket, stage, answer, policy=True):
+    """None to continue, or `next`'s answer for the size check at `stage`
+    (module docstring, T-0058). A trigger means look, never split."""
+    look = f"/crew:autopilot split {ticket}"
+    try:
+        size = _size_check(top, ticket, stage)
+        if size["unknown"] or not size["fired"]:
+            decision, why = None, ""
+        else:
+            decision, why = _decision_state(top, ticket, size["fired"])
+        slices = (_slice_problems(top, ticket)
+                  if not why and decision == "slices" and stage == "plan" else [])
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return answer("split-check-unknown", True, f"the size check after {stage} could not "
+                      f"run ({type(exc).__name__}: {exc}) - a person looks", look)
+    if size["unknown"]:
+        return answer("split-check-unknown", True, f"the size check after {stage} could not "
+                      f"read {', '.join(size['unknown'])} (its source is there): could not "
+                      "tell is not \"small\" - a person fixes the source or decides",
+                      look)
+    if not size["fired"]:
+        return None
+    fired = f"after {stage}: {', '.join(size['fired'])} fired (a trigger means look, never split)"
+    if why:
+        return answer("split-check", False, f"{fired}; {why}{_unmeasured_words(size)}", look)
+    if decision == "split":
+        hint = ""
+        if policy:
+            rule = crew_split.ticket_split_policy(top, ticket)
+            hint = (f"; autopilot may apply it: crew_autopilot.py split --apply "
+                    f"({rule['reason']})" if rule["allow"] else f"; {rule['reason']}")
+        return answer("split-approval", True, f"{fired}; {crew_split.PROPOSAL} decides split, "
+                      f"not yet applied{hint}", f"/crew:split {ticket}")
+    if slices is None:
+        return answer("split-check-unknown", True, f"{fired}; the slices decision needs the "
+                      f"plan's ## PR slices checked, which arrives with {SLICES_ARRIVE}",
+                      f"/crew:plan {ticket}")
+    if slices:
+        return answer("plan", True, f"{fired}; the plan's ## PR slices fail: "
+                      + "; ".join(str(p) for p in slices), f"/crew:plan {ticket}")
+    return None
+
+
+def split_report(root, ticket):
+    """`split`'s bare lines: the measures, the fired triggers, the unmeasured
+    and unknown ones, the tracker, the current decision and the policy."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    folder = crew_ticket.ticket_dir(top, ticket)
+    stage = "plan" if os.path.isfile(os.path.join(folder, "plan.md")) else "spec"
+    size = _size_check(top, ticket, stage)
+    decision, why = _decision_state(top, ticket, size["fired"])
+    rule = crew_split.ticket_split_policy(top, ticket)
+    lines = [" ".join(f"{k}={crew_split._fmt(v)}"  # pylint: disable=protected-access
+                      for k, v in size["measures"].items()),
+             f"stage={stage} triggers: {', '.join(size['fired']) or 'none'}"]
+    lines += [f"unknown: {name} (its source is there and could not be read)"
+              for name in size["unknown"]]
+    lines += [f"unmeasured: {name} ({w})" for name, w in size["unmeasured"].items()]
+    lines += [f"tracker={crew_split.tracker_mode(top)}",
+              f"decision={decision or 'none'} current={int(not why)}"
+              + (f" ({why})" if why else ""),
+              f"policy: {'allow' if rule['allow'] else 'refuse'} - {rule['reason']}"]
+    return [_one_line(line) for line in lines]
+
+
+def _split_main(args):
+    """`split` (exit 0), `split --check` (0 pass, 1 problems) and `split
+    --apply` (0 applied, 1 refused, the owner's /crew:split last). A crash is
+    a refusal, exit 1."""
+    lines, code = [], 0
+    try:
+        top = crew_ticket.toplevel(args.root) or os.path.abspath(args.root)
+        crew_ticket.check_ticket(args.ticket)
+        if args.check:
+            folder = crew_ticket.ticket_dir(top, args.ticket)
+            stage = "plan" if os.path.isfile(os.path.join(folder, "plan.md")) else "spec"
+            decision, problems = crew_split.check(top, args.ticket)
+            fired = _size_check(top, args.ticket, stage)["fired"]
+            answered = crew_split.parse_proposal(
+                read_text(os.path.join(folder, crew_split.PROPOSAL)) or "")["answered"]
+            missing = [f for f in fired if f not in answered]
+            if missing:
+                problems = problems + [f"answered: does not name {', '.join(missing)}"]
+            lines = [f"problem: {p}" for p in problems] or [f"ok decision={decision}"]
+            code = 1 if problems else 0
+        elif args.apply:
+            got = crew_split.apply(top, args.ticket, "autopilot")
+            lines = ([f"child={kid}" for kid in got["children"]]
+                     + [f"parent={args.ticket} status={got['parent']}"]
+                     + [f"warning: {w}" for w in got["warnings"]])
+        else:
+            lines = split_report(top, args.ticket)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        lines, code = [f"refused: {_failure(exc)}"], 1
+        if args.apply:
+            lines.append(f"owner: the human types /crew:split {args.ticket}")
+    sys.stdout.write("\n".join(_one_line(line) for line in lines) + "\n")
+    return code
 
 
 def _current_rounds(ledger):
@@ -1716,7 +1908,22 @@ def split_policy(root, slug):
     words = (f"goal risk: {risk['risk']}" if risk["known"]
              else "a proposed ticket's risk is not low|med|high (reads as high)")
     all_low = risk["known"] and risk["risk"] == "low"
-    # First refusal wins; only `self`, or `risk` with every ticket low, is left.
+    why = _split_rule(conf, warnings, allowed, all_low,
+                      f"autopilot.approval is risk and the {words}, not every ticket low")
+    if why:
+        return dict(result, reason=why)
+    return dict(result, allow=True, reason=(
+        f"autopilot.approval is self ({words})" if policy == SELF
+        else "autopilot.approval is risk and every proposed ticket is risk: low"))
+
+
+def _split_rule(conf, warnings, allowed, low, risk_refusal):
+    """T-0012's split rule, slug-free (T-0058 applies it to a ticket's split
+    too): the first refusal's reason, or "" when autopilot may approve. `conf`
+    is `settings`'s answer, `allowed` `crew_ticket.cli_approval_allowed`'s,
+    `low` whether the risk is a KNOWN `low`; `risk_refusal` names the risk
+    under `risk`. Only `self`, or `risk` with a known `low`, is left."""
+    policy = conf["approval"]
     refusals = (
         (policy == UNKNOWN, f"could not tell the approval policy "
                             f"({'; '.join(warnings) or 'unreadable'}); the human approves the "
@@ -1728,15 +1935,9 @@ def split_policy(root, slug):
         # `human`, and anything settings did not map to a policy: never approves.
         (policy not in (SELF, RISK), f"autopilot.approval is {policy}: the split waits for "
                                      "the owner"),
-        (policy == RISK and not all_low, f"autopilot.approval is risk and the {words}, not "
-                                         "every ticket low"),
+        (policy == RISK and low is not True, risk_refusal),
     )
-    for refused, why in refusals:
-        if refused:
-            return dict(result, reason=why)
-    return dict(result, allow=True, reason=(
-        f"autopilot.approval is self ({words})" if policy == SELF
-        else "autopilot.approval is risk and every proposed ticket is risk: low"))
+    return next((why for refused, why in refusals if refused), "")
 
 
 def _owner_receipt(top, slug, digest):
@@ -1909,8 +2110,9 @@ def route_args(root, text):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done", NEEDS_OWNER)}
+    "done", NEEDS_OWNER, "split-approval", "split-check-unknown")}
 WAITING["closed"] = "nobody"
+WAITING["split-check"] = "autopilot"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
 # UNKNOWN is also a string a file can hold, with a count computed beside it.
@@ -2245,6 +2447,12 @@ def main(argv):
         action.add_argument("--root", default=".")
     sub.choices["goal-propose"].add_argument("--proposal-file", required=True)
     sub.choices["goal-approve"].add_argument("--goal", required=True)
+    split = sub.add_parser("split")
+    split.add_argument("--root", default=".")
+    split.add_argument("--ticket", required=True)
+    given_split = split.add_mutually_exclusive_group()
+    given_split.add_argument("--check", action="store_true")
+    given_split.add_argument("--apply", action="store_true")
     deploy = sub.add_parser("deploy-allowed")
     deploy.add_argument("--json", action="store_true")
     deploy.add_argument("--root", default=".")
@@ -2269,6 +2477,8 @@ def main(argv):
         return _policy_main(args)
     if args.action in ("goal-propose", "goal-approve"):
         return _goal_main(args)
+    if args.action == "split":
+        return _split_main(args)
     if args.action == "status":
         try:
             result = status(args.root, args.ticket or None)

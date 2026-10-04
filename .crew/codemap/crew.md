@@ -1230,6 +1230,34 @@ Obsidian vault). A CLI the commands call, not a hook.
   HARNESS, so its ten mutations were run by hand and are registered by a
   separate tooling PR.
 
+## Autopilot's size check and `/crew:autopilot split` (T-0058)
+
+- DERIVED (T-0058; cites are line numbers on T-0058-build at the commit that
+  adds this section, behind the anchor above like the rest of the file):
+  `_phase` calls `_split_gate` after the spec validates
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:543`) and after the plan
+  validates (`:553`). `_split_gate` (`:625`) reads `_size_check` (`:577`:
+  `crew_split.measure`, `triggers`, `absent_sources`) and `_decision_state`
+  (`:595`: `check_proposal` plus the `answered:` rule), and T-0059's
+  `parse_slices` through `_slice_problems` (`:612`, `SLICES_ARRIVE` `:574`).
+  `split_report` (`:668`) and `_split_main` (`:690`) are the `split`
+  subcommand; `split` joins the router at `:289-290` (appended under the
+  `SUBCOMMANDS` line, which a sabotage anchor pins) and `WAITING` at
+  `:2113-2115`. T-0012's rule is slug-free as `_split_rule` (`:1920`), which
+  `split_policy` (`:1886`) and `crew_split.ticket_split_policy`
+  (`plugin/crew/hooks/scripts/crew_split.py:592`) both call. `VIAS` gains
+  `autopilot` (`plugin/crew/hooks/scripts/crew_split.py:110`, `JIRA_STOP`
+  `:112`); `apply` asks the policy for it (`:744`) and skips `confirm`;
+  `check` records `policy_at_check` for the report only (`:533-537`).
+  `absent_sources` (`:244`) is what the gate names `unmeasured`.
+- Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
+  block at the end of `plugin/crew/tests/test_crew_split.py`, on the
+  `crew_split` rule in `.crew/verify.json`.
+  JUDGEMENT: a source the repository lacks (no codemap, no review recorded)
+  not stopping the run is this ticket's reading of the spec's "unreadable
+  measure"; a stop on every run of a repo without metrics would be the
+  "check that always fires" the plan's risk names.
+
 ## The artifact refresh check (T-0008, crew 1.0.36)
 
 `plugin/crew/hooks/scripts/crew_refresh_check.py` answers one read-only

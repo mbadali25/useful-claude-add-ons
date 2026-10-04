@@ -604,4 +604,4 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
            for text in ("approve T-1", "questions-check T-1")]
 
     assert (crew_autopilot.SUBCOMMANDS, got) == (
-        ("status", "run", "assign", "goal", "focus"), [True, True])
+        ("status", "run", "assign", "goal", "focus", "split"), [True, True])
