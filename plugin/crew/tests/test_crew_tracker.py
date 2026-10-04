@@ -2264,7 +2264,7 @@ def test_cli_accepts_l_and_w_ids(tmp_path, ticket):
 
     done = _cli(root, "move", "--ticket", ticket, "--to", "planned")
 
-    assert (done.returncode, done.stdout) == (0, f"files: updated: .work/INDEX.md spec -> planned\n")
+    assert (done.returncode, done.stdout) == (0, "files: updated: .work/INDEX.md spec -> planned\n")
 
 
 @pytest.mark.parametrize("ticket", ["Complete", "complete", "T-0042\n"])

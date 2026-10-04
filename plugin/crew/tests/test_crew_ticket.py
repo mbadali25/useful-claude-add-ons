@@ -2,22 +2,25 @@
 scope mode and its ten-ticket ramp, and the successor-plan seam it drives in
 review_ledger.py.
 """
+import ast
 import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_common
 import crew_ticket
 import review_ledger as rl
 import review_patch
 import scope_report
 from review_fixtures import git
-from scope_fixtures import SCRIPTS, common_dir, make_repo, make_ticket, ready
+from scope_fixtures import SCRIPTS, archive_ticket, common_dir, make_repo, make_ticket, ready
 
 _CLI = os.path.join(SCRIPTS, "crew_ticket.py")
 
@@ -885,12 +888,6 @@ def test_autopilot_single_ticket_approval_still_records_under_an_allowing_policy
 
 
 # --- where a ticket lives: live or Complete/ (L-0509) ------------------------------
-
-import ast  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
-import re  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
-
-import crew_common  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
-from scope_fixtures import archive_ticket, both_places  # noqa: E402  pylint: disable=wrong-import-position
 
 
 def _tickets(root):
