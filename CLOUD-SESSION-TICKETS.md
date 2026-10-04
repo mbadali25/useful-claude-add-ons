@@ -149,7 +149,7 @@ Held for your go: L-0674 (#404).
 | L-0674 | #404 | not started (spec only) | T-0082 child 2: the verify gate ends a hung rule itself and reports it FAILED (could not t |
 | L-0675 | #425 | not started (spec only) | T-0083 child 1: crew passes the repo's project to vault recall and falls back cleanly on a |
 | L-0676 | #429 | not started (spec only) | T-0083 child 2: sabotage mutations prove the recall project tests (tooling-only) |
-| L-0677 | #456 | not started (spec only) | crew_memory.py save - write the vault note, then turn the native memory into a pointer |
+| L-0677 | #456 | in review: round 2 at febb3d3b had 0 BLOCK, 2 FIX (lock error crash, stale-lock race); fixing (kernel locks) | crew_memory.py save - write the vault note, then turn the native memory into a pointer |
 | L-0678 | #462 | not started (spec only) | crew_memory.py migrate and restore - convert existing native memories, previewed and opt-i |
 | L-0679 | #466 | not started (spec only) | sabotage entries for crew_memory.py (tooling-only PR) |
 | L-0680 | #400 | not started (spec only) | T-0096 child 1: the session hooks (notify, handoff-read, handoff-write, context-watch) inh |
