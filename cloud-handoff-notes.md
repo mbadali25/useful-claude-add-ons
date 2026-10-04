@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:33 UTC
+Last updated: 2026-10-04 11:34 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:34: Builders STARTED (owner-approved specs): T-0016-build 1.0.351 (opens PR; unblocks #356), T-0037-build 1.0.352 PR A feature only (PR B harness sabotage = follow-up; unblocks #364/#365/#366), T-0049-build 1.0.353 (measures heartbeat survival in Bash tool first; fallback pre-approved; unblocks #363). Each builder opens its own PR. Also running: #341 L-0509, #346 T-0039 builds; Windows-flaky fix agent. Next: #360 re-run failed jobs when run 37197995041 completes.
 - 11:33: OWNER DECISIONS: (1) CLOSED #274 T-0104 and #275 T-0500 (885 behind; specs kept in docs/handoff/cloud/T-0104.md, T-0500.md; branches kept) - comment on each. (2) APPROVED reconstructed specs T-0016, T-0037, T-0049 as written (all OWNER CHECKs) -> builders starting: T-0016-build (1.0.351), T-0037-build (1.0.352, feature PR; harness sabotage PR separate), T-0049-build (1.0.353). (3) Train: keep 1-by-1 per-PR review+CI, land small/docs-only first, land-prep in parallel.
 - 11:30: OWNER (now): push a notes line after EVERY action so a lost session/container can resume. #353 fix 4cb8fbcd (1.0.349; CONFIG 74/135/61, §11 61, codemap/mmd cites) re-review 0/0/1 CLEAN (NIT CONFIG.md:881 '58 is leaf_paths' -> 61, carry at landing). #360 CI on a30f6679: verify-gate GREEN (markdown fix works); crew-windows-default 1/3 RED again but a DIFFERENT test: test_crew_ticket_mint::test_concurrent_mints_distinct (1 of 8 concurrent mints exit 1 on Windows). Run 1 was test_verify_gate_stop_budget timing 2!=1. main's own run at edb2b8ff also red on the same shard -> pre-existing Windows flakiness, not #360's. Re-run of failed jobs refused (run still in progress, shard 3/3) -> do it when run completes (check-in 11:33). Agent started: root-cause both Windows tests on main, fix PR from branch fix-windows-flaky-crew-tests (crew 1.0.350). Running: builds #341 L-0509 (1.0.347), #346 T-0039 (1.0.348). Helper: scratchpad note.sh appends+pushes a log line.
 - 11:27: Review-clean on 155fe6d8 (wait their turn behind #360): #352 498cc1ed (1.0.341), #351 faa36c21 (1.0.342; NIT: 5 diagram header comments still say 'merging edb2b8ff'), #368 5e8a1eca (1.0.340; merge needed test fix 59840979 - compare _current_hash()[0] as receipt does; NIT: branch-based variant test), #344 32c9f648 (1.0.345, localgpu 0.1.21), #342 cbc2d1e2 (1.0.344; test_crew_config 3399 lines; CONFIG counts 74/132/58), #357 abe796e6 (1.0.343 + docs-only cites commit; FIXes fixed: focus names .scope-base, surfaces scope-base message, 2 tests sabotage-red; 90 codemap cites re-derived). #353 land-prep 0ee13b5d (1.0.346): review 1 FIX (CONFIG.md counts still 72/130 vs 74/135/61) + NITs -> fixer, re-version 1.0.349. NOTE #351 and #353 add config leaves: after #360 lands they need crew_keys.py KEY_META rows. Builds started: #341 L-0509 (1.0.347), #346 T-0039 (1.0.348). Version placeholders in use: 1.0.340-1.0.349.
