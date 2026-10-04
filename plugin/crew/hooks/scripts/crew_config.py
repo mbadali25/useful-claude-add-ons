@@ -378,6 +378,12 @@ def default_config():
         # never off -- which is a property of the tier ORDER in
         # `crew_state.CHANGE_REQUIREMENTS`, not of a second mechanism.
         "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
+        # T-0066: commit trailers crew reports (`crew_trailers.py --check`,
+        # run by `/crew:done`; nothing refuses them yet). Both layers, combined by
+        # UNION in `crew_trailers.forbidden`, never by precedence -- a cloned
+        # repo's `[]` must not disarm the machine owner's list. The list is
+        # the switch: `[]` means off.
+        "git": {"forbiddenTrailers": []},
         # crew 1.0 T3: the plan-approval + scope guard and the Stop-time
         # completion audit (scope_guard.py, completion_audit.py). `off` by
         # default -- a new blocking hook starts disarmed. `auto` is `report`
@@ -591,6 +597,10 @@ def default_global_config():
         # here whose two layers do not combine by precedence: see
         # `crew_state.CHANGE_REQUIREMENTS` and `resolve_ratcheted`.
         "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
+        # T-0066: the owner's forbidden commit trailers. Both layers, combined
+        # by UNION in `crew_trailers.forbidden`, never by precedence; `[]`
+        # means off.
+        "git": {"forbiddenTrailers": []},
         # T-0023's routing switch, settable machine-wide (see the comment in
         # `default_config()` for why a repo file can still veto it).
         "route": {"enabled": False},
