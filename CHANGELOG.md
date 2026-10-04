@@ -53,6 +53,118 @@ All notable changes to this repository are documented here. Format follows [Keep
   refresh writes a README its Touch does not name is flagged by the Stop audit:
   name the README in Touch.
 
+### Changed — `crew` 1.0.322: the review bundle and the completion audit account for merged main (T-0100)
+
+- **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
+  latest merged integration commit (`git merge-base HEAD <ref>`, `<ref>` from
+  `scope_base._default_ref`) and holds the one rule both consumers share: a path
+  leaves the changed set when its working-state content and mode are
+  byte-identical to that commit. `review_patch.py` diffs from a synthetic base
+  tree (the start's tree with each such path set to its working-state entry,
+  built in a second temporary index), so the patch, `entries` and every file
+  list drop those paths. A file main changed that the ticket changes again is
+  diffed from the merged commit's version instead of the start's, so main's
+  lines are context and only the ticket's are `+`/`-` (review round 1: the
+  first build showed main's landed lines as the ticket's additions). The
+  manifest gains `merged_main` (ref, commit, applies, reason, dropped,
+  diffed_from_merged) and `bundle_base_tree`, `base` stays the recorded
+  start, and the stderr summary carries `merged-main=`. `completion_audit.py`
+  leaves the same paths out, including a merged-in path taken out of the
+  index (`git rm --cached`) whose file on disk is still the merged commit's,
+  which the bundle's `add -A` stages back and drops; its verdict prints
+  `merged main <sha> (<ref>): <n> path(s) identical to it not counted`, and
+  `merged main: could not tell` on a pass as well as a failure. The reviewer's prompt
+  prints a `merged main:` line; `--check-receipt` names the merged commit.
+- **Why.** Both diffed from the ticket's recorded start, so after a merge of
+  main T-0092's round-2 bundle re-carried three landed tickets and its
+  `/crew:done` check 3 flagged 16 merged-in paths; T-0075's flagged 89. Both
+  were waived by hand as merge artifacts.
+- **Could not tell.** No integration ref, a detached HEAD, or git giving no
+  answer: nothing is dropped, and the manifest, stderr (`merged-main=could-not-tell`),
+  prompt, audit verdict and receipt check each say `could not tell`.
+- **Receipt.** A merge of main that touches no reviewed path keeps an
+  accepted receipt current (the line says how many paths it left out); one
+  that changes a reviewed path stales it, conflict or not (that file's diff
+  now starts from main's version), and names the merged commit. A
+  receipt recorded before 1.0.202 on a branch that had already merged main
+  reads stale once. The same fix landing byte-identical on main and on the
+  ticket drops out of both.
+- **Unchanged.** HEAD on the integration branch itself, or no merge of it past
+  the start: byte-identical to the crew before this entry. `completion_audit.changed_paths` without
+  the new argument (the refresh check's caller), Touch membership, the
+  refresh-artifact allowance, `scope_base.py`, and `scope_base.py --changed` /
+  `scope_report.py` (filed to `TODO.md`).
+- **Sabotage.** 33 entries across `plugin/crew/tests/sabotage_scope.py` and
+  `sabotage_review.py`, one or more for every merged-main check: each
+  could-not-tell cause (no ref, detached HEAD, merge-base and is-ancestor
+  failing), the ancestor and on-main tests, the fast-forward, `keep` unfiltered
+  and widened through the module, bash and PowerShell audits, the audit's
+  untracked handling both ways, its `merged` argument and both verdict lines,
+  the bundle's patch, `entries`, merged-commit and fork bases, the summary and
+  nothing-to-review lines, the prompt lines and both receipt notes. Each was
+  run in the foreground against the tracked file, seen RED on an assertion,
+  and restored with `git checkout --` to its HEAD blob.
+- **Successor (round 2).** Two FIXes from the second review round.
+  `completion_audit.py` judges an untracked merged-in path by the mode
+  `git add` would record: the execute bit counts only when `core.fileMode` is
+  not false (unset or unreadable reads true, so a mismatch is counted, never
+  dropped; measured on git 2.53: 100644 under `false` whatever the bit), so the
+  audit and the bundle's `add -A` agree under both settings, and the mode half
+  of the identity test now has a failing control. `review_patch.py` records the
+  fork lookup: `merged_main.fork` is `git merge-base <start> <merged>`, or
+  `null` with a `fork_reason` when git gives no answer; then paths main also
+  changed are still diffed from the start (more shown, never less), and the
+  stderr summary (`diffed-from-merged=could-not-tell`), the prompt's
+  `merged main:` line and `--check-receipt`'s `fork: could not tell` all say
+  so. A manifest without the key, from an older crew, reads as before. The
+  step-2 exit-2 `echo` in `review.md` is kept (its old text is false in the
+  merged-main exit-2 case), permitted by a spec amendment and pinned by a test.
+  Sabotage entries (l)-(q): the identity test reduced to the blob id,
+  `core.fileMode` ignored, `fork_reason` never written, the stderr count
+  printed on a failed lookup, the prompt clause dropped, the receipt note
+  dropped; each run by hand, RED on an assertion, restored to its HEAD blob.
+- Bumped to `1.0.202` (the coordinator's assigned number; 1.0.55, 1.0.60, 1.0.62, 1.0.70,
+  1.0.71, 1.0.76 and 1.0.166 on its branch before it, each re-set after a merge of main). Built on
+  origin/main at crew 1.0.154 (since merged up to main 4f6ef540, crew 1.0.162) merged with T-0061's harness half (`origin/T-0061-harness`,
+  PR #378, which lands first). `merged_main.resolve` now reads the integration ref through
+  T-0061's `scope_base.base_branch` (so `tickets.baseBranch` decides it), and a configured
+  base branch that names no commit is could-not-tell with T-0061's own reason, never a fall
+  back to `origin/main`; two new `test_merged_main.py` cases and two sabotage entries pin it.
+- **Harness PR.** Every production file here is review/gate harness (owner rule T-0087):
+  `merged_main.py` joins `HARNESS` in `scripts/check-tooling-pr.py` (and the harness rule's
+  paths in `.crew/verify.json`), because the review bundle and the completion audit both run
+  its rule. The `/crew:done` check 3 paragraph, a prompt outside the harness, is left at
+  main's text and filed to `TODO.md` for its own PR.
+
+### Added — `crew` 1.0.321: auto-resume types the resume command into its own session (T-0013)
+
+- On the SessionStart after `/clear` or a manual `/compact`, an armed machine (`resume.auto`, T-0006)
+  now TYPES the command `decide` rendered, where the terminal can be driven. The context hook runs its
+  own flavour's sender in resume mode (`auto-clear.sh --resume`, `auto-clear.ps1 -Resume`) before its
+  per-event claim, and names the outcome: `Auto-resume: typing /crew:done T-0001 into this session in
+  2s (method tmux); ...`, or T-0006's line plus `Auto-resume was not typed: <reason>.` No new hook.
+- `crew_autocycle.resume_plan` decides: `decide` (off is silent, any other non-run refuses), then
+  `onlyRepos`/`onlySessions` (silent), then the method from `context.autoClear` (`enabled` is not
+  needed): tmux into the pane whose pid is an ancestor; `auto` on native Windows is `notify`, which
+  types, claims and records nothing; `sendkeys` only by name, on the `.ps1`; `wtype` and `xdotool`
+  refused. CLI `resume-plan` and `probe`.
+- The sender claims a per-handoff marker `<git-common-dir>/crew/resume-typed-<sha256[:16]>` after
+  every refusal, records the run with `crew_resume.py record` (a failed record types nothing), then
+  spawns. tmux: `resume.typeDelaySeconds`, then a ready probe (the `❯` input line between two rule
+  lines, empty once dim placeholder runs are removed, no `esc to interrupt`) every 250 ms up to
+  `resume.readyTimeoutSeconds`, then `CREW_AUTOCLEAR_INHIBIT`, then the text and, 0.5 s later, Enter
+  (the spike's paste rule). Windows: the existing child, delay, focus check, tab recheck, inhibit.
+- New machine keys `resume.typeDelaySeconds` (2, from the T-0013 spike: input ready by 0.134 s on
+  Claude Code 2.1.282) and `resume.readyTimeoutSeconds` (15), in both templates and crew-setup's copy;
+  read from the machine file only. Repo leaf count 130 -> 132.
+- `test_resume_typing.py` (must-fire and must-not-fire for each rule, sh and ps1, the hook entry
+  point) and `test_resume_typing_structure.py` (gate order in both senders' source). Every case sets
+  `CREW_AUTOCLEAR_INHIBIT`, a recording tmux stub and a stub window list. `.crew/verify.json` gains
+  their rule. The `/clear` path is unchanged. The sabotage entries are harness (T-0087) and land in
+  their own PR (TODO.md).
+- Docs: README, CONFIG.md §14b, crew-context SKILL.md, the auto-cycle guide source: the typing path,
+  every refusal, the delay and its limit (a delay is a guess; Windows has no probe).
+
 ### Changed — `crew` 1.0.256: `tickets.baseBranch`, the branch ticket branches are cut from (T-0061)
 
 - New repo-only config key `tickets.baseBranch` (default `null`, meaning `origin/HEAD`'s target,

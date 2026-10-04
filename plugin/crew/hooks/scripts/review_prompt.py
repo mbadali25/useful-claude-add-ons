@@ -54,6 +54,7 @@ import sys
 
 import ci_receipt
 import crew_standards
+import merged_main
 import recurring_findings
 import review_checks
 import review_gate
@@ -116,6 +117,7 @@ def _bundle_block(manifest):
                    + (", ".join(excluded) if excluded else "none"))
     else:
         out.append("  excluded: not recorded by this manifest (unknown)")
+    out.append(_merged_main_line(manifest.get("merged_main")))
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
     for key, label in (("renames", "renamed"), ("mode_changes", "mode changed"),
@@ -124,6 +126,38 @@ def _bundle_block(manifest):
         if manifest.get(key):
             out.append(f"  {label}: {', '.join(manifest[key])}")
     return out
+
+
+def _merged_main_line(merged):
+    """What the bundle left out as identical to the merged integration commit
+    (T-0100), could-not-tell, none, or not recorded -- never silent."""
+    if not isinstance(merged, dict):
+        return "  merged main: not recorded"
+    if merged.get("applies"):
+        dropped = merged.get("dropped") or []
+        against = merged.get("diffed_from_merged") or []
+        return (f"  merged main: {str(merged.get('commit'))[:12]} ({merged.get('ref')}) - "
+                f"{len(dropped)} path(s) identical to it left out: "
+                f"{', '.join(dropped) if dropped else 'none'}"
+                + (f"; {len(against)} path(s) main also changed diffed from it, so main's "
+                   f"lines there are context: {', '.join(against)}" if against else "")
+                + _fork_clause(merged))
+    if merged.get("commit") is None:
+        return (f"  merged main: {merged_main.UNKNOWN} - {merged_main.bare_reason(merged)}; "
+                "nothing left out")
+    return f"  merged main: none since the ticket start ({merged_main.bare_reason(merged)})"
+
+
+def _fork_clause(merged):
+    """The could-not-tell clause when the fork lookup failed (`fork` recorded as
+    null): which paths main also changed is unknown, so none were diffed from
+    the merged commit. A manifest without the key (an older crew) adds nothing."""
+    if merged.get("fork", "") is not None:
+        return ""
+    reason = str(merged.get("fork_reason") or "could not tell: the fork lookup gave no answer")
+    reason = reason[len("could not tell: "):] if reason.startswith("could not tell: ") else reason
+    return (f"; could not tell which paths main also changed ({reason}), so main's lines "
+            "there may read as the ticket's")
 
 
 def _spec_block(root, ticket):

@@ -12,6 +12,7 @@ REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
 REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
+MERGED_MAIN = os.path.join(CREW, "hooks", "scripts", "merged_main.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
 REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
 
@@ -33,8 +34,8 @@ REVIEW_FIX_MUTATIONS = (
         # index, or committed at the base, reach the bundle and its hash.
         "the bundle diff no longer excludes .work",
         REVIEW_PATCH,
-        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)\n',
-        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree])\n',
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree] + only)\n',
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree])\n',
         ("tests/test_review_patch.py::"
          "test_work_entries_already_in_the_index_stay_out_of_the_bundle"),
     ),
@@ -451,6 +452,133 @@ REVIEW_FIX_MUTATIONS = (
         '    for line in (jsonl or "").splitlines():\n',
         ("tests/test_review_verdict.py::"
          "test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
+    ),
+    # T-0100: paths identical to merged main leave the bundle, and the reviewer
+    # and the receipt check are told. Each run by hand against the tracked
+    # file, restored with `git checkout`.
+    (
+        "the bundle diffs from the ticket start instead of the synthetic base",
+        REVIEW_PATCH,
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree] + only)\n',
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)\n',
+        "tests/test_review_patch.py::test_merged_main_paths_leave_the_bundle",
+    ),
+    (
+        "the manifest entries read the ticket start instead of the synthetic base",
+        REVIEW_PATCH,
+        "        entries = _entries(root, tree, working_tree)\n",
+        "        entries = _entries(root, base_sha, working_tree)\n",
+        "tests/test_review_patch.py::test_merged_main_paths_leave_the_bundle",
+    ),
+    (
+        "the reviewer is not told what merged main left out",
+        REVIEW_PROMPT,
+        '    out.append(_merged_main_line(manifest.get("merged_main")))\n',
+        "",
+        "tests/test_review_prompt.py::test_build_names_the_merged_main_line[could-not-tell]",
+    ),
+    (
+        "a stale receipt hides a could-not-tell merge of main",
+        REVIEW_LEDGER,
+        '                       f"{_merged_note(merged, stale=True)}")\n',
+        '                       "")\n',
+        "tests/test_review_receipt.py::test_check_receipt_stale_message_says_could_not_tell",
+    ),
+    # T-0100 review round 1: every merged-main bundle and receipt check gets a
+    # mutation. Each run by hand in the foreground against the tracked file,
+    # restored with `git checkout --`; output in .work/tickets/T-0100/sabotage-r1.txt.
+    (
+        "a path main also changed is diffed from the start",
+        REVIEW_PATCH,
+        '    against = sorted((by_main[p] for p in kept if p in by_main), key=lambda e: e["path"])\n',
+        "    against = []\n",
+        "tests/test_review_patch.py::test_a_ticket_edit_on_top_of_merged_mains_edit_stays_in_the_bundle",
+    ),
+    (
+        "main's changes are read from the start instead of the fork",
+        REVIEW_PATCH,
+        '                _parse_raw(_run_raw(root, raw + [fork, merged["commit"]] + only))}\n',
+        '                _parse_raw(_run_raw(root, raw + [base_sha, merged["commit"]] + only))}\n',
+        "tests/test_review_patch.py::"
+        "test_a_start_after_the_fork_diffs_only_mains_paths_from_the_merged_commit",
+    ),
+    (
+        "the reviewer is not told which paths are diffed from merged main",
+        REVIEW_PROMPT,
+        '                   f"lines there are context: {\', \'.join(against)}" if against else "")\n',
+        '                   f"lines there are context: {\', \'.join(against)}" if False else "")\n',
+        "tests/test_review_prompt.py::test_build_names_the_merged_main_line"
+        "[applies-diffed-from-merged]",
+    ),
+    (
+        "a detached HEAD bundles as though a merge applied",
+        MERGED_MAIN,
+        '    if not branch:\n        return {"ref": ref, "commit": None,',
+        '    if False:\n        return {"ref": ref, "commit": None,',
+        "tests/test_review_patch.py::test_could_not_tell_bundles_everything_and_says_so",
+    ),
+    (
+        "the summary line reads could-not-tell as none",
+        REVIEW_PATCH,
+        '    return " merged-main=could-not-tell" if merged["commit"] is None else " merged-main=none"\n',
+        '    return " merged-main=none"\n',
+        "tests/test_review_patch.py::test_could_not_tell_bundles_everything_and_says_so",
+    ),
+    (
+        "nothing-to-review after a merge says the base matches",
+        REVIEW_PATCH,
+        '    if code == EXIT_NOTHING_TO_REVIEW and merged["dropped"]:\n',
+        "    if False:\n",
+        "tests/test_review_patch.py::test_everything_merged_and_nothing_else_is_nothing_to_review",
+    ),
+    (
+        "the bundle never leaves out what merged main already holds",
+        REVIEW_PATCH,
+        '    if not merged["applies"]:\n        return base_tree, merged, [], []\n',
+        '    if True:\n        return base_tree, merged, [], []\n',
+        "tests/test_review_receipt.py::"
+        "test_check_receipt_survives_a_merge_of_main_that_touches_no_reviewed_path",
+    ),
+    (
+        "a stale receipt does not name the merged commit",
+        REVIEW_LEDGER,
+        '        return (f"; merged main: {merged[\'commit\'][:12]} ({count} path(s) identical to it "\n'
+        '                f"left out){fork}")\n',
+        '        return ""\n',
+        "tests/test_review_receipt.py::"
+        "test_check_receipt_is_stale_when_a_merge_of_main_changes_a_reviewed_path",
+    ),
+    # T-0100 successor (review round 2): a failed fork lookup is could-not-tell in
+    # every line derived from it -- manifest, stderr, prompt, receipt note.
+    (
+        "a failed fork lookup leaves no fork_reason in the manifest",
+        REVIEW_PATCH,
+        '    if not fork:\n        # The more-inclusive bundle stays',
+        '    if False:\n        # The more-inclusive bundle stays',
+        "tests/test_review_patch.py::test_a_failed_fork_lookup_is_could_not_tell",
+    ),
+    (
+        "review-patch's stderr prints a count when the fork lookup failed",
+        REVIEW_PATCH,
+        '        against = ("could-not-tell" if merged.get("fork", "") is None\n',
+        '        against = ("could-not-tell" if False\n',
+        "tests/test_review_patch.py::test_a_failed_fork_lookup_is_could_not_tell",
+    ),
+    (
+        "the reviewer is not told the fork lookup failed",
+        REVIEW_PROMPT,
+        '                + _fork_clause(merged))\n',
+        '                + "")\n',
+        "tests/test_review_prompt.py::test_build_names_the_merged_main_line"
+        "[applies-fork-could-not-tell]",
+    ),
+    (
+        "the receipt note is silent on a failed fork lookup",
+        REVIEW_LEDGER,
+        '    fork = "; fork: could not tell" if merged.get("fork", "") is None else ""\n',
+        '    fork = ""\n',
+        "tests/test_review_receipt.py::"
+        "test_check_receipt_says_could_not_tell_when_the_fork_lookup_fails",
     ),
     # crew 1.0.65: gate first, and no second round on an unchanged CLEAN
     # bundle. Each was run by hand against the tracked file and confirmed RED.
