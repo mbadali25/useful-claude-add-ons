@@ -2800,7 +2800,7 @@ included.
 
 ## 22. `git.forbiddenTrailers` — commit trailers the owner forbids
 
-`git.forbiddenTrailers` (T-0066, since 1.0.356) is a list of commit trailer
+`git.forbiddenTrailers` (T-0066, since 1.0.328) is a list of commit trailer
 tokens, such as `["Co-Authored-By"]`, that the owner does not want on any commit
 crew's sessions make. crew takes no side on attribution: the owner's own
 instructions (CLAUDE.md, memory) decide, crew never adds a trailer, and a

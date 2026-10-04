@@ -1485,7 +1485,7 @@ then the train is advisory.
   scripts call it, nothing forces a lane through the train; its value is the queue, the land check
   and the merge log for lanes that use it.
 
-## Forbidden commit trailers (T-0066, crew 1.0.356)
+## Forbidden commit trailers (T-0066, crew 1.0.328)
 
 DERIVED from the code cited. `git.forbiddenTrailers` is declared in both layers,
 default `[]` (`plugin/crew/hooks/scripts/crew_config.py:386` and `:603`). Its two
