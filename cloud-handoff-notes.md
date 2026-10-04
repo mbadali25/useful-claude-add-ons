@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:57 UTC
+Last updated: 2026-10-04 11:58 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:58: #352 land-prep onto e9364a70 done: fe45b8bb (1.0.357; troubleshooting guide rebuilt; 12 crew_resume.py codemap cites re-derived incl. the NIT). Merge-only review started.
 - 11:57: #377 land-prep onto e9364a70 done: 0d8c1bce (1.0.355; daily-workflow guide rebuilt; build.py/config_reference --check pass). Merge-only review started.
 - 11:56: #392 merge-only review 136eaade: 0/0/0 CLEAN. Waits CI (check-in 12:16), then merge.
 - 11:56: Land-prep onto e9364a70 started: #377 (1.0.355), #351 (1.0.356; must add crew_keys.py KEY_META row for git.forbiddenTrailers), #352 (1.0.357; carry codemap cite NIT). #392 merge-only review on 136eaade + CI running (check-in 12:16). #346 T-0039 review c580f399: 0/4/5 - FIX1 uncaught exceptions exit 1; FIX2 codemap bare :N cites stale under new anchor; FIX3 .env.sample/.template flagged as secrets; FIX4 sabotage AC deferred to harness PR (forced by T-0087, state in PR body). Sent to builder; will merge main + re-version 1.0.358.
