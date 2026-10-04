@@ -200,3 +200,16 @@ Held for your go: L-0674 (#404).
 | T-0502 | #465 | not started (spec only) | crew-setup _verify diagrams case renders as root (puppeteer --no-sandbox when EUID=0) and  |
 | T-0506 | #476 | not started (spec only) | concurrent pwsh runs corrupt the shared ~/.cache/powershell startup profile; every later p |
 | T-0507 | #479 | not started (spec only) | Refresh the 7 code maps (crew, install-scripts, localgpu, marketplace-registration, obsidi |
+
+## Owner decisions, 2026-10-04 evening (open questions that blocked builds)
+
+| Ticket | Question | Decision |
+|---|---|---|
+| L-0674 (#404) | Build a gate-owned deadline for a hung rule? | **Not built.** #404 closed; T-0082 already fails a hung rule closed (COULD NOT TELL). Revisit only if real hangs show up |
+| T-0029, T-0030 | No spec, branch or code; 8 tickets wait on them | **Deferred**, out of this rush: T-0031, T-0032, L-0633, L-0634, L-0636, L-0637, L-0635, L-0638 |
+| T-0073 | Keep for `reviewAcceptance`, or close? | **Close as superseded** by L-0510 + T-0074 (no open PR found here; close it in your tracker) |
+| L-0635 Q2 | Missing must-block test found by the sabotage PR | **Add it in that PR** (tests ride along under T-0087) |
+| L-0639 Q5 | Home of the `depends-on:` parser and header status helpers | **L-0639 owns them, in `crew_ticket_state.py`**; `crew_ticket.py` (harness) untouched |
+| L-0640 Q4 | Where `superseded-by:` lives | **spec.md line 2**, the line #394 already reads; next.md does not repeat it |
+| L-0550 Q5 | Header words hold/landing/needs-owner? | **No header words.** hold = next.md `waiting-on`/`revisit`; needs-owner = INDEX row (#394); landing derived from a current review receipt |
+| L-0551 Q7 | One status line or two | **One line:** `waiting  N on you: <ids> (/crew:status --owner)`, replacing #394's separate owner line |
