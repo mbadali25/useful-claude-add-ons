@@ -8,6 +8,7 @@ import subprocess
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
 import diagram_doc
 
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "diagrams")
@@ -164,8 +165,22 @@ echo "<svg/>" > "$out"; echo "$out" >> "$MMDC_LOG"
 """
 
 
-@pytest.mark.skipif(shutil.which("bash") is None or not (shutil.which("sha256sum") or shutil.which("shasum")),
-                    reason="needs bash and a sha256 tool")
+# Not shutil.which("bash"): on a Windows runner that is WSL's launcher, which
+# exits 1 when no distribution is installed. resolve_bash() proves a bash can
+# run a script at a Windows path, and the sha256 tool is looked for by that
+# bash, since render.sh is what calls it.
+_BASH = crew_fixtures.resolve_bash()
+
+
+def _bash_has_sha256():
+    if _BASH is None:
+        return False
+    probe = subprocess.run([_BASH, "-c", "command -v sha256sum || command -v shasum"],
+                           capture_output=True, check=False)
+    return probe.returncode == 0
+
+
+@pytest.mark.skipif(not _bash_has_sha256(), reason="needs a bash that runs scripts here and a sha256 tool")
 def test_render_sh_records_the_source_hash_and_rerenders_on_a_new_one(tmp_path):
     d = _dir(tmp_path)
     tools = tmp_path / "bin"
@@ -175,7 +190,8 @@ def test_render_sh_records_the_source_hash_and_rerenders_on_a_new_one(tmp_path):
     env = dict(os.environ, PATH=f"{tools}{os.pathsep}{os.environ['PATH']}", MMDC_LOG=str(tmp_path / "log"))
 
     def render():
-        subprocess.run(["bash", RENDER_SH, str(d), "--svg-only"], env=env, check=True, capture_output=True)
+        subprocess.run([_BASH, RENDER_SH.replace("\\", "/"), str(d).replace("\\", "/"), "--svg-only"],
+                       env=env, check=True, capture_output=True)
         return (tmp_path / "log").read_text(encoding="utf-8").count("process-merge")
 
     assert render() == 1
