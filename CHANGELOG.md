@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.255: `tickets.baseBranch`, the branch ticket branches are cut from (T-0061)
+### Changed — `crew` 1.0.256: `tickets.baseBranch`, the branch ticket branches are cut from (T-0061)
 
 - New repo-only config key `tickets.baseBranch` (default `null`, meaning `origin/HEAD`'s target,
   then `origin/main`, then `main`, as before), declared in `crew_config.default_config()`, the
