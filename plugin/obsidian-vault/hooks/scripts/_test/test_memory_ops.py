@@ -382,6 +382,9 @@ def _recall_json(argv):
         code, out = run_cli(["recall"] + argv + ["--json"])
     except SystemExit as exc:  # an option this CLI does not know: argparse exits 2
         return exc.code, {"results": [], "unparsed": f"SystemExit {exc.code}"}
+    except Exception as exc:  # pylint: disable=broad-except
+        # a crash is that check's failure, not the end of every later check
+        return f"raised {type(exc).__name__}", {"results": []}
     try:
         return code, json.loads(out)
     except ValueError:
@@ -404,6 +407,14 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
             "broken": sb.vault("broken", {
                 ".obsidian/app.json": "{not json",
                 archived: "zebra crossing\n", "keep.md": "zebra crossing\n"}),
+            "huge": sb.vault("huge", {".obsidian/app.json": "[" * 100000,
+                                      "keep.md": "zebra crossing\n"}),
+            "case": sb.vault("case", {
+                "wiki/sessions/Archive/2026-07/Session - y.md": "# quokka\nquokka\nquokka\n",
+                "wiki/Sessions/s.md": "# quokka\nquokka\n",
+                "wiki/Concepts/c.md": "a quokka\n"}),
+            "links": sb.vault("links", {archived: "a narwhal\n", "wiki/real.md": "a narwhal\n"}),
+            "words": sb.vault("words", {"a.md": "support and report\n", "b.md": "the port.\n"}),
             "floor": sb.vault("floor", {
                 "note-a.md": "the port only\n", "note-b.md": "the port and the collision\n"}),
             "kinds": sb.vault("kinds", {
@@ -425,6 +436,17 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
             "palpha": sb.vault("palpha", {
                 "wiki/concepts/x.md": "---\nproject: crew\n---\n# sprocket\nsprocket\n"}),
         }
+        outside = os.path.join(sb.tmp, "outside.md")
+        with open(outside, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("a narwhal\n")
+        linked = True
+        try:
+            os.symlink(os.path.join(vaults["links"], archived),
+                       os.path.join(vaults["links"], "wiki", "into-archive.md"))
+            os.symlink(outside, os.path.join(vaults["links"], "wiki", "out-of-vault.md"))
+        except (OSError, NotImplementedError) as exc:
+            linked = False
+            print(f"SKIP: symlinks not creatable here ({exc}) - the symlink cases did not run")
         config = {n: {"path": p, "role": "recall"} for n, p in vaults.items()}
         config["arch"].update(role="primary", default=True)
         sb.write_config({"vaults": config})
@@ -438,13 +460,36 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
                                   "--include-excluded"])
         check("--include-excluded reads the archive", _paths(res), [archived])
 
+        # Review round 1 FIX6: the userIgnoreFilters shape was never checked against a
+        # real app.json, so per spec Unknowns #3 only the built-in prefix ships.
         code, res = _recall_json(["--query", "zebra", "--vaults", "filt"])
-        check("userIgnoreFilters prefix is honoured", _paths(res), ["pub.md", "tmpstuff/n.md"])
-        check("userIgnoreFilters prefix is honoured: regex counted, not applied",
-              res.get("skipped_filters"), 1)
+        check("userIgnoreFilters is not applied: only the built-in prefix ships", _paths(res),
+              ["private/n.md", "pub.md", "tmpstuff/n.md"])
         code, res = _recall_json(["--query", "zebra", "--vaults", "broken"])
-        check("userIgnoreFilters prefix is honoured: broken app.json keeps the built-in prefix",
+        check("a broken app.json still applies the built-in prefix",
               (code, _paths(res)), (0, ["keep.md"]))
+        code, res = _recall_json(["--query", "zebra", "--vaults", "huge,filt"])
+        check("a deeply nested app.json never breaks recall (FIX1)",
+              (code, [(r["vault"], r["path"]) for r in res["results"]][:1]),
+              (0, [("huge", "keep.md")]))
+
+        code, res = _recall_json(["--query", "quokka", "--vaults", "case"])
+        check("archive and kind folders match case-insensitively (FIX3)",
+              [(r["path"], r.get("kind")) for r in res["results"]],
+              [("wiki/Concepts/c.md", "concept"), ("wiki/Sessions/s.md", "session")])
+
+        if linked:
+            code, res = _recall_json(["--query", "narwhal", "--vaults", "links"])
+            check("a symlink into the archive or out of the vault is not served (FIX4)",
+                  _paths(res), ["wiki/real.md"])
+            code, res = _recall_json(["--query", "narwhal", "--vaults", "links",
+                                      "--include-excluded"])
+            check("--include-excluded still never serves a link out of the vault (FIX4)",
+                  sorted(_paths(res)), sorted([archived, "wiki/into-archive.md",
+                                               "wiki/real.md"]))
+
+        code, res = _recall_json(["--query", "port", "--vaults", "words"])
+        check("terms match whole words, not substrings (N4)", _paths(res), ["b.md"])
 
         code, res = _recall_json(["--query", "what is the port for this", "--vaults", "floor"])
         check("stop words are not terms", res.get("terms"), ["port"])

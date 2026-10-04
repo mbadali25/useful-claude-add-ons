@@ -10,13 +10,15 @@ its body, per query term:
     title hit  6      heading hit  3 per heading (max 3)      body hit  1 per line (max 5)
 
 Relevance (T-0083). Query terms are the words of three or more characters that
-are not in STOP_WORDS, first MAX_TERMS kept. A note is a hit only when it holds
-at least `need` distinct terms: 1 for a query of one or two terms, 2 for three
-to five, 3 for six or more; `--min-terms N` sets it (capped at the term count).
-Excluded folders are never read: `wiki/sessions/archive/` and every plain
-(non-`/regex/`) entry of the vault's `.obsidian/app.json` `userIgnoreFilters`,
-compared as path prefixes. Regex entries are counted in `skipped_filters`,
-never applied. `--include-excluded` turns exclusion off.
+are not in STOP_WORDS, first MAX_TERMS kept, and they match whole words only
+(`port` is not found in `support`). A note is a hit only when it holds at least
+`need` distinct terms: 1 for a query of one or two terms, 2 for three to five,
+3 for six or more; `--min-terms N` sets it (capped at the term count).
+`wiki/sessions/archive/` (any letter case) is never read, and a symlinked note
+whose real path lies inside it is skipped too; `--include-excluded` turns that
+off. A symlinked note whose real path lies outside the vault is always skipped.
+The vault's `.obsidian/app.json` `userIgnoreFilters` are NOT read: their shape
+was never checked against a real app.json (spec Unknowns #3, review FIX6).
 
 Ordering is vault priority first: `--vaults a,b` means every hit in `a` ranks
 above every hit in `b`, so when the budget runs out it is the lower-priority
@@ -25,8 +27,10 @@ vault that loses. Without --vaults the order is the primary vault, then every
 vault alone. Inside a vault: project (`match` - frontmatter `project:` or a
 path folder equals a `--project` name - then `none`, then `other`, a note whose
 `project:` names another project; ranked last, never dropped), then kind
-(concept and decision notes, then other notes, then session notes), then
-score, then path.
+(concept and decision notes, then other notes, then session notes; folder
+names compared in any letter case), then score, then path. A folder match can
+be a coincidence (a topic folder named like the project); accepted, because it
+only promotes a note, never hides one.
 
 Budget: each result carries a `line` - `[vault] path: snippet` - and the sum
 of `len(line) + 1` over the returned results never exceeds --max-chars. The
@@ -117,21 +121,26 @@ def split_note(text):
     return title, project, headings, body
 
 
+def words_of(text):
+    """The whole words of a text, tokenised the way terms_of tokenises a query."""
+    return {w.strip(".-") for w in TERM_RE.findall(text.lower())}
+
+
 def score_note(terms, title, headings, body):
-    """(score, best body line or None, distinct terms matched)."""
+    """(score, best body line or None, distinct terms matched). Whole words only."""
     score, matched = 0, 0
-    title_l = title.lower()
-    heads_l = [h.lower() for h in headings]
-    body_l = [b.lower() for b in body]
+    title_w = words_of(title)
+    heads_w = [words_of(h) for h in headings]
+    body_w = [words_of(b) for b in body]
     for term in terms:
-        gained = 6 if term in title_l else 0
-        gained += 3 * min(3, sum(1 for h in heads_l if term in h))
-        gained += min(5, sum(1 for b in body_l if term in b))
+        gained = 6 if term in title_w else 0
+        gained += 3 * min(3, sum(1 for h in heads_w if term in h))
+        gained += min(5, sum(1 for b in body_w if term in b))
         score += gained
         matched += 1 if gained else 0
     best, best_hits = None, 0
-    for raw, low in zip(body, body_l):
-        hits = sum(1 for t in terms if t in low)
+    for raw, words in zip(body, body_w):
+        hits = sum(1 for t in terms if t in words)
         if hits > best_hits:
             best, best_hits = raw, hits
     return score, best, matched
@@ -147,32 +156,17 @@ def snippet_for(terms, best, headings, title):
     return ("..." if start else "") + text[start:start + SNIPPET_CHARS - 3] + "..."
 
 
-def excluded_prefixes(vault_path):
-    """(prefixes, skipped regex entries). The archive prefix always; plus the plain
-    `userIgnoreFilters` entries of the vault's .obsidian/app.json. A missing,
-    unreadable or malformed app.json means no vault filters. Read only."""
-    prefixes, skipped = [ARCHIVE_PREFIX], 0
-    try:
-        with open(os.path.join(vault_path, ".obsidian", "app.json"), "r",
-                  encoding="utf-8") as fh:
-            filters = json.load(fh).get("userIgnoreFilters")
-    except (OSError, ValueError, AttributeError):
-        filters = None
-    for entry in filters if isinstance(filters, list) else []:
-        if not isinstance(entry, str) or not entry.strip():
-            continue
-        if entry.startswith("/"):
-            skipped += 1
-            continue
-        entry = entry.strip()
-        prefixes.append(entry if entry.endswith("/") else entry + "/")
-    return prefixes, skipped
+def is_excluded(rel, prefixes):
+    """True when a vault-relative path lies under one of the (lowercase) prefixes."""
+    low = rel.lower()
+    return any(low.startswith(p) for p in prefixes)
 
 
 def iter_notes(vault_path, prefixes=(), pruned=None):
     """Every .md note, sorted. A directory whose vault-relative path (with a
-    trailing /) starts with one of `prefixes` is not entered; it is appended to
-    `pruned` when that is a list."""
+    trailing /) starts with one of the lowercase `prefixes`, in any letter case,
+    is not entered; it is appended to `pruned` when that is a list. Directory
+    symlinks are not followed (os.walk's default)."""
     for root, dirs, files in os.walk(vault_path):
         rel_root = os.path.relpath(root, vault_path).replace(os.sep, "/")
         rel_root = "" if rel_root == "." else rel_root + "/"
@@ -180,7 +174,7 @@ def iter_notes(vault_path, prefixes=(), pruned=None):
         for d in sorted(dirs):
             if d in SKIP_DIRS or d.startswith("."):
                 continue
-            if any((rel_root + d + "/").startswith(p) for p in prefixes):
+            if is_excluded(rel_root + d + "/", prefixes):
                 if pruned is not None:
                     pruned.append(rel_root + d)
                 continue
@@ -192,8 +186,9 @@ def iter_notes(vault_path, prefixes=(), pruned=None):
 
 
 def kind_of(rel):
+    low = rel.lower()
     for prefix, kind in KIND_PREFIXES:
-        if rel.startswith(prefix):
+        if low.startswith(prefix):
             return kind
     return "other"
 
@@ -210,23 +205,40 @@ def project_of(rel, fm_project, projects):
     return "other" if value else "none"
 
 
-def search_vault(name, vault_path, terms, deadline, opts=None):
+def link_target(full, vault_real):
+    """For a symlinked note: its real path relative to the vault, or None when it
+    resolves outside the vault (or cannot be resolved). "" for a plain file."""
+    if not os.path.islink(full):
+        return ""
+    try:
+        rel = os.path.relpath(os.path.realpath(full), vault_real).replace(os.sep, "/")
+    except (OSError, ValueError):  # ValueError: another drive on Windows
+        return None
+    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        return None
+    return rel
+
+
+def search_vault(name, vault_path, terms, deadline, opts=None):  # pylint: disable=too-many-locals
     """(hits, truncated, stats). Each hit: {vault, path, title, score, snippet,
-    kind, project, matched}. stats: {below_floor, excluded_dirs, skipped_filters}.
+    kind, project, matched}. stats: {below_floor, excluded_dirs, skipped_links}.
     opts: {need, projects (lowercased), include_excluded}."""
     opts = opts or {}
     need = opts.get("need", 1)
     projects = opts.get("projects") or []
-    stats = {"below_floor": 0, "excluded_dirs": 0, "skipped_filters": 0}
-    prefixes, pruned = [], []
-    if not opts.get("include_excluded"):
-        prefixes, stats["skipped_filters"] = excluded_prefixes(vault_path)
+    stats = {"below_floor": 0, "excluded_dirs": 0, "skipped_links": 0}
+    prefixes = () if opts.get("include_excluded") else (ARCHIVE_PREFIX,)
+    pruned, vault_real = [], os.path.realpath(vault_path)
     hits, truncated, seen = [], False, 0
     for full in iter_notes(vault_path, prefixes, pruned):
         if time.monotonic() > deadline or seen >= MAX_FILES:
             truncated = True
             break
         seen += 1
+        target = link_target(full, vault_real)
+        if target is None or (target and is_excluded(target, prefixes)):
+            stats["skipped_links"] += 1
+            continue
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as fh:
                 text = fh.read(MAX_BYTES)
@@ -269,7 +281,7 @@ def recall(query, names=None, max_chars=4000, timeout_ms=1500,  # pylint: disabl
     projects = list(projects or [])
     opts = {"need": need_for(terms, min_terms), "include_excluded": include_excluded,
             "projects": [p.lower() for p in projects]}
-    totals = {"below_floor": 0, "excluded_dirs": 0, "skipped_filters": 0}
+    totals = {"below_floor": 0, "excluded_dirs": 0, "skipped_links": 0}
     errors = []
     order = list(names) if names else default_order(vaults)
     deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
@@ -358,7 +370,8 @@ def add_parsers(sub):
                    help="distinct query terms a note must hold (default 1/2/3 for "
                         "1-2/3-5/6+ terms; 1 restores the pre-T-0083 floor)")
     s.add_argument("--include-excluded", action="store_true",
-                   help="also read wiki/sessions/archive/ and the vault's userIgnoreFilters")
+                   help="also read wiki/sessions/archive/ (a link out of the vault is "
+                        "still skipped)")
     s.add_argument("--max-chars", type=int, default=4000)
     s.add_argument("--timeout-ms", type=int, default=1500)
     s.add_argument("--json", action="store_true")
