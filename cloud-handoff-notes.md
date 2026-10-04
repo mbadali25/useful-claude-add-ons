@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 18:42 UTC
+Last updated: 2026-10-04 18:54 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 18:54: MERGED #396 T-0016 at d666a056 -> main f1cace4a, crew 1.0.333 (Windows fix worked). #356/#347/#456 still red on Windows: test_wrapup.py::test_git_failing_refuses_the_clear[ps1] - ps1 auto-clear sends when git fails (fail-open). Builder spawned to fix on #356 and re-chain.
 - 18:42: MERGED #491 L-1506 at 004c5cdc -> main 9c8c0418 (CI only). First 6-shard run: shards 5.5-8.6 min (was 11-16), decide->gate 14.3 min incl ~6 min queue behind batch-2 reruns. crew-windows-slow (11 min) is now the long pole.
 - 18:39: #399 H2a round-2 at 3716a78a: 0 BLOCK, 1 FIX (Windows skip via native-Python /proc probe hides every killed/unknown must-block test on Windows CI), 3 NIT. Sent back to builder with N7 carry.
 - 18:35: #489 L-1503 round-4 review CLEAN at 9dba8652 (0/0/2 NIT). No false refusals across 158 repo JSON files + 1800-doc fuzz; no regressions vs 7670dbc3. NIT N1 (verify-gate marker parsing / regex grep on env names) added to L-1505 harness scope.
