@@ -25,8 +25,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `## Open questions` or saying none is recorded - never as "cannot tell
   whether direction is approved". `/crew:status` prints
   `owner    <ids> (needs-owner)`. The README gains a "Ticket statuses" table;
-  `obsidian-sync.md`, `status.md`, `autopilot.md` and CONFIG.md's
-  `obsidian.columns.backlog`/`.done` rows name the words.
+  `obsidian-sync.md`, `status.md`, `autopilot.md`, the memory-and-obsidian
+  guide's lane table and `crew_keys.py`'s `obsidian.columns.backlog`/`.done`
+  summaries (so the generated configuration reference) name the words.
 - **Why.** Nothing on main knew these words: a `cancelled` INDEX row read as
   OPEN, so the session brief could name a cancelled ticket as the current
   one, autopilot stopped on it as "cannot tell whether direction is
