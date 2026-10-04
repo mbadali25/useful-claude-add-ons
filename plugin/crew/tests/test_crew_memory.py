@@ -163,7 +163,7 @@ def test_pointer_grammar_accepts(host, capsys, body, newline, note):
     "vault: work | note: notes/fa\x01ct.md",
     "vault: work | note: notes/fact.md | extra: x.md",
     "vault: work | note: notes/ fact.md",
-    "vault: work | notes/fact.md",
+    "vault: work",
 ], ids=["abs-posix", "drive", "backslash", "dotdot", "dot", "empty-segment", "not-md",
         "empty-name", "long-name", "ctrl-name", "ctrl-path", "second-field",
         "segment-space", "no-note"])
@@ -973,8 +973,7 @@ def test_open_regular_refuses_a_fifo_without_blocking(tmp_path):
 @pytest.mark.parametrize("body", [
     "Vault: keep client notes in the work vault, not personal.\n",
     "Vault: keep client notes in the work vault, not personal.\nA second line of prose.\n",
-    "vault: the big one\n",
-], ids=["vault-prose", "vault-prose-two-lines", "lowercase-prose"])
+], ids=["vault-prose", "vault-prose-two-lines"])
 def test_prose_starting_vault_is_full_text(host, capsys, body):
     """FIX1, must-allow: a real memory that happens to start `Vault:` is not a
     pointer attempt unless the line also carries `note:` or `|`."""
@@ -988,8 +987,7 @@ def test_prose_starting_vault_is_full_text(host, capsys, body):
     "Vault : work | note: notes/x.md",
     "VAULT: work note : notes/x.md",
     "vault: work | notes/x.md",
-    "vault: work | note: notes/fact.md\nand prose after it",
-], ids=["space-colon-capital", "note-colon-no-bar", "bar-no-note", "pointer-then-prose"])
+], ids=["capital-v-space-before-colon", "upper-note-colon-no-bar", "bar-no-note"])
 def test_near_pointer_with_note_or_bar_is_malformed(host, capsys, body):
     """FIX1, must-block: a `vault:` line that also has `note:` or `|` is a
     pointer attempt, and anything short of the grammar is malformed."""
@@ -1045,3 +1043,25 @@ def test_non_regular_note_is_unreadable(host, capsys):
         os.mkfifo(str(vault / "pipe.md"))
         mem = host.memory("vault: work | note: pipe.md\n", name="b.md")
         _assert_degraded(*resolve(host, mem, capsys), "unreadable")
+
+
+# --- review round 4 (31c1e061) ---------------------------------------------
+
+@pytest.mark.parametrize("body,newline", [
+    ("vault: work\r| note: notes/fact.md\n", "\n"),
+    ("vault: work\n| note: notes/fact.md\n", "\n"),
+    ("vault: work\n| note: notes/fact.md\n", "\r\n"),
+    ("vault: work\n", "\n"),
+    ("Vault:  work\n", "\n"),
+    ("vault: work (main)\nnote: notes/fact.md\n", "\n"),
+], ids=["cr-before-bar", "lf-wrapped", "crlf-wrapped", "bare-name", "bare-name-capital",
+        "mark-only-on-line-two"])
+def test_broken_or_bare_pointer_is_malformed(host, capsys, body, newline):
+    """FIX1: a first line `vault:` + a bare vault name, or a `vault:` first
+    line with the `note:`/`|` mark anywhere in the body (a pointer broken
+    before its `|`), is a pointer attempt - malformed, never full text."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(body, newline=newline)
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "malformed")
+    assert "if this is prose, reword the first line" in reason_of(out), out

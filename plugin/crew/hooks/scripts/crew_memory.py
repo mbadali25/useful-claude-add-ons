@@ -18,10 +18,10 @@ Rules, each with a test in plugin/crew/tests/test_crew_memory.py:
   all end a line.
 - A body is `pointer`, else `malformed`, else `full-text`. The first
   non-blank line, with Cf characters removed and then stripped, that starts
-  `vault`, optional whitespace and `:` in any case, and also holds `note:` or
-  `|`, is a pointer attempt: it
-  must be the whole body and match the grammar exactly, or it is `malformed`
-  (never read as full text, never resolved). The note path refuses `:` in
+  `vault`, optional whitespace and `:` in any case, and either has the
+  `note:`/`|` mark anywhere in the body or is a bare vault name alone, is a
+  pointer attempt: it must be the whole body and match the grammar exactly,
+  or it is `malformed` (never read as full text, never resolved). The note path refuses `:` in
   any segment and any Cc, Cf, Zl or Zp character.
 - A vault name maps to a path through `vaults.<name>.path` in the machine's
   Obsidian config (`crew_recall.obsidian_config_path`); a `role: ignore`
@@ -68,6 +68,7 @@ _ATTEMPT = re.compile(r"vault\s*:", re.IGNORECASE)
 # Without one of these a `vault:` line is prose ("Vault: keep client notes in
 # the work vault"), not a pointer attempt.
 _ATTEMPT_MARK = re.compile(r"note\s*:|\|", re.IGNORECASE)
+_BARE = re.compile(r"vault\s*:\s*[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", re.IGNORECASE)
 CONFIG_CAP = 1024 * 1024  # bytes; a larger config file is "config unreadable"
 LEGACY_NAME = "memory"
 
@@ -122,19 +123,25 @@ def _path_problem(path):
     return None
 
 
-def classify(body):
-    """`(kind, vault, note, reason)` for a body; kind is pointer / malformed /
-    full-text. The first non-blank line, with Cf characters removed and then
-    stripped, that starts `vault` and optional whitespace and `:` (any case)
-    and also holds `note:` (optional whitespace) or `|` is a pointer
-    attempt: it must be the whole body and match the grammar exactly, or it
-    is `malformed`. Without that mark a `vault:` line is prose. A lone CR ends a line, so a CR inside a
-    pointer line leaves a second line and is `malformed` too."""
-    lines = [line for line in _LINE_BREAK.split(body) if line.strip()]
-    probe = "".join(ch for ch in lines[0] if unicodedata.category(ch) != "Cf") if lines else ""
-    probe = probe.strip()
-    if not (_ATTEMPT.match(probe) and _ATTEMPT_MARK.search(probe)):
-        return "full-text", None, None, "not a pointer; nothing to resolve"
+def _strip_cf(text):
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+
+
+def _attempt(lines, body):
+    """True when the body is a pointer attempt: its first non-blank line, Cf
+    removed and stripped, starts `vault` + optional whitespace + `:` (any
+    case), and either the `note:`/`|` mark appears anywhere in the body (a
+    pointer broken before its `|` included) or that line is a bare vault
+    name with nothing after it. `Vault: keep client notes in the work
+    vault, not personal.` has neither, so it is prose."""
+    probe = _strip_cf(lines[0]).strip() if lines else ""
+    if not _ATTEMPT.match(probe):
+        return False
+    return bool(_ATTEMPT_MARK.search(_strip_cf(body)) or _BARE.fullmatch(probe))
+
+
+def _grammar(lines):
+    """`(kind, vault, note, reason)` for a pointer attempt."""
     line = lines[0]
     if len(lines) != 1:
         return "malformed", None, None, "a pointer line must be the whole body"
@@ -152,6 +159,21 @@ def classify(body):
     if problem:
         return "malformed", name, path, problem
     return "pointer", name, path, None
+
+
+def classify(body):
+    """`(kind, vault, note, reason)` for a body; kind is pointer / malformed /
+    full-text. A pointer attempt (`_attempt`) must be the whole body and match
+    the grammar exactly, or it is `malformed`; any other body is full text. A
+    lone CR ends a line, so a CR inside a pointer leaves a second line and is
+    `malformed` too."""
+    lines = [line for line in _LINE_BREAK.split(body) if line.strip()]
+    if not _attempt(lines, body):
+        return "full-text", None, None, "not a pointer; nothing to resolve"
+    kind, name, path, reason = _grammar(lines)
+    if kind == "malformed":
+        reason += "; if this is prose, reword the first line"
+    return kind, name, path, reason
 
 
 def _obsidian_problem(data):
