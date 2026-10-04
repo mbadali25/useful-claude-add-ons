@@ -2,7 +2,7 @@
 
 ## >>> RESUME HERE ("read Cloudhead") <<<
 
-Written 2026-10-04 22:20 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at the owner's request to clear and restart.
+Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at the owner's request to clear and restart.
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
 ### State
@@ -21,8 +21,8 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 ### In flight at handoff (verify each on GitHub first)
 | Item | Where | State | Next |
 |---|---|---|---|
-| Batch 4 land-prep | #400 L-0680 -> #421 T-0083 -> #394 T-0037 -> #364 T-0052 | agent was running (heads before: 897f3faf, 41b1d576, 96080457, 1b0de3cb); may have pushed with OLD per-PR versions 1.0.343+ | Re-check heads. Re-do versions per the new one-bump-per-batch rule. Send real content conflicts (#394/#364 catch-up likely) for review. Merge in order when green |
-| L-1512 build | branch `L-1512-build`, placeholder 1.0.412 | agent was running (cloud-guard bash tests exit 2304 on Windows) | Find its PR (`L-1512:` title); review; harness-check; land |
+| Batch 4 land-prep | #400 L-0680 -> #421 T-0083 -> #394 T-0037 -> #364 T-0052 | NOT STARTED: agent stopped at handoff, nothing pushed. Heads unchanged: 897f3faf, 41b1d576, 96080457, 1b0de3cb | Land-prep with the one-bump-per-batch rule (only #364 carries crew 1.0.343 + obsidian-vault bump). #394 must land before #364. Add up to 2 more Windows-green PRs (batch size 5-6) |
+| L-1512 fix (owner asked 2026-10-04 22:18) | not started: agent stopped at handoff, no branch | cloud-guard bash tests exit 2304 on Windows (job 111538994343, test_cloud_guard.py:589) | FIRST JOB of the next session: build `L-1512-build` from main, root-cause with the job log, never skip; feature PR unless it touches HARNESS |
 | #416 T-0057 | `T-0057-build` | Windows pre-flight dispatched 22:14 | Check result; it is review-clean |
 | L-1508 PR B | not started | 9 harness files allowlisted "L-1508 PR B" in test_tool_resolution.py | Build as harness-only PR |
 | #407 T-0045 | `T-0045-build` | review-clean | Must adopt L-1503's UNION rule in `_gate_pick` before landing; carry `[!-[]` FIX |
