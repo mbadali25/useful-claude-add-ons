@@ -411,7 +411,10 @@ def test_a_bad_environment_name_refuses_the_map(flavour, name, tmp_path):
     for command in ("./deploy.sh prod", "echo hi"):
         code, err = run_gate(flavour, repo, command)
         assert code == 2, (command, err)
-        assert "environment name" in err, err
+        # ConvertFrom-Json itself refuses an empty property name, first.
+        empty_on_ps1 = flavour == "ps1" and name == ""
+        assert ("could not be read or parsed" if empty_on_ps1
+                else "environment name") in err, err
         assert repo.in_flight() is None
 
 
