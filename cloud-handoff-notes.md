@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 21:32: #400 L-0680 at 0fe83674, CI all green (6+3 Windows). Windows causes: backslash handoff path, hidden .git file in test, Git Bash /c/ path in test. N1-N5 + wrapUp known key + stale cites carried. Behaviour changes -> round-3 review sent to a9a5cd1; candidate for batch 4.
 - 21:32: MERGED #494 L-1510 at e15a652f -> main 8c0843ca, crew 1.0.338 (coordinator reviewed land-prep delta: sabotage entry 4 now distinct; merge conflict CHANGELOG only). 18 merged. Batch 3 land-prep spawned: #481 1.0.339, #493 1.0.340, #427 1.0.341, #489 1.0.342 (all Windows-green on own heads).
 - 21:29: #489 L-1503 Windows fixed at c1c07aa9, CI all green (6+3 shards). Cause: union names printed one per line; Windows python writes CRLF, Git Bash keeps 'qa\r'. Fix: strip CR from ENVNAMES (coordinator reviewed: safe, names with control chars already refused in python). Red-first CRLF-shim test. Ready for batch 3; must land before #407.
 - 21:14: Container restarted. #489 and #400 builders stopped before pushing (heads unchanged); resumed both. #494 land-prepped to e15a652f (1.0.338), CI in progress; check-in 21:30.
