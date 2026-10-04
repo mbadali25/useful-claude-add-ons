@@ -6,18 +6,15 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 
 Build `.crew/verify.json` — the map from changed paths to the checks they require.
 
-1. **Look for `_verify/` first**, then the repo's other conventions — `qa/`,
-   `spec/`, `_test*/`. If `_verify/` exists, read its `README.md` and the scripts
-   in it, and map every one of them into a rule. If **none** of them exists,
-   create `_verify/` from
-   `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/templates/_verify/` — `README.md`,
-   `smoke.sh`, `run-all.sh`, and a `cases/` directory — then fill in that
-   README's layout and status tables with what this repo actually needs. Do not
-   leave the template's commented-out examples as the whole file: either write
-   real checks or say plainly that the directory is a scaffold with none in it
-   yet. If a convention does exist, read it and ask me what runs it and
-   when. It will not be discovered for you, and it is usually the most valuable
-   thing in the repo for this purpose.
+1. **Look for `_verify/` first**, then the repo's other conventions — `qa/`, `spec/`, `_test*/`. If
+   `_verify/` exists, read its `README.md` and the scripts in it, and map every one of them into a
+   rule. If **none** of them exists, create `_verify/` from
+   `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/templates/_verify/` — `README.md`, `smoke.sh`,
+   `run-all.sh`, and a `cases/` directory — then fill in that README's layout and status tables with
+   what this repo actually needs. Do not leave the template's commented-out examples as the whole
+   file: either write real checks or say plainly that the directory is a scaffold with none in it
+   yet. If a convention does exist, read it and ask me what runs it and when. It will not be
+   discovered for you, and it is usually the most valuable thing in the repo for this purpose.
 2. Inventory what exists: test directories, test scripts in `package.json` /
    `*.csproj` / `Makefile` / `composer.json`, CI workflow steps, `e2e/` specs.
    Read the CI config carefully — it is the closest thing to an existing map.
@@ -28,7 +25,10 @@ Build `.crew/verify.json` — the map from changed paths to the checks they requ
    confirm red, revert. An unverified mapping is a guess written in JSON.
    Report any pairing that stayed green — that is a coverage hole worth knowing.
 6. Time each check. Anything over ~3 minutes belongs in CI, not the local gate.
-7. Write the map with a `why` on every rule and `"unmapped": "fail"`.
+7. Write the map with a `why` on every rule and `"unmapped": "fail"`. Then, from the repo root, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" agents --root .`. Unless it
+   printed `hand-written, left alone` or a rule already runs `agents --check`, add the rule that the
+   same script's `agents-rule` prints to `rules`, then run the `agents` command again.
 8. Report: rules created, paths left unmapped, and every pairing that failed
    step 4.
 
