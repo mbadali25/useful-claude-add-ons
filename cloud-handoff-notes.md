@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 14:52 UTC
+Last updated: 2026-10-04 14:53 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:53: #407 T-0045 review 155ac5bd: 1 BLOCK (two-env map: production dispatch gated as staging via substring first-match -> requireHuman skipped) / 3 FIX (case-sensitivity vs ps1 -like, leading @ ref splats in pwsh, tag rule overclaimed) / 6 NIT. Sent to builder. Possible follow-up: promote-gate substring first-match itself.
 - 14:52: #450 T-0084 review e5c17322: 1 BLOCK (non-dict vaults.memory falls back to another vault) / 7 FIX (EACCES read as absent, near-pointer -> full-text, ':' in later segments, dangling md skipped, unreadable vault -> note-missing, stale vaultPath fallback, one-shell test pass) / 9 NIT. Sent to builder; F2+F6 owner-decisions taken per recommendation (fail closed; match obsidian_common).
 - 14:49: WAVE1 #416 T-0057 built -> 767966c2 (5 routing rows + _gate; 222 route tests, 14 mutations red; 1.0.399; L-0661 to commit mutations from scratchpad/t0057/sab.py). Review started. Slot -> #481 T-0074 build (1.0.402; may stop on Q7).
 - 14:48: #405 L-0688 review 760691de: 0/0/2 CLEAN -> landing queue. Carry NIT: unmerged (U) record gets 'removed from the index' reason - check status letter D vs U.
