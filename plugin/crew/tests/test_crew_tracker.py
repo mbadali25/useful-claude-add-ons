@@ -2226,3 +2226,400 @@ def test_checkboxless_card_gets_an_empty_box_elsewhere():
     lines = new.splitlines()
 
     assert (problem, "- [ ] T-0042" in lines, "- T-0042" in lines) == (None, True, False)
+
+
+# --- ids beyond T- and the Complete/ archive (L-0509) -------------------------------
+
+ARCHIVED = "Complete"
+DONE_ROW = "T-0042 | done | low | repo | Fix token refresh on 401\n"
+
+
+def _board_dir(vault):
+    return vault / "Boards" / "repo"
+
+
+def _archive_note(vault, ticket=CARD):
+    folder = _board_dir(vault) / ARCHIVED
+    folder.mkdir(exist_ok=True)
+    os.rename(_board_dir(vault) / f"{ticket}.md", folder / f"{ticket}.md")
+
+
+def _archived_obsidian(tmp_path, folder=True):
+    """T-0042 done, its card gone from the board, its note under Complete/."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(DONE_ROW, encoding="utf-8", newline="\n")
+    board = _board_dir(vault) / "Board.md"
+    board.write_text(board.read_text(encoding="utf-8").replace(
+        "- [ ] [[T-0042]] Fix token refresh on 401\n", ""), encoding="utf-8", newline="\n")
+    _archive_note(vault)
+    if folder:
+        (root / ".work" / "tickets" / ARCHIVED / CARD).mkdir(parents=True)
+    return root, vault
+
+
+@pytest.mark.parametrize("ticket", ["L-0509", "W-0001"])
+def test_cli_accepts_l_and_w_ids(tmp_path, ticket):
+    root = _files_repo(tmp_path, f"{ticket} | spec | low | repo | x\n")
+
+    done = _cli(root, "move", "--ticket", ticket, "--to", "planned")
+
+    assert (done.returncode, done.stdout) == (0, f"files: updated: .work/INDEX.md spec -> planned\n")
+
+
+@pytest.mark.parametrize("ticket", ["Complete", "complete", "T-0042\n"])
+def test_cli_refuses_complete(tmp_path, ticket):
+    root = _files_repo(tmp_path, ROW)
+
+    done = _cli(root, "read", "--ticket", ticket)
+
+    assert (done.returncode, "like T-0042 or L-0509" in done.stderr) == (2, True)
+
+
+def test_vault_paths_accepts_the_archive_subdir_only_through_the_constant(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = make_repo(tmp_path)
+    settings = {"vaultPath": str(vault), "boardDir": "Boards/repo"}
+
+    good, problem = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), settings, [("note", "T-1.md", ARCHIVED)])
+    _, other = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), settings, [("note", "T-1.md", "Elsewhere")])
+    _, nested = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), settings, [("board", "Complete/Board.md")])
+
+    assert (problem, good["noteShown"], good["note"]) == (
+        None, "Boards/repo/Complete/T-1.md", str(_board_dir(vault).resolve() / ARCHIVED / "T-1.md"))
+    assert "only the archive folder" in other
+    assert "must be a bare file name" in nested
+
+
+def test_archived_note_is_confinement_checked(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / f"{CARD}.md").write_text("planted\n", encoding="utf-8")
+    _symlink(_board_dir(vault) / ARCHIVED, outside, is_dir=True)
+    root = _obsidian_repo(tmp_path, vault)
+
+    done, untouched = _refused(tmp_path, root, ("read", "--ticket", CARD))
+
+    assert (done.returncode, untouched, "resolves outside the vault" in done.stdout) == (1, True, True)
+
+
+def test_read_of_an_archived_ticket_reports_it_archived(tmp_path):
+    root, _vault = _archived_obsidian(tmp_path)
+
+    got = crew_tracker.read(str(root), CARD)["results"]
+
+    assert (got[1]["state"], got[1]["lane"], got[1]["archived"]) == ("read", "Complete/", True)
+    assert _cli(root, "read", "--ticket", CARD).returncode == 0
+
+
+@pytest.mark.parametrize("folder", [True, False], ids=["folder-and-note", "note-only"])
+@pytest.mark.parametrize("reopen", [False, True])
+def test_move_of_an_archived_ticket_refuses(tmp_path, reopen, folder):
+    root, vault = _archived_obsidian(tmp_path, folder=folder)
+    before = _snapshot(root, vault)
+
+    got = crew_tracker.move(str(root), CARD, "in-progress", reopen=reopen)
+
+    assert (crew_tracker.exit_code(got), _snapshot(root, vault) == before) == (1, True)
+    assert got["results"][-1]["reason"] == (
+        "T-0042 is archived in Complete/; move its folder and note back by hand to reopen it")
+
+
+@pytest.mark.parametrize("reopen", [False, True])
+def test_files_move_of_an_archived_ticket_refuses(tmp_path, reopen):
+    root = _files_repo(tmp_path, DONE_ROW)
+    (root / ".work" / "tickets" / ARCHIVED / CARD).mkdir(parents=True)
+
+    got = crew_tracker.move(str(root), CARD, "in-progress", reopen=reopen)
+
+    assert (crew_tracker.exit_code(got), _index(root)) == (1, DONE_ROW)
+    assert "archived in Complete/" in got["results"][-1]["reason"]
+
+
+def test_create_refuses_an_id_whose_note_is_archived(tmp_path):
+    root, vault = _archived_obsidian(tmp_path, folder=False)
+    (root / ".work" / "INDEX.md").write_text("", encoding="utf-8")
+    before = _snapshot(root, vault)
+
+    got = crew_tracker.create(str(root), CARD, "again")
+
+    assert (crew_tracker.exit_code(got), _snapshot(root, vault) == before) == (1, True)
+    assert got["results"][-1]["reason"].startswith("id taken: ")
+    assert "Complete" in got["results"][-1]["reason"]
+
+
+@pytest.mark.parametrize("action", ["read", "move", "create"])
+def test_note_in_both_places_is_could_not_tell(tmp_path, action):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (_board_dir(vault) / ARCHIVED).mkdir()
+    _own(root, _board_dir(vault) / ARCHIVED)
+    if action == "create":
+        (root / ".work" / "INDEX.md").write_text("", encoding="utf-8")
+    before = _snapshot(root, vault)
+
+    got = {"read": lambda: crew_tracker.read(str(root), CARD),
+           "move": lambda: crew_tracker.move(str(root), CARD, "in-progress"),
+           "create": lambda: crew_tracker.create(str(root), CARD, "again")}[action]()
+
+    assert (crew_tracker.exit_code(got), _snapshot(root, vault) == before) == (1, True)
+    assert "could not tell" in got["results"][-1]["reason"]
+
+
+# --- crew_tracker.py archive (L-0509) -----------------------------------------------
+
+def _done_obsidian(tmp_path, status="done"):
+    """T-0042 at `status`, its two-line card in Done, its note this repo's."""
+    vault = _make_vault(tmp_path / "vault", board="board_archived.md")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(DONE_ROW.replace("done", status), encoding="utf-8",
+                                               newline="\n")
+    (root / ".work" / "tickets" / CARD).mkdir(parents=True)
+    (root / ".work" / "tickets" / CARD / "spec.md").write_text("spec\n", encoding="utf-8")
+    return root, vault
+
+
+def _archive_cli(root, ticket=CARD):
+    return _cli(root, "archive", "--ticket", ticket)
+
+
+def _archived_paths(root, vault, ticket=CARD):
+    return ((root / ".work" / "tickets" / ARCHIVED / ticket / "spec.md").is_file(),
+            (root / ".work" / "tickets" / ticket).exists(),
+            (_board_dir(vault) / ARCHIVED / f"{ticket}.md").is_file(),
+            (_board_dir(vault) / f"{ticket}.md").exists())
+
+
+@pytest.mark.parametrize("status", ["in-progress", "review", "spec"])
+def test_archive_refuses_a_ticket_not_done(tmp_path, status):
+    root, vault = _done_obsidian(tmp_path, status)
+    before = _snapshot(root, vault)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _snapshot(root, vault) == before, done.stdout) == (
+        1, True, f"files: could not update: T-0042 is {status}; only a done or merged ticket is archived\n")
+
+
+@pytest.mark.parametrize("status", ["done", "merged"])
+def test_archive_accepts_done_and_merged(tmp_path, status):
+    root, vault = _done_obsidian(tmp_path, status)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _archived_paths(root, vault)) == (0, (True, False, True, False))
+
+
+def _point(root, mapping):
+    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+    path = pathlib.Path(common) / "crew" / "active-ticket"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(mapping if isinstance(mapping, str) else json.dumps(mapping), encoding="utf-8")
+
+
+def test_archive_refuses_a_ticket_an_active_pointer_names(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    _point(root, {"/somewhere/else": CARD, str(root): "T-0001"})
+    before = _snapshot(root, vault)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _snapshot(root, vault) == before) == (1, True)
+    assert "T-0042 is the active ticket of the worktree at /somewhere/else" in done.stdout
+
+
+def test_archive_refuses_when_the_pointer_map_is_unreadable(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    _point(root, "{")
+    before = _snapshot(root, vault)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _snapshot(root, vault) == before) == (1, True)
+    assert "could not tell whether a worktree has T-0042 active" in done.stdout
+
+
+def test_archive_moves_the_folder_and_creates_complete(tmp_path):
+    root = _files_repo(tmp_path, DONE_ROW)
+    (root / ".work" / "tickets" / CARD).mkdir(parents=True)
+    (root / ".work" / "tickets" / CARD / "plan.md").write_text("plan\n", encoding="utf-8")
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, done.stdout,
+            (root / ".work" / "tickets" / ARCHIVED / CARD / "plan.md").read_text(encoding="utf-8")) == (
+        0, "folder: updated: .work/tickets/T-0042 -> .work/tickets/Complete/T-0042\n", "plan\n")
+
+
+@pytest.mark.parametrize("which", ["folder", "note"])
+def test_archive_refuses_an_existing_destination(tmp_path, which):
+    root, vault = _done_obsidian(tmp_path)
+    if which == "folder":
+        (root / ".work" / "tickets" / ARCHIVED / CARD).mkdir(parents=True)
+    else:
+        (_board_dir(vault) / ARCHIVED).mkdir()
+        (_board_dir(vault) / ARCHIVED / f"{CARD}.md").write_text("someone's\n", encoding="utf-8")
+    before = _snapshot(root, vault)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _snapshot(root, vault) == before) == (1, True)
+    assert "could not tell" in done.stdout
+
+
+def test_archive_never_renames_over_a_destination_that_appears(tmp_path, monkeypatch):
+    """The folder half checks the destination, then renames: a destination that
+    appears between the two is not overwritten (a non-empty directory refuses)."""
+    root, vault = _done_obsidian(tmp_path)
+    real = crew_tracker.crew_common.locate_ticket
+
+    def appear(top, ticket):
+        got = real(top, ticket)
+        dest = root / ".work" / "tickets" / ARCHIVED / CARD
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "theirs.md").write_text("theirs\n", encoding="utf-8")
+        return got
+    monkeypatch.setattr(crew_tracker.crew_common, "locate_ticket", appear)
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert crew_tracker.exit_code(got) == 1
+    assert (root / ".work" / "tickets" / ARCHIVED / CARD / "theirs.md").is_file()
+    assert (root / ".work" / "tickets" / CARD / "spec.md").is_file()
+    assert (_board_dir(vault) / f"{CARD}.md").is_file()
+
+
+@pytest.mark.parametrize("owner", ["foreign", "unknown"])
+def test_archive_moves_a_note_only_when_ours(tmp_path, owner):
+    root, vault = _done_obsidian(tmp_path)
+    note = _board_dir(vault) / f"{CARD}.md"
+    note.write_text("# T-0042\n\n- repo-id: someone-else\n" if owner == "foreign" else "# T-0042\n",
+                    encoding="utf-8")
+    before = _snapshot(root, vault)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _snapshot(root, vault) == before) == (1, True)
+
+
+def test_archive_removes_the_whole_card_from_done(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    board = _board_dir(vault) / "Board.md"
+    old = board.read_text(encoding="utf-8")
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, board.read_text(encoding="utf-8")) == (0, old.replace(
+        "- [x] [[T-0042]] Fix token refresh on 401\n\ta continuation line the card carries\n", ""))
+    assert done.stdout.splitlines() == [
+        "folder: updated: .work/tickets/T-0042 -> .work/tickets/Complete/T-0042",
+        "obsidian-note: updated: Boards/repo/T-0042.md -> Boards/repo/Complete/T-0042.md",
+        "obsidian: updated: Boards/repo/Board.md card removed from Done"]
+
+
+def test_archive_refuses_a_card_outside_done(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    board = _board_dir(vault) / "Board.md"
+    board.write_text(board.read_text(encoding="utf-8").replace("[[T-0043]]", "[[T-0042]]", 1).replace(
+        "- [x] [[T-0042]] Fix token refresh on 401\n\ta continuation line the card carries\n", ""),
+        encoding="utf-8")
+    before = _snapshot(root, vault)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _snapshot(root, vault) == before) == (1, True)
+    assert "card is in Ready, not Done" in done.stdout
+
+
+def test_archive_leaves_index_byte_identical(tmp_path):
+    root, _vault = _done_obsidian(tmp_path)
+    index = (root / ".work" / "INDEX.md").read_bytes()
+
+    assert _archive_cli(root).returncode == 0
+    assert (root / ".work" / "INDEX.md").read_bytes() == index
+
+
+def test_archive_twice_is_unchanged(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    _archive_cli(root)
+    before = _snapshot(root, vault)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, _snapshot(root, vault) == before, [line.split(":")[1].strip()
+                                                               for line in done.stdout.splitlines()]) == (
+        0, True, ["unchanged", "unchanged", "unchanged"])
+
+
+@pytest.mark.parametrize("crash", ["after-folder", "after-note"])
+def test_archive_completes_after_a_crash_between_halves(tmp_path, crash):
+    root, vault = _done_obsidian(tmp_path)
+    os.makedirs(root / ".work" / "tickets" / ARCHIVED)
+    os.rename(root / ".work" / "tickets" / CARD, root / ".work" / "tickets" / ARCHIVED / CARD)
+    if crash == "after-note":
+        _archive_note(vault)
+
+    done = _archive_cli(root)
+    board = (_board_dir(vault) / "Board.md").read_text(encoding="utf-8")
+
+    assert (done.returncode, _archived_paths(root, vault), "T-0042" in board) == (
+        0, (True, False, True, False), False)
+    assert done.stdout.splitlines()[0].startswith("folder: unchanged")
+
+
+def test_archive_under_jira_moves_the_folder_only(tmp_path):
+    root = make_repo(tmp_path)
+    _crew_json(root, {"kind": "jira"})
+    (root / ".work" / "INDEX.md").write_text(DONE_ROW, encoding="utf-8")
+    (root / ".work" / "tickets" / CARD).mkdir(parents=True)
+
+    done = _archive_cli(root)
+
+    assert (done.returncode, done.stdout.splitlines()) == (0, [
+        "folder: updated: .work/tickets/T-0042 -> .work/tickets/Complete/T-0042",
+        "tracker: not applicable: jira has no board to archive from; the folder only"])
+
+
+def test_archive_exit_codes_match_move(tmp_path):
+    root = _files_repo(tmp_path, DONE_ROW)
+
+    missing = _archive_cli(root)
+    usage = _cli(root, "archive")
+
+    assert (missing.returncode, usage.returncode, missing.stdout) == (
+        1, 2, "folder: could not update: no folder for T-0042 at .work/tickets/T-0042\n")
+
+
+def test_create_refuses_an_id_whose_folder_is_archived(tmp_path):
+    root = _files_repo(tmp_path, "")
+    (root / ".work" / "INDEX.md").write_text("", encoding="utf-8")
+    (root / ".work" / "tickets" / ARCHIVED / CARD).mkdir(parents=True)
+
+    got = crew_tracker.create(str(root), CARD, "again")
+
+    assert (crew_tracker.exit_code(got), _index(root)) == (1, "")
+    assert got["results"][0]["reason"] == "id taken: T-0042 is archived in Complete/"
+
+
+def test_rename_note_refuses_an_existing_destination(tmp_path):
+    """Belt to `_note_where`'s braces: a destination that appears after the
+    check is never renamed over."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    paths, problem = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), crew_tracker.resolve(str(root))["settings"],
+        crew_tracker._note_names({"board": "Board.md"}, CARD))  # pylint: disable=protected-access
+    (_board_dir(vault) / ARCHIVED).mkdir()
+    (_board_dir(vault) / ARCHIVED / f"{CARD}.md").write_text("theirs\n", encoding="utf-8")
+    live = (_board_dir(vault) / f"{CARD}.md").read_bytes()
+
+    got = crew_tracker._rename_note(paths)  # pylint: disable=protected-access
+
+    assert (problem, got["state"], (_board_dir(vault) / f"{CARD}.md").read_bytes(),
+            (_board_dir(vault) / ARCHIVED / f"{CARD}.md").read_text(encoding="utf-8")) == (
+        None, "could not update", live, "theirs\n")

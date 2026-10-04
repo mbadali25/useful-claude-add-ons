@@ -4,6 +4,7 @@
     python3 crew_tracker.py create  --ticket T-0042 --title "..." [--root .] [--json]
     python3 crew_tracker.py move    --ticket T-0042 --to spec [--root .] [--json]
     python3 crew_tracker.py read    --ticket T-0042 [--root .] [--json]
+    python3 crew_tracker.py archive --ticket L-0509 [--root .] [--json]
 
 The lifecycle commands call this at their status transitions instead of each
 restating, in prose, how a tracker is written. One line per backend is
@@ -50,6 +51,22 @@ around the write, so a directory renamed out of the vault with the fd held is
 refused too. A failed tracker write never
 undoes the lifecycle transition that called it: it prints `could not update:
 <reason>` and exits 1, and the command's prose tells the human.
+
+## Archive (L-0509)
+
+`archive --ticket <ID>` moves ONE done or merged ticket out of the way: its
+folder `.work/tickets/<ID>/` to `.work/tickets/Complete/<ID>/`, under obsidian
+its note `<boardDir>/<ID>.md` to `<boardDir>/Complete/<ID>.md` (only when the
+note says the card is this repo's), and its card off the Done lane. Each half
+is one line, idempotent (`unchanged` when already done, so a re-run after a
+crash completes the rest), and a failed half stops the halves after it. It
+refuses unless INDEX says `done` or `merged`, refuses a ticket any worktree's
+active-ticket pointer names (or when that map cannot be read), never renames
+over an existing destination, and never edits INDEX.md: the row keeps the id
+taken. Every vault check runs before the folder moves. jira and sdp: the
+folder only. An archived ticket is still found by `read` (lane `Complete/`);
+`move` refuses it (un-archiving is by hand) and `create` treats its id as
+taken. A note or folder present in both places is `could not tell`.
 """
 import argparse
 import contextlib
@@ -950,6 +967,30 @@ def move_card(board, ticket, key):
     return _place(rest, key, moved), card["lane"], None
 
 
+def remove_card(board, ticket):
+    """`(new_text, None)`, `(None, "absent")` when no card for `ticket` is on the
+    lanes, or `(None, problem)`. Cuts the card's whole span -- first line and
+    continuation lines -- only from the done lane; every other byte is kept."""
+    card, problem = find_card(board, ticket)
+    if problem and not _cards_for(board, ticket):
+        return None, "absent"
+    if problem:
+        return None, problem
+    done = board["columns"]["done"]
+    if card["lane"] != done:
+        return None, f"card is in {card['lane']}, not {done}"
+    lines = board["lines"]
+    remaining = lines[:card["start"]] + lines[card["end"]:]
+    rest, problem = parse_board("".join(remaining), board["columns"])
+    if problem:
+        return None, problem
+    return "".join(rest["lines"]), None
+
+
+def _cards_for(board, ticket):
+    return [card for card in _cards(board) if card["id"] == ticket]
+
+
 def add_card(board, ticket, title, key):
     """`(new_text, None)`: `- [ ] [[<id>]] <title>` first in lane `key`; unchanged
     when the ticket already has a card anywhere above the archive."""
@@ -987,7 +1028,10 @@ def _git_ignored(repo, path):
 def _vault_paths(root, settings, names):
     """`({"vault", "dir", <label>: real path}, None)` or `(None, problem)`.
 
-    `names` is `[(label, file name)]`, each placed at `<vault>/<boardDir>/`.
+    `names` is `[(label, file name)]` or `[(label, file name, sub)]`, each
+    placed at `<vault>/<boardDir>/` or `<vault>/<boardDir>/<sub>/`, where `sub`
+    may only be the archive folder (`crew_common.ARCHIVE_DIR`, L-0509). Every
+    file gets the same confinement, regular-file and git-ignore checks.
     """
     raw = settings.get("vaultPath")
     if not raw or not isinstance(raw, str):
@@ -1010,13 +1054,16 @@ def _vault_paths(root, settings, names):
     except OSError as exc:
         return None, f"vault {raw}: {exc.strerror or exc}"
     found["vaultId"] = (seen.st_dev, seen.st_ino)
-    for label, name in names:
+    for label, name, *sub in names:
         if not isinstance(name, str):
             return None, f"obsidian.{label} {name!r} must be a bare file name"
         if not name or name in (".", "..") or any(sep in name for sep in "/\\"):
             return None, f"obsidian.{label} {name!r} must be a bare file name"
+        if sub and sub != [crew_common.ARCHIVE_DIR]:
+            return None, f"{label}: {sub!r} is not a folder crew writes; only the archive folder is"
+        name = "/".join(sub + [name])
         shown = f"{found['dir']}/{name}" if found["dir"] else name
-        real = os.path.realpath(os.path.join(vault, board_dir, name))
+        real = os.path.realpath(os.path.join(vault, board_dir, *name.split("/")))
         if not _inside(vault, real):
             return None, f"{label} {shown} resolves outside the vault"
         if os.path.lexists(real) and not os.path.isfile(real):
@@ -1025,7 +1072,7 @@ def _vault_paths(root, settings, names):
     # Each file, not the vault: a vault that CONTAINS the repo, with boardDir
     # pointing into it, puts the board in the worktree while the vault is not.
     repo = os.path.realpath(root)
-    for label, _ in names:
+    for label, *_ in names:
         if not _inside(repo, found[label]):
             continue
         ignored = _git_ignored(repo, found[label])
@@ -1280,23 +1327,58 @@ _NOTE_REPO_ID = re.compile(r"^(?:- )?repo-id:[ \t]*['\"]?(.+?)['\"]?[ \t\r]*$", 
 OURS, FOREIGN, UNKNOWN = "ours", "foreign", "unknown"
 
 
-def _card_owner(paths, here):
+def _card_owner(paths, here, label="note"):
     """`(OURS|FOREIGN|UNKNOWN, detail, note_exists)`; detail is the note's
-    repo-id for FOREIGN and why it cannot be told for UNKNOWN."""
+    repo-id for FOREIGN and why it cannot be told for UNKNOWN. `label` is the
+    note `_note_where` found: the live one, or `archivedNote` (L-0509)."""
+    shown = paths[label + "Shown"]
     try:
-        raw = _read_bytes(paths["note"])
+        raw = _read_bytes(paths[label])
     except OSError as exc:
-        return UNKNOWN, f"{paths['noteShown']}: {exc.strerror or exc}", True
+        return UNKNOWN, f"{shown}: {exc.strerror or exc}", True
     if raw is None:
-        return UNKNOWN, f"no {paths['noteShown']} note names its repo-id", False
-    text, problem = _decode(raw, paths["noteShown"])
+        return UNKNOWN, f"no {shown} note names its repo-id", False
+    text, problem = _decode(raw, shown)
     found = set() if problem else set(_NOTE_REPO_ID.findall(text))
     if len(found) != 1:
-        why = problem or (f"{paths['noteShown']} names no repo-id" if not found
-                          else f"{paths['noteShown']} names {len(found)} repo-ids")
+        why = problem or (f"{shown} names no repo-id" if not found
+                          else f"{shown} names {len(found)} repo-ids")
         return UNKNOWN, why, True
     owner = found.pop()
     return (OURS, owner, True) if owner == here else (FOREIGN, owner, True)
+
+
+def _note_names(settings, ticket):
+    """The board, the live note and the archived note, for `_vault_paths`."""
+    return [("board", settings["board"]), ("note", f"{ticket}.md"),
+            ("archivedNote", f"{ticket}.md", crew_common.ARCHIVE_DIR)]
+
+
+def _note_where(paths):
+    """`(where, why)`: the ticket note live (`<boardDir>/<ID>.md`), archived
+    (`<boardDir>/Complete/<ID>.md`), absent, or could not tell -- both present,
+    or an `lstat` that failed with anything but not-found (L-0509). An unknown
+    never reads as absent."""
+    seen = {}
+    for label in ("note", "archivedNote"):
+        try:
+            os.lstat(paths[label])
+            seen[label] = True
+        except (FileNotFoundError, NotADirectoryError):
+            seen[label] = False
+        except OSError as exc:
+            return crew_common.COULD_NOT_TELL, f"{paths[label + 'Shown']}: {exc.strerror or exc}"
+    if seen["note"] and seen["archivedNote"]:
+        return crew_common.COULD_NOT_TELL, (f"both {paths['noteShown']} and "
+                                            f"{paths['archivedNoteShown']} exist")
+    if seen["archivedNote"]:
+        return crew_common.COMPLETE, None
+    return (crew_common.LIVE if seen["note"] else crew_common.ABSENT), None
+
+
+def _archived(ticket):
+    return (f"{ticket} is archived in {crew_common.ARCHIVE_DIR}/; move its folder and note "
+            "back by hand to reopen it")
 
 
 def _foreign(paths, ticket, owner, here):
@@ -1346,11 +1428,16 @@ def _obsidian_create(root, settings, ticket, title):
     if held:
         return [_result("files", FAILED, held)]
     here = repo_id(root)
-    paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
+    paths, problem = _vault_paths(root, settings, _note_names(settings, ticket))
     if not problem and here is None:
         problem = _no_identity(root)
     board, problem = (None, problem) if problem else _load_board(paths, columns)
     note = False
+    where, why = (None, None) if problem else _note_where(paths)
+    if where == crew_common.COMPLETE:
+        problem = f"{TAKEN}: {ticket}'s note is archived at {paths['archivedNoteShown']}"
+    elif where == crew_common.COULD_NOT_TELL:
+        problem = f"{TAKEN}: could not tell where {ticket}'s note lives: {why}"
     if not problem:
         owner, detail, note = _card_owner(paths, here)
         if owner == FOREIGN:
@@ -1388,7 +1475,12 @@ def _obsidian_create(root, settings, ticket, title):
 def _obsidian_move(root, settings, ticket, status, reopen=False):
     columns, key = settings["columns"], LANE_FOR_STATUS[status]
     here = repo_id(root)
-    paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
+    paths, problem = _vault_paths(root, settings, _note_names(settings, ticket))
+    where, why = (None, None) if problem else _note_where(paths)
+    if where == crew_common.COMPLETE:
+        problem = _archived(ticket)
+    elif where == crew_common.COULD_NOT_TELL:
+        problem = f"could not tell where {ticket}'s note lives: {why}"
     row = None if problem else _files_read(root, ticket)
     if not problem and row["state"] != READ:
         problem = f"no {INDEX_REL} row for {ticket} in this repo"
@@ -1427,14 +1519,24 @@ def _obsidian_move(root, settings, ticket, status, reopen=False):
 def _obsidian_read(root, settings, ticket):
     files = _files_read(root, ticket)
     here = repo_id(root)
-    paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
+    paths, problem = _vault_paths(root, settings, _note_names(settings, ticket))
     if not problem and here is None:
         problem = _no_identity(root)
+    where, why = (None, None) if problem else _note_where(paths)
+    if where == crew_common.COULD_NOT_TELL:
+        problem = f"could not tell where {ticket}'s note lives: {why}"
     board, problem = (None, problem) if problem else _load_board(paths, settings["columns"])
     card, problem = (None, problem) if problem else find_card(board, ticket)
+    label = "archivedNote" if where == crew_common.COMPLETE else "note"
+    if where == crew_common.COMPLETE and problem == f"no card for {ticket} on the board":
+        owner, detail, _ = _card_owner(paths, here, label)
+        if owner == FOREIGN:
+            return [files, _result("obsidian", UNREADABLE, _foreign(paths, ticket, detail, here))]
+        return [files, _result("obsidian", READ, f"archived; INDEX status {files.get('status')}",
+                               lane=f"{crew_common.ARCHIVE_DIR}/", archived=True, disagree=False)]
     owner, detail = None, None
     if not problem:
-        owner, detail, _ = _card_owner(paths, here)
+        owner, detail, _ = _card_owner(paths, here, label)
         if owner == FOREIGN:
             problem = _foreign(paths, ticket, detail, here)
     if problem:
@@ -1445,6 +1547,195 @@ def _obsidian_read(root, settings, ticket):
     notes = [f"INDEX status {status} expects {expected}"] if disagree else []
     notes += [f"whose card could not tell: {detail}"] if owner == UNKNOWN else []
     return [files, _result("obsidian", READ, "; ".join(notes) or None, lane=card["lane"], disagree=disagree)]
+
+
+# --- archive (L-0509) ------------------------------------------------------------
+
+ARCHIVE_STATUSES = ("done", "merged")
+_TICKETS_REL = ".work/tickets"
+
+
+def _active_holder(root, ticket):
+    """Why `ticket` may not be archived because a worktree has it active, or
+    None. The map is `<git-common-dir>/crew/active-ticket`, worktree -> id; one
+    that cannot be read is could-not-tell, never "no pointer"."""
+    common = _common_dir(root)
+    if common is None:
+        return f"could not tell whether a worktree has {ticket} active: git named no common dir"
+    path = os.path.join(common, "crew", "active-ticket")
+    try:
+        raw = _read_bytes(path)
+    except OSError as exc:
+        return f"could not tell whether a worktree has {ticket} active: {path}: {exc.strerror or exc}"
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return f"could not tell whether a worktree has {ticket} active: {path} does not parse"
+    holders = sorted(str(top) for top, held in data.items() if held == ticket)
+    if holders:
+        return (f"{ticket} is the active ticket of the worktree at {', '.join(holders)}; "
+                "deactivate it there first")
+    return None
+
+
+def _files_archive(root, ticket):
+    """The folder half: `.work/tickets/<ID>` -> `.work/tickets/Complete/<ID>`."""
+    backend = "folder"
+    live_rel = f"{_TICKETS_REL}/{ticket}"
+    done_rel = f"{_TICKETS_REL}/{crew_common.ARCHIVE_DIR}/{ticket}"
+    folder, where, why = crew_common.locate_ticket(root, ticket)
+    if where == crew_common.COMPLETE:
+        return _result(backend, UNCHANGED, f"{done_rel} already archived")
+    if where == crew_common.COULD_NOT_TELL:
+        return _result(backend, FAILED, f"could not tell where {ticket} lives: {why}")
+    if where == crew_common.ABSENT:
+        return _result(backend, FAILED, f"no folder for {ticket} at {live_rel}")
+    archive = os.path.join(crew_common.tickets_root(root), crew_common.ARCHIVE_DIR)
+    try:
+        os.makedirs(archive, exist_ok=True)
+        # os.rename, never shutil.move: a cross-device move would copy, and a
+        # destination that appeared since the check is refused, not merged.
+        os.rename(folder, os.path.join(archive, ticket))
+    except OSError as exc:
+        return _result(backend, FAILED, f"{live_rel}: {exc.strerror or exc}; nothing moved")
+    return _result(backend, UPDATED, f"{live_rel} -> {done_rel}")
+
+
+def _rename_note(paths):
+    """Move the live note into `<boardDir>/Complete/` through the pinned
+    directory walk; the archive folder is created and entered without
+    following a link, and an existing destination is refused."""
+    shown, dest = paths["noteShown"], paths["archivedNoteShown"]
+    try:
+        with _pinned(paths, "note") as (name, fd, check):
+            stale = check()
+            if stale:
+                return _result("obsidian-note", FAILED, stale)
+            if fd is not None:
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(crew_common.ARCHIVE_DIR, dir_fd=fd)
+                inner = os.open(crew_common.ARCHIVE_DIR, _DIR_FLAGS, dir_fd=fd)
+                try:
+                    if _exists_at(name, inner):
+                        return _result("obsidian-note", FAILED, f"could not tell which note is "
+                                       f"{os.path.basename(name)[:-3]}'s: {dest} already exists")
+                    os.rename(name, name, src_dir_fd=fd, dst_dir_fd=inner)
+                finally:
+                    os.close(inner)
+            else:
+                folder = os.path.join(os.path.dirname(name), crew_common.ARCHIVE_DIR)
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(folder)
+                if os.path.islink(folder) or not os.path.isdir(folder):
+                    return _result("obsidian-note", FAILED, f"{dest}: its folder is not a directory")
+                if os.path.lexists(paths["archivedNote"]):
+                    return _result("obsidian-note", FAILED, f"could not tell which note is the "
+                                   f"ticket's: {dest} already exists")
+                os.rename(name, paths["archivedNote"])
+            stale = check()
+            if stale:
+                return _result("obsidian-note", FAILED, f"{stale}; the note may have moved")
+    except OSError as exc:
+        return _result("obsidian-note", FAILED, _moved(shown, exc))
+    return _result("obsidian-note", UPDATED, f"{shown} -> {dest}")
+
+
+def _exists_at(name, dir_fd):
+    try:
+        os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _obsidian_archive_checks(root, settings, ticket):
+    """`(paths, where, None)` or `(None, None, problem)`: every vault check the
+    note and board halves need, run before the folder half moves anything."""
+    here = repo_id(root)
+    paths, problem = _vault_paths(root, settings, _note_names(settings, ticket))
+    if not problem and here is None:
+        problem = _no_identity(root)
+    board, problem = (None, problem) if problem else _load_board(paths, settings["columns"])
+    if not problem:
+        _, why = remove_card(board, ticket)
+        problem = None if why == "absent" else why
+    where, why = (None, None) if problem else _note_where(paths)
+    if where == crew_common.COULD_NOT_TELL:
+        problem = f"could not tell where {ticket}'s note lives: {why}"
+    if not problem:
+        label = "archivedNote" if where == crew_common.COMPLETE else "note"
+        owner, detail, _ = _card_owner(paths, here, label)
+        if owner != OURS:
+            problem = (_foreign if owner == FOREIGN else _unclaimed)(paths, ticket, detail, here)
+    return (None, None, problem) if problem else (paths, where, None)
+
+
+def _obsidian_archive(settings, ticket, paths, where):
+    """The note half, then the card half; a failed note half stops the card."""
+    columns = settings["columns"]
+    if where == crew_common.COMPLETE:
+        note = _result("obsidian-note", UNCHANGED, f"{paths['archivedNoteShown']} already archived")
+    else:
+        note = _rename_note(paths)
+        if note["state"] == FAILED:
+            return [note]
+
+    def edit(current):
+        new, why = remove_card(current, ticket)
+        if why == "absent":
+            return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} has no card for {ticket}")
+        if why:
+            return None, _result("obsidian", FAILED, why)
+        return new, _result("obsidian", UPDATED, f"{paths['boardShown']} card removed from {columns['done']}")
+
+    return [note, _board_write(paths, columns, edit)]
+
+
+def archive(root, ticket):
+    """Archive ONE done or merged ticket: folder, then note, then card (module
+    docstring, "Archive"). Never edits INDEX.md."""
+    info = resolve(root)
+    stop = _gate(info)
+    if stop:
+        return _report(info, [stop])
+    kind = info["kind"]
+    row = _files_read(root, ticket)
+    if row["state"] != READ:
+        return _report(info, [_result("files", FAILED, row["reason"])])
+    if row["status"] not in ARCHIVE_STATUSES:
+        return _report(info, [_result("files", FAILED, f"{ticket} is {row['status']}; only a done or "
+                                      "merged ticket is archived")])
+    held = _active_holder(root, ticket)
+    if held:
+        return _report(info, [_result("files", FAILED, held)])
+    paths = where = None
+    if kind == "obsidian":
+        paths, where, problem = _obsidian_archive_checks(root, info["settings"], ticket)
+        if problem:
+            return _report(info, [_result("obsidian", FAILED, problem)])
+    results = [_files_archive(root, ticket)]
+    if results[0]["state"] == FAILED:
+        return _report(info, results)
+    if kind == "obsidian":
+        results += _obsidian_archive(info["settings"], ticket, paths, where)
+    elif kind in _SYNC:
+        results.append(_result("tracker", NOT_APPLICABLE, None, line=(
+            f"tracker: not applicable: {kind} has no board to archive from; the folder only")))
+    return _report(info, results)
+
+
+def _folder_refusal(root, ticket):
+    """Why `move` refuses `ticket` because of where its folder is, or None."""
+    _, where, why = crew_common.locate_ticket(root, ticket)
+    if where == crew_common.COMPLETE:
+        return _archived(ticket)
+    if where == crew_common.COULD_NOT_TELL:
+        return f"could not tell where {ticket} lives: {why}"
+    return None
 
 
 # --- the interface -------------------------------------------------------------
@@ -1473,6 +1764,12 @@ def create(root, ticket, title):
         return _report(info, [_result(kind, DELEGATED, _CREATE_DELEGATED)])
     if not title_ok(title):
         return _report(info, [_result(kind, FAILED, "title must be one line with no '|'")])
+    _, where, why = crew_common.locate_ticket(root, ticket)
+    if where == crew_common.COMPLETE:
+        return _report(info, [_result(kind, FAILED, f"{TAKEN}: {ticket} is archived in "
+                                      f"{crew_common.ARCHIVE_DIR}/")])
+    if where == crew_common.COULD_NOT_TELL:
+        return _report(info, [_result(kind, FAILED, f"{TAKEN}: could not tell where {ticket} lives: {why}")])
     if kind == "obsidian":
         return _report(info, _obsidian_create(root, info["settings"], ticket, title))
     return _report(info, [_files_create(root, ticket, title)])
@@ -1490,6 +1787,9 @@ def move(root, ticket, status, reopen=False):
         return _report(info, [_result(kind, FAILED, f"status {status} maps to no lane")])
     if kind in _SYNC:
         return _report(info, [_push(kind, ticket, status)])
+    refused = _folder_refusal(root, ticket)
+    if refused:
+        return _report(info, [_result(kind, FAILED, refused)])
     if kind == "obsidian":
         return _report(info, _obsidian_move(root, info["settings"], ticket, status, reopen))
     return _report(info, [_files_move(root, ticket, status, reopen)])
@@ -1534,7 +1834,7 @@ def describe(info):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="crew's one tracker interface")
-    parser.add_argument("action", choices=("resolve", "create", "move", "read"))
+    parser.add_argument("action", choices=("resolve", "create", "move", "read", "archive"))
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket")
     parser.add_argument("--title")
@@ -1549,7 +1849,7 @@ def main(argv=None):
         print(json.dumps(info, indent=2, sort_keys=True) if args.json else "tracker " + describe(info))
         return 1 if info["kind"] == COULD_NOT_TELL else 0
     if not args.ticket or not _TICKET_ID.match(args.ticket):
-        parser.error("--ticket must be a ticket id like T-0042")
+        parser.error("--ticket must be a ticket id like T-0042 or L-0509")
     if args.action == "create":
         if not args.title:
             parser.error("create needs --title")
@@ -1558,6 +1858,8 @@ def main(argv=None):
         if not args.status:
             parser.error("move needs --to <status>")
         report = move(root, args.ticket, args.status, args.reopen)
+    elif args.action == "archive":
+        report = archive(root, args.ticket)
     else:
         report = read(root, args.ticket)
     if args.json:
