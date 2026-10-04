@@ -116,7 +116,13 @@ judged, nothing is written (exit 2). A second `--write` then changes nothing.
 
 Exit codes: `--check` 0 covered, 1 uncovered, 2 unknown. `--write` 0 covered
 after the write, 1 still uncovered or a `!` line kept open, 2 unknown or the
-write failed.
+write failed. An unexpected exception is 2, never 1: a crash proves nothing.
+
+Every repository-supplied name this module prints, or puts in a `reason`,
+goes through `shown` (its `ascii()` form unless `_plain`), and callers
+print uncovered paths through `listed`, so no ESC, BEL or line break in a
+file name reaches a terminal raw or forges a line. stdout is reconfigured
+with `errors="backslashreplace"` as a second line of defence.
 """
 
 import sys
@@ -160,7 +166,7 @@ def _run_git(git, cwd, args, stdin=None):
                               input=stdin, capture_output=True, timeout=_TIMEOUT,
                               check=False, env=_GIT_ENV)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise _Unknown(f"git could not run ({type(exc).__name__}: {exc})") from exc
+        raise _Unknown(f"git could not run ({type(exc).__name__}: {shown(str(exc))})") from exc
     return done
 
 
@@ -202,7 +208,7 @@ def translate_rule(rule, root):
     """`(patterns, skipped_reason, unknown_reason)` for one deny entry. A
     non-Read entry gives ([], None, None)."""
     if not isinstance(rule, str):
-        return [], None, f"a permissions.deny entry is not a string: {rule!r}"
+        return [], None, f"a permissions.deny entry is not a string: {ascii(rule)}"
     match = _READ_RULE.match(rule.strip())
     if not match:
         return [], None, None
@@ -210,7 +216,7 @@ def translate_rule(rule, root):
     # `x`, silently. `Read(.\\secrets\\**)` means `./secrets/**`.
     inner = (match.group(1) or "").strip().replace("\\", "/")
     if not inner or "\n" in inner:
-        return [], None, f"{rule} denies every read, which no ignore file can express"
+        return [], None, f"{shown(rule)} denies every read, which no ignore file can express"
     if inner.startswith("!"):
         return [], "a carve-out only shrinks the denylist; ignored", None
     if inner.startswith("//"):
@@ -232,7 +238,7 @@ def translate_rule(rule, root):
         if re.fullmatch(r"[^/*]+/\*\*", rel):
             patterns.append("**/" + rel)
     if any(p in _DENY_ALL for p in patterns):
-        return [], None, f"{rule} denies every read, which no ignore file can express"
+        return [], None, f"{shown(rule)} denies every read, which no ignore file can express"
     return patterns, None, None
 
 
@@ -286,7 +292,7 @@ def denylist(root):
 def _toplevel(root, git):
     done = _run_git(git, root, ["rev-parse", "--show-toplevel"])
     if done.returncode != 0:
-        raise _Unknown(f"{root} is not a git repository git can read")
+        raise _Unknown(f"{shown(root)} is not a git repository git can read")
     return done.stdout.decode("utf-8", "replace").strip()
 
 
@@ -325,11 +331,11 @@ def _link_target(top, path, full):
     directory), or _Unknown when it does not resolve inside the repo."""
     real = os.path.realpath(full)
     if not os.path.exists(real):
-        raise _Unknown(f"symlink {path} does not resolve, so what graphify would "
+        raise _Unknown(f"symlink {shown(path)} does not resolve, so what graphify would "
                        f"read through it is not known")
     rel = os.path.relpath(real, os.path.realpath(top)).replace(os.sep, "/")
     if rel == "." or rel == ".." or rel.startswith("../") or os.path.isabs(rel):
-        raise _Unknown(f"symlink {path} resolves outside the repository, so what "
+        raise _Unknown(f"symlink {shown(path)} resolves outside the repository, so what "
                        f"graphify would read through it is not known")
     return rel + "/" if os.path.isdir(real) else rel
 
@@ -342,7 +348,7 @@ def _judge(top, paths, patterns, lines, git):
     excluded = _ignored(sorted(opaque + list(own.values())), lines, git)
     blind = [d for d in opaque if d not in excluded]
     if blind:
-        raise _Unknown(f"{IGNORE_FILE} does not exclude {', '.join(blind[:SHOWN])}, a "
+        raise _Unknown(f"{IGNORE_FILE} does not exclude {listed(blind)}, a "
                        f"directory git lists without its files (a nested repository "
                        f"or submodule), so what graphify would read there is not known")
     # An unexcluded link is judged by its own name and by its target's.
@@ -383,7 +389,7 @@ def _matches(paths, patterns, git, fold_case=False):
                                        "-v", "-n"], stdin=stdin)
     if done.returncode not in (0, 1):
         raise _Unknown("git check-ignore failed: "
-                       + done.stderr.decode("utf-8", "replace").strip()[:200])
+                       + shown(done.stderr.decode("utf-8", "replace").strip()[:200]))
     fields = done.stdout.decode("utf-8", "surrogateescape").split("\0")
     out = {}
     for i in range(0, len(fields) - 3, 4):
@@ -421,7 +427,7 @@ def coverage(root, git="git"):
         if nested:
             result["reason"] = (f"nested {IGNORE_FILE} can re-include what the root one "
                                 f"excludes, and only the root one is evaluated: "
-                                f"{', '.join(nested[:SHOWN])}")
+                                f"{listed(nested)}")
             return result
         denied, uncovered = _judge(top, paths, patterns, _ignore_lines(top), git)
     except _Unknown as exc:
@@ -544,8 +550,22 @@ def write(root, git="git"):
     return missing, keep_open
 
 
-def _shown(path):
-    return path if _plain(path) else ascii(path)
+def shown(text):
+    """`text` safe to print on one terminal line: as it is when `_plain`,
+    else its `ascii()` form, so no control character, line separator or
+    surrogate-escaped byte reaches the terminal raw. Every name (or other
+    repository-supplied text) this module or a caller prints goes through
+    this or `listed`."""
+    return text if _plain(text) else ascii(text)
+
+
+def listed(paths, limit=SHOWN):
+    """The first `limit` of `paths`, each `shown`, comma-joined, with
+    `(+N more)` when there are more."""
+    text = ", ".join(shown(p) for p in paths[:limit])
+    if len(paths) > limit:
+        text += f" (+{len(paths) - limit} more)"
+    return text
 
 
 def render(result):
@@ -555,11 +575,8 @@ def render(result):
                 f"all excluded by {IGNORE_FILE}")
     if result["status"] == UNCOVERED:
         paths = result["uncovered"]
-        shown = ", ".join(_shown(p) for p in paths[:SHOWN])
-        if len(paths) > SHOWN:
-            shown += f" (+{len(paths) - SHOWN} more)"
         return (f"graph-ignore: UNCOVERED - graphify would read {len(paths)} "
-                f"secrets-denylisted path(s) {IGNORE_FILE} does not exclude: {shown}; "
+                f"secrets-denylisted path(s) {IGNORE_FILE} does not exclude: {listed(paths)}; "
                 f"run {FIX}")
     return f"graph-ignore: unknown - {result['reason']}"
 
@@ -573,17 +590,33 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--git", default="git", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    # A name is `shown` before it is printed; this is the second line of
+    # defence, so an encoding the terminal lacks can never raise.
+    try:
+        sys.stdout.reconfigure(errors="backslashreplace")
+    except (AttributeError, OSError, ValueError):
+        pass  # not a text stream that can be reconfigured (a test's capture)
+    try:
+        return _main(args)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # Exit 1 means "uncovered"; a crash proves nothing, so it is unknown.
+        print(ascii(f"graph-ignore: unknown - {type(exc).__name__}: {exc}")[1:-1])
+        return 2
+
+
+def _main(args):
     if args.write:
         try:
             added, kept_open = write(args.root, args.git)
         except (_Unknown, OSError, ValueError) as exc:
-            print(f"graph-ignore: unknown - write failed, {IGNORE_FILE} unchanged: {exc}")
+            print(f"graph-ignore: unknown - write failed, {IGNORE_FILE} unchanged: "
+                  f"{shown(str(exc))}")
             return 2
         print(f"graph-ignore: added {len(added)} pattern(s) to {IGNORE_FILE}"
-              + (f": {', '.join(added)}" if added else ""))
+              + (f": {listed(added, len(added))}" if added else ""))
         for path, (line, pattern) in sorted(kept_open.items()):
-            where = f"line {line} (`{pattern}`)" if line else "an unknown line"
-            print(f"graph-ignore: {where} re-includes denylisted {_shown(path)}; "
+            where = f"line {line} (`{shown(pattern)}`)" if line else "an unknown line"
+            print(f"graph-ignore: {where} re-includes denylisted {shown(path)}; "
                   f"remove that line or accept the exposure")
     else:
         kept_open = {}

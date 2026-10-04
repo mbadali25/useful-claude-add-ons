@@ -315,6 +315,27 @@ def test_status_graph_ignore_ok_and_unknown(tmp_path, case, prefix):
     assert line.startswith(prefix), line
 
 
+_HOSTILE = ("Z\x1b[2J.PEM", "ID_RSA\ngraph-ignore  ok")
+
+
+def test_status_graph_ignore_line_escapes_hostile_names(tmp_path):
+    """A tracked name carrying ESC, or a newline that would forge a second
+    `graph-ignore  ok` line, is printed in its escaped form, never raw."""
+    root = make_repo(tmp_path)
+    for name in _HOSTILE:
+        (root / name).write_text("k\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", "--", *_HOSTILE], cwd=root, check=True,
+                   capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "keys"], cwd=root, check=True,
+                   capture_output=True)
+
+    out = _run(root).stdout
+    line = _graph_ignore_line(out)
+
+    assert ("\x1b" in out, ascii(_HOSTILE[0]) in line, ascii(_HOSTILE[1]) in line) == (
+        False, True, True), out
+
+
 def test_status_graph_ignore_line_is_read_only(tmp_path):
     root = _uncovered_repo(tmp_path)
     before = _stat_tree(root)

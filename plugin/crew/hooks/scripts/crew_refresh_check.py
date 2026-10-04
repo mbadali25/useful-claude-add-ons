@@ -1236,7 +1236,7 @@ def _graph_ignore_refusal(root, graph_out, command):
     cover = crew_graph_ignore.coverage(root)
     if cover["status"] == crew_graph_ignore.UNCOVERED:
         paths = cover["uncovered"]
-        shown = ", ".join(paths[:3]) + (f" (+{len(paths) - 3} more)" if len(paths) > 3 else "")
+        shown = crew_graph_ignore.listed(paths, 3)
         return _entry("graph", graph_out, UNKNOWN,
                       f"graphify would read {len(paths)} secrets-denylisted path(s) "
                       f".graphifyignore does not exclude: {shown}; run "

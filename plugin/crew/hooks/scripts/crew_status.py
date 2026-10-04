@@ -192,7 +192,7 @@ def _graph_ignore_line(root):
         return "graph-ignore  ok"
     if cover["status"] == crew_graph_ignore.UNCOVERED:
         paths = cover["uncovered"]
-        shown = ", ".join(paths[:3]) + (f" (+{len(paths) - 3} more)" if len(paths) > 3 else "")
+        shown = crew_graph_ignore.listed(paths, 3)
         return (f"graph-ignore  UNCOVERED {len(paths)} denylisted path(s) graphify would read: "
                 f"{shown} - {crew_graph_ignore.FIX}")
     return f"graph-ignore  unknown - {cover['reason']}"

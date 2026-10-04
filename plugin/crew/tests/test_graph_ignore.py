@@ -553,3 +553,79 @@ def test_write_uses_crlf_only_when_most_lines_do(tmp_path, capsys, before, eol):
         block = handle.read()[len(before):]
 
     assert (b"\r" in block, block.count(eol)) == (eol == b"\r\n", block.count(b"\n")), block
+
+
+def test_an_unknown_reason_names_a_symlink_escaped(tmp_path, capsys):
+    """A name interpolated into the `unknown` reason is escaped: a raw ESC
+    or BEL would reach the terminal (here, retitling it)."""
+    name = "evil\x1b]0;pwn\x07"
+    root = _repo(tmp_path, {"app.py": "x = 1\n"})
+    _symlink(root, "no-such-target.txt", name)
+
+    code, out = _check(root, capsys)
+
+    assert (code, "\x1b" in out, "\x07" in out, ascii(name) in out) == (
+        2, False, False, True), out
+
+
+def test_a_non_utf8_name_under_strict_utf8_stdout_is_unknown_not_a_crash(tmp_path):
+    """A dangling link named with a byte that is not UTF-8 makes the status
+    unknown (exit 2); printing its name must not crash into exit 1, which
+    reads as uncovered."""
+    root = _repo(tmp_path, {"app.py": "x = 1\n"})
+    try:
+        os.symlink(b"no-such-target.txt", os.path.join(os.fsencode(str(root)), b"l\xffnk"))
+    except (OSError, NotImplementedError, UnicodeError, TypeError):
+        pytest.skip("this platform cannot hold a non-UTF-8 symlink name")
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+
+    done = subprocess.run([sys.executable, crew_graph_ignore.__file__, "--root", str(root),
+                           "--check"], capture_output=True, env=env, check=False, timeout=60)
+
+    assert (done.returncode, b"Traceback" in done.stderr, b"l\\udcffnk" in done.stdout) == (
+        2, False, True), (done.stdout, done.stderr)
+
+
+def test_an_unexpected_exception_is_unknown_never_uncovered(tmp_path, capsys, monkeypatch):
+    root = _repo(tmp_path, {"app.py": "x = 1\n"})
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("surprise")
+    monkeypatch.setattr(crew_graph_ignore, "coverage", boom)
+
+    code, out = _check(root, capsys)
+
+    assert (code, "graph-ignore: unknown - RuntimeError: surprise" in out) == (2, True), out
+
+
+def test_write_with_a_negation_and_unjudgeable_paths_writes_nothing(
+        tmp_path, capsys, monkeypatch):
+    """The documented branch: a `!` line exists and the paths cannot be
+    judged, so whether an appended pattern would override it is not known.
+    Nothing is written; exit 2."""
+    root = _repo(tmp_path, {"a.pem": "k\n", ".graphifyignore": "!a.pem\n"})
+    target = os.path.join(str(root), ".graphifyignore")
+    with open(target, "rb") as handle:
+        before = handle.read()
+
+    def cannot_judge(*_args, **_kwargs):
+        raise crew_graph_ignore._Unknown("cannot judge")  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_graph_ignore, "_judge", cannot_judge)
+
+    code = _main(root, "--write")
+    out = capsys.readouterr().out
+    with open(target, "rb") as handle:
+        after = handle.read()
+
+    assert (code, after == before, "has a `!` line" in out) == (2, True, True), (out, after)
+
+
+def test_an_unknown_reason_names_a_nested_repository_escaped(tmp_path, capsys):
+    name = "sub\x1b[2J"
+    root = _repo(tmp_path, {"app.py": "x = 1\n"})
+    subprocess.run(["git", "init", "-q", name], cwd=str(root), check=True,
+                   capture_output=True, stdin=subprocess.DEVNULL, timeout=30)
+
+    code, out = _check(root, capsys)
+
+    assert (code, "\x1b" in out, ascii(name + "/") in out) == (2, False, True), out

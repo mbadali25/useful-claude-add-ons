@@ -246,6 +246,21 @@ def test_graph_refresh_refused_while_denylisted_path_uncovered(tmp_path, capsys)
         "unknown", False, True, True, 1, True), (item, out)
 
 
+def test_graph_refresh_refusal_escapes_hostile_names(tmp_path, capsys):
+    """The refusal names uncovered paths escaped: a raw ESC would reach the
+    terminal, and a newline could forge a line of the check's output."""
+    names = ("Z\x1b[2J.PEM", "ID_RSA\ngraph-ignore  ok")
+    root = _stale_graph_with(tmp_path, {name: "k\n" for name in names})
+
+    item = _artifact(_check(root), "graph", "graphify-out")
+    crew_refresh_check.main(["--root", str(root), "--ticket", TICKET])
+    out = capsys.readouterr().out
+
+    assert (item["refreshable"], "\x1b" in out, "\n" in item["reason"],
+            all(ascii(name) in item["reason"] for name in names)) == (
+        False, False, False, True), (item, out)
+
+
 def test_graph_refresh_named_once_covered(tmp_path):
     root = _stale_graph_with(tmp_path, {".env": "PW=x\n", ".graphifyignore": ".env\n"})
 
