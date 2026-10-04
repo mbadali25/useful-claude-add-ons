@@ -186,12 +186,12 @@ and `approval-hook` (plan-approval-by-user-prompt) are new hooks, and
 `PreToolUse` grew from 2 pairs to 4 (`cloud-guard`, `scope-guard` are new).
 
 **Role-write-guard fails closed without python.**
-`plugin/crew/hooks/scripts/role-write-guard.sh:348-354` resolves its own
+`plugin/crew/hooks/scripts/role-write-guard.sh:358-364` resolves its own
 private python (`_resolve_role_write_python`, `:43-` — hand-copied from
 `_common.sh`'s `crew_py_strict`, not shared, "because it is the one hook
 that can BLOCK a tool call and its test suite patches this file textually",
 comment at `:34-41`); if no candidate resolves at all, or one resolves but
-the interpreter then fails to launch (`role-write-guard.sh:367-382`, any
+the interpreter then fails to launch (`role-write-guard.sh:377-392`, any
 exit status other than 0 or 2), `_role_write_fallback_decision`
 (`:326-346`) blocks (`exit 2`) any restricted role and only allows an
 unrestricted one through, unjudged, with a named reason on stderr — "could
@@ -1140,7 +1140,7 @@ writable (`:1863-1870`), rather than falling back to the old pipe form.
 anchor, `crew_py()` (`_common.sh`) only asked `command -v` and returned the
 first resolvable name, never running it; only `crew_py_strict()` actually
 executed a candidate. **At this anchor, `crew_py()` itself
-(`plugin/crew/hooks/scripts/_common.sh:59-116`) now probes**: it walks every
+(`plugin/crew/hooks/scripts/_common.sh:59-119`) now probes**: it walks every
 `python3`/`python`/`py` match on PATH (`type -ap`, `:110`), actually runs
 each with a bounded per-candidate timeout inside an overall 8-second deadline
 (`:78-107`), and returns the first one that runs `-c pass` successfully,
@@ -1167,7 +1167,7 @@ was discarded before the next call regardless.
 - **A committed parity test now exists** —
   `plugin/crew/tests/test_context_watch_python_resolver.py` and
   `plugin/crew/tests/test_verify_gate_python_resolver.py`, both confirmed
-  present, **neither read this pass**. `_common.sh:135-140`'s own comment
+  present, **neither read this pass**. `_common.sh:138-143`'s own comment
   says one of them "asserts the two copies still agree" (`crew_py_strict`
   vs. `role-write-guard.sh`'s private `_resolve_role_write_python`) — a
   guard against the "hand-copy with no guard is this repository's most
@@ -1831,7 +1831,7 @@ Added after this note's anchor; read in full at the L-0677 build head. The only 
   `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:540` — `classify`, the
   decision function; `:685` — `main()`.
-- `plugin/crew/hooks/scripts/role-write-guard.sh:348` — where the strict
+- `plugin/crew/hooks/scripts/role-write-guard.sh:358` — where the strict
   private-resolver result feeds the guard's fail-closed fallback.
 - `plugin/crew/hooks/scripts/event_claim.py` — no single entry point read
   this pass beyond the module docstring; called from `notify.sh` and
@@ -4064,15 +4064,15 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 Added 2026-10-04 on `T-0096-build`; the citations are to that branch's content
 commit. This section does not move the file's `anchor:`.
 
-- **DERIVED.** `crew_repo_config_dir` (`plugin/crew/hooks/scripts/_common.sh:328`)
+- **DERIVED.** `crew_repo_config_dir` (`plugin/crew/hooks/scripts/_common.sh:341`)
   sets `CREW_CFG_DIR` / `CREW_CFG_SOURCE` (`own`, `main`, `unknown`) by the rules of
   `crew_common.repo_config_dir` (`plugin/crew/hooks/scripts/crew_common.py:96`), with no
-  python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:354`) prints a
+  python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:367`) prints a
   resolved path. The PowerShell twin `Get-CrewRepoConfigDir` is one body copied into
   `plugin/crew/hooks/scripts/cloud-guard.ps1:192`, `plugin/crew/hooks/scripts/promote-gate.ps1:142`
   and `plugin/crew/hooks/scripts/auto-clear.ps1:126`.
 - **DERIVED.** Routed readers: `crew_incident_active`'s `standDown` read
-  (`plugin/crew/hooks/scripts/_common.sh:386`), `_cloud_guard_armed`
+  (`plugin/crew/hooks/scripts/_common.sh:399`), `_cloud_guard_armed`
   (`plugin/crew/hooks/scripts/cloud-guard.sh:40-53`, a missing resolver armed at `:42`, `unknown` at `:44`),
   `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:248-249`),
   promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:201`)

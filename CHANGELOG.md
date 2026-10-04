@@ -4,6 +4,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed - `crew`: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
+
+- Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched
+  the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343,
+  0.8s into a run bounded at 120s, empty stderr) and `test_identity_bash[aws-read-known-profile-
+  other-cloud-pinned-ok]` on #356. 2304 is `9 << 8`, how msys2-runtime's `pinfo::exit` reports a
+  process no Cygwin parent started that died of signal 9. Not the test's subprocess timeout (it
+  raises, and never fired), not the wrapper's own status path (it prints, and exits 2), not a fork
+  failure (it prints too). Cygwin raises no SIGKILL itself, the other workers were running pwsh-only
+  cases at that second, and the hook's tree had one sender: the python probe in `crew_py_strict`,
+  which after every candidate exited ran `kill -9 -- "-$watchdog" "-$pid"` at a watchdog that was
+  still alive. How Cygwin's delivery landed that on the hook's own bash.exe is modelled, not
+  observed on a Windows host. A hook killed that way is a PreToolUse status other than 0 or 2, so
+  the agent would have run the command unjudged.
+- The probe (`crew_py_strict`, its byte copy in `role-write-guard.sh`, and `crew_py`) now sends no
+  signal on the normal path: its watchdog is the builtin `read -t` in a process substitution, on a
+  pipe the probe holds, so it returns on EOF when the probe exits and leaves by itself. Only a
+  timeout still kills, as before. No `sleep` process is forked per probe any more, so the bound
+  holds on a host without `sleep` too.
+- `test_cloud_guard.py`'s `run_hook` read a killed hook's empty stdout as `allow`. A hook ended by a
+  signal (`-N` on POSIX, `N << 8` from Git Bash on Windows) is now `could not tell`, and the failure
+  names the signal instead of a bare `assert 2304 == 0`.
+- Tests: `test_python_probe_signals.py` drives each probe copy with `kill` shadowed by a spy - an
+  answering or failing candidate signals nothing live, a hung one is still killed and is no python.
+  In `test_cloud_guard.py`, a `BASH_ENV` that turns every kill at a live target into `kill -9 $$`
+  reproduces the Windows failure on Linux (red before the fix: the hook died with no output), and
+  one that kills the hook outright must read as could-not-tell. Sabotaged: the old probe turns five
+  cases red, dropping the signal decode turns the could-not-tell case red, and a watchdog that never
+  kills hangs the hung-candidate case. The `obsidian-vault` plugin carries the same probe in three
+  hooks and is not changed here.
+
 ### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with

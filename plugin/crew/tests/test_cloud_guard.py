@@ -122,6 +122,27 @@ def _argv(driver):
     return [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _PS1]
 
 
+KILLED_UNJUDGED = "could not tell"
+
+
+def killed_by(code, driver, platform=sys.platform):
+    """The signal that ended the hook process, or None when it exited.
+
+    POSIX python reports a signal death as `-N`. A native Windows parent sees
+    an MSYS bash.exe ended by signal N as `N << 8`: msys2-runtime's
+    `pinfo::exit` byte-swaps the wait status of a process no Cygwin parent
+    started, so SIGKILL reads 2304 (L-1512; measured in CI job 111538994343).
+    A bash `exit` is 0..255, so a low byte of 0 with a signal number above
+    it is a signal there and nothing else. 137 is an exit status -- bash
+    reporting a child it saw killed -- and stays one."""
+    if code < 0:
+        return -code
+    if (driver == "bash" and platform.startswith("win") and code & 0xFF == 0
+            and 0 < code >> 8 < 65):
+        return code >> 8
+    return None
+
+
 def run_hook(driver, tmp_path, tool, command, extra_env=None, payload=None,
              raw=None):
     """(decision, reason, exit code, stderr) for one hook invocation.
@@ -141,6 +162,15 @@ def run_hook(driver, tmp_path, tool, command, extra_env=None, payload=None,
         cwd=str(tmp_path), timeout=120, check=False)
     out = proc.stdout.decode("utf-8", "replace").strip()
     err = proc.stderr.decode("utf-8", "replace")
+    signal_no = killed_by(proc.returncode, driver)
+    if signal_no is not None:
+        # Silence from a hook that never finished is not its allow. PreToolUse
+        # reads any status but 0 and 2 as non-blocking, so the agent would
+        # have run the command unjudged: this run could not tell.
+        return (KILLED_UNJUDGED, "", proc.returncode,
+                f"{err}[harness] the {driver} hook was killed by signal "
+                f"{signal_no} (exit {proc.returncode}) before it judged -- "
+                "could not tell, which is not an allow")
     if not out:
         return "allow", "", proc.returncode, err
     lines = [ln for ln in out.splitlines() if ln.startswith("{")]
@@ -1288,3 +1318,69 @@ def test_scan_does_not_judge_words_inside_arguments():
                  != cloud_guard.OP_UNREADABLE_LINE}
         assert not rules & {"terraformApply", "cloudDestructive",
                             "sqlDestructive", "forcePush"}, command
+
+
+# --- L-1512: a hook killed by a signal is "could not tell", never an allow ---
+
+@pytest.mark.parametrize("code,driver,platform,want", [
+    (-9, "bash", "linux", 9),
+    (2304, "bash", "win32", 9),
+    (3840, "bash", "win32", 15),
+    (2304, "bash", "linux", None),
+    (2304, "pwsh", "win32", None),
+    (137, "bash", "win32", None),
+    (2, "bash", "win32", None),
+    (0, "bash", "linux", None),
+])
+def test_killed_by_reads_the_signal_from_each_platforms_status(code, driver, platform, want):
+    assert killed_by(code, driver, platform) == want
+
+
+def _bash_env(tmp_path, text):
+    """A BASH_ENV file: non-interactive bash sources it before cloud-guard.sh."""
+    path = tmp_path / "bash-env.sh"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return {"BASH_ENV": path.as_posix()}
+
+
+@needs_bash
+def test_a_hook_killed_by_sigkill_reads_as_could_not_tell_not_allow(tmp_path):
+    """The flake's own shape, made deterministic: the hook's bash.exe dies of
+    SIGKILL before printing a word (2304 on Windows, -9 here). Its empty
+    stdout must not read as the guard's allow -- the harness used to return
+    `allow` for it, and a case asserting only the decision would have passed
+    on a hook that never ran."""
+    _fixture(tmp_path, ARMED)
+    decision, _reason, code, err = run_hook(
+        "bash", tmp_path, "Bash", "echo hello",
+        extra_env=_bash_env(tmp_path, "kill -9 $$\n"))
+    assert decision == KILLED_UNJUDGED == "could not tell", (decision, code, err)
+    assert "killed by signal 9" in err, err
+    assert code != 0
+
+
+@needs_bash
+def test_a_sigkill_aimed_at_anything_live_during_the_probe_cannot_end_the_hook(tmp_path):
+    """L-1512's model of the Windows failure, run on any host: every `kill`
+    the hook sends to a target still alive is delivered to the hook's own
+    bash instead (`$$`), as Cygwin's signal delivery did to the bash.exe in
+    job 111538994343. The python probe used to SIGKILL its still-running
+    watchdog on every call, so this ended the hook with no output; it now
+    signals nothing live unless a candidate hangs, and the guard judges."""
+    _fixture(tmp_path, ARMED)
+    spy = (
+        "kill() {\n"
+        "  local a first=1\n"
+        '  for a in "$@"; do\n'
+        '    if [ "$first" = 1 ]; then first=0; continue; fi\n'
+        '    [ "$a" = "--" ] && continue\n'
+        '    builtin kill -0 -- "$a" 2>/dev/null && builtin kill -9 $$\n'
+        "  done\n"
+        '  builtin kill "$@"\n'
+        "}\n")
+    decision, reason, code, err = run_hook(
+        "bash", tmp_path, "Bash", "aws s3 rm s3://bucket/ --recursive",
+        extra_env=_bash_env(tmp_path, spy))
+    assert code == 0, err
+    assert decision == "deny", (decision, err)
+    assert "[cloudDestructive]" in reason, reason

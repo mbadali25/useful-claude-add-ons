@@ -92,17 +92,20 @@ crew_py() {
       set -m
       "$candidate" -c pass </dev/null >/dev/null 2>&1 &
       pid=$!
-      (
-        sleep "$probe_timeout" 2>/dev/null || exit 0
-        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
-          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
-        fi
-        kill -9 -- "-$pid" || kill -9 "$pid"
-      ) </dev/null >/dev/null 2>&1 &
-      watchdog=$!
+      set +m
+      exec 3> >(
+        {
+          read -r -t "$probe_timeout" _
+          [ "$?" -gt 128 ] || exit 0
+          if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+            MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+          fi
+          kill -9 -- "-$pid" || kill -9 "$pid"
+        } >/dev/null 2>&1
+      )
       wait "$pid"
       status=$?
-      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      kill -9 -- "-$pid" 2>/dev/null
       exit "$status"
     ) || continue
     printf '%s\n' "$candidate"
@@ -184,25 +187,35 @@ crew_py_strict() {
     # takes whole -- on a timeout, and after a normal exit too, for any child
     # it left behind. Under MSYS a native child is outside that group, so
     # `taskkill /T` takes the Windows tree when /proc exposes its winpid
-    # (MODELLED, not observed on a Windows host). No `sleep` at all means no
-    # watchdog: unbounded, as before, rather than killing every candidate.
+    # (MODELLED, not observed on a Windows host).
+    # The watchdog is the builtin `read -t` in a process substitution, on a
+    # pipe whose only writer is fd 3 of this subshell: the subshell's exit
+    # closes it, `read` returns on EOF, and the watchdog exits by itself.
+    # Only a timeout (status above 128) kills. L-1512: the previous `sleep`
+    # watchdog was SIGKILLed, group and all, on EVERY call, while still
+    # alive; on Windows CI a SIGKILL sent there ended the hook's own bash.exe
+    # (exit 2304, `9 << 8`, empty stderr), which PreToolUse reads as
+    # non-blocking -- a guard that never judged, letting the command through.
     # stdin is /dev/null: the candidate must not read the hook payload or
     # this loop's own input.
     real=$(
       set -m
       "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
       pid=$!
-      (
-        sleep "$_crew_py_strict_probe_timeout" 2>/dev/null || exit 0
-        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
-          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
-        fi
-        kill -9 -- "-$pid" || kill -9 "$pid"
-      ) </dev/null >/dev/null 2>&1 &
-      watchdog=$!
+      set +m
+      exec 3> >(
+        {
+          read -r -t "$_crew_py_strict_probe_timeout" _
+          [ "$?" -gt 128 ] || exit 0
+          if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+            MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+          fi
+          kill -9 -- "-$pid" || kill -9 "$pid"
+        } >/dev/null 2>&1
+      )
       wait "$pid"
       status=$?
-      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      kill -9 -- "-$pid" 2>/dev/null
       exit "$status"
     ) || continue
     # A trailing CR must not survive into the `-x` test below: a real native
