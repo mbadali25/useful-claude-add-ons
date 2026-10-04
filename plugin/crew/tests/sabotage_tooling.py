@@ -7,6 +7,7 @@ Run that file, not this one.
 """
 import os
 import shutil
+import sys
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -379,6 +380,36 @@ TOOLING_MUTATIONS += (
         "tests/test_verify_gate_tree_cache.py::test_the_cache_can_always_be_refused",
     ),
     (
+        # docs/review/08 defect 1: the prompt reads the local marker only, so
+        # a round the gate reserved on a CI receipt is told MISSING.
+        "review_prompt: a CI receipt the gate accepted is not shown to the reviewer",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "            if r_state == review_gate.VERIFIED:\n",
+        "            if False:  # pylint: disable=using-constant-test\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_ci_receipt_the_gate_accepts_is_what_the_reviewer_is_told"),
+    ),
+    (
+        # Review r1 BLOCK: without the local question first, a local pass on
+        # a dirty tree reaches accepted_state and is printed as a CI receipt.
+        "review_prompt: a local pass on a dirty tree is labelled a CI receipt",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "        local, local_why = _ask(review_gate.gate_state, root)\n",
+        "        local, local_why = review_gate.UNVERIFIED, \"\"\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_local_pass_on_a_dirty_tree_is_never_called_a_ci_receipt"),
+    ),
+    (
+        # Review r2: accepted_state re-asks gate_state, so a local pass that
+        # lands mid-build comes back VERIFIED and is printed as a receipt.
+        "review_prompt: the receipt is asked through accepted_state (a race)",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "            r_state, r_reason = _ask(_receipt, root)\n",
+        "            r_state, r_reason = _ask(review_gate.accepted_state, root)\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_local_pass_that_lands_mid_build_is_never_a_ci_receipt"),
+    ),
+    (
         "review_gate: a receipt that is not VERIFIED still upgrades the gate",
         os.path.join(SCRIPTS, "review_gate.py"),
         "    if r_state == VERIFIED:\n",
@@ -619,3 +650,406 @@ if shutil.which("pwsh"):
              "test_a_withdrawn_credit_never_clears_the_rule_s_record"),
         ),
     )
+
+# The gate exports CLAUDE_PLUGIN_ROOT to its rule commands when unset.
+TOOLING_MUTATIONS += (
+    (
+        # Unexported, a rule's child process (python3 under `/crew:verify
+        # --all`) never sees it: the rule fails there and passes at Stop.
+        "the gate does not export CLAUDE_PLUGIN_ROOT to its rule commands",
+        GATE_SH,
+        "  export CLAUDE_PLUGIN_ROOT\n",
+        "  :\n",
+        "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+    ),
+    (
+        # Replacing the hook's own value swaps a native Windows path for the
+        # bash form.
+        "the gate replaces a CLAUDE_PLUGIN_ROOT its caller set",
+        GATE_SH,
+        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        'if [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        "tests/test_verify_gate_plugin_root.py::test_a_plugin_root_the_caller_set_is_kept",
+    ),
+    (
+        # An empty value kept as empty: a rule's `$CLAUDE_PLUGIN_ROOT/...`
+        # becomes `/hooks/...`.
+        "the gate keeps an empty CLAUDE_PLUGIN_ROOT",
+        GATE_SH,
+        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        'if [ "${CLAUDE_PLUGIN_ROOT+set}" != set ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+    ),
+    (
+        # Resolved after the gate cd's into the project, a relative script
+        # path no longer names the plugin (the old code exported `/`; this
+        # mutation exports the project dir).
+        "the gate resolves its plugin root after leaving the caller's directory",
+        GATE_SH,
+        '  CLAUDE_PLUGIN_ROOT="$GATE_PLUGIN_ROOT"\n',
+        '  CLAUDE_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null; pwd)"\n',
+        ("tests/test_verify_gate_plugin_root.py::"
+         "test_a_gate_started_by_a_relative_path_still_finds_its_root"),
+    ),
+)
+# The .ps1 cases run only on native Windows (verify-gate.ps1 exits early
+# elsewhere), so its mutation would survive anywhere else.
+if sys.platform.startswith("win") and shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            "the PowerShell gate does not set CLAUDE_PLUGIN_ROOT for its rule commands",
+            GATE_PS1,
+            "  $env:CLAUDE_PLUGIN_ROOT = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path\n",
+            "  $null = 0\n",
+            "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+        ),
+    )
+
+# `verify-gate --ci`: the gate as a pull request's CI job. One mutation per
+# behaviour; each must turn its named case in test_verify_gate_ci_mode.py red.
+_CI = "tests/test_verify_gate_ci_mode.py::"
+TOOLING_MUTATIONS += (
+    (
+        # A `network` rule runs on a CI runner that cannot reach its target.
+        "--ci: the reach filter is not applied",
+        GATE_SH,
+        "REACH_FILTER = STOP_MODE or CI_MODE\n",
+        "REACH_FILTER = STOP_MODE\n",
+        _CI + "test_a_network_rule_is_excluded_named_and_does_not_fail[sh]",
+    ),
+    (
+        # `always`/`default` skip the reach scan under --ci: the fallback
+        # reintroduces what the rule-level filter excluded.
+        "--ci: an `always` command is not reach-filtered",
+        GATE_SH,
+        "        continue\n"
+        "    _cls = _classify_run_reach([c]) if REACH_FILTER else None\n"
+        "    if _cls is not None:\n"
+        "        fallback_notices.append(\"`always` command",
+        "        continue\n"
+        "    _cls = _classify_run_reach([c]) if STOP_MODE else None\n"
+        "    if _cls is not None:\n"
+        "        fallback_notices.append(\"`always` command",
+        _CI + "test_an_always_command_is_reach_filtered_too[sh]",
+    ),
+    (
+        # rc 77 reported and passed: the PR goes green on a check it never ran.
+        "--ci: a command exiting 77 does not fail the run",
+        GATE_SH,
+        '    echo "verify-gate --ci: $SKIP_N command(s) exited 77 (SKIP) - a skip is not a pass in CI" >&2\n'
+        "    FAILED=1\n",
+        '    echo "verify-gate --ci: $SKIP_N command(s) exited 77 (SKIP) - a skip is not a pass in CI" >&2\n',
+        _CI + "test_a_skip_is_not_a_pass_in_ci[sh]",
+    ),
+    (
+        # A --ci pass falls through to the marker block and records a tree
+        # whose reach-excluded rules never ran as verified.
+        "--ci: a pass advances the verified marker",
+        GATE_SH,
+        ("    echo \"verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and "
+         "the fingerprint were NOT advanced - --ci never writes them, by design\" >&2\n  fi\n  exit 0\n"),
+        ("    echo \"verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and "
+         "the fingerprint were NOT advanced - --ci never writes them, by design\" >&2\n  fi\n"),
+        _CI + "test_a_passing_map_exits_0_and_records_nothing[sh]",
+    ),
+    (
+        # Stop's clean-tree exclusion leaks into --ci, so the one place such
+        # a rule can run never runs it.
+        "--ci: a requiresCleanTree rule is excluded",
+        GATE_SH,
+        '                    if STOP_MODE and r.get("requiresCleanTree") is True:\n',
+        '                    if r.get("requiresCleanTree") is True:\n',
+        _CI + "test_a_requires_clean_tree_rule_runs[sh]",
+    ),
+    (
+        # --ci diffs against a base like Stop: a committed file is invisible.
+        "--ci: the scope narrows to the changed files",
+        GATE_SH,
+        'if [ "${1:-}" = "--all" ] || [ "$CI_MODE" -eq 1 ]; then\n',
+        'if [ "${1:-}" = "--all" ]; then\n',
+        _CI + "test_a_rule_on_a_file_the_branch_never_changed_still_runs[sh]",
+    ),
+    (
+        # --all --ci silently picks one reading of the pair.
+        "--ci: --all together with --ci is accepted",
+        GATE_SH,
+        'if [ "$CI_MODE" -eq 1 ] && [ "$CI_ALL_SEEN" -eq 1 ]; then\n',
+        "if false; then\n",
+        _CI + "test_all_and_ci_together_is_a_usage_error[sh-all-ci]",
+    ),
+    (
+        # A disabled gate exits 0 under --ci too: a green job that checked nothing.
+        "--ci: a disabled gate passes",
+        GATE_SH,
+        ('echo "verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, '
+         'so nothing was checked. Turn it on or remove the CI job." >&2\n    exit 2\n'),
+        "exit 0\n",
+        _CI + "test_a_disabled_gate_fails_in_ci_rather_than_passing_unchecked[sh]",
+    ),
+    (
+        # No map and no smoke exits 0 under --ci: nothing checked, reported green.
+        "--ci: nothing to verify passes",
+        GATE_SH,
+        ('echo "verify-gate --ci: no .crew/verify.json and no _verify/smoke.sh - nothing to '
+         'verify, so nothing was checked" >&2\n      exit 2\n'),
+        "exit 0\n",
+        _CI + "test_no_map_and_no_smoke_fails_in_ci[sh]",
+    ),
+)
+# Round 2 (review r1): every --ci path that would end having checked nothing
+# exits 2, the Stop-only stand-downs are skipped, the scope is tracked files,
+# and arguments are checked strictly.
+TOOLING_MUTATIONS += (
+    (
+        "--ci: zero commands to run passes (every rule reach-excluded)",
+        GATE_SH,
+        ('    echo "verify-gate --ci: zero commands to run - ${CI_NOTHING:-the matcher selected none} '
+         '- nothing was checked" >&2\n    exit 2\n'),
+        ('    echo "verify-gate --ci: zero commands to run - ${CI_NOTHING:-the matcher selected none} '
+         '- nothing was checked" >&2\n'),
+        _CI + "test_every_matched_rule_reach_excluded_fails[sh]",
+    ),
+    (
+        "--ci: zero commands to run passes (no rule matched)",
+        GATE_SH,
+        ('    echo "verify-gate --ci: zero commands to run - ${CI_NOTHING:-the matcher selected none} '
+         '- nothing was checked" >&2\n    exit 2\n'),
+        ('    echo "verify-gate --ci: zero commands to run - ${CI_NOTHING:-the matcher selected none} '
+         '- nothing was checked" >&2\n'),
+        _CI + "test_no_rule_matching_anything_fails[sh]",
+    ),
+    (
+        "--ci: no tracked files passes",
+        GATE_SH,
+        ('    echo "verify-gate --ci: no tracked files found in $PWD (not a git work tree, git failed '
+         '- e.g. refused a dubious-ownership checkout - or nothing is tracked) - nothing was '
+         'checked" >&2\n    exit 2\n'),
+        "    :\n",
+        _CI + "test_no_tracked_files_fails[sh]",
+    ),
+    (
+        "--ci: a project dir that cannot be entered passes",
+        GATE_SH,
+        ('  [ "$CI_MODE" -eq 1 ] && { echo "verify-gate --ci: cannot cd into ${CLAUDE_PROJECT_DIR:-.} '
+         '- nothing was checked" >&2; exit 2; }\n'),
+        "",
+        _CI + "test_a_project_dir_that_cannot_be_entered_fails[sh]",
+    ),
+    (
+        "--ci: a Stop fingerprint skips the run",
+        GATE_SH,
+        '[ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FLAG" ]; then\n',
+        '[ -f "$FP_DIR/verify_fingerprint.py" ] && [ "$BUDGET_FLAG" != "--all" ]; then\n',
+        _CI + "test_a_stop_fingerprint_never_skips_a_ci_run[sh]",
+    ),
+    (
+        "--ci: an unknown argument is ignored",
+        GATE_SH,
+        ('      echo "verify-gate: unknown argument \'$CI_ARG\' - the gate accepts --all, --ci, or '
+         '--price as the first argument. Nothing was verified." >&2\n      exit 2 ;;\n'),
+        "      : ;;\n",
+        _CI + "test_an_unknown_argument_is_a_usage_error[sh--ci]",
+    ),
+    (
+        "--ci: --price --ci prices a file named --ci",
+        GATE_SH,
+        ('      --ci) echo "verify-gate: --price and --ci cannot be combined (--price times the map '
+         'and writes it; --ci is a gate run). Pass one of them. Nothing was verified." >&2\n'
+         '            exit 2 ;;\n'),
+        "",
+        _CI + "test_ci_and_price_together_is_a_usage_error[sh-price-ci]",
+    ),
+    (
+        "--ci: untracked files are in scope",
+        GATE_SH,
+        '{ [ "$CI_MODE" -eq 1 ] || git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })\n',
+        '{ git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })\n',
+        _CI + "test_an_untracked_unmapped_file_is_not_in_scope[sh]",
+    ),
+    (
+        "--ci: a stop_hook_active payload ends the run",
+        GATE_SH,
+        'if [ "$CI_MODE" -eq 0 ] && [ ! -t 0 ]; then\n',
+        "if [ ! -t 0 ]; then\n",
+        _CI + "test_a_stop_hook_active_payload_does_not_end_a_ci_run[sh]",
+    ),
+    (
+        "--ci: an incident stands the run down",
+        GATE_SH,
+        'if [ "$CI_MODE" -eq 1 ]; then\n  if [ -f .crew/incident.json ]; then\n',
+        "if false; then\n  if [ -f .crew/incident.json ]; then\n",
+        _CI + "test_an_incident_does_not_stand_a_ci_run_down[sh]",
+    ),
+    (
+        "--ci: a lock back-off passes",
+        GATE_SH,
+        '    echo "verify-gate --ci: $1 - this run checked nothing" >&2\n    exit 2\n',
+        '    echo "verify-gate --ci: $1 - this run checked nothing" >&2\n',
+        _CI + "test_a_held_lock_fails_rather_than_backing_off_green[sh]",
+    ),
+)
+# Their PowerShell twins. The .ps1 cases run wherever pwsh exists (the suite
+# sets OS=Windows_NT past the flavour guard), so these are appended there.
+if shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            "--ci (ps1): the reach filter is not applied",
+            GATE_PS1,
+            "$reachFilter = $stopMode -or $Ci\n",
+            "$reachFilter = $stopMode\n",
+            _CI + "test_a_network_rule_is_excluded_named_and_does_not_fail[ps1]",
+        ),
+        (
+            "--ci (ps1): a command exiting 77 does not fail the run",
+            GATE_PS1,
+            '    [Console]::Error.WriteLine("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
+            'a skip is not a pass in CI")\n    $failed = $true\n',
+            '    [Console]::Error.WriteLine("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
+            'a skip is not a pass in CI")\n',
+            _CI + "test_a_skip_is_not_a_pass_in_ci[ps1]",
+        ),
+        (
+            "--ci (ps1): a pass advances the verified marker",
+            GATE_PS1,
+            "never writes them, by design\")\n  }\n  exit 0\n",
+            "never writes them, by design\")\n  }\n",
+            _CI + "test_a_passing_map_exits_0_and_records_nothing[ps1]",
+        ),
+        (
+            "--ci (ps1): a requiresCleanTree rule is excluded",
+            GATE_PS1,
+            "            if ($stopMode -and $r.requiresCleanTree -eq $true) {\n",
+            "            if ($r.requiresCleanTree -eq $true) {\n",
+            _CI + "test_a_requires_clean_tree_rule_runs[ps1]",
+        ),
+        (
+            "--ci (ps1): the scope narrows to the changed files",
+            GATE_PS1,
+            "if ($All -or $Ci) {\n  # -All does not diff",
+            "if ($All) {\n  # -All does not diff",
+            _CI + "test_a_rule_on_a_file_the_branch_never_changed_still_runs[ps1]",
+        ),
+        (
+            "--ci (ps1): a disabled gate passes",
+            GATE_PS1,
+            ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
+             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n      exit 2\n'),
+            ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
+             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'),
+            _CI + "test_a_disabled_gate_fails_in_ci_rather_than_passing_unchecked[ps1]",
+        ),
+        (
+            "--ci (ps1): nothing to verify passes",
+            GATE_PS1,
+            ('    [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no '
+             '_verify/smoke.sh - nothing to verify, so nothing was checked")\n    exit 2\n'),
+            ('    [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no '
+             '_verify/smoke.sh - nothing to verify, so nothing was checked")\n'),
+            _CI + "test_no_map_and_no_smoke_fails_in_ci[ps1]",
+        ),
+        (
+            "--ci (ps1): zero commands to run passes",
+            GATE_PS1,
+            ('    [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - '
+             'nothing was checked")\n    exit 2\n'),
+            ('    [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - '
+             'nothing was checked")\n'),
+            _CI + "test_every_matched_rule_reach_excluded_fails[ps1]",
+        ),
+        (
+            "--ci (ps1): no tracked files passes",
+            GATE_PS1,
+            ('or nothing is tracked) - nothing was checked")\n    exit 2\n'),
+            ('or nothing is tracked) - nothing was checked")\n'),
+            _CI + "test_no_tracked_files_fails[ps1]",
+        ),
+        (
+            "--ci (ps1): a project dir that cannot be entered passes",
+            GATE_PS1,
+            "  try { Set-Location $root -ErrorAction Stop }\n",
+            "  try { Set-Location $root }\n",
+            _CI + "test_a_project_dir_that_cannot_be_entered_fails[ps1]",
+        ),
+        (
+            "--ci (ps1): a Stop fingerprint skips the run",
+            GATE_PS1,
+            "if (-not $All -and -not $Ci) {\n  try {\n    $fpPy = Resolve-CrewPython\n",
+            "if (-not $All) {\n  try {\n    $fpPy = Resolve-CrewPython\n",
+            _CI + "test_a_stop_fingerprint_never_skips_a_ci_run[ps1]",
+        ),
+        (
+            "--ci (ps1): untracked files are in scope",
+            GATE_PS1,
+            "  if (-not $Ci) {\n    $changed += ($null | git -c core.quotePath=false ls-files --others",
+            "  if ($true) {\n    $changed += ($null | git -c core.quotePath=false ls-files --others",
+            _CI + "test_an_untracked_unmapped_file_is_not_in_scope[ps1]",
+        ),
+        (
+            "--ci (ps1): a stop_hook_active payload ends the run",
+            GATE_PS1,
+            "if (-not $Ci -and [Console]::IsInputRedirected) {\n",
+            "if ([Console]::IsInputRedirected) {\n",
+            _CI + "test_a_stop_hook_active_payload_does_not_end_a_ci_run[ps1]",
+        ),
+        (
+            "--ci (ps1): an incident stands the run down",
+            GATE_PS1,
+            "if ($Ci) {\n  if (Test-Path .crew/incident.json) {\n",
+            "if ($false) {\n  if (Test-Path .crew/incident.json) {\n",
+            _CI + "test_an_incident_does_not_stand_a_ci_run_down[ps1]",
+        ),
+        (
+            "--ci (ps1): a lock back-off passes",
+            GATE_PS1,
+            '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n    exit 2\n',
+            '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n',
+            _CI + "test_a_held_lock_fails_rather_than_backing_off_green[ps1]",
+        ),
+        (
+            "--ci (ps1): an unknown argument is ignored",
+            GATE_PS1,
+            "if ($args.Count -gt 0 -or ($PSBoundParameters.ContainsKey('PriceTarget') -and -not $Price)) {\n",
+            "if ($false) {\n",
+            _CI + "test_an_unknown_argument_is_a_usage_error[ps1---ci=1]",
+        ),
+        (
+            "--ci (ps1): -Ci -Price is accepted",
+            GATE_PS1,
+            "if ($Price -and $Ci) {\n",
+            "if ($false) {\n",
+            _CI + "test_ci_and_price_together_is_a_usage_error[ps1-ci-price]",
+        ),
+        (
+            # Off Windows the flavour guard's silent exit 0 is reached first.
+            "--ci (ps1): -Ci off Windows stands down green",
+            GATE_PS1,
+            "  [ValidateScript({ if ($env:OS -ne 'Windows_NT') { throw ",
+            "  [ValidateScript({ if ($false) { throw ",
+            _CI + "test_the_ps1_with_ci_off_windows_fails_instead_of_standing_down",
+        ),
+        (
+            "--ci (ps1): a blank command counts as a check",
+            GATE_PS1,
+            "          if ($Ci -and [string]::IsNullOrWhiteSpace([string]$c)) { continue }\n",
+            "",
+            _CI + "test_a_map_of_blank_commands_checks_nothing_and_fails[ps1-empty]",
+        ),
+    )
+TOOLING_MUTATIONS += (
+    (
+        # A blank rule command runs and "passes" under --ci.
+        "--ci: a blank command counts as a check",
+        GATE_SH,
+        "                if CI_MODE and not str(c).strip():\n                    continue\n",
+        "",
+        _CI + "test_a_map_of_blank_commands_checks_nothing_and_fails[sh-spaces]",
+    ),
+    (
+        # The deploy-in-flight record check blocks a CI run and deletes the marker.
+        "--ci: the deploy-in-flight check runs under --ci",
+        GATE_SH,
+        'if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then\n',
+        "if [ -f .crew/.deploy-in-flight ]; then\n",
+        _CI + "test_a_deploy_marker_is_left_alone_and_does_not_block[sh]",
+    ),
+)
