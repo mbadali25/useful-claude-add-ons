@@ -1196,33 +1196,34 @@ Obsidian vault). A CLI the commands call, not a hook.
 
 ## The split rulebook (T-0052)
 
-- DERIVED (T-0052, after review round 1; measured on this tree, anchors not moved):
+- DERIVED (T-0052, after review round 2; measured on this tree, anchors not moved):
   `plugin/crew/hooks/scripts/crew_split.py` holds `/crew:split`'s judgement as code; its module docstring is the
   API T-0058 and T-0059 build on. The thresholds are constants, each with its
-  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:100`),
-  `ACCEPTANCE_LOOK` (`:104`), `SUBSYSTEMS_LOOK` (`:107`), `CHILDREN_MIN,
-  CHILDREN_MAX` (`:110`); `EVIDENCE_KEYS` (`:112`), `VIAS` (`:120`, `command`
-  only; T-0058 appends `autopilot`), `SDP_STOP` (`:121`). `measure`
-  (`:235`) returns None, never 0, for a measure it cannot read or a readable
-  section that yields nothing, and `triggers` (`:262`) reports it as
-  `unknown:<name>`. `check_proposal` (`:412`) over `parse_proposal` (`:346`)
+  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:102`),
+  `ACCEPTANCE_LOOK` (`:106`), `SUBSYSTEMS_LOOK` (`:109`), `CHILDREN_MIN,
+  CHILDREN_MAX` (`:112`); `EVIDENCE_KEYS` (`:114`), `VIAS` (`:122`, `command`
+  only; T-0058 appends `autopilot`), `SDP_STOP` (`:123`). `measure`
+  (`:237`) returns None, never 0, for a measure it cannot read or a readable
+  section that yields nothing, and `triggers` (`:264`) reports it as
+  `unknown:<name>`. `check_proposal` (`:414`) over `parse_proposal` (`:348`)
   is the placement rule (every parent criterion exactly once,
-  whitespace-collapsed equality); `minted_tail` (`:324`) accepts `## Minted`
+  whitespace-collapsed equality); `minted_tail` (`:326`) accepts `## Minted`
   only as a trailing block of `- Child N: <id>` lines, and `_proposal_sha`
-  (`:489`) hashes everything else. `tracker_mode` (`:459`) reads
-  `crew_tracker.resolve`. `check` (`:568`) records the proposal's sha256, the
-  current turn (`current_turn`, `:527`) and a hash of the prompt that set it
-  (`current_prompt`, `:542`), both read from the context hook's per-session
+  (`:491`) hashes everything else. `tracker_mode` (`:461`) reads
+  `crew_tracker.resolve`. `check` (`:570`) records the proposal's sha256, the
+  current turn (`current_turn`, `:529`) and a hash of the prompt that set it
+  (`current_prompt`, `:544`), both read from the context hook's per-session
   state through `crew_context._session_file`
   (`plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1071-1072`),
-  keyed by `CLAUDE_CODE_SESSION_ID` (`plugin/crew/hooks/scripts/crew_split.py:122`); `confirm` (`:625`) passes
+  keyed by `CLAUDE_CODE_SESSION_ID` (`plugin/crew/hooks/scripts/crew_split.py:124`); `confirm` (`:627`) passes
   only on a different turn for the same session, an unchanged proposal, and a
   readable prompt that is neither a `<`-envelope nor check's own. `apply`
-  (`:840`) refuses through `_refuse_mode` (`:748`) and `_verified_minted`
-  (`:826`: an apply record, `apply_record_path` `:500`, and each entry's
-  provenance, `_provenance` `:696`), then writes `spec.pre-split.md`, mints
-  through `_mint_children` (`:780`, adopting a provenance orphan, `_orphan`
-  `:708`, and calling `crew_ticket.mint`,
+  (`:885`) refuses through `_refuse_mode` (`:807`) and `_existing_children`
+  (`:749`: under an apply record, `apply_record_path` `:502`, each `## Minted`
+  entry and each orphan, `_orphans` `:733`, needs provenance, `_provenance`
+  `:701`, an INDEX row, and a direction equal to the current proposal's child,
+  `_written_for` `:722`), then writes `spec.pre-split.md`, mints through
+  `_mint_children` (`:839`, calling `crew_ticket.mint`,
   `plugin/crew/hooks/scripts/crew_ticket.py:1355`, unedited: it takes no
   risk, so the child's `risk:` rides in its direction body), and only then
   sets the parent `superseded`.

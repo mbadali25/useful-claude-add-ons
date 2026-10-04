@@ -53,7 +53,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   children under a trailing `## Minted` in `split.md`; a re-run after a new
   check and yes skips a child only when an apply record exists and its
   direction carries apply's provenance (`origin: split of <parent>`,
-  `split-child: <n>`), and adopts a child whose id never reached `split.md`.
+  `split-child: <n>`) and an INDEX row and its direction is exactly what the
+  current proposal's child would get, and adopts a child whose id never
+  reached `split.md` on the same terms; a minted child an edited proposal no
+  longer matches stops the apply, naming it.
   A `## Minted` section apply did not write is refused, and the proposal
   hash covers every byte but a valid trailing block. An unknown evidence key
   is refused even beside a known one.
@@ -63,15 +66,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   (a readable section yielding nothing, or an unmatched Touch entry, read as
   0; the sabotage module's follow-up recorded in `TODO.md`; the window
   between a mint and its record, and a non-UTF-8 spec found after minting)
-  and three NITs, each test-first.
-- **Tests.** `test_crew_split.py` (92 cases): must-block and must-allow for
+  and three NITs, each test-first. **Round 2:** a skipped or adopted child
+  is compared to the current proposal (a swapped child was reused with its
+  old criteria), orphans need the apply record and an INDEX row, and the
+  repeated-prompt refusal says the owner may have typed the same words.
+- **Tests.** `test_crew_split.py` (97 cases): must-block and must-allow for
   every rule, the confirm gate, `apply` in files and Obsidian mode, and the
   command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
   entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
-  Twenty-two mutations (the first ten: child bound, substring placement,
+  Twenty-six mutations (the first ten: child bound, substring placement,
   duplicates, exclusions, `separable-criteria`, `None` as 0, the sdp stop,
-  mint order, parent-status order, the confirm turn check; twelve more for
-  round 1's guards) were run by hand, each red on its named test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
+  mint order, parent-status order, the confirm turn check; sixteen more for
+  the review rounds' guards) were run by hand, each red on its named test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
   paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
   maps `crew_split.py`, its test, the fixture and `split.md`.
 

@@ -45,10 +45,12 @@ evidence, and "not too big" is a result, not a failure. `split.md` format:
 A `## Minted` heading anywhere else, or holding anything else, is refused,
 and the proposal hash covers every byte but a valid trailing block. An entry
 is trusted only when an apply record exists (`split-apply.json`, written
-before the first mint) and the child's direction.md carries apply's
-provenance (`origin: split of <parent>`, `split-child: <n>`); a child
-minted whose id never reached split.md is found by that provenance on a
-re-run, never minted twice.
+before the first mint), the ticket has an INDEX row, and its direction.md is
+exactly what apply writes for the CURRENT proposal's child (provenance lines
+`origin: split of <parent>`, `split-child: <n>`, then the criteria and
+exclusions); a child minted whose id never reached split.md is adopted on the
+same terms, never minted twice. A minted child an edited proposal no longer
+matches stops apply, naming it, with nothing written.
 
 `confirm` is the code half of `/crew:split`'s confirmation: `check`, when it
 passes, records the proposal's sha256 and the session's current human-turn id
@@ -664,8 +666,11 @@ def confirm(top, ticket, session=None):
                                        "prompt (a task notification, wake or webhook); ask "
                                        "again and wait for the owner"}
     if record.get("prompt_sha256") and _prompt_sha(prompt) == record["prompt_sha256"]:
-        return {"ok": False, "reason": "the turn moved on the same prompt check ran under (a "
-                                       "loop or a repeat), not an answer; ask again"}
+        return {"ok": False, "reason": "the prompt that moved the turn matches the one check ran "
+                                       "under (only the first 500 characters are compared): a "
+                                       "loop re-sending it, or the owner typed the same words "
+                                       "both times (e.g. 'go' twice); ask again and have the "
+                                       "owner answer in different words"}
     return {"ok": True, "reason": f"a human prompt arrived since check (turn {turn})"}
 
 
@@ -693,30 +698,84 @@ def _direction(parent, child):
     return "\n".join(lines) + "\n"
 
 
-def _provenance(top, child_id, parent, number):
-    """True when `child_id`'s direction.md was written by apply for this
-    parent's child `number` (its `origin:` and `split-child:` lines)."""
+def _provenance(top, child_id, parent):
+    """The `split-child:` number when `child_id`'s direction.md carries
+    apply's provenance for this parent (its `origin:` and `split-child:`
+    lines), else None."""
+    try:
+        folder = crew_ticket.ticket_dir(top, child_id)
+    except crew_ticket.TicketError:
+        return None
+    lines = (_read(os.path.join(folder, "direction.md")) or "").splitlines()[1:3]
+    if len(lines) < 2 or lines[0] != f"origin: split of {parent}":
+        return None
+    found = re.fullmatch(r"split-child: (\d+)", lines[1])
+    return int(found.group(1)) if found else None
+
+
+def _indexed(top, child_id):
+    """True when .work/INDEX.md holds a row for `child_id` (mint writes one)."""
+    text = _read(os.path.join(top, ".work", "INDEX.md")) or ""
+    return any(line.split("|", 1)[0].strip() == child_id for line in text.splitlines())
+
+
+def _written_for(top, child_id, parent, child):
+    """True when `child_id`'s direction.md is exactly what apply writes for
+    this child of the CURRENT proposal (mint's header plus `_direction`)."""
     try:
         folder = crew_ticket.ticket_dir(top, child_id)
     except crew_ticket.TicketError:
         return False
-    text = _read(os.path.join(folder, "direction.md")) or ""
-    lines = text.splitlines()[1:4]
-    return f"origin: split of {parent}" in lines and f"split-child: {number}" in lines
+    held = (_read(os.path.join(folder, "direction.md")) or "").replace("\r\n", "\n")
+    return held == f"# {child_id} direction\n{_direction(parent, child)}"
 
 
-def _orphan(top, parent, number):
-    """A child already minted for (parent, number) whose id never reached
-    split.md -- found by its provenance -- or None."""
+def _orphans(top, parent):
+    """`{number: id}` for tickets apply minted for this parent (provenance
+    plus an INDEX row) -- whether or not their ids reached split.md."""
     tickets = os.path.join(top, ".work", "tickets")
     try:
         names = sorted(os.listdir(tickets))
     except OSError:
-        return None
+        return {}
+    found = {}
     for name in names:
-        if name != parent and _provenance(top, name, parent, number):
-            return name
-    return None
+        number = None if name == parent else _provenance(top, name, parent)
+        if number is not None and _indexed(top, name):
+            found.setdefault(number, name)
+    return found
+
+
+def _existing_children(top, ticket, children, minted):
+    """`{number: id}` of children apply already minted, each verified against
+    the CURRENT proposal, or SplitError with nothing written. Trusted only
+    under an apply record: a `## Minted` entry must carry provenance and an
+    INDEX row, an orphan (minted, id never recorded) is found by them, and
+    either must hold exactly the direction this proposal's child would get;
+    a minted child the proposal no longer has, or whose child changed, is a
+    stale child and stops the apply."""
+    record = os.path.lexists(apply_record_path(top, ticket))
+    if minted and not record:
+        raise SplitError(f"{PROPOSAL}'s ## Minted lists children but no apply has run for "
+                         f"{ticket}; {MINTED_RULE}; nothing was written")
+    if not record:
+        return {}
+    for number, child_id in sorted(minted.items()):
+        if _provenance(top, child_id, ticket) != number or not _indexed(top, child_id):
+            raise SplitError(f"## Minted names {child_id} as Child {number}, but it carries no "
+                             f"provenance (`origin: split of {ticket}`, `split-child: "
+                             f"{number}`) or INDEX row; nothing was written")
+    found = dict(_orphans(top, ticket))
+    found.update(minted)
+    by_number = {child["number"]: child for child in children}
+    for number, child_id in sorted(found.items()):
+        child = by_number.get(number)
+        if child is None or not _written_for(top, child_id, ticket, child):
+            raise SplitError(f"{child_id} was minted as Child {number} for a different proposal "
+                             f"(its direction no longer matches this {PROPOSAL}'s Child "
+                             f"{number}); restore that child, or cancel {child_id} and remove it "
+                             f"from ## Minted; nothing was written")
+    return found
 
 
 def _record_minted(path, number, ticket):
@@ -777,15 +836,15 @@ def _write_pre_split(folder, data):
     _atomic_write(pre, data)
 
 
-def _mint_children(top, ticket, children, minted, path):
-    """Mint each child not yet minted, in order. A child is skipped only when
-    its `## Minted` id carries this split's provenance (checked by apply), or
-    an orphan with that provenance exists (minted, but killed before its id
-    was recorded); either is recorded, never minted twice."""
+def _mint_children(top, ticket, children, existing, path):
+    """Mint each child not in `existing` (`_existing_children`), in order,
+    recording each id in split.md; an existing child is recorded, never
+    minted twice."""
+    minted = dict(parse_proposal(_read(path) or "")["minted"])
     kids, warnings = [], []
     for child in children:
         number = child["number"]
-        found = minted.get(number) or _orphan(top, ticket, number)
+        found = existing.get(number)
         if found:
             if number not in minted:
                 minted[number] = found
@@ -823,20 +882,6 @@ def _read_strict(path, label):
         raise SplitError(f"{label} is not UTF-8 ({exc}); nothing was written") from exc
 
 
-def _verified_minted(top, ticket, minted):
-    if not minted:
-        return {}
-    if not os.path.lexists(apply_record_path(top, ticket)):
-        raise SplitError(f"{PROPOSAL}'s ## Minted lists children but no apply has run for "
-                         f"{ticket}; {MINTED_RULE}; nothing was written")
-    for number, child_id in sorted(minted.items()):
-        if not _provenance(top, child_id, ticket, number):
-            raise SplitError(f"## Minted names {child_id} as Child {number}, but its "
-                             f"direction.md carries no provenance (`origin: split of {ticket}`, "
-                             f"`split-child: {number}`); nothing was written")
-    return dict(minted)
-
-
 def apply(top, ticket, via, session=None):
     """Split a files/Obsidian ticket. Refused, with nothing written, in jira,
     sdp or an unknown mode, on a `via` not in VIAS, on a spec or proposal that
@@ -866,7 +911,7 @@ def apply(top, ticket, via, session=None):
     if decision != "split":
         raise SplitError(f"the decision is {decision}, not split; nothing to apply")
     got = parse_proposal(proposal)
-    minted = _verified_minted(top, ticket, got["minted"])
+    existing = _existing_children(top, ticket, got["children"], got["minted"])
     gate = confirm(top, ticket, session)
     if not gate["ok"]:
         raise SplitError(f"confirm refused: {gate['reason']}; nothing was written")
@@ -875,7 +920,7 @@ def apply(top, ticket, via, session=None):
         _atomic_write(record_path, (json.dumps({"parent": ticket}) + "\n").encode("utf-8"))
     try:
         _write_pre_split(folder, spec)
-        kids, warnings = _mint_children(top, ticket, got["children"], minted, path)
+        kids, warnings = _mint_children(top, ticket, got["children"], existing, path)
     except BaseException:
         _drop(check_path)
         raise

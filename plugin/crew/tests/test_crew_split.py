@@ -1102,7 +1102,7 @@ def test_confirm_refuses_repeated_prompt(tmp_path):
 
     got = crew_split.confirm(str(root), ticket, session=SESSION)
 
-    assert (got["ok"], "same prompt" in got["reason"]) == (False, True), got
+    assert (got["ok"], "typed the same words" in got["reason"]) == (False, True), got
 
 
 def test_confirm_refuses_unknown_prompt(tmp_path):
@@ -1191,3 +1191,129 @@ def test_minted_record_keeps_crlf(tmp_path, monkeypatch):
 
     data = path.read_bytes()
     assert b"\n" not in data.replace(b"\r\n", b""), data[-80:]
+
+
+# --- review round 2 (#364 at 687d1edd) ----------------------------------------------
+
+def _fail_second_mint(monkeypatch):
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+    return real
+
+
+def test_minted_child_from_an_edited_proposal_refused(tmp_path, monkeypatch):
+    """BLOCK: after a failed apply, an edited proposal that swaps children
+    must not reuse Child 1's ticket (minted with the OLD criteria)."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    crit = _criteria()
+    swapped = _t0004_proposal(children=[
+        ("autopilot ship policy", "high", crit[7:10]),
+        ("autopilot approval and question policies", "high", crit[4:7]),
+        ("autopilot goal: tickets from a goal file", "med", crit[10:11])])
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    old = path.read_text(encoding="utf-8")
+    path.write_text(swapped + "\n" + old[old.index("## Minted"):], encoding="utf-8")
+    _turn(root, "turn-3")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-4")
+    before = sorted(os.listdir(root / ".work" / "tickets"))
+
+    with pytest.raises(crew_split.SplitError, match="different proposal"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert sorted(os.listdir(root / ".work" / "tickets")) == before
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_stale_orphan_from_an_edited_proposal_refused(tmp_path, monkeypatch):
+    """BLOCK: an orphan (minted, id never recorded) whose direction no longer
+    matches the current Child N is refused, never adopted or duplicated."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real_record = crew_split._record_minted  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_split, "_record_minted",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("killed")))
+    with pytest.raises((crew_split.SplitError, OSError)):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    monkeypatch.setattr(crew_split, "_record_minted", real_record)
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        "- next/resume, which stays on T-0004", "- next/resume, kept on the parent", 1),
+        encoding="utf-8")
+    _turn(root, "turn-3")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-4")
+    before = sorted(os.listdir(root / ".work" / "tickets"))
+
+    with pytest.raises(crew_split.SplitError, match="different proposal"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert sorted(os.listdir(root / ".work" / "tickets")) == before
+
+
+def test_forged_orphan_without_apply_record_ignored(tmp_path):
+    """FIX 2: a hand-made folder with apply's exact direction and an INDEX
+    row, but no apply record, is never adopted as a child."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    child = (crew_split.parse_proposal(_t0004_proposal())["children"] or [])[0]
+    fake = root / ".work" / "tickets" / "T-0077"
+    fake.mkdir()
+    (fake / "direction.md").write_text(  # exact provenance and direction, and a row
+        "# T-0077 direction\n" + crew_split._direction(ticket, child),  # pylint: disable=protected-access
+        encoding="utf-8")
+    with open(root / ".work" / "INDEX.md", "a", encoding="utf-8") as handle:
+        handle.write("T-0077 | ready | - | r | forged\n")
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert "T-0077" not in got["children"]
+
+
+def test_orphan_without_index_row_not_adopted(tmp_path, monkeypatch):
+    """FIX 2: even with an apply record and a matching direction, a folder
+    with no INDEX row (mint never finished) is not a child."""
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    proposal = crew_split.parse_proposal(
+        (root / ".work" / "tickets" / ticket / "split.md").read_text(encoding="utf-8"))
+    child = (proposal["children"] or [])[1]
+    fake = root / ".work" / "tickets" / "T-0080"
+    fake.mkdir()
+    (fake / "direction.md").write_text(
+        "# T-0080 direction\n" + crew_split._direction(ticket, child),  # pylint: disable=protected-access
+        encoding="utf-8")
+
+    monkeypatch.undo()
+    _turn(root, "turn-3")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-4")
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert "T-0080" not in got["children"] and len(set(got["children"])) == 3
+
+
+def test_repeated_prompt_reason_names_typed_words():
+    """NIT 1: the refusal says the owner may have typed the same words and
+    that only the first 500 characters are compared."""
+    with open(SCRIPT, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "typed the same words" in text and "first 500 characters" in text

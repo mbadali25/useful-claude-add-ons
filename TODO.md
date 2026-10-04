@@ -8,7 +8,7 @@ be wrong can be closed on evidence.
   `plugin/crew/tests/sabotage_split.py` with `SPLIT_MUTATIONS` (the list T-0058 and T-0059 append
   to) and its one import line in `plugin/crew/tests/sabotage.py`'s sum, plus an anchor-presence
   test. `plugin/crew/tests/sabotage*.py` is HARNESS (`scripts/check-tooling-pr.py`), so PR #364
-  ran its 22 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
+  ran its 26 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
   body) and could not commit them.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
