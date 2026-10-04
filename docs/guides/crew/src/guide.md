@@ -171,7 +171,7 @@ Source: `plugin/crew/commands/implement.md` and
 A refresh artifact is a file that describes the code and must follow it:
 the code maps under `.crew/codemap/`, the diagrams, the code graph in
 `graphify-out/`, the generated `.claude/rules/`, and the integrations
-reference `docs/reference/integrations.md` that `/crew:reference
+reference (docs/reference/integrations.md) that `/crew:reference
 --integrations` writes. The order is fixed: implement, then refresh, then
 review, then done.
 
