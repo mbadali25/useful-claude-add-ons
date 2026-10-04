@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:12: MERGED #351 (T-0066 part 1) at 86d96fa1 (crew 1.0.328; CI 24/24 after done.md reflow; merge-only review clean). main = 86d96fa1. Next: #405 L-0688 land-prep at 1.0.329 (+ U-record reason carry). #481 r2 CLEAN.
 - 16:12: #481 T-0074 round-2 858c5336: 0/0/1 CLEAN -> landing queue (carry: daily-workflow.md:189 'raising the cap is your call' -> say limit is 5).
 - 16:10: #347 round-3 877ef4b8: 2 BLOCK (return/throw keyword hides terraform; launcher with runtime scriptblock/variable) / 1 FIX ([Diagnostics.Process]::Start no-space) / 1 NIT. All round-2 closed. Sent back: replace denylist backstop with 'account for every mention' rule (each tool-name occurrence must be a judged command word, else could-not-tell).
 - 16:08: #481 fixes -> 858c5336 (merged main b863b773; _auto_rejected re-runs conds 5-8 via _block_round; clamp <=5; auto-replan-cap phase; current-plan check; 83 cases; 22 mutations). Round-2 review started.
