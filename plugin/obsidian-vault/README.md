@@ -242,11 +242,14 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
   `port-collision` match the whole joined word or its parts side by side in
   order (`port collision`, `port-collisions`), never the parts scattered
   (`t-0083` does not find `L-0083`; `github.com` does not find `example.com`).
-  Plurals: `es` is added or stripped only after s, x, z, ch or sh (`box` /
-  `boxes`, but `plan` never finds `planes`); a plain `s` is stripped only when
-  four letters remain (`bridges` finds `bridge`, `news` never finds `new`,
-  `bugs` does not find `bug`); no form is a stop word (`notes` never finds
-  `not`). CamelCase is not split: `PortCollision` does not contain `port`.
+  Plurals: a consonant + `y` pairs with `ies` (`entry` / `entries`,
+  `policies` / `policy`); `es` is added or stripped only after s, x, z, ch or
+  sh (`box` / `boxes`, but `plan` never finds `planes`); a plain `s` is added
+  or stripped otherwise, also from an `es` word (`releases` / `release`,
+  `caches` / `cache`, `logs` / `log`). No form is shorter than three letters
+  (`uses` never finds the `us` of `us-east-1`), `news` never gains or loses its
+  `s` (an exception list, `news` alone today), and no form is a stop word
+  (`notes` never finds `not`). CamelCase is not split: `PortCollision` does not contain `port`.
 - `wiki/sessions/archive/` (in any letter case) is never read, and a
   symlinked note whose real path is inside it is skipped too.
   `--include-excluded` reads it. A symlinked note that resolves outside the
