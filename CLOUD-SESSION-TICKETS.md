@@ -55,15 +55,15 @@ Next free untracked ID: **L-1504**.
 | T-0017 | #356 | 5e37f872 | ready to land | Stacked on #396 (T-0016). Carry NIT: stdout backslashreplace for non-ASCII refusal reasons. |
 | T-0059 | #366 | e14b5a45 | ready to land | Stacked on T-0052 (#364). |
 | T-0058 | #365 | 16228584 | ready to land | Stacked on #364/#354. Carry: `_gate_stage` must pick stage like `_phase`; `split_report current=` from `_not_current`. Decision: absent sources read as unmeasured (owner-approved). |
-| L-0688 | #405 | 760691de | landing now | Carry NIT: unmerged (U) record reason. Lands before L-0540. |
-| T-0096 | #398 | dfe113ab | ready to land | Slice 0. Follow-ups in TODO.md: could-not-tell treated as absent for stand-down/veto across all flavours. |
+| L-0688 | #405 | ea2a1884 | landing (batch 1, crew 1.0.329) | Carry NIT: unmerged (U) record reason. Lands before L-0540. |
+| T-0096 | #398 | 670d5cbb | landing (batch 1, crew 1.0.330) | Slice 0. Follow-ups in TODO.md: could-not-tell treated as absent for stand-down/veto across all flavours. |
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
 | T-0045 | #407 | 6cada04c | ready to land | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
-| T-0053 | #403 | 610deaea | ready to land | Slice 1. Decisions taken for you: unknown = strictest per key; non-object block = human; carry: a typo night value (not a policy) reads strictest. |
+| T-0053 | #403 | 791af057 | landing (batch 1, crew 1.0.332) | Slice 1. Decisions taken for you: unknown = strictest per key; non-object block = human; carry: a typo night value (not a policy) reads strictest. |
 | T-0047 | #347 | 877ef4b8 | in review | PowerShell fail-closed backstop added. |
 | T-0074 | #481 | 858c5336 | ready to land | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. Review clean. Carry: daily-workflow.md:189 cap-limit wording. Q7 open. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
-| T-0084 | #450 | 5080f05c | ready to land | Review clean (round 6). Carry: treat a bare `vault:` first line as a pointer attempt. Decisions taken for you: near-miss pointers = malformed; legacy `vaultPath` ignored when a `vaults` block exists. |
+| T-0084 | #450 | 4e9ee867 | landing (batch 1, crew 1.0.331) | Review clean (round 6). Carry: treat a bare `vault:` first line as a pointer attempt. Decisions taken for you: near-miss pointers = malformed; legacy `vaultPath` ignored when a `vaults` block exists. |
 | T-0082, T-0080 | #399 (H2a bundle) | ed58c3d9 | building | Harness-only. #475 (T-0080) closes at landing. |
 
 ## Review-clean on older bases (catch-up merge + version at their turn)
