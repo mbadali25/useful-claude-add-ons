@@ -32,7 +32,7 @@ summary above or below it, and do not pad it with advice.
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
 | `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
-| `graph-ignore` | `crew_graph_ignore.py`: a secrets-denylisted path on disk that `.graphifyignore` does not exclude reads `UNCOVERED` with the paths and the `--write` fix | git missing, a settings file that will not parse, a nested `.graphifyignore`, a deny-all `Read` rule |
+| `graph-ignore` | `crew_graph_ignore.py`: a secrets-denylisted path on disk that `.graphifyignore` does not exclude reads `UNCOVERED` with the paths and the `--write` fix | git missing, a settings file that will not parse, a nested `.graphifyignore`, an unexcluded nested repository, a symlink leaving the repo, a deny-all `Read` rule |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` | - |
 | `handoff` | `.work/HANDOFF.md` present | - |
 | `migrate` | a backup under `.crew/backups/` whose apply never finished | - |

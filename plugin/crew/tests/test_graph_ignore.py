@@ -285,7 +285,7 @@ def test_write_never_truncates_on_a_failed_build(tmp_path, capsys, monkeypatch):
     root = _repo(tmp_path, {".env": "PW=x\n", ".graphifyignore": "vendor/\n"})
     target = os.path.join(str(root), ".graphifyignore")
 
-    def boom(_patterns):
+    def boom(*_args):
         raise ValueError("block builder failed")
     monkeypatch.setattr(crew_graph_ignore, "_block", boom)
 
@@ -323,3 +323,120 @@ def test_text_output_names_at_most_ten_paths(tmp_path, capsys):
 
     assert (code, "k09.pem" in out, "k10.pem" in out, "(+3 more)" in out) == (
         1, True, False, True), out
+
+
+def _symlink(root, target, rel):
+    try:
+        os.symlink(target, os.path.join(str(root), *rel.split("/")))
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform or user cannot create symlinks")
+
+
+def test_a_nested_repository_is_unknown_until_excluded(tmp_path, capsys):
+    """git lists a nested repository (or submodule) as a bare `sub/`, never
+    its files, so a `.env` inside it was never judged and read as covered."""
+    root = _repo(tmp_path, {"app.py": "x = 1\n"})
+    sub = os.path.join(str(root), "sub")
+    os.makedirs(sub)
+    subprocess.run(["git", "init", "-q"], cwd=sub, check=True, capture_output=True,
+                   stdin=subprocess.DEVNULL, timeout=30)
+    _write(root, "sub/.env", "PW=x\n")
+
+    first, out = _check(root, capsys)
+    _write(root, ".graphifyignore", "sub/\n")
+    second, again = _check(root, capsys)
+
+    assert (first, "sub/" in out, second) == (2, True, 0), (out, again)
+
+
+def test_a_symlink_is_judged_by_its_target(tmp_path, capsys):
+    root = _repo(tmp_path, {".env": "PW=x\n", ".graphifyignore": ".env\n"})
+    _symlink(root, ".env", "notes.txt")
+
+    code, out = _check(root, capsys)
+
+    assert (code, "notes.txt" in out) == (1, True), out
+
+
+def test_a_symlinked_directory_matches_a_directory_rule(tmp_path, capsys):
+    root = _repo(tmp_path, {".claude/secrets-denylist": "config/\n",
+                            "real/env.php": "<?php $pw = 'x';\n",
+                            ".graphifyignore": "real/\n"})
+    _symlink(root, "real", "config")
+
+    code, out = _check(root, capsys)
+
+    assert (code, "config" in out) == (1, True), out
+
+
+def test_a_symlink_leaving_the_repository_is_unknown(tmp_path, capsys):
+    root = _repo(tmp_path, {"app.py": "x = 1\n"})
+    outside = tmp_path / "outside.txt"
+    outside.write_text("x\n", encoding="utf-8")
+    _symlink(root, str(outside), "notes.txt")
+
+    code, out = _check(root, capsys)
+
+    assert (code, "notes.txt" in out) == (2, True), out
+
+
+@pytest.mark.parametrize("rule,pattern", [
+    ("Read(.\\secrets\\**)", "**/secrets/**"),
+    ("Read(secrets\\x.txt)", "secrets/x.txt"),
+])
+def test_windows_separators_in_read_rules(rule, pattern):
+    patterns, _skipped, _unknown = crew_graph_ignore.translate_rule(rule, "/repo")
+
+    assert pattern in patterns and not any("\\" in p for p in patterns), patterns
+
+
+def test_write_covers_a_differently_cased_secret(tmp_path, capsys):
+    """The denylist folds case and coverage does not: `--write` must not
+    leave a `.ENV` that `--check` still names after it."""
+    root = _repo(tmp_path, {".ENV": "PW=x\n", "Prod.PEM": "k\n"})
+
+    before, _out = _check(root, capsys)
+    wrote = _main(root, "--write")
+    after, out = _check(root, capsys)
+
+    assert (before, wrote, after) == (1, 0, 0), out
+
+
+def test_write_keeps_the_target_mode(tmp_path, capsys):
+    if sys.platform == "win32":
+        pytest.skip("Windows has no POSIX permission bits")
+    root = _repo(tmp_path, {".env": "PW=x\n", ".graphifyignore": "vendor/\n"})
+    target = os.path.join(str(root), ".graphifyignore")
+    os.chmod(target, 0o640)
+
+    _main(root, "--write")
+    capsys.readouterr()
+
+    assert oct(os.stat(target).st_mode & 0o777) == oct(0o640)
+
+
+def test_write_goes_through_a_symlinked_graphifyignore(tmp_path, capsys):
+    root = _repo(tmp_path, {".env": "PW=x\n", "shared/ignore": "vendor/\n"})
+    _symlink(root, os.path.join("shared", "ignore"), ".graphifyignore")
+
+    code = _main(root, "--write")
+    capsys.readouterr()
+    with open(os.path.join(str(root), "shared", "ignore"), "rb") as handle:
+        real = handle.read()
+
+    assert (code, os.path.islink(os.path.join(str(root), ".graphifyignore")),
+            b"\n.env\n" in real) == (0, True, True), real
+
+
+def test_write_keeps_crlf_line_endings(tmp_path, capsys):
+    root = _repo(tmp_path, {".env": "PW=x\n"})
+    target = os.path.join(str(root), ".graphifyignore")
+    with open(target, "wb") as handle:
+        handle.write(b"vendor/\r\n")
+
+    _main(root, "--write")
+    capsys.readouterr()
+    with open(target, "rb") as handle:
+        after = handle.read()
+
+    assert (after.count(b"\n"), b"\r\n.env\r\n" in after) == (after.count(b"\r\n"), True), after

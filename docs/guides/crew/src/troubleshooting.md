@@ -485,14 +485,17 @@ every file the secrets denylist matches.
   ```bash
   python3 "<crew>/hooks/scripts/crew_graph_ignore.py" --root . --write
   ```
-  It appends only the missing patterns, under one marked block, and leaves every existing line as
-  it was. Commit `.graphifyignore`, then re-run the refresh check.
+  It appends the missing patterns, then any flagged path they still miss (the denylist ignores
+  case, `.graphifyignore` does not, so `.ENV` gets `/.ENV`), under one marked block, and leaves
+  every existing line as it was. Commit `.graphifyignore`, then re-run the refresh check.
 
 - **Symptom: `denylist coverage unknown: <reason>`** (the refresh check) or `graph-ignore  unknown`
   (`/crew:status`).
   **Check:** the reason names it: git missing, a settings file that does not parse, an unreadable
   `.claude/secrets-denylist` or `.graphifyignore`, a nested `.graphifyignore` (only the root one is
-  evaluated, and a nested one could re-include a file with `!`), or a deny-all `Read` rule.
+  evaluated, and a nested one could re-include a file with `!`), a nested repository or submodule
+  `.graphifyignore` does not exclude, a symlink that resolves outside the repository or not at
+  all, or a deny-all `Read` rule.
   **Fix:** repair what it names. An unknown is never read as covered, so no refresh is named until
   it is fixed.
 

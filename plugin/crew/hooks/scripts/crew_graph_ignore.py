@@ -42,6 +42,8 @@ depth. So, taking the session's directory to be the repository root:
   `//abs`      -> `/<rest>` when `abs` is inside the repository, `**/<rest>`
                   for `//**/<rest>`, else skipped by name
   `~/p`        -> as `//abs` after expanding the home directory
+  `.\\x`, `x\\y`  -> as `./x`, `x/y`: `\\` is read as `/` first, since in
+                  a git pattern it escapes and would silently match nothing
   `!p`         -> skipped by name: a carve-out only shrinks the denylist, and
                   ignoring one can only require more coverage
   `Read`, `Read(*)`, `Read(**)`  -> unknown: no ignore file can express
@@ -63,6 +65,16 @@ excludes can never make a path look excluded.
 
 uncovered = denylisted(candidates) - excluded by the root `.graphifyignore`.
 
+The denylist match folds case (`.ENV` and `Prod.PEM` are secrets too); the
+`.graphifyignore` match does not, as graphify's does not on a case-sensitive
+disk. `--write` closes that gap with the flagged path itself (below).
+
+A directory git lists without its files (`sub/`: a nested repository or a
+submodule) is `unknown` unless `.graphifyignore` excludes it. A symlink
+`.graphifyignore` does not exclude by its own name is judged by that name and
+by its target's repo-relative path (`dir/` for a directory); a target that
+does not resolve, or resolves outside the repository, is `unknown`.
+
 ## An unknown stays unknown
 
 Git missing or failing, a settings file that does not parse or has the wrong
@@ -79,10 +91,13 @@ graphify's walk; a Read rule written for a session started below the root.
 ## --write
 
 Appends every denylisted pattern not already a line of `.graphifyignore`
-(negations are never written: they could only re-include) under one marked
-block, then checks again. The full text is built before anything is opened,
-written to a temporary file beside the target with LF endings, then moved
-over it with `os.replace`, so a failed build leaves the file as it was.
+(negations are never written: they could only re-include), then each path
+still uncovered as an anchored literal (`/.ENV`), under one marked block,
+then checks again. The full text is built before anything is opened, written
+to a temporary file beside the target in the file's own line ending, given
+the target's permission bits (a new file: 0666 less the umask), then moved
+over it with `os.replace`, so a failed build leaves the file as it was. A
+symlinked `.graphifyignore` is written through to the file it names.
 
 Exit codes: `--check` 0 covered, 1 uncovered, 2 unknown. `--write` 0 covered
 after the write, 1 still uncovered, 2 unknown or the write failed.
@@ -174,7 +189,9 @@ def translate_rule(rule, root):
     match = _READ_RULE.match(rule.strip())
     if not match:
         return [], None, None
-    inner = (match.group(1) or "").strip()
+    # A Windows separator is an escape in a git pattern: `\x` would match
+    # `x`, silently. `Read(.\\secrets\\**)` means `./secrets/**`.
+    inner = (match.group(1) or "").strip().replace("\\", "/")
     if not inner or "\n" in inner:
         return [], None, f"{rule} denies every read, which no ignore file can express"
     if inner.startswith("!"):
@@ -270,6 +287,58 @@ def candidates(root, git="git"):
     return paths, nested
 
 
+def _split(top, paths):
+    """`(plain, opaque, links)`: files git lists, directories it lists
+    without their files (a nested repository or a submodule, as `sub/`),
+    and symlinks ({path: absolute path of the link})."""
+    plain, opaque, links = [], [], {}
+    for path in paths:
+        full = os.path.join(top, *path.rstrip("/").split("/"))
+        if os.path.islink(full):
+            links[path.rstrip("/")] = full
+        elif path.endswith("/") or os.path.isdir(full):
+            opaque.append(path.rstrip("/") + "/")
+        else:
+            plain.append(path)
+    return plain, opaque, links
+
+
+def _link_target(top, path, full):
+    """The repo-relative query for a symlink's target (`dir/` for a
+    directory), or _Unknown when it does not resolve inside the repo."""
+    real = os.path.realpath(full)
+    if not os.path.exists(real):
+        raise _Unknown(f"symlink {path} does not resolve, so what graphify would "
+                       f"read through it is not known")
+    rel = os.path.relpath(real, os.path.realpath(top)).replace(os.sep, "/")
+    if rel == "." or rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        raise _Unknown(f"symlink {path} resolves outside the repository, so what "
+                       f"graphify would read through it is not known")
+    return rel + "/" if os.path.isdir(real) else rel
+
+
+def _judge(top, paths, patterns, lines, git):
+    """`(denied, uncovered)` for the candidates `paths` under the denylist
+    `patterns` and the `.graphifyignore` `lines`. Raises _Unknown."""
+    plain, opaque, links = _split(top, paths)
+    own = {p: p + "/" if os.path.isdir(full) else p for p, full in links.items()}
+    excluded = _ignored(sorted(opaque + list(own.values())), lines, git)
+    blind = [d for d in opaque if d not in excluded]
+    if blind:
+        raise _Unknown(f"{IGNORE_FILE} does not exclude {', '.join(blind[:SHOWN])}, a "
+                       f"directory git lists without its files (a nested repository "
+                       f"or submodule), so what graphify would read there is not known")
+    # An unexcluded link is judged by its own name and by its target's.
+    judged = {path: (query, _link_target(top, path, links[path]))
+              for path, query in own.items() if query not in excluded}
+    queries = set(plain).union(*judged.values())
+    hits = _ignored(sorted(queries), patterns, git, fold_case=True)
+    files = sorted(hits.intersection(plain))
+    through = {path for path, pair in judged.items() if hits.intersection(pair)}
+    uncovered = (set(files) - _ignored(files, lines, git)) | through
+    return set(files) | through, sorted(uncovered)
+
+
 def _ignored(paths, patterns, git, fold_case=False):
     """The subset of `paths` git's matcher excludes under `patterns`."""
     if not paths or not patterns:
@@ -325,19 +394,38 @@ def coverage(root, git="git"):
                                 f"excludes, and only the root one is evaluated: "
                                 f"{', '.join(nested[:SHOWN])}")
             return result
-        denied = _ignored(paths, patterns, git, fold_case=True)
-        excluded = _ignored(sorted(denied), _ignore_lines(top), git)
+        denied, uncovered = _judge(top, paths, patterns, _ignore_lines(top), git)
     except _Unknown as exc:
         result["reason"] = str(exc)
         return result
-    uncovered = sorted(denied - excluded)
     result.update(status=UNCOVERED if uncovered else COVERED, uncovered=uncovered,
                   denied=len(denied), reason=None)
     return result
 
 
-def _block(patterns):
-    return BLOCK_HEADER + "\n" + "".join(p + "\n" for p in patterns)
+def _block(patterns, eol="\n"):
+    return BLOCK_HEADER + eol + "".join(p + eol for p in patterns)
+
+
+def _literals(top, git, patterns, lines):
+    """Each path still uncovered once `lines` are in place, as an anchored
+    literal: the denylist folds case and coverage does not, so `.ENV` needs
+    `/.ENV`. A path git would read as a pattern (`*?[\\`, a trailing space)
+    is left out, so the check after the write still names it."""
+    try:
+        _denied, uncovered = _judge(top, candidates(top, git)[0], patterns, lines, git)
+    except _Unknown:
+        return []
+    return ["/" + p for p in uncovered
+            if not re.search(r"[*?\[\\]|\s$", p) and "/" + p not in lines]
+
+
+def _mode(path):
+    if os.path.exists(path):
+        return os.stat(path).st_mode & 0o7777
+    mask = os.umask(0)
+    os.umask(mask)
+    return 0o666 & ~mask
 
 
 def write(root, git="git"):
@@ -348,26 +436,33 @@ def write(root, git="git"):
     if why:
         raise _Unknown(why)
     top = _toplevel(root, git)
-    target = os.path.join(top, IGNORE_FILE)
-    present = {line.strip() for line in _ignore_lines(top)}
+    # A symlinked .graphifyignore is written through: replacing the link
+    # with a regular file would leave the file it names untouched.
+    target = os.path.realpath(os.path.join(top, IGNORE_FILE))
+    lines = _ignore_lines(top)
+    present = {line.strip() for line in lines}
     missing = []
     for pattern in patterns:
         if pattern.startswith("!") or pattern.strip() in present or pattern in missing:
             continue
         missing.append(pattern)
+    missing += _literals(top, git, patterns, lines + missing)
     if not missing:
         return []
     before = b""
     if os.path.lexists(target):
         with open(target, "rb") as handle:
             before = handle.read()
-    text = _block(missing)
-    sep = b"" if not before or before.endswith(b"\n") else b"\n"
+    eol = b"\r\n" if b"\r\n" in before else b"\n"
+    text = _block(missing, eol.decode())
+    sep = b"" if not before or before.endswith(b"\n") else eol
     payload = before + sep + text.encode("utf-8")
-    handle, temp = tempfile.mkstemp(prefix=".graphifyignore.", dir=top)
+    mode = _mode(target)
+    handle, temp = tempfile.mkstemp(prefix=".graphifyignore.", dir=os.path.dirname(target))
     try:
         with os.fdopen(handle, "wb") as out:
             out.write(payload)
+        os.chmod(temp, mode)
         os.replace(temp, target)
     except OSError:
         if os.path.lexists(temp):

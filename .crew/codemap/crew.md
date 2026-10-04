@@ -1282,11 +1282,12 @@ called at `:1260`) after its "no code changed" return and before the graphify-mi
 While `crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore`
 does not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
 graphify command is run and autopilot's `_settles` stops on it unchanged. The checker is
-`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:107`), `translate_rule`
-for `Read(...)` deny rules (`:169`), `denylist` (`:232`), `candidates` (`:259`, `git ls-files
---cached --others`, no `--exclude-standard`), `_ignored` (`:273`, git's own `check-ignore
+`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:122`), `translate_rule`
+for `Read(...)` deny rules (`:184`), `denylist` (`:249`), `candidates` (`:276`, `git ls-files
+--cached --others`, no `--exclude-standard`), `_judge` (`:320`; an unexcluded `sub/` is
+unknown, a symlink is judged by its target too), `_ignored` (`:342`, git's own `check-ignore
 --no-index` in a scratch repository with the user's global excludes disabled), `coverage`
-(`:310`), `write` (`:343`, temp file then `os.replace`) and `main` (`:395`). `crew_status.py`
+(`:379`), `write` (`:431`, temp file then `os.replace`) and `main` (`:490`). `crew_status.py`
 prints the same answer as its `graph-ignore` line (`_graph_ignore_line`,
 `plugin/crew/hooks/scripts/crew_status.py:185`, appended at `:252`). Tests:
 `plugin/crew/tests/test_graph_ignore.py`, `plugin/crew/tests/test_graph_ignore_graphify.py` (real
@@ -1520,8 +1521,8 @@ then the train is advisory.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:1342` — `ticket_freshness`,
   the library entry point; `main()` at `:1442`; `artifact_verdicts` at `:1024`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
-- `plugin/crew/hooks/scripts/crew_graph_ignore.py:310` — `coverage`, the library
-  entry point `crew_refresh_check.py` and `crew_status.py` call; `main()` at `:395` is the
+- `plugin/crew/hooks/scripts/crew_graph_ignore.py:379` — `coverage`, the library
+  entry point `crew_refresh_check.py` and `crew_status.py` call; `main()` at `:490` is the
   `--check` / `--write` CLI (T-0064).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:568` — `next_phase`, read-only;
   `main()` at `:1662` is the `next` / `resume` / `settings` / `stops` /
