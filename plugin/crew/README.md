@@ -2101,7 +2101,7 @@ nothing (`CONFIG.md` §14a). Never on `startup`.
 `initialUserMessage` in an interactive session (spike, 2026-09-25), so crew
 never sends one. When the checks pass, the injected handoff carries
 `Auto-resume: ready to run /crew:done T-0001.` and says it did not start from
-the hook — press Enter or type it; T-0013 is the ticket that types it. When
+the hook — press Enter or type it, unless crew types it (below). When
 they do not, it carries `Auto-resume did not start: <reason>.` The reasons:
 compact was not a manual /compact; no handoff note, or the handoff was
 archived as stale (or is stale and could not be archived); the handoff is the
@@ -2119,6 +2119,31 @@ directory cannot be searched; this handoff was already resumed; the progress
 fingerprint could not be computed; the same command with no progress since
 the last auto-resume; or `internal error` (the decision itself failed — the
 handoff is still injected).
+
+**Typing it (T-0013).** Where the terminal can be driven, crew types the
+command into its own session. On that SessionStart the context hook runs its
+own flavour's `auto-clear` sender in resume mode, before its context claim.
+Consent is `resume.auto`; `context.autoClear` only describes the terminal
+(`method`, `windowTitle`, `onlyRepos`, `onlySessions`). The sender claims a
+per-handoff marker (`<git-common-dir>/crew/resume-typed-<sha256[:16]>`) only
+after every refusal, records the run with `crew_resume.py record` (a failed
+record types nothing), and then a detached sender types. In tmux it waits
+`resume.typeDelaySeconds` (2), polls the pane up to
+`resume.readyTimeoutSeconds` (15) for an idle, empty input line, and sends
+the text and, half a second later, Enter. On native Windows it types only
+under an explicit `method: sendkeys`, after the delay, with the focus and
+tab rechecks; `auto` there is `notify` and types nothing. The context says
+`Auto-resume: typing /crew:done T-0001 into this session in 2s (method
+tmux); ...`, or keeps the line above and adds `Auto-resume was not typed:
+<reason>.` Refusals, each logged to `.crew/.autoclear.log` (off is silent):
+`decide` did not say run; no usable method, `$TMUX` unset, or a pane that is
+not an ancestor; `wtype` or `xdotool`; the other flavour's method; already
+typed once (marker); the run could not be recorded; the input line is not
+empty; the input line was not ready in time; on Windows, focus lost or a tab
+not provable after the delay. The 2 s default comes from the T-0013 spike
+(input ready by 0.134 s on Claude Code 2.1.282). A delay is a guess, not a
+proof: Windows has no probe, so on a loaded machine a key can land before
+the box is ready (`CONFIG.md` §14b).
 
 A note resumes only in the session that wrote it (T-0042). When the note is
 written with Write, Edit or MultiEdit on an armed machine, the context hook

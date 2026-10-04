@@ -819,8 +819,8 @@ cleanly, clear, and pick up where it stopped.</p>
 <p>With <strong><code>resume.auto: true</code></strong> in the machine-global config, the handoff after <code>/clear</code> or a manual
    <code>/compact</code> also names the exact next command, read from the note's <code>resume:</code> line
    (<code>resume: /crew:done T-0001</code>): <code>Auto-resume: ready to run /crew:done T-0001.</code> — or
-   <code>Auto-resume did not start: &lt;reason&gt;.</code> when a check refuses it. It still does not start on its
-   own: you press Enter or type it, until T-0013 types it where the terminal can be identified. The
+   <code>Auto-resume did not start: &lt;reason&gt;.</code> when a check refuses it. It does not start from the hook:
+   you press Enter or type it, or crew types it where the terminal can be identified (below). The
    refusal reasons are: compact was not a manual /compact; no handoff note, or it was archived as
    stale, or is stale and could not be archived; the handoff is the automatic PreCompact skeleton;
    no resume line, <code>resume: none</code>, or a line the grammar refuses (a second line, trailing text, an
@@ -834,6 +834,20 @@ cleanly, clear, and pick up where it stopped.</p>
    progress fingerprint could not be computed; the same command with no progress since the last
    auto-resume; <code>internal error</code> (the decision itself failed, and the handoff is still injected).
    Never on a plain <code>startup</code>.</p>
+<p><strong>Crew types it where it can (T-0013).</strong> The context hook runs its own flavour's <code>auto-clear</code>
+   sender in resume mode. Consent is <code>resume.auto</code>; <code>context.autoClear</code> only describes the terminal.
+   In tmux it waits <code>resume.typeDelaySeconds</code> (default 2), polls the pane for an idle, empty input
+   line for up to <code>resume.readyTimeoutSeconds</code> (default 15), then sends the command and, half a
+   second later, Enter. On native Windows it types only under an explicit <code>method: sendkeys</code>, after
+   the delay, with the focus and tab rechecks; <code>auto</code> there types nothing. It types once per
+   handoff (a marker under <code>&lt;git-common-dir&gt;/crew/</code>) and records the run first, so a run that could
+   not be recorded is never typed. The context then says <code>Auto-resume: typing /crew:done T-0001 into
+   this session in 2s (method tmux)</code>, or keeps the line above and adds <code>Auto-resume was not typed:
+   &lt;reason&gt;.</code> Every refusal is in <code>.crew/.autoclear.log</code>: decide did not say run; no usable method,
+   <code>$TMUX</code> unset or a pane that is not this session's; <code>wtype</code> or <code>xdotool</code>; already typed; the run
+   could not be recorded; the input line is not empty; not ready in time; on Windows, focus lost or
+   a tab not provable. The 2 s default comes from a measurement (input ready by 0.134 s after
+   SessionStart on Claude Code 2.1.282); a delay is still a guess, and Windows has no probe.</p>
 <p>A note resumes only in the session that wrote it. Write it with the Write tool (as
    <code>/crew:handoff</code> does): the context hook then records which session and which Claude Code process
    wrote it. After <code>/compact</code> the session must match; after <code>/clear</code> the process must, so a <code>/clear</code>

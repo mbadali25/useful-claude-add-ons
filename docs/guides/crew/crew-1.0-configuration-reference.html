@@ -139,7 +139,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>130 keys</strong>: 72 settable in the machine-global file, 58 repo-only.</p>
+<p><strong>132 keys</strong>: 74 settable in the machine-global file, 58 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -830,6 +830,22 @@ the plugin.</p>
 <td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_resume.py</code>)</td>
 <td>1.0.40</td>
 <td>Auto-resume after <code>/clear</code> or a manual <code>/compact</code>. Only the machine file can arm it (exactly <code>true</code>); a repo <code>false</code> vetoes it.</td>
+</tr>
+<tr>
+<td><code>resume.typeDelaySeconds</code></td>
+<td>both</td>
+<td><code>2</code></td>
+<td>whole seconds; fraction cut, negative or non-number reads as the default (coerced in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
+<td>1.0.321</td>
+<td>Wait before auto-resume types its command: before the tmux ready probe, and the only wait on Windows. Read from the machine file only.</td>
+</tr>
+<tr>
+<td><code>resume.readyTimeoutSeconds</code></td>
+<td>both</td>
+<td><code>15</code></td>
+<td>whole seconds; fraction cut, negative or non-number reads as the default (coerced in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
+<td>1.0.321</td>
+<td>How long the tmux ready probe waits for an idle, empty input line before it types nothing. Read from the machine file only.</td>
 </tr>
 </tbody>
 </table>
@@ -1754,37 +1770,6 @@ the plugin.</p>
 <td>off</td>
 <td><code>off</code> | <code>plan</code> | <code>backlog</code></td>
 <td>Adds <code>backlog</code>: work a goal's tickets one at a time.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="t-0013">T-0013</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>resume.typeDelaySeconds</code></td>
-<td>new key</td>
-<td>machine</td>
-<td>measured by T-0013</td>
-<td></td>
-<td>Delay before typing the resume command where no ready-probe exists.</td>
-</tr>
-<tr>
-<td><code>resume.readyTimeoutSeconds</code></td>
-<td>new key</td>
-<td>machine</td>
-<td>15</td>
-<td></td>
-<td>How long the ready-probe waits before giving up.</td>
 </tr>
 </tbody>
 </table>

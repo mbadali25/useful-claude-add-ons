@@ -62,7 +62,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**130 keys**: 72 settable in the machine-global file, 58 repo-only.
+**132 keys**: 74 settable in the machine-global file, 58 repo-only.
 
 Columns:
 
@@ -198,6 +198,8 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `resume.auto` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_resume.py`) | 1.0.40 | Auto-resume after `/clear` or a manual `/compact`. Only the machine file can arm it (exactly `true`); a repo `false` vetoes it. |
+| `resume.typeDelaySeconds` | both | `2` | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.321 | Wait before auto-resume types its command: before the tmux ready probe, and the only wait on Windows. Read from the machine file only. |
+| `resume.readyTimeoutSeconds` | both | `15` | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.321 | How long the tmux ready probe waits for an idle, empty input line before it types nothing. Read from the machine file only. |
 
 ### `emergency`
 
@@ -386,13 +388,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 | `autopilot.maxTicketsPerRun` | new key | repo | 3 |  | Tickets one goal run may work before it stops. |
 | `autopilot.maxTokensPerSession` | new key | repo | 2000000 |  | Token cap for one goal session. |
 | `autopilot.mode` | changes values | repo | off | `off` \| `plan` \| `backlog` | Adds `backlog`: work a goal's tickets one at a time. |
-
-### T-0013
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `resume.typeDelaySeconds` | new key | machine | measured by T-0013 |  | Delay before typing the resume command where no ready-probe exists. |
-| `resume.readyTimeoutSeconds` | new key | machine | 15 |  | How long the ready-probe waits before giving up. |
 
 ### T-0017
 

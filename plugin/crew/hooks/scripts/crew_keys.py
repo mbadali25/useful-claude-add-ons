@@ -257,6 +257,18 @@ KEY_META = {
                         "machine file can arm it (exactly `true`); a repo `false` vetoes "
                         "it.", "branch", (None, True, False), "1.0.40",
                         _S + "crew_resume.py"),
+    "resume.typeDelaySeconds": _row("Wait before auto-resume types its command: before the "
+                                    "tmux ready probe, and the only wait on Windows. Read "
+                                    "from the machine file only.", "type", since="1.0.321",
+                                    source=_S + "crew_autocycle.py",
+                                    type_="whole seconds; fraction cut, negative or "
+                                          "non-number reads as the default"),
+    "resume.readyTimeoutSeconds": _row("How long the tmux ready probe waits for an idle, "
+                                       "empty input line before it types nothing. Read "
+                                       "from the machine file only.", "type",
+                                       since="1.0.321", source=_S + "crew_autocycle.py",
+                                       type_="whole seconds; fraction cut, negative or "
+                                             "non-number reads as the default"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "
                                 "`false` forbids it.", FIRST, _S + "_common.sh", "boolean"),
@@ -441,11 +453,6 @@ COMING = (
     _coming("autopilot.mode", "T-0012", "changes values",
             "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
             ("off", "plan", "backlog")),
-    _coming("resume.typeDelaySeconds", "T-0013", "new key",
-            "Delay before typing the resume command where no ready-probe exists.",
-            "measured by T-0013", "machine"),
-    _coming("resume.readyTimeoutSeconds", "T-0013", "new key",
-            "How long the ready-probe waits before giving up.", "15", "machine"),
     _coming("context.autoClear.wrapUp", "T-0017", "new key",
             "Machine opt-in for the automatic wrap-up; only exactly `true` arms it.",
             "null", "machine-arms"),
