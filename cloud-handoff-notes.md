@@ -58,6 +58,7 @@ Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #37
 
 ## Log (newest first)
 
+- 09:57: #360 fixer: head 7d442123 (kind branch + test, docs regen), version 1.0.323 (placeholder). Delta review started.
 - 09:57: #371 and #344 are CONFLICTED with main (mergeable_state dirty) so pull_request CI never ran (only verify-gate receipt). Land-prep started: #371 -> 1.0.326, #344 -> 1.0.327. #355 CI 15/24 green, merges first.
 - 09:56: #344 r2 6af8d6fd: 0 BLOCK 0 FIX 1 NIT (embedded Source: links relative, dangle in plugin cache). Review-clean; waits its turn.
 - 09:55: #342 fixer done: head c6b33f3f, 3 FIX + NIT fixed (global-not-read wording, approvals unknown, escaping incl --inert lines), 1.0.324. r2 review started (incl post-#361 merge check).
