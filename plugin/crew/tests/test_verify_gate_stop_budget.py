@@ -35,10 +35,12 @@ Five properties are load-bearing and each has a case here, in BOTH flavours:
 to run the whole map.
 """
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -826,14 +828,27 @@ def test_an_unusable_measurement_leaves_the_declared_price(flavour, value, tmp_p
 def test_a_declared_rule_that_passes_is_measured(flavour, tmp_path):
     """The other half: without a cache entry for declared rules there is
     nothing to take the minimum of. A clean pass of a declared rule records
-    its wall time under its rule key."""
+    its wall time under its rule key.
+
+    What is recorded is a MEASUREMENT, whole seconds from the gate's clock,
+    so it is held between its floor (1, `max(1, ceil(...))`) and the wall
+    time this test saw around the whole gate run, never to an exact value.
+    It asserted `== 1` until a slow Windows runner took over a second to
+    spawn `echo` through Git Bash and the gate rightly recorded 2 (PR #360,
+    run 37196163874)."""
     root = _repo(tmp_path, _CHEAP_ALONE)
     import verify_record  # pylint: disable=import-outside-toplevel
     key = verify_record.rule_key(_CHEAP_ALONE["rules"][0])
 
+    started = time.monotonic()
     result = _run(flavour, root)
+    outer = math.ceil(time.monotonic() - started)
 
     assert result.returncode == 0, result.stderr
     timings = json.loads((root / ".crew" / ".verify-gate.timings.json")
                          .read_text(encoding="utf-8"))
-    assert timings["rules"].get(key) == 1, timings
+    got = timings["rules"].get(key)
+    # +1: the gate subtracts two whole-second clock readings, which can span
+    # one more second boundary than the interval it measures.
+    assert (isinstance(got, int) and not isinstance(got, bool)
+            and 1 <= got <= outer + 1), (got, outer, timings)

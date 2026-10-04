@@ -14,6 +14,9 @@ the large one: many agents, commands, skills, and hooks in one plugin.
 
 ## How to verify a change
 
+`VERIFYING.md` is the map: every layer, its command, when to run it and what
+no automated layer runs. The detail on the pytest sets and CI jobs is below.
+
 Run in order: `python3 scripts/check-marketplace.py` (the gate — checks
 registration completeness, version drift, self-stated numeric claims, and
 that each plugin's declared licence matches the repo's `LICENSE`), then
