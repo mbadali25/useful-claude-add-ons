@@ -595,7 +595,7 @@ def test_crash_mid_apply_on_a_pre_0_20_repo_restores_config_json(v1_repo, monkey
     calls = {"target": 0}
 
     def flaky(src, dst):
-        if src.endswith(crew_migrate.TMP_SUFFIX) and not dst.startswith(backups):
+        if not dst.startswith(backups) and src.endswith(crew_migrate.TMP_SUFFIX):
             calls["target"] += 1
             if calls["target"] == stop:
                 raise OSError("injected crash")
