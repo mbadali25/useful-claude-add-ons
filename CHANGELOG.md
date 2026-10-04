@@ -32,9 +32,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   `<kind>-<topic>[-<part>].mmd` naming are #375's and unchanged. Not built here: the
   spec's per-kind directory layout and nested discovery (it conflicts with #375's
   flat naming - for the owner), the spec's own index writer (#375's page is it).
-  Split out earlier: the lint and theme (L-0547) and this repo's migration and
-  first `embed` run (L-0548); this repo's READMEs carry no section yet, and `check`
-  lists them as pending.
+  Split out earlier: the lint and theme (L-0547) and this repo's diagram migration
+  and redraw (L-0548).
+- **First `embed` run in this repo.** `plugin/crew/README.md` (22 diagrams),
+  `plugin/localgpu/README.md` (4) and `skills/README.md` (7) now carry the section
+  exactly as `embed` wrote it, so `check --root .` reports fresh with nothing
+  pending and `check_diagram_embeds` gates real sections. `localgpu` goes to
+  0.1.21 for its README.
+- **Known limits / follow-ups.** Discovery is flat: only `.mmd` files directly in
+  the diagrams dir are embedded or judged, so a nested `.mmd` is neither embedded
+  nor flagged. `crew_diagrams.outside_markers` is unused until the completion-audit
+  allowance below lands. Plan steps not built here, for L-0547/L-0548 or a
+  follow-up: nested discovery by kind dir, the completion-audit allowance,
+  `render.sh` over nested dirs, the sabotage registry entries, and the diagram
+  migration/redraw.
 - **Harness follow-ups (tooling-PR rule).** The completion-audit allowance for a
   README changed only inside the markers (`completion_audit.py`, using
   `crew_diagrams.outside_markers`) and a `sabotage_diagrams.py` registration are
