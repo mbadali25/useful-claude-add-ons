@@ -69,7 +69,8 @@ force says `take`. Exit 0 valid, 1 not.
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
   spec header `status: done`, unarmed    closed              stop
   ... armed, detached HEAD or gh failure ship                stop (cannot tell)
-  ... PR merged                          closed              stop
+  ... PR merged at this HEAD (full SHA)  closed              stop
+  ... PR merged, HEAD differs/unreadable ship                stop, new branch and PR
   ... PR open, `autopilot.ship: pr`      closed              stop, merge by hand
   ... PR closed unmerged, other state    ship                stop
   ... working tree differs from HEAD     ship                stop
@@ -578,9 +579,37 @@ def ship_command(ticket):
     return f"crew_autopilot.py ship --ticket {ticket}"
 
 
+_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def _full_sha(value):
+    """`value` lower-cased when it is a full 40-hex SHA, else None."""
+    value = value.strip().lower() if isinstance(value, str) else ""
+    return value if _SHA.fullmatch(value) else None
+
+
+def _merged_phase(top, branch, pr, answer):
+    """A MERGED PR closes the ticket only when it merged this checkout's HEAD
+    (full SHAs). A later commit on the branch, or a head either side cannot
+    read, stops: autopilot never ships a merged branch again, and "could not
+    tell" never reads `closed`."""
+    merged = _full_sha(pr.get("headRefOid"))
+    local = _full_sha(git_out(top, "rev-parse", "HEAD"))
+    if merged and local and merged == local:
+        return answer("closed", True, f"PR #{pr['number']} is merged ({pr.get('url')})")
+    if merged and local:
+        return answer("ship", True, f"{branch} has commits after PR #{pr['number']} merged "
+                      f"(merged head {merged}, HEAD {local}) - ship them on a new branch "
+                      "and PR; autopilot never opens a second PR on a merged branch")
+    return answer("ship", True, f"PR #{pr['number']} for {branch} is merged, but its "
+                  f"merged head ({merged or 'unreadable'}) or this checkout's HEAD "
+                  f"({local or 'unreadable'}) could not be read, so whether commits after "
+                  "the merge remain cannot be told - a human looks")
+
+
 def _ship_phase(top, ticket, answer, why):
     """`next` for a ticket `/crew:done` closed: `closed` once its PR merged
-    (or, under `ship: pr`, once one is open), `ship` while there is work
+    this HEAD (or, under `ship: pr`, once one is open), `ship` while there is work
     left, and a stop for every state that cannot be read. Unarmed, it is
     `closed` without asking gh: shipping is autopilot's alone."""
     config = settings(top)
@@ -599,7 +628,7 @@ def _ship_phase(top, ticket, answer, why):
                       "is not a PR) - a human looks")
     state = pr["state"]
     if state == "MERGED":
-        return answer("closed", True, f"PR #{pr['number']} is merged ({pr.get('url')})")
+        return _merged_phase(top, branch, pr, answer)
     if state == "OPEN" and config["ship"] != "merge":
         return answer("closed", True, f"PR #{pr['number']} open, merge by hand "
                       f"({pr.get('url')}; autopilot.ship is {config['ship']})")

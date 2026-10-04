@@ -320,11 +320,66 @@ def test_phase_unarmed_done_is_closed_without_reading_gh(tmp_path, monkeypatch):
 
 def test_phase_merged_pr_closes(tmp_path, monkeypatch):
     root = _done_ticket(tmp_path)
-    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_view=_view(_pr("MERGED"))))
+    head = git(root, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(crew_autopilot, "_run_gh",
+                        FakeGh(pr_view=_view(_pr("MERGED", head=head))))
 
     got = _next(root)
 
     assert (got["phase"], got["stop"], "#7" in got["reason"]) == ("closed", True, True)
+
+
+def test_phase_merged_pr_with_a_later_commit_stops(tmp_path, monkeypatch):
+    """Merged as PR #7, then a follow-up commit on the same branch: never
+    `closed` (the follow-up would never ship) and never a second PR."""
+    root = _done_ticket(tmp_path)
+    merged = git(root, "rev-parse", "HEAD").strip()
+    _write(root / "src" / "later.py", "x = 1\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "follow-up")
+    _receipt_ok(monkeypatch)
+    fake = FakeGh(pr_view=_view(_pr("MERGED", head=merged)))
+    monkeypatch.setattr(crew_autopilot, "_run_gh", fake)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "commits after PR #7 merged" in got["reason"],
+            "new branch" in got["reason"], fake.ran("pr", "create")) == (
+        "ship", True, True, True, [])
+
+
+@pytest.mark.parametrize("merged_head", [None, "", "abc123", 7, "z" * 40])
+def test_phase_merged_pr_with_an_unreadable_head_stops(tmp_path, monkeypatch, merged_head):
+    root = _done_ticket(tmp_path)
+    pr = _pr("MERGED")
+    if merged_head is None:
+        del pr["headRefOid"]
+    else:
+        pr["headRefOid"] = merged_head
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_view=_view(pr)))
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "could not be read" in got["reason"]) == (
+        "ship", True, True)
+
+
+def test_phase_merged_pr_with_local_head_unreadable_stops(tmp_path, monkeypatch):
+    root = _done_ticket(tmp_path)
+    head = git(root, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(crew_autopilot, "_run_gh",
+                        FakeGh(pr_view=_view(_pr("MERGED", head=head))))
+    real = crew_autopilot.git_out
+
+    def git_out(top, *args):
+        return None if list(args) == ["rev-parse", "HEAD"] else real(top, *args)
+
+    monkeypatch.setattr(crew_autopilot, "git_out", git_out)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "HEAD (unreadable)" in got["reason"]) == (
+        "ship", True, True)
 
 
 def test_phase_open_pr_under_pr_policy_closes_with_note(tmp_path, monkeypatch):

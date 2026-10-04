@@ -874,7 +874,8 @@ Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of
 | no INDEX table row for the ticket (or no INDEX), or a status cell that is not `ready`, `open`, `spec`, `planned`, `approved`, `in-progress`, `implement` or `review` | `direction-approval` | stop — cannot tell whether the direction was approved (Jira and ServiceDesk Plus modes write no row; a blank or unknown cell is not a yes) |
 | INDEX status `merged`, `closed`, `shipped`, `complete(d)`, or `done` without a `status: done` spec header | `closed` | stop — never re-driven |
 | spec header `status: done` (INDEX `done` or not), autopilot unarmed | `closed` | stop — shipping is autopilot's; nothing is pushed |
-| … armed: the branch's PR is merged, or open under `autopilot.ship: pr` | `closed` | stop — "PR #n open, merge by hand" |
+| … armed: the branch's PR is merged and its merged head (`headRefOid`) is this checkout's HEAD (full SHAs), or open under `autopilot.ship: pr` | `closed` | stop — "PR #n open, merge by hand" |
+| … armed: the branch's PR is merged but HEAD has moved past its merged head, or either head cannot be read | `ship` | stop — ship the later commits on a new branch and PR; autopilot never opens a second PR on a merged branch |
 | … armed: detached HEAD, `gh pr view` failed or answered something that is not a PR state, the PR closed unmerged, a working tree that differs from HEAD, or the review receipt no longer stands | `ship` | stop |
 | … armed: no PR yet, or one open under `autopilot.ship: merge` | `ship` | runs `crew_autopilot.py ship --ticket <id>` |
 | an item under an `Open questions` heading (any level, sub-headings included) in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]`; `None of us has decided` is still open |
