@@ -375,6 +375,268 @@ def _t_recall():
         check("recall is read-only", after, before)
 
 
+# --- recall relevance (T-0083): excluded folders, stop words, floor, kind, project -----
+
+def _recall_json(argv):
+    try:
+        code, out = run_cli(["recall"] + argv + ["--json"])
+    except SystemExit as exc:  # an option this CLI does not know: argparse exits 2
+        return exc.code, {"results": [], "unparsed": f"SystemExit {exc.code}"}
+    except Exception as exc:  # pylint: disable=broad-except
+        # a crash is that check's failure, not the end of every later check
+        return f"raised {type(exc).__name__}", {"results": []}
+    try:
+        return code, json.loads(out)
+    except ValueError:
+        return code, {"results": [], "unparsed": out}
+
+
+def _paths(res):
+    return [r["path"] for r in res.get("results", [])]
+
+
+def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statements
+    archived = "wiki/sessions/archive/2026-07/Session - x.md"
+    with Sandbox() as sb:
+        vaults = {
+            "arch": sb.vault("arch", {archived: "# Bridge port collision\nbridge port collision\n"}),
+            "filt": sb.vault("filt", {
+                ".obsidian/app.json": json.dumps({"userIgnoreFilters": ["private/", "/tmp.*/"]}),
+                "private/n.md": "zebra crossing\n", "tmpstuff/n.md": "zebra crossing\n",
+                "pub.md": "zebra crossing\n"}),
+            "broken": sb.vault("broken", {
+                ".obsidian/app.json": "{not json",
+                archived: "zebra crossing\n", "keep.md": "zebra crossing\n"}),
+            "huge": sb.vault("huge", {".obsidian/app.json": "[" * 100000,
+                                      "keep.md": "zebra crossing\n"}),
+            "case": sb.vault("case", {
+                "wiki/sessions/Archive/2026-07/Session - y.md": "# quokka\nquokka\nquokka\n",
+                "wiki/Sessions/s.md": "# quokka\nquokka\n",
+                "wiki/Concepts/c.md": "a quokka\n"}),
+            "links": sb.vault("links", {archived: "a narwhal\n", "wiki/real.md": "a narwhal\n"}),
+            "words": sb.vault("words", {"a.md": "support and report\n", "b.md": "the port.\n"}),
+            "joined": sb.vault("joined", {
+                "a.md": "the obsidian-vault plugin\n", "b.md": "runs crew-context.sh\n",
+                "c.md": "see vault_recall.py\n", "port-collisions-break-the-bridge.md": "none\n",
+                "t.md": "ticket t-0083 done\n", "pl.md": "two bridges here\n",
+                "pl2.md": "a lone sprocket\n"}),
+            "links2": sb.vault("links2", {"wiki/real.md": "a walrus\n", ".trash/n.md": "a walrus\n",
+                                          "node_modules/m.md": "a walrus\n"}),
+            "pairs": sb.vault("pairs", {
+                "q00.md": "the release notes\n", "q01.md": "this is not right\n",
+                "q02.md": "the news today\n", "q03.md": "whats new today\n",
+                "q04.md": "the state machine\n", "q05.md": "stat the file\n",
+                "q06.md": "two plans\n", "q07.md": "the planes fly\n",
+                "q08.md": "two boxes\n", "q09.md": "the boxer\n",
+                "q10.md": "ticket T-0083 shipped\n", "q11.md": "ticket L-0083 shipped\n",
+                "q12.md": "see github.com/x\n", "q13.md": "see example.com/x\n",
+                "q14.md": "edit vault_recall.py now\n", "q15.md": "the vault config.py file\n",
+                "q16.md": "a vault, then recall, then py\n",
+                "q17.md": "runs crew-context.sh\n", "q18.md": "the crew wiki\n",
+                "q19.md": "a port collision here\n", "q20.md": "port-collisions again\n",
+                "q21.md": "port moved; one collision\n",
+                "q22.md": "two others here\n", "q23.md": "the other one\n",
+                "q24.md": "the release went out\n", "q25.md": "clear the cache now\n",
+                "q26.md": "a good use case\n", "q27.md": "region us-east-1 only\n",
+                "q28.md": "read the log\n", "q29.md": "one tag left\n",
+                "q30.md": "one entry\n", "q31.md": "the policy says\n",
+                "q32.md": "edit the py file\n", "q33.md": "fresh news today\n"}),
+            "snip": sb.vault("snip", {"s.md": "support " + "filler " * 60 + "the port here\n"}),
+            "floor": sb.vault("floor", {
+                "note-a.md": "the port only\n", "note-b.md": "the port and the collision\n"}),
+            "kinds": sb.vault("kinds", {
+                "wiki/sessions/Session - a.md": "# widget\n# widget\nwidget\nwidget\nwidget\n",
+                "wiki/other.md": "# widget\nwidget\nwidget\n",
+                "wiki/concepts/c.md": "a widget\n",
+                "wiki/decisions/D-001 - d.md": "a widget\n"}),
+            "proj": sb.vault("proj", {
+                "wiki/concepts/p1.md": "---\nproject: \"crew\"\n---\na gizmo\n",
+                "wiki/concepts/p2.md": "# gizmo\ngizmo\n",
+                "wiki/concepts/p3.md": "---\nproject: other\n---\n# gizmo\n# gizmo\ngizmo\n"}),
+            "fold": sb.vault("fold", {"wiki/concepts/acme/crew/n.md": "a gadget\n"}),
+            "dirc": sb.vault("dirc", {
+                "wiki/concepts/Recall ranking.md":
+                    "---\nproject: crew\n---\nvault recall ranking\n",
+                archived: "---\nproject: elsewhere\n---\n# vault recall ranking\n"
+                          "vault recall ranking\n"}),
+            "pbeta": sb.vault("pbeta", {"wiki/sessions/Session - s.md": "a sprocket\n"}),
+            "palpha": sb.vault("palpha", {
+                "wiki/concepts/x.md": "---\nproject: crew\n---\n# sprocket\nsprocket\n"}),
+        }
+        outside = os.path.join(sb.tmp, "outside.md")
+        with open(outside, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("a narwhal\n")
+        linked = True
+        try:
+            os.symlink(os.path.join(vaults["links"], archived),
+                       os.path.join(vaults["links"], "wiki", "into-archive.md"))
+            os.symlink(outside, os.path.join(vaults["links"], "wiki", "out-of-vault.md"))
+            os.symlink(os.path.join(vaults["links2"], ".trash", "n.md"),
+                       os.path.join(vaults["links2"], "wiki", "to-trash.md"))
+            os.symlink(os.path.join(vaults["links2"], "node_modules", "m.md"),
+                       os.path.join(vaults["links2"], "wiki", "to-node-modules.md"))
+        except (OSError, NotImplementedError) as exc:
+            linked = False
+            print(f"SKIP: symlinks not creatable here ({exc}) - the symlink cases did not run")
+        config = {n: {"path": p, "role": "recall"} for n, p in vaults.items()}
+        config["arch"].update(role="primary", default=True)
+        sb.write_config({"vaults": config})
+        before = {n: tree_snapshot(p) for n, p in vaults.items()}
+
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "arch"])
+        check("archived session is never returned", (code, res["results"]), (0, []))
+        check_true("archived session is never returned: excluded_dirs >= 1",
+                   res.get("excluded_dirs", 0) >= 1)
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "arch",
+                                  "--include-excluded"])
+        check("--include-excluded reads the archive", _paths(res), [archived])
+
+        # Review round 1 FIX6: the userIgnoreFilters shape was never checked against a
+        # real app.json, so per spec Unknowns #3 only the built-in prefix ships.
+        code, res = _recall_json(["--query", "zebra", "--vaults", "filt"])
+        check("userIgnoreFilters is not applied: only the built-in prefix ships", _paths(res),
+              ["private/n.md", "pub.md", "tmpstuff/n.md"])
+        code, res = _recall_json(["--query", "zebra", "--vaults", "broken"])
+        check("a broken app.json still applies the built-in prefix",
+              (code, _paths(res)), (0, ["keep.md"]))
+        code, res = _recall_json(["--query", "zebra", "--vaults", "huge,filt"])
+        check("a deeply nested app.json never breaks recall (FIX1)",
+              (code, [(r["vault"], r["path"]) for r in res["results"]][:1]),
+              (0, [("huge", "keep.md")]))
+
+        code, res = _recall_json(["--query", "quokka", "--vaults", "case"])
+        check("archive and kind folders match case-insensitively (FIX3)",
+              [(r["path"], r.get("kind")) for r in res["results"]],
+              [("wiki/Concepts/c.md", "concept"), ("wiki/Sessions/s.md", "session")])
+
+        if linked:
+            code, res = _recall_json(["--query", "narwhal", "--vaults", "links"])
+            check("a symlink into the archive or out of the vault is not served (FIX4)",
+                  _paths(res), ["wiki/real.md"])
+            code, res = _recall_json(["--query", "narwhal", "--vaults", "links",
+                                      "--include-excluded"])
+            check("--include-excluded still never serves a link out of the vault (FIX4)",
+                  sorted(_paths(res)), sorted([archived, "wiki/into-archive.md",
+                                               "wiki/real.md"]))
+
+        code, res = _recall_json(["--query", "port", "--vaults", "words"])
+        check("terms match whole words, not substrings (N4)", _paths(res), ["b.md"])
+
+        # Review round 2 FIX1: a joined word's parts are words too, in notes and in queries.
+        for query, want in (("obsidian vault", "a.md"), ("context", "b.md"), ("recall", "c.md"),
+                            ("port collision", "port-collisions-break-the-bridge.md"),
+                            ("t-0083", "t.md"), ("vault_recall", "c.md"),
+                            ("bridge", "pl.md"), ("sprockets", "pl2.md")):
+            code, res = _recall_json(["--query", query, "--vaults", "joined"])
+            check_true(f"joined words and plurals match ({query!r} finds {want}): got "
+                       f"{_paths(res)}", want in _paths(res))
+
+        # Review round 3: every joined-word and plural rule is a must-match paired with a
+        # must-not-match (FIX A: plural forms only by the s/es rule, never a stop word;
+        # FIX B: a joined query word is one term, matched whole or as a contiguous run).
+        # File names are neutral: a note's file name is its title, and so its words.
+        for query, yes, nos in (
+                ("notes", ["q00.md"], ["q01.md"]),           # not 'not'
+                ("news", ["q02.md"], ["q03.md"]),            # not 'new'
+                ("states", ["q04.md"], ["q05.md"]),          # not 'stat'
+                ("plan", ["q06.md"], ["q07.md"]),            # not 'planes'
+                ("box", ["q08.md"], ["q09.md"]),             # boxes, not boxer
+                ("T-0083", ["q10.md"], ["q11.md"]),          # not L-0083
+                ("github.com", ["q12.md"], ["q13.md"]),      # not example.com
+                ("vault_recall.py", ["q14.md"], ["q15.md", "q16.md"]),  # no scatter
+                ("crew-context", ["q17.md"], ["q18.md"]),    # not 'the crew wiki'
+                ("port-collision", ["q19.md", "q20.md"], ["q21.md"]),
+                ("others", ["q22.md"], ["q23.md"]),              # never a stop word
+                # Review round 4: strip just the s too; never a stem under 3; plain-s
+                # stem of 3 with an exception list (news); -ies -> y.
+                ("releases", ["q24.md"], []), ("caches", ["q25.md"], []),
+                ("uses", ["q26.md"], ["q27.md"]),            # not 'us' of us-east-1
+                ("logs", ["q28.md"], []), ("tags", ["q29.md"], []),
+                ("entries", ["q30.md"], []), ("policies", ["q31.md"], []),
+                ("pies", [], ["q32.md"]),                    # no 'py': stem under 3
+                ("new", [], ["q33.md"])):                    # the news exception, reversed
+            code, res = _recall_json(["--query", query, "--vaults", "pairs"])
+            got = _paths(res)
+            check(f"{query!r} must match {yes}", [y for y in yes if y in got], yes)
+            check(f"{query!r} must not match {nos}", [n for n in nos if n in got], [])
+        code, res = _recall_json(["--query", "T-0083 shipped", "--vaults", "pairs"])
+        check("a joined query word is one term for the floor", res.get("terms"),
+              ["t-0083", "shipped"])
+
+        if linked:
+            for extra in ([], ["--include-excluded"]):
+                code, res = _recall_json(["--query", "walrus", "--vaults", "links2"] + extra)
+                check(f"a symlink into .trash or node_modules is not served {extra} (N2)",
+                      _paths(res), ["wiki/real.md"])
+
+        code, res = _recall_json(["--query", "port", "--vaults", "snip"])
+        check_in("the snippet is centred on the whole-word match (N5)", "port here",
+                 res["results"][0]["snippet"] if res["results"] else "")
+
+        code, res = _recall_json(["--query", "what is the port for this", "--vaults", "floor"])
+        check("stop words are not terms", res.get("terms"), ["port"])
+        code, res = _recall_json(["--query", "what is the", "--vaults", "floor"])
+        check("stop words are not terms: stop words only",
+              (code, res.get("terms"), res["results"]), (0, [], []))
+        code, res = _recall_json(["--query", "with and from", "--vaults", "floor"])
+        check("stop words are not terms: with/and/from", res.get("terms"), [])
+
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "floor"])
+        check("floor drops a one-word match", _paths(res), ["note-b.md"])
+        check("floor drops a one-word match: below_floor", res.get("below_floor"), 1)
+        check("floor drops a one-word match: need", res.get("need"), 2)
+        check("floor drops a one-word match: matched",
+              [r.get("matched") for r in res["results"]], [2])
+        code, res = _recall_json(["--query", "bridge port collision", "--vaults", "floor",
+                                  "--min-terms", "1"])
+        check("floor drops a one-word match: --min-terms 1 keeps both", sorted(_paths(res)),
+              ["note-a.md", "note-b.md"])
+        code, res = _recall_json(["--query", "port", "--vaults", "floor", "--min-terms", "5"])
+        check("floor drops a one-word match: --min-terms is capped at the term count",
+              (res.get("need"), len(res["results"])), (1, 2))
+
+        code, res = _recall_json(["--query", "widget", "--vaults", "kinds"])
+        check("concept outranks a higher-scoring session", _paths(res),
+              ["wiki/concepts/c.md", "wiki/decisions/D-001 - d.md", "wiki/other.md",
+               "wiki/sessions/Session - a.md"])
+        check("concept outranks a higher-scoring session: kinds",
+              [r.get("kind") for r in res["results"]], ["concept", "decision", "other", "session"])
+
+        for spelled in ("crew", "CREW", " crew "):
+            code, res = _recall_json(["--query", "gizmo", "--vaults", "proj",
+                                      "--project", spelled])
+            check(f"project match ranks first ({spelled!r})", _paths(res),
+                  ["wiki/concepts/p1.md", "wiki/concepts/p2.md", "wiki/concepts/p3.md"])
+            check(f"project match ranks first ({spelled!r}): labels",
+                  [r.get("project") for r in res["results"]], ["match", "none", "other"])
+        check("no project never hides a note", res["results"][1].get("project"), "none")
+        code, res = _recall_json(["--query", "gizmo", "--vaults", "proj"])
+        check("without --project every note is none",
+              [r.get("project") for r in res["results"]], ["none", "none", "none"])
+        check("without --project the order is score", _paths(res)[0], "wiki/concepts/p3.md")
+        code, res = _recall_json(["--query", "gizmo", "--vaults", "proj",
+                                  "--project", "foo,crew", "--project", "bar"])
+        check("--project is comma-separated and repeatable", res.get("project"),
+              ["foo", "crew", "bar"])
+        check("--project is comma-separated and repeatable: still matches",
+              _paths(res)[0], "wiki/concepts/p1.md")
+
+        code, res = _recall_json(["--query", "gadget", "--vaults", "fold", "--project", "crew"])
+        check("project by folder", [r.get("project") for r in res["results"]], ["match"])
+
+        code, res = _recall_json(["--query", "vault recall ranking", "--vaults", "dirc",
+                                  "--project", "crew"])
+        check("the direction's case", _paths(res), ["wiki/concepts/Recall ranking.md"])
+
+        code, res = _recall_json(["--query", "sprocket", "--vaults", "pbeta,palpha",
+                                  "--project", "crew"])
+        check("vault priority still wins", [(r["vault"], r.get("kind")) for r in res["results"]],
+              [("pbeta", "session"), ("palpha", "concept")])
+
+        after = {n: tree_snapshot(p) for n, p in vaults.items()}
+        check("recall is still read-only", after, before)
+
+
 # --- gardener: bound, ack only after write, hosts, lock, owned commits ----------------
 
 PROCESSOR = r'''
@@ -1347,7 +1609,7 @@ def _t_garden_snapshot_time_counts_against_deadline():
                  "spent snapshotting the vault", reason)
 
 
-for case in (_t_adopt, _t_import, _t_recall, _t_garden_bound, _t_garden_ack_after_write,
+for case in (_t_adopt, _t_import, _t_recall, _t_recall_relevance, _t_garden_bound, _t_garden_ack_after_write,
              _t_garden_hosts_and_legacy, _t_garden_owned_commit, _t_schedule, _t_capture,
              _t_capture_unknown_session, _t_detect_install, _t_create_vault_and_config_override,
              _t_writers_primary_only, _t_garden_ack_needs_a_write, _t_garden_commit_bounded,

@@ -4,6 +4,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `obsidian-vault` 0.5.0: vault recall relevance (T-0083)
+
+- **Behaviour change: default recall results.** `vault_ops.py recall` (the CLI crew's context hook
+  calls on every prompt) returns fewer, more relevant notes for every caller, with no crew change:
+  - it never reads `wiki/sessions/archive/` (any letter case), nor a symlinked note whose real
+    path is inside it; a symlinked note that resolves outside the vault or into `.trash`,
+    `.git`, `node_modules` or another dot folder is always skipped (hard links cannot be
+    detected; Windows junctions are untested);
+  - stop words and words under three characters are not query terms; a stop-word-only query
+    returns nothing, exit 0; terms match whole words only (`port` no longer matches `support`),
+    where a note's joined word (`crew-context.sh`, `vault_recall.py`) also counts as its parts,
+    a joined query word (`t-0083`, `github.com`) is one term matched whole or as its parts side
+    by side in order; plurals pair `y`/`ies`, `es` only after s/x/z/ch/sh, else a plain `s`
+    (also stripped from an `es` word: `releases` finds `release`), no form is shorter than three
+    letters (`uses` is not `us`), `news` is an exception (never `new`), no plural form is a stop
+    word, and CamelCase is not split;
+  - a note must hold 1 distinct term for a query of one or two terms, 2 for three to five, 3 for
+    six or more;
+  - inside a vault the order is project, note kind (`wiki/concepts/` and `wiki/decisions/`, then
+    other notes, then `wiki/sessions/`, any letter case), score, path. Vault priority still
+    comes first.
+- Not in this release: the vault's `.obsidian/app.json` `userIgnoreFilters`. Their format has
+  not been checked against a real vault, so recall does not read them; that is a follow-up.
+- New options: `--project NAME[,NAME]` (a note whose `project:` or a path folder matches ranks
+  first; another project's notes rank last and are never dropped), `--min-terms N` (`1` restores
+  the old floor) and `--include-excluded`.
+- New JSON keys, existing ones unchanged: `kind`, `project` and `matched` per result; `project`,
+  `need`, `below_floor`, `excluded_dirs` and `skipped_links` at the top.
+- crew passing its project to `--project` is L-0675, a separate change.
 ### Changed — `crew` 1.0.343: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
 
 - **What changed.** `notify`, `handoff-read`, `handoff-write` and `context-watch`, in both
