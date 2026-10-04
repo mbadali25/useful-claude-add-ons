@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.323: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
+### Changed — `crew` 1.0.329: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
 
 - `crew_autopilot.py next` and `resume` read a ticket's `.work/INDEX.md` row from the main checkout
   (the first record of `git worktree list --porcelain`) when the lane worktree's INDEX has none.
