@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:58 UTC
+Last updated: 2026-10-04 11:59 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:59: #377 merge review 0d8c1bce: 0/1/1. FIX: troubleshooting.md:196,209-215 (from T-0048) gives old catch-up order vs L-0522 LANDING_ORDER -> sent to lander (rebuild guide, re-version 1.0.359).
 - 11:58: T-0049 BUILT -> PR #395 (T-0049-build a972a0af, crew 1.0.353 placeholder). Heartbeat measured on Linux cloud: detached child survives Bash calls (128s, 5 calls) -> fallback not built; Windows/macOS pid check 'unmeasured', TTL decides. 13/13 hand sabotage red; harness follow-up sabotage_inflight.py (draft in scratchpad/sab/). NOTE builder wrote code before tests (sabotage showed red half). First review (security-focused) started.
 - 11:58: #352 land-prep onto e9364a70 done: fe45b8bb (1.0.357; troubleshooting guide rebuilt; 12 crew_resume.py codemap cites re-derived incl. the NIT). Merge-only review started.
 - 11:57: #377 land-prep onto e9364a70 done: 0d8c1bce (1.0.355; daily-workflow guide rebuilt; build.py/config_reference --check pass). Merge-only review started.
