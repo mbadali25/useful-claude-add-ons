@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:14: #341 L-0509 re-review 7dddc79d: 0/0/1 CLEAN, land this half (harness half = TODO.md follow-up (a)-(g), its own PRs).
 - 12:14: #357 land-prep onto e9364a70 done: af805254 (1.0.365; full guide says focus shipped; PLUGINS row re-added). Merge-only review started.
 - 12:14: #342 land-prep onto e9364a70 done: 904ca36f (1.0.364; CONFIG §10 generated heading kept, hand paragraph dropped; counts 74/132/58; troubleshooting rebuilt; test_crew_config 3399). Merge-only review started.
 - 12:13: #341 FIX1-2 pushed 7dddc79d (archived ticket -> closed; resume names archive; 2 tests red-first; FIX3 harness follow-up in TODO.md; 1.0.363). Re-review started.
