@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 14:12 UTC
+Last updated: 2026-10-04 14:18 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:18: #366 fixes -> e14b5a45 (one conservative overlap rule, step regex aligned; 1355 tests, 8 mutations). #365 fixes -> 9805fcb1 (policy try/except, _unanswered on --apply, docs; 1627 tests, 32 mutations). Both re-reviews started. NEW: owner opened 91 spec-only cloud-handoff drafts #397-#487 (12:32-12:42 UTC); plan pending owner decision.
 - 14:12: #366 re-review 1994b788: 0 BLOCK / 2 FIX (./ prefix not normalised; literal-vs-glob judged disjoint) / 3 NIT. Asked builder to replace overlap proof with one conservative rule (normalised, casefolded literal prefixes must diverge, else cannot-tell) instead of case patches.
 - 14:11: #365 review 20718c87: merge clean, guards hold; 0 BLOCK / 1 FIX (policy except branch untested) / 5 NIT (via-autopilot doc, policy code outside try, split --apply skips answered:, 2 autopilot-path tests, README zero-count stops). All sent to builder. #377 CI: 6 green, 12 queued.
 - 14:07: #366 review fixes pushed -> 1994b788 (step after slices uncovered, glob-vs-glob cannot-tell, verify.json maps crew_autopilot.py, ## Step refused; 1346 tests, 6 mutations red). Re-review started.
