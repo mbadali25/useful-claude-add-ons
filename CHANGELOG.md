@@ -23,15 +23,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Never untracks, never edits a human line.** A tracked file a new pattern matches is named
   (`tracked ...`); a tracked secret-shaped file is `needs-owner`, exit 3. Crew never edits a line
   outside its block, never touches the `.crew` policy block, and never drops an entry from its own
-  block. A directory pattern that would defeat a human `!` re-include is a `conflict`, not added; a
+  block. The `.env.*` row re-includes `.env.example`, `.sample`, `.template`, `.dist` and `.defaults`;
+  a committed test-fixture `*.pem`/`*.key` is still `needs-owner` (known limit, no acknowledgement
+  mechanism). A directory pattern that would defeat a human `!` re-include is a `conflict`, not added; a
   block pattern a rule below re-includes is `overridden`, not re-added.
 - **Exit codes.** 0 current, 1 pending, 2 usage, 3 owner decision, 4 unknown (git missing, failed or
-  timed out, an undecodable `.gitignore`, a malformed block - never "current"), 5 refused (a
+  timed out, an unreadable or undecodable `.gitignore`, a malformed block, or any unexpected error -
+  never "current" and never 1; output never fails on a path the console cannot encode), 5 refused (a
   `# crew:gitignore:off` line, a non-regular `.gitignore`, or an active ticket whose Touch does not
   cover `.gitignore`: an ignore line written inside a ticket could hide its own files from the
   completion audit, so `.gitignore` is deliberately not a refresh artifact).
 - **Tests.** `plugin/crew/tests/test_crew_gitignore.py` (new) and four `test_status.py` cases, mapped
-  by a new `.crew/verify.json` rule; 16 hand-run sabotage mutations each turned their named test red.
+  by a new `.crew/verify.json` rule; 19 hand-run sabotage mutations each turned their named test red.
   Registering them in `sabotage.py` is a harness change and lands alone (TODO.md).
 
 ### Changed — `crew` 1.0.322: the review bundle and the completion audit account for merged main (T-0100)

@@ -4,7 +4,7 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
-- **T-0039 follow-ups (`crew_gitignore.py`).** (a) Harness, tooling-alone PR: register the 16
+- **T-0039 follow-ups (`crew_gitignore.py`).** (a) Harness, tooling-alone PR: register the 19
   hand-run mutations listed in `.crew/verify.json`'s T-0039 rule as `GITIGNORE_MUTATIONS` in a new
   `plugin/crew/tests/sabotage_gitignore.py`, imported and concatenated in
   `plugin/crew/tests/sabotage.py`. Both paths are `HARNESS` in `scripts/check-tooling-pr.py`, so they

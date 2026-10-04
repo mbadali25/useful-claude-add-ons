@@ -181,5 +181,7 @@ Ignore patterns selected from **github/gitignore**.
 **What crew changed:** build-output directories (`bin/`, `obj/`, `target/`, `build/`, `vendor/`) are
 anchored to each manifest's directory instead of matching anywhere; `.idea/` is ignored whole where
 the JetBrains template lists files; `*.py[codz]` is `*.py[cod]`; ambiguous patterns that repositories
-legitimately commit (`dist/`, Go `vendor/`, `*.tfvars`, `.terraform.lock.hcl`) are left out. The
+legitimately commit (`dist/`, Go `vendor/`, `*.tfvars`, `.terraform.lock.hcl`) are left out; the `.env.*`
+row re-includes the common templates (`.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`) beside
+`.env.example`. The
 secret-key rows (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ed25519`) are crew's own and say so.

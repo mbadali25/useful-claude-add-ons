@@ -72,6 +72,7 @@ import argparse  # noqa: E402
 import difflib  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402
+import re  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
 import tempfile  # noqa: E402
@@ -183,8 +184,9 @@ NOISE = [
 
 SECRETS = [
     _row(".env", ".env", "local environment secrets", "Python.gitignore, Node.gitignore"),
-    _row(".env.*", ".env.local", "local environment secrets, except the shared example",
-         "Node.gitignore", ("!.env.example",)),
+    _row(".env.*", ".env.local", "local environment secrets, except the shared templates",
+         "Node.gitignore", ("!.env.example", "!.env.sample", "!.env.template", "!.env.dist",
+                            "!.env.defaults")),
     _row("*.pem", "server.pem", "certificates and private keys", "crew"),
     _row("*.key", "server.key", "private keys", "crew"),
     _row("*.p12", "cert.p12", "PKCS#12 key bundles", "crew"),
@@ -248,8 +250,10 @@ def toplevel(root):
     try:
         _status, out = _git(root, "rev-parse", "--show-toplevel")
     except Unknown as exc:
-        if "exited" in str(exc):
+        if "not a git repository" in str(exc):
             raise Unknown("not a git repository") from exc
+        if "exited" in str(exc):  # e.g. a safe.directory refusal: say what git said
+            raise Unknown(f"could not run git rev-parse: {exc}") from exc
         raise
     return os.path.realpath(out.strip())
 
@@ -314,6 +318,24 @@ def candidates(langs):
 
 # --- the root .gitignore ----------------------------------------------------------------
 
+def _keep_lines(text):
+    """Lines with their endings, split the way git splits an ignore file: on
+    LF only (str.splitlines also splits on CR, VT, FF and U+2028)."""
+    return re.findall(r"[^\n]*\n|[^\n]+\Z", text)
+
+
+def _lines(text):
+    """`_keep_lines` without the LF, and without a CR before it."""
+    return [line[:-1].rstrip("\r") if line.endswith("\n") else line for line in _keep_lines(text)]
+
+
+def _read_bytes(path, label):
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise Unknown(f"{label} could not be read: {exc}") from exc
+
 def read_gitignore(top):
     """{exists, regular, text, bom, newline} for the root `.gitignore`;
     raises Unknown when it cannot be decoded."""
@@ -325,8 +347,7 @@ def read_gitignore(top):
     if os.path.islink(path) or not os.path.isfile(path):
         info["regular"] = False
         return info
-    with open(path, "rb") as fh:
-        raw = fh.read()
+    raw = _read_bytes(path, GITIGNORE)
     if raw.startswith(b"\xef\xbb\xbf"):
         info["bom"], raw = True, raw[3:]
     try:
@@ -343,7 +364,7 @@ def read_gitignore(top):
 def block_span(text):
     """(start, end) line indexes of the managed block, or None; raises
     Unknown on a malformed one."""
-    lines = text.splitlines()
+    lines = _lines(text)
     starts = [i for i, line in enumerate(lines) if line.startswith(START)]
     ends = [i for i, line in enumerate(lines) if line.rstrip() == END]
     if not starts and not ends:
@@ -364,7 +385,7 @@ def block_patterns(text):
     span = block_span(text)
     if span is None:
         return set()
-    lines = text.splitlines()[span[0] + 1:span[1]]
+    lines = _lines(text)[span[0] + 1:span[1]]
     return {line.strip() for line in lines if line.strip() and not line.startswith("#")}
 
 
@@ -380,15 +401,14 @@ def _negations(top, files, root_text):
             path = os.path.join(top, rel)
             if os.path.islink(path) or not os.path.isfile(path):
                 continue
-            with open(path, "rb") as fh:
-                raw = fh.read()
+            raw = _read_bytes(path, rel)
             try:
                 text = raw.decode("utf-8-sig")
             except UnicodeDecodeError as exc:
                 raise Unknown(f"{rel} is not UTF-8 (byte {exc.start})") from exc
             skip = None
         base = _dir_of(rel)
-        for n, line in enumerate(text.splitlines(), start=1):
+        for n, line in enumerate(_lines(text), start=1):
             if skip and skip[0] < n <= skip[1] + 1:
                 continue
             body = line.rstrip(" ")
@@ -460,7 +480,7 @@ def measure(root):
         result["regular"] = info["regular"]
         text = info["text"] if info["regular"] else ""
         block_span(text)
-        result["off"] = any(line.strip() == OFF for line in text.splitlines())
+        result["off"] = any(line.strip() == OFF for line in _lines(text))
         in_block = block_patterns(text)
         langs = detect(files)
         result["detected"] = langs
@@ -579,7 +599,7 @@ def _render_impl(text, rows, newline="\n"):
         return rendered + (newline + text if text else "")
     if not added:
         return text
-    lines = text.splitlines(keepends=True)
+    lines = _keep_lines(text)
     insert = "".join(line + newline for line in added)
     return "".join(lines[:span[1]]) + insert + "".join(lines[span[1]:])
 
@@ -640,7 +660,11 @@ def apply(root, out=print):
         return EXIT_REFUSED
     missing = _missing(result)
     if missing:
-        info = read_gitignore(top)
+        try:
+            info = read_gitignore(top)
+        except Unknown as exc:
+            out(f"unknown {exc}; nothing written")
+            return EXIT_UNKNOWN
         new = render(info["text"], missing, info["newline"])
         if new != info["text"]:
             data = (b"\xef\xbb\xbf" if info["bom"] else b"") + new.encode("utf-8")
@@ -649,7 +673,7 @@ def apply(root, out=print):
             except OSError as exc:
                 out(f"unknown could not write .gitignore: {exc}; original left as it was")
                 return EXIT_UNKNOWN
-            for line in difflib.unified_diff(info["text"].splitlines(), new.splitlines(),
+            for line in difflib.unified_diff(_lines(info["text"]), _lines(new),
                                              "a/.gitignore", "b/.gitignore", lineterm=""):
                 out(line)
         # What was found and acted on, then the state measured AFTER the write:
@@ -670,6 +694,14 @@ EXITS = {"current": EXIT_CURRENT, "pending": EXIT_PENDING, "owner": EXIT_OWNER, 
 
 
 def main(argv=None):
+    # A path git hands back is bytes; one that is not valid in the console's
+    # encoding (cp1252, or a surrogate-escaped byte under UTF-8) must not turn
+    # the report into a traceback and exit 1, which reads as "additions pending".
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
     for name in ("check", "apply", "summary"):
@@ -678,6 +710,16 @@ def main(argv=None):
         if name == "check":
             one.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    try:
+        return _run(args)
+    except Exception as exc:  # pylint: disable=broad-except
+        # Anything unforeseen is "could not tell" (exit 4), never a status a
+        # caller acts on: 1 would read as "additions pending".
+        print(f"unknown crew_gitignore.py failed: {type(exc).__name__}: {exc}")
+        return EXIT_UNKNOWN
+
+
+def _run(args):
     if args.action == "apply":
         return apply(args.root)
     result = measure(args.root)

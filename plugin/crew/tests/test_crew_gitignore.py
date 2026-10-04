@@ -418,9 +418,8 @@ def test_write_is_atomic_and_leaves_original_on_failure(tmp_path, monkeypatch, c
     def boom(*_a, **_k):
         raise RuntimeError("render failed")
     monkeypatch.setattr(cg, "render", boom)
-    with pytest.raises(RuntimeError):
-        cg.main(["apply", "--root", str(root)])
-    capsys.readouterr()
+    assert cg.main(["apply", "--root", str(root)]) == 4  # an uncaught error is "could not tell"
+    assert "unknown " in capsys.readouterr().out
 
     assert (root / ".gitignore").read_bytes() == before
     assert sorted(os.listdir(root)) == [".git", ".gitignore", "README.md", "a.py"]
@@ -539,3 +538,101 @@ def test_pattern_overridden_below_the_block_is_reported_not_re_added(tmp_path):
     assert done.returncode == 0, done.stdout
     assert "overridden *.py[cod]" in done.stdout
     assert (root / ".gitignore").read_bytes() == before
+
+
+# --- review round 1: no exception may exit 1 ("additions pending") ----------------------
+
+def test_unreadable_gitignore_is_unknown_exit_4(tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, files={"a.py": ""}, gitignore="*.log\n")
+    real_open = open
+
+    def guarded(path, *a, **k):
+        if str(path).endswith(".gitignore"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_open(path, *a, **k)
+    monkeypatch.setattr(cg, "open", guarded, raising=False)
+
+    codes = (cg.main(["check", "--root", str(root)]), cg.main(["apply", "--root", str(root)]))
+
+    out = capsys.readouterr().out
+    assert codes == (4, 4), out
+    assert "unknown .gitignore could not be read: " in out and "Permission denied" in out
+
+
+def test_unexpected_exception_is_unknown_exit_4(tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, files={"a.py": ""})
+
+    def boom(*_a, **_k):
+        raise ValueError("surprise")
+    monkeypatch.setattr(cg, "measure", boom)
+
+    codes = [cg.main([action, "--root", str(root)]) for action in ("check", "apply", "summary")]
+
+    assert codes == [4, 4, 4]
+    assert capsys.readouterr().out.count("unknown ") == 3
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "cp1252"])
+def test_undecodable_tracked_name_still_reports_owner_exit_3(tmp_path, encoding):
+    root = _repo(tmp_path, files={"a.py": ""})
+    name = os.fsencode(str(root)) + b"/k\xff.pem"
+    with open(name, "wb") as fh:
+        fh.write(b"secret")
+    subprocess.run([b"git", b"add", b"-f", b"k\xff.pem"], cwd=root, check=True)
+
+    done = subprocess.run([sys.executable, SCRIPT, "check", "--root", str(root)], capture_output=True,
+                          check=False, env=dict(os.environ, PYTHONIOENCODING=encoding))
+
+    assert done.returncode == 3, done.stdout + done.stderr
+    assert b"needs-owner k" in done.stdout and b"Traceback" not in done.stderr
+
+
+@pytest.mark.parametrize("template", [".env.example", ".env.sample", ".env.template", ".env.dist",
+                                      ".env.defaults"])
+def test_tracked_env_template_is_not_a_secret(tmp_path, template):
+    root = _repo(tmp_path, files={template: "KEY=\n"}, tracked=[template])
+
+    done = _run(root, "check")
+
+    assert done.returncode != 3, done.stdout
+    assert "needs-owner" not in done.stdout
+
+
+def test_tracked_env_local_is_still_a_secret(tmp_path):
+    root = _repo(tmp_path, files={".env.local": "KEY=v\n", ".env.sample": "KEY=\n"},
+                 tracked=[".env.local", ".env.sample"])
+
+    done = _run(root, "check")
+
+    assert done.returncode == 3, done.stdout
+    assert "needs-owner .env.local" in done.stdout and "needs-owner .env.sample" not in done.stdout
+
+
+def test_line_numbers_follow_git_lf_lines_only(tmp_path):
+    """git splits an ignore file on LF alone; a form feed, a lone CR or U+2028
+    inside a human line must not shift the line a finding names, nor the block."""
+    human = "a\x0cb\rc\u2028d\n!src/App/bin/keep.txt\n"
+    root = _repo(tmp_path, files={"src/App/App.csproj": ""}, gitignore=human)
+
+    by = {c["pattern"]: c for c in cg.measure(str(root))["candidates"]}
+    assert by["/src/App/bin/"]["where"] == ".gitignore:2"
+    assert _run(root, "apply").returncode == 0
+    before = (root / ".gitignore").read_bytes()
+    assert _run(root, "apply").returncode == 0
+    assert (root / ".gitignore").read_bytes() == before
+    assert (root / ".gitignore").read_bytes().decode("utf-8").endswith("\n" + human)
+
+
+def test_rev_parse_refusal_names_what_git_said(tmp_path, monkeypatch):
+    root = _repo(tmp_path, files={"a.py": ""})
+    real = subprocess.run
+
+    def refused(cmd, *a, **k):
+        if "rev-parse" in cmd:
+            return subprocess.CompletedProcess(cmd, 128, "", "fatal: detected dubious ownership in repository")
+        return real(cmd, *a, **k)  # pylint: disable=subprocess-run-check
+    monkeypatch.setattr(cg.subprocess, "run", refused)
+
+    reason = cg.measure(str(root))["reason"]
+
+    assert reason.startswith("could not run git rev-parse: ") and "dubious ownership" in reason
