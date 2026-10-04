@@ -146,11 +146,14 @@ block, `memory`), never a `recall` or `ignore` vault, never a substitute. Report
 | `malformed`, `unreadable`, or any `resolve` state of a pointer that does not resolve | untouched | 1 |
 
 Two saves by the same user on this machine exclude each other with kernel locks
-(`~/.cache/crew/memory-locks`, `%LOCALAPPDATA%\crew\memory-locks` on Windows) that the OS
-drops when a save exits or is killed, so `another save is running now` is true when
-reported. The lock does not stop a save on another machine syncing the vault, nor an
+(`~/.cache/crew/memory-locks`, `%LOCALAPPDATA%\crew\memory-locks` on Windows) that
+the OS drops when a save exits or is killed, so `another save is running now` is
+true when reported; with no absolute cache folder the save is `lock failed`. Every
+spelling of a file (symlinked folder, `..`, case variant, hard link) takes the same
+lock. The lock does not stop a save on another machine syncing the vault, nor an
 edit by Claude Code or Obsidian: the memory and note are re-compared before each
-rename, and an edit in the instant before the final rename is not detected. If Claude Code later rewrites a pointer memory with full text, `check` shows
-it as `full-text` again; run `save` again. On Windows Git Bash there may be no
+rename, and an edit in the instant before the final rename is not detected. If
+Claude Code later rewrites a pointer memory with full text, `check` shows it as
+`full-text` again; run `save` again. On Windows Git Bash there may be no
 `python3`: run the same command with `py -3` or `python`, and if none resolves, say so
 rather than skipping the save silently.

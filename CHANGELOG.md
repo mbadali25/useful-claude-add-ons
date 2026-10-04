@@ -27,7 +27,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `kept-full-text: MEMORY.md is the index`, exit 1, in text and `--json` (review round 2; it was
   a usage error on stderr, exit 2). A `memory.md` is the index only where the file system folds
   case and it is the same file; on Linux it is an ordinary memory. No hook, no config key.
-- Concurrency (review round 2): a save holds two kernel locks, note first, for its whole write
+- Concurrency (review round 2): a save holds kernel locks, note first, for its whole write
   sequence, one non-blocking try each: `flock(LOCK_EX|LOCK_NB)` on POSIX, `msvcrt.locking
   (LK_NBLCK)` on Windows, on files named by the sha256 of each guarded file's real path in
   `$XDG_CACHE_HOME` or `~/.cache` (`%LOCALAPPDATA%` on Windows) under `crew/memory-locks`. The OS
@@ -37,7 +37,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   user file is ever mistaken for a lock. A held lock is `kept-full-text: another save is running
   now`; any other error taking one (unwritable cache, full disk, read-only file system) is
   `kept-full-text: lock failed`, exit 1, with every lock already taken released - round 1
-  crashed with a traceback there and left the note's lock behind. It excludes saves by the same
+  crashed with a traceback there and left the note's lock behind. Review round 3: no absolute
+  cache folder (HOME unset on a uid with no passwd entry leaves `~` as `~`) is `lock failed: no
+  cache folder`, never a lock folder relative to the working directory; a file is locked under
+  its case-folded real path and its `dev:ino`, so a symlinked folder, `..`, a case variant on a
+  case-folding volume and a hard link all meet one lock, and the path key holds across the
+  `os.replace` that gives the file a new inode. It excludes saves by the same
   user on the same machine only: not a save on another machine syncing the vault, nor Claude
   Code or Obsidian, which never take it. The memory and an existing note are re-compared right
   before each `os.replace`. Not guaranteed: an edit by a program that is not `save` in the instant

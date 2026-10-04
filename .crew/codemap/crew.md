@@ -1562,7 +1562,7 @@ writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, 
 - DERIVED `crew_memory.py:435` `_check_one` - `check` lists every `*.md` (suffix in any case)
   but the exact name `MEMORY.md` (`:429`); `os.stat` follows links and only a regular file is
   opened, so a dangling link, FIFO, device or directory is `unreadable` unopened.
-- DERIVED `crew_memory.py:1057` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+- DERIVED `crew_memory.py:1103` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
   1 for any other state, 2 for usage, a missing `--file`/`--memory-dir` or an unlistable folder.
 - JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
   because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
@@ -1584,25 +1584,27 @@ Added after this note's anchor; read in full at the L-0677 build head. The only 
   `outside-vault`) and `create` / `append` / `unchanged` / `collision` (`:595`
   `_existing_action`, matching `memory_id`), and computes the full note text and the new native
   bytes before anything is opened for write. `:473` `today` is the only clock read.
-- DERIVED `crew_memory.py:921` `apply_note` - create = temp file (`:721` `_write_temp`, fsynced)
+- DERIVED `crew_memory.py:967` `apply_note` - create = temp file (`:721` `_write_temp`, fsynced)
   then `os.link` to the name (never over an existing file); append = re-read, compare, temp and
-  `os.replace`; containment re-checked after `makedirs`. `:948` `apply_pointer` re-reads the
+  `os.replace`; containment re-checked after `makedirs`. `:994` `apply_pointer` re-reads the
   native file, refuses if it changed, writes a temp beside it with the mode copied, then
-  `os.replace`. `:976` `apply_save` orders them: note, read-back (bytes equal AND
+  `os.replace`. `:1022` `apply_save` orders them: note, read-back (bytes equal AND
   `resolve_pointer` resolved), pointer; each failure is `kept-full-text: <reason>` with the native
-  file byte-identical. `:1030` `_save_cli` is the `save` subcommand (dry run unless `--apply`).
-- DERIVED (review round 2) `crew_memory.py:880` `_locked` - `apply_save` takes two kernel
-  locks, the note's then the native file's, for the whole write, one non-blocking try each;
+  file byte-identical. `:1076` `_save_cli` is the `save` subcommand (dry run unless `--apply`).
+- DERIVED (review rounds 2-3) `crew_memory.py:926` `_locked` - `apply_save` takes kernel
+  locks, the note's then the native file's (one or two each), for the whole write, one non-blocking try each;
   a busy lock is `another save is running now`, any OSError `lock failed`, and every lock
-  already held is released (`:866` `_release`). `:847` `_take_lock` opens (never deletes)
-  `<sha256 of the real path>.lock` in `:828` `_lock_dir` (`$XDG_CACHE_HOME` or `~/.cache`,
+  already held is released (`:912` `_release`). `:889` `_take_lock` opens (never deletes)
+  `<sha256 of each key>.lock` - `:848` `_lock_keys`: the case-folded real path, plus `dev:ino`
+  when the file exists - in `:828` `_lock_dir` (no absolute base is `lock failed: no cache
+  folder`) (`$XDG_CACHE_HOME` or `~/.cache`,
   `%LOCALAPPDATA%` on Windows, then `crew/memory-locks`) and locks it with `:790`
   `_posix_try_lock` (`flock LOCK_EX|LOCK_NB`) or `:803` `_windows_try_lock`
   (`msvcrt.locking LK_NBLCK`, byte 0); the OS drops the lock when its holder dies. Round 1's
   TTL lock files beside the files are gone. `:623` `_is_index` refuses `MEMORY.md`, and a
-  case variant only when it is the same file. `:989` `_apply_locked` re-checks the native bytes under the locks
-  (`:966` `_now_pointer`: `already-pointer` when another save won); `apply_note` and
-  `apply_pointer` re-compare right before each `os.replace`. `:898` `_create_exclusive`
+  case variant only when it is the same file. `:1035` `_apply_locked` re-checks the native bytes under the locks
+  (`:1012` `_now_pointer`: `already-pointer` when another save won); `apply_note` and
+  `apply_pointer` re-compare right before each `os.replace`. `:944` `_create_exclusive`
   falls back to an `O_EXCL` create, never `os.replace`, when hard links are refused;
   `:758` `_fsync_dir`; `:743` `_new_mode` (0644 less the umask).
 - JUDGEMENT: the locks exclude only other `save` runs by the same user on the same machine
