@@ -10,7 +10,20 @@ real repository, its git directory, or ~/.claude.
 Every content edit changes the byte length of the file it edits, so a
 same-second index write can never hide an edit behind a matching stat.
 """
-from review_fixtures import git, init_repo
+import subprocess
+
+from review_fixtures import git as _git, init_repo
+
+
+def git(root, *args):
+    """`review_fixtures.git`, but a failure carries git's own stderr: a bare
+    CalledProcessError names only the exit status (T-0100's Windows red)."""
+    try:
+        return _git(root, *args)
+    except subprocess.CalledProcessError as exc:
+        raise AssertionError(
+            f"git {' '.join(args)} exited {exc.returncode} in {root}:\n"
+            f"{(exc.stderr or '').strip()}\n{(exc.stdout or '').strip()}") from exc
 
 # The upstream seed, beside `init_repo`'s own `seed.txt`.
 SEED = {
@@ -59,9 +72,15 @@ def seed_upstream(tmp_path, files=None, name="upstream"):
 
 
 def clone(upstream, tmp_path, branch="T-1", name="clone"):
-    """A clone of `upstream` with `branch` cut from `origin/main`."""
+    """A clone of `upstream` with `branch` cut from `origin/main`.
+
+    `core.autocrlf=false` goes in at clone time, not after: the clone's own
+    checkout runs before `configure`, and under a global or system
+    `core.autocrlf=true` (Git for Windows' default) it writes CRLF files. Set
+    false afterwards, every racily-clean entry then re-reads as modified and
+    `git merge` refuses to overwrite it (exit 2)."""
     root = tmp_path / name
-    git(tmp_path, "clone", "-q", str(upstream), str(root))
+    git(tmp_path, "clone", "-q", "-c", "core.autocrlf=false", str(upstream), str(root))
     configure(root)
     git(root, "checkout", "-q", "-b", branch, "origin/main")
     return root
