@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 17:47 UTC
+Last updated: 2026-10-04 17:53 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 17:53: #421 T-0083 round-5 review CLEAN at 41b1d576 (0/0/1 NIT: se+s leftover stems dos/los/pos, no corpus hits, no action). Joins batch 3. Not verified on a real vault or Windows.
 - 17:47: #421 T-0083 round-4 fixes pushed at 41b1d576: -es words also strip s, min stem 3, plain-s stem 3 with {news} exception, -ies->y; 23 sabotages. releases 7->20, logs 13->31, news 0. Round-5 re-review sent to a608304.
 - 17:45: #427 L-0652 review at 05269a89: 0 BLOCK, 2 FIX (N3 read-safety layers untested individually; DST fall-back sleep writes a record it distrusts), 4 NIT. Security property held (63 attacks, no loosening). Sent back to builder. Note: shared scratchpad dir 'sab' was deleted mid-run by another agent; agents told to use unique dir names.
 - 17:39: MERGED #403 T-0053 at 4cdf076f -> main a27c5e38, crew 1.0.332 (batch 1 complete). #456 L-0677 round-4 CLEAN at ea18c748 (0/0/2 NIT). #400 L-0680 round-2 CLEAN at 15160c4a (0/0/5 NIT, carries listed in tickets file). Batch 2 land-prep started: #396 1.0.333, #356 1.0.334, #347 1.0.335, #456 1.0.336.
