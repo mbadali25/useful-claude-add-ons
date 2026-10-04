@@ -228,6 +228,31 @@ def test_powershell_resolver_never_reads_main_through_a_symlinked_common_dir(tmp
     assert pwsh_resolve(tmp_path, wt)[0] != "main"
 
 
+@needs_pwsh
+def test_powershell_resolver_reads_a_non_ascii_lane_path_whatever_the_console_encoding(tmp_path):
+    """git prints paths as UTF-8; PowerShell decodes a native command's output
+    with [Console]::OutputEncoding, the OEM code page on Windows. Under a
+    Latin-1 console a lane below `José` read `unknown` until the resolver
+    pinned UTF-8 around its git call."""
+    base = tmp_path / "Jos\u00e9"
+    base.mkdir()
+    _main, wt = _lane(base, {"scope": {"mode": "block"}})
+    script = tmp_path / "resolve_latin1.ps1"
+    script.write_text("[Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding(28591)\n" +
+                      ps_function("cloud-guard") +
+                      "$before = [Console]::OutputEncoding.CodePage\n"
+                      "$r = Get-CrewRepoConfigDir $args[0]\n"
+                      "Write-Output $r.Source\n"
+                      "Write-Output ($before -eq [Console]::OutputEncoding.CodePage)\n",
+                      encoding="utf-8-sig")
+    proc = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(script), str(wt)],
+                          capture_output=True, text=True, check=False, timeout=120,
+                          stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stderr
+    source, restored = proc.stdout.splitlines()[-2:]
+    assert (source, restored) == ("main", "True"), proc.stderr
+
+
 def test_powershell_resolver_copies_are_identical():
     first = ps_function(PS_COPIES[0])
     for stem in PS_COPIES[1:]:
@@ -305,6 +330,23 @@ def test_cloud_guard_without_python_allows_when_no_layer_arms_it(tmp_path, drive
     main, wt = _lane(tmp_path, None)
     proc = _run_guard(tmp_path, wt if where == "lane" else main, driver)
     assert proc.returncode == 0, proc.stderr
+
+
+@needs_bash
+def test_cloud_guard_without_common_sh_is_armed_in_a_main_checkout(tmp_path):
+    """A `_common.sh` that cannot be sourced leaves no resolver: that is
+    "could not tell", so the fallback refuses, as it did before T-0096."""
+    main = make_repo(tmp_path, mode=None, name="main")
+    (main / ".crew" / "config.json").write_text(json.dumps({"guards": {"cloudGuard": "block"}}),
+                                                encoding="utf-8")
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    shutil.copy(os.path.join(SCRIPTS, "cloud-guard.sh"), hooks / "cloud-guard.sh")
+    proc = subprocess.run([_BASH, str(hooks / "cloud-guard.sh")],
+                          input=b'{"tool_name":"Bash","tool_input":{"command":"terraform destroy"}}',
+                          capture_output=True, env=_guard_env(tmp_path, main, "sh"),
+                          cwd=str(main), timeout=120, check=False)
+    assert proc.returncode == 2, proc.stderr
 
 
 # --- the incident stand-down -------------------------------------------------------------

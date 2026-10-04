@@ -130,8 +130,9 @@ function Get-CrewRepoConfigDir([string]$Root) {
   # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
   # into each script that needs it (a dot-sourced function is invisible to
   # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
-  # 5.1 cannot resolve a symlink as realpath does, so a link in either path
-  # compared below reads `unknown`, never `main`.
+  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
+  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
+  # root, likely) in either path compared below reads `unknown`, never `main`.
   if (-not $Root) { $Root = '.' }
   $own = Join-Path $Root '.crew'
   $result = @{ Dir = $own; Source = 'own' }
@@ -140,10 +141,15 @@ function Get-CrewRepoConfigDir([string]$Root) {
   }
   if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
   $result.Source = 'unknown'
+  # git prints paths as UTF-8; a native command's output is decoded with
+  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
+  # this one call and put the caller's back.
+  $encoding = [Console]::OutputEncoding
   try {
     $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
     $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
-  } catch { return $result }
+  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
   if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
   $real = New-Object System.Collections.Generic.List[string]
   foreach ($p in $lines) {
