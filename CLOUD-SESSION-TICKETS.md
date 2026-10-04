@@ -26,7 +26,7 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 | L-1501 | Windows CI: sabotage mutations for Lock's delete-pending branch (harness-only) | #393 | merged (crew 1.0.325) |
 | L-1502 | *Proposed:* `promote-gate.sh` lets a deploy through when `_common.sh` fails to load (pre-existing on main; found reviewing #398) | none yet | needs ticket in your tracker |
 
-| L-1503 | HIGH: `promote-gate.ps1` gives no gate on PowerShell when an environment's `deploy` string holds a `[set]` (e.g. `jq .items[0]` never matches itself) or an unreadable pattern (`[`, `[]`, `[z-a]` throws, iteration skipped). Pre-existing; found reviewing #407. | L-1503-build (draft PR coming) | building |
+| L-1503 | HIGH: `promote-gate.ps1` gives no gate on PowerShell when an environment's `deploy` string holds a `[set]` (e.g. `jq .items[0]` never matches itself) or an unreadable pattern (`[`, `[]`, `[z-a]` throws, iteration skipped). Pre-existing; found reviewing #407. | #489 | in review |
 
 Next free untracked ID: **L-1504**.
 
