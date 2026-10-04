@@ -122,7 +122,7 @@ def test_values_agree_with_the_writers_enum_values():
 
 
 # `branch` rows whose reader checks a shape rather than a closed value list.
-_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "tickets.baseBranch")
+_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "autopilot.maxAutoReplans", "tickets.baseBranch")
 
 
 def test_every_row_has_a_summary_and_a_values_kind():
