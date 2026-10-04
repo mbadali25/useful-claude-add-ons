@@ -4,6 +4,43 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.343: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
+
+- **What changed.** `notify`, `handoff-read`, `handoff-write` and `context-watch`, in both
+  flavours, read the repo config through T-0096's resolver (`crew_repo_config_dir` in
+  `_common.sh`; a verbatim `Get-CrewRepoConfigDir` in each `.ps1`, now seven copies held
+  byte-identical). A linked worktree with no crew config of its own gets the main checkout's
+  notifications, handoff path, transcript retention and context thresholds, where it got
+  nothing before. Own files win whole; `unknown` (git cannot name the main checkout) reads only
+  the own `.crew/`.
+- **Taken defaults (the spec's recommended options).** A lane notifies with the main checkout's
+  `notify` settings, so several lanes ping one channel unless a lane writes its own config. An
+  inherited relative `context.handoffPath` names a file in the lane. The `.crew/` directory gates
+  stay, so `context-watch` still needs a `.crew/` directory in the lane. Nothing these hooks
+  write moves.
+- context-watch's messages that say where to set a value name the main checkout's file by its
+  path when it is inherited; unchanged text for an own file.
+- `handoff-write.ps1` honours `context.keepTranscripts` on PowerShell 7, whose `ConvertFrom-Json`
+  reads a JSON integer as Int64 (BigInteger past Int64); it was dropped there and five copies
+  kept. Both flavours clamp a larger value to Int32.MaxValue (2,147,483,647 kept, in effect
+  all). Both now take an integer only, as documented: a digit string such as `"2"`, which bash
+  used to accept, a float or a bool keeps the default 5.
+- `context.handoffPath` stays inside the checkout in every flavour, by the Python readers' rule
+  (`crew_state.handoff_path`): an absolute, `..` or symlinked value that leaves it (in a lane,
+  one naming the main checkout's file), or one naming a directory, is the default
+  `.work/HANDOFF.md`, with a warning, so a lane never writes or prints the main checkout's
+  note; context-watch's message says so too. The path is printed with forward slashes on
+  every OS. The `.ps1` hooks read a backslash as a separator on every OS, as PowerShell's file
+  cmdlets do, so `..\main\...` cannot slip past the check on Linux; bash reads it as python
+  does (a filename character off Windows). PowerShell, which cannot resolve a
+  link as `realpath` does, treats any link on the way as leaving.
+- `auto-clear.ps1` lists `wrapUp` among `context.autoClear`'s known keys, so it no longer logs
+  that recognised key as unrecognised.
+- **Not in this release:** the harness readers (`verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py`), L-0681, a tooling PR.
+- Tests: `plugin/crew/tests/test_worktree_config_shell.py` (both flavours and the no-python
+  path; a static check that no executable line in the eight scripts names the own path outside
+  a counted allowlist). Every routed gate was sabotaged by hand and went red.
 ### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with

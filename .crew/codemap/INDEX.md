@@ -358,3 +358,7 @@ map — what is actually true of the code right now, at the anchored commit.
 T-0096 (2026-10-04) appended one dated section each to `crew.md` (the shell and
 PowerShell repo-config resolvers) and `verification-harness.md` (its verify rule),
 citing `T-0096-build`'s content commit; neither file's `anchor:` moved.
+
+L-0680 (2026-10-04) appended one dated section each to `crew.md` (the session hooks
+read the resolved repo config) and `verification-harness.md` (the widened verify
+rule), citing `L-0680-build`'s content commits; neither file's `anchor:` moved.
