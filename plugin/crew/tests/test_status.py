@@ -350,3 +350,36 @@ def test_status_tree_is_unknown_when_git_does_not_resolve(tmp_path, monkeypatch)
     first = crew_status.collect(str(root))[0]
 
     assert first.endswith("?@?  tree unknown"), first
+
+
+# --- T-0037: needs-owner gets its own line; cancelled and superseded none ---
+
+def _tickets_with(tmp_path, rows):
+    root = make_repo(tmp_path)
+    (root / ".work" / "tickets").mkdir()
+    (root / ".work" / "INDEX.md").write_text(rows, encoding="utf-8", newline="\n")
+    return crew_status._ticket_lines(str(root))  # pylint: disable=protected-access
+
+
+def test_status_lists_needs_owner_line(tmp_path):
+    rows = "".join(f"T-{n} | needs-owner | low | r | t\n" for n in range(1, 8)) + "T-9 | review | low | r | t\n"
+
+    assert _tickets_with(tmp_path, rows) == [
+        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-9",
+        "owner    T-1, T-2, T-3, T-4, T-5 (+2) (needs-owner)"]
+
+
+def test_status_hides_closed_words(tmp_path):
+    rows = "T-1 | cancelled | low | r | t\n| T-2 | Superseded | low | r | t |\nT-3 | Needs-Owner | low | r | t\n"
+
+    assert _tickets_with(tmp_path, rows) == [
+        "tickets  0 ticket dir(s), 0 legacy file(s)", "owner    T-3 (needs-owner)"]
+
+
+def test_status_unchanged_without_new_words(tmp_path):
+    """Today's words only: exactly the lines status printed before T-0037."""
+    rows = ("| id | status |\n|---|---|\n| T-1 | open | low |\nT-2 | in progress | low\n"
+            "T-3 | done | low\nT-4 | review | low\nT-5 | spec | low\n")
+
+    assert _tickets_with(tmp_path, rows) == [
+        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-1, T-2, T-4"]

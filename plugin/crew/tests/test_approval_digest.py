@@ -479,3 +479,40 @@ def test_every_approval_digest_mutation_names_a_test_in_this_file():
     names = {m[4].split("::")[1].split("[")[0] for m in _DIGEST_MUTATIONS}
 
     assert all(callable(globals().get(name)) for name in names)
+
+
+# --- T-0037: which header edits keep an approval, and which stale it ------------
+
+@pytest.mark.parametrize("word", crew_ticket.STATUS_VALUES)
+def test_every_status_values_word_keeps_approval(repo, word):
+    """`in-progress` is T-0059's non-final slice; every lifecycle word keeps it."""
+    folder = _approved(repo)
+    _swap(folder / "spec.md", "status: spec", f"status: {word}")
+
+    assert _state(repo) == "approved"
+
+
+@pytest.mark.parametrize("word", ["cancelled", "superseded", "needs-owner"])
+def test_closed_and_owner_words_stale_approval(repo, word):
+    """On purpose: a cancelled or superseded contract authorises nothing, and
+    `needs-owner` is never a header word, so it stales like any unknown one."""
+    folder = _approved(repo)
+    _swap(folder / "spec.md", "status: spec", f"status: {word}")
+
+    assert _state(repo) == "stale"
+
+
+def test_status_values_is_unchanged_by_t0037():
+    """T-0037 adds no header word: the blocking hook accepts nothing new."""
+    assert crew_ticket.STATUS_VALUES == (
+        "spec", "planned", "approved", "in-progress", "review", "done", "merged")
+
+
+def test_a_successor_line_under_the_header_validates(repo):
+    """`split-into:` / `superseded-by:` sit on line 2, where `depends-on:` does."""
+    folder = _ticket(repo)
+    for line in ("split-into: T-2, T-3", "superseded-by: T-9"):
+        text = (folder / "spec.md").read_text(encoding="utf-8").split("\n", 1)
+        (folder / "spec.md").write_text(f"{text[0]}\n{line}\n{text[1]}", encoding="utf-8", newline="\n")
+
+        assert crew_ticket.validate(str(repo), "T-1") == [], line

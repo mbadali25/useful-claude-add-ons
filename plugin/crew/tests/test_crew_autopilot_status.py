@@ -1187,3 +1187,15 @@ def test_status_at_open_questions_reads_the_same_under_every_questions_policy(tm
 
     assert (texts[1:] == texts[:1] * 2, "action=" in texts[0],
             "phase: open-questions, stopped" in texts[0]) == (True, False, True)
+
+
+def test_status_renders_needs_owner_within_the_line_budget(tmp_path):
+    """T-0037: the `needs-owner` stop names the owner, in at most STATUS_MAX_LINES."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, spec=False, plan=False, status="needs-owner")
+
+    code, lines = _lines(root, "--ticket", T)
+
+    assert (code, _field(lines, "phase").startswith("phase: needs-owner"),
+            _field(lines, "waiting on").split(" - ")[0], len(lines) <= crew_autopilot.STATUS_MAX_LINES) == (
+        0, True, "waiting on: owner", True)
