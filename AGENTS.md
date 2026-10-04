@@ -46,12 +46,13 @@ is never cancelled), alongside
 gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
 on `ubuntu-latest` — the full hook matrix the `test` job deselects. On Windows the
 same suite runs as parallel `crew-windows-*` jobs (L-0577): the plain default
-command split in three by pytest-split (`test` already covers that set, but only on
-ubuntu, so the PowerShell parity-sample cases run natively nowhere else), `-m slow`,
-and `-m wallclock` serially. Their fan-in, `crew-windows-gate`, carries the required
-check name `crew-shell-matrix (windows-latest)` and passes only when every Windows job
-succeeded and `scripts/check-windows-shards.py` finds every collected default test in
-exactly one shard's JUnit. On a pull request the Windows jobs do work only when the PR
+command split in six by pytest-split (L-1506; `test` already covers that set, but only
+on ubuntu, so the PowerShell parity-sample cases run natively nowhere else), `-m slow`
+split in three the same way (L-1507), and `-m wallclock` serially in one job. Their
+fan-in, `crew-windows-gate`, carries the required check name
+`crew-shell-matrix (windows-latest)` and passes only when every Windows job succeeded
+and `scripts/check-windows-shards.py` finds every collected default test, and every
+collected slow test, in exactly one of its set's shards' JUnit. On a pull request the Windows jobs do work only when the PR
 changes `plugin/crew/**` or `pytest-crew.yml` (T-0110), and otherwise the gate reports
 a skipped pass. Neither job substitutes for the other: a change to `conftest.py`'s
 slow-marker logic, or to a hook only the matrix exercises, can pass one and still be wrong.
