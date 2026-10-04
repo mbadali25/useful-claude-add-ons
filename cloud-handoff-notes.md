@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:03 UTC
+Last updated: 2026-10-04 10:04 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:04: #344 land-prep done: head e96cade3 (1.0.327, localgpu 0.1.21 restored after taking main's version files), embed re-run no-op, check fresh. Merge-only review next.
 - 10:03: #342 land-prep done: head 41b113c6 (1.0.328), NIT1 fixed + test (red/green/sabotage). Merge review started.
 - 10:00: #342 conflicted with main -> land-prep started (1.0.328) carrying NIT1 fix + test.
 - 09:59: #342 r2 c6b33f3f: 0 BLOCK 0 FIX 2 NIT CLEAN (NIT1: _inert_warnings list-comp outside try -> settings() can raise if completion_audit import fails; carry into land-prep push. NIT2: dangling INDEX symlink wording). Post-#361 merge check: 789 pass.
