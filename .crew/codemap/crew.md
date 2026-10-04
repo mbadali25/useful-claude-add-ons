@@ -703,7 +703,7 @@ open questions; plan approval and open questions wait for a person unless T-0010
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
 
-**In-flight markers (T-0049, crew 1.0.360).** DERIVED at `08f0c890`. `next_phase`
+**In-flight markers (T-0049, crew 1.0.375).** DERIVED at `3e6ff1e9`. `next_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:603`) takes `runner`; when set, and only after `_phase`
 returned no stop, `_inflight` (`:579`, called at `:621`) lazy-imports `crew_inflight` and asks
 `holds(root, ticket, runner=runner)`: `free`/`mine` return None (the plain result), `elsewhere` is
@@ -713,30 +713,34 @@ and unknown. `FIXED_STOPS` (`:193`) gains both (`:205`, eleven now); the CLI's `
 checked lazily by `_runner_ok` (`:1701`: an unknown runner exits 2, an import failure is the stop).
 `plugin/crew/hooks/scripts/crew_inflight.py` owns the marker,
 `<git-common-dir>/crew/inflight/<ticket>.json`: `TTL_SECONDS` 1800 and `HEARTBEAT_SECONDS`
-`min(600, TTL/3)` (`:107-108`), `STATES` and `RUNNERS` (`:112-113`), `CLEAR_COMMAND` (`:115`).
-The holder is `_holder_pid` (`:290`): `CLAUDE_PID` when `_ancestors` (`:270`) finds it among the
-CLI's ancestors (trusted unchecked only where no chain can be walked, Windows), else the nearest
-ancestor named `claude` (`HOLDER_NAMES`, `:114`), else None in a Claude Code session, else the
-CLI's parent. `_process` (`:251`) is the one OS seam: `/proc` (`_proc_stat` `:189`) on Linux,
-`os.kill` plus `ps -o stat=,ppid=,lstart=,comm=` (`_posix_process` `:200`) elsewhere on POSIX,
-OpenProcess/GetExitCodeProcess/GetProcessTimes (`_win_process` `:221`) on Windows; `probe` (`:350`)
-measures only when host, boot_id and pidns are equal, and any probe error is unmeasured. `holds`
-(`:461`) wraps `_assess` (`:473`: git, the directory, the lock wait, `load_marker` `:387` with
-lstat-first, duplicate-key and shape checks `_shape` `:418`) and `_judge` (`:496`: the reader's own
-worktree unnameable is unknown; a future heartbeat unknown; older than the TTL or probed gone stale;
-`_is_mine` (`:516`, where both pids are None only a non-empty session decides) mine; another worktree
-elsewhere; else live); any raise is unknown. Writers, each under `_Lock` (`:556`), log first
-(`_log` `:622`, taken back by `_unlog` `:642` when the effect fails): `claim` (`:702`, `_publish`
-`:740` with `os.link` or a refresh by replace), `release` (`:761`), `clear` (`:784`, stale or unknown
-only - unknown included - via `_remove_logged` `:752`). The heartbeat: `beat_once` (`:834`) checks
-marker, token and holder before the lock (`_beat_check` `:819`) and again under it, and skips a beat
-on a busy lock or any OSError; `beat_loop` (`:857`) stops once its holder has gone more than the TTL
-without a confirmed-alive beat; `spawn_beat` (`:674`) starts it detached. `crew_status._inflight_lines`
-(`plugin/crew/hooks/scripts/crew_status.py:157`, called at `:251`) prints `survey`
-(`crew_inflight.py:531`). `AUTONOMOUS_STOPS` gains `clear-inflight`
+`min(600, TTL/3)` (`:112-113`), `STATES` and `RUNNERS` (`:117-118`), `CLEAR_COMMAND` (`:120`).
+The holder is `_holder_pid` (`:355`): `CLAUDE_PID` only when `_ancestors` (`:328`) finds it among the
+CLI's ancestors and `_born_before_me` (`:348`) says it started first - the chain comes from /proc, `ps`,
+or a Windows process snapshot (`_win_ancestors` `:280`), and a hint that cannot be checked is never
+trusted - else the nearest ancestor named `claude` (`HOLDER_NAMES` `:119`, compared by `_name` `:322`,
+so `Claude.exe` counts), else None in a Claude Code session, else the CLI's parent. `_process` (`:260`)
+is the one OS seam: `/proc` (`_proc_stat` `:198`) on Linux, `os.kill` plus
+`ps -o stat=,ppid=,lstart=,comm=` (`_posix_process` `:209`) elsewhere on POSIX,
+OpenProcess/GetExitCodeProcess/GetProcessTimes (`_win_process` `:230`) on Windows; `probe` (`:413`)
+measures only when host, boot_id and pidns are equal, and any probe error (overflow included) is
+unmeasured. `holds` (`:528`) wraps `_assess` (`:540`: git, the directory, the lock wait,
+`load_marker` `:450` with lstat-first, duplicate-key and shape checks `_shape` `:481`, a pid outside
+1..2^32 included) and `_judge` (`:563`: the reader's own worktree unnameable is unknown; a future
+heartbeat unknown; older than the TTL or probed gone stale; `_is_mine` (`:583`, where only when both
+pids are None does a non-empty session decide alone) mine; another worktree elsewhere; else live); any
+raise is unknown. Writers, each under `_Lock` (`:623`), log first (`_log` `:689`, whose failure is
+`LogError` naming the file to fix or move aside; `_unlog` `:713` takes an event back when the effect
+fails): `claim` (`:773`, `_publish` `:811` with `os.link` or a refresh by replace), `release` (`:832`),
+`clear` (`:855`, stale or unknown only - unknown included - via `_remove_logged` `:823`). The
+heartbeat: `beat_once` (`:905`) checks marker, token and holder before the lock (`_beat_check` `:890`)
+and again under it, and skips a beat on a busy lock or any OSError; `beat_loop` (`:928`) stops once
+its holder has gone more than the TTL without a confirmed-alive beat, so an unprobeable dead holder
+reads stale within 2 x TTL + one heartbeat (4200 s); `spawn_beat` (`:745`) starts it detached.
+`crew_status._inflight_lines` (`plugin/crew/hooks/scripts/crew_status.py:157`, called at `:251`)
+prints `survey` (`crew_inflight.py:598`). `AUTONOMOUS_STOPS` gains `clear-inflight`
 (`plugin/crew/hooks/scripts/crew_state.py:1121`). JUDGEMENT: the heartbeat surviving a Bash tool call
-was measured on Linux only (cloud container, no pid namespace); on Windows, macOS or a sandboxed
-Linux session it is unmeasured, and there the beat loop's TTL bound decides.
+was measured on Linux only (cloud container, no pid namespace); the Windows snapshot, probe and
+creation-time paths are tested only through mocked seams, and macOS only by hiding /proc on Linux.
 
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:502`) asks `review_ledger.receipt_stands`

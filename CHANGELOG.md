@@ -4,16 +4,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.360: in-flight markers, one runner drives a ticket at a time (T-0049)
+### Added — `crew` 1.0.375: in-flight markers, one runner drives a ticket at a time (T-0049)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one
   marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by
   every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a
   token, the holder, worktree, branch, `since` and `heartbeat_at`. The holder is
   `CLAUDE_CODE_SESSION_ID` plus the long-lived Claude Code process (`CLAUDE_PID`
-  when it is an ancestor of the claiming command, else the nearest `claude`
-  ancestor; a Claude Code session where neither is found records no pid and is
-  matched by its session id; a lane's script records its own shell), with that
+  only when it is an ancestor of the claiming command that started before it -
+  the chain is walked with /proc, `ps` or a Windows process snapshot, and a hint
+  that cannot be checked is never trusted - else the nearest `claude`
+  ancestor; a Claude Code session where neither is found records no pid, and
+  the session id decides alone only when neither side has a pid; a lane's
+  script records its own shell), with that
   process's start time, pid namespace, boot id and host. `holds(root, ticket)`
   answers `free`, `mine`, `live`, `stale`, `elsewhere` or `unknown` and writes
   nothing; anything it cannot read, parse, probe or trust is `unknown`, never
@@ -58,10 +61,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   container, no pid namespace or bubblewrap). The no-/proc paths are tested by
   hiding /proc (and `ps`) from the CLI on Linux. Not measured: Windows, macOS,
   or a sandboxed (bubblewrap) Linux session. Where the holder cannot be
-  measured, a dead holder reads stale within about an hour (the heartbeat's TTL
-  bound plus the TTL), and a live run there longer than that reads stale too,
-  stopping autopilot, never double-driving.
-- **Sabotage.** 21 mutations, each RED on its named test by hand (the table is
+  measured, a dead holder reads stale within 2 x TTL + one heartbeat (4200 s,
+  70 minutes: the last beat lands at most 2400 s after the last confirmation,
+  then the TTL), and a live run there longer than that reads stale too,
+  stopping autopilot, never double-driving. The Windows process snapshot,
+  exit-code probe and creation-time check are tested only through mocked
+  seams; real Windows is unverified.
+- **Review round 2.** `CLAUDE_PID` is no longer trusted where the ancestor
+  chain cannot be walked (Windows now walks it with CreateToolhelp32Snapshot,
+  and a failed walk means no pid, so the session id and the TTL decide); a
+  hint must also have started before the claimer. A marker pid outside
+  1..2^32 reads unknown, and an overflowing pid probes as unmeasured. A broken
+  `events.jsonl` refusal names the file to fix or move aside before retrying.
+- **Sabotage.** 24 mutations, each RED on its named test by hand (the table is
   in the PR). `sabotage_inflight.py` and its `sabotage.py` registration land in
   a separate harness-only PR (T-0087 rule).
 
