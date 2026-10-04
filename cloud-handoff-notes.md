@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 23:44 UTC
+Last updated: 2026-10-04 23:51 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 23:51: #407 T-0045 focused re-check CLEAN at 62ca0756 (0/0/1 NIT): 3 FIX-1 shapes refused, fuzz 220x622 0 violations (65 gate disagreements all took the stricter), 18.9k date strings 0 missed, 83 mutations RED. In batch 5. Minted L-1517 (ps1 in-flight marker writes non-ASCII env names as '?').
 - 23:44: Owner: batch 5 = 5 items in one batch PR. Added #407 T-0045 (62ca0756) as 5th to the batch-5 builder (pending its focused re-check).
 - 23:44: #407 T-0045 FIX-1 + NITs at 62ca0756 (refuse when either gate refuses: empty key, .NET-only twins table, DateTime deploy; RecursionError -> exit 2). Focused re-check sent to a5bddc9. Goes into batch 6 (batch PR) once clean + green.
 - 23:43: #407 T-0045 re-review fixes pushed 62ca0756: either-gate-refuses rule (empty key, 27 .NET-only folds, ConvertFrom-Json DateTime deploy), union-fold match, RecursionError -> gate-refuses-map, docstring/SKILL NITs; merged main 189c3b80; crew 1.0.345 version-only last; 294 tests, 83 mutations RED; CI running at handback
