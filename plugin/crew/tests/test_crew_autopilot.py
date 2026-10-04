@@ -1604,9 +1604,10 @@ def test_next_runner_writes_nothing(tmp_path):
 def test_cli_next_runner(tmp_path):
     root = _approved(tmp_path)
     args = [sys.executable, "-B", _SCRIPT, "next", "--root", str(root), "--ticket", T]
-    run = lambda *extra: subprocess.run(  # noqa: E731
-        args + list(extra), capture_output=True, text=True, check=False, timeout=60,
-        stdin=subprocess.DEVNULL)
+
+    def run(*extra):
+        return subprocess.run(args + list(extra), capture_output=True, text=True, check=False,
+                              timeout=60, stdin=subprocess.DEVNULL)
 
     plain, free, bad = run(), run("--runner", "autopilot"), run("--runner", "robot")
 

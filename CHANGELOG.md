@@ -4,6 +4,54 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.353: in-flight markers, one runner drives a ticket at a time (T-0049)
+
+- **What changed.** A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one
+  marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by
+  every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a
+  token, the holder (`CLAUDE_CODE_SESSION_ID`, the long-lived Claude Code
+  process's pid and start time, pid namespace, boot id, host), worktree, branch,
+  `since` and `heartbeat_at`. `holds(root, ticket)` answers `free`, `mine`,
+  `live`, `stale`, `elsewhere` or `unknown` and writes nothing; anything it
+  cannot read, parse, probe or trust is `unknown`, never `free`. `claim`
+  publishes with `os.link` (one of six racing claimers wins) and starts one
+  detached heartbeat keyed by the token, rewriting `heartbeat_at` every 600 s
+  against a 30-minute TTL; `release` is the holder's; `clear --by --reason`
+  is the owner's, refuses anything but stale or unknown, and is logged.
+  Nothing clears a marker by age. `crew_autopilot.py next --runner autopilot`
+  stops as `in-flight` on live, stale and unknown (stale and unknown carry the
+  clear command) and as `handover-elsewhere` on a fresh holder in another
+  worktree; free and mine change nothing, and without `--runner` `next` is
+  unchanged. `/crew:autopilot` claims after resume/activate, passes
+  `--runner autopilot`, and releases at every stop (autopilot.md stays at 109
+  lines). `crew_state.AUTONOMOUS_STOPS` gains `clear-inflight`. `/crew:status`
+  prints one `in-flight:` line per marker (at most five).
+- **Why.** An autopilot session, a workflow lane and a person's session could
+  all drive one ticket and nothing recorded who was driving it, so two could
+  double-drive it, and a lane that died left nothing to say so. T-0060's stall
+  ping (#363) reads `holds()` and this TTL; it was blocked on this ticket.
+- **Owner decisions.** The owner approved (2026-10-04) every `OWNER CHECK:`
+  choice in the reconstructed spec as written: TTL 1800 s with no config key;
+  never clear by age; the owner's `clear` command; `elsewhere` is a fresh
+  holder in another worktree and stops as `handover-elsewhere`; runner names
+  `autopilot`/`lane`/`session`; autopilot.md net 0 lines, never raising
+  `AUTOPILOT_MAX_LINES`; the holder identity fields; and the tooling-PR split
+  for `sabotage_inflight.py` while `sabotage*.py` is harness.
+- **Measured.** A child started with `start_new_session=True` from a Claude
+  Code Bash tool call outlived the call: reparented to pid 1, it beat every
+  second for 128 s across five later calls (Claude Code 2.1.42, Linux cloud
+  container, no pid namespace or bubblewrap). Not measured: Windows, macOS, or
+  a sandboxed (bubblewrap) Linux session; there the TTL alone decides, which
+  reads a lost heartbeat as stale, never live.
+- **Sabotage.** 13 mutations (stale read as live, a dead pid read as alive, an
+  unreadable marker read as free, an unmeasured probe read as gone, a future
+  heartbeat read as fresh, mine by session alone, elsewhere proceeding, next
+  ignoring stale, an import error passing, holds() creating the directory,
+  clear accepting live, an old heartbeat beating a new holder's marker, status
+  reading an unreadable directory as none), each RED on its named test by
+  hand. `sabotage_inflight.py` and its `sabotage.py` registration land in a
+  separate harness-only PR (T-0087 rule).
+
 ### Changed — `crew` 1.0.322: the review bundle and the completion audit account for merged main (T-0100)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the

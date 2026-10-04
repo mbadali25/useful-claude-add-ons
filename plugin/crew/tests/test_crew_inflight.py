@@ -462,9 +462,9 @@ def test_claim_refuses_stale_and_unknown_with_clear(repo, arrange, state):
 
 
 def test_claim_race_two_processes_one_wins(repo):
-    code = ("import sys; sys.path.insert(0, %r); import crew_inflight;"
-            "c, t = crew_inflight.claim(%r, 'T-1', 'lane', session=sys.argv[1],"
-            " spawn=lambda *a: None); print(t)") % (os.path.dirname(_SCRIPT), str(repo))
+    code = (f"import sys; sys.path.insert(0, {os.path.dirname(_SCRIPT)!r}); import crew_inflight;"
+            f"c, t = crew_inflight.claim({str(repo)!r}, 'T-1', 'lane', session=sys.argv[1],"
+            " spawn=lambda *a: None); print(t)")
     procs = [subprocess.Popen([sys.executable, "-B", "-c", code, f"s{i}"],  # pylint: disable=consider-using-with
                               stdout=subprocess.PIPE, text=True) for i in range(6)]
     outs = [p.communicate(timeout=60)[0].strip() for p in procs]

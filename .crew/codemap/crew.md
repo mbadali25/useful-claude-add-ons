@@ -697,11 +697,35 @@ unchanged), while an absent file or block reads the defaults. Its first text lin
 `maxPhases` and `deploy` (T-0072's line, pinned exactly by `test_settings_line_names_deploy`), its
 second `approval` and `questions`. `stops`
 (`:1283`) lists every stop from code: `crew_state.AUTONOMOUS_STOPS`,
-`FIXED_STOPS` (`:186`, nine), `PROCEDURE_STOPS` (`:203`, three) and
+`FIXED_STOPS` (`:186`, nine before T-0049's two), `PROCEDURE_STOPS` (`:203`, three) and
 `HUMAN_STOPS` (`:209`, four - brainstorm, plan approval, review acceptance,
 open questions; plan approval and open questions wait for a person unless T-0010's policy
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
+
+**In-flight markers (T-0049, crew 1.0.353).** DERIVED at `d3210d6d`. `next_phase`
+(`plugin/crew/hooks/scripts/crew_autopilot.py:603`) takes `runner`; when set, and only after `_phase`
+returned no stop, `_inflight` (`:579`, called at `:621`) lazy-imports `crew_inflight` and asks
+`holds(root, ticket, runner=runner)`: `free`/`mine` return None (the plain result), `elsewhere` is
+phase `handover-elsewhere`, everything else - `live`, `stale`, `unknown`, an unexpected state, an
+import error or a raise - is phase `in-flight`, with the owner's clear command as `command` for stale
+and unknown. `FIXED_STOPS` gains both (`:205`, eleven now); the CLI's `--runner` (`:1733`) is checked
+lazily by `_runner_ok` (`:1701`, an unknown runner exit 2, an import failure the stop).
+`plugin/crew/hooks/scripts/crew_inflight.py` owns the marker,
+`<git-common-dir>/crew/inflight/<ticket>.json`: `TTL_SECONDS` 1800 and `HEARTBEAT_SECONDS`
+`min(600, TTL/3)` (`:87-88`), `STATES` and `RUNNERS` (`:92-93`), `CLEAR_COMMAND` (`:95`). `holds`
+(`:346`) wraps `_assess` (`:358`: git, the directory, the lock wait, `load_marker` `:272` with
+lstat-first, duplicate-key and shape checks `_shape` `:303`) and `_judge` (`:381`: future heartbeat
+unknown, older than the TTL or `probe` (`:236`) gone stale, `_is_mine` (`:401`) mine, another worktree
+elsewhere, else live); any raise is unknown. The probe is measured only when host, boot_id and pidns
+match. Writers: `claim` (`:560`, `os.link` publish, refresh under `_Lock` `:438` with a new token),
+`release` (`:600`), `clear` (`:620`, stale or unknown only, logged), `beat_once`/`beat_loop`
+(`:653`/`:678`, keyed by token; started detached by `spawn_beat` `:532`). `crew_status._inflight_lines`
+(`plugin/crew/hooks/scripts/crew_status.py:157`, called at `:251`) prints `survey` (`crew_inflight.py:413`).
+`AUTONOMOUS_STOPS` gains `clear-inflight` (`plugin/crew/hooks/scripts/crew_state.py:1121`).
+JUDGEMENT: the heartbeat surviving a Bash tool call was measured on Linux only (cloud container, no
+pid namespace); a sandboxed or Windows session falls back to the TTL alone, which is the safe side
+(stale, never live).
 
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:491`) asks `review_ledger.receipt_stands`
