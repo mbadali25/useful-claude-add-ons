@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@36ad9c14
+anchor: useful-claude-add-ons@5cdfb775
 verified: 2026-10-04
 
 ## Re-derive provenance
@@ -1148,7 +1148,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   The ticket note (`_note_text` `:1227`) is an exclusive create
   (`_create_note_once` `:1236`, `_NOTE_FLAGS` `:292`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:61`,
-  `implement.md:32` and `:112`, `done.md:72` and `fix.md:27`, `:73`, `:81`,
+  `implement.md:33` and `:112`, `done.md:72` and `fix.md:27`, `:73`, `:81`,
   `:90`, `:92` (all under `plugin/crew/commands/`); brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
@@ -1178,7 +1178,7 @@ whole answer `unknown`, and every artifact measured against that base with it
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
-- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:85-115`) runs
+- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:86-115`) runs
   it after `/crew:docs` and before `/crew:review` (`:93`), runs each named
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:55-66`) runs it again
@@ -1506,7 +1506,7 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/crew_status.py:179`, appended at `:243`); an import failure still
   prints `gitignore unknown (crew_gitignore.py not importable)`.
 - DERIVED: callers are prose: `plugin/crew/skills/crew-setup/phases.md` Phase 1, `plugin/crew/commands/onboard.md`
-  item 6 and `--refresh`, `plugin/crew/commands/implement.md:102-104` (`check`; `apply` only when Touch covers
+  item 6 and `--refresh`, `plugin/crew/commands/implement.md:103-104` (`check`; `apply` only when Touch covers
   `.gitignore`). Tests: `plugin/crew/tests/test_crew_gitignore.py` and the four
   `test_status_gitignore_line_*` cases in `plugin/crew/tests/test_status.py`, under the T-0039 rule in
   `.crew/verify.json`.
@@ -3746,4 +3746,4 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
 
-**Re-anchored `42effe14` -> `36ad9c14` on 2026-10-04 (T-0039 merges origin/main 155fe6d8 - T-0013 #355, T-0100 #371 - then adds crew_gitignore.py).** Main's copy of this map was anchored at `42effe14` while main changed 174 files after it, some lines re-written by T-0061 and T-0100 against newer trees. Each path-qualified `path:line` citation was moved by difflib from the commit its map line was last written in (`git blame`) to `affbfab0` (history notes and provenance sections skipped): 61 moved, every one an exact-text match except `plugin/crew/.claude-plugin/plugin.json:3` (the version line, changed in place). Bare `:N` citations that lean on an earlier path were NOT machine-moved and are unverified at this anchor where their file changed. The T-0039 section above is new and derived at `36ad9c14`. No suite was executed for this note beyond the T-0039 rule.
+**Re-anchored `42effe14` -> `36ad9c14` -> `5cdfb775` on 2026-10-04 (T-0039 merges origin/main 155fe6d8 - T-0013 #355, T-0100 #371 - then adds crew_gitignore.py).** Main's copy of this map was anchored at `42effe14` while main changed 174 files after it, some lines re-written by T-0061 and T-0100 against newer trees. Each path-qualified `path:line` citation was moved by difflib from the commit its map line was last written in (`git blame`) to `affbfab0` (history notes and provenance sections skipped): 61 moved, every one an exact-text match except `plugin/crew/.claude-plugin/plugin.json:3` (the version line, changed in place). Bare `:N` citations that lean on an earlier path were NOT machine-moved and are unverified at this anchor where their file changed. The T-0039 section above is new and derived at `36ad9c14`. No suite was executed for this note beyond the T-0039 rule. Then `36ad9c14` -> `5cdfb775` the same day: implement.md step 0 keeps its approval sentence's line break (a test asserts it), so `implement.md:32` -> `:33`, `:85-115` -> `:86-115`, and the T-0039 section cites the gitignore check at `:103-104`.

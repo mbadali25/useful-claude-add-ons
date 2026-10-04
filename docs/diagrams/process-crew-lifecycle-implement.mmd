@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@affbfab0 on 2026-10-04. Verify before trusting.
+%% Generated from useful-claude-add-ons@5cdfb775 on 2026-10-04. Verify before trusting.
 %% Anchors: plugin/crew/commands/implement.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_standards.py
 %% Purpose: /crew:implement from the approval check to handing over to /crew:review: the plan steps under the scope guard, the refresh-artifacts loop and the required standards self-check.
 %% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
@@ -6,10 +6,9 @@
 %% T-0061 (#378, merged with main 38adba44+): im1 relabelled - `crew_ticket.py activate` now records the scope
 %% base at branch cut, so /crew:implement step 1 may report `kept`, and a `tickets.baseBranch` naming no commit
 %% exits 1 "could not tell". Cites :28, :33 re-read on the merged tree.
-%% T-0039 at affbfab0: implement.md step 0 and step 6's opening re-wrapped (two lines saved) and step 6 gained the
-%% read-only `crew_gitignore.py check` after the refresh loop (:102-104; apply only when Touch covers .gitignore).
-%% Cites re-read with sed -n: im0 :17-22, im1 :27, :32, im2 :37-41, im3a :56, :66, im3 :85-89, rf1 :91; sc1, im4
-%% and im5 hold. The gitignore check is drawn as gi1 between the refresh and the self-check.
+%% T-0039: implement.md step 6's opening re-wrapped (one line saved) and step 6 gained the read-only
+%% `crew_gitignore.py check` after the refresh loop (:103-104; apply only when Touch covers .gitignore).
+%% Cites re-read with sed -n: im3 :86-90, rf1 :92; im0, im1, im2, im3a, sc1, im4 and im5 hold. The gitignore check is drawn as gi1 between the refresh and the self-check.
 %% --
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
@@ -34,17 +33,17 @@
 %%    review (Review lane: review outstanding)
 flowchart TB
     subgraph implement["/crew:implement"]
-        im0{"plan approved?<br/>implement.md:17-22"}
+        im0{"plan approved?<br/>implement.md:17-23"}
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
-        im0 -- yes --> im1["scope_base --record (kept if activate<br/>recorded; exit 1 could not tell), then<br/>crew_tracker.py move --to in-progress<br/>:27, :32"]
-        im1 --> im2["steps in order, test first,<br/>scope-guard on every write<br/>:37-41"]
-        im2 --> im3a["changed-file list, verify<br/>:56, :66"]
-        im3a --> im3["step 6: tests, then /crew:docs<br/>:85-89"]
-        im3 --> rf1{"crew_refresh_check.py<br/>:91"}
+        im0 -- yes --> im1["scope_base --record (kept if activate<br/>recorded; exit 1 could not tell), then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
+        im1 --> im2["steps in order, test first,<br/>scope-guard on every write<br/>:38-42"]
+        im2 --> im3a["changed-file list, verify<br/>:57, :67"]
+        im3a --> im3["step 6: tests, then /crew:docs<br/>:86-90"]
+        im3 --> rf1{"crew_refresh_check.py<br/>:92"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
-        rf1 -- fresh --> gi1["crew_gitignore.py check (read-only);<br/>apply only if Touch covers .gitignore,<br/>exit 3 to the owner<br/>:102-104"]
+        rf1 -- fresh --> gi1["crew_gitignore.py check (read-only);<br/>apply only if Touch covers .gitignore,<br/>exit 3 to the owner<br/>:103-104"]
         gi1 --> sc1["required standards self-check<br/>:105-109"]
         sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:110-113"]
         im4 --> im5["then /crew:review last<br/>:114"]
