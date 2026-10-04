@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 04:44 UTC
+Last updated: 2026-10-04 04:45 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 04:44 UTC
 
 ## Log (newest first)
 
+- 04:45: #350 merge-only review on 459b9724: CLEAN (0/0/2 NIT: codemap says 1.0.184; stray CHANGELOG blank line). Fits #378's scope_base exactly. Waiting CI.
 - 04:44: #343 3 FIX fixed -> 1292b863 (four lists: bookkeeping/write-allowed(metrics.md only)/state/content; rule 2 refuses gate files even in Touch; 13 new mutations, 40/40 red; full suite 9305 passed). r2 started incl. guard.log bookkeeping-vs-state question.
 - 04:44: MERGED #379 at d67098ad (crew 1.0.252; Windows fix verified by CI 25/25). #350 re-merged -> 459b9724 crew 1.0.253 (BUDGETS 22,550), merge-only review + CI next. #369 fixes pushed 9ba064c1 (--setting-sources user per docs, denyWrite, env/stores widened, bounded probe) - r2 started. #370 T-0038 built 03f99760 - review started (1 known red: sabotage anchor in upgrade.md stub needs harness retarget). #361 r2 CLEAN -> train. mmdc installed locally for diagram renders. Next free 1.0.254.
 - 04:41: #361 r2 on ccce8df4: CLEAN (0/0/2 NIT). Joins landing train.
