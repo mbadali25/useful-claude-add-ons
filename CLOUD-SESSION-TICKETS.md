@@ -125,7 +125,7 @@ Held for your go: L-0674 (#404).
 | L-0649 | #452 | not started (spec only) | autopilot's deploy phase - promote to the first nonProd GitHub environment after the merge |
 | L-0650 | #457 | not started (spec only) | wire the GitHub-deploy mutations into the sabotage harness (tooling only) |
 | L-0651 | #423 | not started (spec only) | sabotage mutations for the sleep schedule overlay (tooling-only PR) |
-| L-0652 | #427 | not started (spec only) | manual /crew:autopilot sleep and wake (state file under git-common-dir/crew, gated on scop |
+| L-0652 | #427 | review-clean at 20a4168c (round 2: 0 BLOCK, 0 FIX, 3 NIT); manual sleep tighten-only until L-1504. Carry at landing: test for the 25-real-hour backstop (Antarctica/Troll case); thread+timeout guard on test_fstat_refuses_a_swapped_in_fifo... so an O_NONBLOCK regression fails instead of hanging CI; CHANGELOG:42 "24 hours after at" wording | manual /crew:autopilot sleep and wake (state file under git-common-dir/crew, gated on scop |
 | L-0653 | #431 | not started (spec only) | sleep log and morning summary (.work/autopilot/sleep-log.md, sleep-note, sleep-summary) |
 | L-0654 | #435 | not started (spec only) | sleep deploy override, nonprod only; production always waits while asleep |
 | L-0655 | #438 | not started (spec only) | sabotage mutations for manual sleep, the sleep log and the deploy override (tooling-only P |
