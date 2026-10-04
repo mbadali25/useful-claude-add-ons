@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:28: #398 fixes -> dfe113ab (missing resolver = armed; PS UTF-8 around git; N1/N3 TODO follow-ups; 43 tests). Round-2 review started. #352 CI 20 green, 3 running.
 - 15:28: #416 round-2 fixes -> 18efb28e (merged main f3f319d1; printable-ASCII allowlist in _screen; ASCII _ID all rows; 370 route tests; 33 mutations). Round-3 review started.
 - 15:27: #450 round-3 fixes -> 31c1e061 (pointer attempt needs note:/|, dup keys, RecursionError+1MiB cap, non-regular note unreadable, docs; 113 tests). Round-4 delta review started.
 - 15:23: #403 round-2 69456696: 0/1/4. F2: resolve raising (deep-nested value repr) drops ALL overrides -> looser day value. N7 owner-decision taken per rec: non-object sleep block under unknown reads human. + N6/N8 threading.local/N9. Sent to builder.
