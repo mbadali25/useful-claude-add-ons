@@ -13,7 +13,9 @@ work.
 
 ## The contract
 
-A ticket lives in `.work/tickets/<id>/`:
+A ticket lives in `.work/tickets/<id>/` (once done and archived with `crew_tracker.py archive`, in
+`.work/tickets/Complete/<id>/`; crew finds it in either place, and a ticket present in both is "could
+not tell", which refuses). An id is `LETTERS-digits` with any prefix (`T-`, `L-`, `W-`):
 
 - `spec.md` has six sections: `## Intent`, `## Exclusions`, `## Evidence`, `## Unknowns`,
   `## Touch` and `## Acceptance checks`. `## Touch` lists one repo-relative glob or path per

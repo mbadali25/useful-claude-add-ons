@@ -807,7 +807,7 @@ A repository adds its own in the **overlay**, `.crew/standards.md` (set `REPO`, 
 
 ### Scope and approval
 
-A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`, `spec.md` (Intent, Exclusions, Evidence, Unknowns, **Touch**, Acceptance checks) and `plan.md` (steps, each with `Files:`, `Test:`, `Risk:` and `Standards:`). `## Touch` is one repo-relative glob or path per bullet line; `*`, `?` and `[...]` match within one path segment and never cross `/`, `**` spans segments, and an entry with no wildcard also covers everything under it as a directory. These scripts in `hooks/scripts/` enforce it:
+A crew 1.0 ticket is a directory, `.work/tickets/<id>/` — or, once archived by `crew_tracker.py archive` (L-0509), `.work/tickets/Complete/<id>/` — holding `direction.md`, `spec.md` (Intent, Exclusions, Evidence, Unknowns, **Touch**, Acceptance checks) and `plan.md` (steps, each with `Files:`, `Test:`, `Risk:` and `Standards:`). Every reader outside the review/gate harness finds the folder through one resolver, `crew_common.locate_ticket`: live first, else `Complete/`; both present, or a `stat` that fails with anything but not-found, is "could not tell", which refuses and never reads as "no such ticket". `Complete` is reserved, never a ticket id, and an id is `LETTERS-digits` with any prefix (`T-`, `L-`, `W-`). The harness modules (`crew_ticket.ticket_dir`, the scope guard's own-files prefix, approval, the review prompt and `review_run`) still read the live folder only; routing them is L-0509's harness follow-up, landing alone (T-0087), so until then a session cannot write into an archived ticket's folder. `## Touch` is one repo-relative glob or path per bullet line; `*`, `?` and `[...]` match within one path segment and never cross `/`, `**` spans segments, and an entry with no wildcard also covers everything under it as a directory. These scripts in `hooks/scripts/` enforce it:
 
 | Script | What it does |
 |---|---|
@@ -848,7 +848,7 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 
 A `.crew/config.json` that exists but does not parse, or a value outside those four, is treated as `block` and says so. A hook payload that does not parse is refused whenever the effective mode is `block` (`auto` past its ramp included). An active-ticket pointer naming a ticket that does not exist is refused under `block`, never read as "no ticket". If python cannot run at all, the wrappers fail closed unless `.crew/config.json` is absent or *provably* sets `scope.mode` to `off`. bash has no JSON parser, so from bash a config that exists is never provable: with no usable python, a present config blocks writes and the Stop until python is available. PowerShell proves it with a strict `System.Text.Json` parse (not `ConvertFrom-Json`, which accepts trailing commas), and fails closed where that type cannot load; the Stop audit then blocks at most once in a row per session, so a broken python cannot loop the Stop.
 
-**Threat model.** These guards stop *drift and accidental bypass*: a session editing outside the plan, approving its own plan through the CLI, or writing the approval state through Write/Edit or an obvious shell command. They do not stop a session that sets out to forge local state. It has a shell, and the receipt, the active-ticket pointer and the ramp count are files on your machine: a command that hides the path in a variable or an encoded string, or a script that writes JSON, passes the textual shell check. The Stop audit and review are the backstop — the audit diffs the whole tree after the fact, and a reviewer sees the change and the receipt's `approved_via`. Treat an approval as "the user asked, and nothing obviously went around it", not as a signature. The merge train's state (`<git-common-dir>/crew/train/`) is the same kind of local file: a session set on it could forge a hold or a release, so the train prevents lanes colliding by accident, and `check-land`'s `merge-tree`, receipt and gate checks — and your review of the merge — are the backstop.
+**Threat model.** These guards stop *drift and accidental bypass*: a session editing outside the plan, approving its own plan through the CLI, or writing the approval state through Write/Edit or an obvious shell command. They do not stop a session that sets out to forge local state. It has a shell, and the receipt, the active-ticket pointer and the ramp count are files on your machine: a command that hides the path in a variable or an encoded string, or a script that writes JSON, passes the textual shell check. The Stop audit and review are the backstop — the audit diffs the whole tree after the fact, and a reviewer sees the change and the receipt's `approved_via`. Treat an approval as "the user asked, and nothing obviously went around it", not as a signature. `crew_tracker.py archive` is a shell command no guard watches, like every tracker write: it refuses a ticket INDEX does not mark `done` or `merged` and one any worktree's active-ticket pointer names, and it widens nothing, because every reader resolves a ticket's folder the same way. The merge train's state (`<git-common-dir>/crew/train/`) is the same kind of local file: a session set on it could forge a hold or a release, so the train prevents lanes colliding by accident, and `check-land`'s `merge-tree`, receipt and gate checks — and your review of the merge — are the backstop.
 
 **What this does not do.** The edit guard judges only the four editing tools against Touch; the Stop audit is what catches `sed -i`, redirects and formatters, after the fact. The audit sees what git sees: gitignored files (`.crew/*` among them) and `.work/` are outside it.
 
@@ -935,7 +935,7 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 
 `it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
 
-**Three outcomes.** `route` — an unambiguous phrase and a ticket that resolves to exactly one. `ask` — the phrase matched but the ticket did not resolve: an id with no `.work/tickets/<id>/` folder, a broken active-ticket pointer, several open tickets and no pointer (listed), none at all, or a `continue` whose next phase is a stop (with its reason). The line then tells Claude to ask you which before running anything. `none` — no line at all, so the context is exactly what it was. The ticket comes from the id you typed, else this worktree's active ticket, else `.work/INDEX.md` **only when exactly one** open ticket has a folder; the INDEX fallback that takes the first open line is never used.
+**Three outcomes.** `route` — an unambiguous phrase and a ticket that resolves to exactly one. `ask` — the phrase matched but the ticket did not resolve: an id with no `.work/tickets/<id>/` folder (live or `Complete/`), one whose folder could not be located (`could not tell where <id> lives`), a broken active-ticket pointer, several open tickets and no pointer (listed), none at all, or a `continue` whose next phase is a stop (with its reason). The line then tells Claude to ask you which before running anything. `none` — no line at all, so the context is exactly what it was. The ticket comes from the id you typed, else this worktree's active ticket, else `.work/INDEX.md` **only when exactly one** open ticket has a folder; the INDEX fallback that takes the first open line is never used.
 
 **Routing never approves.** No phrase routes to `/crew:approve`, a `continue` whose next step is approval asks instead, and `/crew:approve` is not model-invocable anyway. Type `/crew:approve <id>` yourself.
 
@@ -1697,6 +1697,26 @@ order (`direction`, `ready`, `spec`, `planned`, `in-progress`, `review`,
 crew does not know (`merged`, say), because whether it goes backwards cannot be
 told. `/crew:implement` passes `--reopen` on a successor plan.
 
+**Archive (L-0509).** `crew_tracker.py archive --ticket <ID>` moves ONE done or
+merged ticket out of the lanes, in three halves, one line each: the folder
+`.work/tickets/<ID>/` to `.work/tickets/Complete/<ID>/`; under obsidian the note
+`<boardDir>/<ID>.md` to `<boardDir>/Complete/<ID>.md`, only when the note says
+the card is this repo's, through the same no-follow directory walk as every
+vault write; then the card's whole span off the Done lane through the atomic
+board write. It refuses unless INDEX says `done` or `merged`, refuses a ticket
+any worktree's active-ticket pointer names (or when that map cannot be read),
+refuses a card in any lane but Done, and never renames over an existing
+destination. Every vault check runs before the folder moves. Each half is
+idempotent (`unchanged`), so a re-run after a crash completes the rest; a failed
+half stops the ones after it. INDEX.md is never edited: the row keeps its
+status, which keeps the id taken. jira and sdp archive the folder only. After
+it, `read` reports the ticket archived (lane `Complete/`), `move` refuses it
+(`--reopen` included: un-archiving is by hand), and `create` treats its id as
+taken. The note's `ticket:` link to the live folder goes stale; the note is
+never rewritten, and `[[ID]]` links resolve by name. The one-time archive of
+the existing done tickets is an ops step run after this release, one
+`archive` per ticket, never part of the code.
+
 **A tracker write never undoes a transition.** A write that fails prints
 `could not update: <reason>` and exits 1; the command tells you "tracker not
 updated" and the phase stands.
@@ -1752,8 +1772,11 @@ board alone, and a card already in its lane is repaired in place (checked in
 Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one).
 
 **There is no `.work/cache/` mirror.** The ticket's content lives in
-`.work/tickets/<id>/` for every mode; the board carries status only. The key
-keeps the `T-####` shape, so nothing else in crew needed a new format.
+`.work/tickets/<id>/` (or `.work/tickets/Complete/<id>/` once archived) for
+every mode; the board carries status only. The key keeps the `LETTERS-digits`
+shape, any prefix (`T-`, `L-`, `W-`), so nothing else in crew needed a new
+format; a new ticket takes the next number above every id in `.work/INDEX.md`
+with the prefix this box mints.
 
 **Unlike Jira and ServiceDesk Plus, this mode also keeps `.work/INDEX.md`.**
 The session brief finds the open ticket by reading that file, and a key shaped
@@ -2808,7 +2831,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
-| `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
+| `/crew:obsidian-sync <ID> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
