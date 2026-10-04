@@ -708,8 +708,9 @@ line numbers in this paragraph are that commit's, not the anchor's. After `/crew
 `_ship_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:581`): unarmed is `closed` without
 asking gh; a detached HEAD, an unreadable `read_pr` (`:415`), a PR closed unmerged, a working tree
 that differs from HEAD (`_clean_tree` `:521`, `git status --porcelain --untracked-files=all`) or
-a receipt that no longer stands stops at `ship`; MERGED, or OPEN under `autopilot.ship: pr`, is
-`closed`. `ship` (`:718`) refuses the default branch and a dirty tree before
+a receipt that no longer stands stops at `ship`; MERGED is `closed` only when the PR's
+`headRefOid` and local HEAD are the same full SHA (`_merged_phase`, `:591` at `4d73e543`; a later
+commit or an unreadable head stops at `ship`), and OPEN under `autopilot.ship: pr` is `closed`. `ship` (`:718`) refuses the default branch and a dirty tree before
 `git push -u origin <branch>`, takes HEAD once right after the push, opens the PR when none, and
 under `merge` polls in `_wait_for_ci` (`:645`): `_head_stop` (`:629`) holds local HEAD and the
 PR's `headRefOid` to the pushed commit before and after each `read_checks` (`:436`; a row that
