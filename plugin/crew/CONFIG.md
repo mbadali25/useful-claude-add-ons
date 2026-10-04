@@ -161,9 +161,11 @@ survives a console on the OEM code page. In the cloud guard's bash fallback a
 missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
 `crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
 in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
-veto. Still own-file only: the session hooks (`notify`, `handoff-read`,
-`handoff-write`, `context-watch`), the verify gate, the scope and completion
-wrappers, and `review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
+veto, and (L-0680) the session hooks `notify`, `handoff-read`, `handoff-write` and
+`context-watch` in both flavours, whose writes stay in the worktree and whose
+inherited relative `context.handoffPath` names a file in the worktree. Still
+own-file only: the verify gate, the scope and completion wrappers, and
+`review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
 lane's own `emergency.standDown` while the bash verify gate and
 `crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
 

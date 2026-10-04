@@ -4,6 +4,30 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.404: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
+
+- **What changed.** `notify`, `handoff-read`, `handoff-write` and `context-watch`, in both
+  flavours, read the repo config through T-0096's resolver (`crew_repo_config_dir` in
+  `_common.sh`; a verbatim `Get-CrewRepoConfigDir` in each `.ps1`, now seven copies held
+  byte-identical). A linked worktree with no crew config of its own gets the main checkout's
+  notifications, handoff path, transcript retention and context thresholds, where it got
+  nothing before. Own files win whole; `unknown` (git cannot name the main checkout) reads only
+  the own `.crew/`.
+- **Taken defaults (the spec's recommended options).** A lane notifies with the main checkout's
+  `notify` settings, so several lanes ping one channel unless a lane writes its own config. An
+  inherited relative `context.handoffPath` names a file in the lane. The `.crew/` directory gates
+  stay, so `context-watch` still needs a `.crew/` directory in the lane. Nothing these hooks
+  write moves.
+- context-watch's messages that say where to set a value name the main checkout's file by its
+  path when it is inherited; unchanged text for an own file.
+- `handoff-write.ps1` honours `context.keepTranscripts` on PowerShell 7, whose `ConvertFrom-Json`
+  reads a JSON integer as Int64; it was dropped there and five copies kept.
+- **Not in this release:** the harness readers (`verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py`), L-0681, a tooling PR.
+- Tests: `plugin/crew/tests/test_worktree_config_shell.py` (both flavours and the no-python
+  path; a static check that no executable line in the eight scripts names the own path outside
+  a counted allowlist). Every routed gate was sabotaged by hand and went red.
+
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds

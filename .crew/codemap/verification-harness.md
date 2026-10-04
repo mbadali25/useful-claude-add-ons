@@ -2372,3 +2372,11 @@ standing rule, 2026-09-28); no test suite was executed for this note.
   `pytest_rule.py`, priced 13s (41 passed in 12.5s with pwsh on PATH on an idle 4-CPU container; 43 after review round 1). It is
   appended, so no earlier rule number moves. This section does not move the file's
   `anchor:`.
+
+## L-0680 widens T-0096's verify rule (added 2026-10-04 on `L-0680-build`)
+
+- **DERIVED.** `.crew/verify.json:614` (T-0096's rule) now also maps `notify`, `handoff-read`,
+  `handoff-write` and `context-watch`, `.sh` and `.ps1`, to
+  `plugin/crew/tests/test_worktree_config_shell.py`, re-priced 36s (66 passed, 35.8s wall with
+  pwsh on PATH, 4-CPU container at load average 11-20). No rule number moves. This section
+  does not move the file's `anchor:`.

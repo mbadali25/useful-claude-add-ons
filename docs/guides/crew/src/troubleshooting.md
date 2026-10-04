@@ -238,9 +238,10 @@ contract itself. This section is what goes wrong with the approval and the audit
   could not name the main checkout; then no default is written either. Of the shell and
   PowerShell readers (T-0096), the incident stand-down read (`_common.sh`,
   `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
-  the cloud guard's fallback `unknown` counts as armed. The session hooks (`notify`, the handoff
-  scripts, `context-watch`), the verify gate, the scope and completion wrappers and
-  `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
+  the cloud guard's fallback `unknown` counts as armed. So do the session hooks (`notify`, the
+  handoff scripts, `context-watch`; crew 1.0.404, L-0680): a lane notifies with the main
+  checkout's settings, and a relative handoff path still names a file in the lane. The verify
+  gate, the scope and completion wrappers and `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
   `emergency.standDown` while the bash gate reads the inherited one.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.

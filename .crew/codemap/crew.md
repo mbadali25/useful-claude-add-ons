@@ -3783,3 +3783,35 @@ commit. This section does not move the file's `anchor:`.
   `verify-gate.ps1`'s inline `Test-CrewIncidentActive` reads the lane's own
   `standDown` while the bash gate (through `_common.sh`) and `crew_incident.py` read
   the inherited one.
+
+## The session hooks read the resolved repo config (L-0680, slice 1)
+
+Added 2026-10-04 on `L-0680-build`, stacked on `T-0096-build`; the citations are
+to that branch's content commits. This section does not move the file's `anchor:`.
+
+- **DERIVED.** Each `.sh` hook calls `crew_repo_config_dir .` after its `cd` and reads
+  `$CREW_CFG_DIR/config.json`: `plugin/crew/hooks/scripts/notify.sh:11`,
+  `plugin/crew/hooks/scripts/handoff-read.sh:48`, `plugin/crew/hooks/scripts/handoff-write.sh:16`,
+  `plugin/crew/hooks/scripts/context-watch.sh:179` (after the `.crew/` directory gate, which
+  stays). Python is handed the path as an argument; context-watch's no-python awk pass reads the
+  same file.
+- **DERIVED.** Each `.ps1` hook carries a verbatim `Get-CrewRepoConfigDir` (now seven copies, held
+  equal by `PS_COPIES`, `plugin/crew/tests/test_worktree_config_shell.py:45`) and routes through
+  it: `plugin/crew/hooks/scripts/notify.ps1:345`, `plugin/crew/hooks/scripts/handoff-read.ps1:280`,
+  `plugin/crew/hooks/scripts/handoff-write.ps1:350`, `plugin/crew/hooks/scripts/context-watch.ps1:194`.
+  `notify.ps1` run with `&` from `context-watch.ps1` gets its own script scope, so its copy only
+  shadows the caller's identical one.
+- **DERIVED.** handoff-write keeps the literal own-or-unknown gate in its non-`main` branch
+  (`plugin/crew/hooks/scripts/handoff-write.sh:23`, `plugin/crew/hooks/scripts/handoff-write.ps1:358`):
+  there the resolved directory is the own `.crew/`, and `plugin/crew/tests/sabotage_resume.py`
+  (a harness path) anchors on that text. `handoff-write.ps1:442` also accepts an Int64
+  `keepTranscripts` (PowerShell 7's `ConvertFrom-Json`), which it used to drop.
+- **DERIVED.** context-watch's messages name the file in force: `CFG_SHOWN`
+  (`plugin/crew/hooks/scripts/context-watch.sh:181`) and `$cfgShown`
+  (`plugin/crew/hooks/scripts/context-watch.ps1:196`) are `.crew/config.json` for an own file and
+  the main checkout's full path when inherited.
+- **DERIVED.** `test_no_session_hook_names_the_own_config_path`
+  (`plugin/crew/tests/test_worktree_config_shell.py:730`) fails on any executable line in the
+  eight scripts naming `.crew/config.json` or `.crew/crew.json` beyond `OWN_PATH_ALLOWED` (`:707`).
+- **JUDGEMENT.** Still own-file only: the harness readers `verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR).

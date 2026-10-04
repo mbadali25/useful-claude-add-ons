@@ -1035,10 +1035,17 @@ rules, without python. Routed through them: the incident stand-down read
 repo veto. In the cloud guard's fallback an `unknown` source counts as armed: a
 lane whose git cannot name its main checkout, with no usable python, refuses Bash
 until one works. Inheritance can loosen as well as tighten: an inherited
-`cloudGuard: off` applies in a lane. **Not yet covered** (they read only the
-worktree's own file): the session hooks (`notify`, `handoff-read`,
-`handoff-write`, `context-watch`, both flavours), the verify gate, the scope and
-completion wrappers, and `review_gate.py`. Until those land, **the PowerShell
+`cloudGuard: off` applies in a lane. The session hooks (`notify`,
+`handoff-read`, `handoff-write`, `context-watch`, both flavours) read the
+resolved file too (crew 1.0.404, L-0680): a lane notifies with the main
+checkout's `notify` settings, so several lanes ping the same channel unless one
+writes its own config, and an inherited `context.handoffPath`,
+`keepTranscripts` or threshold applies in the lane while a relative handoff path
+still names a file in the lane. What they write (transcripts, markers, the
+handoff note) stays in the lane, and `context-watch` still needs a `.crew/`
+directory there before it measures. **Not yet covered** (they read only the
+worktree's own file): the verify gate, the scope and completion wrappers, and
+`review_gate.py`. Until those land, **the PowerShell
 verify gate reads the lane's own `emergency.standDown`** while the bash verify
 gate (through `_common.sh`) and `crew_incident.py` read the inherited one.
 
