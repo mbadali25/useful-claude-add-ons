@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:15: #407 re-review 8ec0d228: 1 BLOCK (plain deploy of production contains staging's prefix when staging has shaInput -> prod runs unattended) / 1 FIX (ps1 -like wildcards in plain deploy strings) / 3 NIT. Sent back: replace pairwise overlap with _gate_pick simulating BOTH gates over every env's commands (+agreement test vs real gates).
 - 15:15: #416 re-review 38bb1825: 0/2/6 (combining marks bypass pronoun/non-ASCII; fullwidth/lookalike / ? quotes and Cf ride into raw command). Sent back: replace fold+screen with printable-ASCII allowlist on free text (else ask) + ASCII-only _ID + merge main.
 - 15:14: #352 land-prep -> e50a37af (merged main f3f319d1, crew 1.0.327; docx/pdf rebuilt; 392+55 tests + gates pass). Merge-only review + CI next; subscribed.
 - 15:13: #398 T-0096 review 968cf3a4: 0/2/6. FIX1: PR CREATES cloud-guard.sh fail-open in main checkout when _common.sh missing (was rc2, now rc0). FIX2: PS resolver reads unknown for non-ASCII paths under OEM console encoding. NITs N1/N3 -> TODO follow-ups (could-not-tell treated as absent for stand-down/veto across all flavours). Sent to builder.
