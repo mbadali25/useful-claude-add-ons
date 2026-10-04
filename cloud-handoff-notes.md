@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:56: #392 merge-only review 136eaade: 0/0/0 CLEAN. Waits CI (check-in 12:16), then merge.
 - 11:56: Land-prep onto e9364a70 started: #377 (1.0.355), #351 (1.0.356; must add crew_keys.py KEY_META row for git.forbiddenTrailers), #352 (1.0.357; carry codemap cite NIT). #392 merge-only review on 136eaade + CI running (check-in 12:16). #346 T-0039 review c580f399: 0/4/5 - FIX1 uncaught exceptions exit 1; FIX2 codemap bare :N cites stale under new anchor; FIX3 .env.sample/.template flagged as secrets; FIX4 sabotage AC deferred to harness PR (forced by T-0087, state in PR body). Sent to builder; will merge main + re-version 1.0.358.
 - 11:55: #392 land-prep: merged main e9364a70 (version files + CHANGELOG both kept), crew 1.0.324 last -> 136eaade. Gates + 297 tests pass. Merge-only review + CI next.
 - 11:54: MERGED #360 T-0048 at e9364a70 (crew 1.0.323; re-run of Windows shard green; review clean a30f6679). main = e9364a70. Next: #392 (Windows lock fix) land-prep -> 1.0.324, then #393 alone, then #377 and train.
