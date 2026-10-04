@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.354: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
+### Changed — `crew` 1.0.367: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
 
 - **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
   gains three rows beside `STATUS_ORDER`: `OWNER_STATUSES = ("needs-owner",)`
