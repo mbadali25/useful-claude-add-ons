@@ -31,7 +31,7 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 | L-1504 | Harness-only: approval hook / scope guard accept only the owner's typed `/crew:autopilot sleep`, then unlock loosening in manual sleep (L-0652 ships tighten-only until then). Owner decision 2026-10-04. | none yet | needs ticket in your tracker |
 | L-1505 | Harness-only: when a deploy command matches several environments (L-1503 union rule), verify-gate.sh records one PROMOTIONS row per matched environment instead of the joined name `staging,prod`, so a later `requires: [prod]` is satisfied. Fails closed until then. Also: verify-gate.sh:192/:207 parse the in-flight marker with `read -r DENV DSHA` (a name with a space splits) and :208 greps $DENV as a regex (`a|b` matches row `apple`, `.` matches any char) - escape the name and parse the marker by its last field (found in #489 round-4 review). | none yet | needs ticket in your tracker |
 | L-1506 | CI: crew Windows default set split into 6 shards instead of 3 (owner request 2026-10-04, rush speed-up) | #491 | MERGED 9c8c0418 (no plugin version; CI-only) |
-| L-1507 | CI: crew Windows slow set split into 3 shards (owner request 2026-10-04, after L-1506) | #492 open | needs ticket in your tracker |
+| L-1507 | CI: crew Windows slow set split into 3 shards (owner request 2026-10-04, after L-1506) | MERGED 1a5b3dca (#492; CI only) | needs ticket in your tracker |
 | L-1508 | Ticket written (owner request): audit crew hook Python for bare-name `subprocess.run(["tool", ...])` where a check resolves the tool with `shutil.which` (PATHEXT) but the run uses CreateProcess (.exe only) - two Windows bugs today (T-0016 `_tmux_pane_pid`, T-0017 `_git_out`, the latter fail-open). Add a lint/test that flags the pattern. | #493: owner decided scope option 1 (2026-10-04); PR A building (stacked on #356) | needs ticket in your tracker |
 | L-1509 | Follow-up to L-1508: `skills/repo-docs/scripts/git_changelog.py:71` runs a bare `git`; resolve it with shutil.which (own repo-docs bump). Not a guard; low risk. | none yet | needs ticket in your tracker |
 
@@ -53,6 +53,7 @@ Next free untracked ID: **L-1510**.
 | T-0053 | #403 | a27c5e38 | 1.0.332 (slice 1) |
 | L-1506 | #491 | 9c8c0418 | none (CI workflow only: Windows 3 -> 6 shards) |
 | T-0016 | #396 | f1cace4a | 1.0.333 |
+| L-1507 | #492 | 1a5b3dca | none (CI workflow only: Windows slow set split into 3 shards) |
 
 ## Closed without merging (your instruction)
 
