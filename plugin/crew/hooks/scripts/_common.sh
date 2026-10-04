@@ -312,6 +312,50 @@ crew_py_strict() {
   return 1
 }
 
+# --- The repo config's directory (T-0096) ---------------------------------
+#
+# Sets CREW_CFG_DIR (the `.crew/` to read config.json or crew.json from) and
+# CREW_CFG_SOURCE (own, main or unknown) for the checkout at $1 (default: the
+# cwd). The twin of crew_common.repo_config_dir (T-0088), held to it case by
+# case by tests/test_worktree_config_shell.py, and of Get-CrewRepoConfigDir in
+# the .ps1 hooks. No python: the guards' no-python fallbacks read through it.
+# Own files win whole and are never merged. `.git` not a regular file is own
+# with no git call. Git names the common directory; a submodule (git dir ==
+# common dir) or a bare repository (common dir not named .git) is own. When
+# git cannot tell, the source is `unknown`, CREW_CFG_DIR is the own `.crew/`,
+# and nothing is inherited -- a guard must not read that as "absent".
+# Only READS follow this: markers, logs and incident.json stay in the own .crew/.
+crew_repo_config_dir() {
+  local root="${1:-.}" n out g c nl='
+'
+  CREW_CFG_DIR="$root/.crew" CREW_CFG_SOURCE=own
+  for n in crew.json config.json; do
+    { [ -e "$root/.crew/$n" ] || [ -L "$root/.crew/$n" ]; } && return 0
+  done
+  [ -f "$root/.git" ] || return 0
+  CREW_CFG_SOURCE=unknown
+  # No --path-format: git before 2.31 echoes it back as a line of its own.
+  out=$(git -C "$root" rev-parse --git-dir --git-common-dir 2>/dev/null) || return 0
+  case "$out" in *"$nl"*"$nl"*) return 0 ;; *"$nl"*) ;; *) return 0 ;; esac
+  g=$(CDPATH=; cd -- "$root" 2>/dev/null && cd -P -- "${out%%"$nl"*}" 2>/dev/null && pwd -P) || return 0
+  c=$(CDPATH=; cd -- "$root" 2>/dev/null && cd -P -- "${out#*"$nl"}" 2>/dev/null && pwd -P) || return 0
+  CREW_CFG_SOURCE=own
+  [ "$g" != "$c" ] && [ "${c##*/}" = ".git" ] || return 0
+  for n in crew.json config.json; do
+    if [ -e "${c%/*}/.crew/$n" ] || [ -L "${c%/*}/.crew/$n" ]; then
+      CREW_CFG_DIR="${c%/*}/.crew" CREW_CFG_SOURCE=main
+      return 0
+    fi
+  done
+}
+
+# Print the resolved path of repo config file $1 (default config.json) for the
+# checkout at $2 (default: the cwd).
+crew_repo_config_file() {
+  crew_repo_config_dir "${2:-.}"
+  printf '%s/%s\n' "$CREW_CFG_DIR" "${1:-config.json}"
+}
+
 # --- Emergency lane -------------------------------------------------------
 #
 # Is an incident open, unexpired, and allowed to stand the gates down?
@@ -321,7 +365,8 @@ crew_py_strict() {
 #
 # Four separate conditions, deliberately not collapsed:
 #   1. a state file exists
-#   2. emergency.standDown is not false (a repo can forbid stand-downs)
+#   2. emergency.standDown is not false (a repo can forbid stand-downs; read
+#      from the resolved repo config, so a lane inherits the main checkout's)
 #   3. it PARSES as JSON, in full
 #   4. the clock has not passed the expiry
 #
@@ -338,7 +383,8 @@ crew_py_strict() {
 # its own state must not assume it has been told to stand down.
 crew_incident_active() {
   [ -f .crew/incident.json ] || return 1
-  grep -q '"standDown"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null && return 1
+  crew_repo_config_dir .
+  grep -q '"standDown"[[:space:]]*:[[:space:]]*false' "$CREW_CFG_DIR/config.json" 2>/dev/null && return 1
   local py exp now
   py=$(crew_py) || return 1
   exp=$("$py" - << 'PY' 2>/dev/null

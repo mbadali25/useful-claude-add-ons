@@ -384,7 +384,6 @@ guide describes them as present.
 | T-0009 | A ratcheted guard for deploy workflows, and per-environment deploy workflows |
 | T-0011 | Autopilot ships: opens a PR, or merges once required checks are green |
 | T-0012 | Autopilot goals and backlogs, with per-run caps |
-| T-0017 | A machine opt-in for the automatic wrap-up |
 | T-0019 | `/crew:autopilot assign` |
 | T-0020 | `/crew:autopilot focus` |
 | T-0029 | Parallel autopilot lanes and a review policy |

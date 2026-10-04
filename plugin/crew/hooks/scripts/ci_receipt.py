@@ -73,6 +73,7 @@ import zipfile
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
 
+import crew_common  # noqa: E402  pylint: disable=wrong-import-position
 import review_gate  # noqa: E402  pylint: disable=wrong-import-position
 import verify_fingerprint  # noqa: E402  pylint: disable=wrong-import-position
 
@@ -125,7 +126,8 @@ class Unreadable(Exception):
 
 def _git(root, *args):
     try:
-        out = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=root,
+        out = subprocess.run([crew_common.require_tool("git"), "-c", "core.quotePath=false", *args],
+                             cwd=root,
                              capture_output=True, text=True, check=False, timeout=60,
                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -139,8 +141,8 @@ def _git(root, *args):
 def _git_ok(root, *args):
     """True/False for a git command whose exit status IS the answer."""
     try:
-        out = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
-                             check=False, timeout=60, stdin=subprocess.DEVNULL)
+        out = subprocess.run([crew_common.require_tool("git"), *args], cwd=root, capture_output=True,
+                             text=True, check=False, timeout=60, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
         raise Unreadable(f"git {args[0]} could not run: {exc}") from exc
     return out.returncode == 0

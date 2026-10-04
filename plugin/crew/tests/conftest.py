@@ -64,6 +64,13 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     # afterwards (`monkeypatch.setenv`, or an explicit `env=` for a subprocess)
     # and that still wins; this only removes the ambient value nobody declared.
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    # Same rule for T-0016's session records: auto-clear reads
+    # `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`, and every case points HOME at
+    # a fixture -- so an ambient CLAUDE_CONFIG_DIR would be the one way left to
+    # read the developer's real records. crew_fixtures.bind_session sets it
+    # back, to the fixture, wherever a case wants a record.
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CREW_AUTOCLEAR_PROC_STUB", raising=False)
 
     # Third channel: the developer's GLOBAL git config reaches every fixture
     # `git commit`, and with `commit.gpgsign=true` each one runs their signing

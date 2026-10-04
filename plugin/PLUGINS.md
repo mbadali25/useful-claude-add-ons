@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.327<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.342<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -127,7 +127,7 @@ to CI or to branch protection.
 | Command | Purpose |
 |---|---|
 | `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this, unless you opt `/crew:autopilot` into `autopilot.approval`; the prompt hook records the receipt |
-| `/crew:autopilot [status\|run] [ticket id]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; review acceptance always stops, and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt, its one write (needs `scope.allowCliApproval: true`); `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
+| `/crew:autopilot [status\|run\|sleep\|wake] [ticket id]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; accepting a review with a BLOCK always stops (with `autopilot.maxAutoReplans` at 1 or more, an out-of-rounds BLOCK round is rejected by `crew_autopilot.py auto-reject` and replanned instead, capped), and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt (needs `scope.allowCliApproval: true`); its other writers are `sleep` and `wake`, which start or end sleep mode now (until L-1504 a manual sleep only tightens a day value) and write only `<git-common-dir>/crew/autopilot-sleep.json` (`sleep` needs `scope.allowCliApproval: true`); `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show \| --models]` | Show where every crew setting comes from; with no argument, a menu that sets the machine or repo config and deletes the repo config with a backup |
@@ -205,7 +205,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-diagrams` | Architecture and data-flow diagrams, with a Visio path |
 | `crew-house-style` | House style for a document handed to a human — palette, headings, capitalization, and PDF vs DOCX vs HTML vs plain markdown. Routes generation to `anthropic-office-skills`, `ppt-master` and `visio-diagrams`; falls back to markdown and says so when none is installed |
 | `crew-providers` | Codex as reviewer, Gemini as design partner, and verifying either |
-| `crew-memory` | Obsidian-backed memory |
+| `crew-memory` | Obsidian-backed memory; resolves native-memory vault pointers and saves a memory as one, note first (`crew_memory.py`) |
 | `crew-notify` | Teams and Telegram payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
 | `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |

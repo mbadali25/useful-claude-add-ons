@@ -128,7 +128,7 @@ def test_the_rule_loop_refuses_named_before_invoking():
     # to contain the same substring - the invocation itself must be
     # reached only via 'elseif', proving it is mutually exclusive with the
     # empty-bash refusal branch.
-    elseif_marker = "} elseif ($ruleOutFile) {"
+    elseif_marker = "} elseif ($ruleOutFile -and $ruleDoneFile) {"
     elseif_count = chain.count(elseif_marker)
     assert elseif_count == 1, (
         f"expected exactly one {elseif_marker!r} following the empty-bash "
@@ -137,7 +137,7 @@ def test_the_rule_loop_refuses_named_before_invoking():
         + chain)
     elseif_pos = chain.index(elseif_marker, guard_pos)
     assert elseif_pos > guard_pos, (
-        "the '} elseif ($ruleOutFile) {' branch that gates the invocation "
+        "the '} elseif ($ruleOutFile -and $ruleDoneFile) {' branch that gates the invocation "
         "comes before the empty-bash refusal guard, not after - the "
         "invocation is not proven mutually exclusive with refusal. "
         "Region:\n" + chain)
