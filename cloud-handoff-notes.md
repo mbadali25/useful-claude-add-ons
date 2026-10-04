@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:51: #416 round-4 2eaac674: head CLEAN (0 BLOCK; FIX is at-landing). CARRY AT LANDING MERGE: switch 3 _autopilot _answer(route) sites to T-0069's _route(); drop T-0057 _LINE_BREAKS (normalise now rejects them); resolve test_crew_route.py conflict; re-review the merge; re-bump all 6 'since 1.0.399' prose spots.
 - 15:51: #351 merge-only review 75a0d5db: 0/0/3 CLEAN, but CI RED (real, merge-caused): done.md 123 lines > budget 120 (check_instructions + test_lifecycle_commands). Sent to land-prep agent: trim in place, revert/re-set version.
 - 15:50: Created CLOUD-SESSION-TICKETS.md at repo root on the notes branch (PR #391) - per-ticket hand-back status; refresh it on every merge/state change. WAVES plan copied to docs/handoff/cloud/WAVES-2026-10-04.md.
 - 15:46: #416 round-3 fixes -> 2eaac674 (leading-dash asks; ' out of allowlist, dead _SHELL branch removed; approv before allowlist; 390 route tests; 39 mutations). Round-4 review started. Behind main b863b773 - merge at land-prep.
