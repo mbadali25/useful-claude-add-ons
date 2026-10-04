@@ -1,0 +1,41 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_tracker.py
+%% Purpose: An open question: crew_config.py reads .crew/config.json while crew_context.py reads .crew/crew.json first, so which file governs depends on which module asks.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%%  5. AN OPEN AUTHORITY QUESTION, drawn because the code disagrees with
+%%     itself, not because this diagram resolves it: `crew_migrate.py --apply`
+%%     is the only writer of `.crew/crew.json` (schema 1); crew_config.py
+%%     (the ratchet, the guards, verify-gate.sh, /crew:config, /crew:model)
+%%     reads ONLY `.crew/config.json` (schema 7, crew_config.py:1 docstring);
+%%     crew_context.py's load_crew_config (:121-132) reads `crew.json` FIRST
+%%     and falls back to `config.json` only if `crew.json` is absent. A repo
+%%     that has run --apply has both files, and which one governs a given
+%%     read depends on which module asked. Labelled OPEN below; deciding which
+%%     file should win is scribe's decision to record, not this diagram's.
+%% Note CFGREAD: crew_config.py reads ONLY .crew/config.json (schema 7) module docstring :1; ratchet, guards,
+%%    verify-gate.sh, /crew:config, /crew:model all route through this module
+%% Note CTXREAD: crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:122-133 tries
+%%    .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent
+%% Note MIGRATE: crew_migrate.py --apply the ONLY writer of .crew/crew.json (schema 1). Never touches
+%%    config.json's runtime read path - crew_config.py keeps reading config.json regardless
+%% Note OPEN: Net effect: a repo that has run --apply has BOTH files, and which one governs a given read
+%%    depends on which module asked. Not resolved by this diagram - a decision for scribe to record, not this
+%%    note's to make.
+%% Note TRKREAD: crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:212 tracker key only: reads
+%%    BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree
+%%    - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath
+%%    fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than
+%%    picks
+flowchart TB
+
+    subgraph TwoFiles["OPEN AUTHORITY QUESTION - two modules read two different repo files as \"the config\""]
+        direction TB
+        CFGREAD["<b>crew_config.py</b> reads ONLY<br/>.crew/config.json (schema 7)"]
+        CTXREAD["<b>crew_context.load_crew_config()</b><br/>.crew/crew.json FIRST,<br/>then .crew/config.json"]
+        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1)"]
+        OPEN["<b>Net effect:</b> which file governs<br/>depends on which module asked.<br/>OPEN - not resolved here"]
+        TRKREAD["<b>crew_tracker.resolve()</b><br/>reads BOTH files; answers<br/>'could not tell' on disagreement"]
+        MIGRATE -.-> CTXREAD
+        CFGREAD --- OPEN --- CTXREAD
+        TRKREAD -.- OPEN
+    end
