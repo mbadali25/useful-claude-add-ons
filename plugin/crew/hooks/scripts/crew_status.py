@@ -1,10 +1,14 @@
 """Read-only crew status for one repository, at most 40 lines.
 
     python3 crew_status.py [--root .] [--memory]
+    python3 crew_status.py [--root .] --approvals
 
 Replaces what `/crew:pm`, `/crew:roster` and `/crew:scale` reported, and does
 none of what they did: no dispatch, no config edit, no file written anywhere.
 Every section is a fact read from disk or git, or it says it could not tell.
+
+`--approvals` prints only the tickets whose approval is missing, stale or
+unaccepted, as ready-to-paste `/crew:approve <id>` lines (T-0070).
 
 `--memory` adds the context hook's own numbers by running `crew_context.py
 --stats --root <root>` from this directory when that script exists, and says
@@ -208,6 +212,58 @@ def _memory_lines(root, budget):
     return lines
 
 
+def _inert_line(root):
+    """`inert    key=value (ticket), ...` for every setting this crew does not
+    act on, or None (T-0070). A failed check says so rather than vanishing."""
+    try:
+        import crew_config  # pylint: disable=import-outside-toplevel
+        entries = crew_config.inert_settings(root)
+        return "inert    " + crew_config.inert_items(entries, 300) if entries else None
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"inert    could not tell ({exc.__class__.__name__})"
+
+
+def pending_approvals(root):
+    """`(pending, invalid)`: `pending` is `[(ticket, why)]` for every open INDEX
+    ticket with a spec.md and plan.md that validate and whose receipt is
+    missing, stale or unaccepted; `invalid` is the open tickets whose spec and
+    plan exist but do not validate. Merged, closed, spec-only and currently
+    approved tickets are in neither: approving them changes nothing."""
+    # pylint: disable=import-outside-toplevel
+    import crew_autopilot
+    import crew_ticket
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    pending, invalid = [], []
+    for ticket in crew_autopilot.open_index_tickets(top):
+        folder = crew_ticket.ticket_dir(top, ticket)
+        if not all(os.path.isfile(os.path.join(folder, n)) for n in ("spec.md", "plan.md")):
+            continue
+        if crew_ticket.validate(top, ticket):
+            invalid.append(ticket)
+            continue
+        result = crew_ticket.accepted(top, ticket)
+        if result["status"] == "approved":
+            continue
+        if result["status"] == "none" and result.get("receipt") is None \
+                and str(result.get("why", "")).endswith("has no approved plan"):
+            why = "no approval"
+        else:
+            why = f"{result['status']}: {result.get('why')}"
+        pending.append((ticket, why))
+    return pending, invalid
+
+
+def approvals_lines(root):
+    pending, invalid = pending_approvals(root)
+    lines = [f"/crew:approve {ticket}  ({why})" for ticket, why in pending]
+    if invalid:
+        one = len(invalid) == 1
+        lines.append(f"{len(invalid)} {'ticket' if one else 'tickets'} with a spec and plan "
+                     f"that do not validate {'is' if one else 'are'} not listed: "
+                     + ", ".join(invalid))
+    return lines or ["nothing needs approval"]
+
+
 def collect(root, memory=False):
     root = os.path.abspath(root)
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD") or "?"
@@ -218,6 +274,9 @@ def collect(root, memory=False):
     lines = [f"crew status  {os.path.basename(root)}  {branch}@{head}  tree {tree}"]
     config_lines, cfg = _config_lines(root)
     lines += config_lines
+    inert = _inert_line(root)
+    if inert:
+        lines.append(inert)
     lines += _ticket_lines(root)
     lines += _review_lines(root)
     lines.append(_verify_line(root))
@@ -244,7 +303,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--memory", action="store_true", help="add crew_context.py --stats")
+    parser.add_argument("--approvals", action="store_true",
+                        help="only the tickets whose approval is missing, stale or unaccepted")
     args = parser.parse_args(argv)
+    if args.approvals:
+        print("\n".join(approvals_lines(os.path.abspath(args.root))))
+        return 0
     print("\n".join(collect(args.root, memory=args.memory)))
     return 0
 

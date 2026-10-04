@@ -328,3 +328,73 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 
     assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
         0, True), done.stdout + done.stderr
+
+
+# --- T-0070: inert settings, and the approvals that actually need you -------
+
+def test_status_names_inert_settings(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"ship": "merge"}})
+    lines = [l for l in crew_status.collect(str(root)) if l.startswith("inert")]
+    assert lines == ["inert    autopilot.ship=merge (T-0011)"]
+
+
+def test_status_is_quiet_without_inert_settings(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"mode": "plan", "approval": "self"}})
+    assert [l for l in crew_status.collect(str(root)) if l.startswith("inert")] == []
+
+
+def _approvals_repo(tmp_path):
+    # pylint: disable=import-outside-toplevel
+    import crew_ticket
+    from scope_fixtures import make_repo as scope_repo, make_ticket
+    root = scope_repo(tmp_path)        # scope.allowCliApproval is unset: false
+    for ticket in ("T-1", "T-2", "T-3", "T-4", "T-5", "T-6", "T-7"):
+        make_ticket(root, ticket, activate=False)
+    t4 = root / ".work" / "tickets" / "T-4" / "spec.md"
+    t4.write_text(t4.read_text(encoding="utf-8").replace(
+        "# T-4\n", "# T-4 widget    status: planned   risk: low\n"), encoding="utf-8")
+    for ticket in ("T-2", "T-4"):
+        crew_ticket.approve(str(root), ticket, by="owner", via=crew_ticket.USER_PROMPT)
+    crew_ticket.approve(str(root), "T-3", by="owner", via=crew_ticket.CLI)
+    plan = root / ".work" / "tickets" / "T-2" / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nmore\n", encoding="utf-8")
+    # T-0026: the header's status value alone never makes a receipt stale.
+    t4.write_text(t4.read_text(encoding="utf-8").replace("status: planned", "status: review"),
+                  encoding="utf-8")
+    (root / ".work" / "tickets" / "T-6" / "plan.md").unlink()
+    spec7 = root / ".work" / "tickets" / "T-7" / "spec.md"
+    spec7.write_text(spec7.read_text(encoding="utf-8").replace("## Intent\n", "## Other\n"),
+                     encoding="utf-8")
+    rows = ["| Ticket | Status | Title |", "| --- | --- | --- |"]
+    rows += [f"| T-{n} | {'merged' if n == 5 else 'open'} | t{n} |" for n in range(1, 8)]
+    (root / ".work" / "INDEX.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return root
+
+
+def test_status_approvals_lists_only_what_needs_you(tmp_path):
+    root = _approvals_repo(tmp_path)
+    done = _run(root, "--approvals")
+    assert done.returncode == 0, done.stderr
+    lines = done.stdout.splitlines()
+    assert [l.split("  (")[0] for l in lines[:3]] == [
+        "/crew:approve T-1", "/crew:approve T-2", "/crew:approve T-3"], lines
+    assert lines[0].endswith("(no approval)")
+    assert lines[1].startswith("/crew:approve T-2  (stale: ")
+    assert lines[2].startswith("/crew:approve T-3  (unaccepted: ")
+    assert lines[3:] == [
+        "1 ticket with a spec and plan that do not validate is not listed: T-7"]
+    for absent in ("T-4", "T-5", "T-6"):
+        assert absent not in done.stdout
+
+
+def test_status_approvals_says_nothing_needs_approval(tmp_path):
+    root = make_repo(tmp_path, config={})
+    done = _run(root, "--approvals")
+    assert (done.returncode, done.stdout.strip()) == (0, "nothing needs approval")
+
+
+def test_status_approvals_is_read_only(tmp_path):
+    root = _approvals_repo(tmp_path)
+    before = _stat_tree(root)
+    done = _run(root, "--approvals")
+    assert (done.returncode, _stat_tree(root)) == (0, before)
