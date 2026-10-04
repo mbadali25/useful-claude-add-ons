@@ -47,6 +47,17 @@ _PWSH = cf.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="bash not installed - the sh flavour was NOT run")
 needs_pwsh = pytest.mark.skipif(_PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
 FLAVORS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+# A test that shadows a real tool with a stub first on PATH. On Windows,
+# _BASH is Git's bin/bash.exe launcher, which prepends /mingw64/bin:/usr/bin
+# ahead of any PATH it is handed: the real git always wins and the stub is
+# never reached (crew_fixtures.resolve_bash_no_prepend). usr/bin/bash.exe
+# keeps the PATH it is given. Off Windows nothing prepends, so _BASH is it.
+_BASH_NO_PREPEND = cf.resolve_bash_no_prepend() if os.name == "nt" else _BASH
+SHADOW_FLAVORS = [
+    pytest.param("sh", marks=pytest.mark.skipif(
+        _BASH_NO_PREPEND is None,
+        reason="no bash that keeps a stub first on PATH - the sh flavour was NOT run")),
+    pytest.param("ps1", marks=needs_pwsh)]
 
 SESSION = "55555555-eeee-4eee-8eee-000000000005"
 KEY = crew_autocycle.session_key(SESSION)
@@ -140,14 +151,14 @@ class Repo:
             env["OS"] = "Windows_NT"
         return env
 
-    def autoclear(self, flavor, *args, extra=None):
+    def autoclear(self, flavor, *args, extra=None, bash=None):
         env = self.base_env(flavor, extra)
         if flavor == "ps1":
             names = {"--dry-run": "-DryRun", "--force": "-Force"}
             cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(_SCRIPTS / "auto-clear.ps1"),
                    "-Session", SESSION, "-Root", str(self.root), *[names.get(a, a) for a in args]]
         else:
-            cmd = [_BASH, str(_SCRIPTS / "auto-clear.sh").replace("\\", "/"),
+            cmd = [bash or _BASH, str(_SCRIPTS / "auto-clear.sh").replace("\\", "/"),
                    "--session", SESSION, "--root", str(self.root), *args]
         return subprocess.run(cmd, cwd=str(self.root), env=env, capture_output=True, text=True,
                               stdin=subprocess.DEVNULL, check=False, timeout=120)
@@ -940,7 +951,7 @@ def test_crew_resume_missing_refuses_the_clear(repo, flavor, tmp_path):
     assert "T-0006's crew_resume is not installed" in repo.log(), (done.stdout, done.stderr)
 
 
-@pytest.mark.parametrize("flavor", FLAVORS)
+@pytest.mark.parametrize("flavor", SHADOW_FLAVORS)
 def test_git_failing_refuses_the_clear(repo, flavor, tmp_path):
     repo.arm()
     repo.wrapped()
@@ -949,8 +960,8 @@ def test_git_failing_refuses_the_clear(repo, flavor, tmp_path):
                   "@echo off\r\necho fatal: broken 1>&2\r\nexit /b 128\r\n")
     extra = cf.bind_session(repo.home, SESSION)
     extra["PATH"] = str(bindir) + os.pathsep + os.environ.get("PATH", "")
-    done = repo.autoclear(flavor, "--dry-run", extra=extra)
-    assert "would send" not in done.stdout
+    done = repo.autoclear(flavor, "--dry-run", extra=extra, bash=_BASH_NO_PREPEND)
+    assert "would send" not in done.stdout, (done.stdout, done.stderr, repo.log())
     assert "refusing - wrap-up: git rev-parse failed (fatal: broken)" in repo.log(), (done.stdout, done.stderr)
 
 
