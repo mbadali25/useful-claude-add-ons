@@ -17,10 +17,12 @@ the whole word), so `context` finds `crew-context.sh`. A joined query word
 (`t-0083`, `vault_recall.py`) is ONE term: it matches the whole joined word or
 its parts as one contiguous in-order run (`port-collision` finds `port
 collision` and `port-collisions`; never `port ... collision` apart, and
-`t-0083` never finds `l-0083`). Plurals: `es` is added or stripped only after
-s, x, z, ch or sh, a plain `s` is stripped only when four characters remain
-(`news` is not `new`; `bugs` does not find `bug`), and no form is a stop word
-(`notes` never finds `not`). CamelCase is not split: `PortCollision` holds no
+`t-0083` never finds `l-0083`). Plurals: a consonant + `y` pairs with `ies`
+(`entries` / `entry`); `es` is added or stripped only after s, x, z, ch or sh;
+otherwise a plain `s`, which is also stripped from an `es` word (`releases` /
+`release`, `caches` / `cache`). No form is shorter than three letters (`uses`
+is never `us`), a word in S_EXCEPTIONS (`news`) never gains or loses a plain
+`s`, and no form is a stop word (`notes` never finds `not`). CamelCase is not split: `PortCollision` holds no
 `port`. A note is a hit only when it holds at least `need` distinct terms: 1
 for a query of one or two terms, 2 for three to five, 3 for six or more;
 `--min-terms N` sets it (capped at the term count).
@@ -96,7 +98,8 @@ PART_RE = re.compile(r"[-._]+")
 
 
 ES_ENDINGS = ("s", "x", "z", "ch", "sh")
-MIN_S_STEM = 4
+MIN_STEM = 3
+S_EXCEPTIONS = frozenset({"news"})  # never singular <-> plural by a plain s (news / new)
 
 
 def parts_of(word):
@@ -117,16 +120,27 @@ def terms_of(query):
 
 
 def variants(term):
-    """The words a term matches: itself, its plural (+es only after s, x, z, ch or
-    sh, else +s) and, for a plural, its singular (-es by the same rule; -s only
-    when MIN_S_STEM characters are left, so `news` never becomes `new`). A form
-    that is a stop word is never produced (`notes` never matches `not`)."""
-    forms = {term + "es" if term.endswith(ES_ENDINGS) else term + "s"}
+    """The words a term matches: itself, its plural and, for a plural, its
+    singular. Plural: +ies for a consonant + y (`entry` / `entries`), +es after s,
+    x, z, ch or sh, else +s. Singular: -ies -> y; -es after s, x, z, ch or sh; and
+    a plain -s (also for an -es word: `releases` -> `release`, `caches` ->
+    `cache`). No stem is shorter than MIN_STEM (`uses` never becomes `us`), a
+    word in S_EXCEPTIONS never gains or loses a plain s (`news` / `new`), and no
+    form is a stop word (`notes` never matches `not`)."""
+    if term.endswith("y") and len(term) > 1 and term[-2] not in "aeiou":
+        forms = {term[:-1] + "ies"}
+    elif term.endswith(ES_ENDINGS):
+        forms = {term + "es"}
+    else:
+        forms = set() if term + "s" in S_EXCEPTIONS else {term + "s"}
+    if term.endswith("ies"):
+        forms.add(term[:-3] + "y")
     if term.endswith("es") and term[:-2].endswith(ES_ENDINGS):
         forms.add(term[:-2])
-    elif term.endswith("s") and not term.endswith("ss") and len(term) - 1 >= MIN_S_STEM:
+    if term.endswith("s") and not term.endswith("ss") and term not in S_EXCEPTIONS:
         forms.add(term[:-1])
-    return frozenset({term} | {f for f in forms if f not in STOP_WORDS})
+    return frozenset({term} | {f for f in forms
+                               if len(f) >= MIN_STEM and f not in STOP_WORDS})
 
 
 def matcher(term):

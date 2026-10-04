@@ -435,7 +435,12 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
                 "q17.md": "runs crew-context.sh\n", "q18.md": "the crew wiki\n",
                 "q19.md": "a port collision here\n", "q20.md": "port-collisions again\n",
                 "q21.md": "port moved; one collision\n",
-                "q22.md": "two others here\n", "q23.md": "the other one\n"}),
+                "q22.md": "two others here\n", "q23.md": "the other one\n",
+                "q24.md": "the release went out\n", "q25.md": "clear the cache now\n",
+                "q26.md": "a good use case\n", "q27.md": "region us-east-1 only\n",
+                "q28.md": "read the log\n", "q29.md": "one tag left\n",
+                "q30.md": "one entry\n", "q31.md": "the policy says\n",
+                "q32.md": "edit the py file\n", "q33.md": "fresh news today\n"}),
             "snip": sb.vault("snip", {"s.md": "support " + "filler " * 60 + "the port here\n"}),
             "floor": sb.vault("floor", {
                 "note-a.md": "the port only\n", "note-b.md": "the port and the collision\n"}),
@@ -541,7 +546,15 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
                 ("vault_recall.py", ["q14.md"], ["q15.md", "q16.md"]),  # no scatter
                 ("crew-context", ["q17.md"], ["q18.md"]),    # not 'the crew wiki'
                 ("port-collision", ["q19.md", "q20.md"], ["q21.md"]),
-                ("others", ["q22.md"], ["q23.md"])):              # never a stop word
+                ("others", ["q22.md"], ["q23.md"]),              # never a stop word
+                # Review round 4: strip just the s too; never a stem under 3; plain-s
+                # stem of 3 with an exception list (news); -ies -> y.
+                ("releases", ["q24.md"], []), ("caches", ["q25.md"], []),
+                ("uses", ["q26.md"], ["q27.md"]),            # not 'us' of us-east-1
+                ("logs", ["q28.md"], []), ("tags", ["q29.md"], []),
+                ("entries", ["q30.md"], []), ("policies", ["q31.md"], []),
+                ("pies", [], ["q32.md"]),                    # no 'py': stem under 3
+                ("new", [], ["q33.md"])):                    # the news exception, reversed
             code, res = _recall_json(["--query", query, "--vaults", "pairs"])
             got = _paths(res)
             check(f"{query!r} must match {yes}", [y for y in yes if y in got], yes)
