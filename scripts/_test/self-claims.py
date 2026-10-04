@@ -627,6 +627,7 @@ ALL_CHECK_FUNCS = [
     "check_command_backtick_spans",
     "check_versions",
     "check_self_claims",
+    "check_config_reference",
     "check_description_claims",
     "check_catalog_claims",
     "check_crew_ignore_policy",

@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.348<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.323<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -155,7 +155,7 @@ to CI or to branch protection.
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync a ticket between ServiceDesk Plus (via MCP) and the local cache |
 | `/crew:spec <ticket id>` | Fill the ticket contract from an approved direction - Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
 | `/crew:split <ISSUE-KEY> [--dry-run]` | Split an oversized Jira ticket into sub-tickets, with evidence and a confirmation |
-| `/crew:status [--memory]` | Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, gitignore, handoff |
+| `/crew:status [--memory]` | Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, handoff |
 | `/crew:survey [area, e.g. "performance" or "the billing module"]` | Research the app for real gaps and propose options with tradeoffs |
 | `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
 | `/crew:upgrade` | Bring a pre-0.20 crew config up to the 0.20 schema so /crew:migrate can move it to 1.0 |
