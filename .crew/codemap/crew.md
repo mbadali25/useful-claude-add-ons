@@ -1522,8 +1522,8 @@ then the train is advisory.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:1342` — `ticket_freshness`,
   the library entry point; `main()` at `:1442`; `artifact_verdicts` at `:1024`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
-- `plugin/crew/hooks/scripts/crew_graph_ignore.py:408` — `coverage`, the library
-  entry point `crew_refresh_check.py` and `crew_status.py` call; `main()` at `:567` is the
+- `plugin/crew/hooks/scripts/crew_graph_ignore.py:414` — `coverage`, the library
+  entry point `crew_refresh_check.py` and `crew_status.py` call; `main()` at `:584` is the
   `--check` / `--write` CLI (T-0064).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:568` — `next_phase`, read-only;
   `main()` at `:1662` is the `next` / `resume` / `settings` / `stops` /
