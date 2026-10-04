@@ -2587,7 +2587,12 @@ working map and, when that is dirty, the committed map alike (L-1503):
   and `requireHuman` must hold. They are named together - `staging,prod` - in
   the block message and in `.crew/.deploy-in-flight`, so the promotions row
   that clears the Stop check names `staging,prod` too. So `git push`, inside
-  both `git push staging main` and `git push prod main`, needs prod's approval
+  both `git push staging main` and `git push prod main`, needs prod's approval.
+  That combined row is not a row for `staging` or for `prod`: after such a
+  deploy, an environment that `requires` one of them still needs an
+  unambiguous deploy record for it first - deploy with a command that matches
+  only that environment, and record that (L-1505 is to write one row per
+  matched environment instead)
 - if the comparison itself fails, the command blocks rather than skipping
   that environment
 

@@ -357,6 +357,8 @@ def test_the_committed_map_uses_the_same_rule(flavour, deploy, tmp_path):
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_the_committed_map_applies_the_union_too(flavour, tmp_path):
+    """The union rule holds on the committed-map path as well: an uncommitted
+    edit that drops one environment does not drop its requirements."""
     repo = Repo(tmp_path / "r", {"qa": _env("deploy target=Prod"),
                                  "production": _env("deploy target=prod")})
     repo.write_map({"qa": _env("x-renamed")})
@@ -443,6 +445,7 @@ def test_a_whitespace_only_command_deploys_nothing(flavour, command, tmp_path):
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_an_unrelated_command_passes_untouched(flavour, tmp_path):
+    """Must-allow: a command no deploy names passes and leaves no marker."""
     repo = Repo(tmp_path / "r", {"prod": _env(_JQ, human=True),
                                  "x": _env("ship [z-a]", human=True)})
     code, err = run_gate(flavour, repo, "git status")
@@ -520,6 +523,8 @@ _AGREEMENT = [
 
 
 def _chosen(flavour, repo, command):
+    """What one gate decided for `command`: an environment list, None for no
+    match, or the block it gave (`BLOCKED <envs>` / `BLOCKED: map`)."""
     repo.clear_in_flight()
     code, err = run_gate(flavour, repo, command)
     if code == 2:
@@ -532,6 +537,7 @@ def _chosen(flavour, repo, command):
 
 
 def _agreement_params():
+    """One param per agreement map; all but the first are `slow`."""
     out = []
     for i in range(len(_AGREEMENT)):
         marks = [needs_bash, needs_pwsh] + ([pytest.mark.slow] if i else [])
