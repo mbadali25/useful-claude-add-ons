@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:19: #351 fixer done: head 846e9b2e (1.0.330; Measured para 73/131/58, ~50 diagram cites re-pointed). Skipping separate delta review: land-prep onto edb2b8ff started now (1.0.333; recount ~133 with #355 keys, re-point cites + since text); one review will cover fix delta + merge.
 - 10:19: #368 fixer done: head 9fda5538 (1.0.329). LANDING RE-POINT LIST for #368 (since-version = landing version): .crew/codemap/crew.md:59(version sentence),706,712,1212; plugin/crew/README.md:822,824,917; docs/guides/crew/src/troubleshooting.md:305 + build.py --guide troubleshooting. Main follow-up: docs/diagrams README/index show stale im1 label vs process-crew-lifecycle-implement.mmd:36. Delta review started.
 - 10:17: #360 merge review f6795d74: 0/0/3 CLEAN. FOLLOW-UP BUG ON MAIN (from #355): crew_autocycle._num_checked int(inf) OverflowError - machine file resume.typeDelaySeconds 1e999 makes resume_typing raise instead of default. Needs a small fix PR after the train.
 - 10:15: #360 land-prep on edb2b8ff done: head f6795d74 (1.0.332); #355's resume.* keys moved COMING->KEY_META (since 1.0.321, kind type), ref regen 132/74/58, guides rebuilt. Merge review started. NOTE: CONFIG.md 'Measured, not argued' paragraph on MAIN says 72/130 but code is 74/132 after #355 - pre-existing on main; #351's fixer touches same paragraph.
