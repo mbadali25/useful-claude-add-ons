@@ -140,9 +140,14 @@ block, `memory`), never a `recall` or `ignore` vault, never a substitute. Report
 | `already-pointer` | untouched | 0 |
 | `kept-full-text: no vault configured` | untouched | 0 |
 | `kept-full-text: vault unavailable` / `no primary` / `several primaries` / `not a vault` / `config unreadable` | untouched | 1 |
-| `kept-full-text: collision` / `ascii-required` / `outside-vault` / `bad-note-path` | untouched | 1 |
-| `kept-full-text: note write failed` / `note not readable after write` / `pointer write failed` / `the memory file changed during save` | untouched | 1 |
+| `kept-full-text: collision` / `ascii-required` / `outside-vault` / `bad-note-path` / `the existing note is not UTF-8` | untouched | 1 |
+| `kept-full-text: MEMORY.md is the index` / `the memory file is a symlink` / `the memory has no body to save` | untouched | 1 |
+| `kept-full-text: another save is in progress` / `note write failed` / `the note changed during save` / `note not readable after write` / `the memory file changed during save` / `the memory file cannot be read again` / `pointer write failed` | untouched | 1 |
 | `malformed`, `unreadable`, or any `resolve` state of a pointer that does not resolve | untouched | 1 |
 
-If Claude Code later rewrites a pointer memory with full text, `check` shows it as
-`full-text` again; run `save` again.
+Two saves exclude each other with `.<name>.crew-save.lock` files (stale after 10
+minutes). An edit by another program in the instant before the final rename is not
+detected. If Claude Code later rewrites a pointer memory with full text, `check` shows
+it as `full-text` again; run `save` again. On Windows Git Bash there may be no
+`python3`: run the same command with `py -3` or `python`, and if none resolves, say so
+rather than skipping the save silently.

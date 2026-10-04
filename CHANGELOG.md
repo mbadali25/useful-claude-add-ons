@@ -18,22 +18,42 @@ All notable changes to this repository are documented here. Format follows [Keep
   note of the same `memory_id` gains `## Update <date>` and a bumped `updated:` (`unchanged` when
   the body is already its last passage); any other existing note is a `collision`.
 - Order and crash safety: the full note text and new native bytes are computed first; the note
-  goes through a fsynced temp file and `os.link` (create, never over a file) or `os.replace`
-  (append, after a re-read); it is read back and the pointer resolved; only then is the native
-  body replaced (frontmatter bytes kept, mode kept) through a temp file and `os.replace`, after
-  checking the file did not change meanwhile. Every refusal and every failure prints
-  `kept-full-text: <reason>` and leaves the memory byte-identical; a dangling pointer is never
-  written. `MEMORY.md` is not edited; no hook, no config key.
+  goes through a fsynced temp file and `os.link` (create, never over a file; where hard links
+  are refused, an `O_EXCL` create, never `os.replace`) or `os.replace` (append); its folder is
+  fsynced; it is read back and the pointer resolved; only then is the native body replaced
+  (frontmatter bytes kept, mode kept) through a temp file and `os.replace`. Every refusal and
+  every failure prints `kept-full-text: <reason>` and leaves the memory byte-identical; a
+  dangling pointer is never written. `MEMORY.md` is not edited and is refused as `--file`; no
+  hook, no config key.
+- Concurrency (review round 1): a save holds two `O_EXCL` lock files, `.<name>.crew-save.lock`
+  beside the note and beside the memory, note first, for its whole write sequence; a held lock
+  is `kept-full-text: another save is in progress`, and one older than `LOCK_TTL` (600 s) is
+  removed as left by a dead save. The memory and an existing note are re-compared right before
+  each `os.replace`. Not guaranteed: an edit by a program that is not `save` in the instant
+  between that last compare and the rename (a rename cannot compare-and-swap). A second save of
+  the same memory that finds it already a resolving pointer reports `already-pointer`.
+- Edge cases (review round 1): an existing note that is not strict UTF-8 is refused; an append
+  keeps every existing byte (BOM, CRLF), changing only the `updated:` value; a symlinked memory
+  file is refused; a note path segment starting `.` is `bad-note-path`; `memory_id` is
+  JSON-decoded when compared; a new note is mode 0644 less the umask, an appended one keeps its
+  mode. The skill says what to do on Git Bash without `python3`.
 - Checked with the real `claude` CLI 2.1.289 (auto-memory on): a one-line pointer body survived
   three new sessions byte-identical (a session updating that memory rewrote only its
   frontmatter). The `crew-memory` skill, README section 14 and the memory guide carry the save
   procedure and its state table.
-- **Tests.** `plugin/crew/tests/test_crew_memory_save.py`, 54 cases; the crew_memory verify rule
-  runs both files. Each failure ordering (note write, link, read-back, pointer temp write,
+- **Tests.** `plugin/crew/tests/test_crew_memory_save.py`, 74 cases (54, then 20 from review
+  round 1, each red on `e7c8b073` except three guards of new code paths); the crew_memory
+  verify rule runs both files. Reviewer races A (an edit while the pointer temp is written) and
+  B (two saves appending to one note, on real threads) now keep every byte. Each failure ordering (note write, link, read-back, pointer temp write,
   pointer replace, native changed meanwhile) has a test. Sabotaged by hand, each turned a named
   test red: pointer before note, no read-back, no `memory_id` collision check, no symlink check,
   falling back to a recall vault, no changed-meanwhile check, no ASCII rule, no temp cleanup, no
-  path grammar, no `.obsidian/` check, rewriting an unchanged note.
+  path grammar, no `.obsidian/` check, rewriting an unchanged note; and from round 1: no locks,
+  no re-compare before the pointer rename, the `os.replace` fallback when `os.link` fails, a
+  lossy UTF-8 decode, the BOM dropped, `MEMORY.md` allowed (plan and CLI, separately), no
+  folder fsync, no new-note mode, a symlinked memory followed, no `already-pointer` on a double
+  save, `.` segments allowed, no JSON decode of `memory_id`, a stale lock never cleared, locks
+  not released.
 
 ### Added — `crew` 1.0.331: native memories as vault pointers, read side (T-0084)
 

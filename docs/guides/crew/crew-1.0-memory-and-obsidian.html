@@ -481,17 +481,30 @@ it was:</p>
 <td>1</td>
 </tr>
 <tr>
-<td><code>kept-full-text: collision</code>, <code>ascii-required</code>, <code>outside-vault</code>, <code>bad-note-path</code></td>
+<td><code>kept-full-text: collision</code>, <code>ascii-required</code>, <code>outside-vault</code>, <code>bad-note-path</code>, <code>the existing note is not UTF-8</code></td>
 <td>untouched</td>
 <td>1</td>
 </tr>
 <tr>
-<td><code>kept-full-text: note write failed</code>, <code>note not readable after write</code>, <code>pointer write failed</code>, <code>the memory file changed during save</code></td>
+<td><code>kept-full-text: MEMORY.md is the index</code>, <code>the memory file is a symlink</code>, <code>the memory has no body to save</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>kept-full-text: another save is in progress</code>, <code>note write failed</code>, <code>the note changed during save</code>, <code>note not readable after write</code>, <code>the memory file changed during save</code>, <code>the memory file cannot be read again</code>, <code>pointer write failed</code></td>
 <td>untouched</td>
 <td>1</td>
 </tr>
 </tbody>
 </table>
+<p>Two <code>save</code> runs never interleave: each holds a lock file beside the note
+and beside the memory (<code>.&lt;name&gt;.crew-save.lock</code>; one older than 10 minutes is
+removed as left by a save that died). The memory and an existing note are
+compared again right before each rename. An edit by another program in the
+instant between that compare and the rename is not detected: a rename cannot
+compare and swap. An existing note keeps every byte, a BOM and CRLF line
+endings included; only its <code>updated:</code> value changes and the passage is
+appended. A new note gets mode 0644 less your umask.</p>
 <p>Claude Code 2.1.289 was seen to keep a one-line pointer body across new
 sessions (it rewrites the frontmatter when it updates the memory, and kept
 the pointer). If a later version rewrites the body with full text, <code>check</code>

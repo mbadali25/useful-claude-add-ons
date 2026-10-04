@@ -376,8 +376,18 @@ it was:
 | `already-pointer` | untouched | 0 |
 | `kept-full-text: no vault configured` | untouched | 0 |
 | `kept-full-text: vault unavailable`, `no primary`, `several primaries`, `not a vault`, `config unreadable` | untouched | 1 |
-| `kept-full-text: collision`, `ascii-required`, `outside-vault`, `bad-note-path` | untouched | 1 |
-| `kept-full-text: note write failed`, `note not readable after write`, `pointer write failed`, `the memory file changed during save` | untouched | 1 |
+| `kept-full-text: collision`, `ascii-required`, `outside-vault`, `bad-note-path`, `the existing note is not UTF-8` | untouched | 1 |
+| `kept-full-text: MEMORY.md is the index`, `the memory file is a symlink`, `the memory has no body to save` | untouched | 1 |
+| `kept-full-text: another save is in progress`, `note write failed`, `the note changed during save`, `note not readable after write`, `the memory file changed during save`, `the memory file cannot be read again`, `pointer write failed` | untouched | 1 |
+
+Two `save` runs never interleave: each holds a lock file beside the note
+and beside the memory (`.<name>.crew-save.lock`; one older than 10 minutes is
+removed as left by a save that died). The memory and an existing note are
+compared again right before each rename. An edit by another program in the
+instant between that compare and the rename is not detected: a rename cannot
+compare and swap. An existing note keeps every byte, a BOM and CRLF line
+endings included; only its `updated:` value changes and the passage is
+appended. A new note gets mode 0644 less your umask.
 
 Claude Code 2.1.289 was seen to keep a one-line pointer body across new
 sessions (it rewrites the frontmatter when it updates the memory, and kept
