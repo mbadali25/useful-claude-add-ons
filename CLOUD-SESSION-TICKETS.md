@@ -56,6 +56,8 @@ Next free untracked ID: **L-1511**.
 | T-0016 | #396 | f1cace4a | 1.0.333 |
 | L-1507 | #492 | 1a5b3dca | none (CI workflow only: Windows slow set split into 3 shards) |
 | T-0017 | #356 | d64f113e | 1.0.334 |
+| T-0047 | #347 | 59fe7d84 | 1.0.335 |
+| L-0677 | #456 | 644adfc2 | 1.0.336 |
 
 ## Closed without merging (your instruction)
 
@@ -72,7 +74,6 @@ Next free untracked ID: **L-1511**.
 | T-0058 | #365 | 16228584 | ready to land | Stacked on #364/#354. Carry: `_gate_stage` must pick stage like `_phase`; `split_report current=` from `_not_current`. Decision: absent sources read as unmeasured (owner-approved). |
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
 | T-0045 | #407 | 6cada04c | ready to land | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
-| T-0047 | #347 | 14ce284f | landing (batch 2: #396 1.0.333, #356 1.0.334, #347 1.0.335, #456 1.0.336) | PowerShell fail-closed backstop added. |
 | T-0074 | #481 | 858c5336 | ready to land | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. Review clean. Carry: daily-workflow.md:189 cap-limit wording. Q7 open. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
 | T-0082, T-0080 | #399 (H2a bundle) | ed58c3d9 | review-clean at ce4e4083 (round 3: 0 BLOCK, 0 FIX), CI green (6 shards). Harness: lands ALONE right after batch 2 as crew 1.0.337. Carry at land-prep: NIT-1 narrow 2304 to ps1-on-Windows in _RUNNER_KILLED regex; NIT-2 add a "0\\n\\0" FIFO case that catches removal of the RULE_REC_EOF line; N7 done | Harness-only. #475 (T-0080) closes at landing. |
@@ -157,7 +158,6 @@ Held for your go: L-0674 (#404).
 | L-0674 | #404 | not started (spec only) | T-0082 child 2: the verify gate ends a hung rule itself and reports it FAILED (could not t |
 | L-0675 | #425 | not started (spec only) | T-0083 child 1: crew passes the repo's project to vault recall and falls back cleanly on a |
 | L-0676 | #429 | not started (spec only) | T-0083 child 2: sabotage mutations prove the recall project tests (tooling-only) |
-| L-0677 | #456 | land-prepped at f831386e (codemap cite fix after merge review) (was review-clean at ea18c748) (round 4: 0 BLOCK, 0 FIX); landing in batch 2 (crew 1.0.336) | crew_memory.py save - write the vault note, then turn the native memory into a pointer |
 | L-0678 | #462 | not started (spec only) | crew_memory.py migrate and restore - convert existing native memories, previewed and opt-i |
 | L-0679 | #466 | not started (spec only) | sabotage entries for crew_memory.py (tooling-only PR) |
 | L-0680 | #400 | review-clean at 15160c4a (round 2: 0 BLOCK, 0 FIX, 5 NIT); batch 3. Carry: auto-clear.ps1 $_crewAutoClearKnownKeys (~:680) lacks wrapUp - logs it as unrecognised while honouring it (from #356 review); codemap crew.md T-0096 section cites auto-clear.ps1:197 ($repoCfg, now :374) and :126 (Get-CrewRepoConfigDir, now :132) - stale after #356; N1 dir-valued handoffPath parity, N2 document ps1 symlink rule in README/CONFIG, N3 keepTranscripts >Int64 clamp, N4 codemap crew.md:634-635 cites, N5 context-watch.ps1 message parity | T-0096 child 1: the session hooks (notify, handoff-read, handoff-write, context-watch) inh |
