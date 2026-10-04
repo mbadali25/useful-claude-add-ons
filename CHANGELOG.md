@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.316: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
+### Added — `crew` 1.0.325: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`
   writes every diagram under `docs.diagramsDir` into the README nearest its
