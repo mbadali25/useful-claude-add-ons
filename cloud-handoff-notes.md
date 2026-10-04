@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 19:37 UTC
+Last updated: 2026-10-04 19:54 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 19:54: MERGED #356 T-0017 at aadd6b23 -> main d64f113e, crew 1.0.334. #347 was dirty vs main (#492 codemap anchor) so its PR CI never ran: coordinator merged main (anchor-only conflict, main's side, rules regenerated) -> #347 9c56ec40 (1.0.335); #456 re-merged -> 81414bc5 (1.0.336). L-1508 PR A at f1da4e82, review spawned. Minted L-1510 (Windows mint race flake); widened L-1509 to repo_survey.py.
 - 19:37: #399 H2a round-3 review CLEAN at ce4e4083 (0/0/2 NIT). 2304 decodes as COULD NOT TELL (not plain fail); formerly-skipped killed/unknown tests confirmed PASSED in Windows shard logs. Lands alone after batch 2 as 1.0.337 with NIT-1/NIT-2 carried.
 - 19:31: Batch 2 triage: 5 causes. Fixed: (1) T-0017 test - Git bin/bash.exe prepends mingw PATH so [sh] stub never reached -> usr/bin bash; (2) L-0677 note_path mixed separators; (3) L-0677 bash -c quoting under Git Bash; (4) L-0677 test file name with '"' impossible on Windows -> platform skip + new file-less test covering the same comparison (coordinator accepts: genuine platform limit, equivalent coverage). (5) test_cloud_guard identity_bash exit 2304 (=MSYS SIGKILL) on B slow job, passed on afe4b455, not batch-2 code: watch on re-run; second failure is real. New heads: #356 aadd6b23, #347 56feb547, #456 a65d3db9.
 - 19:28: MERGED #492 L-1507 at 5607affe -> main 1a5b3dca (CI only). First run: slow shards 4.0-4.1 min (was ~11 single job); default shards 5.9-9.1 min; decide->gate 14.2 min incl ~4.5 min queue for default shards. Queueing at the concurrency limit is now the main cost.
