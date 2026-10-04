@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 02:18 UTC
+Last updated: 2026-10-03 02:19 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 02:19: #375 re-merged main cce7e486 -> 8bf5c021 (crew 1.0.242, BUDGETS 22,520/139; gates + 90 tests green); pushed; merge-only review + CI running. Triage of unreviewed PRs started in 3 groups: A #338-#347, B #348/#349/#336/#333/#331/#324/#274/#275, C #376/#377/#379/#344/#345/#361/#369/#370 + blocked-chain check. Next free: 1.0.243.
 - 02:18: RESUMED (owner: other session done; work all remaining open PRs). main now cce7e486 (#383 crew 1.0.232, #384 crew 1.0.233 from other session). Next free: 1.0.242. Step 1: re-merge main into #375 -> 1.0.242. Parallel: triage of unreviewed open PRs.
 - 01:35: PAUSED by owner (another session working). No merges, no pushes, no agents running. Cancelled check-ins (#375, PR-set 3); unsubscribed #374/#375. RESUME STATE: #375 head f4045346 (crew 1.0.241) review clean, CI was running - verify Windows green + main still 3473f08f before merge. Then #378 (worktree /home/user/pr-378, 1.0.242). Clean & waiting: #352 113eccbf, #353 ea342f1f, #358 88e7295f, #362 0920f1eb, #367 00910e28 (+ #350/#351/#355/#357/#359/#360/#368/#371 earlier). Follow-ups: render.sh drive-letter dir bug; lint for tests calling bare bash; process-qa-gates.mmd rule count.
 - 01:32: #375 fix r2 review on f4045346: CLEAN (0 BLOCK, 0 FIX, 1 NIT stale timing). Waiting on CI (Windows is the real proof).
