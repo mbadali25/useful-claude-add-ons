@@ -2378,5 +2378,6 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 - **DERIVED.** `.crew/verify.json:614` (T-0096's rule) now also maps `notify`, `handoff-read`,
   `handoff-write` and `context-watch`, `.sh` and `.ps1`, to
   `plugin/crew/tests/test_worktree_config_shell.py`, re-priced 36s (66 passed, 35.8s wall with
-  pwsh on PATH, 4-CPU container at load average 11-20). No rule number moves. This section
+  pwsh on PATH, 4-CPU container at load average 11-20; 91 passed, 27.4s wall, after review
+  round 1). No rule number moves. This section
   does not move the file's `anchor:`.

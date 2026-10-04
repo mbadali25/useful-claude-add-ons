@@ -163,7 +163,8 @@ missing resolver (`_common.sh` failed to source) also counts as armed. Routed: t
 in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
 veto, and (L-0680) the session hooks `notify`, `handoff-read`, `handoff-write` and
 `context-watch` in both flavours, whose writes stay in the worktree and whose
-inherited relative `context.handoffPath` names a file in the worktree. Still
+inherited `context.handoffPath` stays inside the worktree (one that leaves it is
+`.work/HANDOFF.md` there, as in `crew_state.handoff_path`). Still
 own-file only: the verify gate, the scope and completion wrappers, and
 `review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
 lane's own `emergency.standDown` while the bash verify gate and

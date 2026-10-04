@@ -1040,8 +1040,9 @@ until one works. Inheritance can loosen as well as tighten: an inherited
 resolved file too (crew 1.0.404, L-0680): a lane notifies with the main
 checkout's `notify` settings, so several lanes ping the same channel unless one
 writes its own config, and an inherited `context.handoffPath`,
-`keepTranscripts` or threshold applies in the lane while a relative handoff path
-still names a file in the lane. What they write (transcripts, markers, the
+`keepTranscripts` or threshold applies in the lane while the handoff path
+stays inside the lane: a relative one names a file there, and one that leaves
+it (absolute, `..`) is the lane's `.work/HANDOFF.md`, with a warning. What they write (transcripts, markers, the
 handoff note) stays in the lane, and `context-watch` still needs a `.crew/`
 directory there before it measures. **Not yet covered** (they read only the
 worktree's own file): the verify gate, the scope and completion wrappers, and
