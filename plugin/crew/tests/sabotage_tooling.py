@@ -1023,8 +1023,8 @@ if shutil.which("pwsh"):
             # Off Windows the flavour guard's silent exit 0 is reached first.
             "--ci (ps1): -Ci off Windows stands down green",
             GATE_PS1,
-            "if ($Ci -and $env:OS -ne 'Windows_NT') {\n",
-            "if ($false) {\n",
+            "  [ValidateScript({ if ($env:OS -ne 'Windows_NT') { throw ",
+            "  [ValidateScript({ if ($false) { throw ",
             _CI + "test_the_ps1_with_ci_off_windows_fails_instead_of_standing_down",
         ),
         (

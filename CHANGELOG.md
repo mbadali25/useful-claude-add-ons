@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — crew 1.0.230: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
+### Added — crew 1.0.231: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
 
 - **Scope is the whole map, over tracked files:** every file `git ls-files` lists (staged deletions
   and renames included), no Stop budget, no fingerprint skip. Untracked files are left out, so a crew
@@ -50,6 +50,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   round 2, 1 BLOCK (`.ps1 -Ci` off Windows stood down green; `pwsh` ships on ubuntu runners), 2 FIX
   (blank commands passed; a false doc example), 4 NIT. All fixed but two lock-reclaim paths that
   no test can reach.
+- The `.ps1` refuses `-Ci` off Windows at parameter binding (`ValidateScript`, exit 1), not with a
+  statement: `hooks/scripts/_test/test_flavour_guard.py` requires the flavour guard to stay the first
+  executable statement and the hook pair's stand-down to run nothing past it. CI caught the first
+  placement.
 - A harness change under T-0087, so it lands alone.
 
 ### Added — `crew` 1.0.229: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)

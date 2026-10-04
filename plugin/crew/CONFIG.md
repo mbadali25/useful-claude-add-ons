@@ -2437,7 +2437,7 @@ on every Stop. `verify-gate.sh --price [path] [--force]` /
 `verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]` is reachable only
 by typing the flag; the Stop hook (`hooks.json`) never passes it.
 
-**`--ci` / `-Ci` is the gate as a pull request's CI job (crew 1.0.230), and
+**`--ci` / `-Ci` is the gate as a pull request's CI job (crew 1.0.231), and
 it is not a spelling of `--all`.** Its scope is the whole map with no budget
 and no fingerprint skip, over TRACKED files only (`git ls-files`, staged
 deletions and renames included): a CI workspace's untracked files (a crew

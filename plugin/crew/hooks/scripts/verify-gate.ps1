@@ -47,6 +47,13 @@ param(
   # passed by the Stop hook. -All or -Price together with -Ci is a usage
   # error. Its scope is TRACKED files only, and every path that would end
   # having checked nothing exits 2 with a named `verify-gate --ci:` reason.
+  # Off Windows, -Ci is refused HERE, at parameter binding, not by a statement:
+  # the flavour guard below must stay the first executable statement
+  # (hooks/scripts/_test/test_flavour_guard.py), and its silent exit 0 would
+  # otherwise be a green CI job that checked nothing. Binding fails, so the
+  # script exits non-zero before any statement runs; the hook pair never
+  # passes -Ci, so its stand-down is untouched.
+  [ValidateScript({ if ($env:OS -ne 'Windows_NT') { throw "verify-gate --ci: verify-gate.ps1 is the native-Windows flavour; on this OS run verify-gate.sh --ci. Nothing was checked." }; $true })]
   [switch]$Ci,
 
   # Operator-only. Times every rule with no budget and writes `seconds` for
@@ -70,13 +77,6 @@ param(
 # does not exist in 5.1, so it is $null there, `-not $null` is $true, and the
 # hook stands down on the one platform it exists for. crew has already shipped
 # that bug once - the guard stood down on Windows and blocked nothing there.
-# -Ci is called on purpose by a CI job, never by the hook pair, so the guard's
-# silent stand-down would be a green job that checked nothing. Off Windows it
-# is an error that names the flavour to use instead.
-if ($Ci -and $env:OS -ne 'Windows_NT') {
-  [Console]::Error.WriteLine("verify-gate --ci: verify-gate.ps1 is the native-Windows flavour; on this OS run verify-gate.sh --ci. Nothing was checked.")
-  exit 2
-}
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 # Resolve a real bash.exe, not WSL's launcher. With WSL installed, unqualified
