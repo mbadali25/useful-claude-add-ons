@@ -27,7 +27,10 @@ come from those sessions and were not reproduced.
 Ten recurring defects. Each names the crew template, phase or rule a fix would change.
 
 **D10. A Stop gate that runs nothing.** Crew 1.0 runs a rule on Stop only when it declares `reach`;
-a rule without it is recorded as skipped (`verify-gate.sh:803`). Nothing migrated maps written before
+a rule without it is recorded as skipped (`verify-gate.sh:803`). *Correction (L-0562, 2026-10-03): more precisely, a rule
+without `reach` is classified by `verify_record.scan_reach` (`plugin/crew/CONFIG.md` §19); a plain
+local command still runs, and one with shell syntax, a remote verb or a wrapper script is deferred
+and recorded as skipped. Repo A's rules are of the deferred kind, so the finding stands for it.* Nothing migrated maps written before
 `reach` existed. In repo A every rule lacks `reach`, so every Stop records 13 skips while the
 verified-at marker advances to HEAD with no command run (checked). Repo B hit the same defect and fixed
 it by hand; declaring `reach` then exposed rules timed under a login shell that fail in the gate's
