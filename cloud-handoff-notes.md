@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:15: #342 merge review 904ca36f: 0/0/0 CLEAN (on e9364a70).
 - 12:15: #357 merge review af805254: 0/0/0 CLEAN (on e9364a70).
 - 12:14: #341 L-0509 re-review 7dddc79d: 0/0/1 CLEAN, land this half (harness half = TODO.md follow-up (a)-(g), its own PRs).
 - 12:14: #357 land-prep onto e9364a70 done: af805254 (1.0.365; full guide says focus shipped; PLUGINS row re-added). Merge-only review started.
