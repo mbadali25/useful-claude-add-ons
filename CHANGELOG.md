@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.384: review metrics are read from the main checkout's `.crew/` in a linked worktree (L-0582)
+### Fixed — `crew` 1.0.388: review metrics are read from the main checkout's `.crew/` in a linked worktree (L-0582)
 
 - **What changed.** One resolver, `crew_common.metrics_crew_dir(root)` ->
   `(crew_dir, problem)`, names the `.crew/` that holds review metrics: the
