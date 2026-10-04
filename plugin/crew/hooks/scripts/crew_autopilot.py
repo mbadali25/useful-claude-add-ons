@@ -1018,6 +1018,11 @@ def sleep_now(root, by="cli"):
     record = {"state": crew_sleep.ASLEEP, "by": by,
               "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
               "until": crew_sleep.to_utc(until).replace(microsecond=0).isoformat()}
+    check = crew_sleep.read_manual(("ok", record), when)
+    if check["kind"] != "valid":
+        # Review round 2 FIX-2: never report a sleep the reader would distrust.
+        return 2, _one_line(f"refused: the record sleep would write is not trusted by its own "
+                            f"reader ({check['warning'][:200]}); nothing written")
     crew_ticket._write_json(_manual_path(top), record)  # pylint: disable=protected-access
     what = ("the scheduled night" if found["state"] == crew_sleep.ASLEEP
             else f"tightens {','.join(tightens)}")
@@ -1048,7 +1053,7 @@ def wake_now(root):
         until = crew_sleep.next_edge(crew_sleep.parse_schedule(schedule)[1], when)
         record = {"state": crew_sleep.AWAKE, "by": "cli",
                   "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
-                  "until": crew_sleep.to_utc(until).isoformat()}
+                  "until": crew_sleep.to_utc(until).replace(microsecond=0).isoformat()}
         crew_ticket._write_json(path, record)  # pylint: disable=protected-access
         return 0, f"awake; the schedule resumes at {_hhmm(record['until'])}"
     if not os.path.lexists(path):

@@ -55,7 +55,11 @@ MANUAL_FILE = "autopilot-sleep.json"
 MANUAL_STATES = ("asleep", "awake")
 MANUAL_FIELDS = ("state", "by", "at", "until")
 MANUAL_SLEEP_HOURS = 12
+# A record may span at most 24 wall-clock hours (one window cycle) and, as a
+# backstop, 25 real ones: across a fall-back one cycle is 25 real hours
+# (review round 2 FIX-2).
 MANUAL_MAX = datetime.timedelta(hours=24)
+MANUAL_MAX_REAL = datetime.timedelta(hours=25)
 KEYS = ("schedule",) + OVERRIDES
 OFF, AWAKE, ASLEEP, UNKNOWN = "off", "awake", "asleep", "unknown"
 # What an override crew cannot read counts as: the strictest policy, the
@@ -157,8 +161,19 @@ def next_edge(minute, when):
 
 
 def to_utc(when):
-    """The naive local datetime `when` as an aware UTC one."""
-    return when.astimezone(datetime.timezone.utc)
+    """The naive local datetime `when` as an aware UTC one. A wall-clock time
+    that does not exist (the hour a spring-forward skips) resolves forward to
+    the later instant, so an `until` there never ends an hour early (review
+    round 2 NIT 1); an ambiguous one keeps the fold it was given."""
+    found = when.astimezone(datetime.timezone.utc)
+    if found.astimezone().replace(tzinfo=None, fold=0) == when.replace(fold=0):
+        return found
+    return max(when.replace(fold=fold).astimezone(datetime.timezone.utc) for fold in (0, 1))
+
+
+def _wall(when):
+    """The aware `when` as a naive local wall-clock time."""
+    return when.astimezone().replace(tzinfo=None, fold=0)
 
 
 def _when(value):
@@ -215,8 +230,10 @@ def _manual_problem(status, data, when):
     when = to_utc(when)
     if at > when:
         return f"at {data['at']} is in the future (the clock moved back?)"
-    if until - at > MANUAL_MAX or until <= at:
-        return f"until {data['until']} is not within 24 hours after at {data['at']}"
+    wall = _wall(until) - _wall(at)
+    if until - at > MANUAL_MAX_REAL or wall > MANUAL_MAX or until <= at:
+        return (f"until {data['until']} is not within 24 hours (25 across a clock change) "
+                f"after at {data['at']}")
     if until <= when:
         return f"expired at {data['until']}"
     return ""

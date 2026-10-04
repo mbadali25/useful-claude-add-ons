@@ -15,6 +15,8 @@ tmp_path; nothing touches the real one or ~/.claude.
 import datetime
 import json
 import os
+import stat
+import time
 
 import context  # pylint: disable=unused-import
 import crew_autopilot
@@ -946,6 +948,7 @@ def test_sleep_refuses_and_writes_nothing(tmp_path, clock, capsys, build, why):
     (dict(VALID, state="on"), "unknown", "state"),
     (dict(VALID, until=_iso(_at(11, 30))), "awake", "expired"),
     (dict(VALID, until=_iso(datetime.datetime(2026, 10, 5, 12, 0))), "unknown", "24 hours"),
+    (dict(VALID, until=_iso(datetime.datetime(2026, 10, 5, 11, 1))), "unknown", "24 hours"),
     (dict(VALID, at=_iso(_at(13, 0))), "unknown", "future"),
     (dict(VALID, at="yesterday"), "unknown", "at"),
     (dict(VALID, by=["x"]), "unknown", "by"),
@@ -1170,3 +1173,226 @@ def test_a_state_directory_git_cannot_name_is_unknown(tmp_path, clock, monkeypat
 
     assert (conf["sleep"]["state"], conf["approval"], _allowed(root)) == (
         "unknown", "risk", False)
+
+
+# --- #427 review round 2: each read-safety layer of the state file (FIX-1) ------
+# `_manual_found` / `_read_regular`: lstat must say regular (nothing else is
+# ever opened), the open neither follows a final symlink (O_NOFOLLOW) nor
+# blocks on a FIFO (O_NONBLOCK), fstat re-checks what was opened, and at most
+# MANUAL_MAX_BYTES are read. Each test below goes red with one layer removed.
+
+def _honouring(tmp_path):
+    """A repo where a valid planted record reads `asleep` (a tightening)."""
+    return _repo(tmp_path, sleep=_night(approval="human"), approval="self", risk="high")
+
+
+def _opens(monkeypatch, path, before=None):
+    """Wrap `os.open`: record the file type of every fd opened at `path`, and
+    run `before()` once just ahead of the first open there (the swap between
+    lstat and open)."""
+    real, seen, armed = os.open, [], {"once": before}
+
+    def fake(name, flags, *rest):
+        if os.fspath(name) == path and armed["once"]:
+            armed.pop("once")()
+        handle = real(name, flags, *rest)
+        if os.fspath(name) == path:
+            seen.append(stat.S_IFMT(os.fstat(handle).st_mode))
+        return handle
+    monkeypatch.setattr(os, "open", fake)
+    return seen
+
+
+def test_an_oversized_state_file_is_unknown(tmp_path, clock):
+    clock(DAY)
+    root = _honouring(tmp_path)
+    _plant(root, json.dumps(VALID) + " " * crew_autopilot.MANUAL_MAX_BYTES)
+
+    conf = _sleep_conf(root)
+
+    assert (conf["sleep"]["state"], _allowed(root)) == ("unknown", False)
+
+
+def test_an_exactly_full_state_file_is_still_read(tmp_path, clock):
+    """The cap's must-allow neighbour."""
+    clock(DAY)
+    root = _honouring(tmp_path)
+    text = json.dumps(VALID)
+    _plant(root, text + " " * (crew_autopilot.MANUAL_MAX_BYTES - len(text)))
+
+    assert _sleep_conf(root)["sleep"]["state"] == "asleep"
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFOs and symlinks")
+@pytest.mark.parametrize("make", [_fifo, _directory, _symlink])
+def test_lstat_keeps_anything_but_a_regular_file_from_being_opened(tmp_path, clock, monkeypatch,
+                                                                    make):
+    clock(DAY)
+    root = _honouring(tmp_path)
+    path = _manual_path(root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    make(path)
+    seen = _opens(monkeypatch, path)
+
+    conf = _sleep_conf(root)
+
+    assert (conf["sleep"]["state"], seen) == ("unknown", [])
+
+
+def _swap_to(path, make):
+    def swap():
+        os.unlink(path)
+        make(path)
+    return swap
+
+
+def _symlink_to_fifo(path):
+    os.mkfifo(path + ".fifo")
+    os.symlink(path + ".fifo", path)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFOs and symlinks")
+def test_o_nofollow_never_opens_what_a_swapped_in_symlink_names(tmp_path, clock, monkeypatch):
+    """lstat saw a regular file; a symlink to a FIFO replaced it before the
+    open. O_NOFOLLOW refuses the link, so the FIFO is never opened."""
+    clock(DAY)
+    root = _honouring(tmp_path)
+    _plant(root, VALID)
+    path = _manual_path(root)
+    seen = _opens(monkeypatch, path, _swap_to(path, _symlink_to_fifo))
+
+    conf = _sleep_conf(root)
+
+    assert (conf["sleep"]["state"], seen) == ("unknown", [])
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFOs")
+def test_o_nonblock_never_waits_on_a_swapped_in_fifo(tmp_path, clock, monkeypatch):
+    """A FIFO with no writer, swapped in after lstat: the read returns at once."""
+    import threading  # pylint: disable=import-outside-toplevel
+    clock(DAY)
+    root = _honouring(tmp_path)
+    _plant(root, VALID)
+    path = _manual_path(root)
+    _opens(monkeypatch, path, _swap_to(path, os.mkfifo))
+    got = {}
+    worker = threading.Thread(target=lambda: got.update(conf=_sleep_conf(root)), daemon=True)
+
+    worker.start()
+    worker.join(10)
+    stuck = worker.is_alive()
+    if stuck:  # unblock the reader so the thread can end
+        os.close(os.open(path, os.O_WRONLY | os.O_NONBLOCK))
+        worker.join(10)
+
+    assert (stuck, got.get("conf", {}).get("sleep", {}).get("state")) == (False, "unknown")
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFOs")
+def test_fstat_refuses_a_swapped_in_fifo_that_holds_a_valid_record(tmp_path, clock,
+                                                                    monkeypatch):
+    """O_NOFOLLOW and O_NONBLOCK let a FIFO open; only fstat sees it is not a
+    regular file. Its writer has already queued a valid record."""
+    clock(DAY)
+    root = _honouring(tmp_path)
+    _plant(root, VALID)
+    path = _manual_path(root)
+    writers = []
+    real_open = os.open
+
+    def swap():
+        os.unlink(path)
+        os.mkfifo(path)
+        writers.append(path)
+    seen = _opens(monkeypatch, path, swap)
+    real_read = os.read
+
+    def feed(handle, size):
+        if writers:
+            writer = real_open(writers.pop(), os.O_WRONLY | os.O_NONBLOCK)
+            os.write(writer, json.dumps(VALID).encode())
+            os.close(writer)
+        return real_read(handle, size)
+    monkeypatch.setattr(os, "read", feed)
+
+    conf = _sleep_conf(root)
+
+    assert (conf["sleep"]["state"], seen) == ("unknown", [stat.S_IFIFO])
+
+
+def test_without_o_nofollow_lstat_still_refuses_a_symlink(tmp_path, clock, monkeypatch):
+    """Windows has no O_NOFOLLOW: simulated by removing it, a symlink at the
+    path is still refused by lstat before anything is opened."""
+    if not hasattr(os, "symlink"):
+        pytest.skip("no symlinks")
+    clock(DAY)
+    root = _honouring(tmp_path)
+    path = _manual_path(root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _symlink(path)
+    monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+    seen = _opens(monkeypatch, path)
+
+    assert (_sleep_conf(root)["sleep"]["state"], seen) == ("unknown", [])
+
+
+# --- #427 review round 2: DST (FIX-2, NIT 1) -----------------------------------
+
+@pytest.fixture(name="new_york")
+def _new_york(monkeypatch):
+    if not hasattr(time, "tzset") or not os.path.exists("/usr/share/zoneinfo/America/New_York"):
+        pytest.skip("needs time.tzset and the tz database")
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_sleep_on_a_fall_back_day_writes_a_record_it_trusts(tmp_path, clock, capsys, new_york):
+    """03:30 on 2026-10-31, window 23:00-03:00: the next 03:00 is 24.5 real
+    hours away across the fall-back; the record must still be trusted."""
+    when = datetime.datetime(2026, 10, 31, 3, 30)
+    clock(when)
+    root = _repo(tmp_path, sleep=dict(TIGHT_NIGHT, schedule="23:00-03:00"))
+
+    code, _out = _cmd(root, capsys, "sleep")
+
+    assert (code, _record(root)["until"], _sleep_conf(root)["sleep"]["state"]) == (
+        0, "2026-11-01T08:00:00+00:00", "asleep")
+
+
+def test_sleep_on_a_spring_forward_day_ends_at_the_next_valid_instant(tmp_path, clock, capsys,
+                                                                      new_york):
+    """Window 22:00-02:30 the night 02:00 becomes 03:00: 02:30 does not exist,
+    and the sleep ends at 03:30 EDT (07:30Z), never an hour early."""
+    clock(datetime.datetime(2026, 3, 7, 23, 0))
+    root = _repo(tmp_path, sleep=dict(TIGHT_NIGHT, schedule="22:00-02:30"))
+
+    code, _out = _cmd(root, capsys, "sleep")
+
+    assert (code, _record(root)["until"]) == (0, "2026-03-08T07:30:00+00:00")
+
+
+def test_sleep_refuses_a_record_its_own_reader_would_not_trust(tmp_path, clock, capsys,
+                                                               monkeypatch):
+    import test_crew_autopilot_policy as policy  # pylint: disable=import-outside-toplevel
+    clock(EVENING)
+    root = _repo(tmp_path, sleep=TIGHT_NIGHT)
+    monkeypatch.setattr(crew_sleep, "next_edge",
+                        lambda _minute, when: when + datetime.timedelta(hours=30))
+    before = policy._files(root)  # pylint: disable=protected-access
+
+    code, out = _cmd(root, capsys, "sleep")
+
+    assert (code, out.startswith("refused: the record sleep would write is not trusted"),
+            policy._files(root) == before) == (2, True, True)  # pylint: disable=protected-access
+
+
+def test_wake_writes_whole_seconds(tmp_path, clock, capsys):
+    clock(datetime.datetime(2026, 10, 4, 23, 0, 12, 345678))
+    root = _repo(tmp_path, sleep=_night())
+
+    _cmd(root, capsys, "wake")
+
+    assert [("." in _record(root)[key]) for key in ("at", "until")] == [False, False]
