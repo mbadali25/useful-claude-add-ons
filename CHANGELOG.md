@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.313: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
+### Changed — `crew` 1.0.257: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
 
 - **What migrate now does for a pre-0.20 config.** A `.crew/config.json` with no `schema` key, or
   an integer 1-6, is brought to the current schema by `crew_upgrade.upgrade_config` (the code
