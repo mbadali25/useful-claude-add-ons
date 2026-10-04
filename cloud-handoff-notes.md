@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:56 UTC
 
 ## Log (newest first)
 
+- 03:56: #379 merge-only review on a88e9b07: CLEAN (0/0/0; ASSIGN 34/34 + SCOPE sabotage red, 7 pwsh-only green w/o pwsh). Waits on CI.
 - 03:56: #361 r1 on e6c5fa6a: 0 BLOCK, 2 FIX (approval=null widening warning blank; --restore of corrupt stamp writes it saying nothing to change), 4 NIT. Fixer started (1.0.307 placeholder) incl. 2 safety NITs.
 - 03:52: OWNER: runner disk resolved. CI running on #339 c2a3ccb5 and #379 a88e9b07.
 - 03:52: #361 T-0050 built -> e6c5fa6a (1.0.301 placeholder; 120 new tests, 21 hand sabotages red, full suite 9316 passed; harness follow-ups: allowCliApproval global, sabotage_config_layers.py). Sonnet review started. Builder started: T-0038 #370 (1.0.306).
