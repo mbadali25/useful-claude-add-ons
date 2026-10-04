@@ -4,6 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.339: autopilot rejects an out-of-rounds BLOCK review and replans, capped (T-0074)
+
+- **What changed.** A new repo-only key, `autopilot.maxAutoReplans` (default
+  `0`, off: today's behaviour). At 1 or more, with autopilot armed and
+  `autopilot.approval` allowing the successor plan, a final review round that
+  is FINDINGS with a BLOCK and no round left is no longer a stop: `next`
+  answers the new phase `auto-replan`, whose command is
+  `crew_autopilot.py auto-reject --root . --ticket <id>`. It moves the ledger
+  REVIEWED -> NEEDS_REPLAN through `review_ledger.reject` under the fixed
+  name `autopilot (policy: autopilot.maxAutoReplans)` and prints every BLOCK
+  and FIX line; `next` then names `/crew:plan` without stopping, and the
+  existing approve phase and fresh rounds follow. At the cap (every successor
+  plan on the ledger counts; the cap is at most 5) `next` stops with phase
+  `auto-replan-cap`, naming the cap and each successor plan. The non-stop
+  `replan` re-checks the rejected round (current plan, FINDINGS, a BLOCK, no
+  round left, another family), so a hand-typed reject name is the owner's stop. `settings` prints
+  `maxAutoReplans=` on its first line.
+- **Never.** Autopilot accepts no round with a BLOCK at any setting. An
+  INCOMPLETE round, a same-family or unknown reviewer, counts and finding
+  lines that disagree, a round still left, an unreadable ledger or config, or
+  a value of the wrong type is today's stop. `status` reads neither route.
+- **Tests.** `test_crew_autopilot_replan.py` (new): the setting, a refusal
+  per policy condition that leaves the ledger bytes unchanged, the routes,
+  the full reject -> plan -> approve -> implement cycle, and the family rule
+  held against `review_ledger.auto_accept_refusal`. The write-path test now
+  names two writers, `approve` and `auto-reject`.
+- **Not here.** The check that a successor plan quotes every BLOCK and FIX
+  line (L-0670) and the committed sabotage entries plus the `review.md`
+  sentence (L-0671, a tooling-only PR).
+
 ### Fixed — `crew` 1.0.338: mint never reads INDEX.md mid-replace (L-1510)
 
 - **What broke.** On the Windows runner, `test_concurrent_mints_distinct` and

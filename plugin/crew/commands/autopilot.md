@@ -45,7 +45,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .
 
 `settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say `autopilot.mode: plan`
 in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; nothing here deploys),
-`approval`, `questions`, `sleep=`. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:`
+`maxAutoReplans` (0: off), `approval`, `questions`, `sleep=`. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:`
 and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is
 open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).
 `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
@@ -64,12 +64,12 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
 No output, a traceback or a non-zero exit is a stop.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
-  named and commit it. Then `LAST=<c>`, `N+=1`, again.
+  named and commit it. `auto-replan`: run its `auto-reject` line, report every line verbatim, send them as `review.md` step 5's notification. A `replan` that does not stop: `/crew:plan` writes a successor plan whose steps quote every BLOCK and FIX line of the rejected round verbatim, each with a neighbouring-case check, and differs from every plan approved before. Then `LAST=<c>`, `N+=1`, again.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
 - any other `stop=1` - print the phase, the reason and the command the human types (may be
   empty), then **stop** - never run it yourself.
 
-The policy (T-0010; `next`'s reason names it; `human` always stops) is the only writer here:
+The policy (T-0010; `next`'s reason names it; `human` always stops) is one writer here (the other is `auto-replan`'s `auto-reject`, T-0074, which writes only the ledger's REVIEWED -> NEEDS_REPLAN):
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>`
 prints `self-approved ...` (report it by name, go round again) or `refused:` (stop; the
 human types `/crew:approve <ticket>`). For a question, research it (crew:explorer, crew:researcher)
@@ -90,10 +90,10 @@ later round, never after an accepted review (that stales the receipt): `next` en
 
 ## 4. Stops
 
-A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
+A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's; a BLOCK is never accepted here, at any setting, and only `auto-replan` rejects one); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
-`max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
+`max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger). This procedure: `review-verdict`, `failed-done-check`,
 `failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
@@ -105,4 +105,4 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 
 When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with
 `resume: /crew:autopilot <ticket>` as its resume line, then stop. Report the ticket and its source, each phase run with its command, every
-`self-approved` and `taken:` line, where `next` stopped, why, and the command the human types next.
+`self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.

@@ -139,7 +139,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>137 keys</strong>: 76 settable in the machine-global file, 61 repo-only.</p>
+<p><strong>138 keys</strong>: 76 settable in the machine-global file, 62 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1644,6 +1644,14 @@ the plugin.</p>
 <td><code>human</code> | <code>self</code> | <code>risk</code></td>
 <td>1.0.42</td>
 <td>Who answers a ticket's open questions under autopilot; anything else reads as <code>human</code>.</td>
+</tr>
+<tr>
+<td><code>autopilot.maxAutoReplans</code></td>
+<td>repo</td>
+<td><code>0</code></td>
+<td>non-negative integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td>1.0.339</td>
+<td>Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning.</td>
 </tr>
 <tr>
 <td><code>autopilot.sleep.schedule</code></td>
