@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:59 UTC
+Last updated: 2026-10-04 13:04 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 13:04: #345 fixes pushed 0350da69 (17 secret kinds + must-allow; anchor echo suppressed; header at doc head only; abs/.. anchors refused; 42 hand mutations red; 1.0.381). Re-review started.
 - 12:59: L-0526 BUILT on #340 (harness-only): L-0526-build 9cf6d93d (1.0.371; EXIT_TRAIN=6; rerere block; sabotage_train S1-S15+R1-R3+P1-P5, suite PASS; S16-S19 + S20-S33 missing (machine-local drafts) -> TODO; graph rebuilt, graphifyy 0.9.75 installed in container). First review started.
 - 12:58: Started port/finish of #338 L-0582 (1.0.384; stops if spec still awaits owner approval). Only #324 (owner WIP) untouched.
 - 12:58: #362 review 2156b68b: 0/0/2 CLEAN, all security fixes survived (20 hostile base URLs, redirects, chatId mask, global-only keys). NIT: SKILL.md caveat that a repo env can still set the VALUE of the global urlEnv/token variable (inherent) - carry at landing.
