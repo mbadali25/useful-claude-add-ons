@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:13 UTC
+Last updated: 2026-10-04 12:14 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:14: #342 land-prep onto e9364a70 done: 904ca36f (1.0.364; CONFIG §10 generated heading kept, hand paragraph dropped; counts 74/132/58; troubleshooting rebuilt; test_crew_config 3399). Merge-only review started.
 - 12:13: #341 FIX1-2 pushed 7dddc79d (archived ticket -> closed; resume names archive; 2 tests red-first; FIX3 harness follow-up in TODO.md; 1.0.363). Re-review started.
 - 12:10: Land-prep onto e9364a70 started: #342 (1.0.364; CONFIG §10 now generated - reconcile), #357 (1.0.365; guide may list focus as coming).
 - 12:10: #368 merge review 29889e98: 0/0/1 CLEAN (on e9364a70).
