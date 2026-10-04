@@ -78,6 +78,8 @@ import subprocess
 import sys
 import unicodedata
 
+import crew_common
+
 VALUE = re.compile(r"[A-Za-z0-9._/@:+-]+")
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 WORKFLOW = re.compile(r"[A-Za-z0-9._][A-Za-z0-9._-]*\.ya?ml")
@@ -366,7 +368,8 @@ def _environment(root, env):
 
 def _head(root):
     try:
-        proc = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "-q", "HEAD"],
+        proc = subprocess.run([crew_common.require_tool("git"), "-C", root, "rev-parse",
+                               "--verify", "-q", "HEAD"],
                               capture_output=True, text=True, check=False,
                               stdin=subprocess.DEVNULL, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
