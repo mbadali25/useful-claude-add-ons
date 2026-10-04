@@ -2638,7 +2638,7 @@ driven is a fact about that checkout.
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
-| `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell: no override applies, with a warning. `null` is off. |
+| `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies. `null` is off. |
 | `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` keeps the day value too, with a warning; it never reads as `human` or as permission. |
 | `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
 
@@ -2660,22 +2660,32 @@ asleep from 22:00 to 06:59). Inside it, a non-null `autopilot.sleep.approval`
 or `autopilot.sleep.questions` replaces the day value, so an unattended run
 keeps going where the day setting would stop. The window is re-resolved from
 the clock on every policy read, never cached, so a run that crosses 07:00 is
-back on the day values at its next decision. Anything that cannot be told — a
-malformed schedule, `autopilot.sleep` that is not an object, a clock or
-resolver that fails — leaves the day values in force, with a warning naming
-the key; a key under `autopilot.sleep` this version does not have
+back on the day values at its next decision. A window can be as long as
+23h59 (`00:00-23:59`; only start equal to end is refused), and a night
+override looser than the day value applies for the whole of it. Anything that
+cannot be told — a malformed schedule, `autopilot.sleep` that is not an
+object, a clock or resolver that fails — is `unknown`, with a warning naming
+the key: per key, the **stricter** of the day value and a valid night
+override applies (`human` over `risk` over `self`), so could-not-tell never
+loosens a policy and never drops a tightening the owner set (review round 1,
+owner decision taken on the recommendation). A non-object block has no
+override to read, so its day values stand. A key under `autopilot.sleep` this version does not have
 (`deploy`, `reviewPolicy`, held pings) is named "not available in this crew
 version" and has no effect. An override can lower authority as well as raise
 it. Everything else still binds asleep: `scope.allowCliApproval` exactly
 `true`, autopilot armed, a readable ledger, every stop. While asleep the
-policies' reasons, and `approve`'s line, end with `(asleep <window>; day value
-<day>)`. **A receipt written asleep stops standing when the window ends**
+reason of a policy a night override set, and `approve`'s line, end with
+`(asleep <window>; day value <day>)`; `approve` makes one decision and its
+receipt, its line and `crew_ticket.approve`'s re-check all use it, so a
+window edge between the reads cannot split them. **A receipt written asleep stops standing when the window ends**
 wherever the day value would not have approved it: `crew_ticket.accepted`
 re-asks the policy, so in the morning the ticket reads unaccepted until the
 owner types `/crew:approve <id>`; the work done overnight stays. In the same
 way a `taken:` line written asleep makes `questions-check` say `valid=0` by
-day when the day policy stops. There is no environment variable or flag that
-moves the clock. Not in this version: manual `sleep` / `wake`, a sleep log, a
+day when the day policy stops. The clock is local time as each process sees
+it, so it follows that process's `TZ`: `approve` and `questions-check` run in
+the model's shell environment, and a different `TZ` there moves the window.
+crew adds no variable or flag of its own that moves the clock. Not in this version: manual `sleep` / `wake`, a sleep log, a
 `deploy` override (sleep leaves `deploy_allowed` unchanged), and a
 machine-global `autopilot.sleep`.
 

@@ -419,8 +419,8 @@ KEY_META = {
                                 crew_autopilot.POLICIES, "1.0.42"),
     "autopilot.sleep.schedule": _row("A nightly window, `HH:MM-HH:MM` in machine local time "
                                      "(may cross midnight); inside it the two sleep "
-                                     "overrides apply. Anything else reads as could not "
-                                     "tell, and the day values apply.", "branch",
+                                     "overrides apply. Anything else is could not tell: "
+                                     "only a stricter override applies.", "branch",
                                      since="1.0.394", source=_S + "crew_sleep.py",
                                      type_="HH:MM-HH:MM or null"),
     "autopilot.sleep.approval": _row("`autopilot.approval` inside the sleep window; null "

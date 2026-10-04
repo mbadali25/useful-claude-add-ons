@@ -17,11 +17,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   end of the window is back on the day values at its next decision.
   `crew_autopilot.py settings` prints a third line,
   `sleep=<state> schedule=<window|none> approval=<override|-> questions=<override|->`,
-  and `--json` adds `day` and `sleep`. While asleep the policies' reasons and
-  `approve`'s line end with `(asleep <window>; day value <day>)`.
+  and `--json` adds `day` and `sleep`. While asleep the reason of a policy a
+  night override set, and `approve`'s line, end with
+  `(asleep <window>; day value <day>)`; `approve`'s receipt, line and
+  `crew_ticket.approve` re-check use one decision.
 - **Fail closed.** A schedule outside the grammar, an `autopilot.sleep` that is
-  not an object, a clock or resolver that fails: the day values, with a
-  warning naming the key. An override that is not a policy keeps that key's day
+  not an object, a clock or resolver that fails: `unknown`, with a warning
+  naming the key, and per key the stricter of the day value and a valid night
+  override (`human` over `risk` over `self`) — never a looser value, and never
+  a tightening dropped. An override that is not a policy keeps that key's day
   value. A key this version does not have (`deploy`, `reviewPolicy`, held
   pings) is named "not available in this crew version" and has no effect.
   There is no environment variable or flag that moves the clock.
@@ -34,7 +38,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Manual `sleep` / `wake`, the sleep log and morning summary, the
   `deploy` override, and the committed sabotage mutations for this slice are
   L-0652, L-0653, L-0654 and L-0651.
-- **Tests.** `plugin/crew/tests/test_crew_autopilot_sleep.py` (81 cases);
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_sleep.py` (97 cases);
   `test_crew_config.py` (135 declared leaves), `test_config_menu.py`,
   `test_crew_keys.py` and `test_crew_autopilot.py` cover the config surface.
   `.crew/verify.json`'s policy rule maps `crew_sleep.py` and the new file.
