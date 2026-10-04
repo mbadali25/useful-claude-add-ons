@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """The fan-in for crew's sharded Windows CI: pass only when nothing was lost.
 
-    python3 scripts/check-windows-shards.py --shards 6 --artifacts <dir> \
-        --decide-result <result> --run <true|false> --event <event_name> \
+    python3 scripts/check-windows-shards.py --shards 6 --slow-shards 3 \
+        --artifacts <dir> --decide-result <result> --run <true|false> --event <event_name> \
         --job default=<result> --job slow=<result> --job wallclock=<result>
 
 `.github/workflows/pytest-crew.yml` splits the Windows half of
 `crew-shell-matrix` into parallel jobs: the default set in `--shards` groups
-(pytest-split), the `slow` set, and the `wallclock` set. Branch protection
+and the `slow` set in `--slow-shards` groups (both by pytest-split), and the
+unsplit `wallclock` set. Branch protection
 requires ONE check, `crew-shell-matrix (windows-latest)`, and that check is the
 job that runs this script. So this script is the only thing standing between a
 lost test and a green required check, and it fails closed: anything it cannot
@@ -19,18 +20,25 @@ It passes when either
   that changes nothing under plugin/crew/ or the workflow), and every Windows
   job was skipped; or
 - the decide job succeeded and said `run=true`, every Windows job's result is
-  `success`, `crew-windows-slow/` and `crew-windows-wallclock/` each hold a
-  `collected.txt` and a `junit.xml` naming exactly what was collected, and the
-  default shards together ran exactly the default set:
+  `success`, `crew-windows-wallclock/` holds a `collected.txt` and a
+  `junit.xml` naming exactly what was collected, and each split set's shards
+  together ran exactly that set -- the default set across
+  `crew-windows-default-<k>/` (k = 1..shards) and the slow set across
+  `crew-windows-slow-<k>/` (k = 1..slow-shards), each checked the same way:
 
-  * each `<artifacts>/crew-windows-default-<k>/` (k = 1..shards) holds
-    `collected.txt` (that shard's `pytest --collect-only -q` of the WHOLE
-    default set, before splitting) and `junit.xml` (what the shard ran);
+  * each shard's artifact directory holds `collected.txt` (that shard's
+    `pytest --collect-only -q` of the WHOLE set, before splitting) and
+    `junit.xml` (what the shard ran); a missing shard directory, or one
+    numbered past the shard count, fails, naming it;
   * every shard collected the same node ids, in the same order (pytest-split
     assumes it), and the count matches pytest's own "N tests collected" line;
   * every collected test appears in exactly one shard's JUnit, exactly once
     (a testcase recorded twice is a failure), and no shard's
     JUnit names a test the collection does not have.
+
+  The unsplit `crew-windows-slow/` artifact of the layout before L-1507 is
+  unexpected: a stale slow job uploading it fails the gate rather than being
+  ignored beside the shards.
 
 JUnit records (classname, name), not node ids. A node id is mapped the way
 pytest's junitxml does it (`_pytest.junitxml.mangle_test_address`): the file
@@ -51,7 +59,6 @@ import sys
 import xml.etree.ElementTree as ET
 
 SET_PREFIX = "crew-windows-"
-ARTIFACT_PREFIX = SET_PREFIX + "default-"
 COLLECTED = "collected.txt"
 JUNIT = "junit.xml"
 _COUNT_RE = re.compile(r"^(?:(\d+)/)?(\d+) tests? collected")
@@ -60,7 +67,11 @@ _NO_TESTS_RE = re.compile(r"^no tests collected")
 # failure: a job dropped from the fan-in's `needs` must not pass unseen.
 REQUIRED_JOBS = ("default", "slow", "wallclock")
 # The unsplit sets, each one artifact `crew-windows-<name>/`.
-WHOLE_SETS = ("slow", "wallclock")
+WHOLE_SETS = ("wallclock",)
+# The split sets, each in shards `crew-windows-<name>-<k>/`: set name -> the
+# label its problems are reported under. An unsplit `crew-windows-<name>/`
+# beside a split set's shards is a stale layout and fails.
+SPLIT_SETS = {"default": "shard", "slow": "slow shard"}
 
 
 def escape_annotation(text: str) -> str:
@@ -136,30 +147,40 @@ def read_junit(path: str) -> tuple:
     return set(counts), problems[:20]
 
 
-def check_partition(artifacts: str, shards: int) -> list:
+def check_partition(artifacts: str, shards: int, set_name: str = "default") -> list:
+    """The shards `crew-windows-<set_name>-<k>/` (k = 1..shards) together ran
+    exactly the set each of them collected, every test exactly once."""
+    label = SPLIT_SETS[set_name]
+    prefix = f"{SET_PREFIX}{set_name}-"
     problems = []
     collections = {}
     ran = {}
     for k in range(1, shards + 1):
-        shard_dir = os.path.join(artifacts, f"{ARTIFACT_PREFIX}{k}")
+        shard_dir = os.path.join(artifacts, f"{prefix}{k}")
         if not os.path.isdir(shard_dir):
-            problems.append(f"shard {k}: no artifact directory {shard_dir}")
+            problems.append(f"{label} {k}: no artifact directory {shard_dir}")
             continue
         ids, found = read_collected(os.path.join(shard_dir, COLLECTED))
-        problems += [f"shard {k}: {p}" for p in found]
+        problems += [f"{label} {k}: {p}" for p in found]
         if ids:
             collections[k] = ids
         keys, found = read_junit(os.path.join(shard_dir, JUNIT))
-        problems += [f"shard {k}: {p}" for p in found]
+        problems += [f"{label} {k}: {p}" for p in found]
         if keys or not found:
             ran[k] = keys
+    present = os.listdir(artifacts) if os.path.isdir(artifacts) else []
     extra_dirs = sorted(
-        name for name in (os.listdir(artifacts) if os.path.isdir(artifacts) else [])
-        if name.startswith(ARTIFACT_PREFIX)
-        and name[len(ARTIFACT_PREFIX):] not in {str(k) for k in range(1, shards + 1)})
-    problems += [f"unexpected shard artifact {name} (expected {shards} shards)" for name in extra_dirs]
+        name for name in present
+        if name.startswith(prefix)
+        and name[len(prefix):] not in {str(k) for k in range(1, shards + 1)})
+    problems += [f"unexpected {label} artifact {name} (expected {shards} shards)"
+                 for name in extra_dirs]
+    if f"{SET_PREFIX}{set_name}" in present:
+        problems.append(f"unexpected artifact {SET_PREFIX}{set_name}: the {set_name} set is "
+                        f"split into {shards} shards ({prefix}1..{shards}), so an unsplit "
+                        "artifact is a stale layout")
     if not collections:
-        return problems + ["no shard produced a usable collection; nothing to check against"]
+        return problems + [f"no {label} produced a usable collection; nothing to check against"]
     reference_shard = min(collections)
     reference = collections[reference_shard]
     for k, ids in sorted(collections.items()):
@@ -167,7 +188,7 @@ def check_partition(artifacts: str, shards: int) -> list:
             only_here = sorted(set(ids) - set(reference))[:5]
             only_there = sorted(set(reference) - set(ids))[:5]
             problems.append(
-                f"shard {k} collected a different default set than shard {reference_shard} "
+                f"{label} {k} collected a different {set_name} set than {label} {reference_shard} "
                 f"({len(ids)} vs {len(reference)}; only in {k}: {only_here}; "
                 f"only in {reference_shard}: {only_there})")
     expected = {}
@@ -179,27 +200,28 @@ def check_partition(artifacts: str, shards: int) -> list:
     seen = {}
     for k, keys in sorted(ran.items()):
         for key in sorted(keys - expected.keys())[:20]:
-            problems.append(f"shard {k} ran {key[0]}::{key[1]}, which the default set does not collect")
+            problems.append(f"{label} {k} ran {key[0]}::{key[1]}, "
+                            f"which the {set_name} set does not collect")
         for key in keys & expected.keys():
             if key in seen:
-                problems.append(f"{expected[key]} ran in shard {seen[key]} and shard {k}")
+                problems.append(f"{expected[key]} ran in {label} {seen[key]} and {label} {k}")
             else:
                 seen[key] = k
     if len(ran) == shards:
         missing = [nodeid for key, nodeid in expected.items() if key not in seen]
         for nodeid in missing[:20]:
-            problems.append(f"{nodeid} was collected but ran in no shard")
+            problems.append(f"{nodeid} was collected but ran in no {label}")
         if len(missing) > 20:
-            problems.append(f"... and {len(missing) - 20} more tests ran in no shard")
+            problems.append(f"... and {len(missing) - 20} more tests ran in no {label}")
     if not problems:
-        per_shard = ", ".join(f"shard {k}: {len(ran[k])}" for k in sorted(ran))
-        print(f"default set: {len(reference)} tests collected by each of {shards} shards; "
+        per_shard = ", ".join(f"{label} {k}: {len(ran[k])}" for k in sorted(ran))
+        print(f"{set_name} set: {len(reference)} tests collected by each of {shards} shards; "
               f"{per_shard}; each ran exactly once")
     return problems
 
 
 def check_whole_set(artifacts: str, name: str) -> list:
-    """An unsplit set (slow, wallclock): its JUnit names exactly what it collected."""
+    """An unsplit set (wallclock): its JUnit names exactly what it collected."""
     set_dir = os.path.join(artifacts, f"{SET_PREFIX}{name}")
     if not os.path.isdir(set_dir):
         return [f"{name}: no artifact directory {set_dir}"]
@@ -234,7 +256,8 @@ def _job(text: str) -> tuple:
 
 def parse_args(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--shards", type=int, required=True)
+    ap.add_argument("--shards", type=int, required=True, help="default-set shard count")
+    ap.add_argument("--slow-shards", type=int, required=True, help="slow-set shard count")
     ap.add_argument("--artifacts", required=True)
     ap.add_argument("--decide-result", required=True)
     ap.add_argument("--run", required=True)
@@ -244,6 +267,8 @@ def parse_args(argv):
     args = ap.parse_args(argv)
     if args.shards < 1:
         ap.error("--shards must be >= 1")
+    if args.slow_shards < 1:
+        ap.error("--slow-shards must be >= 1")
     return args
 
 
@@ -277,7 +302,8 @@ def main(argv=None) -> int:
         for name, result in args.job:
             if result != "success":
                 problems.append(f"Windows job {name}: result {result!r}")
-        problems += check_partition(args.artifacts, args.shards)
+        problems += check_partition(args.artifacts, args.shards, "default")
+        problems += check_partition(args.artifacts, args.slow_shards, "slow")
         for name in WHOLE_SETS:
             problems += check_whole_set(args.artifacts, name)
     for problem in problems:

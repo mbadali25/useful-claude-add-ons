@@ -29,8 +29,8 @@ IDS = [
     "plugin/crew/tests/test_b.py::TestThing::test_y",
     "plugin/crew/tests/sub/test_c.py::test_z[x::y]",
 ]
-SLOW_IDS = ["plugin/crew/tests/test_a.py::test_matrix[sh-case1]",
-            "plugin/crew/tests/test_a.py::test_matrix[ps1-case1]"]
+SLOW_IDS = [f"plugin/crew/tests/test_a.py::test_matrix[{shell}-case{n}]"
+            for n in (1, 2, 3) for shell in ("sh", "ps1")]
 WALL_IDS = ["plugin/crew/tests/test_w.py::test_bound"]
 # A checker that hangs is a failed case, not a hung CI job.
 CHECKER_TIMEOUT = 60
@@ -65,21 +65,33 @@ def write(path, text):
         fh.write(text)
 
 
-def build(root, groups, collected=None, shards=3, whole=True):
-    """groups: one list of node ids per shard (what its JUnit names). `whole`
-    also writes complete slow and wallclock artifacts."""
-    if whole:
-        for name, ids in (("slow", SLOW_IDS), ("wallclock", WALL_IDS)):
-            d = os.path.join(root, f"crew-windows-{name}")
-            write(os.path.join(d, "collected.txt"), collected_text(ids, deselected=9))
-            write(os.path.join(d, "junit.xml"), junit_text(ids))
+def build_shards(root, set_name, groups, collected):
+    """groups: one list of node ids per shard of `set_name` (what its JUnit
+    names), None for a shard with no artifact. collected: one transcript per
+    shard."""
     for k, ran in enumerate(groups, start=1):
         if ran is None:
             continue
-        d = os.path.join(root, f"crew-windows-default-{k}")
-        write(os.path.join(d, "collected.txt"),
-              collected[k - 1] if collected else collected_text(IDS, deselected=3))
+        d = os.path.join(root, f"crew-windows-{set_name}-{k}")
+        write(os.path.join(d, "collected.txt"), collected[k - 1])
         write(os.path.join(d, "junit.xml"), junit_text(ran))
+
+
+def build(root, groups, collected=None, shards=3, whole=True, slow_groups=None,
+          slow_collected=None):
+    """groups: one list of node ids per default shard. `whole` also writes a
+    complete wallclock artifact and the slow shards: `slow_groups` (default a
+    complete 3-way partition) with `slow_collected` transcripts (default the
+    whole slow set in every shard)."""
+    if whole:
+        d = os.path.join(root, "crew-windows-wallclock")
+        write(os.path.join(d, "collected.txt"), collected_text(WALL_IDS, deselected=9))
+        write(os.path.join(d, "junit.xml"), junit_text(WALL_IDS))
+        slow_groups = good_slow_groups() if slow_groups is None else slow_groups
+        build_shards(root, "slow", slow_groups,
+                     slow_collected or [collected_text(SLOW_IDS, deselected=9)] * len(slow_groups))
+    build_shards(root, "default", groups,
+                 collected or [collected_text(IDS, deselected=3)] * len(groups))
     return shards
 
 
@@ -87,9 +99,14 @@ def good_groups():
     return [IDS[0::3], IDS[1::3], IDS[2::3]]
 
 
+def good_slow_groups():
+    return [SLOW_IDS[0::3], SLOW_IDS[1::3], SLOW_IDS[2::3]]
+
+
 def run(root, extra=None, run_flag="true", decide="success", jobs=None, shards=3,
-        event="pull_request"):
-    argv = [sys.executable, CHECKER, "--shards", str(shards), "--artifacts", root,
+        event="pull_request", slow_shards=3):
+    argv = [sys.executable, CHECKER, "--shards", str(shards), "--slow-shards", str(slow_shards),
+            "--artifacts", root,
             "--decide-result", decide, "--run", run_flag, "--event", event] + (JOBS_OK if jobs is None else jobs)
     try:
         proc = subprocess.run(argv + (extra or []), capture_output=True, text=True, check=False,
@@ -114,16 +131,80 @@ def case_skip_decision_on_a_push_fails(root):
     return run(root, run_flag="false", jobs=jobs, event="push"), (1, "only a pull_request may skip")
 
 
-def case_slow_artifact_missing_fails(root):
+def case_slow_complete_partition_passes(root):
     build(root, good_groups())
-    shutil.rmtree(os.path.join(root, "crew-windows-slow"))
-    return run(root), (1, "slow: no artifact directory")
+    return run(root), (0, "slow set: 6 tests collected by each of 3 shards; slow shard 1: 2, "
+                          "slow shard 2: 2, slow shard 3: 2; each ran exactly once")
+
+
+def case_slow_shard_missing_fails(root):
+    build(root, good_groups())
+    shutil.rmtree(os.path.join(root, "crew-windows-slow-2"))
+    return run(root), (1, "slow shard 2: no artifact directory")
+
+
+def case_slow_shard_extra_fails(root):
+    build(root, good_groups(), slow_groups=good_slow_groups() + [[]])
+    return run(root), (1, "unexpected slow shard artifact crew-windows-slow-4 (expected 3 shards)")
 
 
 def case_slow_ran_nothing_fails(root):
+    build(root, good_groups(), slow_groups=[[], [], []])
+    return run(root), (1, f"{SLOW_IDS[0]} was collected but ran in no slow shard")
+
+
+def case_slow_test_in_no_shard_fails(root):
+    groups = good_slow_groups()
+    lost = groups[2].pop()
+    build(root, good_groups(), slow_groups=groups)
+    return run(root), (1, f"{lost} was collected but ran in no slow shard")
+
+
+def case_slow_test_in_two_shards_fails(root):
+    groups = good_slow_groups()
+    groups[0].append(groups[1][0])
+    build(root, good_groups(), slow_groups=groups)
+    return run(root), (1, f"{groups[1][0]} ran in slow shard 1 and slow shard 2")
+
+
+def case_slow_shards_collected_differently_fails(root):
+    same = collected_text(SLOW_IDS, deselected=9)
+    other = collected_text(SLOW_IDS[:-1], deselected=10)
+    build(root, good_groups(), slow_collected=[same, same, other])
+    return run(root), (1, "slow shard 3 collected a different slow set than slow shard 1")
+
+
+def case_slow_shard_ran_an_uncollected_test_fails(root):
+    groups = good_slow_groups()
+    groups[1].append("plugin/crew/tests/test_a.py::test_matrix[sh-case9]")
+    build(root, good_groups(), slow_groups=groups)
+    return run(root), (1, "which the slow set does not collect")
+
+
+def case_old_single_slow_layout_fails(root):
+    # The layout before L-1507: one unsplit crew-windows-slow/ and no shards.
+    build(root, good_groups(), slow_groups=[])
+    d = os.path.join(root, "crew-windows-slow")
+    write(os.path.join(d, "collected.txt"), collected_text(SLOW_IDS, deselected=9))
+    write(os.path.join(d, "junit.xml"), junit_text(SLOW_IDS))
+    return run(root), (1, "unexpected artifact crew-windows-slow: the slow set is split")
+
+
+def case_old_slow_artifact_beside_complete_shards_fails(root):
     build(root, good_groups())
-    write(os.path.join(root, "crew-windows-slow", "junit.xml"), junit_text([]))
-    return run(root), (1, f"slow: {SLOW_IDS[0]} was collected but did not run")
+    d = os.path.join(root, "crew-windows-slow")
+    write(os.path.join(d, "collected.txt"), collected_text(SLOW_IDS, deselected=9))
+    write(os.path.join(d, "junit.xml"), junit_text(SLOW_IDS))
+    return run(root), (1, "unexpected artifact crew-windows-slow: the slow set is split")
+
+
+def case_slow_shards_flag_missing_is_usage_error(root):
+    build(root, good_groups())
+    argv = [sys.executable, CHECKER, "--shards", "3", "--artifacts", root,
+            "--decide-result", "success", "--run", "true", "--event", "push"] + JOBS_OK
+    proc = subprocess.run(argv, capture_output=True, text=True, check=False,
+                          stdin=subprocess.DEVNULL, timeout=CHECKER_TIMEOUT)
+    return (proc.returncode, proc.stdout + proc.stderr), (2, "--slow-shards")
 
 
 def case_wallclock_collected_nothing_fails(root):
@@ -239,10 +320,10 @@ def case_test_twice_in_one_shard_fails(root):
 
 
 def case_slow_test_ran_twice_fails(root):
-    build(root, good_groups())
-    write(os.path.join(root, "crew-windows-slow", "junit.xml"),
-          junit_text(SLOW_IDS + SLOW_IDS[:1]))
-    return run(root), (1, "slow: plugin.crew.tests.test_a::test_matrix[sh-case1] ran 2 times")
+    groups = good_slow_groups()
+    groups[0].append(groups[0][0])
+    build(root, good_groups(), slow_groups=groups)
+    return run(root), (1, "slow shard 1: plugin.crew.tests.test_a::test_matrix[sh-case1] ran 2 times")
 
 
 def case_test_in_two_shards_fails(root):
