@@ -115,11 +115,11 @@ step 1, and carry `$BASE` forward — step 2 reuses it rather than recomputing i
 for the same reason `$SCRATCH` is carried:
 
 ```bash
-# The ticket's START, recorded by /crew:implement (`scope_base.py --record`):
-# the same range /crew:implement's scope evidence covers, so the bundle -- and the
-# receipt bound to its hash -- is this ticket's change, not the whole branch. With no
-# usable record scope_base.py falls back to the merge-base with tickets.baseBranch (default
-# origin/HEAD) and says "(fallback)"; repeat it in the verdict. Exit 3 = could not tell: stop.
+# The ticket's START (`scope_base.py --record`): the bundle and its receipt diff from it but
+# leave out paths byte-identical to merged main (T-0100: manifest `merged_main`, stderr
+# `merged-main=`; could-not-tell leaves nothing out). With no usable record scope_base.py falls
+# back to the merge-base with tickets.baseBranch (default origin/HEAD) and says "(fallback)";
+# repeat it in the verdict. Exit 3 = could not tell: stop.
 BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base "$TICKET"); SB_RC=$?
 if [ "$SB_RC" -eq 3 ]; then echo "review base: could not tell - stopping (see scope-base line above)" >&2; exit 3; fi
 if [ -z "$BASE" ]; then
@@ -325,16 +325,16 @@ case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hoo
 # about a different range than the diff the reviewer actually read.
 #
 # review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and untracked
-# changes, never `.work/` or generated `graphify-out/` (the manifest's `excluded`), with
-# renames, modes, binaries and submodules in the manifest, split into parts (never
-# truncated) and hashed. `git diff "$BASE"...HEAD` alone gave a 0-byte patch on a dirty
-# tree (found by Codex, `docs/review/03-codex-review.md`). The real index is never written.
+# changes, never `.work/`, generated `graphify-out/` (`excluded`) or a path identical to
+# merged main (`merged_main`), with renames, modes, binaries and submodules in the
+# manifest, split into parts (never truncated) and hashed. `git diff "$BASE"...HEAD` gave
+# 0 bytes on a dirty tree (Codex, `docs/review/03-codex-review.md`). Real index unwritten.
 MANIFEST="$SCRATCH/manifest.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
   --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"
 PATCH_STATUS=$?
 if [ "$PATCH_STATUS" -eq 2 ]; then
-  echo "nothing to review: HEAD matches $BASE and the tree is clean"
+  echo "nothing to review since $BASE: review-patch's line above says why"
   exit 0
 elif [ "$PATCH_STATUS" -ne 0 ]; then
   echo "review-patch failed (exit $PATCH_STATUS) -- see stderr above. This is a defect in building the review input, not an empty diff to wave through."
