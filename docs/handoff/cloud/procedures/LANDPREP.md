@@ -35,3 +35,13 @@ Any REAL content conflict in a land-prep merge gets a review agent (`git show --
 
 ## Version rule during cloud sessions - WITHDRAWN 2026-10-04 23:1x (check-marketplace requires a bump per PR; owner kept per-PR bumps). Historical text below
 ONE crew version bump per BATCH, not per PR. Land the batch's PRs without their own bump (each PR's placeholder version commit is reverted at land-prep, no new one), then the LAST PR of the batch carries the single version-only commit (main + 1, covering every PR in the batch; its CHANGELOG heading lists all of them). PRs in a batch no longer stack on each other for version numbers, so they can be land-prepped and CI'd in parallel; merge order still matters only for real content dependencies. Any other plugin a batch touches (obsidian-vault, localgpu, ...) also gets one bump in that last PR. check-marketplace's version-drift check runs per PR: if it refuses an intermediate PR for content-without-bump, put the bump on that PR instead and tell the owner; never work around the checker.
+
+## Batch PR (owner decision 2026-10-04 23:1x): ONE version bump per batch
+A feature batch of 5-6 review-clean, Windows-green PRs lands as ONE batch PR:
+1. Branch `batch-<n>-build` from origin/main.
+2. For each PR in order: revert that PR's placeholder version commit ON THE BATCH BRANCH is not possible, so instead `git merge --no-edit origin/<pr-branch>` and resolve; then in a follow-up commit restore every version file (plugin.json, marketplace.json, PLUGINS.md claim, CHANGELOG headings, arrival text) to main's value. Each merge commit subject: `<TICKET>: merge #<n> into batch <n>`.
+3. One version-only commit LAST: crew = main+1 (and +1 for every other plugin the batch touches). CHANGELOG: one heading for the version listing every ticket in the batch, each PR's entry beneath it.
+4. Re-measure BUDGETS, regenerate rules, rebuild changed guides (before the version commit).
+5. Open the batch PR: title `Batch <n>: <TICKET>, <TICKET>, ...`, body `Tickets: ...` naming every ticket and `Lands: #a, #b, ...`. Its CI is the gate (all 6+3 Windows shards and the gate job). A merge-resolution review covers any real content conflict.
+6. Merge the batch PR (merge commit). GitHub marks each original PR merged because its head is now in main; if one is not, close it with a comment "landed in batch PR #N".
+Harness PRs still land ALONE, never in a batch PR.
