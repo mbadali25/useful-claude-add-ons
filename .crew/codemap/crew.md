@@ -1360,7 +1360,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `EXIT_USAGE` (`review_run.py:724`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:714`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:272`, defined at `crew_standards.py:664`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:306`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
@@ -1606,6 +1606,53 @@ then the train is advisory.
   key or anything but a list of non-blank strings as
   `excluded: not recorded by this manifest (unknown)` (T-0099)
   (`plugin/crew/hooks/scripts/review_prompt.py:111`).
+- DERIVED (T-0100, crew 1.0.202): `merged_main.resolve`
+  (`plugin/crew/hooks/scripts/merged_main.py:67`) names the latest merged
+  integration commit, `git merge-base HEAD <ref>` with `<ref>` from T-0061's
+  `scope_base.base_branch` (`tickets.baseBranch`, else origin/HEAD's target,
+  origin/main, main); it never applies when HEAD's branch is `<ref>` or when
+  that commit is an ancestor of the ticket start, and returns `commit None`
+  with a reason starting `could not tell` for no ref, a configured base branch
+  naming no commit (T-0061's own reason), a detached HEAD or a git error.
+  `merged_main.keep` (`plugin/crew/hooks/scripts/merged_main.py:106`) is the one drop rule: a
+  path stays when it differs from the start AND from the merged commit.
+  `review_patch._ticket_base_tree`
+  (`plugin/crew/hooks/scripts/review_patch.py:271`) builds the synthetic base
+  tree (the start's tree with each dropped path set to its working-state
+  entry, and each kept path main changed since the fork -- the merge-base of
+  the start and the merged commit, `plugin/crew/hooks/scripts/review_patch.py:296`
+  -- set to the merged commit's entry, so main's lines are context; one second
+  temporary index) that `compute` diffs from
+  (`plugin/crew/hooks/scripts/review_patch.py:424`); the manifest carries
+  `merged_main` (with `dropped` and `diffed_from_merged`) and `bundle_base_tree`
+  (`plugin/crew/hooks/scripts/review_patch.py:462`). `merged_main.fork` is
+  that merge-base; when git gives no answer it is null with a `fork_reason`
+  (`plugin/crew/hooks/scripts/review_patch.py:302`), every path main also
+  changed stays diffed from the start, and `_merged_field`
+  (`plugin/crew/hooks/scripts/review_patch.py:558`) prints
+  `diffed-from-merged=could-not-tell`. The completion audit
+  applies the same rule in `changed_paths(top, base, merged)`
+  (`plugin/crew/hooks/scripts/completion_audit.py:173`), where `_as_merged`
+  (`plugin/crew/hooks/scripts/completion_audit.py:194`) keeps an untracked
+  path whose disk bytes and mode are the merged commit's entry out of the
+  since-merged set, as the bundle's `add -A` drops it; the mode is the one
+  `git add` records, `_disk_mode`
+  (`plugin/crew/hooks/scripts/completion_audit.py:231`): the execute bit only
+  when `core.fileMode`, read once by `_file_mode`
+  (`plugin/crew/hooks/scripts/completion_audit.py:224`), is not false; called from `audit`
+  (`plugin/crew/hooks/scripts/completion_audit.py:279`), which prints its
+  `merged main` line from `_merged_lines`
+  (`plugin/crew/hooks/scripts/completion_audit.py:316`) on a failure, on an
+  applying pass, and on a could-not-tell pass
+  (`plugin/crew/hooks/scripts/completion_audit.py:287`); `changed_paths`
+  without `merged` is unchanged for `crew_refresh_check`. The prompt's
+  `merged main:` line is `_merged_main_line`
+  (`plugin/crew/hooks/scripts/review_prompt.py:123`), which appends
+  `_fork_clause` (`plugin/crew/hooks/scripts/review_prompt.py:143`) on a null
+  fork, and the receipt check's note `_merged_note`
+  (`plugin/crew/hooks/scripts/review_ledger.py:834`), which adds
+  `; fork: could not tell` there (`plugin/crew/hooks/scripts/review_ledger.py:848`).
+  `merged_main.py` is in `HARNESS` (`scripts/check-tooling-pr.py`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:149`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
@@ -1613,8 +1660,8 @@ then the train is advisory.
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:199`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:108`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:98`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:258`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:99`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:292`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:540`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:542`). `parse` and
@@ -1661,7 +1708,7 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/review_patch.py:126`, `:123`, `:124`) and
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:178`) and `crew_status._verify_line`
+  (`plugin/crew/hooks/scripts/review_prompt.py:212`) and `crew_status._verify_line`
   (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one

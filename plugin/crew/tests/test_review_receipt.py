@@ -16,6 +16,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import review_ledger as rl
+import merged_main_fixtures
 import review_patch
 from review_fixtures import git, init_repo
 
@@ -32,8 +33,8 @@ def _repo(tmp_path):
     return root
 
 
-def _review(repo, verdict):
-    base = git(repo, "rev-parse", "HEAD")
+def _review(repo, verdict, base=None):
+    base = base or git(repo, "rev-parse", "HEAD")
     manifest, _, _ = review_patch.compute(str(repo), base)
     ok, number, _ = rl.reserve(str(repo), "T1", "codex")
     assert ok
@@ -352,3 +353,78 @@ def test_check_receipt_fails_when_the_latest_round_is_not_clean_or_accepted(repo
 
     assert (result.returncode, "CLEAN or owner-accepted" in result.stdout) == (1, True), \
         result.stdout
+
+
+# --- T-0100: a merge of main is judged against what the reviewer read ------------
+
+def _reviewed_clone(tmp_path):
+    """A ticket clone whose own change (`feature.txt`, committed) was reviewed
+    CLEAN from the ticket start. Returns `(clone, upstream)`."""
+    root, upstream, sha = merged_main_fixtures.build(tmp_path)
+    merged_main_fixtures.ticket_commit(root, "feature.txt", "feature v1\n")
+    _review(root, "CLEAN", base=sha["base"])
+    return root, upstream
+
+
+def test_check_receipt_survives_a_merge_of_main_that_touches_no_reviewed_path(tmp_path):
+    root, upstream = _reviewed_clone(tmp_path)
+    merged_main_fixtures.advance_main(upstream, *merged_main_fixtures.MAIN_EDITS[:4])
+    merged_main_fixtures.merge_main(root)
+
+    result = _check(root)
+
+    assert (result.returncode, result.stdout.strip().endswith(
+        "(5 path(s) identical to merged main left out)")) == (0, True), result.stdout
+
+
+def test_check_receipt_is_stale_when_a_merge_of_main_changes_a_reviewed_path(tmp_path):
+    root, upstream = _reviewed_clone(tmp_path)
+    merged = merged_main_fixtures.advance_main(
+        upstream, ("write", "feature.txt", "feature from main, a longer line\n"))
+    git(root, "fetch", "-q", "origin")
+    git(root, "merge", "-q", "--no-edit", "origin/main", check=False)
+    git(root, "checkout", "--theirs", "--", "feature.txt")
+    git(root, "add", "--", "feature.txt")
+    git(root, "commit", "-q", "--no-edit")
+
+    result = _check(root)
+
+    assert (result.returncode, "receipt is stale" in result.stdout,
+            f"merged main: {merged[:12]}" in result.stdout) == (1, True, True), result.stdout
+
+
+def test_check_receipt_stale_message_says_could_not_tell(tmp_path):
+    root, upstream = _reviewed_clone(tmp_path)
+    merged_main_fixtures.advance_main(upstream)
+    merged_main_fixtures.merge_main(root)
+    git(root, "checkout", "-q", "--detach")
+
+    result = _check(root)
+
+    assert (result.returncode, "merged main: could not tell" in result.stdout) == (
+        1, True), result.stdout
+
+
+@pytest.mark.parametrize("stale", [False, True], ids=["current", "stale"])
+def test_check_receipt_says_could_not_tell_when_the_fork_lookup_fails(
+        tmp_path, monkeypatch, stale):
+    """Review round 2: a rebuild whose `git merge-base <start> <merged>` gave no
+    answer diffs main's paths from the start; the receipt line says the fork was
+    unknown on a current receipt and on a stale one alike."""
+    root, upstream = _reviewed_clone(tmp_path)
+    merged_main_fixtures.advance_main(upstream, *merged_main_fixtures.MAIN_EDITS[:4])
+    merged_main_fixtures.merge_main(root)
+    if stale:
+        merged_main_fixtures.write(root, "feature.txt", "feature v2, edited after review\n")
+    real = review_patch.crew_common.git_out
+
+    def fake(top, *args):
+        fork_lookup = args[:1] == ("merge-base",) and len(args) == 3 and args[1] != "HEAD"
+        return None if fork_lookup else real(top, *args)
+
+    monkeypatch.setattr(review_patch.crew_common, "git_out", fake)
+
+    ok, message = rl.check_receipt(str(root), "T1")
+
+    assert (ok, "receipt is stale" in message, message.endswith("; fork: could not tell")) == (
+        not stale, stale, True), message
