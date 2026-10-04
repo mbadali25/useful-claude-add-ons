@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 19:12 UTC
+Last updated: 2026-10-04 19:23 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 19:23: Batch 2 still red on Windows (3rd run, 6-shard layout): #356 default 2/6 + slow; #347 default 5/6; #456 default 2-5/6. Triage sent to builder a44cc15. #492 5607affe CI in progress (20 pass, 7 running).
 - 19:12: #492 L-1507 FIX done at 5607affe (2 new suite cases, red against scratch checkers; codemap DERIVED marker). Coordinator verified delta is tests+docstring+docs only, suite 46 passed. Review-clean; merges when its Windows CI is green.
 - 19:10: Owner: go with recommendations. L-1508 scope option 1 recorded in ticket (b753c698); minted L-1509 (repo-docs follow-up). L-1508 PR A builder spawned on #493, stacked on #356, crew placeholder 1.0.410.
 - 19:10: #492 L-1507 review at 8c9d38ed: 0 BLOCK, 1 FIX (no suite case for stale crew-windows-default/ dir or empty slow set), 2 NIT. Fail-closed verified; default-set behaviour identical to main except intended stale-dir refusal. Sent to builder. L-1508 #493 scope options added (option 1 recommended: fix 3 crew-qa-standards sites in PR A, allowlist obsidian ps + notify tasklist, repo-docs follow-up).
