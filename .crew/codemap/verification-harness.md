@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@69de978c
+anchor: useful-claude-add-ons@5479ac05
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -212,8 +212,9 @@ Notable rules, re-read directly:
   `completion_audit.py`, `crew_freshness.py` and `scope_base.py` with
   `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`,
   since T-0061 `test_scope_base_branch.py` (also on the `crew_ticket.py` rule),
-  and since T-0094 `crew_instructions.py` and `plugin/crew/tests/refresh_fixtures.py`
-  → `python3 -m pytest` over six test files, priced 58s since T-0094 review
+  since T-0094 `crew_instructions.py` and `plugin/crew/tests/refresh_fixtures.py`,
+  and since T-0100 `merged_main.py`, `merged_main_fixtures.py` and `test_merged_main.py`
+  → `python3 -m pytest` over eight test files, priced 58s since T-0094 review
   round 2 (its `why`, `:287`, records 46.4s, 379 passed, at load 2.2-2.5 on
   the merge of `8ab733d7`, x1.25; it was 65s after review round 1 with
   `test_refresh_admission.py` in it, 31.8s before T-0094 — claims read, not
@@ -443,7 +444,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2451-2458` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2478-2485` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -509,15 +510,24 @@ that changed shape or are newly documented here:
 ## `scripts/check-marketplace.py` — the direct gate
 
 **DERIVED, re-read at this anchor; `main()` is unchanged in shape from
-`5d1fc5fd`.** `main()` (`scripts/check-marketplace.py:1639-1674`) still calls
-**sixteen** checks, in the same order, at `:1648-1663`:
+`5d1fc5fd`.** `main()` (`scripts/check-marketplace.py:1679-1715`) calls
+**seventeen** checks, in this order, at `:1688-1704`; T-0048 added
+`check_config_reference` (`:1375`) after `check_self_claims`:
 
 `check_registration`, `check_skill_manifests`, `check_plugin_manifests`,
 `check_argument_hint_frontmatter`, `check_license_consistency`,
 `check_catalogs`, `check_menu_parity`, `check_group_parity`, `check_docs`,
 `check_hook_commands`, `check_command_backtick_spans`, `check_versions`,
-`check_self_claims`, `check_description_claims`, `check_catalog_claims`,
-`check_crew_ignore_policy`.
+`check_self_claims`, `check_config_reference`, `check_description_claims`,
+`check_catalog_claims`, `check_crew_ignore_policy`.
+
+`check_config_reference` runs `docs/guides/crew/src/config_reference.py --check`
+as a subprocess (`python3 -I`), so the generator imports the checked tree's
+crew modules rather than whichever copy this interpreter loaded first. It
+fails once per stale file (`configuration-reference.md`, `plugin/crew/CONFIG.md`'s
+generated key tables), and on any other exit with the generator's message: a
+check that did not run is a failure, never a pass. Its suite is
+`scripts/_test/config-reference.py`.
 
 The one change in this range is internal to `check_self_claims`
 (`:673-903`, moved +24 from `5d1fc5fd`'s `:649`): a new claim type,
@@ -700,11 +710,11 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1588-1597` /
-  `plugin/crew/CONFIG.md:2451-2458` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2478-2485` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
-- `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
+- `scripts/check-marketplace.py:1679` — `main()`, seventeen checks.
 - `scripts/check-marketplace.py:518` — `check_versions`.
 - `scripts/check-marketplace.py:564`, `:673` — `count_crew_markdown_lines`,
   `check_self_claims`.
@@ -2350,4 +2360,4 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
-**Re-anchored `0620587f` -> `69de978c` on 2026-10-04 (T-0041 feature half, crew 1.0.308, after merging origin/main into T-0041-build).** `69de978c` changes .crew/verify.json, plugin/crew/README.md, plugin/crew/agents/{explorer,researcher,security}.md, plugin/crew/commands/{done,debug}.md, plugin/crew/hooks/scripts/_test/validate-prompts.py, plugin/crew/skills/{crew-best-practices,crew-brainstorm,crew-plan}/SKILL.md and the new plugin/crew/tests/test_verify_before_stating.py: inserted lines only, plus `**Unverified**` renamed in place in researcher.md, the crew-best-practices description (`:3`) and `.crew/verify.json:554` gaining a comma before a rule appended last. Every body citation of the form `<changed file>:N` in this note was listed by script against each file's first inserted line (verify.json 554, README 2804, explorer 55, researcher 70, security 143, debug 95, done 86, validate-prompts 106, crew-best-practices 76, crew-brainstorm 41, crew-plan 73); every hit was a line number of another file or a dated provenance position, so no body citation moved. No suite was executed for this note.
+**Re-anchored `0620587f` -> `5479ac05` on 2026-10-03 (T-0048 merges origin/main `4f6ef540` (L-0601 #327, crew 1.0.162) at `5479ac05`; crew 1.0.183 kept).** Main's maps were taken and T-0048's body edits re-applied at merged-tree lines: `scripts/check-marketplace.py` `main()` `:1679-1715` with seventeen checks (`check_config_reference` at `:1701`, defined `:1375`), the plugins derivation `:1705-1706`, `plugin/crew/CONFIG.md:2478-2485` (main's `:2451-2458`, moved by the generated key tables of sections 10 and 11), `scripts/_test/self-claims.py:1228`. Citations inside earlier re-anchor notes are history and were not moved. Re-anchor only; no claim was re-derived and no suite was executed for this note.

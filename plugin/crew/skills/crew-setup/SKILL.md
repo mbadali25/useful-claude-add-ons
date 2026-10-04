@@ -209,7 +209,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800 } },
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
-  "resume": { "auto": null },
+  "resume": { "auto": null, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15 },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
@@ -230,6 +230,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
   "scope": { "mode": "off", "allowCliApproval": false },
   "autopilot": { "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk" },
+  "tickets": { "baseBranch": null },
   "route": { "enabled": false }
 }
 ```
