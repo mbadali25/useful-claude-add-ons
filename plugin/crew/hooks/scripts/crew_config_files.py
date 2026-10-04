@@ -101,6 +101,26 @@ def _holder(lock_path):
         return "unknown"
 
 
+# How long `Lock` keeps retrying a create that is denied while no lock file
+# is there to explain it: long enough to cover a delete-pending name vanishing
+# between the create and the `stat`, short enough that an unwritable folder
+# fails at once rather than after the whole wait.
+_DENIED_GRACE = 0.25
+
+
+def _lock_absent(lock_path):
+    """True only when `stat` says the lock file is not there. Present, or a
+    `stat` that itself fails (a delete-pending file answers access denied),
+    is False: could-not-tell waits like a held lock, bounded by the wait."""
+    try:
+        os.stat(lock_path)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 class Lock:
     """`<path>.lock`, created with `O_CREAT | O_EXCL`, the PID written inside.
 
@@ -115,20 +135,45 @@ class Lock:
         self.path = path + ".lock"
         self.wait = wait
 
+    def _busy(self, wait):
+        return Busy(
+            f"{self.path} is held by pid {_holder(self.path)} "
+            f"(waited {wait:.1f}s); another crew command is "
+            "writing this config. If no crew command is running, "
+            "a process died holding it -- remove that file by "
+            "hand")
+
     def __enter__(self):
         wait = LOCK_WAIT_SECONDS if self.wait is None else self.wait
         deadline = time.monotonic() + wait
+        absent_since = None
         while True:
             try:
                 fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             except FileExistsError as exc:
                 if time.monotonic() >= deadline:
-                    raise Busy(
-                        f"{self.path} is held by pid {_holder(self.path)} "
-                        f"(waited {wait:.1f}s); another crew command is "
-                        "writing this config. If no crew command is running, "
-                        "a process died holding it -- remove that file by "
-                        "hand") from exc
+                    raise self._busy(wait) from exc
+                time.sleep(0.02)
+                continue
+            except PermissionError as exc:
+                # Windows: the previous holder's `os.remove` leaves the name
+                # DELETE PENDING while any handle to it is still open (its
+                # own, a scanner's, an indexer's), and creating that name
+                # answers ERROR_ACCESS_DENIED, not ERROR_FILE_EXISTS. That
+                # is a held lock, not a refusal: eight concurrent mints lost
+                # one to it on the Windows runner. While the lock file is
+                # there, or `stat` cannot tell, wait as for a held lock. A
+                # denial with no lock file to blame (an unwritable folder)
+                # is the real error once `_DENIED_GRACE` has passed.
+                now = time.monotonic()
+                if _lock_absent(self.path):
+                    absent_since = now if absent_since is None else absent_since
+                    if now - absent_since >= _DENIED_GRACE:
+                        raise
+                else:
+                    absent_since = None
+                if now >= deadline:
+                    raise self._busy(wait) from exc
                 time.sleep(0.02)
                 continue
             try:

@@ -139,6 +139,89 @@ def test_lock_removes_its_file_when_the_pid_write_fails(tmp_path, monkeypatch):
     assert not os.path.exists(path + ".lock")
 
 
+def _denied_while_pending(monkeypatch, lock, denials):
+    """`os.open` on `lock` answers access denied `denials` times, the way
+    Windows answers a create on a DELETE PENDING name, then the name clears
+    (the last handle closes) and the next create is real."""
+    real, seen = os.open, []
+
+    def fake(path, *args, **kwargs):
+        if path == lock and len(seen) < denials:
+            seen.append(path)
+            if len(seen) == denials and os.path.exists(lock):
+                os.remove(lock)
+            raise PermissionError(errno.EACCES, "Permission denied", path)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(files.os, "open", fake)
+    return seen
+
+
+def test_lock_waits_out_a_delete_pending_name_instead_of_failing(tmp_path, monkeypatch):
+    """Windows CI (main, run 37194523702): a concurrent mint died with
+    PermissionError from this `os.open`, because the previous holder's lock
+    file was still DELETE PENDING. That is a held lock: wait, then take it."""
+    path = str(tmp_path / "config.json")
+    lock = _write(path + ".lock", b"4242")
+    seen = _denied_while_pending(monkeypatch, lock, 3)
+
+    with files.Lock(path, wait=5):
+        with open(lock, "rb") as handle:
+            inside = handle.read()
+
+    assert (len(seen), inside, os.path.exists(lock)) == (
+        3, str(os.getpid()).encode("ascii"), False)
+
+
+def test_lock_denied_past_the_wait_with_the_file_there_is_busy(tmp_path, monkeypatch):
+    path = str(tmp_path / "config.json")
+    lock = _write(path + ".lock", b"4242")
+    _denied_while_pending(monkeypatch, lock, 10 ** 6)
+
+    with pytest.raises(files.Busy) as caught:
+        with files.Lock(path, wait=0):
+            pass
+
+    assert "4242" in str(caught.value) and isinstance(caught.value.__cause__, PermissionError)
+
+
+def test_lock_denied_with_no_lock_file_is_the_real_error(tmp_path, monkeypatch):
+    """The neighbouring case: nothing holds the lock and the create is still
+    denied (an unwritable folder). That surfaces as the PermissionError it
+    is, after the short grace, never as Busy and never after the whole wait."""
+    path = str(tmp_path / "config.json")
+    lock = path + ".lock"
+    _denied_while_pending(monkeypatch, lock, 10 ** 6)
+    monkeypatch.setattr(files, "_DENIED_GRACE", 0)
+
+    with pytest.raises(PermissionError):
+        with files.Lock(path, wait=3600):
+            pass
+
+    assert not os.path.exists(lock)
+
+
+def test_lock_a_stat_that_cannot_tell_waits_like_a_held_lock(tmp_path, monkeypatch):
+    """A delete-pending file can deny the `stat` too. Could-not-tell is not
+    absent: it waits (bounded by the wait) rather than raising at once."""
+    path = str(tmp_path / "config.json")
+    lock = path + ".lock"
+    _denied_while_pending(monkeypatch, lock, 10 ** 6)
+    monkeypatch.setattr(files, "_DENIED_GRACE", 0)
+    real_stat = os.stat
+
+    def stat(target, *args, **kwargs):
+        if target == lock:
+            raise PermissionError(errno.EACCES, "Permission denied", target)
+        return real_stat(target, *args, **kwargs)
+
+    monkeypatch.setattr(files.os, "stat", stat)
+
+    with pytest.raises(files.Busy):
+        with files.Lock(path, wait=0):
+            pass
+
+
 # --- update_json: compare-and-swap inside the lock -----------------------------
 
 
