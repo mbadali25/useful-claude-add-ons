@@ -39,7 +39,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   for policy; with nothing to undo it prints `already awake`. A crash in either exits 1.
 - **Fail closed, stricter than the spec's "ignored" in three places (owner may review).** A record
   that is unreadable, not an object, missing a field, with another `state`, an `at`/`until` that
-  is not a UTC-aware ISO time, an `at` in the future or an `until` more than 24 hours after `at`
+  is not a UTC-aware ISO time, an `at` in the future or an `until` more than 24 wall-clock hours (or 25 real hours) after `at`
   reads `unknown` with a warning naming the file (per key the stricter of the day value and the
   night override), not "no manual state"; an expired record is ignored with a warning. A manual
   `asleep` counts only while `scope.allowCliApproval` is exactly `true` at read time too. A

@@ -232,7 +232,7 @@ def _manual_problem(status, data, when):
         return f"at {data['at']} is in the future (the clock moved back?)"
     wall = _wall(until) - _wall(at)
     if until - at > MANUAL_MAX_REAL or wall > MANUAL_MAX or until <= at:
-        return (f"until {data['until']} is not within 24 hours (25 across a clock change) "
+        return (f"until {data['until']} is not within 24 hours (24 wall-clock and 25 real) "
                 f"after at {data['at']}")
     if until <= when:
         return f"expired at {data['until']}"

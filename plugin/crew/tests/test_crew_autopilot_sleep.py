@@ -1288,6 +1288,25 @@ def test_o_nonblock_never_waits_on_a_swapped_in_fifo(tmp_path, clock, monkeypatc
     assert (stuck, got.get("conf", {}).get("sleep", {}).get("state")) == (False, "unknown")
 
 
+def _within(seconds, call, fifo):
+    """`call()` on a thread; if it is still running after `seconds` (an
+    O_NONBLOCK regression blocking on the FIFO), open a writer to free it and
+    fail rather than hang the suite."""
+    import threading  # pylint: disable=import-outside-toplevel
+    got = {}
+    worker = threading.Thread(target=lambda: got.update(value=call()), daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        try:
+            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass
+        worker.join(seconds)
+        pytest.fail(f"reading the state file blocked for more than {seconds}s")
+    return got["value"]
+
+
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFOs")
 def test_fstat_refuses_a_swapped_in_fifo_that_holds_a_valid_record(tmp_path, clock,
                                                                     monkeypatch):
@@ -1314,8 +1333,7 @@ def test_fstat_refuses_a_swapped_in_fifo_that_holds_a_valid_record(tmp_path, clo
             os.close(writer)
         return real_read(handle, size)
     monkeypatch.setattr(os, "read", feed)
-
-    conf = _sleep_conf(root)
+    conf = _within(10, lambda: _sleep_conf(root), path)
 
     assert (conf["sleep"]["state"], seen) == ("unknown", [stat.S_IFIFO])
 
@@ -1396,3 +1414,28 @@ def test_wake_writes_whole_seconds(tmp_path, clock, capsys):
     _cmd(root, capsys, "wake")
 
     assert [("." in _record(root)[key]) for key in ("at", "until")] == [False, False]
+
+
+@pytest.fixture(name="troll")
+def _troll(monkeypatch):
+    if not hasattr(time, "tzset") or not os.path.exists("/usr/share/zoneinfo/Antarctica/Troll"):
+        pytest.skip("needs time.tzset and the tz database")
+    monkeypatch.setenv("TZ", "Antarctica/Troll")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_the_25_real_hour_backstop_holds_where_a_clock_change_is_two_hours(troll):
+    """Antarctica/Troll falls back two hours (+02 to +00, 2026-10-25): 24
+    wall-clock hours there are 26 real ones, past the 25-hour backstop."""
+    at, until = datetime.datetime(2026, 10, 24, 12, 0), datetime.datetime(2026, 10, 25, 12, 0)
+    record = dict(VALID, at=_iso(at), until=_iso(until))
+    inside = dict(record, until=_iso(datetime.datetime(2026, 10, 25, 10, 0)))
+
+    got = crew_sleep.read_manual(("ok", record), datetime.datetime(2026, 10, 24, 13, 0))
+    kept = crew_sleep.read_manual(("ok", inside), datetime.datetime(2026, 10, 24, 13, 0))
+
+    assert (got["kind"], "25 real" in got["warning"], kept["kind"]) == (
+        "untrusted", True, "valid")
