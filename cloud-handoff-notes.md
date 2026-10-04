@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:38 UTC
+Last updated: 2026-10-04 15:45 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:45: OWNER: untracked work gets L-1500+ (next free L-1502). #392 -> L-1500, #393 -> L-1501 (titles+Tickets: line patched). #351 land-prep -> 75a0d5db (1.0.328, Tickets: T-0066 added), merge-only review started, subscribed. CLEAN: #398 r2 dfe113ab 0/0/4 (follow-up: promote-gate.sh fail-open w/o _common.sh pre-existing -> L-1502 candidate); H1 #418 r2 ea9dcc10 0/0/5 (name: tightening of --accept/plain --reject for owner). #450 r5: 0/1/1 over-block -> narrowed fix sent. Re-reviews started: #407 3e2afb49 (_gate_pick), #403 610deaea, #347 877ef4b8 (PS backstop). #481 T-0074 built b573d4c9 -> review (Q4 security-adjacent flagged).
 - 15:38: OWNER RULE: every PR title starts with its ticket id(s) and body has a 'Tickets:' line (bundles list all). Audit: all 128 open PRs carry ids except #391 (notes, docs-only). Merged #392/#393 (Windows CI fixes) have NO ticket id - asked owner. Added rule to BUILD.md/LANDPREP.md.
 - 15:37: #450 round-4 fixes -> 9350f997 (attempt = mark anywhere OR bare name; reasons say reword prose; 117 tests). Quick round-5 delta review started. #351 land-prep running (1.0.328).
 - 15:36: MERGED #352 (T-0069) at b863b773 (crew 1.0.327; CI 24/24, merge-only review clean). main = b863b773. Next: #351 land-prep at 1.0.328.
