@@ -10,10 +10,15 @@ the payload in, so the two shells cannot disagree.
 1. `scope.mode` resolves to `off` (the default, and what a repo that never set
    the key gets) -> exit 0 before anything else is read.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
-   ledger, the active-ticket pointer, the ramp count -- or the scope base
-   `.crew/.scope-base` is REFUSED in every mode but `off`, whether or not a
-   ticket is active. Those files are what the guard and the Stop audit trust;
-   an Edit that could write them could approve its own plan.
+   ledger, the active-ticket pointer, the ramp count -- or crew bookkeeping
+   that is not write-allowed (`crew_ticket.is_crew_write_refused`: the scope
+   base `.crew/.scope-base`, the verify gate's record, marker, fingerprint,
+   timings and lock, `metrics.jsonl`) is REFUSED in every mode but `off`,
+   whether or not a ticket is active, whatever Touch says. Those files are
+   what the guard, the Stop audit and the review gate trust, and the
+   bookkeeping ones are left out of the review bundle and the audit (T-0068),
+   so a write to them would be both a forgery and invisible; an Edit that
+   could write them could approve its own plan or green its own gate.
 3. A BROKEN active-ticket pointer (`crew_ticket.resolve_active`: it names a
    ticket with no directory, is not an id, or does not parse) is refused
    under `block` -- never read as "no active ticket".
@@ -41,14 +46,15 @@ the payload in, so the two shells cannot disagree.
    carry a write anywhere else. A configured dir resolving to the repository
    root opens nothing. Config is already this guard's trust root --
    `scope.mode` lives there -- so a configured dir is not a new way round it.
-5a. crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`: the
-   metrics files `/crew:review` appends with Edit, the gate's records, logs,
-   markers, locks) is writable with or without an approval (T-0068): it is
-   crew writing for itself, never a scope change, and the completion audit
-   and the review bundle leave it out too. BOTH the real and the named path
+5a. `crew_ticket.CREW_WRITE_ALLOWED_PATHS` -- only `.crew/metrics.md`, the
+   row `/crew:review` step 6 appends with Edit -- is writable with or without
+   an approval (T-0068): it is crew writing for itself, never a scope
+   change, and nothing reads it as policy. BOTH the real and the named path
    must be on the list, whole segments from the root, so a link cannot carry
-   a write out of `.crew/`. The scope base is on the list and still refused
-   by rule 2, which runs first.
+   a write out of `.crew/`. Nothing crew reads as a trust input is on it:
+   `.crew/tfplan/`, `.crew/incident.json` and `.crew/.deploy-in-flight` are
+   judged against Touch like any file, and the gate's files are refused by
+   rule 2, which runs first.
    Nothing else is exempt: not the rest of `.crew/` (`config.json`,
    `verify.json`, the code map outside rule 6), not `TODO.md`, not the rest
    of `.claude/`, not crew's policy files. Put them in Touch if the ticket is
@@ -201,7 +207,7 @@ def classify(top, common, ticket, touch, approval, target, base):
         return True, "outside the worktree"
     if all(os.path.normcase(r).startswith(os.path.normcase(own)) for r in checks):
         return True, "the ticket's own files"
-    if real_rel is not None and all(crew_ticket.is_crew_bookkeeping(r) for r in checks):
+    if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):
         return True, "crew bookkeeping"
     if _refresh_artifact(top, real_rel, checks, approval):
         return True, "a refresh artifact of an approved ticket"
@@ -232,7 +238,8 @@ def _refresh_artifact(top, real_rel, checks, approval):
 
 
 def protected(top, state, target, base):
-    """True when `target` names crew's approval/ledger state."""
+    """True when `target` names crew's approval/ledger state, or bookkeeping
+    a Write/Edit may never touch (module docstring, rule 2)."""
     absolute = target if os.path.isabs(target) else os.path.join(base, target)
     real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
     named = os.path.normpath(absolute)
@@ -241,6 +248,8 @@ def protected(top, state, target, base):
             return True
         rel = _rel(path, top)
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
+            return True
+        if rel is not None and crew_ticket.is_crew_write_refused(rel):
             return True
     return False
 
@@ -375,8 +384,8 @@ def decide(data):
     for path in paths:
         if protected(top, state, path, base):
             _log(top, configured, "block", None, path, "crew approval/ledger state")
-            return _deny([f"SCOPE GUARD: {path} is crew's approval/ledger state and is never "
-                          "written by Write/Edit.",
+            return _deny([f"SCOPE GUARD: {path} is crew's approval/ledger state (or a record "
+                          "it trusts) and is never written by Write/Edit.",
                           "  Approval is recorded when the USER types `/crew:approve <id>`."])
     ticket, source, broken = crew_ticket.resolve_active(root)
     if broken:

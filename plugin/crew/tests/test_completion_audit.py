@@ -736,3 +736,23 @@ def test_ticket_is_still_required_without_classify(repo):
                           stdin=subprocess.DEVNULL)
 
     assert done.returncode == 2 and "--ticket" in done.stderr
+
+
+@pytest.mark.parametrize("rel", [".crew/incident.json", ".crew/tfplan/x.json",
+                                 ".crew/handoffs/x.md", ".crew/.deploy-in-flight"])
+def test_a_committed_crew_trust_input_is_out_of_touch(tmp_path, rel):
+    """Must-block (review of 514ca132, FIX 3): a ticket that commits one of
+    the files crew READS as a trust input is judged like any file -- outside
+    Touch it fails the audit, by name."""
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    target = root.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"deletes": []}\n', encoding="utf-8")
+    git(root, "add", "-f", rel)
+    git(root, "commit", "-qm", "commits a crew trust input")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert not ok and rel in "\n".join(lines), lines

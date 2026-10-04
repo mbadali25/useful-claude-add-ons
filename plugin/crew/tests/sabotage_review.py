@@ -93,6 +93,36 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_patch.py::"
          "test_a_crew_content_path_still_enters_the_bundle"),
     ),
+    # Review of 514ca132, FIX 3: a PR that commits a file crew READS as a
+    # trust input must reach the reviewer; only ticket-flow bookkeeping is
+    # left out of the bundle.
+    (
+        "a committed incident file leaves the bundle",
+        CREW_TICKET,
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+        '    ".crew/incident.json",\n',
+        ("tests/test_review_patch.py::"
+         "test_a_committed_crew_trust_input_is_in_the_bundle[.crew/incident.json]"),
+    ),
+    (
+        "a committed tfplan summary leaves the bundle",
+        CREW_TICKET,
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+        '    ".crew/tfplan/**",\n',
+        ("tests/test_review_patch.py::"
+         "test_a_committed_crew_trust_input_is_in_the_bundle[.crew/tfplan/x.json]"),
+    ),
+    (
+        "a committed handoff leaves the bundle",
+        CREW_TICKET,
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+        '    ".crew/handoffs/**",\n',
+        ("tests/test_review_patch.py::"
+         "test_a_committed_crew_trust_input_is_in_the_bundle[.crew/handoffs/x.md]"),
+    ),
     (
         "the manifest stops naming the bookkeeping exclusions",
         REVIEW_PATCH,
@@ -1012,7 +1042,7 @@ REVIEW_FIX_MUTATIONS = (
         # entry, so the mutation drops that entry.
         "the metrics row is reviewed as part of the bundle",
         CREW_TICKET,
-        '    ".crew/metrics.md",                   # review_run.py, commands/review.md step 6\n',
+        '    ".crew/metrics.md",                   # review_metrics.py, commands/review.md step 6\n',
         "",
         "tests/test_review_patch.py::"
         "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",

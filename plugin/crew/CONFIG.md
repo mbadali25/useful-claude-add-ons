@@ -2323,7 +2323,7 @@ gate defect this section exists to explain the fix for.
 `.crew/*` template — see the ignore policy in root `CLAUDE.md`; where a repo
 does not ignore it, it is crew bookkeeping, `crew_ticket.CREW_BOOKKEEPING_PATHS`,
 excluded by name from the review bundle, the completion audit and the gate's
-own changed list, T-0068) now tracks status per
+own changed list, and refused to Write/Edit by the scope guard, T-0068) now tracks status per
 rule, keyed by a content hash of that rule's `paths`/`run` so it survives
 `.crew/verify.json` being reordered:
 

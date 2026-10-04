@@ -283,7 +283,9 @@ contract itself. This section is what goes wrong with the approval and the audit
   that, in a repository whose `.gitignore` does not ignore `.crew/*`.
   **Fix:** update crew. These are crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`),
   never a changed path for the audit, the gate or the review bundle; do not add them to Touch.
-  A `.crew/` path the audit still lists (`.crew/verify.json`, `.crew/config.json`) is a real change.
+  A `.crew/` path the audit still lists (`.crew/verify.json`, `.crew/config.json`, a committed
+  `.crew/incident.json` or `.crew/tfplan/` file, `.crew/guard.log`) is a real change: only the
+  ticket-flow bookkeeping is left out, never a file crew reads as a trust input.
 
 - **`scope.mode` values, and what "auto" means:** `off` (hooks do nothing, the default), `report`
   (allows everything, logs the row to `.crew/guard.log`), `block` (refuses out-of-scope writes and

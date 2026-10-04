@@ -300,7 +300,7 @@ REFRESH_MUTATIONS = (
     ("the matcher and git disagree on a directory", TICKET,
      "            first = j + 1 if i == len(pat) - 1 else j\n",
      "            first = j\n",
-     _BK + "test_is_crew_bookkeeping_matches_whole_segments_at_the_root"),
+     _BK + "test_a_trailing_double_star_is_everything_below_never_the_directory"),
     ("the sh gate reports bookkeeping as unmapped", GATE_SH,
      _SH_DROP, "",
      _GB + "test_untracked_bookkeeping_is_not_unmapped[sh]"),

@@ -531,3 +531,27 @@ def test_a_crew_content_path_still_enters_the_bundle(repo, tmp_path, rel, tracke
     assert _manifest(tmp_path)["bundle_sha256"] != before
     patch = (tmp_path / "diff.txt").read_bytes()
     assert rel.encode() in patch and b"by the ticket" in patch
+
+
+@pytest.mark.parametrize("rel", [".crew/incident.json", ".crew/tfplan/x.json",
+                                 ".crew/handoffs/x.md", ".crew/backups/x",
+                                 ".crew/transcripts/x.jsonl", ".crew/.deploy-in-flight"])
+def test_a_committed_crew_trust_input_is_in_the_bundle(repo, tmp_path, rel):
+    """Must-block (review of 514ca132, FIX 3): crew writes these, but a PR
+    that COMMITS one -- a plan summary `cloud_guard` trusts, an incident that
+    stands the Stop gate down -- is a change the reviewer must see. Only the
+    ticket-flow bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`) is left out."""
+    base = _git(repo, "rev-parse", "HEAD")
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"deletes": []}\n', encoding="utf-8")
+    _git(repo, "add", "-f", rel)
+    _git(repo, "commit", "-qm", "commits a crew trust input")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    m = _manifest(tmp_path)
+    assert rel in m["committed_files"]
+    assert rel not in m["excluded"]
+    assert rel.encode() in (tmp_path / "diff.txt").read_bytes()

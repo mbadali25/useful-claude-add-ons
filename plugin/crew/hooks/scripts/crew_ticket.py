@@ -411,40 +411,74 @@ def in_touch(path, touch):
 
 # --- crew's own bookkeeping (T-0068) ------------------------------------------
 #
-# Every path a crew script writes for ITSELF under `.crew/`: records, logs,
-# markers, locks, caches. None of it is a change a ticket makes, so the review
-# bundle and its receipt (`review_patch`), the completion audit, the scope
-# guard's Touch judgement and the verify gate's changed-path list leave it out
-# whatever the repository's `.gitignore` says, as they leave out `.work/`.
-# Without that, a repository that does not ignore `.crew/*` deadlocks
-# `/crew:done`: the gate's own record stales the accepted receipt, and the
-# scope base fails the audit (TSS-510).
+# Three lists of the `.crew/` paths crew writes, each with one job. They are
+# separate on purpose: a path crew READS as a trust input (a plan summary, an
+# incident, a deploy marker, the gate's verdict) must stay visible to review
+# and must never be forgeable by Write/Edit, so it is on neither of the first
+# two (review of 514ca132, FIX 1-3).
+#
+# CREW_BOOKKEEPING_PATHS -- left out of the review bundle and its receipt
+# (`review_patch`), the completion audit and the verify gate's changed-path
+# list whatever the repository's `.gitignore` says, as `.work/` is. ONLY what
+# crew's scripts write during the normal ticket flow that deadlocked
+# `/crew:done` in a repository that does not ignore `.crew/*` (TSS-510): the
+# scope base, the metrics rows and the verify gate's own record, marker,
+# fingerprint, timings, lock and rule-output scratch. Being left out of
+# review makes a path invisible, so every entry here that is not on
+# CREW_WRITE_ALLOWED_PATHS is REFUSED to Write/Edit in every scope mode but
+# `off` (`scope_guard` rule 2). Residual, not closed here: a Bash command can
+# still write the gate's marker and fingerprint (the fingerprint is unkeyed),
+# as it could before T-0068.
 #
 # Root-relative globs in git's `:(glob)` dialect: `*` stays inside one
 # segment, a `/**` tail is everything below. A directory needs its own `/**`
 # entry -- git's glob never matches a leading directory (measured, git 2.43),
 # and `is_crew_bookkeeping` agrees with it. Each entry names its writer. Here,
-# not in crew_common, because these four consumers are the review/gate
-# harness (scripts/check-tooling-pr.py HARNESS) and this module already is.
+# not in crew_common, because these consumers are the review/gate harness
+# (scripts/check-tooling-pr.py HARNESS) and this module already is.
 CREW_BOOKKEEPING_PATHS = (
     ".crew/.scope-base",                  # scope_base.py:80 (RECORD)
     ".crew/.verify-verified-at",          # crew_state.py:557, verify-gate.sh
     ".crew/.verify-gate.*",               # verify_record.py, verify_fingerprint.py:172-177
     ".crew/.verify-gate.lock/**",         # verify-gate.sh:535 (LOCK, a directory)
-    ".crew/.verify-rule-out.*",           # verify-gate.sh:2014 (mktemp fallback)
+    ".crew/.verify-rule-out.*",           # verify-gate.sh:2032 (mktemp fallback)
+    ".crew/metrics.md",                   # review_metrics.py, commands/review.md step 6
+    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)
+)
+
+# The ONE subset of CREW_BOOKKEEPING_PATHS a crew command tells Claude to
+# write with Edit during a ticket, so `scope_guard` rule 5a allows it outside
+# Touch, with or without an approval. `.crew/metrics.md`: `/crew:review`
+# step 6 appends the row `review_metrics.py` quoted when it could not write
+# it; nothing reads it as policy (`/crew:status`, `crew_state` health and
+# `crew_standards` report from it). Not `metrics.jsonl`: only scripts write it
+# (`crew_metrics.py record`, `crew_migrate.py`) and `crew_metrics` reads it
+# for a PASS verdict, so it stays refused with the rest of the list.
+CREW_WRITE_ALLOWED_PATHS = (
+    ".crew/metrics.md",
+)
+
+# Everything else crew writes for itself under `.crew/`. NOT left out of
+# anything: a change to one is judged against Touch, listed by the audit and
+# shown to the reviewer like any other file, as before T-0068. Several are
+# trust inputs a forged copy would subvert -- `tfplan/<sha>.json` is the plan
+# summary `cloud_guard` reads before `terraform apply`, `incident.json` stands
+# the Stop gate down, `.deploy-in-flight` is read by `verify-gate.sh` -- and
+# the rest (logs, markers, archives) are judged as they were before T-0068.
+# A name CREW_BOOKKEEPING_PATHS also matches (`.verify-gate.lock` under
+# `*.lock`) is bookkeeping: every consumer asks `is_crew_bookkeeping` only.
+CREW_STATE_PATHS = (
     ".crew/guard.log",                    # scope_guard.py:111, crew_guards.py:346
-    ".crew/metrics.md",                   # review_run.py, commands/review.md step 6
-    ".crew/metrics.jsonl",                # crew_metrics.py:139
     ".crew/.autoclear.log",               # crew_autocycle.py:207, auto-clear.sh:81
     ".crew/.autoclear-sent",              # handoff-read.sh:20 (pre-session-key marker)
     ".crew/.autoclear-sent-*",            # crew_autocycle.py:68, auto-clear.sh:111
     ".crew/.handoff-requested",           # handoff-read.sh:20 (pre-session-key marker)
     ".crew/.handoff-requested-*",         # crew_autocycle.py:67, context-watch.sh:59
     ".crew/.hook-*",                      # hook_once.py:83
-    ".crew/incident.json",                # crew_incident.py:36
+    ".crew/incident.json",                # crew_incident.py:36 (read: verify-gate.sh:185)
     ".crew/incident-skips.log",           # crew_incident.py:37
     ".crew/.cloud-guard-unpinned-noted",  # cloud_guard.py:3226
-    ".crew/.deploy-in-flight",            # promote-gate.sh:511
+    ".crew/.deploy-in-flight",            # promote-gate.sh:511 (read: verify-gate.sh:191)
     ".crew/.qa-audit-at",                 # crew_state.py:601 (QA_AUDIT_STAMP)
     ".crew/config.json.bak-*",            # crew_config_menu.py:566 (BACKUP_PREFIX)
     ".crew/*.lock",                       # lock files
@@ -454,12 +488,13 @@ CREW_BOOKKEEPING_PATHS = (
     ".crew/handoffs/**",                  # crew_state.py:807 (HANDOFF_ARCHIVE_DIR)
     ".crew/incidents/**",                 # crew_incident.py:38 (ARCHIVE_DIR)
     ".crew/backups/**",                   # crew_migrate.py:140 (BACKUP_DIR)
-    ".crew/tfplan/**",                    # cloud_guard.py:1858, crew_tfplan.py
+    ".crew/tfplan/**",                    # crew_tfplan.py (read: cloud_guard.py:1858)
 )
 
 # What crew READS as configuration, policy, approval or a map. It stays
 # reviewable and judged, never bookkeeping. `test_crew_bookkeeping` requires
-# every `.crew/` name a crew script spells to be in exactly one of the two.
+# every `.crew/` name a crew script spells to be in exactly one of
+# CREW_BOOKKEEPING_PATHS, CREW_STATE_PATHS and this list.
 CREW_CONTENT_PATHS = (
     ".crew/config.json",
     ".crew/crew.json",
@@ -512,6 +547,22 @@ def _crew_listed(rel, entries):
 def is_crew_bookkeeping(rel):
     """True when repo-relative `rel` is on `CREW_BOOKKEEPING_PATHS`."""
     return _crew_listed(rel, CREW_BOOKKEEPING_PATHS)
+
+
+def is_crew_write_allowed(rel):
+    """True when repo-relative `rel` is on `CREW_WRITE_ALLOWED_PATHS`."""
+    return _crew_listed(rel, CREW_WRITE_ALLOWED_PATHS)
+
+
+def is_crew_write_refused(rel):
+    """True when `rel` is bookkeeping a Write/Edit may never touch: left out
+    of review and the audit, so a write to it would be invisible."""
+    return is_crew_bookkeeping(rel) and not is_crew_write_allowed(rel)
+
+
+def is_crew_state(rel):
+    """True when repo-relative `rel` is on `CREW_STATE_PATHS`."""
+    return _crew_listed(rel, CREW_STATE_PATHS)
 
 
 def is_crew_content(rel):

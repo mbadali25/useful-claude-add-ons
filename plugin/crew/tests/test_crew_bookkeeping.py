@@ -1,14 +1,17 @@
-"""crew's own bookkeeping under `.crew/` (T-0068): ONE list,
-`crew_ticket.CREW_BOOKKEEPING_PATHS`, that the review bundle, the completion
-audit, the scope guard and the verify gate all leave out.
+"""crew's own bookkeeping under `.crew/` (T-0068):
+`crew_ticket.CREW_BOOKKEEPING_PATHS`, what the review bundle, the completion
+audit and the verify gate leave out, and its subset
+`CREW_WRITE_ALLOWED_PATHS`, what the scope guard's rule 5a opens.
 
-Two-sided on purpose. A path a crew script writes for itself that is missing
-from the list keeps the TSS-510 deadlock (the gate's record stales the
-receipt, the scope base fails the audit). A path crew READS as config or a map
-wrongly put on it hides a real change from review and the audit. So every
-`.crew/<name>` a crew hook script spells must be in exactly one of
-`CREW_BOOKKEEPING_PATHS` and `CREW_CONTENT_PATHS`, and the matcher is pinned
-against git's own reading of the exclude pathspecs.
+Two-sided on purpose. A ticket-flow path a crew script writes for itself that
+is missing from the bookkeeping list keeps the TSS-510 deadlock (the gate's
+record stales the receipt, the scope base fails the audit). A path crew READS
+-- as config, a map, or a trust input such as a plan summary or an incident
+-- wrongly put on it hides a real change from review and the audit (review of
+514ca132). So every `.crew/<name>` a crew hook script spells must be in
+exactly one of `CREW_BOOKKEEPING_PATHS`, `CREW_STATE_PATHS` (crew writes it,
+everything still judges it) and `CREW_CONTENT_PATHS`, and the matcher is
+pinned against git's own reading of the exclude pathspecs.
 """
 import ast
 import glob
@@ -163,13 +166,44 @@ def test_every_crew_state_path_is_classified():
                             f"_DYNAMIC_JOINS with the names it takes: {unresolved}")
     problems = []
     for name, where in sorted(found.items()):
-        hits = [(s, crew_ticket.is_crew_bookkeeping(s), crew_ticket.is_crew_content(s))
-                for s in _samples(name)]
-        if any(b and c for _s, b, c in hits):
-            problems.append(f"BOTH lists: .crew/{name} ({sorted(where)[0]})")
-        elif not any(b or c for _s, b, c in hits):
+        # Bookkeeping is matched first by every consumer, so a name both it
+        # and a broad state glob match (`.verify-gate.lock` and `*.lock`) is
+        # bookkeeping; content may share a name with neither.
+        hits = [(crew_ticket.is_crew_bookkeeping(s),
+                 crew_ticket.is_crew_state(s) and not crew_ticket.is_crew_bookkeeping(s),
+                 crew_ticket.is_crew_content(s)) for s in _samples(name)]
+        if any(sum(h) > 1 for h in hits):
+            problems.append(f"on more than one list: .crew/{name} ({sorted(where)[0]})")
+        elif not any(any(h) for h in hits):
             problems.append(f"unclassified: .crew/{name} ({', '.join(sorted(where)[:3])})")
     assert not problems, "\n".join(problems)
+
+
+def test_write_allowed_is_only_the_metrics_row_and_is_bookkeeping():
+    """Rule 5a opens a path to Write/Edit with no approval; every such path
+    is also out of review, so the list is pinned, not grown by accident."""
+    assert crew_ticket.CREW_WRITE_ALLOWED_PATHS == (".crew/metrics.md",)
+    assert set(crew_ticket.CREW_WRITE_ALLOWED_PATHS) <= set(crew_ticket.CREW_BOOKKEEPING_PATHS)
+
+
+@pytest.mark.parametrize("rel", [".crew/tfplan/x.json", ".crew/incident.json",
+                                 ".crew/.deploy-in-flight", ".crew/handoffs/x",
+                                 ".crew/backups/x", ".crew/transcripts/x"])
+def test_a_trust_input_is_never_bookkeeping(rel):
+    """Must-block (review of 514ca132, FIX 1 and 3): crew writes these AND
+    reads them as trust inputs, so they stay reviewable and judged."""
+    assert (crew_ticket.is_crew_bookkeeping(rel), crew_ticket.is_crew_write_allowed(rel),
+            crew_ticket.is_crew_state(rel)) == (False, False, True)
+
+
+@pytest.mark.parametrize("rel", [".crew/.verify-gate.record.json", ".crew/.verify-gate.fingerprint",
+                                 ".crew/.verify-verified-at", ".crew/.scope-base",
+                                 ".crew/metrics.jsonl"])
+def test_out_of_review_and_not_write_allowed_is_write_refused(rel):
+    """FIX 2: what the bundle and the audit cannot see, Write/Edit cannot
+    write (scope_guard rule 2) -- except the metrics row."""
+    assert crew_ticket.is_crew_write_refused(rel) is True
+    assert crew_ticket.is_crew_write_refused(".crew/metrics.md") is False
 
 
 @pytest.mark.parametrize("rel,expected", [
@@ -177,9 +211,12 @@ def test_every_crew_state_path_is_classified():
     (".crew/.verify-gate.timings.json", True),
     (".crew/.verify-gate.record.json", True),
     (".crew/.verify-gate.lock/owner", True),
-    (".crew/.autoclear-sent-abc", True),
-    (".crew/event-claims/x", True),
-    (".crew/event-claims/a/b", True),
+    (".crew/.autoclear-sent-abc", False),
+    (".crew/event-claims/x", False),
+    (".crew/tfplan/x.json", False),
+    (".crew/incident.json", False),
+    (".crew/metrics.jsonl", True),
+    (".crew/.verify-gate.fingerprint", True),
     (".crew/metrics.md", True),
     ("sub/.crew/.scope-base", False),
     (".crew/.scope-baseX", False),
@@ -200,6 +237,17 @@ def test_is_crew_bookkeeping_matches_whole_segments_at_the_root(rel, expected):
     assert crew_ticket.is_crew_bookkeeping(rel) is expected
 
 
+@pytest.mark.parametrize("matcher,rel,expected", [
+    ("is_crew_state", ".crew/event-claims", False),
+    ("is_crew_state", ".crew/event-claims/a/b", True),
+    ("is_crew_content", ".crew/codemap", False),
+    ("is_crew_content", ".crew/codemap/x.md", True),
+])
+def test_a_trailing_double_star_is_everything_below_never_the_directory(matcher, rel, expected):
+    """git's `:(glob)` reading of a `/**` tail, which every list shares."""
+    assert getattr(crew_ticket, matcher)(rel) is expected
+
+
 def test_git_excludes_are_root_anchored():
     specs = crew_ticket.bookkeeping_excludes()
     assert len(specs) == len(crew_ticket.CREW_BOOKKEEPING_PATHS)
@@ -207,8 +255,12 @@ def test_git_excludes_are_root_anchored():
         assert spec == ":(exclude,top,glob)" + entry
 
 
-def test_no_entry_is_on_both_lists():
-    assert not set(crew_ticket.CREW_BOOKKEEPING_PATHS) & set(crew_ticket.CREW_CONTENT_PATHS)
+def test_no_entry_is_on_two_lists():
+    lists = (crew_ticket.CREW_BOOKKEEPING_PATHS, crew_ticket.CREW_STATE_PATHS,
+             crew_ticket.CREW_CONTENT_PATHS)
+    for i, left in enumerate(lists):
+        for right in lists[i + 1:]:
+            assert not set(left) & set(right)
 
 
 def test_the_matcher_agrees_with_git(tmp_path):

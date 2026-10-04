@@ -11,22 +11,34 @@ completion audit listed `.crew/.scope-base` and `.crew/metrics.md` as out of Tou
 verify gate wrote `.crew/.verify-gate.record.json` and `.timings.json` untracked, which changed the
 review bundle and staled the accepted receipt with no round left.
 
-- **One list.** `crew_ticket.CREW_BOOKKEEPING_PATHS`: every path a crew script writes for itself
-  under `.crew/` (the scope base, the gate's records, fingerprint, lock and marker, `metrics.md`,
-  `metrics.jsonl`, `guard.log`, the auto-clear and handoff markers, incident files, and the
-  transcript, handoff, incident, backup, event-claim and tfplan dirs), each entry naming its
-  writer, as root-anchored `:(exclude,top,glob)` pathspecs. `CREW_CONTENT_PATHS` lists what crew
-  reads as config, policy, approval or a map (`config.json`, `crew.json`, `verify.json`,
-  `endpoints.json`, `standards.md`, `.approved-*`, the code map, the archive), which stays
-  reviewable. `test_crew_bookkeeping.py` walks every crew hook script's `.crew/` names and
-  requires each in exactly one list, and pins the matcher against git's own reading of the
-  pathspecs.
-- **Four consumers.** The review bundle (`review_patch.py`, so `review_ledger.py
-  --check-receipt`) and the completion audit leave the list out whatever `.gitignore` says; the
-  scope guard allows a Write/Edit to it with or without an approval when both the real and the
-  named path are on it (`.crew/.scope-base` stays refused, rule 2 runs first); the verify gate, in
-  both flavours, drops it from the changed list. A nested `sub/.crew/.scope-base`, `.crew/verify.json`
-  and `.crew/config.json` are still judged everywhere.
+- **Two lists, not one.** `crew_ticket.CREW_BOOKKEEPING_PATHS` is only what crew's scripts write
+  during a ticket's normal flow -- the scope base, the verify gate's record, timings, fingerprint,
+  lock, marker and rule-output scratch, `metrics.md` and `metrics.jsonl` -- each entry naming its
+  writer, as root-anchored `:(exclude,top,glob)` pathspecs. `CREW_WRITE_ALLOWED_PATHS` is the one
+  path of it a crew command Edits by hand, `.crew/metrics.md`. `CREW_STATE_PATHS` holds everything
+  else crew writes (`.crew/tfplan/`, `incident.json`, `.deploy-in-flight`, `guard.log`, the
+  auto-clear and handoff markers, the transcript, handoff, incident, backup and event-claim dirs),
+  and is left out of nothing: crew reads several of them as trust inputs (a tfplan sidecar is the
+  plan summary `cloud_guard` trusts before `terraform apply`, `incident.json` stands the Stop gate
+  down), so a PR that commits one is reviewed and audited like any file. `CREW_CONTENT_PATHS`
+  lists what crew reads as config, policy, approval or a map (`config.json`, `crew.json`,
+  `verify.json`, `endpoints.json`, `standards.md`, `.approved-*`, the code map, the archive).
+  `test_crew_bookkeeping.py` walks every crew hook script's `.crew/` names and requires each on
+  exactly one of bookkeeping, state and content, and pins the matcher against git's own reading of
+  the pathspecs.
+- **The consumers.** The review bundle (`review_patch.py`, so `review_ledger.py --check-receipt`),
+  the completion audit and the verify gate's changed list (both flavours) leave the bookkeeping
+  list out whatever `.gitignore` says. The scope guard's rule 5a allows a Write/Edit to
+  `CREW_WRITE_ALLOWED_PATHS` with or without an approval when both the real and the named path are
+  on it; rule 2 refuses every other bookkeeping path (the scope base, the gate's records and marker,
+  `metrics.jsonl`) in every mode but `off`, whatever Touch says, because the bundle and the audit
+  cannot see a write to it. A nested `sub/.crew/.scope-base`, `.crew/verify.json` and
+  `.crew/config.json` are still judged everywhere.
+- **Residual risk, not closed here.** A Bash command can still write the gate's marker
+  (`.verify-verified-at`) and fingerprint, and the fingerprint is not keyed, so a shell write could
+  forge a green gate that the bundle and the audit do not show; the same was true before T-0068.
+  `.crew/guard.log` and the other state files are judged again as before T-0068, so a repository that
+  does not ignore `.crew/*` still sees them listed if a guard writes one during a ticket.
 - **Refresh artifacts are mapped.** The gate never reports a refresh artifact (`.crew/codemap/`, the
   diagrams dir, the graph dir, `.claude/rules/`) as unmapped; a rule that names one still runs.
   `completion_audit.classify_paths` is the one judgement: `verify-gate.sh` imports it, and
@@ -35,10 +47,12 @@ review bundle and staled the accepted receipt with no round left.
 - **One re-review after the upgrade, in such a repository.** A receipt accepted over a tree that
   held a non-ignored bookkeeping file reads stale once the rebuilt bundle drops that file. Accepted
   as risk (spec, Unknowns).
-- Must-block and must-allow tests for each consumer; 26 new sabotage mutations in
-  `sabotage_refresh.py`, `sabotage_review.py` and `sabotage_scope.py` (4 of them `.ps1` ones, joined
-  where pwsh exists), each red on its named test, and three earlier ones re-anchored on the new
-  exclusion lines. `.crew/verify.json` gains a rule for
+- Must-block and must-allow tests for each consumer (including Write/Edit to `.crew/tfplan/x.json`,
+  `.crew/incident.json`, `.crew/.deploy-in-flight` and the gate's records refused, and a committed
+  `.crew/incident.json`, tfplan or handoff file in the bundle and the audit); new sabotage
+  mutations in `sabotage_refresh.py`, `sabotage_review.py` and `sabotage_scope.py` (4 of them
+  `.ps1` ones, joined where pwsh exists), each red on its named test, and three earlier ones
+  re-anchored on the new exclusion lines. `.crew/verify.json` gains a rule for
   `review_patch.py` / `review_ledger.py`, and rules 4 and 12 run the new suites.
 - A harness change under T-0087, so it lands alone. The list lives in `crew_ticket.py` and the
   classifier in `completion_audit.py` (both harness) rather than the plan's `crew_common.py` and

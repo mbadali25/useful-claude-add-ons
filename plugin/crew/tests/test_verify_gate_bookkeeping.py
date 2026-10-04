@@ -90,7 +90,6 @@ def _bookkeeping(flavour, root):
     _write(root, ".crew/.scope-base", '{"T-1": "0000000"}\n')
     _write(root, ".crew/metrics.md", "| 2026-10-04 | T-1 | codex (r1) | 0 | 0 |\n")
     _write(root, ".crew/metrics.jsonl", '{"ticket": "T-1"}\n')
-    _write(root, ".crew/guard.log", "0\tscope\tblock\tallow\n")
     listed = subprocess.run(["git", "ls-files", "-o", "--exclude-standard"], cwd=root,
                             check=True, capture_output=True, text=True).stdout.split()
     assert ".crew/.verify-gate.record.json" in listed, listed
