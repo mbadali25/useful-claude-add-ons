@@ -1,0 +1,43 @@
+%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/fix.md, plugin/crew/hooks/scripts/crew_tracker.py
+%% Purpose: How a request enters the crew lifecycle: a small change takes /crew:fix, anything else goes through /crew:brainstorm until the user approves a direction and the ticket moves to ready.
+%% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
+%% Arrow-shaped nodes ("next:" / "back:" / "again:") stand for a node drawn in the named part.
+%% --
+%% Every node cites the command file's own line; files are named repo-relative
+%% here and by basename in the nodes (all under plugin/crew/commands/ unless
+%% named otherwise):
+%%   plugin/crew/commands/brainstorm.md:15-40 mint ticket: crew_tracker.py resolve (:22),
+%%     then crew_tracker.py create (:28) - INDEX row `direction`, Obsidian card + note;
+%%     `id taken` -> next free id, nothing written under it (:34-36); any other
+%%     failed create -> stop, nothing written under that id (:35-37);
+%%     :45 one question per message; :54 propose 2-3 options; :63-71 direction.md;
+%%     :73 show and stop; :81 crew_tracker.py move --to ready (INDEX `ready`, card
+%%     stays in Backlog); :90-91 suggest /crew:fix when small.
+%%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
+%%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29;
+%%     any other failure -> stop, :29-30),
+%%     :73 --to spec, :81 --to planned, :89 --to in-progress, :91 --to review;
+%%     :75 one-step plan, still /crew:approve; :94 one review round.
+%% --
+%% Note small: small? one subsystem, known cause, no new behaviour, no auth/SQL/IaC
+%% Note BR: (+ Obsidian card); 'id taken' -> next free id; any other failure -> stop
+%% Note rdy: (INDEX 'ready', card stays in Backlog)
+flowchart TB
+    ask([A request])
+    ask --> small{"small change?<br/>brainstorm.md:90-91"}
+    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :75, :95"]
+    small -- no --> BR
+
+    subgraph brainstorm["/crew:brainstorm"]
+        BR["mint T-####: crew_tracker.py create<br/>INDEX row 'direction'<br/>brainstorm.md:15-40"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:45, :54"]
+        br2 --> br3["write direction.md, show, STOP<br/>:63-73"]
+    end
+
+    br3 --> ok1{user approves<br/>the direction?}
+    ok1 -- no --> br2
+    ok1 -- yes --> rdy["crew_tracker.py move --to ready<br/>brainstorm.md:81"]
+
+    fix -.-> BR
+    fix -. "same /crew:approve,<br/>/crew:review, /crew:done" .-> to_ap0>"next: approve part<br/>user types /crew:approve id"]
+    rdy --> to_sp1>"next: spec-plan part<br/>direction.md?"]

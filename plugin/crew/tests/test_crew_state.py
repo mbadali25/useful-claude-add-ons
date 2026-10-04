@@ -937,6 +937,59 @@ def test_fully_priced_and_declared_map_with_fresh_marker_fires_nothing():
     assert "verifyReachUndeclared" not in got
 
 
+# --- qaAuditStale (L-0618) ------------------------------------------------------
+
+def _qa(**over):
+    base = {"stampPresent": True, "stampSha": "abc1234", "changedSince": False}
+    base.update(over)
+    return base
+
+
+def test_qa_audit_not_measured_does_not_fire():
+    assert "qaAuditStale" not in crew_state.evaluate_triggers(_state())
+
+
+def test_qa_audit_never_stamped_fires():
+    got = crew_state.evaluate_triggers(_state(qaAudit=_qa(stampPresent=False, stampSha=None,
+                                                          changedSince=None)))
+    assert "qaAuditStale" in got
+
+
+def test_qa_audit_paths_moved_since_the_stamp_fires():
+    assert "qaAuditStale" in crew_state.evaluate_triggers(_state(qaAudit=_qa(changedSince=True)))
+
+
+def test_qa_audit_unanswerable_diff_fires_not_healthy():
+    """UNKNOWN NEVER RESOLVES TO HEALTHY: a stamp git cannot diff from fires."""
+    assert "qaAuditStale" in crew_state.evaluate_triggers(_state(qaAudit=_qa(changedSince=None)))
+
+
+def test_qa_audit_current_stamp_is_quiet():
+    assert "qaAuditStale" not in crew_state.evaluate_triggers(_state(qaAudit=_qa()))
+
+
+def test_read_qa_audit_against_a_real_fixture(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    assert crew_state.read_qa_audit(str(root))["stampPresent"] is False
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
+                         capture_output=True, text=True, check=True).stdout.strip()
+    (root / ".crew" / ".qa-audit-at").write_text(sha + "\n", encoding="utf-8")
+    assert crew_state.read_qa_audit(str(root))["changedSince"] is False
+    (root / "notes.txt").write_text("x", encoding="utf-8")
+    crew_fixtures.commit_file(root, "notes.txt")
+    assert crew_state.read_qa_audit(str(root))["changedSince"] is False  # not an audited path
+    (root / ".gitignore").write_text(".crew/*\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, ".gitignore")
+    assert crew_state.read_qa_audit(str(root))["changedSince"] is True
+
+
+def test_read_qa_audit_a_stamp_naming_no_commit_is_unknown(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".crew" / ".qa-audit-at").write_text("0" * 40 + "\n", encoding="utf-8")
+    got = crew_state.read_qa_audit(str(root))
+    assert got["stampPresent"] is True and got["changedSince"] is None
+
+
 def test_read_verify_health_against_a_real_fixture(tmp_path):
     """read_verify_health itself, not evaluate_triggers - reads the actual
     files the gate reads, the same way --price was sabotage-tested against a
