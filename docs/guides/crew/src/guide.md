@@ -259,6 +259,16 @@ merges, pushes, opens a pull request or deploys today. Shipping arrives with
 T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
 `/crew:autopilot status` prints where a ticket stands, read-only.
 
+`/crew:autopilot focus <id>` locks autopilot onto one ticket. It writes this
+worktree's active-ticket pointer and `.crew/.scope-base`, and prints the
+scope-base line. While focused, autopilot refuses to run another ticket,
+`assign` and `goal`; once the plan is approved, `next` stops as `drift` on a
+changed path outside the plan's Touch list, or when that check could not run.
+`focus --findings --ticket <id>` names where an out-of-scope finding goes.
+`/crew:autopilot focus` shows the lock and `/crew:autopilot focus off`
+releases it. Claude Code's built-in `/focus` is unrelated: it only toggles the
+display.
+
 A separate autopilot guide with worked examples is planned as T-0054.
 
 ## Trackers
@@ -386,7 +396,6 @@ guide describes them as present.
 | T-0012 | Autopilot goals and backlogs, with per-run caps |
 | T-0017 | A machine opt-in for the automatic wrap-up |
 | T-0019 | `/crew:autopilot assign` |
-| T-0020 | `/crew:autopilot focus` |
 | T-0029 | Parallel autopilot lanes and a review policy |
 | T-0030 | Cross-session coordination claims |
 | T-0044 | A credentials boundary for what the cloud guard cannot see |
