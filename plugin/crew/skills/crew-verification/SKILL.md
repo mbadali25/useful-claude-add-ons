@@ -423,6 +423,49 @@ repository; a literal sha in the command must be that tree's HEAD. This file,
 session's project directory, because they are per-checkout gitignored state.
 To deploy from a clean worktree, run the declared command there.
 
+### A GitHub Actions deploy: the `github` entry
+
+An environment whose deploy is a `workflow_dispatch` run describes it as data,
+one object or a list of them, and lists each entry's canonical prefix in
+`deploy` so the gate's match fires on the real dispatch:
+
+```json
+"staging": {
+  "deploy": ["gh workflow run deploy.yml --ref main -f target=staging"],
+  "github": {"workflow": "deploy.yml", "ref": "main",
+             "inputs": {"target": "staging"}, "shaInput": "sha"},
+  "rollback": "none", "rollbackReason": "staging is redeployed from main"
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `workflow` | Required. The workflow's `.yml`/`.yaml` filename - not its display name or id |
+| `ref` | Required. A branch name: valid for `git check-ref-format --branch`, not starting `-` or `@`, not `HEAD`, no `refs/` path but `refs/heads/`. A bare tag name is not detected |
+| `inputs` | Fixed `-f` inputs, dispatched in the order listed |
+| `shaInput` | The input that receives the full HEAD sha |
+| `correlationInput` | The input that receives `crew-<env>-<sha7>-<8 hex>`; useful only when the workflow's `run-name` shows it |
+| `deployJob` | A glob naming the job whose result is the deploy's result |
+| `watchMinutes` / `identifySeconds` | 1-360 (default 60) / 10-900 (default 120) |
+
+Every value must fit `[A-Za-z0-9._/@:+-]`; one that does not is refused by
+name, never quoted. There is no key for `-R/--repo`, and an unknown key is
+refused. `python3 <crew>/hooks/scripts/crew_ghdeploy.py check --root . --env
+<name>` validates the entries, checks `deploy` lists exactly their prefixes,
+and applies both gates' one rule: every environment whose `deploy` string
+matches the command literally, ignoring case, either way round (CRs and
+trailing newlines stripped; `*`, `?`, `[` are text) applies, the union of
+their `requires`, `rollback` and `requireHuman`. A map EITHER gate refuses
+(twin keys, an empty key, a comma or control-character name, a null,
+non-string or date-time `deploy`, a list or object `requireHuman`) is
+refused as `gate-refuses-map`. Each printed dispatch carries `gated-as:
+'<names>'`, the union of what the two gates apply (they differ only on 29
+non-ASCII case pairs in another environment's deploy string).
+It prints the literal dispatch for HEAD, writes nothing and runs no `gh`. Exit 0 is valid (or no `github` entry), 2 is refused with
+`result=refused reason=<code>`, 3 is could-not-tell (map, environment or HEAD
+unreadable). **The dispatch sequence is not built yet:** nothing dispatches,
+finds the run, watches it or records it. Run the printed command by hand.
+
 ### The promotion record
 
 Every promotion appends one line to `.work/PROMOTIONS.md`:

@@ -338,6 +338,24 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
 
+**GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:458`; `entries`, `:223`),
+validates each against a closed key set (`KEYS`, `:98`) and value grammar (`VALUE`, `:95`;
+`entry_problem`, `:185`; the ref as a branch name, `_ref_problem`, `:124`), requires `deploy` to be
+exactly the entries' prefixes (`check`, `:505`; `prefix`, `:236`), and applies L-1503's promote-gate
+rule, refusing when EITHER gate refuses: twin keys under Python's or .NET's fold and an empty key at
+any depth (`_no_twins`, `:288`; the 27 .NET-only pairs, `_DOTNET_ONLY_FOLDS`, `:264`), bad names,
+a null, non-string or ConvertFrom-Json date-time `deploy` (`_is_dotnet_date`, `:346`), a list or
+object `requireHuman` (`gate_problem`, `:383`) and JSON past the recursion limit (`_parse`, `:416`)
+are `gate-refuses-map`; each dispatch is printed with `gated-as:` - every environment whose
+`deploy` matches it literally, ignoring case under either gate's fold, either way round, after CR
+stripping (`gate_matches`, `:406`; `simulate_gate`, `:440`, is the agreement tables' entry point).
+It prints the dispatch for HEAD (`dispatch`, `:244`), runs only `git rev-parse HEAD`, the git
+`crew_common.require_tool` resolves (`_head`, `:491`), and writes nothing; no hook calls it yet,
+and promote-gate ignores the `github` key. DERIVED from the definitions cited. Its unwired
+mutations are `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after
+the anchor; the anchor was not moved for it.
+
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls
 `_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2789`, called at `:2838`, and only at
