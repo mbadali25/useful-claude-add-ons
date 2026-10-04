@@ -16,6 +16,7 @@ Last updated: 2026-10-04 11:30 UTC
 - **After each merge:** merge `main` into the next PR (generated files take main's side, rules
   regenerated), crew version set in the LAST commit, merge-only Sonnet review, CI, merge.
 - **Commits** carry only `Claude-Session:`. Never `Co-Authored-By`.
+- **Owner 2026-10-04 11:3x: notes after EVERY action** (merge, push, review verdict, agent start/finish, CI result, owner decision) so a lost session or container can resume from the last line. Pending work a lost agent was doing must be named with branch + placeholder version.
 - **Versions:** the next PR in the train takes the next free number. Builders use 1.0.300+
   placeholders and are re-bumped at landing. Next free for landing: see the latest log line (main is crew **1.0.256** at c9263465; placeholders 1.0.319-1.0.327 are in use and get re-bumped at landing).
 - **Helpers** (this session's scratchpad, lost on restart; recreate from the description):
