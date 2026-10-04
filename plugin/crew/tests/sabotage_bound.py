@@ -8,7 +8,7 @@ uncapped full run then grew one python3 past 19 GB and the host's OOM killer
 took the orchestrating session with it. The host's heavy-run cgroup is not on
 CI or on other machines, so the harness bounds itself, per entry:
 
-- MEMORY. `RLIMIT_AS` set in the child before exec, so every process the test
+- MEMORY. `RLIMIT_DATA` set in the child before exec, so every process the test
   spawns inherits it. Over the cap the reading process gets MemoryError, the
   guard turns that into an "internal error" deny, the test's own assertion
   fails and pytest exits 1: RED by a real assertion, never a new outcome that
@@ -21,8 +21,11 @@ CI or on other machines, so the harness bounds itself, per entry:
 `CREW_SABOTAGE_MEM_MB` (default 4096, 0 = no cap, and the line says so) and
 `CREW_SABOTAGE_TIMEOUT_S` (default 600). Anything else that is not an integer
 in range raises ValueError: an unreadable limit refuses the run, it never
-means the default or no cap. 4096 MiB because pwsh needs more than 2 GiB of
-address space to start (measured: exit 134 under 2 GiB, clean under 4 GiB).
+means the default or no cap. RLIMIT_DATA, not RLIMIT_AS: .NET reserves far
+more address space than it uses, and pwsh 7.4.6 died under every RLIMIT_AS
+tried up to 30 GiB (measured, Linux, 2026-10-04), which made 1121 unmutated
+crew tests fail under a 4 GiB address-space cap. Under a 4 GiB data limit pwsh
+starts, and a python process reading without bound still hits MemoryError.
 
 A harness killed by SIGKILL cannot stop its child; any other exit the harness
 sees (its signal handler's SystemExit, Ctrl-C) stops the group before it
@@ -92,7 +95,7 @@ def _absent(mem_mib):
 def describe(mem_mib, timeout_s):
     """The one line `sabotage.py` prints before the first mutation."""
     why = _absent(mem_mib)
-    memory = (f"memory {mem_mib} MiB per process (RLIMIT_AS)" if why is None
+    memory = (f"memory {mem_mib} MiB per process (RLIMIT_DATA)" if why is None
               else f"memory cap absent ({why})")
     return f"bound: {memory}, {timeout_s} s per entry"
 
@@ -145,7 +148,7 @@ def run(argv, cwd, env, mem_mib, timeout_s):
     else:
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     if cap:
-        kwargs["preexec_fn"] = lambda: resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
+        kwargs["preexec_fn"] = lambda: resource.setrlimit(resource.RLIMIT_DATA, (cap, cap))
     proc = subprocess.Popen(  # pylint: disable=consider-using-with
         argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL, text=True, **kwargs)

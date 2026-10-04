@@ -379,10 +379,17 @@ def test_no_record_file_is_left_behind(flavour, tmp_path):
     the sh gate refuses earlier, before any rule, for its own temp files.)"""
     tmpdir = tmp_path / "tmpdir"
     tmpdir.mkdir()
-    env = {"TMPDIR": str(tmpdir), "TMP": str(tmpdir), "TEMP": str(tmpdir)}
     root = _repo(tmp_path, ["echo ok", "exit 1", "kill -KILL $BASHPID"])
-
-    res = _run(flavour, root, env=env)
+    # TMP/TEMP handed to a child: inside the MSYS /tmp pin (a no-op off
+    # Windows), pinning the bash the gate's own rules run under - resolved
+    # before `env` exists, as test_34d_ps1 does (it only reads PATH).
+    pin = (crew_fixtures.gate_bash(_PWSH, _PS1)
+           if flavour == "ps1" and sys.platform.startswith("win") else _BASH)
+    env = dict(_env(flavour, root), TMPDIR=str(tmpdir), TMP=str(tmpdir), TEMP=str(tmpdir))
+    with crew_fixtures.msys_tmp_pinned(pin, env):
+        res = crew_fixtures.run_gate(_cmd(flavour), input="{}", cwd=str(root), env=env,
+                                     capture_output=True, text=True, check=False,
+                                     timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
     assert res.returncode == 2, res.stderr
     assert "VERIFY FAILED: exit 1" in res.stderr

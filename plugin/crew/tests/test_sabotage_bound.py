@@ -4,7 +4,7 @@ Two cloud guard mutations turn a bounded read into an unbounded one. Before
 this, `sabotage.py` ran each entry's pytest as a bare `subprocess.run`, so an
 uncapped full run grew one python3 past 19 GB and the host's OOM killer took
 the orchestrating session with it. `sabotage_bound.run` is the harness's own
-bound: the child starts in its own process group under `RLIMIT_AS` (Linux),
+bound: the child starts in its own process group under `RLIMIT_DATA` (Linux),
 and a timeout stops the whole group and returns 124.
 
 Every case here runs a throwaway python child, never a crew test, so the
@@ -51,7 +51,7 @@ def _gone(pid):
 
 # --- must block --------------------------------------------------------------
 
-@pytest.mark.skipif(not _LINUX, reason="RLIMIT_AS is enforced on Linux only")
+@pytest.mark.skipif(not _LINUX, reason="RLIMIT_DATA is enforced on Linux only")
 def test_a_child_over_the_memory_cap_fails_instead_of_growing():
     code, output = _run(_py(_OVER))
 
@@ -59,12 +59,12 @@ def test_a_child_over_the_memory_cap_fails_instead_of_growing():
     assert "MemoryError" in output
 
 
-@pytest.mark.skipif(not _LINUX, reason="RLIMIT_AS is enforced on Linux only")
+@pytest.mark.skipif(not _LINUX, reason="RLIMIT_DATA is enforced on Linux only")
 def test_the_memory_cap_reaches_a_grandchild():
     """The guard a crew test drives is a subprocess of the test, so the cap has
     to be inherited by everything the child starts, not set on pytest alone."""
     grandchild = (
-        "import resource, sys; print('AS', resource.getrlimit(resource.RLIMIT_AS)[0]); "
+        "import resource, sys; print('AS', resource.getrlimit(resource.RLIMIT_DATA)[0]); "
         + _OVER)
     child = ("import subprocess, sys; "
              f"sys.exit(subprocess.call([sys.executable, '-c', {grandchild!r}]))")
@@ -145,7 +145,7 @@ def test_zero_memory_is_no_cap_and_the_line_says_absent():
     assert line.endswith("600 s per entry")
     if _LINUX:
         code, output = _run(_py(
-            "import resource; print('AS', resource.getrlimit(resource.RLIMIT_AS)[0])"),
+            "import resource; print('AS', resource.getrlimit(resource.RLIMIT_DATA)[0])"),
             mem_mib=0)
         assert code == 0, output
         assert f"AS {_CAP_MIB << 20}" not in output
@@ -154,7 +154,7 @@ def test_zero_memory_is_no_cap_and_the_line_says_absent():
 def test_the_bound_line_says_absent_where_no_cap_is_enforced(monkeypatch):
     if _LINUX:
         assert sabotage_bound.describe(4096, 600) == (
-            "bound: memory 4096 MiB per process (RLIMIT_AS), 600 s per entry")
+            "bound: memory 4096 MiB per process (RLIMIT_DATA), 600 s per entry")
     monkeypatch.setattr(sabotage_bound.sys, "platform", "win32")
 
     line = sabotage_bound.describe(4096, 600)
