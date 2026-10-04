@@ -1050,7 +1050,7 @@ flowchart TB
 flowchart TB
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
+        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
         dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
         dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
         dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done<br/>:68-97"]
@@ -1060,8 +1060,8 @@ flowchart TB
         dn5 -- "stale / unknown" --> dnx
         dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:99-102"}
         ln0 -- yes --> ln1{"check-land passes?<br/>done.md:104-110"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>crew never merges :110-111"]
-        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:112-113" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:112-116" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
 ```
 
@@ -1094,8 +1094,8 @@ flowchart TB
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check<br/>:106-110"]
-        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:111-114"]
-        im4 --> im5["then /crew:review last<br/>:115"]
+        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:111-113"]
+        im4 --> im5["then /crew:review last<br/>:114"]
     end
 
     im5 --> to_pf0>"next: review part<br/>preflight first"]

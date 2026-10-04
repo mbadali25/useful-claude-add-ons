@@ -535,7 +535,7 @@ pre { overflow-x:auto; } pre.mermaid { background:transparent; text-align:center
 <section id="process-crew-lifecycle-done"><h2>Process crew lifecycle done</h2><p>/crew:done&#x27;s four checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.</p><pre class="mermaid">flowchart TB
     subgraph done[&quot;/crew:done - all four or nothing&lt;br/&gt;done.md:7&quot;]
         dn1{&quot;1 review receipt&lt;br/&gt;--check-receipt&lt;br/&gt;done.md:10-13&quot;}
-        dn1 -- pass --&gt; dn2{&quot;2 verify gate all pass&lt;br/&gt;crew_status.py&lt;br/&gt;:21-27&quot;}
+        dn1 -- pass --&gt; dn2{&quot;2 verify gate all pass&lt;br/&gt;crew_status.py, or a CI receipt for HEAD&lt;br/&gt;(ci_receipt.py check)&lt;br/&gt;:21-38&quot;}
         dn2 -- pass --&gt; dn3{&quot;3 completion audit&lt;br/&gt;passes?&lt;br/&gt;:40-53&quot;}
         dn3 -- pass --&gt; dn5{&quot;4 artifacts current&lt;br/&gt;crew_refresh_check.py, read-only&lt;br/&gt;:55-66&quot;}
         dn5 -- fresh --&gt; dn4[&quot;trailer report, then&lt;br/&gt;&#x27;status: done&#x27;, move --to done&lt;br/&gt;:68-97&quot;]
@@ -545,8 +545,8 @@ pre { overflow-x:auto; } pre.mermaid { background:transparent; text-align:center
         dn5 -- &quot;stale / unknown&quot; --&gt; dnx
         dn4 --&gt; ln0{&quot;train armed?&lt;br/&gt;crew_train.py status&lt;br/&gt;done.md:99-102&quot;}
         ln0 -- yes --&gt; ln1{&quot;check-land passes?&lt;br/&gt;done.md:104-110&quot;}
-        ln1 -- LAND_OK --&gt; ln2[&quot;you run the printed gh pr merge,&lt;br/&gt;then release --merged sha&lt;br/&gt;crew never merges :110-111&quot;]
-        ln1 -- &quot;refused: catch-up,&lt;br/&gt;gate the merged head again&lt;br/&gt;:112-113&quot; --&gt; to_im5&gt;&quot;back: implement part&lt;br/&gt;then /crew:review last&quot;]
+        ln1 -- LAND_OK --&gt; ln2[&quot;you run the printed gh pr merge,&lt;br/&gt;then release --merged sha&lt;br/&gt;(crew never merges) :110-111&quot;]
+        ln1 -- &quot;refused: catch-up, resolve,&lt;br/&gt;bump, refresh, commit, gate,&lt;br/&gt;review again if the receipt is stale&lt;br/&gt;:112-116&quot; --&gt; to_im5&gt;&quot;back: implement part&lt;br/&gt;then /crew:review last&quot;]
     end</pre><table><thead><tr><th>Box</th><th>Details</th></tr></thead><tbody><tr><td><code>dn3</code></td><td>(refresh artifacts: re-anchor or regeneration the change reaches)</td></tr><tr><td><code>dn4</code></td><td>first a report, never a check (T-0066, done.md:68-79): crew_trailers.py --check lists git.forbiddenTrailers over the ticket&#x27;s own commits (git log --first-parent) as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md &#x27;status: done&#x27; (keeps the approval), crew_tracker.py move --to done, crew_metrics record</td></tr><tr><td><code>ln1</code></td><td>crew_train.py check-land: holds the train, merge-tree clean, base unmoved in Touch, receipt + gate</td></tr><tr><td><code>ln2</code></td><td>--merge --match-head-commit sha</td></tr></tbody></table><ul><li><strong>Source:</strong> <code>process-crew-lifecycle-done.mmd</code></li><li><strong>Drawn from:</strong> <code>plugin/crew/commands/done.md</code>, <code>plugin/crew/hooks/scripts/crew_ticket.py</code>, <code>plugin/crew/hooks/scripts/completion_audit.py</code>, <code>plugin/crew/hooks/scripts/crew_refresh_check.py</code>, <code>plugin/crew/hooks/scripts/crew_tracker.py</code>, <code>plugin/crew/hooks/scripts/crew_train.py</code></li><li><strong>Readability:</strong> PASS: 10 nodes, no crossings, nothing drawn through a node</li></ul></section>
 <section id="process-crew-lifecycle-implement"><h2>Process crew lifecycle implement</h2><p>/crew:implement from the approval check to handing over to /crew:review: the plan steps under the scope guard, the refresh-artifacts loop and the required standards self-check.</p><pre class="mermaid">flowchart TB
     subgraph implement[&quot;/crew:implement&quot;]
@@ -561,8 +561,8 @@ pre { overflow-x:auto; } pre.mermaid { background:transparent; text-align:center
         rf2 --&gt; rf1
         rf1 -- &quot;stop&quot; --&gt; rfx([report the reason, stop])
         rf1 -- fresh --&gt; sc1[&quot;required standards self-check&lt;br/&gt;:106-110&quot;]
-        sc1 --&gt; im4[&quot;spec.md &#x27;status: review&#x27;,&lt;br/&gt;move --to review&lt;br/&gt;:111-114&quot;]
-        im4 --&gt; im5[&quot;then /crew:review last&lt;br/&gt;:115&quot;]
+        sc1 --&gt; im4[&quot;spec.md &#x27;status: review&#x27;,&lt;br/&gt;move --to review&lt;br/&gt;:111-113&quot;]
+        im4 --&gt; im5[&quot;then /crew:review last&lt;br/&gt;:114&quot;]
     end
 
     im5 --&gt; to_pf0&gt;&quot;next: review part&lt;br/&gt;preflight first&quot;]

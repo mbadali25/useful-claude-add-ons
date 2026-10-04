@@ -43,8 +43,8 @@ flowchart TB
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check<br/>:106-110"]
-        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:111-114"]
-        im4 --> im5["then /crew:review last<br/>:115"]
+        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:111-113"]
+        im4 --> im5["then /crew:review last<br/>:114"]
     end
 
     im5 --> to_pf0>"next: review part<br/>preflight first"]
