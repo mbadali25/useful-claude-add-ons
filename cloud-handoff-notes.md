@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 20:32: Correction to previous line: 16 PRs merged this session (not 17).
 - 20:32: BATCH 2 COMPLETE. MERGED #347 T-0047 (re-run green) -> 59fe7d84, 1.0.335; MERGED #456 L-0677 -> main 644adfc2, crew 1.0.336. 17 PRs merged this session. #399 land-prep as 1.0.337 (harness alone) spawned.
 - 20:28: #493 L-1508 PR A round-2 review CLEAN at dbff75d9 (0/0/2 NIT), CI green first run. Carry :658 gate cite at landing. L-1509 widened: gizmoduck depcheck runs bare dependency-check (.bat) after which() found it.
 - 20:21: #493 L-1508 PR A round-1 fixes at dbff75d9, CI green first run (no mint flake): crew_shell FIX, lint widened (Name argv, string argv, os.*, wrappers), exact gate lines; new gated allowlist entries crew_shell bash -c and webtest_guard npx (container-only). Round-2 review sent to a66c088.
