@@ -385,11 +385,21 @@ refuses).
   starts but cannot run commands on this host (measured with
   `kernel.apparmor_restrict_unprivileged_userns = 1`). Every launch refuses until the host owner
   makes the sandbox usable or runs unattended work as a separate OS user or container.
+- **`settings: <file> sets sandbox`** or **`allows Read(...)`.** The repo's `.claude/settings.json`
+  or `.claude/settings.local.json` tries to shape the sandbox or widen reads. The sealed session
+  never loads those files, but the launcher refuses rather than trust that. **Fix:** remove the key
+  from the repo's file, or run that work attended.
+- **`settings: ... sandbox.excludedCommands`**, **`allowRead entry ... could re-open a credential
+  store`** or **`sandbox.filesystem.disabled`.** Your `~/.claude/settings.json` loads in the sealed
+  session and would let a command run unsandboxed or re-open a store. **Fix:** move the entry out of
+  your user settings (or narrow the `allowRead` away from the stores), then retry.
 - **`sandbox: the session can read a store: OPEN <path>`.** The sealed settings did not hold for that
-  path (a repo or user setting may be widening it). Nothing launches; find the setting.
-- **`sandbox: store not reported`, `could not tell`, or `probe made no tool call`.** The probe did
-  not measure every store; retry, and treat a repeat as a host problem, not a pass.
-- **`refuse command: ...`.** `launch` runs `claude` only, and supplies `--settings` itself.
+  path (a managed or user setting may be widening it). Nothing launches; find the setting.
+- **`sandbox: store not reported`, `could not tell`, `no end marker`, or `probe made no tool
+  call`.** The probe did not measure every store, or its output was cut short; retry, and treat a
+  repeat as a host problem, not a pass.
+- **`refuse command: ...`.** `launch` runs `claude` only (an executable file or a name on `PATH`),
+  and supplies `--settings` and `--setting-sources` itself.
 
 ## Obsidian
 

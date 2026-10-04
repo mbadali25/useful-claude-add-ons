@@ -544,11 +544,21 @@ refuses).</p>
   starts but cannot run commands on this host (measured with
   <code>kernel.apparmor_restrict_unprivileged_userns = 1</code>). Every launch refuses until the host owner
   makes the sandbox usable or runs unattended work as a separate OS user or container.</li>
+<li><strong><code>settings: &lt;file&gt; sets sandbox</code></strong> or <strong><code>allows Read(...)</code>.</strong> The repo's <code>.claude/settings.json</code>
+  or <code>.claude/settings.local.json</code> tries to shape the sandbox or widen reads. The sealed session
+  never loads those files, but the launcher refuses rather than trust that. <strong>Fix:</strong> remove the key
+  from the repo's file, or run that work attended.</li>
+<li><strong><code>settings: ... sandbox.excludedCommands</code></strong>, <strong><code>allowRead entry ... could re-open a credential
+  store</code></strong> or <strong><code>sandbox.filesystem.disabled</code>.</strong> Your <code>~/.claude/settings.json</code> loads in the sealed
+  session and would let a command run unsandboxed or re-open a store. <strong>Fix:</strong> move the entry out of
+  your user settings (or narrow the <code>allowRead</code> away from the stores), then retry.</li>
 <li><strong><code>sandbox: the session can read a store: OPEN &lt;path&gt;</code>.</strong> The sealed settings did not hold for that
-  path (a repo or user setting may be widening it). Nothing launches; find the setting.</li>
-<li><strong><code>sandbox: store not reported</code>, <code>could not tell</code>, or <code>probe made no tool call</code>.</strong> The probe did
-  not measure every store; retry, and treat a repeat as a host problem, not a pass.</li>
-<li><strong><code>refuse command: ...</code>.</strong> <code>launch</code> runs <code>claude</code> only, and supplies <code>--settings</code> itself.</li>
+  path (a managed or user setting may be widening it). Nothing launches; find the setting.</li>
+<li><strong><code>sandbox: store not reported</code>, <code>could not tell</code>, <code>no end marker</code>, or <code>probe made no tool
+  call</code>.</strong> The probe did not measure every store, or its output was cut short; retry, and treat a
+  repeat as a host problem, not a pass.</li>
+<li><strong><code>refuse command: ...</code>.</strong> <code>launch</code> runs <code>claude</code> only (an executable file or a name on <code>PATH</code>),
+  and supplies <code>--settings</code> and <code>--setting-sources</code> itself.</li>
 </ul>
 <h2 id="obsidian">Obsidian</h2>
 <p>See <a href="memory-and-obsidian.md">Memory and Obsidian</a> for setup. What goes wrong day to day:</p>

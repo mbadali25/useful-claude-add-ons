@@ -1463,7 +1463,7 @@ session by itself, and a hook cannot change the environment of a session that
 is already running, so `/crew:autopilot` touching the cloud unattended is
 started this way. The identity comes from `unattendedCloud` in the machine
 file `~/.claude/crew/config.json` only (CONFIG.md, "`unattendedCloud`"); a
-repo copy is ignored and reported. Five checks run in order, and the first that
+repo copy is ignored and reported. Six checks run in order, and the first that
 is not `ready` refuses with its reason printed verbatim. `unknown` ("could not
 tell") refuses exactly like `refuse` and keeps its own label:
 
@@ -1472,31 +1472,67 @@ tell") refuses exactly like `refuse` and keeps its own label:
    `--environment NAME` without both a machine `nonProd` entry and the repo's
    `environments.nonProd` classifying `NAME` as nonProd. There is no
    production entry.
-3. **export** -- `aws configure export-credentials --format process`, read
+3. **settings** -- the launch passes `--setting-sources user`, so the repo's
+   `.claude/settings.json` and `.claude/settings.local.json` do not load
+   (their `excludedCommands`, `allowRead`, hooks and `env` never reach the
+   sealed session). It fails closed anyway: a repo file with any `sandbox`
+   key or a `Read` allow rule refuses. Your own `~/.claude/settings.json`
+   (or `$CLAUDE_CONFIG_DIR/settings.json`) does load and its lists merge with
+   the sealed ones, so `sandbox.excludedCommands` (those commands run
+   unsandboxed), a `sandbox.filesystem.allowRead` entry at or under a store or
+   holding a glob, or `sandbox.filesystem.disabled: true` refuses. A settings
+   file that exists but is not a JSON object is `unknown`.
+4. **export** -- `aws configure export-credentials --format process`, read
    into memory only. No `SessionToken` or `Expiration` (static keys), under 15
    minutes of lifetime, a non-zero exit, a timeout or non-JSON output refuses.
-4. **identity** -- `aws sts get-caller-identity` in the sealed environment
+5. **identity** -- `aws sts get-caller-identity` in the sealed environment
    must print an ARN that starts with the named prefix (an assumed role ending
    in `/`); a `:user/` ARN or any other role refuses.
-5. **sandbox** -- one headless `claude -p` call in the sealed settings, from
-   the repo root with the repo's own settings loaded, runs a probe that tries
-   `head -c1`/`ls` and `python3 open()` on every store that exists. The verdict
-   is read from the stream-json tool results, never the model's prose: any
-   `OPEN` refuses; a missing nonce, a store not reported, an `ERR` or no tool
-   call is `unknown`.
+6. **sandbox** -- one headless `claude -p` call, made by the same `claude`
+   file the launch will exec, from `--root`, with the same leading flags,
+   runs a probe that tries `head -c1`/`ls` and `python3 open()` on every store
+   root that exists plus a bounded sample of files inside each (two per
+   directory, twelve per store: the sandbox denies a path and all under it, so
+   the root is the test and the sample catches a deny that stopped at the
+   directory). The output carries an index per store, the nonce first and an
+   end marker last, so it stays far under the Bash tool's output limit. The
+   verdict is read from the stream-json tool results, never the model's
+   prose: any `OPEN` refuses; a missing nonce, a missing end marker (output
+   cut short), a store not reported, an `ERR` or no tool call is `unknown`.
 
-The launched session gets: no inherited `AWS_*` variable; the exported
+The launched session is exec'd as
+`<claude> --settings <sealed> --setting-sources user [your args]`, in `--root`
+(whatever directory the launcher was started from), and gets: no inherited
+cloud or forge credential variable (`AWS_*`, `AZURE_*`, `ARM_*`, `CLOUDSDK_*`,
+`GOOGLE_*`, `TF_TOKEN_*`, `KUBECONFIG`, `GITHUB_TOKEN`, `GH_TOKEN`,
+`GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `DOCKER_CONFIG`,
+`DOCKER_AUTH_CONFIG`, `TF_CLI_CONFIG_FILE`, `TFE_TOKEN`); the exported
 temporary credentials; `AWS_EC2_METADATA_DISABLED=true`; `CREW_UNATTENDED=1`
 (so T-0005's guard judges it unattended); `AWS_CONFIG_FILE` at a region-only
 file and `AWS_SHARED_CREDENTIALS_FILE` at a path that does not exist, both in a
-mode-0700 `crew-sealed-*` temp directory that holds no credential; and
+mode-0700 `crew-sealed-<pid>-*` temp directory that holds no credential; and
 `--settings` with `sandbox.enabled`, `failIfUnavailable: true`,
-`allowUnsandboxedCommands: false`, and every store (`~/.aws` whole, `~/.azure`,
-`~/.terraform.d/credentials.tfrc.json`, `~/.claude/crew/config.json`, from both
-`$HOME` and the account's real home) in `sandbox.filesystem.denyRead` and as a
-`Read(...)` deny. A command other than `claude`, or one passing its own
-`--settings`/`--setting-sources`, refuses. It prints the checks and the ARN,
-never a credential.
+`allowUnsandboxedCommands: false` (which also makes the sandbox admin-required,
+so Claude Code itself ignores a repo's loosening settings), filesystem
+isolation pinned on, and every store -- `~/.aws` whole, `~/.azure`,
+`~/.terraform.d/credentials.tfrc.json`, `~/.config/gcloud`, `~/.kube`,
+`~/.config/gh`, `~/.docker/config.json`, `~/.claude/crew/config.json`, from
+both `$HOME` and the account's real home -- in `sandbox.filesystem.denyRead`
+and `denyWrite` and as `Read(...)` and `Edit(...)` denies. The sealed
+directory and the user settings file are write-denied too, so the session
+cannot rewrite its identity or its settings mid-run. A command other than
+`claude`, one that is not an executable file or on `PATH`, or one passing its
+own `--settings`/`--setting-sources`, refuses. It prints the checks and the
+ARN, never a credential. `exec` leaves no process to clean up, so the next
+`check` or `launch` removes any `crew-sealed-<pid>-*` directory you own whose
+process has exited, and leaves one whose process is alive.
+
+Because the session cannot read `~/.config/gh`, `~/.docker/config.json` or
+`~/.kube` and holds no `GH_TOKEN`, `gh`, registry pushes and `kubectl` have no
+credentials in an unattended run. That is deliberate: the run holds the one
+cloud identity it was handed and nothing else. Claude Code itself configured
+to run on Bedrock or Vertex through those variables is not supported by the
+launcher, for the same reason.
 
 **Host requirement.** Claude Code's sandbox has to run commands on the host.
 Where it starts but cannot run anything -- measured on a host with
@@ -1506,13 +1542,22 @@ Where it starts but cannot run anything -- measured on a host with
 and that line. Making it usable (or running unattended work as a separate OS
 user or container) is the host owner's call.
 
-**Accepted risks.** Credentials that expire mid-run fail closed. Grep/Glob
-tools that ignore `Read(...)` denies, if a later Claude Code adds them, are
-unmeasured. `/proc/<pid>/environ` of other root processes is outside the
-session. The probe nonce is in the prompt, so a model that chose to fake the
-probe's output could; the probe guards against an unusable or leaky sandbox,
-not against an adversarial probe session. Azure and TFC/HCP are a provider seam
-only: any key other than `aws` refuses as not implemented.
+**Accepted risks.** Credentials that expire mid-run fail closed. Claude Code
+applies `Read(...)` denies to Grep and Glob "best-effort" (its own words); a
+gap there is unmeasured. `/proc/<pid>/environ` of other root processes is
+outside the session. The probe nonce is in the prompt, so a model that chose
+to fake the probe's output could; the probe guards against an unusable or
+leaky sandbox, not against an adversarial probe session. The probe tries
+`head`, `ls` and `python3` only: a store that one of those can read is
+refused, and the settings check -- not the probe -- is what keeps an excluded
+or unsandboxed command out. Managed (organisation) settings always load and
+are not inspected; an `excludedCommands` there is the administrator's. Hooks
+and MCP servers run outside the sandbox: the user settings' ones are yours and
+load; a repo's `.claude/settings.json` hooks do not load, and a repo's
+`.mcp.json` servers are not inspected by the launcher. `--setting-sources`
+excluding project settings from the sandbox build needs Claude Code 2.1.246 or
+later, and the admin-required behaviour 2.1.285 or later. Azure and TFC/HCP
+are a provider seam only: any key other than `aws` refuses as not implemented.
 
 ### §11c. `change` — change requests, added by schema 7
 

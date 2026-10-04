@@ -1698,6 +1698,15 @@ The defaults name nothing (`profile`, `identity`, `region` all `null`,
 until the owner names one. README, "Unattended runs: sealed cloud
 credentials", lists every check and refusal.
 
+The launched session loads `~/.claude/settings.json` and the sealed
+`--settings` only (`--setting-sources user`): a repo's `.claude/settings.json`
+and `.claude/settings.local.json` never load, and the launcher refuses if
+either has a `sandbox` key or a `Read` allow rule. Your own settings file does
+load, so the launcher refuses while it sets `sandbox.excludedCommands`,
+`sandbox.filesystem.disabled: true`, or a `sandbox.filesystem.allowRead` entry
+that is a glob or sits at or under a credential store. Move such an entry to a
+settings file the unattended run does not need, or run that tool attended.
+
 ### The ratchet is one table, not five copies
 
 `install.policy` shipped its ratchet as a bespoke `effective_install_policy`

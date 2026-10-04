@@ -95,17 +95,19 @@ _CLAUDE_SHIM = r'''#!/usr/bin/env python3
 import json, os, re, shlex, sys, time
 args = sys.argv[1:]
 if "-p" in args:
+    prompt = args[args.index("-p") + 1]
+    targets = [shlex.split(line)[2] for line in prompt.splitlines()
+               if line.startswith("probe ")]
     rec = os.environ.get("FAKE_PROBE_SEEN")
     if rec:
         with open(rec, "w") as fh:
-            json.dump({"argv": args, "env": dict(os.environ),
-                       "cwd": os.getcwd()}, fh)
+            json.dump({"argv": args, "argv0": sys.argv[0],
+                       "env": dict(os.environ), "cwd": os.getcwd(),
+                       "targets": targets, "prompt_len": len(prompt)}, fh)
     if os.environ.get("FAKE_PROBE_SLEEP"):
         time.sleep(float(os.environ["FAKE_PROBE_SLEEP"]))
-    prompt = args[args.index("-p") + 1]
-    targets = [shlex.split(line)[1] for line in prompt.splitlines()
-               if line.startswith("probe ")]
     nonce = re.search(r"echo NONCE (\S+)", prompt).group(1)
+    head, tail = "NONCE " + nonce, "END " + nonce
     mode = os.environ.get("FAKE_PROBE", "sealed")
     out = []
     def emit(obj):
@@ -117,31 +119,34 @@ if "-p" in args:
         emit({"type": "user", "message": {"content": [
             {"type": "tool_result", "tool_use_id": "t1", "is_error": is_error,
              "content": [{"type": "text", "text": text}]}]}})
-    lines = ["SHUT " + t for t in targets]
+    lines = ["SHUT %d" % i for i in range(len(targets))]
     if mode == "seccomp":
         result(os.environ["FAKE_SECCOMP"] + "\nmore detail", True)
     elif mode == "notool":
         emit({"type": "assistant", "message": {"content": [
-            {"type": "text", "text": "\n".join(lines + ["NONCE " + nonce])}]}})
+            {"type": "text", "text": "\n".join([head] + lines + [tail])}]}})
     elif mode == "open":
-        lines[0] = "OPEN " + targets[0]
-        result("\n".join(lines + ["NONCE " + nonce]))
+        lines[0] = "OPEN 0"
+        result("\n".join([head] + lines + [tail]))
     elif mode == "skip":
-        result("\n".join(lines[1:] + ["NONCE " + nonce]))
+        result("\n".join([head] + lines[1:] + [tail]))
     elif mode == "err":
-        lines[0] = "ERR " + targets[0]
-        result("\n".join(lines + ["NONCE " + nonce]))
+        lines[0] = "ERR 0"
+        result("\n".join([head] + lines + [tail]))
     elif mode == "wrongnonce":
-        result("\n".join(lines + ["NONCE deadbeef"]))
+        result("\n".join(["NONCE deadbeef"] + lines + ["END deadbeef"]))
+    elif mode == "noend":
+        result("\n".join([head] + lines))
     else:
-        result("\n".join(lines + ["NONCE " + nonce]))
+        result("\n".join([head] + lines + [tail]))
     emit({"type": "result", "subtype": "success", "result": "done"})
     sys.stdout.write("\n".join(out) + "\n")
     sys.exit(int(os.environ.get("FAKE_PROBE_RC", "0")))
 dump = os.environ.get("FAKE_CLAUDE_DUMP")
 if dump:
     with open(dump, "w") as fh:
-        json.dump({"argv": sys.argv, "env": dict(os.environ)}, fh)
+        json.dump({"argv": sys.argv, "env": dict(os.environ),
+                   "cwd": os.getcwd()}, fh)
 sys.exit(0)
 '''
 
@@ -160,8 +165,18 @@ class World:
         self.home = tmp_path / "home"
         self.bin = tmp_path / "bin"
         self.repo = tmp_path / "repo"
-        for path in (self.home, self.bin, self.repo / ".crew"):
+        self.elsewhere = tmp_path / "elsewhere"
+        self.tmpdir = tmp_path / "tmp"
+        for path in (self.home, self.bin, self.repo / ".crew", self.elsewhere,
+                     self.tmpdir):
             path.mkdir(parents=True)
+        # The launcher is started from a directory that is NOT --root; the
+        # session must still start in --root. monkeypatch restores the cwd.
+        monkeypatch.chdir(self.elsewhere)
+        # Sealed directories (and the stale sweep) live under this tmp dir.
+        monkeypatch.setattr(cu.tempfile, "tempdir", str(self.tmpdir))
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        self.user_settings = self.home / ".claude" / "settings.json"
         aws = self.home / ".aws"
         (aws / "sso" / "cache").mkdir(parents=True)
         (aws / "credentials").write_text(
@@ -191,8 +206,12 @@ class World:
         self.set_export(_export())
         self.set_sts({"Arn": ARN, "Account": "111111111111", "UserId": "X"})
         self.execs = []
-        monkeypatch.setattr(cu.os, "execvpe",
-                            lambda f, a, e: self.execs.append((f, a, e)))
+        self.exec_cwds = []
+
+        def _exec(file_, argv, env):
+            self.execs.append((file_, argv, env))
+            self.exec_cwds.append(os.getcwd())
+        monkeypatch.setattr(cu.os, "execvpe", _exec)
 
     def set_machine(self, cfg):
         self.machine.write_text(json.dumps(cfg), encoding="utf-8")
@@ -200,6 +219,15 @@ class World:
     def set_repo(self, cfg):
         (self.repo / ".crew" / "config.json").write_text(
             json.dumps(cfg), encoding="utf-8")
+
+    def set_user_settings(self, obj):
+        self.user_settings.write_text(json.dumps(obj), encoding="utf-8")
+
+    def set_repo_settings(self, obj, name="settings.json"):
+        path = self.repo / ".claude" / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(obj if isinstance(obj, str) else json.dumps(obj),
+                        encoding="utf-8")
 
     def set_export(self, obj):
         self.mp.setenv("FAKE_AWS_EXPORT",
@@ -301,27 +329,35 @@ def _stream(*texts, tool=True, is_error=False):
 
 
 TARGETS = ["/h/.aws", "/h/.aws/credentials"]
-SEALED = "SHUT /h/.aws\nSHUT /h/.aws/credentials\nNONCE n0nce"
+SEALED = "NONCE n0nce\nSHUT 0\nSHUT 1\nEND n0nce"
 
 CORE_PROBE_PARSE = [
     ("probe-sealed", _stream(SEALED), "ready", "sealed"),
     ("probe-seccomp", _stream(SECCOMP + "\nx", is_error=True), "unknown",
      SECCOMP),
     ("probe-no-tool-call", _stream(SEALED, tool=False), "unknown", "no tool call"),
-    ("probe-open-store", _stream(SEALED.replace("SHUT /h/.aws/c", "OPEN /h/.aws/c")),
+    ("probe-open-store", _stream(SEALED.replace("SHUT 1", "OPEN 1")),
      "refuse", "OPEN /h/.aws/credentials"),
     ("probe-unreported-store",
-     _stream("SHUT /h/.aws\nNONCE n0nce"), "unknown", "/h/.aws/credentials"),
-    ("probe-err-store", _stream(SEALED.replace("SHUT /h/.aws\n", "ERR /h/.aws\n")),
+     _stream("NONCE n0nce\nSHUT 0\nEND n0nce"), "unknown", "/h/.aws/credentials"),
+    ("probe-err-store", _stream(SEALED.replace("SHUT 0", "ERR 0")),
      "unknown", "could not tell"),
     ("probe-wrong-nonce", _stream(SEALED.replace("n0nce", "other")), "unknown",
      "sandbox: unavailable"),
+    # Output cut off after the start marker: the stores it did report do not
+    # vouch for the run, whatever they say.
+    ("probe-no-end-marker", _stream("NONCE n0nce\nSHUT 0\nSHUT 1"), "unknown",
+     "no end marker"),
     # The nonce in a SECOND tool result does not vouch for the first's OPEN.
     ("probe-open-then-sealed",
-     _stream("OPEN /h/.aws/credentials", SEALED), "refuse", "OPEN"),
+     _stream("OPEN 1", SEALED), "refuse", "OPEN"),
     ("probe-garbage", ["not json", "{]"], "unknown", "no tool call"),
     # Both a SHUT and an OPEN for one store is OPEN.
-    ("probe-shut-and-open", _stream(SEALED + "\nOPEN /h/.aws"), "refuse", "OPEN"),
+    ("probe-shut-and-open", _stream(SEALED + "\nOPEN 0"), "refuse", "OPEN"),
+    # An index outside the target list is not a report for any store.
+    ("probe-index-out-of-range",
+     _stream("NONCE n0nce\nSHUT 0\nSHUT 2\nEND n0nce"), "unknown",
+     "/h/.aws/credentials"),
 ]
 
 
@@ -383,6 +419,30 @@ def test_core_config(name, machine, envs, env, state, text):
         assert target is None
 
 
+# Inherited variables that carry, or point at, a credential other than the
+# sealed AWS one. Each must be gone from the launched session's environment.
+FOREIGN_CREDENTIAL_ENV = {
+    "AZURE_CLIENT_SECRET": "az-secret", "AZURE_CONFIG_DIR": "/h/.azure",
+    "ARM_CLIENT_SECRET": "arm-secret", "ARM_ACCESS_KEY": "arm-key",
+    "GOOGLE_APPLICATION_CREDENTIALS": "/h/gcp.json",
+    "GOOGLE_OAUTH_ACCESS_TOKEN": "ya29.x",
+    "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE": "/h/tok",
+    "CLOUDSDK_CONFIG": "/h/.config/gcloud", "KUBECONFIG": "/h/.kube/config",
+    "TF_TOKEN_app_terraform_io": "tfc-token", "TF_CLI_CONFIG_FILE": "/h/.tfrc",
+    "TFE_TOKEN": "tfe-token", "GITHUB_TOKEN": "ghp_x", "GH_TOKEN": "gho_x",
+    "GH_ENTERPRISE_TOKEN": "ghe_x", "GITHUB_ENTERPRISE_TOKEN": "ghe_y",
+    "DOCKER_CONFIG": "/h/.docker", "DOCKER_AUTH_CONFIG": "{}",
+}
+
+
+def test_core_env_strips_foreign_credentials(tmp_path):
+    base = dict(FOREIGN_CREDENTIAL_ENV, PATH="/bin", HOME="/h", LANG="C")
+    env = cu.sealed_env(base, _export(), "eu-west-1", str(tmp_path))
+    assert not set(FOREIGN_CREDENTIAL_ENV) & set(env), \
+        sorted(set(FOREIGN_CREDENTIAL_ENV) & set(env))
+    assert env["LANG"] == "C" and env["PATH"] == "/bin"
+
+
 def test_core_env_strips_and_adds(tmp_path):
     base = {"PATH": "/bin", "AWS_PROFILE": "admin", "AWS_ROLE_ARN": "x",
             "AWS_WEB_IDENTITY_TOKEN_FILE": "/t", "HOME": "/h"}
@@ -404,21 +464,36 @@ def test_core_env_strips_and_adds(tmp_path):
 
 def test_core_settings_seal_every_store():
     stores = ["/h/.aws", "/h/.claude/crew/config.json"]
-    settings = cu.sealed_settings(stores)
+    protected = ["/tmp/crew-sealed-1-x", "/h/.claude/settings.json"]
+    settings = cu.sealed_settings(stores, protected)
     box = settings["sandbox"]
+    deny = settings["permissions"]["deny"]
     assert box["enabled"] is True and box["failIfUnavailable"] is True
     assert box["allowUnsandboxedCommands"] is False
+    # A user file's `filesystem.disabled: true` would lift every deny; the
+    # sealed (higher-precedence) value pins it off.
+    assert box["filesystem"]["disabled"] is False
     for store in stores:
         assert store in box["filesystem"]["denyRead"]
-        assert f"Read(/{store})" in settings["permissions"]["deny"]
-        assert f"Read(/{store}/**)" in settings["permissions"]["deny"]
+        assert store in box["filesystem"]["denyWrite"]
+        assert f"Read(/{store})" in deny
+        assert f"Read(/{store}/**)" in deny
+        assert f"Edit(/{store})" in deny
+        assert f"Edit(/{store}/**)" in deny
+    for path in protected:
+        assert path in box["filesystem"]["denyWrite"]
+        assert path not in box["filesystem"]["denyRead"]
+        assert f"Edit(/{path})" in deny and f"Edit(/{path}/**)" in deny
+        assert f"Read(/{path})" not in deny
 
 
 def test_core_stores_cover_the_named_paths():
-    got = cu.stores(["/h"], "/h/.claude/crew/config.json")
-    for want in ("/h/.aws", "/h/.azure", "/h/.terraform.d/credentials.tfrc.json",
-                 "/h/.claude/crew/config.json"):
-        assert want in got
+    got = cu.stores(["/h", "/r"], "/h/.claude/crew/config.json")
+    for home in ("/h", "/r"):
+        for rel in (".aws", ".azure", ".terraform.d/credentials.tfrc.json",
+                    ".config/gcloud", ".kube", ".config/gh",
+                    ".docker/config.json", ".claude/crew/config.json"):
+            assert f"{home}/{rel}" in got, (home, rel)
 
 
 def test_core_probe_targets_walk_existing_stores(tmp_path):
@@ -432,11 +507,116 @@ def test_core_probe_targets_walk_existing_stores(tmp_path):
     assert str(tmp_path / "absent") not in got
 
 
+def test_core_probe_targets_are_bounded_for_a_large_store(tmp_path):
+    """A store with thousands of cache files is probed at its root plus a
+    bounded sample, never refused for its size, and every sub-directory's
+    first files are reached before the cap (sso/cache after cli/cache)."""
+    cli = tmp_path / ".aws" / "cli" / "cache"
+    sso = tmp_path / ".aws" / "sso" / "cache"
+    cli.mkdir(parents=True)
+    sso.mkdir(parents=True)
+    for i in range(1500):
+        (cli / f"{i:05d}.json").write_text("{}", encoding="utf-8")
+    (sso / "tok.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".kube").mkdir()
+    got = cu.probe_targets([str(tmp_path / ".aws"), str(tmp_path / ".kube")])
+    assert got is not None
+    assert got[0] == str(tmp_path / ".aws")
+    assert str(tmp_path / ".kube") in got
+    assert str(sso / "tok.json") in got
+    assert len(got) <= 2 + cu.PROBE_SAMPLE_PER_STORE * 2
+    script = cu.probe_script(got, "n")
+    assert len(script) < 8000, len(script)
+
+
 def test_core_probe_script_is_one_quoted_command():
     script = cu.probe_script(["/h/it's here", "/h/.aws"], "abc123")
     lines = script.splitlines()
-    assert "probe " + shlex.quote("/h/it's here") in lines
-    assert lines[-1] == "echo NONCE abc123"
+    assert "probe 0 " + shlex.quote("/h/it's here") in lines
+    assert "probe 1 /h/.aws" in lines
+    # The nonce comes FIRST and the end marker LAST, so output cut in the
+    # middle or at the end is told apart from a sealed run.
+    assert lines[0] == "echo NONCE abc123"
+    assert lines[-1] == "echo END abc123"
+
+
+def test_core_probe_output_names_indices_not_paths():
+    """The per-target lines carry an index, so output size does not grow with
+    the paths: a long home path cannot push the end marker past the Bash
+    tool's output limit."""
+    script = cu.probe_script(["/" + "x" * 200], "n")
+    assert 'echo \"OPEN $i\"' in script and 'echo \"SHUT $i\"' in script
+    assert "OPEN $t" not in script and "SHUT $t" not in script
+
+
+_STORES = ["/h/.aws", "/h/.claude/crew/config.json"]
+_USER = "/h/.claude/settings.json"
+
+
+def _settings(repo=(), user=None, user_why=""):
+    return cu.judge_settings(list(repo), (_USER, user, user_why), ["/h"],
+                             _STORES)
+
+
+CORE_SETTINGS = [
+    ("settings-clean", [("/r/.claude/settings.json",
+                         {"permissions": {"allow": ["Bash(ls *)"]}}, "")],
+     {"sandbox": {"filesystem": {"allowRead": ["~/projects"]}}}, "",
+     "ready", "no settings file"),
+    ("repo-sandbox-key", [("/r/.claude/settings.json",
+                           {"sandbox": {"excludedCommands": ["cat"]}}, "")],
+     None, "", "refuse", "sets `sandbox`"),
+    ("repo-local-sandbox-allowread", [
+        ("/r/.claude/settings.local.json",
+         {"sandbox": {"filesystem": {"allowRead": ["~/.aws"]}}}, "")],
+     None, "", "refuse", "settings.local.json"),
+    ("repo-read-allow", [("/r/.claude/settings.json",
+                          {"permissions": {"allow": ["Read(~/.aws/**)"]}}, "")],
+     None, "", "refuse", "Read(~/.aws/**)"),
+    ("repo-bare-read-allow", [("/r/.claude/settings.json",
+                               {"permissions": {"allow": ["Read"]}}, "")],
+     None, "", "refuse", "`Read`"),
+    ("repo-unreadable", [("/r/.claude/settings.json", None,
+                          "`/r/.claude/settings.json` is not JSON")],
+     None, "", "unknown", "not JSON"),
+    ("user-excluded-commands", [],
+     {"sandbox": {"excludedCommands": ["docker *"]}}, "", "refuse",
+     "excludedCommands"),
+    ("user-allowread-store", [],
+     {"sandbox": {"filesystem": {"allowRead": ["~/.aws/sso"]}}}, "", "refuse",
+     "~/.aws/sso"),
+    ("user-allowread-absolute-store", [],
+     {"sandbox": {"filesystem": {"allowRead": ["/h/.claude/crew/config.json"]}}},
+     "", "refuse", "config.json"),
+    ("user-allowread-glob", [],
+     {"sandbox": {"filesystem": {"allowRead": ["~/**/cache"]}}}, "", "refuse",
+     "~/**/cache"),
+    ("user-fs-disabled", [],
+     {"sandbox": {"filesystem": {"disabled": True}}}, "", "refuse", "disabled"),
+    ("user-unreadable", [], None, "`/h/.claude/settings.json` is not JSON",
+     "unknown", "not JSON"),
+    ("user-sandbox-not-object", [], {"sandbox": []}, "", "unknown",
+     "not an object"),
+]
+
+
+@pytest.mark.parametrize("name,repo,user,user_why,state,text", CORE_SETTINGS,
+                         ids=[r[0] for r in CORE_SETTINGS])
+def test_core_settings(name, repo, user, user_why, state, text):
+    got, why = _settings(repo, user, user_why)
+    assert got == state, (name, why)
+    assert text in why, why
+
+
+def test_core_repo_settings_files_include_the_git_root_local_file(tmp_path):
+    (tmp_path / ".git").mkdir()
+    sub = tmp_path / "pkg"
+    sub.mkdir()
+    got = cu.repo_settings_files(str(sub))
+    assert str(sub / ".claude" / "settings.json") in got
+    assert str(sub / ".claude" / "settings.local.json") in got
+    assert os.path.join(os.path.realpath(str(tmp_path)), ".claude",
+                        "settings.local.json") in got
 
 
 # --- MUST_REFUSE: every case exits non-zero, execs nothing, names its reason --
@@ -489,6 +669,26 @@ MUST_REFUSE = {
                            ["no tool call"]),
     "probe-err-store": (lambda w: w.mp.setenv("FAKE_PROBE", "err"), (),
                         ["could not tell"]),
+    "probe-no-end-marker": (lambda w: w.mp.setenv("FAKE_PROBE", "noend"), (),
+                            ["no end marker"]),
+    # A cloned repo's settings must not shape the sealed sandbox. The launch
+    # does not load them (`--setting-sources user`); this refuses anyway.
+    "repo-excludes-cat": (lambda w: w.set_repo_settings(
+        {"sandbox": {"excludedCommands": ["cat", "cp", "perl", "node", "bash"]}}),
+        (), ["sets `sandbox`"]),
+    "repo-local-allows-store": (lambda w: w.set_repo_settings(
+        {"sandbox": {"filesystem": {"allowRead": ["~/.aws"]}}},
+        "settings.local.json"), (), ["settings.local.json", "`sandbox`"]),
+    "repo-allows-read": (lambda w: w.set_repo_settings(
+        {"permissions": {"allow": ["Read(//**)"]}}), (), ["Read(//**)"]),
+    "repo-settings-not-json": (lambda w: w.set_repo_settings("{nope"), (),
+                               ["not JSON"]),
+    "user-excludes-docker": (lambda w: w.set_user_settings(
+        {"sandbox": {"excludedCommands": ["docker *"]}}), (),
+        ["excludedCommands"]),
+    "user-allowread-reopens-store": (lambda w: w.set_user_settings(
+        {"sandbox": {"filesystem": {"allowRead": ["~/.aws/sso/cache"]}}}), (),
+        ["allowRead"]),
     "probe-times-out": (lambda w: (w.mp.setenv("FAKE_PROBE_SLEEP", "5"),
                                    w.mp.setattr(cu, "PROBE_TIMEOUT", 0.5)), (),
                         ["timed out"]),
@@ -552,7 +752,9 @@ def _assert_sealed_child(world, argv, env, profile, region):
     assert argv[0] == "claude" and argv[1] == "--settings"
     with open(argv[2], encoding="utf-8") as fh:
         settings = json.load(fh)
-    assert argv[3:] == ["--resume"]
+    # Project and local settings never load in the sealed session.
+    assert argv[3:5] == ["--setting-sources", "user"]
+    assert argv[5:] == ["--resume"]
     # launch-strips-aws-env
     assert env.get("AWS_PROFILE") is None
     assert env["AWS_ACCESS_KEY_ID"] == KEY
@@ -571,9 +773,19 @@ def _assert_sealed_child(world, argv, env, profile, region):
     box = settings["sandbox"]
     assert box["enabled"] is True and box["failIfUnavailable"] is True
     assert box["allowUnsandboxedCommands"] is False
-    for store in (world.home / ".aws", world.machine):
+    deny = settings["permissions"]["deny"]
+    for store in (world.home / ".aws", world.machine, world.home / ".kube",
+                  world.home / ".config" / "gh", world.home / ".config" / "gcloud",
+                  world.home / ".docker" / "config.json"):
         assert str(store) in box["filesystem"]["denyRead"]
-        assert f"Read(/{store}/**)" in settings["permissions"]["deny"]
+        assert str(store) in box["filesystem"]["denyWrite"]
+        assert f"Read(/{store}/**)" in deny
+        assert f"Edit(/{store}/**)" in deny
+    # The session cannot rewrite its identity, its sealed settings, or the
+    # user settings that load beside them.
+    for path in (sealed, world.user_settings, world.machine):
+        assert str(path) in box["filesystem"]["denyWrite"]
+        assert f"Edit(/{path})" in deny
     del profile
 
 
@@ -593,18 +805,25 @@ def test_must_launch(world, capsys, case):
     world.mp.setenv("FAKE_AWS_EXPORT_SEEN", str(export_seen))
     world.mp.setenv("FAKE_AWS_STS_SEEN", str(sts_seen))
     world.mp.setenv("FAKE_PROBE_SEEN", str(probe_seen))
+    for name, value in FOREIGN_CREDENTIAL_ENV.items():
+        world.mp.setenv(name, value)
     code = world.run(*extra)
     out = capsys.readouterr()
     assert code == 0, out.out + out.err
     assert len(world.execs) == 1
     file_, argv, env = world.execs[0]
-    assert file_ == "claude"
+    # The file exec'd is the absolute `claude` the probe ran, and the
+    # session starts in --root although the launcher ran elsewhere.
+    assert file_ == str(world.bin / "claude")
+    assert os.path.realpath(world.exec_cwds[0]) == os.path.realpath(str(world.repo))
     _assert_sealed_child(world, argv, env, profile, region)
+    assert not set(FOREIGN_CREDENTIAL_ENV) & set(env)
     assert arn in out.out
     # export ran with the profile and a stripped environment
     export = json.loads(export_seen.read_text(encoding="utf-8"))
     assert export["argv"][export["argv"].index("--profile") + 1] == profile
     assert not [k for k in export["env"] if k.startswith("AWS_")]
+    assert not set(FOREIGN_CREDENTIAL_ENV) & set(export["env"])
     # STS and the probe ran in the sealed environment, the probe from the repo
     for seen in (sts_seen, probe_seen):
         rec = json.loads(seen.read_text(encoding="utf-8"))
@@ -614,6 +833,73 @@ def test_must_launch(world, capsys, case):
     probe = json.loads(probe_seen.read_text(encoding="utf-8"))
     assert os.path.realpath(probe["cwd"]) == os.path.realpath(str(world.repo))
     assert probe["argv"][probe["argv"].index("--settings") + 1] == argv[2]
+    assert probe["argv"][probe["argv"].index("--setting-sources") + 1] == "user"
+    assert probe["argv0"] == file_
+    assert not set(FOREIGN_CREDENTIAL_ENV) & set(probe["env"])
+
+
+def test_probe_and_exec_use_the_named_executable(world, capsys):
+    """`launch -- /abs/claude` probes THAT file and execs it, not the
+    `claude` first on PATH."""
+    other = world.tmp / "other-bin"
+    other.mkdir()
+    _write_exe(other / "claude", _CLAUDE_SHIM)
+    seen = world.tmp / "probe-seen.json"
+    world.mp.setenv("FAKE_PROBE_SEEN", str(seen))
+    code = world.run(command=(str(other / "claude"), "--resume"))
+    capsys.readouterr()
+    assert code == 0
+    assert world.execs[0][0] == str(other / "claude")
+    assert json.loads(seen.read_text(encoding="utf-8"))["argv0"] == str(
+        other / "claude")
+
+
+def test_refuses_a_claude_that_is_not_there(world, capsys):
+    code = world.run(command=(str(world.tmp / "nowhere" / "claude"),))
+    assert code != 0 and not world.execs
+    assert "not an executable" in capsys.readouterr().err
+
+
+def test_a_large_store_is_probed_not_refused(world, capsys):
+    cache = world.home / ".aws" / "cli" / "cache"
+    cache.mkdir(parents=True)
+    for i in range(1200):
+        (cache / f"{i:05d}.json").write_text("{}", encoding="utf-8")
+    seen = world.tmp / "probe-seen.json"
+    world.mp.setenv("FAKE_PROBE_SEEN", str(seen))
+    code = world.run()
+    out = capsys.readouterr()
+    assert code == 0, out.out + out.err
+    probe = json.loads(seen.read_text(encoding="utf-8"))
+    assert str(world.home / ".aws") in probe["targets"]
+    assert str(world.home / ".aws" / "sso" / "cache" / "tok.json") in probe["targets"]
+    assert len(probe["targets"]) < 60
+    assert probe["prompt_len"] < 12000
+
+
+def _dead_pid():
+    proc = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
+                          capture_output=True, text=True, check=True)
+    return int(proc.stdout)
+
+
+def test_launch_sweeps_stale_sealed_directories(world, capsys):
+    """exec leaves nothing behind to clean up, so the next launch removes a
+    sealed directory whose process has exited -- and keeps one whose process
+    is alive, since its settings file may be in use."""
+    dead = world.tmpdir / f"crew-sealed-{_dead_pid()}-old"
+    alive = world.tmpdir / f"crew-sealed-{os.getppid()}-live"
+    other = world.tmpdir / "crew-sealed-notapid"
+    for path in (dead, alive, other):
+        path.mkdir()
+        (path / "settings.json").write_text("{}", encoding="utf-8")
+    assert world.run() == 0
+    capsys.readouterr()
+    assert not dead.exists()
+    assert alive.exists() and other.exists()
+    sealed = os.path.dirname(world.execs[0][2]["AWS_CONFIG_FILE"])
+    assert os.path.basename(sealed).startswith(f"crew-sealed-{os.getpid()}-")
+    assert os.path.dirname(sealed) == str(world.tmpdir)
 
 
 def test_check_runs_every_check_and_execs_nothing(world, capsys):
@@ -621,8 +907,8 @@ def test_check_runs_every_check_and_execs_nothing(world, capsys):
     out = capsys.readouterr().out
     rows = json.loads(out)
     assert code == 0 and not world.execs
-    assert [r["check"] for r in rows] == ["platform", "config", "export",
-                                          "identity", "sandbox"]
+    assert [r["check"] for r in rows] == ["platform", "config", "settings",
+                                          "export", "identity", "sandbox"]
     assert all(r["state"] == "ready" for r in rows)
 
 
@@ -649,8 +935,13 @@ def test_launch_execs_the_real_fake_claude(tmp_path):
     _write_exe(tmp_path / "bin" / "aws", _AWS_SHIM)
     _write_exe(tmp_path / "bin" / "claude", _CLAUDE_SHIM)
     dump = tmp_path / "dump.json"
-    env = {k: v for k, v in os.environ.items() if not k.startswith("AWS_")}
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp_path / "tmp").mkdir()
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("AWS_") and k != "CLAUDE_CONFIG_DIR"}
     env.update({"HOME": str(home), "PATH": f"{tmp_path / 'bin'}:{env['PATH']}",
+                "TMPDIR": str(tmp_path / "tmp"),
                 "FAKE_AWS_EXPORT": json.dumps(_export()),
                 "FAKE_STS": json.dumps({"Arn": ARN}),
                 "FAKE_CLAUDE_DUMP": str(dump), "AWS_PROFILE": "admin"})
@@ -666,10 +957,13 @@ def test_launch_execs_the_real_fake_claude(tmp_path):
     proc = subprocess.run(
         [sys.executable, str(wrapper), "launch", "--root", str(repo), "--",
          "claude", "--resume"], env=env, capture_output=True, text=True,
-        timeout=120, check=False)
+        timeout=120, check=False, cwd=str(elsewhere))
     assert proc.returncode == 0, proc.stdout + proc.stderr
     got = json.loads(dump.read_text(encoding="utf-8"))
-    assert got["argv"][1] == "--settings" and got["argv"][3:] == ["--resume"]
+    assert got["argv"][1] == "--settings"
+    assert got["argv"][3:] == ["--setting-sources", "user", "--resume"]
+    # Started from `elsewhere`, the session runs in --root: what was probed.
+    assert os.path.realpath(got["cwd"]) == os.path.realpath(str(repo))
     assert got["env"]["AWS_SESSION_TOKEN"] == TOKEN
     assert "AWS_PROFILE" not in got["env"]
     assert got["env"]["AWS_EC2_METADATA_DISABLED"] == "true"

@@ -27,6 +27,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Docs: plugin README ("Unattended runs: sealed cloud credentials"), CONFIG.md, `/crew:autopilot`,
   crew-cloud and crew-setup skills, the troubleshooting guide (rebuilt HTML/DOCX/PDF), the code map
   and the config data-flow diagram. `.crew/verify.json` maps the launcher to its suite.
+- Review fixes (Sonnet review of `ce400de3`): the session AND the probe now start as
+  `<claude> --settings <sealed> --setting-sources user`, from `--root`, with the same executable, so
+  a cloned repo's `.claude/settings.json`/`settings.local.json` never load (their
+  `sandbox.excludedCommands`, `allowRead`, hooks and `env` cannot reach the sealed session); a new
+  `settings` check also refuses a repo file with any `sandbox` key or `Read` allow rule, and a user
+  file with `sandbox.excludedCommands`, `filesystem.disabled: true` or an `allowRead` that could
+  re-open a store. The launcher `chdir`s to `--root` before `exec`. Every store is now denied for
+  writes too (`denyWrite`, `Edit(...)`), as are the sealed directory and the user settings file.
+  The stores add `~/.config/gcloud`, `~/.kube`, `~/.config/gh` and `~/.docker/config.json`, and the
+  environment drops `AZURE_*`, `ARM_*`, `CLOUDSDK_*`, `GOOGLE_*`, `TF_TOKEN_*`, `KUBECONFIG`,
+  `GITHUB_TOKEN`/`GH_TOKEN`, `DOCKER_CONFIG`/`DOCKER_AUTH_CONFIG` and friends (so `gh`, registry
+  pushes and `kubectl` have no credentials unattended, by design). The probe opens each store root
+  plus a bounded sample, prints indices with the nonce first and an end marker last, and no longer
+  refuses a store with many entries. A stale `crew-sealed-<pid>-*` directory is removed by the next
+  launch once its process has exited. Accepted residual risks are listed in the README.
 - Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.
