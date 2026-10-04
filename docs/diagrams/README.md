@@ -7,7 +7,7 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 |---|---|
 | [Architecture](#architecture) | PASS |
 | [Data flow crew config autoclear](#data-flow-crew-config-autoclear) | PASS |
-| [Data flow crew config menu](#data-flow-crew-config-menu) | PASS |
+| [Data flow crew config menu](#data-flow-crew-config-menu) | FAIL |
 | [Data flow crew config no python](#data-flow-crew-config-no-python) | PASS |
 | [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | PASS |
 | [Data flow crew config read](#data-flow-crew-config-read) | PASS |
@@ -33,8 +33,8 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew lifecycle approve](#process-crew-lifecycle-approve) | PASS |
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
-| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | PASS |
-| [Process crew lifecycle review](#process-crew-lifecycle-review) | PASS |
+| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | FAIL |
+| [Process crew lifecycle review](#process-crew-lifecycle-review) | FAIL |
 | [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | PASS |
 | [Process crew lifecycle](#process-crew-lifecycle) | PASS |
 | [Process qa audit](#process-qa-audit) | PASS |
@@ -182,11 +182,11 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-menu.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config_menu.py`, `plugin/crew/hooks/scripts/crew_config_files.py`, `plugin/crew/hooks/scripts/crew_config.py`
-- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
+- **Readability:** FAIL: 2 crossing(s)
 
 ## Data flow crew config no python
 
-What role-write-guard.sh does when it cannot find python: it cannot read guards.roleWrites, so it always blocks a restricted role.
+What two guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout.
 
 ```mermaid
 flowchart LR
@@ -198,6 +198,14 @@ flowchart LR
         NP3["Unrestricted role: allowed.<br/>Restricted or unreadable role:<br/>ALWAYS BLOCKED (exit 2)"]
         NP1 --> NP2 --> NP3
     end
+
+    subgraph CloudNoPython["cloud-guard's fallback - reads the resolved repo file (T-0096)"]
+        direction TB
+        CG1["no usable python,<br/>or cloud_guard.py failed"]
+        CG2["<b>_cloud_guard_armed</b><br/>resolved repo file +<br/>machine file"]
+        CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
+        CG1 --> CG2 --> CG3
+    end
 ```
 
 | Box | Details |
@@ -205,10 +213,13 @@ flowchart LR
 | `NP1` | _resolve_role_write_python() plugin/crew/hooks/scripts/role-write-guard.sh:44- fails to find a usable interpreter |
 | `NP2` | _role_write_fallback_decision() :326-346. Cannot evaluate guards.roleWrites (off/report/pm's own path allowances) at all - only tells a restricted role from an unrestricted one via the deny-list mirror |
 | `NP3` | Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says :339-345 |
+| `CG1` | crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or cloud_guard.py exits non-zero (cloud-guard.sh:55-78) |
+| `CG2` | _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's. Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir. |
+| `CG3` | source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
 
 - **Source:** `data-flow-crew-config-no-python.mmd`
-- **Drawn from:** `plugin/crew/hooks/scripts/role-write-guard.sh`
-- **Readability:** PASS: 3 nodes, no crossings, nothing drawn through a node
+- **Drawn from:** `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/cloud-guard.sh`
+- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config ratchet
 
@@ -270,8 +281,9 @@ flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>133 leaves, repo template"]
+        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>136 leaves, repo template"]
         GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
+        RES{"which .crew/?<br/>own, else the main<br/>checkout's (a lane)"}
         REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
     end
 
@@ -297,6 +309,7 @@ flowchart TB
     PRUNE --> FILT
     FILT -->|kept| M1
     FILT -.->|"ignored - named, never silent"| IGN>"keys a global file may not set"]
+    RES --> REPO
     REPO --> NULLS
     NULLS --> M2
     M1 --> M2
@@ -307,9 +320,10 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 133 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1134 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
+| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 136 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1134 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
 | `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:767 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
 | `REPO` | .crew/config.json - schema 7 crew_state.load_config() plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the TwoFiles section below |
+| `RES` | which .crew/ the repo file is read from. Python: crew_common.repo_config_dir plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:132 (T-0096). Own config.json or crew.json wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both flavours; the .ps1 copies at notify.ps1:290, handoff-read.ps1:186, handoff-write.ps1:286, context-watch.ps1:29). Still own-file only: the verify gate, the scope and completion wrappers. |
 | `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 75 leaves (executed, this pass) across 19 blocks: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route, shellRoute - the single definition both rules below are enforced against |
 | `PRUNE` | _prune() plugin/crew/hooks/scripts/crew_config.py:699 keeps only keys present in the template. Descends structurally, so naming a block grants only the leaves under it. |
 | `FILT` | filter_global() plugin/crew/hooks/scripts/crew_config.py:725 returns (kept, ignored) |
@@ -319,7 +333,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-read.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_guards.py`
-- **Readability:** PASS: 12 nodes, no crossings, nothing drawn through a node
+- **Readability:** PASS: 13 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config shell route
 
@@ -901,9 +915,9 @@ flowchart TB
         hr1 -- no --> hrx([exit 0])
         hr1 -- yes --> hr2{"memory.inject on?<br/>:41 (1.0 default: on)"}
         hr2 -- yes --> hrx
-        hr2 -- no --> hr3{".crew/config.json?<br/>:44"}
+        hr2 -- no --> hr3{"resolved config.json?<br/>(own, else main checkout's)<br/>:48-50"}
         hr3 -- no --> hrx
-        hr3 -- yes --> hr4[stale check / print note<br/>:63-89]
+        hr3 -- yes --> hr4[stale check / print note<br/>:69-95]
     end
 
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
@@ -1112,7 +1126,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-implement.mmd`
 - **Drawn from:** `plugin/crew/commands/implement.md`, `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
+- **Readability:** FAIL: 1 label overlap(s)
 
 ## Process crew lifecycle review
 
@@ -1139,7 +1153,7 @@ flowchart TB
         rv3 -- "fix, round 2" --> again_rv1
         rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> again_rv1
         rv2 -- "INCOMPLETE (reviewer / tree, a contract-like<br/>or shortfall stray line): counts" --> again_rv1
-        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
+        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan<br/>or autopilot auto-reject])
     end
 
     again_rv1>"again: reserve a round,<br/>run the reviewers (above)"]
@@ -1159,9 +1173,10 @@ flowchart TB
 | `pf0->replan` | the budget refusal answers first, no pre-review checks, no self-check |
 | `rv2->rv3` | FINDINGS (stray prose beside findings ignored and named: review_verdict.py:210-213) |
 | `rv3->rcpt` | auto-accept (L-0510): eligible, no specialist/control BLOCK; one follow-up ticket :505-506 - or the owner accepts :508 |
+| `replan` | also reached from rv3 under autopilot (T-0074): out of rounds with a BLOCK, autopilot.maxAutoReplans 1 or more and the successor plan self-approvable, crew_autopilot.py auto-reject (auto_replan_policy) rejects it; at the cap it stops for the owner |
 
 - **Source:** `process-crew-lifecycle-review.mmd`
-- **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`
+- **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`
 - **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle spec plan

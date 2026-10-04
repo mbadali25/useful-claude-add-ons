@@ -128,7 +128,8 @@ import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
-    skip_wrapper_options, tf_skip_options as _tf_skip_options
+    tf_skip_options as _tf_skip_options, WRAPPER_TABLES, option_words, \
+    wrapper_rest, tg_other_op, ps_head_slot, tg_exec_rest
 
 
 def _head_name(token):
@@ -217,6 +218,8 @@ class _Cmd:
         # Followed by `||`: the next command runs only if this one FAILS,
         # which no in-sequence reading of this one can account for.
         self.or_next = False
+        # PowerShell: run by `&`; the words opening with a quote or group.
+        self.called, self.opens, self.groups = False, set(), set()
 
     def has_content(self):
         return bool(self.words) or self.stdin is not None or self.writes
@@ -838,10 +841,11 @@ def _lex_ps(text):
             cmds.append(cur)
         state["cur"] = _Cmd(pipe_from=cur if pipe else None)
 
-    def add(chars, bare=False):
+    def add(chars, bare=False, opens=False):
         if state["word"] is None:
             state["word"] = []
             state["bare"] = True
+            state["cur"].opens |= {len(state["cur"].words)} if opens else set()
         state["word"].append(chars)
         state["bare"] = state["bare"] and bare
 
@@ -863,26 +867,30 @@ def _lex_ps(text):
             j = text.find("\n", i)
             i = n if j < 0 else j
             continue
+        call = state["bare"] if c == "(" else c in "'\"" and state["word"] == ["."]
+        if call and state["word"] is not None and ps_head_slot(state["cur"].words):
+            end_word()  # `iex("...")`, `terraform('x')`, `.'terraform'`: a call
         if c == "@" and text[i + 1:i + 2] in ("'", '"'):
             here = _read_ps_herestring(text, i, subs)
             if here is not None:
-                add(here[0])
+                add(here[0], opens=True)
                 i = here[1]
                 continue
         if c == "'":
             value, i = _read_ps_single(text, i)
-            add(value)
+            add(value, opens=True)
             continue
         if c == '"':
             value, i = _read_ps_double(text, i, subs)
-            add(value)
+            add(value, opens=True)
             continue
         if text.startswith("$(", i) or text.startswith("@(", i) or c == "(":
             start = i + 1 if c in "$@" else i
             k = _match_close(text, start, ps=True)
             inner = text[start + 1:k]
             subs.append(inner)
-            add(_ps_group_value(inner))
+            add(_ps_group_value(inner), opens=True)
+            state["cur"].groups.add(len(state["cur"].words))
             i = k + 1
             continue
         if c in "{}":
@@ -915,8 +923,9 @@ def _lex_ps(text):
                 add(text[i:i + 2], bare=True)
                 i += 2
                 continue
-            if state["word"] is None and not state["cur"].words:
+            if state["word"] is None and ps_head_slot(state["cur"].words):
                 # The call operator: `& 'C:\tools\terraform.exe' apply`.
+                state["cur"].called = True
                 i += 1
                 continue
             finish()
@@ -1116,20 +1125,15 @@ _WRAPPER_VALUE_OPTS = {
     "nice": frozenset(("-n", "--adjustment")),
     "timeout": frozenset(("-s", "-k", "--signal", "--kill-after")),
     "stdbuf": frozenset(("-i", "-o", "-e", "--input", "--output", "--error")),
-    "xargs": frozenset(("-I", "-J", "-R", "-n", "-P", "-d", "-L", "-s", "-E",
-                        "-a", "--max-args", "--max-procs", "--delimiter",
-                        "--arg-file", "--max-lines", "--max-chars",
-                        "--process-slot-var")),
-    "parallel": frozenset(("-j", "-P", "-S", "-a", "-d", "-n", "-N", "-E",
-                           "-I", "--jobs", "--sshlogin", "--arg-file",
-                           "--delimiter", "--max-args", "--joblog",
-                           "--results", "--tmpdir", "--colsep", "--wd",
-                           "--workdir", "--slf", "--sshloginfile")),
+    "xargs": WRAPPER_TABLES["xargs"][0],  # complete, with their flags
+    "parallel": WRAPPER_TABLES["parallel"][0],
+    "sem": WRAPPER_TABLES["sem"][0],  # `parallel --semaphore`
     "exec": frozenset(("-a",)),
     "time": frozenset(("-f", "-o", "--format", "--output")),
     "nohup": frozenset(),
     "command": frozenset(),
     "builtin": frozenset(),
+    "aws-vault": frozenset(), "unbuffer": frozenset(),  # `unwrap_listed`
 }
 _ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)$", re.DOTALL)
 _SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash", "busybox"))
@@ -1143,11 +1147,11 @@ _ARGV_FEEDERS = frozenset(("xargs", "parallel"))
 def _replace_strings(head, args):
     """Every placeholder an `xargs`/`parallel` invocation substitutes into
     the command it runs: `{}` always, plus whatever `-I R`, `-IR`, `-iR`,
-    `--replace=R` or BSD's `-J R` names. The options are walked the way
-    `_unwrap` walks them, value-taking ones skipping their value -- stopping
-    at the first word that is not an option lost `-I` behind `-a file`."""
+    `--replace=R` or BSD's `-J R` names, in the options as `_unwrap` reads
+    them (`option_words`: `-rn 1 -Iplan` is `-r -n 1 -I plan`, T-0047)."""
     found = ["{}"]
     takes = _WRAPPER_VALUE_OPTS.get(head, frozenset())
+    args = option_words(head, args, takes)
     index = 0
     while index < len(args):
         arg = args[index]
@@ -1391,10 +1395,13 @@ def _unwrap(words, env, fed=None, ctx=None):
                 _moved(ctx)
             words = rest[operands:]
             continue
+        if head == "terragrunt" and tg_exec_rest(words) is not None:
+            words = tg_exec_rest(words, fed)  # `exec -- cmd`: a wrapper
+            continue
         if head in _WRAPPER_VALUE_OPTS:
-            rest = skip_wrapper_options(words[1:], _WRAPPER_VALUE_OPTS[head])
-            opts = words[1:len(words) - len(rest)]
-            if head == "parallel" and any(
+            rest = wrapper_rest(head, words[1:], _WRAPPER_VALUE_OPTS[head], fed, env)
+            opts = option_words(head, words[1:], _WRAPPER_VALUE_OPTS[head])
+            if head in ("parallel", "sem") and any(
                     o.split("=", 1)[0] in ("--wd", "--workdir") for o in opts):
                 _moved(ctx)
             if head == "command" and any(  # `command -v|-V`: a lookup only
@@ -1550,7 +1557,7 @@ def _terraform_destructive(head, args):
         index = _tf_skip_options(args, index + 1)
         if index < len(args) and args[index] in ("apply", "destroy"):
             return f"{head} {sub} {args[index]}"
-    return None
+    return tg_other_op(head, args, index, _terraform_destructive)
 
 
 # --- terraform: which operation, which environment, does it destroy ----------
@@ -2373,10 +2380,7 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
         op = "fed"
         if words and seen(words[:1]) and words[0] == "workspace":
             wsub = words[1] if len(words) > 1 and seen(words[1:2]) else None
-            creates = _tf_workspace(
-                [w for w in args if not carries(w)])[0] == "ws-create"
-            if wsub in _TF_WORKSPACE_READS or (wsub == "select"
-                                               and not creates):
+            if wsub in _TF_WORKSPACE_READS:  # a select may get -or-create
                 return None
             if wsub in ("new", "select") and not (ctx or {}).get("engaged"):
                 # Creation, with the environment layer not configured: as
@@ -2803,8 +2807,8 @@ def _literal_gate(shell, text):
         what = ("a terraform-family line with a word that is not a plain "
                 f"literal: {shown!r}")
     elif unseen:
-        what = ("a terraform-family line that runs "
-                f"{named!r} in a way crew does not follow")
+        what = (f"a terraform-family line that runs {named!r} in a way crew "
+                "does not follow" + (f" ({unseen})" if isinstance(unseen, str) else ""))
     else:
         return None
     return Finding("terraformApply", text, what, None, True, None,

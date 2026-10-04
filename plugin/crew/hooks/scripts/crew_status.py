@@ -45,8 +45,12 @@ _GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
 
 
 def _git(root, *args):
+    argv = ("git", "-c", "core.fsmonitor=false") + args
     try:
-        done = subprocess.run(("git", "-c", "core.fsmonitor=false") + args, cwd=root, capture_output=True, text=True,
+        # The git which() resolves, never the bare name (L-1508): the argv
+        # keeps its literal shape, which sabotage_migrate.py anchors on.
+        done = subprocess.run((crew_common.require_tool(argv[0]),) + argv[1:],
+                              cwd=root, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=10, check=False,
                               stdin=subprocess.DEVNULL, env=_GIT_ENV)
     except (OSError, subprocess.SubprocessError):

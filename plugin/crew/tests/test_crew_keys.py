@@ -122,8 +122,8 @@ def test_values_agree_with_the_writers_enum_values():
 
 
 # `branch` rows whose reader checks a shape rather than a closed value list.
-_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "tickets.baseBranch",
-                     "git.forbiddenTrailers")
+_OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "autopilot.maxAutoReplans", "tickets.baseBranch",
+                     "git.forbiddenTrailers", "autopilot.sleep.schedule")
 
 
 def test_every_row_has_a_summary_and_a_values_kind():
@@ -191,6 +191,19 @@ def test_autopilot_mode_values_agree_with_the_reader(tmp_path, value):
     assert (value in declared) == (not any("autopilot.mode" in w for w in got["warnings"]))
 
 
+@pytest.mark.parametrize("key", ["approval", "questions"])
+@pytest.mark.parametrize("value", [None, "human", "self", "risk", "Self"])
+def test_sleep_override_values_agree_with_the_reader(tmp_path, key, value):
+    """T-0053: every declared value is read without a warning; one that is
+    not declared warns. The tail of the tuple is POLICIES' own items."""
+    declared = crew_keys.values_of(f"autopilot.sleep.{key}")
+    got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"sleep": {key: value}}}))
+    assert declared[1:] == crew_autopilot.POLICIES
+    assert all(a is b for a, b in zip(declared[1:], crew_autopilot.POLICIES))
+    assert (value in declared) == (
+        not any(f"autopilot.sleep.{key}" in w for w in got["warnings"]))
+
+
 @pytest.mark.parametrize("value, kept", [(1, True), (12, True), (0, False), ("12", False)])
 def test_autopilot_max_phases_agrees_with_the_reader(tmp_path, value, kept):
     got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"maxPhases": value}}))
@@ -255,7 +268,7 @@ def _machine(tmp_path, cfg):
     ("true", "true", False),  # an undeclared value (a string) never arms
 ])
 def test_machine_armed_values_agree_with_the_readers(tmp_path, repo, machine, armed):
-    for key in ("resume.auto", "context.autoClear.enabled"):
+    for key in ("resume.auto", "context.autoClear.enabled", "context.autoClear.wrapUp"):
         declared = crew_keys.values_of(key)
         assert crew_keys.layer_of(key) == "machine-arms"
         block, leaf = key.rsplit(".", 1)
@@ -270,7 +283,7 @@ def test_machine_armed_values_agree_with_the_readers(tmp_path, repo, machine, ar
         if key == "resume.auto":
             got = crew_resume.settings(root, global_path=gpath)["armed"]
         else:
-            got = crew_autocycle.settings(root, global_path=gpath)["enabled"]
+            got = crew_autocycle.settings(root, global_path=gpath)[leaf]
         assert got is armed, (key, repo, machine)
         if armed:
             assert machine in declared
