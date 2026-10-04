@@ -337,7 +337,14 @@ fi
 # something the suite legitimately exercises, and an early exit made 20 cases
 # assert the inhibit message instead of the refusal they were written for.
 # Only the keystroke is suppressed. See the .ps1 twin.
-if [ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ]; then
+#
+# CREW_AUTOCLEAR_INHIBIT=spawn goes one step further and still builds and
+# spawns the detached sender, which stops after its sleep, before any
+# keystroke (the guard it carries below). The suite needs that for the
+# spawn itself (fd 3, the sleep argument, the process-group reap), and the
+# process/window stubs are honoured only while the inhibit is set, so this
+# keeps "a stub never steers a keystroke" true for those cases too.
+if [ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ] && [ "${CREW_AUTOCLEAR_INHIBIT}" != "spawn" ]; then
   note "would have sent, but CREW_AUTOCLEAR_INHIBIT is set"
   exit 0
 fi
@@ -346,6 +353,7 @@ send_script=$(mktemp) || { note "refusing - could not create the sender script";
 {
   echo '#!/usr/bin/env bash'
   echo "sleep $DELAY"
+  printf '[ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ] && { rm -f -- %q; exit 0; }\n' "$send_script"
   case "$RESOLVED" in
     tmux)
       # -l sends the string literally, so a command containing ; or " is safe.

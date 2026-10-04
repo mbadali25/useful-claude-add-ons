@@ -20,7 +20,7 @@ be wrong can be closed on evidence.
   (`plugin/crew/docs/session-record-spike.md`, "Not measured"). (b) A live end-to-end run: a `claude -p`
   child in a parent's tmux pane with auto-clear armed, and an interactive `script -qc claude` child
   (its record was not captured by the spike). (c) Harness follow-up, its own tooling PR (T-0087): the
-  35 hand sabotages of T-0016's PR as `plugin/crew/tests/sabotage_autoclear_binding.py`, registered in
+  49 hand sabotages of T-0016's PR as `plugin/crew/tests/sabotage_autoclear_binding.py`, registered in
   `sabotage.py`, with an anchor-present-once test. (d) The sh flavour still runs the hook-anchored
   checks (`crew_autocycle.py`'s `pane_pid not in ancestors()`, `resolve_target(ancestors(), ...)`)
   before the owner proof because their lines are sabotage anchors; once (c) lands they can be folded

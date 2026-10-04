@@ -181,6 +181,7 @@ def test_fixture_pids_are_never_real_processes():
 # --- owner and classify, in-process ---------------------------------------------
 
 def _inproc(monkeypatch, box):
+    monkeypatch.setenv("CREW_AUTOCLEAR_INHIBIT", "1")  # stubs are read only while it is set
     for name, value in box.env.items():
         monkeypatch.setenv(name, value)
 
@@ -472,6 +473,180 @@ def test_walk_through_an_unrecorded_claude_refuses(method, tmp_path):
                PARENT: P(T, TTY, PARENT_START, "claude"), T: P(1, 0, 1, "terminal")})
     result = box.run("sh", "--dry-run")
     assert f"passes through another Claude Code session (pid {PARENT})" in result.stderr, result.stderr
+
+
+@needs_bash
+@pytest.mark.parametrize("parent_comm", ["2.1.289", "node"])
+@pytest.mark.parametrize("method", ["tmux", "xdotool"])
+def test_parent_pane_on_another_tty_refuses(method, parent_comm, tmp_path):
+    """Review round 1 BLOCK (crew_autocycle.py:696-760): an interactive child
+    on its own pty (`script`), whose parent session's record is under a
+    DIFFERENT config dir and whose comm is not `claude` (a versioned native
+    binary, or node). No record and no comm gives the parent away, so the
+    tty is the proof: every process from the session up to the pane must be
+    on the session's own tty (or none)."""
+    box = Box(tmp_path)
+    box.record()
+    cf.write_session_record(tmp_path / "otherconfig", OTHER_SESSION, PARENT, proc_start=PARENT_START)
+    box.procs({H: P(O, TTY_OTHER, 1), O: P(SCRIPT, TTY_OTHER, cf.OWNER_START, "claude"),
+               SCRIPT: P(SHELL, TTY_OTHER, 1, "script"), SHELL: P(PARENT, 0, 1, "bash"),
+               PARENT: P(T, TTY, PARENT_START, parent_comm), T: P(1, 0, 1, "terminal")})
+    _target(box, "sh", method)
+    result = box.run("sh", "--dry-run")
+    assert "would send" not in result.stdout, result.stdout
+    if method == "tmux" and parent_comm == "node":  # a versioned comm ends the walk first
+        assert f"pid {PARENT} is on tty_nr {TTY}" in result.stderr, result.stderr
+
+
+@needs_bash
+def test_tmux_chain_with_an_unreadable_tty_refuses(tmp_path):
+    box = Box(tmp_path)
+    _target(box, "sh")
+    box.record()
+    box.procs({H: P(O, TTY, 1), O: P(SHELL, TTY, cf.OWNER_START, "claude"),
+               SHELL: {"ppid": T, "tty": None, "start": 1, "comm": "bash"}, T: P(1, TTY, 1, "terminal")})
+    result = box.run("sh", "--dry-run")
+    assert "would send" not in result.stdout
+    assert f"the controlling terminal of pid {SHELL}, between this session" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_walk_through_a_versioned_claude_binary_refuses(flavor, tmp_path):
+    """A native install runs as `~/.local/share/claude/versions/<x.y.z>`, so
+    its comm is the version: it ends the walk like `claude` does (NIT 1)."""
+    box = Box(tmp_path)
+    _target(box, flavor, "xdotool" if flavor == "sh" else None)
+    box.record()
+    box.procs({H: P(O, TTY, 1), O: P(PARENT, TTY, cf.OWNER_START, "claude"),
+               PARENT: P(T, TTY, PARENT_START, "2.1.289"), T: P(1, 0, 1, "terminal")})
+    result = box.run(flavor, "--dry-run")
+    assert f"passes through another Claude Code session (pid {PARENT})" in result.stderr, result.stderr
+
+
+# --- review round 1 FIX 1: a stub is honoured only when nothing can be typed -------
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_proc_stub_is_ignored_without_inhibit(flavor, tmp_path):
+    """CREW_AUTOCLEAR_PROC_STUB (and the window stub) can reach a hook from a
+    repo's settings env, so they are read only while CREW_AUTOCLEAR_INHIBIT
+    is set -- when no keystroke can be sent anyway."""
+    box = Box(tmp_path)
+    _target(box, flavor)
+    _own_terminal(box)
+    with_stub = box.run(flavor, "--dry-run")
+    without = box.run(flavor, "--dry-run", extra={"CREW_AUTOCLEAR_INHIBIT": ""})
+    assert "would send" in with_stub.stdout, with_stub.stderr
+    assert "would send" not in without.stdout, without.stdout
+    # sh: the hook's own (real) walk refuses the stubbed pane first; either way the stub was not read.
+    assert ("could not identify this session's process" in without.stderr
+            or "could not be confirmed" in without.stderr), without.stderr
+
+
+def test_window_stub_is_ignored_without_inhibit(tmp_path, monkeypatch):
+    path = tmp_path / "windows.json"
+    path.write_text(json.dumps([{"id": 1, "pid": T, "title": "x"}]), encoding="utf-8")
+    monkeypatch.setenv("CREW_AUTOCLEAR_WINDOW_STUB", str(path))
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    monkeypatch.setenv("CREW_AUTOCLEAR_INHIBIT", "1")
+    assert crew_autocycle.list_windows()[0] == [{"id": 1, "pid": T, "title": "x"}]
+    monkeypatch.delenv("CREW_AUTOCLEAR_INHIBIT")
+    assert crew_autocycle.list_windows() == (None, "xdotool is not on PATH")
+
+
+@needs_bash
+@pytest.mark.skipif(os.name == "nt", reason="the tmux sender is POSIX-only - NOT run here")
+def test_spawn_inhibit_spawns_the_sender_but_types_nothing(tmp_path):
+    """CREW_AUTOCLEAR_INHIBIT=spawn (for the suite's spawn tests) still honours
+    the stubs, so the sender it spawns must stop before any keystroke."""
+    box = Box(tmp_path)
+    box.machine(method="tmux", delaySeconds=0)
+    _own_terminal(box)
+    calls = tmp_path / "tmux-calls.log"
+    bindir = tmp_path / "fakebin"
+    cf.write_shim(bindir, "tmux", f'#!/bin/sh\necho "$*" >> "{calls}"\necho {T}\n')
+    box.env.update(cf.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7"))
+    box.run("sh", extra={"CREW_AUTOCLEAR_INHIBIT": "spawn"})
+    assert "sent - method tmux" in box.log(), box.log()
+    time.sleep(2)  # delaySeconds 0: an unguarded sender has typed long before this
+    assert "send-keys" not in calls.read_text(encoding="utf-8"), calls.read_text(encoding="utf-8")
+
+
+# --- review round 1 FIX 3: a live session whose record cannot be read --------------
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_unreadable_live_sibling_record_refuses_the_title_fallback(flavor, tmp_path):
+    box = Box(tmp_path)
+    _title_only(box, flavor, 999999 if flavor == "sh" else T)
+    box.record()
+    (box.config / "sessions" / f"{SIBLING}.json").write_text("{not json", encoding="utf-8")
+    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
+    result = box.run(flavor, "--dry-run")
+    assert "would send" not in result.stdout, result.stdout
+    assert "another session cannot be ruled out" in result.stderr, result.stderr
+
+
+def test_other_sessions_cannot_rule_out_a_live_unreadable_record(tmp_path, monkeypatch):
+    box = Box(tmp_path)
+    box.record()
+    (box.config / "sessions" / f"{SIBLING}.json").write_text("[]", encoding="utf-8")
+    (box.config / "sessions" / f"{SIBLING + 1}.json").write_text("{not json", encoding="utf-8")
+    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
+    _inproc(monkeypatch, box)
+    assert crew_autocycle.other_sessions(O) is None  # SIBLING is live; SIBLING + 1 is gone and ignored
+    (box.config / "sessions" / f"{SIBLING}.json").unlink()
+    assert crew_autocycle.other_sessions(O) == set()
+
+
+# --- review round 1 FIX 2: an exited parent is the top; an unreadable one is not ---
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+@pytest.mark.parametrize("parent", ["gone", "unreadable"])
+def test_exited_parent_ends_the_chain_but_unreadable_does_not(flavor, parent, tmp_path):
+    box = Box(tmp_path)
+    _title_only(box, flavor, 999999 if flavor == "sh" else T)
+    box.record()
+    table = {H: P(O, TTY, 1), O: P(SHELL, TTY, cf.OWNER_START, "claude"), SHELL: P(SHELL + 1, TTY, 1),
+             SHELL + 1: {"gone": True} if parent == "gone" else None}
+    if flavor == "ps1":
+        table[T] = P(1, 0, 1, "terminal")  # the console window's owner, read for its name
+    box.procs(table)
+    result = box.run(flavor, "--dry-run")
+    if parent == "gone":
+        assert "would send" in result.stdout, result.stdout + result.stderr
+    else:
+        assert "would send" not in result.stdout
+        assert f"the parent of pid {SHELL + 1} could not be read" in result.stderr, result.stderr
+
+
+@needs_pwsh
+def test_ps1_live_lookup_tells_an_exited_parent_from_an_unreadable_one():
+    """Review round 1 FIX 2, the real (unstubbed) Windows path, run from the
+    live functions: no such process is an exit; a parent id that could not be
+    read (Get-CrewParentId's 0) is unreadable, never the top of the chain."""
+    with open(os.path.join(_SCRIPTS, "auto-clear.ps1"), encoding="utf-8") as handle:
+        source = handle.read()
+
+    def _extract_ps1_function(text, name):
+        start = text.index(f"function {name}")
+        depth, i = 0, text.index("{", start)
+        while True:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                return text[start:i + 1]
+            i += 1
+
+    funcs = "\n".join(_extract_ps1_function(source, name) for name in (
+        "Test-CrewTrue", "Get-CrewChild", "Get-CrewProcStub", "Get-CrewProcLookup"))
+    script = (funcs + "\n$script:crewProcStubRead = $false\n"
+              "function Get-CrewParentId([int]$Id) { return 0 }\n"
+              "$a = Get-CrewProcLookup 999999; $b = Get-CrewProcLookup $PID\n"
+              "function Get-Process { throw [System.UnauthorizedAccessException]::new('denied') }\n"
+              "$c = Get-CrewProcLookup 4242\n"
+              "Write-Output \"$($null -eq $a.Info)|$($a.Gone)|$($null -eq $b.Info)|$($b.Gone)|$($c.Gone)\"\n")
+    env = {k: v for k, v in os.environ.items() if k not in ("CREW_AUTOCLEAR_PROC_STUB", "CREW_AUTOCLEAR_INHIBIT")}
+    done = cf.subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
+                             text=True, check=False, timeout=60, env=env, stdin=cf.subprocess.DEVNULL)
+    assert done.stdout.strip() == "True|True|True|False|False", done.stdout + done.stderr
 
 
 # --- 5. must-block: a shared window ------------------------------------------------

@@ -764,8 +764,13 @@ switch ($method) {
 # allowlist; Windows' entrypoint is unmeasured, so anything else is unknown
 # and never typed into. CREW_AUTOCLEAR_PROC_STUB, when set, is the WHOLE
 # process table (the suite's only way in, like the window stub): a pid it
-# does not name does not exist. No environment variable is evidence of which
-# process is this session.
+# does not name does not exist; `{"gone": true}` is a pid that has exited,
+# null one that cannot be read. Both stubs are read ONLY while
+# CREW_AUTOCLEAR_INHIBIT is set (review round 1): a repo's settings env
+# reaches this hook, and with the inhibit set nothing is ever typed. No
+# environment variable is evidence of which process is this session. With no
+# tty on Windows, a parent session is told apart only by its record and its
+# process name (claude, or a version-named native binary) -- a stated limit.
 $script:crewTerminalEntrypoints = @("cli")
 $script:crewProcStub = $null
 $script:crewProcStubRead = $false
@@ -773,7 +778,7 @@ $script:crewProcStubRead = $false
 function Get-CrewProcStub {
   if ($script:crewProcStubRead) { return $script:crewProcStub }
   $script:crewProcStubRead = $true
-  if (-not $env:CREW_AUTOCLEAR_PROC_STUB) { return $null }
+  if (-not $env:CREW_AUTOCLEAR_PROC_STUB -or -not $env:CREW_AUTOCLEAR_INHIBIT) { return $null }
   # Unreadable: an empty table whose scans fail -- nothing in it is proven.
   $table = @{}; $fails = $true; $self = [long]0
   try {
@@ -803,21 +808,36 @@ function Get-CrewParentId([int]$Id) {
   try { return [int]([wmi]"Win32_Process.Handle='$Id'").ParentProcessId } catch { return 0 }
 }
 
-function Get-CrewProcInfo([long]$Id) {
-  # @{ Ppid; Start; Comm }, or $null when the process cannot be read.
+function Get-CrewProcLookup([long]$Id) {
+  # @{ Info = @{ Ppid; Start; Comm } or $null; Gone = $true when the process
+  # provably no longer exists, never merely because it could not be read }.
   $stub = Get-CrewProcStub
   if ($null -ne $stub) {
-    if (-not $stub.Table.ContainsKey($Id)) { return $null }
+    if (-not $stub.Table.ContainsKey($Id)) { return @{ Info = $null; Gone = $false } }
     $entry = $stub.Table[$Id]
-    if ($null -eq $entry) { return $null }
+    if ($null -eq $entry) { return @{ Info = $null; Gone = $false } }
+    if (Test-CrewTrue (Get-CrewChild $entry "gone")) { return @{ Info = $null; Gone = $true } }
     $ppid = Get-CrewChild $entry "ppid"
-    return @{ Ppid = $(if ($ppid -is [ValueType] -and -not ($ppid -is [bool])) { [long]$ppid } else { [long]0 })
-              Start = (Get-CrewChild $entry "start"); Comm = [string](Get-CrewChild $entry "comm") }
+    return @{ Gone = $false; Info = @{
+      Ppid = $(if ($ppid -is [ValueType] -and -not ($ppid -is [bool])) { [long]$ppid } else { [long]0 })
+      Start = (Get-CrewChild $entry "start"); Comm = [string](Get-CrewChild $entry "comm") } }
   }
-  try { $proc = Get-Process -Id $Id -ErrorAction Stop } catch { return $null }
+  try { $proc = Get-Process -Id $Id -ErrorAction Stop } catch {
+    # Only "no such process" is an exit; access denied or anything else is
+    # an unreadable process, never the top of the chain (review round 1).
+    return @{ Info = $null; Gone = ([string]$_.FullyQualifiedErrorId -like "NoProcessFoundForGivenId*") }
+  }
+  # Get-CrewParentId says 0 when it could not read the parent: unreadable.
+  $parent = [long](Get-CrewParentId ([int]$Id))
+  if ($parent -le 0) { return @{ Info = $null; Gone = $false } }
   # No start time: none is comparable to a record's procStart here, so a
   # record is bound by pid and session id only (a stated limit).
-  return @{ Ppid = [long](Get-CrewParentId ([int]$Id)); Start = $null; Comm = [string]$proc.ProcessName }
+  return @{ Gone = $false; Info = @{ Ppid = $parent; Start = $null; Comm = [string]$proc.ProcessName } }
+}
+
+function Get-CrewProcInfo([long]$Id) {
+  # @{ Ppid; Start; Comm }, or $null when the process cannot be read or is gone.
+  return (Get-CrewProcLookup $Id).Info
 }
 
 function Get-CrewChain([long]$Start) {
@@ -828,12 +848,13 @@ function Get-CrewChain([long]$Start) {
     if ($chain.Contains($walk)) { return @{ Chain = $chain; Complete = $false; Why = "the process chain loops back to pid $walk" } }
     if ($chain.Count -ge 16) { return @{ Chain = $chain; Complete = $false; Why = "the process chain is deeper than 16 processes" } }
     $chain.Add($walk)
-    $info = Get-CrewProcInfo $walk
+    $lookup = Get-CrewProcLookup $walk
+    $info = $lookup.Info
     if ($null -eq $info) {
       # On native Windows a process's recorded parent has routinely exited:
-      # that is the top of the chain, not a failure. Under the stub, and for
-      # the walk's own first process, it is a failure.
-      if ($null -eq (Get-CrewProcStub) -and $chain.Count -gt 1) {
+      # that is the top of the chain. A process that exists but cannot be
+      # read, and the walk's own first process, are failures.
+      if ($lookup.Gone -and $chain.Count -gt 1) {
         $chain.RemoveAt($chain.Count - 1)
         return @{ Chain = $chain; Complete = $true; Why = "" }
       }
@@ -907,7 +928,10 @@ function Get-CrewOtherSessions([long]$OwnerPid) {
     if ($other -eq $OwnerPid) { continue }
     $record = Read-CrewJsonFile $file.FullName
     $info = Get-CrewProcInfo $other
-    if ($null -eq $record -or $null -eq $info) { continue }
+    if ($null -eq $info) { continue }
+    # A live process whose record cannot be read may be a session, so no
+    # other session can be ruled out (review round 1).
+    if ($null -eq $record) { return $null }
     if ($null -ne $info.Start -and [string](Get-CrewChild $record "procStart") -cne [string]$info.Start) { continue }
     $out.Add($other)
   }
@@ -1025,7 +1049,7 @@ if ($method -eq "notify") {
 # replaces the real window system -- the suite's only way in, so no test ever
 # enumerates, let alone types into, a real window.
 function Get-CrewWindows {
-  if ($env:CREW_AUTOCLEAR_WINDOW_STUB) {
+  if ($env:CREW_AUTOCLEAR_WINDOW_STUB -and $env:CREW_AUTOCLEAR_INHIBIT) {
     $stub = Get-Content -LiteralPath $env:CREW_AUTOCLEAR_WINDOW_STUB -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     return @($stub | ForEach-Object { [pscustomobject]@{ Id = [long]$_.id; Pid = [int]$_.pid; Title = [string]$_.title } })
   }
@@ -1069,13 +1093,14 @@ try { $windows = @(Get-CrewWindows) } catch { Stop-CrewAutoClear "cannot list wi
 # first -- a child under its parent's window -- refuses, and so does a chain
 # that could not be read to the end with no window found on it.
 $crewOthers = Get-CrewOtherSessions $crewOwner.Pid
-if ($null -eq $crewOthers) { Stop-CrewAutoClear "the session records could not be listed, so another session cannot be ruled out" }
+if ($null -eq $crewOthers) { Stop-CrewAutoClear "the session records could not be listed or read, so another session cannot be ruled out" }
 $crewOwnerChain = Get-CrewChain $crewOwner.Pid
 $ancestors = @()
 $crewFoundOwner = $false
 foreach ($crewStep in @($crewOwnerChain.Chain | Select-Object -Skip 1)) {
   $crewStepInfo = Get-CrewProcInfo $crewStep
-  if ($crewOthers -contains $crewStep -or ($null -ne $crewStepInfo -and $crewStepInfo.Comm -eq "claude")) {
+  if ($crewOthers -contains $crewStep -or ($null -ne $crewStepInfo -and
+      ($crewStepInfo.Comm -eq "claude" -or $crewStepInfo.Comm -match '^\d+\.\d+\.\d+$'))) {
     Stop-CrewAutoClear "the way from this session (pid $($crewOwner.Pid)) up to its window passes through another Claude Code session (pid $crewStep)"
   }
   $ancestors += $crewStep

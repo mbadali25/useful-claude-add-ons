@@ -146,7 +146,7 @@ class Fixture:
         env = self.env(tmux=tmux, **extra)
         monkeypatch.setenv("PATH", env["PATH"])
         for name in ("CREW_TEST_TMUX_LOG", "CREW_TEST_PANE", "CREW_TEST_PANE_PID",
-                     crew_fixtures.PROC_STUB_ENV):
+                     crew_fixtures.PROC_STUB_ENV, "CREW_AUTOCLEAR_INHIBIT"):
             if name in env:
                 monkeypatch.setenv(name, env[name])
         return crew_autocycle.resume_plan(str(self.root), SESSION, "compact", global_path=str(self.global_path),

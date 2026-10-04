@@ -601,27 +601,30 @@ and gets nothing created.
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
 
-### Which terminal: the session's own process (T-0016, crew 1.0.351)
+### Which terminal: the session's own process (T-0016, crew 1.0.376)
 
-Read in full on `T-0016-build` before its version commit; line citations taken with `grep -n` there.
+Read in full on `T-0016-build` after review round 1 and the merge of main ce235468; line citations taken with `grep -n` there.
 
 - DERIVED: the bash flavour binds after `resolve_method` and before returning `send`
-  (`plugin/crew/hooks/scripts/crew_autocycle.py:957`, `bind_to_session` at `:1002`), so the
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:1007`, `bind_to_session` at `:1052`), so the
   sender's sent-marker claim (`plugin/crew/hooks/scripts/auto-clear.sh`, after the plan) never
-  runs for a binding refusal. `session_owner` (`crew_autocycle.py:537`) walks the hook's chain to
+  runs for a binding refusal. `session_owner` (`crew_autocycle.py:568`) walks the hook's chain to
   the first `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json` whose `sessionId` and
-  `procStart` match; `classify` (`:576`) needs kind `interactive`, entrypoint in
+  `procStart` match; `classify` (`:607`) needs kind `interactive`, entrypoint in
   `TERMINAL_ENTRYPOINTS` (`:108`, `{"cli"}`) and a non-zero `tty_nr` for `terminal`;
-  `prove_target` (`:696`) re-proves the pane/window from the owner, with `other_sessions`
-  (`:604`) and `_shared_window` (`:660`, the descendant tty scan). Headless becomes method
-  `notify-headless`, its text from `headless_notice` (`:974`), printed and claimed at
+  `prove_target` (`:731`) re-proves the pane/window from the owner, with `other_sessions`
+  (`:635`, None when a live process's record cannot be read) and `_shared_window` (`:695`, the
+  descendant tty scan); for tmux every process from the owner up to the pane must be on the
+  owner's tty or none (`:769`, review round 1). Headless becomes method
+  `notify-headless`, its text from `headless_notice` (`:1024`), printed and claimed at
   `plugin/crew/hooks/scripts/auto-clear.sh:312`.
 - DERIVED: `plugin/crew/hooks/scripts/auto-clear.ps1` carries the same rules natively
-  (`Get-CrewSessionOwner` `:657`, `Get-CrewSessionClass` `:685` with no tty, the binding block from
-  `:743`, the owner-anchored window walk from `:878`); Windows' parent walk treats an exited parent
-  as the top of the chain.
+  (`Get-CrewSessionOwner` `:678`, `Get-CrewSessionClass` `:706` with no tty, the binding block from
+  `:767`, the owner-anchored window walk from `:902`); `Get-CrewProcLookup` (`:616`) tells an exited
+  parent (the top of the chain) from an unreadable one (refuse).
 - DERIVED: every process fact goes through `_proc`, and `CREW_AUTOCLEAR_PROC_STUB`
-  (`crew_autocycle.py:101`) replaces the whole table; the suite's fixtures are
+  (`crew_autocycle.py:101`) replaces the whole table, read only while CREW_AUTOCLEAR_INHIBIT is set
+  (`_stubs_allowed`, `:409`, as is the window stub); the suite's fixtures are
   `plugin/crew/tests/crew_fixtures.py:1312` (`write_session_record`), `:1334` (`proc_stub`) and
   `:1357` (`bind_session`), which T-0017 builds on.
 - JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
@@ -629,24 +632,24 @@ Read in full on `T-0016-build` before its version commit; line citations taken w
 
 ### Auto wrap-up before the clear (T-0017, crew 1.0.373)
 
-Read in full on `T-0017-build` (stacked on `T-0016-build`) before its version commit; line
+Read in full on `T-0017-build` (stacked on `T-0016-build` d7eb9fbd) before its version commit; line
 citations taken with `grep -n` there.
 
 - DERIVED: `context.autoClear.wrapUp` is read by `settings` with `enabled`'s machine-opt-in rule
-  (`plugin/crew/hooks/scripts/crew_autocycle.py:210`) and arms only through `wrapup_armed`
-  (`:402`: `enabled`, `wrapUp` and `in_scope`). Its default is `None`
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:215`) and arms only through `wrapup_armed`
+  (`:407`: `enabled`, `wrapUp` and `in_scope`). Its default is `None`
   (`plugin/crew/hooks/scripts/crew_state.py:717`) and a repo may only veto it
   (`plugin/crew/hooks/scripts/crew_config.py:3015`).
-- DERIVED: `plan` runs `wrapup_check` (`crew_autocycle.py:425`) after `verify_handoff` and before
-  `resolve_method` (`:1073`), so a refusal (reason prefixed `wrap-up: `, `:397`) never reaches the
+- DERIVED: `plan` runs `wrapup_check` (`crew_autocycle.py:430`) after `verify_handoff` and before
+  `resolve_method` (`:1123`), so a refusal (reason prefixed `wrap-up: `, `:402`) never reaches the
   binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:256` also prints it as a
   `systemMessage`. `plugin/crew/hooks/scripts/auto-clear.ps1:723` reads `wrapUp` natively and runs
   the same check through `crew_autocycle.py wrapup-check` (`:730`); no python refuses.
-- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:475`) instead of either
+- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:480`) instead of either
   `autoWrapUp` text when armed (`plugin/crew/hooks/scripts/context-watch.sh:597`,
   `plugin/crew/hooks/scripts/context-watch.ps1:630`), and in the marker branch escalates a failed
   check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:528`,
-  `context-watch.ps1:515`); the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1297`).
+  `context-watch.ps1:515`); the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1347`).
   SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`,
   `plugin/crew/hooks/scripts/handoff-read.ps1:200`).
 - DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:36`) is the one wrap-up
