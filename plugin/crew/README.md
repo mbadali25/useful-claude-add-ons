@@ -2031,10 +2031,10 @@ every repo. The other keys layer normally, repo over machine.
 
 | Method | How it finds the target | Confidence |
 |---|---|---|
-| `tmux` | `$TMUX_PANE`, and only when that pane's pid is an ancestor of the hook | **Exact.** No focus involved. Use this if you can. |
-| `xdotool` | the one window owned by the nearest ancestor process; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window | Activates that window id, re-checks it is active, then types. |
+| `tmux` | `$TMUX_PANE`, and only when that pane's pid is this session's own process or an ancestor of it | **Exact.** No focus involved. Use this if you can. |
+| `xdotool` | the one window owned by the nearest ancestor of this session's own process, hosting no other terminal; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window (and refuses while another session is live) | Activates that window id, re-checks it is active, then types. |
 | `notify` | no window — types nothing | Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured command yourself. Never claims anything was cleared or compacted, because nothing was. `auto` resolves here on native Windows with no tmux pane. |
-| `sendkeys` | the same rule through `EnumWindows` (renamed from the pre-1.0 `"windows"` literal); at send time that exact window handle must have foreground | **Opt-in only — `auto` never resolves here.** Windows Terminal hosts every tab in one window and nothing outside UI Automation can tell which tab is active, so a Windows-Terminal-owned target declines and falls back to `notify`, logged to `.crew/.autoclear.log`. Request it by name after reading what it does. |
+| `sendkeys` | the same rule, from this session's own process, through `EnumWindows` (renamed from the pre-1.0 `"windows"` literal); at send time that exact window handle must have foreground | **Opt-in only — `auto` never resolves here.** Windows Terminal hosts every tab in one window and nothing outside UI Automation can tell which tab is active, so a Windows-Terminal-owned target declines and falls back to `notify`, logged to `.crew/.autoclear.log`. Request it by name after reading what it does. |
 | `wtype` | cannot identify a window | **Refused**, whatever `unsafeFocus` says. |
 
 #### What has to be true before it types anything
@@ -2049,10 +2049,23 @@ every repo. The other keys layer normally, repo over machine.
    the Windows low-context `/clear` — is unknown, and unknown never clears.
 4. The handoff exists, is **newer** than the request, has at least
    `minHandoffLines` non-blank lines, and is not PreCompact's automatic skeleton.
-5. The target window is identified uniquely (the table above). Zero or several
-   candidates is a refusal, never a guess — this step does not apply to
-   `notify`, which identifies no window because it types nothing.
-6. Nothing has claimed this session's one attempt (`.crew/.autoclear-sent-<session_id>`).
+5. This session is bound to its **own** process (T-0016): the nearest ancestor
+   named by a Claude Code session record
+   (`${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`) with this session's
+   id and that process's start time. A headless session — `claude -p`
+   (entrypoint `sdk-cli`) or one with no controlling terminal — types
+   nothing whatever the method: it gets one `notify-headless` message naming
+   the handoff and its `resume:` line and saying the process that started it
+   must start a new one. A session that cannot be identified, or whose
+   entrypoint was never measured, types nothing either (`auto` falls back to
+   plain `notify`). [CONFIG.md §14](CONFIG.md) has every rule.
+6. The target window is identified uniquely (the table above), walking up
+   from that process: through another Claude Code session, past a chain that
+   could not be read, or into a window that hosts another terminal, it
+   refuses. Zero or several candidates is a refusal, never a guess — this
+   step does not apply to `notify`, which identifies no window because it
+   types nothing.
+7. Nothing has claimed this session's one attempt (`.crew/.autoclear-sent-<session_id>`).
 
 Fail any of those and it writes a line to `.crew/.autoclear.log` saying which,
 and does nothing. That log exists because a `Stop` hook's stderr is invisible

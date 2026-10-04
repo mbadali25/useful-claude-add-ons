@@ -606,6 +606,35 @@ and gets nothing created.
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
 
+### Which terminal: the session's own process (T-0016, crew 1.0.333)
+
+Read in full on `T-0016-build` after review round 1 and the merge of main ce235468; line citations taken with `grep -n` there.
+
+- DERIVED: the bash flavour binds after `resolve_method` and before returning `send`
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:1007`, `bind_to_session` at `:1052`), so the
+  sender's sent-marker claim (`plugin/crew/hooks/scripts/auto-clear.sh`, after the plan) never
+  runs for a binding refusal. `session_owner` (`crew_autocycle.py:568`) walks the hook's chain to
+  the first `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json` whose `sessionId` and
+  `procStart` match; `classify` (`:607`) needs kind `interactive`, entrypoint in
+  `TERMINAL_ENTRYPOINTS` (`:108`, `{"cli"}`) and a non-zero `tty_nr` for `terminal`;
+  `prove_target` (`:731`) re-proves the pane/window from the owner, with `other_sessions`
+  (`:635`, None when a live process's record cannot be read) and `_shared_window` (`:695`, the
+  descendant tty scan); for tmux every process from the owner up to the pane must be on the
+  owner's tty or none (`:769`, review round 1). Headless becomes method
+  `notify-headless`, its text from `headless_notice` (`:1024`), printed and claimed at
+  `plugin/crew/hooks/scripts/auto-clear.sh:312`.
+- DERIVED: `plugin/crew/hooks/scripts/auto-clear.ps1` carries the same rules natively
+  (`Get-CrewSessionOwner` `:678`, `Get-CrewSessionClass` `:706` with no tty, the binding block from
+  `:767`, the owner-anchored window walk from `:902`); `Get-CrewProcLookup` (`:616`) tells an exited
+  parent (the top of the chain) from an unreadable one (refuse).
+- DERIVED: every process fact goes through `_proc`, and `CREW_AUTOCLEAR_PROC_STUB`
+  (`crew_autocycle.py:101`) replaces the whole table, read only while CREW_AUTOCLEAR_INHIBIT is set
+  (`_stubs_allowed`, `:409`, as is the window stub); the suite's fixtures are
+  `plugin/crew/tests/crew_fixtures.py:1312` (`write_session_record`), `:1334` (`proc_stub`) and
+  `:1357` (`bind_session`), which T-0017 builds on.
+- JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
+  sabotage anchors); `prove_target` is the stricter proof and the one that decides.
+
 ## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43)
 
 `plugin/crew/hooks/scripts/crew_resume.py` owns the `resume:` line a handoff

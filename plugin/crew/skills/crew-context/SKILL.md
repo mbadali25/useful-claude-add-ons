@@ -14,8 +14,9 @@ its parent's conversation. Anything promising otherwise is guessing.
 `context.autoClear` (experimental, off by default) does not contradict that. It
 does not clear the conversation; it drives the **terminal**, typing `/clear` at
 the prompt the way a human would. Different mechanism, different failure mode —
-it depends on knowing which terminal, which is why `tmux` (exact, by pane id) is
-the only method that needs no window title and the rest refuse without one. See
+it depends on knowing which terminal: only this session's own, bound through its
+Claude Code session record (a headless `claude -p` child is told instead), with
+`tmux` exact by pane id and the rest refusing without one window. See
 `hooks/scripts/auto-clear.sh` and the crew README's Auto-clear section.
 
 You do not need it to. The lifecycle already provides the whole cycle:

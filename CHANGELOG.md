@@ -72,6 +72,78 @@ All notable changes to this repository are documented here. Format follows [Keep
   `RED (good)` under the new default with no wrapper. The plan-dev-zero entry
   blamed in the report is constant memory (58 MiB). 17 + 5 new tests, five
   sabotage entries for the bound itself.
+### Fixed — `crew` 1.0.333: auto-clear and resume typing bind to the session's own terminal (T-0016)
+
+- **What changed.** Both senders (`crew_autocycle.py` for `auto-clear.sh`, and
+  the same rules natively in `auto-clear.ps1`) bind the session to its OWN
+  process before anything is typed: the nearest ancestor of the hook named by
+  a Claude Code session record, `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`,
+  whose `sessionId` is the payload's and whose `procStart` matches that
+  process's start time where one can be read. It is classified `terminal`
+  (kind `interactive`, entrypoint `cli`, a controlling tty on POSIX),
+  `headless` (an `sdk*` entrypoint, a non-interactive kind, or `tty_nr` 0) or
+  `unknown` (everything else). The pane or window is then proven by walking
+  up from that process, refusing when the walk passes through another Claude
+  Code process or live session record, when the chain could not be read to
+  the end, when an X11 window's owner also hosts another tty or session (or
+  the scan fails), when a console window's owner is also above another live
+  session, and when a title-only or pid-less window is chosen while another
+  session is live. The binding runs after the handoff checks and the method
+  and before the sent-marker claim (T-0017's order).
+- **What each session gets.** Headless, whatever the method: the new method
+  `notify-headless` types nothing and prints one `systemMessage` naming the
+  handoff and its `resume:` line and saying the process that started the
+  session must start a new one; claimed once per session like `notify`, and
+  logged in full. Unknown: `notify` unchanged, `auto` falls back to plain
+  `notify` (logged with the reason), an explicit typing method refuses
+  ("could not identify this session's process" / "could not tell whether
+  this session has a terminal of its own"); it never says "no terminal".
+  T-0013's resume typing takes the same binding for a typing method. With
+  `context.autoClear.enabled` off nothing changed: silent, no record read.
+- **Why.** Every target check was anchored on the hook, so a `claude -p` child
+  started from a session's Bash tool inherited `$TMUX`, found its parent's
+  pane pid among its own ancestors, and typed `/clear` into the parent's pane
+  at its wrap-up (or the resume command at its SessionStart).
+- **Measured.** `plugin/crew/docs/session-record-spike.md` (Claude Code 2.1.289,
+  Linux): `-p` records entrypoint `sdk-cli` with or without a pty, kind is
+  `interactive` for every case, `sessionId` follows `/clear`, a killed session
+  leaves its record behind. Windows' entrypoint and macOS are unmeasured: on
+  Windows an entrypoint outside `cli` is unknown and `procStart` is unchecked;
+  macOS reads `ps` and leaves `procStart` unchecked.
+- **Tests.** `test_autoclear_binding.py` (111 cases, both flavours on the same
+  fixtures), and `crew_fixtures.write_session_record` / `proc_stub` /
+  `bind_session`, which T-0017 builds on. `CREW_AUTOCLEAR_PROC_STUB` replaces
+  the whole process table in tests, so no case reads the real tree;
+  conftest clears an ambient `CLAUDE_CONFIG_DIR`. The existing must-fire
+  helpers in `test_auto_cycle.py`, `test_auto_clear.py`,
+  `test_auto_clear_review_fixes.py` and `test_resume_typing.py` bind their
+  session (and the three spawn tests use `CREW_AUTOCLEAR_INHIBIT=spawn`); no
+  assertion changed. 49 hand sabotages (python, bash and PowerShell) each
+  turned their named test red; the `sabotage*.py` entries
+  are a separate tooling PR.
+- **Review round 1.** tmux now also requires every process from the session
+  up to the pane to be on the session's tty (or none), so an interactive
+  child on its own pty under its parent's pane is refused even when the
+  parent's record is in another config dir and its name is not `claude`; a
+  version-named process (`2.1.289`, a native install) ends the walk like
+  `claude`; a live process whose record cannot be read means no other session
+  can be ruled out; the PowerShell walk tells an exited parent (the top) from
+  an unreadable one (refuse). The process and window stubs are read only
+  while `CREW_AUTOCLEAR_INHIBIT` is set, and `CREW_AUTOCLEAR_INHIBIT=spawn`
+  spawns the bash sender but stops it before any keystroke.
+- **Owner decisions.** Approved 2026-10-04 as the spec recommended: macOS via
+  `ps` with `procStart` unchecked; `windowTitle`'s global fallback kept but
+  refused while another live session record exists or the window's pid is
+  ≤ 1; resume typing in scope; no `allowHeadless`-style escape hatch; the
+  entrypoint allowlist is `{"cli"}` plus a tty.
+- **Windows CI fix.** The pane pid is read from the `tmux` that
+  `shutil.which` accepted, not a bare `tmux`: on native Windows CreateProcess
+  tries only `tmux.exe` while `which` honours PATHEXT, so a `tmux.cmd` passed
+  the check, was never run, and every Git Bash tmux case refused with "pane
+  pid unknown". `test_tmux_pane_pid_is_read_from_the_tmux_the_path_check_found`
+  pins it on any OS; the `~/.claude` owner test sets `USERPROFILE` too, which
+  is where `expanduser` looks on Windows.
+
 ### Added — `crew` 1.0.332: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
 
 - **What changed.** `autopilot.sleep` in `.crew/config.json` (repo only, all

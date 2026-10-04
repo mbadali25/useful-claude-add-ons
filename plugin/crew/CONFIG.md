@@ -1093,11 +1093,11 @@ for.
 | Value | What it does | Where it can run |
 |---|---|---|
 | `"auto"` *(default)* | Picks per platform, below. | everywhere |
-| `"tmux"` | Types into the `$TMUX_PANE` that is an ancestor of the hook. Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
-| `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
+| `"tmux"` | Types into the `$TMUX_PANE` whose pid is this session's own process or an ancestor of it (T-0016, below). Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
+| `"xdotool"` | Types into the one X11 window owned by an ancestor of this session's own process and hosting no other terminal (or matching `windowTitle`). | Linux with `xdotool` installed |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor of this session's own process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -1108,6 +1108,102 @@ Bash alike — and absent inside WSL, which has its own init); else refused
 (`"no usable method"`). `auto` **never** resolves to `sendkeys`: typing into
 a window this hook found itself is a risk `auto` does not get to accept on
 your behalf. Request `sendkeys` by name to opt in to it.
+
+### Which terminal: this session's own process (T-0016)
+
+A `claude -p` child started from a session's Bash tool inherits `$TMUX`, and
+its parent's pane and window are ancestors of its hook, so a target found
+from the hook alone typed `/clear` into the **parent**. Both flavours
+(`crew_autocycle.session_owner`/`classify`/`prove_target`, and the same
+rules natively in `auto-clear.ps1`) now bind first, after the handoff checks
+and the method, before the sent-marker claim:
+
+1. **Owner.** The nearest ancestor of the hook named by a Claude Code session
+   record, `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`, whose
+   `sessionId` is the payload's and whose `procStart` is that process's start
+   time (`/proc/<pid>/stat` field 22) wherever one can be read. No
+   environment variable counts: `CLAUDE_PID` and `CLAUDE_CODE_ENTRYPOINT` are
+   copied into every child.
+2. **Class.** `terminal` needs kind `interactive`, an entrypoint on the
+   measured allowlist (`cli`), and a controlling terminal (`tty_nr` non-zero;
+   native Windows has none to read, so there it rests on kind and entrypoint).
+   `headless` needs positive evidence: an `sdk*` entrypoint (`claude -p` is
+   `sdk-cli`, with or without a pty around it), a kind other than
+   `interactive`, or `tty_nr` 0. Anything else — no record, another session's
+   record, an unreadable one, a start-time mismatch, an entrypoint nobody
+   measured (e.g. `remote_mobile`) — is `unknown`, and unknown is never called
+   headless.
+3. **What each class gets.** `headless`, whatever the method (`notify`
+   included): method `notify-headless` — nothing typed, one `systemMessage` naming the handoff
+   and its `resume:` line and saying the process that started this session
+   must start a new one, claimed like `notify` (once per session) and logged
+   in full (a `-p` parent may never show the message). `unknown`: `notify`
+   is unchanged, `auto` falls back to plain `notify` (logged), an explicit
+   typing method refuses with the reason. `terminal`: `notify` unchanged;
+   tmux, xdotool and sendkeys are proven from the owner.
+4. **Target, from the owner.** tmux: the pane's pid is the owner or an
+   ancestor of it, and every process from the owner up to the pane is on the
+   owner's tty or on none — a pane reached through a process on another tty
+   is someone else's terminal (an interactive child on its own pty under its
+   parent's pane, whose parent's record is in another config dir and whose
+   name is not `claude`, is caught only by this), and a tty that cannot be
+   read refuses. xdotool/sendkeys: the window is owned by a strict ancestor
+   (never the claude process itself). The walk refuses when it passes
+   through another Claude Code process or another live session record (a
+   child under its parent's pane or window), or when the chain could not be
+   read to the end (a parent that cannot be read, a loop, more than 16
+   processes). xdotool also refuses a window whose owner hosts another
+   terminal — any descendant outside the owner's own subtree on another
+   `tty_nr`, another live session, or a process scan that fails — because
+   one terminal server owns one X window for many tabs and a sibling can be
+   invisible to a record scan (`tmux attach`, ssh, another config dir, a
+   plain shell). `sendkeys` refuses a window whose owner is also above
+   another live session; Windows Terminal's one-tab rule (above) still
+   applies. A window found by `windowTitle` alone, or one with no owning
+   process (pid ≤ 1), refuses whenever another live session record exists. A
+   record whose process is gone or whose start time names a reused pid is
+   not live (Claude Code leaves records behind when a session is killed); a
+   LIVE process whose record cannot be read means no other session can be
+   ruled out, and every check that needs that refuses. "Another Claude Code
+   process" is a live record, a process named `claude`, or one named like a
+   version (`2.1.289`: a native install runs from
+   `~/.local/share/claude/versions/<x.y.z>`); the names are a heuristic that
+   only makes the walk fail closed sooner — `node` and other names are not
+   recognised, which is why the records and the tty rule carry the proof.
+
+The chain end to end: T-0017 wrap-up → T-0016 target proof → clear → T-0006
+`decide` → T-0013 typing (which takes the same binding, below).
+
+**Test stubs are inert in production.** `CREW_AUTOCLEAR_PROC_STUB` (the
+whole process table) and `CREW_AUTOCLEAR_WINDOW_STUB` (the window list) are
+read only while `CREW_AUTOCLEAR_INHIBIT` is set, in both flavours: a repo's
+`.claude/settings.json` env reaches every hook, and with the inhibit set no
+keystroke is ever sent. `CREW_AUTOCLEAR_INHIBIT=spawn` (`auto-clear.sh`
+only, for the suite's spawn tests) still builds and spawns the detached
+sender, which stops after its sleep, before any keystroke.
+
+**Stated limits.** Measured on Linux only (Claude Code 2.1.289,
+`plugin/crew/docs/session-record-spike.md`). On native Windows `entrypoint`
+is unmeasured and there is no tty: a value outside the allowlist is unknown,
+and a record is bound by pid and session id with `procStart` unchecked; with
+no tty, a parent session above a console window is told apart only by its
+record and its process name, so one in another config dir under an
+unrecognised name is not seen there (Windows Terminal's one-tab rule and the
+title-fallback refusals still apply). A parent that has exited ends the walk
+on Windows; one that exists but cannot be read (`Get-Process` denied, or no
+parent id) refuses. On
+macOS (no `/proc`), parent and tty come from `ps -o ppid=,tty=,comm=` and
+`procStart` is unchecked, so a pid reused within a record's life is not
+caught there.
+
+**A shared tty proves nothing.** The tty rule tells two sessions apart only
+when they sit on different ttys. A process on the session's own tty (its
+shell, or a parent session started in the same terminal) counts as the
+session's own, and xdotool's shared-window scan reads it the same way. A
+parent session on the same tty is caught only by its live record or its
+process name (`claude`, or a version number); one in another config dir
+under an unrecognised name (`node`) is not seen. Two sessions on one tty
+share one terminal, so a keystroke reaches whichever of them is reading it.
 
 ### What the widening costs
 
@@ -1313,7 +1409,11 @@ Order, first refusal wins, and each is logged to `.crew/.autoclear.log`
 that is not an ancestor of the hook; `wtype`; `xdotool` (no probe can see an
 X11 input line); `sendkeys` on the bash flavour or `tmux` on the PowerShell
 one; `auto` on native Windows is `notify`, which types, claims and records
-nothing. Then the per-handoff marker
+nothing; then, for a typing method, T-0016's binding (§14): a headless or
+unknown session refuses ("auto-resume types only into this session's own
+terminal: ..."), and the pane or window is proven from the session's own
+process. A record's `sessionId` follows `/clear` (measured), so the new
+session's SessionStart binds. Then the per-handoff marker
 `<git-common-dir>/crew/resume-typed-<handoff sha256[:16]>` is claimed with
 `O_EXCL`/`CreateNew` (taken: refuse), then `crew_resume.py record` runs
 (failed: refuse, nothing typed), then the detached sender starts. tmux:
