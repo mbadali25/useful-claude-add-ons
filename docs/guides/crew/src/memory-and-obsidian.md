@@ -306,9 +306,10 @@ machine the vault syncs to. The name is looked up in that machine's
 `memory.vaultPath`, then, only when the Obsidian config has no `vaults` block,
 to its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not used. The
 line is exact and must be the whole body: a first line that starts `vault` and
-`:`, in any case, indent or spacing, and also holds `note:` or `|`, is a pointer
-attempt, and anything less is `malformed`. Without `note:` or `|` the line is
-prose: `Vault: keep client notes in the work vault` is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
+`:`, in any case, indent or spacing, is a pointer attempt when `note:` or `|`
+appears anywhere in the body (a pointer wrapped before its `|` included) or the
+line is a bare vault name alone (`vault: work`); anything less than the full
+grammar is then `malformed`. With neither the line is prose: `Vault: keep client notes in the work vault` is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
 that is there but does not read, parse or have the expected shape (a `vaults`
 object of objects with a string `path`, a string `vaultPath`, crew's `memory`
 an object with a string or null `vaultPath`; no duplicate key, not nested too
