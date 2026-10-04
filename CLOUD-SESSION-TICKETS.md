@@ -38,9 +38,10 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 | L-1511 | Follow-up to L-1510: `crew_tracker.py create` and `move` (or `_atomic_update` on INDEX) take `.work/INDEX.md.lock`, the same lock mint uses. Every unlocked `move` (implement.md:33,112, done.md:82, spec.md:46, review.md, plan.md) replaces INDEX while parallel lanes mint; on Windows mint then refuses (never a wrong id). Not harness. | none yet | needs ticket in your tracker |
 | L-1512 | Windows CI: cloud-guard bash tests intermittently exit 2304 (MSYS bash SIGKILLed) - `test_cloud_guard.py::test_must_block_bash[aws-s3-rm-recursive]` (#493 slow 1/3) and `test_identity_bash[aws-read-known-profile-other-cloud-pinned-ok]` (#356 slow). Likely a per-test timeout killing a slow Git Bash under load. Root-cause; never skip. | none yet | needs ticket in your tracker |
 | L-1514 | read-cloudhead skill on main: "read Cloudhead" resumes the cloud session from this notes branch | #495 MERGED | needs ticket in your tracker |
+| L-1515 | Windows CI flake on main 3ccd527e (run 37240220917): `test_auto_cycle.py::test_the_detached_sender_does_not_outlive_kill_process_group` - "sanity: at most one live job member ([3212])". Did not recur on #394. Root-cause; never skip. | none yet | needs ticket in your tracker |
 | L-1513 | Harness (L-0671 family): sabotage entry "approve writes beside the receipt" (sabotage_autopilot.py) inserts 4-space code after crew_autopilot.py:1668, landing inside T-0053's try/finally -> SyntaxError (RED BUT UNPROVEN, exit 4). Broken on main since T-0053. Re-anchor. Also: no test ties argparse choices to the usage block (a new subcommand missing from usage escapes the writer check). | none yet | needs ticket in your tracker |
 
-Next free untracked ID: **L-1515**.
+Next free untracked ID: **L-1516**.
 
 ## Merged this session
 
