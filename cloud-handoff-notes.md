@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 20:28 UTC
+Last updated: 2026-10-04 20:32 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 20:32: BATCH 2 COMPLETE. MERGED #347 T-0047 (re-run green) -> 59fe7d84, 1.0.335; MERGED #456 L-0677 -> main 644adfc2, crew 1.0.336. 17 PRs merged this session. #399 land-prep as 1.0.337 (harness alone) spawned.
 - 20:28: #493 L-1508 PR A round-2 review CLEAN at dbff75d9 (0/0/2 NIT), CI green first run. Carry :658 gate cite at landing. L-1509 widened: gizmoduck depcheck runs bare dependency-check (.bat) after which() found it.
 - 20:21: #493 L-1508 PR A round-1 fixes at dbff75d9, CI green first run (no mint flake): crew_shell FIX, lint widened (Name argv, string argv, os.*, wrappers), exact gate lines; new gated allowlist entries crew_shell bash -c and webtest_guard npx (container-only). Round-2 review sent to a66c088.
 - 20:16: #456 81414bc5 GREEN (29). #347 9c56ec40 red only on L-1510 mint race (test_index_rows_intact_after_concurrent_mints, harness crew_ticket, red on main too): commented on #347, re-ran job 111517581002 once. L-1510 builder spawned (harness-only PR, lands alone). Merge order still #347 then #456.
