@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 03:25 UTC
+Last updated: 2026-10-04 03:29 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 03:25 UTC
 
 ## Log (newest first)
 
+- 03:29: #379 T-0019: round-2 BLOCK + 5 FIX fixed test-first, merged main, pushed d93f3e5a (1.0.302 placeholder; full crew suite 9280 passed; ASSIGN sabotage 34/34 red). Sonnet round-3 review started. Builder started: T-0044 #369 (1.0.305).
 - 03:25: #378 merge-only review on 9b701365: CLEAN (0/0/2 NIT: diagram comment sha, version gap 243-246 reserved).
 - 03:24: OWNER: docs-only PRs need no gates, just merge. MERGED #386 (notes, 1ffbe7a5). Notes now pushed to branch ccr-b039f2bb-6jks7g after every action (read the BRANCH to resume); merged to main periodically via a docs PR.
 - 03:24: #378 local suites on merged tree: 582 passed, tooling-pr 17/17; merge-only Sonnet review of 9b701365 started. Owner 03:2x: 'merge when ready' (standing).
