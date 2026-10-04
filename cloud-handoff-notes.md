@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 04:41 UTC
+Last updated: 2026-10-04 04:44 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ Last updated: 2026-10-04 04:41 UTC
 
 ## Log (newest first)
 
+- 04:44: MERGED #379 at d67098ad (crew 1.0.252; Windows fix verified by CI 25/25). #350 re-merged -> 459b9724 crew 1.0.253 (BUDGETS 22,550), merge-only review + CI next. #369 fixes pushed 9ba064c1 (--setting-sources user per docs, denyWrite, env/stores widened, bounded probe) - r2 started. #370 T-0038 built 03f99760 - review started (1 known red: sabotage anchor in upgrade.md stub needs harness retarget). #361 r2 CLEAN -> train. mmdc installed locally for diagram renders. Next free 1.0.254.
 - 04:41: #361 r2 on ccce8df4: CLEAN (0/0/2 NIT). Joins landing train.
 - 04:39: #348 r1 on 7ec4750f: CLEAN (0/0/2 NIT: docs/diagrams README/index.html embedded done-diagram stale - regenerate with diagram_doc.py --write where mmdc exists; validate-prompts glob cwd). Joins the landing train.
 - 04:37: #348 T-0041 feature half built -> 7ec4750f (1.0.308 placeholder; 18 tests, 5 hand sabotages red; harness half = follow-ups: review_verdict U+2028 split, review_run output_sha256, reviewer.md/review.md rule, sabotage_review entries). Sonnet review started.
