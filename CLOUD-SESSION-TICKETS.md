@@ -134,7 +134,7 @@ Held for your go: L-0674 (#404).
 | L-0659 | #469 | not started (spec only) | Bare `/crew:autopilot` finds a running goal when there is no usable handoff |
 | L-0660 | #472 | not started (spec only) | Sabotage entries for goal resume: writers, handoff validation, discovery (tooling-only PR) |
 | L-0661 | #417 | not started (spec only) | T-0057 child 1: sabotage mutations for the autopilot routing rows (tooling-only PR) |
-| L-0662 | #420 | not started (spec only) | T-0057 child 2: plain-text routing rows for autopilot wave, split, sleep and wake |
+| L-0662 | #420 | review-clean at aa3e06d5 (0 BLOCK, 0 FIX); stacked on #416, needs re-merge + re-bump after #416 lands | T-0057 child 2: plain-text routing rows for autopilot wave, split, sleep and wake |
 | L-0663 | #424 | not started (spec only) | T-0057 child 3: sabotage mutations for the wave, split, sleep and wake routing rows (tooli |
 | L-0664 | #471 | not started (spec only) | promote-gate.ps1 treats a workflow dispatch of a declared deploy workflow as that deploy |
 | L-0665 | #473 | not started (spec only) | promote-gate reads the newest PROMOTIONS.md row for an environment and sha, not the first |
