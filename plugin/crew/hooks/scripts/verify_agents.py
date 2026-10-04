@@ -78,7 +78,7 @@ def _load_json(path):
         return None, problem
     try:
         return json.loads(text), None
-    except ValueError as exc:
+    except json.JSONDecodeError as exc:
         return None, f"{path} does not parse ({exc.msg})"
 
 
