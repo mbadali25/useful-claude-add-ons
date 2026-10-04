@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:45: #353 fix pushed: 50685af5 (crew 1.0.233; _merged_phase: closed only if merged headRefOid == HEAD, else stop; 7 sabotage-red tests). Sonnet re-review r2 started.
 - 00:45: #352 r3 re-review on 113eccbf: CLEAN (0 BLOCK, 0 FIX, 1 NIT wording). Waits its turn in merge order.
 - 00:44: #358 r3 re-review on 88e7295f: CLEAN (0 BLOCK, 0 FIX, 2 NIT cosmetic). Waits its turn in merge order (needs main merge + re-bump + merge-only review at front).
 - 00:44: #352 fixes pushed: 113eccbf (crew 1.0.231; accepted-risk sentence + docstring + test, stuck-marker clear hint). Sonnet re-review r3 started.
