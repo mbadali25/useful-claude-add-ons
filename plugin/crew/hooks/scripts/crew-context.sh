@@ -16,5 +16,5 @@
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_common.sh"
 PY=$(crew_py_strict) || { echo "crew context: no usable python (stub or unusable interpreter) - no code-map or recall context this event" >&2; exit 0; }
-"$PY" "$DIR/crew_context.py" "$@"
+"$PY" "$DIR/crew_context.py" --flavour sh "$@"
 exit 0

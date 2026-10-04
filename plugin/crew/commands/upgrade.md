@@ -338,6 +338,14 @@ repository, so offer `/crew:config` for it. The repo layer still overrides it
 where one project genuinely wants a different reviewer. Write nothing here
 without being asked — this command reports.
 
+## 5c. Re-run the QA audit — report, do not fix
+
+A repo set up before an audit item existed was never judged by it. Run
+`python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-qa-standards/scripts/qa_audit.py --root .`
+and show the table verbatim, GAP and UNKNOWN first. Fix nothing here; offer
+`/crew:init --audit` for the fixes and `--stamp` once the report is read. A G1
+GAP means the Stop gate skips those rules today: say so first.
+
 ## 6. Say what this run did not do
 
 State this explicitly, every run — a migration that silently declines work
@@ -353,6 +361,7 @@ reads as one that succeeded:
   counter-example: a role is a capability and reversible, and that flag is
   consent to write into the user's own notes outside the repo.
 - It did not remove a role, and it did not touch `~/.claude/crew/config.json`.
+- It did not fix a QA audit GAP or stamp the audit (step 5c reports only).
 - If the graph had to be built in step 3, say that graph freshness is
   commit-based: it describes the last commit, not uncommitted edits to
   tracked files.
