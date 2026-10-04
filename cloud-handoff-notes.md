@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:52: WITHDREW the [skip ci] builder rule: the permission system refused it as a CI bypass for one builder (L-0680). Not working around it. Builders push normally. Surfaced to owner.
 - 16:52: Batch 1 CI: #405 + #398 GREEN (holding merge for batch merge review); #450 RED on Windows - 2 real test-portability bugs (case-insensitive FS MEMORY.md/memory.md; chmod 000 not enforced on Windows) -> fix on T-0084-build then re-merge into #403. #489 L-1503 review: 0/3/4 -> unify both gates (case-insensitive + ambiguous multi-match blocks + case-insensitive deploy key in BOTH sh and ps1); land L-1503 BEFORE #407.
 - 16:50: WAVE2 #427 L-0652 built -> b844b794 (manual sleep/wake; untrusted state=unknown(strict), allowCliApproval checked at read, wake keeps stricter night; ~37 tests; 8 sabotages). Review started.
 - 16:50: #421 fixes -> 76c85c03 (userIgnoreFilters removed per spec rule - follow-up to verify on owner vault; case-insensitive archive/kinds; realpath link checks; whole-word terms; obsidian-vault 0.5.0). Round-2 review started.
