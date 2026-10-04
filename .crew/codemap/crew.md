@@ -1162,7 +1162,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   The ticket note (`_note_text` `:1227`) is an exclusive create
   (`_create_note_once` `:1236`, `_NOTE_FLAGS` `:292`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:61`,
-  `implement.md:33` and `:113`, `done.md:84` and `fix.md:27`, `:73`, `:81`,
+  `implement.md:33` and `:113`, `done.md:82` and `fix.md:27`, `:73`, `:81`,
   `:90`, `:92` (all under `plugin/crew/commands/`); brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
@@ -1508,7 +1508,7 @@ JUDGEMENT: nothing calls `commit_refusal` at this anchor. Its caller, the scope 
 running it ahead of `scope.mode`, touches `HARNESS` paths
 (`scripts/check-tooling-pr.py`) and lands in its own change.
 
-`check` (`:351`) is `/crew:done`'s report (`plugin/crew/commands/done.md:68-79`):
+`check` (`:351`) is `/crew:done`'s report (`plugin/crew/commands/done.md:68-76`):
 `scope_base.resolve`, then `git log --first-parent <base>..HEAD` (`_log_messages`, `:329`), so
 commits merged in from main are not the ticket's (a deliberate refinement of the spec), printing
 `trailers: clean (<n> commits)`, one `trailers: FINDING <sha7> <Token>` per hit, or

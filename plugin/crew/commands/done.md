@@ -71,11 +71,9 @@ commit, then `/crew:review $1` again, then rerun this command. Documents read
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_trailers.py --check --root . --ticket "$1"
 ```
 
-Copy its lines verbatim into the close note and the PR body. `clean`, a
-`FINDING <sha> <trailer>` (a commit carrying a trailer `git.forbiddenTrailers`
-lists) or `unknown - <why>`: this report never refuses done and crew
-never rewrites the commits — a rewrite is the owner's decision, and it stales
-check 1.
+Copy its lines verbatim into the close note and the PR body. `clean`, a `FINDING <sha> <trailer>` (a commit
+carrying a trailer `git.forbiddenTrailers` lists) or `unknown - <why>`: this report never refuses done and crew
+never rewrites the commits — a rewrite is the owner's decision, and it stales check 1.
 
 ## On all four passing
 
@@ -118,6 +116,5 @@ changes only the sha on the `anchor:` line (or a diagram's header) and
 regenerates the rules; its provenance sentence goes in the ticket's `notes.md`,
 since any other byte in a code map, rules file or diagram is read as unreviewed.
 
-Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing"
-is the reason nobody trusts a notification channel — the same line `/crew:work`
-opened with. <!-- deliberate -->
+Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing" is the reason nobody
+trusts a notification channel — the same line `/crew:work` opened with. <!-- deliberate -->

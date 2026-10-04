@@ -1053,22 +1053,22 @@ flowchart TB
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
         dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
         dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
-        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done<br/>:68-97"]
+        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done<br/>:68-95"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:99-102"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:104-110"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:112-116" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:97-100"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:102-108"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :108-109"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:110-114" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
 ```
 
 | Box | Details |
 |---|---|
 | `dn3` | (refresh artifacts: re-anchor or regeneration the change reaches) |
-| `dn4` | first a report, never a check (T-0066, done.md:68-79): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits (git log --first-parent) as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record |
+| `dn4` | first a report, never a check (T-0066, done.md:68-76): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits (git log --first-parent) as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record |
 | `ln1` | crew_train.py check-land: holds the train, merge-tree clean, base unmoved in Touch, receipt + gate |
 | `ln2` | --merge --match-head-commit sha |
 
