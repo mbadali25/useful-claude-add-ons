@@ -4,6 +4,41 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.384: review metrics are read from the main checkout's `.crew/` in a linked worktree (L-0582)
+
+- **What changed.** One resolver, `crew_common.metrics_crew_dir(root)` ->
+  `(crew_dir, problem)`, names the `.crew/` that holds review metrics: the
+  main checkout's from a linked worktree, `root`'s own otherwise (a plain
+  directory, a submodule, the main checkout). `crew_state.read_metrics`
+  (`/crew:status` health, `/crew:split`'s `health.rate`), `crew_standards.py
+  metric` (read and `--record` append) and `/crew:status`'s `metrics` line
+  all go through it. When git cannot name the main checkout, nothing falls
+  back to the worktree's own copy: `read_metrics` returns the verdict
+  `could not tell: <why>` with no rate (never `no data`, and neither health
+  trigger fires), `metric` exits 1 before any read or write, and the status
+  line says `metrics  could not tell (<why>)`. A lane's own stranded
+  `.crew/metrics.jsonl` or `.crew/metrics.md` is named on the same status
+  line as `not counted`; it is not read, merged or moved.
+- **Why.** `review_run.py` has written rows to the main checkout's file
+  since L-0578, but every reader still joined `.crew/metrics.md` to the root
+  it was given, so from a lane it read its own (usually absent) copy as
+  "no data", and `metric --record` created that copy.
+- **Tests.** `plugin/crew/tests/test_metrics_location.py` (20 cases): real
+  `git worktree add` fixtures whose lane holds a decoy file with different
+  counts; must-find from the lane and from the main checkout; could-not-tell
+  from a `.git` file naming a missing gitdir and from git not answering; the
+  stranded note for both file names; and an AST lint that fails on any
+  `os.path.join(..., ".crew", "metrics.md" | "metrics.jsonl")` outside
+  `crew_common.py` beyond three allowed sites (`crew_migrate.py` 2,
+  `crew_metrics.py` 1, `review_metrics.py` 1). 18 of the 20 are red against
+  main; the two green are the main-checkout must-allow controls. Five
+  mutations were applied by hand and each turned its named tests red.
+- **Not changed.** `crew_metrics.py`'s `metrics.jsonl` writer (run by
+  `/crew:done`) still writes `root`'s copy, so a lane's jsonl rows are now
+  named as not counted rather than counted; `review_metrics.metrics_path` and
+  the sabotage entries are harness paths, left for a separate tooling PR.
+  Docs: guides none - no guide describes where `metrics.md` is read from.
+
 ### Fixed — `crew` 1.0.324: a concurrent mint no longer dies on a delete-pending lock name (Windows)
 
 - **What changed.** `crew_config_files.Lock` waits on a `PermissionError`
