@@ -74,7 +74,7 @@ Next free untracked ID: **L-1510**.
 | T-0047 | #347 | 14ce284f | landing (batch 2: #396 1.0.333, #356 1.0.334, #347 1.0.335, #456 1.0.336) | PowerShell fail-closed backstop added. |
 | T-0074 | #481 | 858c5336 | ready to land | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. Review clean. Carry: daily-workflow.md:189 cap-limit wording. Q7 open. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
-| T-0082, T-0080 | #399 (H2a bundle) | ed58c3d9 | round-1 fixes pushed at 3716a78a, CI green; round-2 review running. Carry at landing: N7 (sabotage_event_claim/autocycle/resume use the bounded run_test). Accepted: N1 forge-own-status, N2 FIFO hang (L-0674) | Harness-only. #475 (T-0080) closes at landing. |
+| T-0082, T-0080 | #399 (H2a bundle) | ed58c3d9 | review-clean at ce4e4083 (round 3: 0 BLOCK, 0 FIX), CI green (6 shards). Harness: lands ALONE right after batch 2 as crew 1.0.337. Carry at land-prep: NIT-1 narrow 2304 to ps1-on-Windows in _RUNNER_KILLED regex; NIT-2 add a "0\\n\\0" FIFO case that catches removal of the RULE_REC_EOF line; N7 done | Harness-only. #475 (T-0080) closes at landing. |
 
 ## Review-clean on older bases (catch-up merge + version at their turn)
 
