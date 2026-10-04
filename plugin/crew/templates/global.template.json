@@ -82,7 +82,9 @@
     }
   },
   "resume": {
-    "auto": null
+    "auto": null,
+    "typeDelaySeconds": 2,
+    "readyTimeoutSeconds": 15
   },
   "docs": {
     "theme": null,

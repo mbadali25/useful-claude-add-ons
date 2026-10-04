@@ -25,6 +25,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Owner step after merge: `python3 plugin/crew/hooks/scripts/crew_config.py --set
   'git.forbiddenTrailers=["Co-Authored-By"]' --apply`.
 
+### Added — `crew` 1.0.321: auto-resume types the resume command into its own session (T-0013)
+
+- On the SessionStart after `/clear` or a manual `/compact`, an armed machine (`resume.auto`, T-0006)
+  now TYPES the command `decide` rendered, where the terminal can be driven. The context hook runs its
+  own flavour's sender in resume mode (`auto-clear.sh --resume`, `auto-clear.ps1 -Resume`) before its
+  per-event claim, and names the outcome: `Auto-resume: typing /crew:done T-0001 into this session in
+  2s (method tmux); ...`, or T-0006's line plus `Auto-resume was not typed: <reason>.` No new hook.
+- `crew_autocycle.resume_plan` decides: `decide` (off is silent, any other non-run refuses), then
+  `onlyRepos`/`onlySessions` (silent), then the method from `context.autoClear` (`enabled` is not
+  needed): tmux into the pane whose pid is an ancestor; `auto` on native Windows is `notify`, which
+  types, claims and records nothing; `sendkeys` only by name, on the `.ps1`; `wtype` and `xdotool`
+  refused. CLI `resume-plan` and `probe`.
+- The sender claims a per-handoff marker `<git-common-dir>/crew/resume-typed-<sha256[:16]>` after
+  every refusal, records the run with `crew_resume.py record` (a failed record types nothing), then
+  spawns. tmux: `resume.typeDelaySeconds`, then a ready probe (the `❯` input line between two rule
+  lines, empty once dim placeholder runs are removed, no `esc to interrupt`) every 250 ms up to
+  `resume.readyTimeoutSeconds`, then `CREW_AUTOCLEAR_INHIBIT`, then the text and, 0.5 s later, Enter
+  (the spike's paste rule). Windows: the existing child, delay, focus check, tab recheck, inhibit.
+- New machine keys `resume.typeDelaySeconds` (2, from the T-0013 spike: input ready by 0.134 s on
+  Claude Code 2.1.282) and `resume.readyTimeoutSeconds` (15), in both templates and crew-setup's copy;
+  read from the machine file only. Repo leaf count 130 -> 132.
+- `test_resume_typing.py` (must-fire and must-not-fire for each rule, sh and ps1, the hook entry
+  point) and `test_resume_typing_structure.py` (gate order in both senders' source). Every case sets
+  `CREW_AUTOCLEAR_INHIBIT`, a recording tmux stub and a stub window list. `.crew/verify.json` gains
+  their rule. The `/clear` path is unchanged. The sabotage entries are harness (T-0087) and land in
+  their own PR (TODO.md).
+- Docs: README, CONFIG.md §14b, crew-context SKILL.md, the auto-cycle guide source: the typing path,
+  every refusal, the delay and its limit (a delay is a guess; Windows has no probe).
+
 ### Changed — `crew` 1.0.256: `tickets.baseBranch`, the branch ticket branches are cut from (T-0061)
 
 - New repo-only config key `tickets.baseBranch` (default `null`, meaning `origin/HEAD`'s target,

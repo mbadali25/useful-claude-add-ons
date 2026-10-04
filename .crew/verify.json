@@ -550,6 +550,24 @@
       "reach": "local",
       "why": "T-0066's git.forbiddenTrailers: the two-layer UNION (a repo [] never disarms the global list), a corrupt layer or malformed value as unknown rather than [], the textual commit check over every must-block and must-allow command, and the /crew:done --check report (clean / FINDING / unknown, exit 0/1/2) over real git repos in tmp_path. 1.3s wall (51 passed, one more for the linked-worktree read) measured 2026-10-03 on the Linux cloud container (4 CPUs; one 47s run under a load average of 6.8 from other jobs is not the price). The scope-guard wiring, its suite and the sabotage entries touch harness paths and land in their own change, which extends this rule."
     },
+    {
+      "paths": [
+        "plugin/crew/hooks/scripts/auto-clear.sh",
+        "plugin/crew/hooks/scripts/auto-clear.ps1",
+        "plugin/crew/hooks/scripts/crew_autocycle.py",
+        "plugin/crew/hooks/scripts/crew-context.sh",
+        "plugin/crew/hooks/scripts/crew-context.ps1",
+        "plugin/crew/tests/test_resume_typing.py",
+        "plugin/crew/tests/test_resume_typing_structure.py"
+      ],
+      "seconds": 72,
+      "coveredBy": "crew-suite",
+      "run": [
+        "python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_resume_typing.py plugin/crew/tests/test_resume_typing_structure.py plugin/crew/tests/test_auto_cycle.py -q"
+      ],
+      "reach": "local",
+      "why": "T-0013 auto-resume typing: crew_autocycle.resume_plan (decide, then onlyRepos/onlySessions, then the method: tmux into an ancestor pane, auto never sendkeys on Windows, wtype and xdotool refused, notify types nothing), the tmux ready probe, both senders' resume mode (per-handoff marker claimed after every refusal, the run recorded before the spawn, delay -> probe -> inhibit -> send-keys; the .ps1 child's delay -> focus -> tab recheck -> inhibit -> SendWait), and the context hook starting its own flavour's sender before its claim. test_auto_cycle.py rides along because it drives the same auto-clear scripts for /clear. 72s serial (204 passed, 12 skipped, then 1 wallclock) measured 2026-10-03 on a 4-CPU Linux container without pytest-xdist, load average 5.8-6.7, pwsh 7.4.6 on PATH; above the 60s Stop budget alone, so a Stop that packs it overruns, bounded by the Stop hook's 600s timeout (hooks.json). The .ps1 cases skip without pwsh. Every case sets CREW_AUTOCLEAR_INHIBIT, a tmux stub that records its argv and a stub window list. The sabotage entries for this suite are not in this lane: tests/sabotage*.py is harness (T-0087), so they land as their own tooling PR. reach: local - every case builds a throwaway repo and HOME under tmp_path."
+    },
     { "paths": ["plugin/crew/skills/crew-diagrams/scripts/diagram_check.py", "plugin/crew/skills/crew-diagrams/scripts/diagram_doc.py",
                 "plugin/crew/skills/crew-diagrams/scripts/render.sh",
                 "plugin/crew/tests/test_diagram_check.py", "plugin/crew/tests/test_diagram_doc.py", "plugin/crew/tests/fixtures/diagrams/**"],
