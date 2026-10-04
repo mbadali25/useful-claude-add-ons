@@ -44,6 +44,135 @@ All notable changes to this repository are documented here. Format follows [Keep
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 
+
+### Changed — `crew` 1.0.344: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
+
+- **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
+  gains three rows beside `STATUS_ORDER`: `OWNER_STATUSES = ("needs-owner",)`
+  (open, waiting on the owner, Obsidian Backlog lane) and
+  `CLOSED_STATUSES = ("cancelled", "superseded")` (closed, Done lane,
+  checked). `move --to` any of them is accepted; any move out of `done`,
+  `cancelled` or `superseded` needs `--reopen` and is otherwise refused with
+  nothing written, and `needs-owner` moves to and from any open word without
+  it. The closed words close a ticket in every reader: `crew_state`'s table
+  and prose readers (the session brief, `crew_ticket.resolve_active`'s INDEX
+  fallback, and approval precheck through `_index_closed`, with
+  `crew_ticket.py` unedited), autopilot's `INDEX_DONE` and a new
+  `HEADER_CLOSED` (`done`, `cancelled`, `superseded`; a header `merged` still
+  does not close), and `/crew:status`, which lists them on no line. A closed
+  reason quotes the spec's `split-into: <ids>` (T-0052) or `superseded-by:
+  <id>` line. Autopilot stops an INDEX `needs-owner` row as phase
+  `needs-owner`, waiting on `owner`, naming the ticket's unanswered
+  `## Open questions` or saying none is recorded - never as "cannot tell
+  whether direction is approved". `/crew:status` prints
+  `owner    <ids> (needs-owner)`. The README gains a "Ticket statuses" table;
+  `obsidian-sync.md`, `status.md`, `autopilot.md`, the memory-and-obsidian
+  guide's lane table and `crew_keys.py`'s `obsidian.columns.backlog`/`.done`
+  summaries (so the generated configuration reference) name the words.
+- **Why.** Nothing on main knew these words: a `cancelled` INDEX row read as
+  OPEN, so the session brief could name a cancelled ticket as the current
+  one, autopilot stopped on it as "cannot tell whether direction is
+  approved", and `move --to cancelled` refused with "maps to no lane".
+  T-0052, T-0058 and T-0059 (#364, #365, #366) cite this vocabulary, and
+  T-0039 and T-0040 name `needs-owner`.
+- **Approval is unchanged.** `crew_ticket.STATUS_VALUES` keeps its seven
+  values and `approval_digest` is untouched, so a blocking hook accepts
+  nothing new. `in-progress` and every other `STATUS_VALUES` word keep an
+  approval (T-0059's non-final slice); a header edit to `cancelled` or
+  `superseded` stales it on purpose, and `needs-owner` (never a header word)
+  stales it like any unknown word. Tests pin both and the tuple's literal
+  value.
+- **Trackers.** Jira and SDP push none of the three (`_PUSH_AT` stays
+  `in-progress`, `done`): the line says "nothing to push" and exits 0, and
+  the owner closes a cancelled Jira or SDP item by hand. No `obsidian.columns`
+  key is added, so a cancelled card sits checked in Done. No new command: a
+  ticket is cancelled with `crew_tracker.py move --to cancelled`.
+- **Owner approval.** The owner approved (2026-10-04) every `OWNER CHECK:`
+  choice in T-0037's reconstructed spec as written: `needs-owner` is never a
+  spec header word; `STATUS_VALUES` is unchanged; the Obsidian closed words go
+  to the `done` lane, checked; Jira/SDP push nothing; no separate needs-owner
+  queue (a non-ticket item is minted `ready`, then moved); two PRs.
+- **Tests.** `test_status_vocabulary.py` (new) holds `CLOSED_STATUSES` to
+  `crew_state._TABLE_DONE_WORDS`, `_DONE_RE`, `crew_autopilot.INDEX_DONE` and
+  `HEADER_CLOSED`, keeps it and `needs-owner` out of `STATUS_VALUES`, and
+  checks the `obsidian-sync.md`, README and memory-and-obsidian guide
+  tables list every `LANE_FOR_STATUS` key. Must-block and must-allow cases in
+  `test_crew_tracker.py`, `test_crew_state.py`, `test_crew_ticket.py`,
+  `test_approval_digest.py`, `test_crew_autopilot.py`,
+  `test_crew_autopilot_status.py` and `test_status.py`. A new
+  `.crew/verify.json` rule maps the four scripts, `obsidian-sync.md`, the
+  README and the guide source to the vocabulary, precheck and approval suites.
+- **Two PRs (owner rule T-0087).** This is PR A, the feature: it changes no
+  `HARNESS` path. Its 19 sabotage mutations were run by hand, each red on its
+  named test, and are registered in `sabotage_*.py` by PR B
+  (`T-0037-sabotage`), a tooling PR that lands alone after this one.
+
+### Changed — `obsidian-vault` 0.5.0: vault recall relevance (T-0083)
+
+- **Behaviour change: default recall results.** `vault_ops.py recall` (the CLI crew's context hook
+  calls on every prompt) returns fewer, more relevant notes for every caller, with no crew change:
+  - it never reads `wiki/sessions/archive/` (any letter case), nor a symlinked note whose real
+    path is inside it; a symlinked note that resolves outside the vault or into `.trash`,
+    `.git`, `node_modules` or another dot folder is always skipped (hard links cannot be
+    detected; Windows junctions are untested);
+  - stop words and words under three characters are not query terms; a stop-word-only query
+    returns nothing, exit 0; terms match whole words only (`port` no longer matches `support`),
+    where a note's joined word (`crew-context.sh`, `vault_recall.py`) also counts as its parts,
+    a joined query word (`t-0083`, `github.com`) is one term matched whole or as its parts side
+    by side in order; plurals pair `y`/`ies`, `es` only after s/x/z/ch/sh, else a plain `s`
+    (also stripped from an `es` word: `releases` finds `release`), no form is shorter than three
+    letters (`uses` is not `us`), `news` is an exception (never `new`), no plural form is a stop
+    word, and CamelCase is not split;
+  - a note must hold 1 distinct term for a query of one or two terms, 2 for three to five, 3 for
+    six or more;
+  - inside a vault the order is project, note kind (`wiki/concepts/` and `wiki/decisions/`, then
+    other notes, then `wiki/sessions/`, any letter case), score, path. Vault priority still
+    comes first.
+- Not in this release: the vault's `.obsidian/app.json` `userIgnoreFilters`. Their format has
+  not been checked against a real vault, so recall does not read them; that is a follow-up.
+- New options: `--project NAME[,NAME]` (a note whose `project:` or a path folder matches ranks
+  first; another project's notes rank last and are never dropped), `--min-terms N` (`1` restores
+  the old floor) and `--include-excluded`.
+- New JSON keys, existing ones unchanged: `kind`, `project` and `matched` per result; `project`,
+  `need`, `below_floor`, `excluded_dirs` and `skipped_links` at the top.
+- crew passing its project to `--project` is L-0675, a separate change.
+### Changed — `crew` 1.0.343: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
+
+- **What changed.** `notify`, `handoff-read`, `handoff-write` and `context-watch`, in both
+  flavours, read the repo config through T-0096's resolver (`crew_repo_config_dir` in
+  `_common.sh`; a verbatim `Get-CrewRepoConfigDir` in each `.ps1`, now seven copies held
+  byte-identical). A linked worktree with no crew config of its own gets the main checkout's
+  notifications, handoff path, transcript retention and context thresholds, where it got
+  nothing before. Own files win whole; `unknown` (git cannot name the main checkout) reads only
+  the own `.crew/`.
+- **Taken defaults (the spec's recommended options).** A lane notifies with the main checkout's
+  `notify` settings, so several lanes ping one channel unless a lane writes its own config. An
+  inherited relative `context.handoffPath` names a file in the lane. The `.crew/` directory gates
+  stay, so `context-watch` still needs a `.crew/` directory in the lane. Nothing these hooks
+  write moves.
+- context-watch's messages that say where to set a value name the main checkout's file by its
+  path when it is inherited; unchanged text for an own file.
+- `handoff-write.ps1` honours `context.keepTranscripts` on PowerShell 7, whose `ConvertFrom-Json`
+  reads a JSON integer as Int64 (BigInteger past Int64); it was dropped there and five copies
+  kept. Both flavours clamp a larger value to Int32.MaxValue (2,147,483,647 kept, in effect
+  all). Both now take an integer only, as documented: a digit string such as `"2"`, which bash
+  used to accept, a float or a bool keeps the default 5.
+- `context.handoffPath` stays inside the checkout in every flavour, by the Python readers' rule
+  (`crew_state.handoff_path`): an absolute, `..` or symlinked value that leaves it (in a lane,
+  one naming the main checkout's file), or one naming a directory, is the default
+  `.work/HANDOFF.md`, with a warning, so a lane never writes or prints the main checkout's
+  note; context-watch's message says so too. The path is printed with forward slashes on
+  every OS. The `.ps1` hooks read a backslash as a separator on every OS, as PowerShell's file
+  cmdlets do, so `..\main\...` cannot slip past the check on Linux; bash reads it as python
+  does (a filename character off Windows). PowerShell, which cannot resolve a
+  link as `realpath` does, treats any link on the way as leaving.
+- `auto-clear.ps1` lists `wrapUp` among `context.autoClear`'s known keys, so it no longer logs
+  that recognised key as unrecognised.
+- **Not in this release:** the harness readers (`verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py`), L-0681, a tooling PR.
+- Tests: `plugin/crew/tests/test_worktree_config_shell.py` (both flavours and the no-python
+  path; a static check that no executable line in the eight scripts names the own path outside
+  a counted allowlist). Every routed gate was sabotaged by hand and went red.
 ### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with

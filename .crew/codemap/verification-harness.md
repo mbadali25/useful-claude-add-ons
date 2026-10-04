@@ -2449,6 +2449,15 @@ standing rule, 2026-09-28); no test suite was executed for this note.
   appended, so no earlier rule number moves. This section does not move the file's
   `anchor:`.
 
+## L-0680 widens T-0096's verify rule (added 2026-10-04 on `L-0680-build`)
+
+- **DERIVED.** `.crew/verify.json:658` (T-0096's rule) now also maps `notify`, `handoff-read`,
+  `handoff-write` and `context-watch`, `.sh` and `.ps1`, to
+  `plugin/crew/tests/test_worktree_config_shell.py`, re-priced 36s (66 passed, 35.8s wall with
+  pwsh on PATH, 4-CPU container at load average 11-20; 91 passed, 27.4s wall, after review
+  round 1). No rule number moves. This section
+  does not move the file's `anchor:`.
+
 **Re-anchored `5479ac05` -> `b7b37e12` on 2026-10-04 (L-1507: crew's Windows slow set split into 3 shards, on `L-1507-build` from origin/main `f1cace4a`).** Per-path: `git diff --name-only 5479ac05..b7b37e12 -- .github/workflows/pytest-crew.yml scripts/check-windows-shards.py scripts/_test/windows-shards.py .crew/verify.json` returns all four (L-1506 #491 and L-1507 on the workflow and checker; L-1507 on the suite and the windows-shards rule's `why`, in place, line count unchanged). The Windows-jobs paragraph under `.github/workflows/` was re-derived at `b7b37e12` by `grep -n`: the job lines it cites (`:276`, `:310`, `:322`, `:362`, `:374`, `:414`, `:457`, `:487`) had already drifted under L-1506's comment lines and were re-read, the default set's 3 shards became L-1506's 6, the slow job became 3 shards, and the checker's partition code is cited by line. No other claim in this map cites those files by line. `b7b37e12` is the last commit touching a cited path; the commit adding this note changes only docs and generated rules. Suites run for it: `scripts/_test/windows-shards.py` (44 passed).
 
 **Re-anchored `b7b37e12` -> `e4f17af4` on 2026-10-04 (L-1507 review FIX: suite cases for the unsplit default layout and an empty slow set; the checker's docstring names both stale layouts).** Per-path: `git diff --name-only b7b37e12..e4f17af4 -- .github/workflows/pytest-crew.yml scripts/check-windows-shards.py scripts/_test/windows-shards.py` returns the checker and its suite. The docstring edit keeps its line count, so `scripts/check-windows-shards.py:74`, `:150`, `:178-181` and `:223` were re-read by `grep -n` and are unmoved. The Windows-jobs paragraph now opens with its own DERIVED marker (review NIT) and names `.github/workflows/pytest-crew.yml` on its first cite. Suites run for it: `scripts/_test/windows-shards.py` (46 passed).

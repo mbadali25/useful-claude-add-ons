@@ -1447,3 +1447,102 @@ def test_module_defines_each_function_once():
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
 
     assert sorted({n for n in names if names.count(n) > 1}) == []
+
+
+# --- T-0037: cancelled and superseded close; needs-owner waits on the owner ------
+
+def _with_line2(root, line, ticket=T, header=HEADER):
+    """spec.md with `line` under the header, where `depends-on:` sits."""
+    first, rest = _spec_text(ticket, header).split("\n", 1)
+    _write(root / ".work" / "tickets" / ticket / "spec.md", f"{first}\n{line}\n{rest}")
+
+
+@pytest.mark.parametrize("where", ["index", "header"])
+def test_superseded_parent_is_closed(tmp_path, where):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, status="superseded" if where == "index" else "spec")
+    _with_line2(root, "split-into: T-2, T-3",
+                header="status: superseded   risk: high" if where == "header" else HEADER)
+
+    got = _next(root)
+    shown = crew_autopilot.status(str(root), T)
+
+    assert (got["phase"], got["stop"], "split-into: T-2, T-3" in got["reason"],
+            ("INDEX.md" if where == "index" else "spec.md header") in got["reason"],
+            shown["waiting"]) == ("closed", True, True, True, "nobody - the ticket is closed")
+
+
+@pytest.mark.parametrize("where", ["index", "header"])
+def test_cancelled_header_is_closed(tmp_path, where):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, status="cancelled" if where == "index" else "spec",
+            header="status: cancelled   risk: high" if where == "header" else HEADER)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "cancelled`" in got["reason"],
+            crew_autopilot.status(str(root), T)["waiting"]) == (
+        "closed", True, True, "nobody - the ticket is closed")
+
+
+def test_superseded_by_line_is_quoted(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    _with_line2(root, "superseded-by: T-9", header="status: Superseded   risk: high")
+
+    got = _next(root)
+
+    assert (got["phase"], got["reason"].endswith("(superseded-by: T-9)")) == ("closed", True)
+
+
+def test_merged_header_does_not_close(tmp_path):
+    """Unchanged on purpose: a header `merged` is not a closed header word here."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, header="status: merged   risk: high")
+
+    assert _next(root)["phase"] != "closed"
+
+
+def test_closed_reads_the_new_header_words(tmp_path):
+    """`_closed` (the active-pointer repoint) agrees with `_phase`."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, header="status: cancelled   risk: high")
+    _ticket(root, ticket="T-2", header="status: merged   risk: high")
+    _index(root, "T-1 | spec | high | r | t", "T-2 | spec | high | r | t")
+
+    assert (crew_autopilot._closed(str(root), "T-1"),  # pylint: disable=protected-access
+            crew_autopilot._closed(str(root), "T-2")) == (True, False)  # pylint: disable=protected-access
+
+
+def test_needs_owner_stops_for_owner(tmp_path):
+    root = _approved(tmp_path)
+    _index(root, f"{T} | needs-owner | high | r | title")
+    _write(root / ".work" / "tickets" / T / "direction.md",
+           "go\n## Open questions\n- which tracker closes a cancelled Jira item?\n- none - settled\n")
+
+    got = _next(root)
+    shown = crew_autopilot.status(str(root), T)
+
+    assert (got["phase"], got["stop"], "which tracker closes a cancelled Jira item?" in got["reason"],
+            "settled" in got["reason"], "cannot tell" in got["reason"], shown["waiting"].split(" - ")[0]) == (
+        "needs-owner", True, True, False, False, "owner")
+
+
+def test_needs_owner_without_questions_says_none(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, spec=False, plan=False, status="Needs-Owner")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "no open question recorded" in got["reason"],
+            "direction is approved" in got["reason"]) == ("needs-owner", True, True, False)
+
+
+def test_open_index_tickets_drops_closed_words(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    for ticket in ("T-1", "T-2", "T-3", "T-4"):
+        _ticket(root, ticket=ticket, spec=False, plan=False)
+    _index(root, "T-1 | cancelled | high | r | t", "| T-2 | Superseded | high | r | t |",
+           "T-3 | needs-owner | high | r | t", "- cancelled: T-4")
+
+    assert crew_autopilot.open_index_tickets(str(root)) == ["T-3"]
