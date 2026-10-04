@@ -13,7 +13,7 @@ tree check 1's review receipt was taken over. T-0004's autopilot imports
 
 Three artifact kinds, each with the question `crew_freshness.py` already
 asks of it for the status line, narrowed here to THIS ticket, plus the
-README embeds of the diagrams:
+README embeds of the diagrams and the integrations reference:
 
   codemap  `.crew/codemap/<subsystem>.md`, in scope when a path it cites is
            one the ticket changed. Citations are backticked paths with an
@@ -41,6 +41,14 @@ README embeds of the diagrams:
            embed`. Malformed markers are `stale` with `stop - needs
            judgement` (embed refuses them); a README with no section yet is
            no line (`crew_diagrams` calls it pending).
+  reference  (T-0036) `docs/reference/integrations.md`, when it exists, in
+           scope when a path it cites (read as a codemap's citations are) is
+           one the ticket changed, judged against the sha in its `> Generated
+           from <repo>@<sha>` header (`crew_reference.GENERATED_RE`). No
+           header, or no citation, is `unknown` and refreshable; an
+           unreadable doc is `unknown` and a stop. `api.md`, `features.md`
+           and `flows/` are not judged (their own follow-ups). Refresh:
+           `/crew:reference --integrations`.
 
 "The ticket changed" is `scope_base.resolve` then
 `completion_audit.changed_paths`: the base against the WORKING TREE plus
@@ -114,7 +122,9 @@ judgement. They are never reported `fresh`.
 ## Refresh-artifact paths, and the fixpoint
 
 REFRESH_ARTIFACT_PATHS is what the refreshes write: the code map, the
-diagrams dir, `graph.out` and `.claude/rules/` (generated from the code map).
+diagrams dir, `graph.out`, `.claude/rules/` (generated from the code map) and
+`docs/reference/` (T-0036: the integrations refresh writes a FILE there, and
+the allowance admits only paths strictly under a dir, so the whole dir).
 It is defined here and nowhere else. `scope_guard.py` and
 `completion_audit.py` read it through `refresh_artifact_paths` /
 `is_refresh_artifact` to let an APPROVED ticket write those paths without
@@ -208,6 +218,7 @@ import sys
 
 import completion_audit
 import crew_diagrams
+import crew_reference
 import crew_ticket
 import scope_base
 import crew_common
@@ -236,17 +247,21 @@ _FEW = 4
 
 # What `/crew:implement` step 6's refreshes write, as (config key, default):
 # `/crew:onboard --refresh` writes the code map and the `.claude/rules/` file
-# generated from it, `/crew:diagram` the diagrams dir, graphify `graph.out`.
+# generated from it, `/crew:diagram` the diagrams dir, graphify `graph.out`,
+# `/crew:reference --integrations` a file in `docs/reference/` (T-0036; the
+# fixed dir `reference.md` writes, so no config key).
 # The ONE definition (module docstring): the scope guard and the completion
 # audit let an approved ticket write these without naming them in Touch.
 # A keyed entry is read from crew config exactly as `crew_freshness` reads it
 # (`_diagrams_dir`, `_read_graph`: a wrong-typed or empty value is the
 # default, and `contained_path` keeps it inside the repository).
+REFERENCE_DIR = "docs/reference"
 REFRESH_ARTIFACT_PATHS = (
     (None, ".crew/codemap"),
     ("docs.diagramsDir", DIAGRAMS_DIR_DEFAULT),
     ("graph.out", GRAPH_OUT_DEFAULT),
     (None, ".claude/rules"),
+    (None, REFERENCE_DIR),
 )
 
 # Moved by every release, whatever the ticket: a version bump invalidates no
@@ -1254,6 +1269,39 @@ def _embeds(top):
     return found
 
 
+def _references(root, changed, untracked):
+    """T-0036: `docs/reference/integrations.md`, judged as a code map is but
+    anchored by its Generated header. Absent is no line; a presence that
+    cannot be told, or a doc that cannot be read, is `unknown` and a stop."""
+    name, command = "integrations", "/crew:reference --integrations"
+    path = os.path.join(root, *REFERENCE_DIR.split("/"), "integrations.md")
+    present, why = _present(path)
+    if present is None:
+        return [_entry("reference", name, UNKNOWN, f"could not tell whether "
+                       f"{REFERENCE_DIR}/integrations.md exists ({why})", command,
+                       refreshable=False)] if changed else []
+    if not present:
+        return []
+    body = read_text(path)
+    if body is None:
+        return [_entry("reference", name, UNKNOWN, "the doc could not be read, so what it "
+                       "cites cannot be told", command, refreshable=False)] if changed else []
+    cited = [c for c in dict.fromkeys(_CITATION_RE.findall(body)) if "/" in c or "." in c]
+    if not cited:
+        return [_entry("reference", name, UNKNOWN, "cites no path, so which changes reach "
+                       "it cannot be told", command, refreshable=True)] if changed else []
+    reached = _reached(cited, changed)
+    if not reached:
+        return []
+    header = crew_reference.GENERATED_RE.search(body)
+    if not header:
+        return [_entry("reference", name, UNKNOWN, "no `> Generated from <repo>@<sha>` "
+                       "header, so nothing about it can be checked", command,
+                       refreshable=True)]
+    status, reason, refreshable = _judge(root, header.group(2), reached, untracked)
+    return [_entry("reference", name, status, reason, command, refreshable)]
+
+
 def _graph(root, info, graph_out, code, untracked, which):
     command = ("graphify update ." if info["reportTracked"]
                else "graphify . --no-viz --code-only")
@@ -1390,6 +1438,7 @@ def ticket_freshness(root, ticket, which=shutil.which):
     artifacts = _codemaps(top, changed, untracked)
     artifacts += _diagrams(top, diagrams, changed, code, untracked)
     artifacts += _embeds(top)
+    artifacts += _references(top, changed, untracked)
     graph = _graph(top, info, graph_out, code, untracked, which)
     if graph:
         artifacts.append(graph)

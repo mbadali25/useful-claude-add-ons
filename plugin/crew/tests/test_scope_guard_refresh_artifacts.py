@@ -25,7 +25,8 @@ import scope_guard
 from scope_fixtures import FLAVOUR_MATRIX, FLAVOURS, edit, make_repo, make_ticket, ready, run_hook
 
 ARTIFACTS = [".crew/codemap/crew.md", "docs/diagrams/architecture.mmd",
-             "graphify-out/graph.json", ".claude/rules/crew.md"]
+             "graphify-out/graph.json", ".claude/rules/crew.md",
+             "docs/reference/integrations.md", "docs/reference/flows/order-sync.md"]
 
 
 def _guard(flavour, root, payload):
@@ -78,7 +79,8 @@ def test_a_cli_approval_cannot_write_a_refresh_artifact(flavour, repo):
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("rel", [".crew/codemapX/crew.md", "docs/diagrams-old/a.mmd",
                                  "graphify-outX/graph.json", ".claude/rulesX/crew.md",
-                                 "other/.crew/codemap/crew.md", ".crew/codemap"])
+                                 "other/.crew/codemap/crew.md", ".crew/codemap",
+                                 "docs/referenceX/a.md"])
 def test_a_path_that_only_prefix_matches_an_artifact_dir_is_blocked(flavour, repo, rel):
     ready(repo)
 

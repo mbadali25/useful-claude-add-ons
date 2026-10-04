@@ -193,7 +193,7 @@ repo also has:
    this live"; the reference answers "what can this system do, and how do I call
    it". Those are different questions and the second does not fall out of the
    first. Endpoints, scheduled jobs, queue consumers, CLI commands, feature
-   flags, integrations — each anchored to a file and line.
+   flags, integrations (`--integrations`) — each anchored to a file and line.
 3. `.crew/secrets.md` — record where test credentials come from and which env
    var each lands in. Names and retrieval commands only, never values. See the
    `crew-verification` skill.

@@ -23,7 +23,8 @@ from review_fixtures import git
 from scope_fixtures import FLAVOURS, make_repo, make_ticket, ready, run_hook, stop
 
 ARTIFACTS = [".crew/codemap/crew.md", "docs/diagrams/architecture.mmd",
-             "graphify-out/graph.json", ".claude/rules/crew.md"]
+             "graphify-out/graph.json", ".claude/rules/crew.md",
+             "docs/reference/integrations.md", "docs/reference/flows/order-sync.md"]
 
 
 @pytest.fixture(name="repo")

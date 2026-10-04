@@ -85,9 +85,9 @@ confirm the `.crew/verify.json` rule it falls under actually fires.
 
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
-Coverage above is the tests. Then `/crew:docs` ("none" is common and correct). Then
-commit, and check the code maps, diagrams and code graph this ticket's changed paths
-reach, and every diagram's README embed (`crew_diagrams.py`; drift is `refresh with` embed):
+Coverage above is the tests. Then `/crew:docs` ("none" is common; a new outbound call gets its
+`/crew:reference --integrations` entry). Commit, and check the code maps, diagrams, code graph and
+`docs/reference/integrations.md` your changes reach, and each README embed (`crew_diagrams.py`):
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1
