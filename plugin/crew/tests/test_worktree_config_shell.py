@@ -754,8 +754,59 @@ def test_handoff_write_never_writes_outside_the_lane(tmp_path, flavour, kind):
     assert b"handoffPath" in proc.stderr  # warned
 
 
-@pytest.mark.parametrize("value", [".", "./", "notes/", "notes"])
+@pytest.mark.parametrize("value", ["..\\main\\.work\\HANDOFF.md", "notes\\..\\..\\x",
+                                   "\\\\server\\share\\x"],
+                         ids=["dotdot-backslash", "inner-dotdot-backslash", "unc"])
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
+def test_handoff_write_never_writes_outside_the_lane_through_backslashes(tmp_path, flavour, value):
+    """Round-3 F1: on POSIX a backslash is a filename character, so these are one
+    in-lane name; the .ps1 used to turn them into `/` AFTER its containment check
+    and write main's file, `../x` or `//server/share/x`. On Windows they leave
+    the lane and fall back to the default. Either way nothing is written outside."""
+    main, wt = _lane(tmp_path, None)
+    _own(main, "config.json", {"context": {"handoffPath": value}})
+    (main / ".work").mkdir()  # a real main checkout has one; an escape must not land in it
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
+        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(wt),
+        "session_id": f"s-bs-{flavour}"})
+    assert proc.returncode == 0, proc.stderr
+    assert not list((main / ".work").iterdir()), "a lane hook wrote into the main checkout"
+    assert not (tmp_path / "x").exists(), "a lane hook wrote beside the lane"
+    assert not os.path.exists(os.path.join(os.sep, "server", "share", "x"))
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
+        n for n in ("main", "wt", "home") if (tmp_path / n).exists())
+
+
+@pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash)])
+def test_a_trailing_backslash_is_a_file_name_on_posix(tmp_path, flavour):
+    """Round-3 N1: `notes\\` is a legal POSIX file name, so bash (python's
+    path rules) uses it as given. Not the .ps1: PowerShell's file cmdlets read
+    `\\` as a separator on every OS, so there it is the directory `notes/`
+    (the directory case covers it, and the backslash-escape cases above)."""
+    if os.sep == "\\":
+        pytest.skip("a separator on Windows: covered by the directory case")
+    main, _wt = _lane(tmp_path, None)
+    _own(main, "config.json", {"context": {"handoffPath": "notes\\"}})
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
+        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(main),
+        "session_id": f"s-trail-{flavour}"})
+    assert proc.returncode == 0, proc.stderr
+    assert (main / "notes\\").is_file(), proc.stderr
+    assert not (main / ".work" / "HANDOFF.md").exists()
+
+
+def _dir_cases():
+    """A trailing backslash names a directory where it is a separator: always
+    for the .ps1 (PowerShell's cmdlets), only on Windows for bash."""
+    cases = [pytest.param(f, v, marks=m) for f, m in (("sh", needs_bash), ("ps1", needs_pwsh))
+             for v in (".", "./", "notes/", "notes")]
+    cases.append(pytest.param("ps1", "notes\\", marks=needs_pwsh))
+    if os.sep == "\\":
+        cases.append(pytest.param("sh", "notes\\", marks=needs_bash))
+    return cases
+
+
+@pytest.mark.parametrize("flavour,value", _dir_cases())
 def test_a_directory_valued_handoff_path_is_the_default(tmp_path, flavour, value):
     """Round-2 N1: a handoffPath naming a directory (the checkout itself, or one
     in it) cannot hold the note; both flavours use .work/HANDOFF.md and warn."""

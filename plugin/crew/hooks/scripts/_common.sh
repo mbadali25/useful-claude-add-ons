@@ -384,7 +384,7 @@ try:
     value = ctx.get("handoffPath") if isinstance(ctx, dict) else None
     if isinstance(value, str) and value and os.path.realpath(os.path.join(root, value)) != got:
         sys.stderr.write("crew: context.handoffPath leaves this checkout - using %s\n" % default)
-    elif got == root or os.path.isdir(got) or (isinstance(value, str) and value.endswith(("/", "\\"))):
+    elif got == root or os.path.isdir(got) or (isinstance(value, str) and value.endswith(("/", os.sep))):
         sys.stderr.write("crew: context.handoffPath names a directory - using %s\n" % default)
         got = os.path.join(root, default)
     print(os.path.relpath(got, root).replace(os.sep, "/"))

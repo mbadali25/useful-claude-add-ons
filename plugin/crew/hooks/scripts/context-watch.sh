@@ -355,7 +355,7 @@ else:
         v = c.get("handoffPath")
         if isinstance(v, str) and v and os.path.realpath(os.path.join(root, v)) != got:
             escaped = "escaped"
-        elif got == root or os.path.isdir(got) or (isinstance(v, str) and v.endswith(("/", "\\"))):
+        elif got == root or os.path.isdir(got) or (isinstance(v, str) and v.endswith(("/", os.sep))):
             got = os.path.join(root, ".work/HANDOFF.md")  # a directory cannot hold the note
         handoff = os.path.relpath(got, root).replace(os.sep, "/")
     except Exception:

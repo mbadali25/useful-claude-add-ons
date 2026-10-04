@@ -345,6 +345,11 @@ function Get-CrewHandoffPath($Value) {
   # and context-watch.ps1; test_worktree_config_shell.py holds the copies equal.
   $default = '.work/HANDOFF.md'
   if (-not ($Value -is [string]) -or -not $Value.Trim()) { return $default }
+  # PowerShell's file cmdlets read `\` as a separator on every OS (on POSIX
+  # too, where the .NET path APIs do not), so the containment check below must
+  # see the path those cmdlets will use: `..\main\x` is `../main/x`.
+  $sep = [System.IO.Path]::DirectorySeparatorChar
+  if ($sep -ne '\') { $Value = $Value.Replace('\', '/') }
   $inside = $false
   try {
     $base = [System.IO.Path]::GetFullPath((Get-Location).ProviderPath).TrimEnd('\', '/')
@@ -362,12 +367,16 @@ function Get-CrewHandoffPath($Value) {
     return $default
   }
   # A directory (`notes/`, an existing folder) cannot hold the note.
-  if ($Value.EndsWith('/') -or $Value.EndsWith('\') -or (Test-Path -LiteralPath $full -PathType Container)) {
+  if ($Value.EndsWith('/') -or $Value.EndsWith([string]$sep) -or (Test-Path -LiteralPath $full -PathType Container)) {
     [Console]::Error.WriteLine("crew: context.handoffPath names a directory - using $default")
     return $default
   }
-  # Forward slashes on every OS, as the bash twin prints it.
-  return $full.Substring($base.Length + 1).Replace('\', '/')
+  # Forward slashes on every OS, as the bash twin prints it. Only Windows can
+  # have a `\` left here; converting after the check is safe because the check
+  # above already saw `\` as the separator it is to the cmdlets.
+  $rel = $full.Substring($base.Length + 1)
+  if ($sep -eq '\') { $rel = $rel.Replace('\', '/') }
+  return $rel
 }
 
 $stdinStream = [Console]::OpenStandardInput()
