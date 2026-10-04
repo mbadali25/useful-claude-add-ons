@@ -81,6 +81,11 @@ approval through the /crew:approve harness path (TODO.md).
 on the parent's spec risk, asked at apply time and never read from a record.
 It refuses in jira mode whatever `autopilot.approval` says -- autopilot never
 creates a Jira issue; the owner runs /crew:split <KEY> -- and in sdp mode.
+Any caller may pass `--via autopilot`: like `crew_ticket.approve` ("whoever
+calls"), the gate is the repository's policy, not who the caller is. Out of
+the box it refuses (`scope.allowCliApproval` defaults to false, autopilot to
+off), and the owner opts in per repository; the policy, not the `via`
+string, is what a split under `--via autopilot` answers to.
 
 CLI (exit 0 ok, 1 refused):
     crew_split.py [measure] --root . --ticket <id> [--stage spec|plan]
@@ -740,9 +745,9 @@ def ticket_split_policy(top, ticket):
     rule on the parent's spec risk (`crew_autopilot._ticket_risk`: missing or
     unreadable reads `high`, unknown). Asked fresh on every call; anything
     that raises refuses as could-not-tell."""
-    import crew_autopilot  # pylint: disable=import-outside-toplevel  # it imports this module
     base = {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False, "warnings": []}
     try:
+        import crew_autopilot  # pylint: disable=import-outside-toplevel  # it imports this module
         top = _top(top)
         mode = tracker_mode(top)
         if mode == "jira":
@@ -755,20 +760,20 @@ def ticket_split_policy(top, ticket):
         conf = crew_autopilot.settings(top)
         risk = crew_autopilot._ticket_risk(top, ticket)  # pylint: disable=protected-access
         allowed = crew_ticket.cli_approval_allowed(top)
+        policy = conf["approval"]
+        warnings = [w for w in conf["warnings"] if "autopilot.approval " in w
+                    or "autopilot.mode " in w]
+        words = (f"risk: {risk['risk']}" if risk["known"]
+                 else "no risk: low|med|high in the spec header (reads as high)")
+        low = risk["known"] and risk["risk"] == "low"
+        result = dict(base, policy=policy, risk=risk["risk"], known=risk["known"],
+                      warnings=warnings)
+        why = crew_autopilot._split_rule(  # pylint: disable=protected-access
+            conf, warnings, allowed, low,
+            f"autopilot.approval is risk and the spec has {words}, not risk: low")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return dict(base, reason=f"could not tell whether autopilot may apply the split "
                                  f"({type(exc).__name__}: {exc})")
-    policy = conf["approval"]
-    warnings = [w for w in conf["warnings"] if "autopilot.approval " in w
-                or "autopilot.mode " in w]
-    words = (f"risk: {risk['risk']}" if risk["known"]
-             else "no risk: low|med|high in the spec header (reads as high)")
-    low = risk["known"] and risk["risk"] == "low"
-    result = dict(base, policy=policy, risk=risk["risk"], known=risk["known"],
-                  warnings=warnings)
-    why = crew_autopilot._split_rule(  # pylint: disable=protected-access
-        conf, warnings, allowed, low,
-        f"autopilot.approval is risk and the spec has {words}, not risk: low")
     if why:
         return dict(result, reason=why)
     return dict(result, allow=True, reason=f"autopilot.approval is {policy} ({words})")

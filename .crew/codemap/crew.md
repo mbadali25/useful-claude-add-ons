@@ -1250,17 +1250,19 @@ Obsidian vault). A CLI the commands call, not a hook.
   `crew_split.measure`, `triggers`, `absent_sources`) and `_decision_state`
   (`:595`: `check_proposal` plus the `answered:` rule), and T-0059's
   `parse_slices` through `_slice_problems` (`:612`, `SLICES_ARRIVE` `:574`).
-  `split_report` (`:670`) and `_split_main` (`:692`) are the `split`
+  `split_report` (`:670`), `_unanswered` (`:692`, the `answered:` rule `--check`
+  and `--apply` share) and `_split_main` (`:704`) are the `split`
   subcommand; `split` joins the router at `:289-290` (appended under the
   `SUBCOMMANDS` line, which a sabotage anchor pins) and `WAITING` at
-  `:2115-2117`. T-0012's rule is slug-free as `_split_rule` (`:1922`), which
-  `split_policy` (`:1888`) and `crew_split.ticket_split_policy`
-  (`plugin/crew/hooks/scripts/crew_split.py:736`) both call. `VIAS` gains
-  `autopilot` (`plugin/crew/hooks/scripts/crew_split.py:136`, `JIRA_STOP`
-  `:138`); `apply` asks the policy for it (`:1007`) and skips only `confirm`, keeping T-0052's existing-children
+  `:2126-2128`. T-0012's rule is slug-free as `_split_rule` (`:1933`), which
+  `split_policy` (`:1899`) and `crew_split.ticket_split_policy`
+  (`plugin/crew/hooks/scripts/crew_split.py:741`, its whole read inside one could-not-tell
+  boundary) both call. `VIAS` gains
+  `autopilot` (`plugin/crew/hooks/scripts/crew_split.py:141`, `JIRA_STOP`
+  `:143`); `apply` asks the policy for it (`:1012`) and skips only `confirm`, keeping T-0052's existing-children
   verification;
-  `check` records `policy_at_check` for the report only (`:644-649`).
-  `absent_sources` (`:280`) is what the gate names `unmeasured`.
+  `check` records `policy_at_check` for the report only (`:649-654`).
+  `absent_sources` (`:285`) is what the gate names `unmeasured`.
 - Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
   block at the end of `plugin/crew/tests/test_crew_split.py`, on the
   `crew_split` rule in `.crew/verify.json`.

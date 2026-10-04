@@ -689,6 +689,18 @@ def split_report(root, ticket):
     return [_one_line(line) for line in lines]
 
 
+def _unanswered(top, ticket):
+    """`["answered: does not name <triggers>"]` for the triggers firing now at
+    the ticket's stage that split.md's `answered:` misses, else []."""
+    folder = crew_ticket.ticket_dir(top, ticket)
+    stage = "plan" if os.path.isfile(os.path.join(folder, "plan.md")) else "spec"
+    fired = _size_check(top, ticket, stage)["fired"]
+    answered = crew_split.parse_proposal(
+        read_text(os.path.join(folder, crew_split.PROPOSAL)) or "")["answered"]
+    missing = [f for f in fired if f not in answered]
+    return [f"answered: does not name {', '.join(missing)}"] if missing else []
+
+
 def _split_main(args):
     """`split` (exit 0), `split --check` (0 pass, 1 problems) and `split
     --apply` (0 applied, 1 refused, the owner's /crew:split last). A crash is
@@ -698,18 +710,17 @@ def _split_main(args):
         top = crew_ticket.toplevel(args.root) or os.path.abspath(args.root)
         crew_ticket.check_ticket(args.ticket)
         if args.check:
-            folder = crew_ticket.ticket_dir(top, args.ticket)
-            stage = "plan" if os.path.isfile(os.path.join(folder, "plan.md")) else "spec"
             decision, problems = crew_split.check(top, args.ticket)
-            fired = _size_check(top, args.ticket, stage)["fired"]
-            answered = crew_split.parse_proposal(
-                read_text(os.path.join(folder, crew_split.PROPOSAL)) or "")["answered"]
-            missing = [f for f in fired if f not in answered]
-            if missing:
-                problems = problems + [f"answered: does not name {', '.join(missing)}"]
+            problems = problems + _unanswered(top, args.ticket)
             lines = [f"problem: {p}" for p in problems] or [f"ok decision={decision}"]
             code = 1 if problems else 0
         elif args.apply:
+            # The same answered: rule as --check and the gate: a decision taken
+            # before a trigger fired is not applied.
+            unanswered = _unanswered(top, args.ticket)
+            if unanswered:
+                raise crew_split.SplitError(f"{crew_split.PROPOSAL} is not current: "
+                                            + "; ".join(unanswered) + "; nothing was written")
             got = crew_split.apply(top, args.ticket, "autopilot")
             lines = ([f"child={kid}" for kid in got["children"]]
                      + [f"parent={args.ticket} status={got['parent']}"]

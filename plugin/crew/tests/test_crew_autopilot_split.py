@@ -312,6 +312,24 @@ def test_split_decision_stops_at_split_approval(tmp_path):
     assert "split --apply" in got["reason"], got
 
 
+def test_split_approval_with_a_policy_crash_stops_never_raises(tmp_path, monkeypatch):
+    """NIT 2: an error inside the split rule reaches next as a could-not-tell
+    refusal at split-approval, never a crash."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12)
+    _decision(root, ticket, "split", "acceptance-count")
+
+    def boom(*_a, **_k):
+        raise KeyError("approval")
+
+    monkeypatch.setattr(crew_autopilot, "_split_rule", boom)
+
+    got = _next(root, ticket)
+
+    assert (got["phase"], got["stop"], "could not tell" in got["reason"]) == (
+        "split-approval", True, True), got
+
+
 def test_split_approval_under_human_names_the_owner(tmp_path):
     root = _repo(tmp_path, approval="human")
     ticket = _ticket(root, count=12)
@@ -407,6 +425,21 @@ def test_split_subcommand_apply_in_jira_always_stops(tmp_path):
     run = _cli(root, "split", "--ticket", ticket, "--apply")
 
     assert (run.returncode != 0, "/crew:split <KEY>" in run.stdout) == (True, True), run.stdout
+
+
+def test_split_apply_refuses_a_decision_missing_a_fired_trigger(tmp_path):
+    """NIT 3: --apply holds split.md to the same answered: rule as --check and
+    the gate: a decision taken before a trigger fired is not applied."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12, steps=9)
+    _decision(root, ticket, "split", "acceptance-count")
+
+    run = _cli(root, "split", "--ticket", ticket, "--apply")
+
+    assert run.returncode == 1, run.stdout
+    assert "answered: does not name plan-steps" in run.stdout, run.stdout
+    assert run.stdout.rstrip().splitlines()[-1] == f"owner: the human types /crew:split {ticket}"
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
 
 
 def test_split_check_refuses_a_decision_missing_a_fired_trigger(tmp_path):

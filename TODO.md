@@ -17,6 +17,24 @@ be wrong can be closed on evidence.
   test. `plugin/crew/tests/sabotage*.py` is HARNESS (`scripts/check-tooling-pr.py`), so PR #364
   ran its 27 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
   body) and could not commit them.
+  T-0058 (PR #365) appends its own, also run by hand (each red on its named test): the jira
+  refusal removed from `ticket_split_policy` (`test_policy_refuses_jira_even_under_self`); the
+  policy re-ask replaced by `policy_at_check` (`test_policy_reasked_at_apply`); the risk rule
+  accepting an unknown risk (`test_policy_refuses_risk_not_low`); the policy's except branch
+  returning allow (`test_policy_crash_refuses_and_apply_writes_nothing`); `_split_rule` outside
+  the could-not-tell boundary (`test_policy_rule_crash_refuses_never_raises[_split_rule]`);
+  `--via autopilot` needing `confirm` (`test_apply_via_autopilot_needs_no_human_turn`) and
+  `--via command` asking the policy (`test_apply_via_command_needs_no_policy`); autopilot
+  skipping the existing-children verification
+  (`test_apply_via_autopilot_refuses_minted_entry_without_provenance`,
+  `test_apply_via_autopilot_refuses_a_stale_child_from_an_edited_proposal`); a closed child
+  row read as open (`test_apply_via_autopilot_remints_a_closed_child`); `apply` not making the
+  record folder (`test_apply_self_files_mode_mints_children`); and in `crew_autopilot.py`'s gate
+  (`test_crew_autopilot_split.py`): an unreadable measure, or a plain-bullet acceptance list,
+  read as not fired; an unreadable metrics file counted absent; `answered:` unchecked in the
+  gate or in `split --apply`; no gate after spec or after plan; a split decision continuing;
+  slices without `parse_slices` continuing; `split-check` becoming a stop; a refused `--apply`
+  not naming `/crew:split`.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and

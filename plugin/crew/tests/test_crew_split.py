@@ -1658,3 +1658,103 @@ def test_apply_via_autopilot_rerun_skips_verified_children(tmp_path, monkeypatch
     got = crew_split.apply(str(root), ticket, "autopilot")
 
     assert (len(calls), len(got["children"]), len(set(got["children"]))) == (4, 3, 3)
+
+
+# --- #365 review of 20718c87 -------------------------------------------------------
+
+def test_policy_crash_refuses_and_apply_writes_nothing(tmp_path, monkeypatch):
+    """FIX 1: anything ticket_split_policy cannot read is could-not-tell, never allow."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    root, ticket = _policy_repo(tmp_path)
+    before = _spec_bytes(root, ticket)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("settings unreadable")
+
+    monkeypatch.setattr(crew_autopilot, "settings", boom)
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+    assert (got["allow"], "could not tell" in got["reason"]) == (False, True), got
+    with pytest.raises(crew_split.SplitError, match="could not tell"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert (minted, _spec_bytes(root, ticket), _index_status(root, ticket)) == (
+        [], before, "spec")
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+
+
+@pytest.mark.parametrize("target", ["_split_rule", "_ticket_risk"])
+def test_policy_rule_crash_refuses_never_raises(tmp_path, monkeypatch, target):
+    """NIT 2: the rule and the risk read sit inside the could-not-tell boundary."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    root, ticket = _policy_repo(tmp_path)
+
+    def boom(*_a, **_k):
+        raise KeyError("approval")
+
+    monkeypatch.setattr(crew_autopilot, target, boom)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "could not tell" in got["reason"]) == (False, True), got
+
+
+def test_policy_with_a_settings_answer_missing_a_key_refuses(tmp_path, monkeypatch):
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    root, ticket = _policy_repo(tmp_path)
+    monkeypatch.setattr(crew_autopilot, "settings", lambda top: {"warnings": []})
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "could not tell" in got["reason"]) == (False, True), got
+
+
+def _swap_after_partial(root, ticket):
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    old = path.read_text(encoding="utf-8")
+    first = re.search(r"- Child 1: (T-\d+)", old).group(1)
+    crit = _criteria()
+    swapped = _t0004_proposal(children=[
+        ("autopilot ship policy", "high", crit[7:10]),
+        ("autopilot approval and question policies", "high", crit[4:7]),
+        ("autopilot goal: tickets from a goal file", "med", crit[10:11])])
+    path.write_text(swapped + "\n" + old[old.index("## Minted"):], encoding="utf-8")
+    return first
+
+
+def test_apply_via_autopilot_refuses_a_stale_child_from_an_edited_proposal(tmp_path,
+                                                                           monkeypatch):
+    """NIT 4 (T-0052 round 2 on the autopilot path): a child minted for an older
+    proposal is refused, never reused, and nothing new is written."""
+    root, ticket = _policy_repo(tmp_path)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "autopilot")
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    _swap_after_partial(root, ticket)
+    before = sorted(os.listdir(root / ".work" / "tickets"))
+
+    with pytest.raises(crew_split.SplitError, match="different proposal"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert sorted(os.listdir(root / ".work" / "tickets")) == before
+    assert _index_status(root, ticket) == "spec"
+
+
+@pytest.mark.parametrize("closed", ["cancelled", "superseded"])
+def test_apply_via_autopilot_remints_a_closed_child(tmp_path, monkeypatch, closed):
+    """NIT 4 (T-0052 round 3 on the autopilot path): a cancelled or superseded
+    child is re-minted, never reused."""
+    root, ticket = _policy_repo(tmp_path)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "autopilot")
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    first = re.search(r"- Child 1: (T-\d+)", (root / ".work" / "tickets" / ticket /
+                                              "split.md").read_text(encoding="utf-8")).group(1)
+    assert crew_tracker.exit_code(crew_tracker.move(str(root), first, closed)) == 0
+
+    got = crew_split.apply(str(root), ticket, "autopilot")
+
+    assert first not in got["children"] and len(set(got["children"])) == 3
+    assert _index_status(root, ticket) == "superseded"
