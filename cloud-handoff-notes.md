@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:53 UTC
+Last updated: 2026-10-04 15:56 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:56: #351 CI fix -> 2c09afff (done.md 123->120 by pure reflow, wording unchanged - reviewed diff myself; diagram/codemap cites re-pointed; 1.0.328 last). Waiting CI on 2c09afff.
 - 15:53: #450 round-6 5080f05c: 0/0/2 CLEAN -> landing queue (carry: bare 'vault:' first line = attempt). Tickets file refreshed.
 - 15:52: #481 T-0074 review b573d4c9: 0/1/3 (F1: typed rejected.by name skips policy conds 5-8 -> non-stop replan). OWNER DECIDED Q4: as spec'd - auto-replan follows autopilot.approval (guard/prod tickets qualify under self). Sent F1 + clamp maxAutoReplans<=5 + auto-replan-cap stop id + current-plan check + merge main.
 - 15:52: #450 round-5 fix -> 5080f05c (mark only line 1 or line 2 starting with |/note:; 121 tests). Round-6 quick delta started.
