@@ -16,14 +16,31 @@ a script) is invisible to it, and it says UNKNOWN rather than PASS or GAP.
 Comment lines (`#`) are skipped. Python and GitHub/Bitbucket/GitLab/Azure CI
 are what it reads today; other stacks' rules still need a reader.
 
-Usage: qa_audit.py [--root DIR] [--json] [--strict]
+ENVIRONMENT AND GATE ITEMS (L-0618). `qa_audit_env.CHECKS` adds the E* and
+G* items of references/environments.md -- environment isolation, rollback,
+deploy refs, fire-and-forget commands, the D10 `reach` check -- to the same
+report, under the same four answers.
+
+`--stamp` records the audited HEAD in `.crew/.qa-audit-at` (gitignored by the
+`.crew/*` block) so the `qaAuditStale` session trigger can say when the paths
+the audit reads have moved since. It is the only write, and only on request.
+
+`--all-repos ROOT` prints one line per crew checkout found under ROOT (a
+directory holding `.crew/`, at most two levels down): the setup phase reached,
+the GAP and UNKNOWN counts, and whether D10 is live: an undeclared rule the
+Stop gate's own classifier defers (CONFIG.md §19).
+
+Usage: qa_audit.py [--root DIR] [--json] [--strict] [--stamp] [--all-repos ROOT]
 Exit: 0 report printed; 1 with --strict and any GAP or UNKNOWN; 2 usage.
 """
 import argparse
 import json
 import os
 import re
+import subprocess
 import sys
+
+import qa_audit_env
 
 PASS, GAP, NA, UNKNOWN = "PASS", "GAP", "N/A", "UNKNOWN"
 CLAUDE_MD_LIMIT = 12000
@@ -276,7 +293,8 @@ def check_steward(root, ci, tests):
 
 
 CHECKS = (check_parallel_tests, check_wallclock_serial, check_fixture_git, check_pylint_jobs,
-          check_ruff_pinned, check_ruff_in_ci, check_claude_md, check_steward)
+          check_ruff_pinned, check_ruff_in_ci, check_claude_md, check_steward) + qa_audit_env.CHECKS
+STAMP = os.path.join(".crew", ".qa-audit-at")
 
 
 def audit(root):
@@ -304,17 +322,92 @@ def render(rows):
     return "\n".join(lines) + "\n"
 
 
+def stamp(root):
+    """Record HEAD as the last audited commit. Returns the sha, or None when
+    there is no `.crew/` or git cannot name HEAD -- never a guessed value."""
+    if not os.path.isdir(os.path.join(root, ".crew")):
+        return None
+    try:
+        sha = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True,
+                             text=True, timeout=30, check=False).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not re.fullmatch(r"[0-9a-f]{7,64}", sha):
+        return None
+    text = sha + "\n"
+    tmp = os.path.join(root, STAMP + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, os.path.join(root, STAMP))
+    return sha
+
+
+def _phase_reached(root):
+    """The last `done` phase in `.crew/STATUS.md`, `none`, or `unknown`."""
+    text = _read(os.path.join(root, ".crew", "STATUS.md"))
+    if text is None:
+        return "unknown"
+    done = re.findall(r"^\|\s*(\d+)[^|\n]*\|[^\n]*\bdone\b", text, re.M | re.I)
+    return f"phase {max(int(n) for n in done)}" if done else "none"
+
+
+def crew_checkouts(base):
+    """Directories at most two levels under base (base included) holding `.crew/`."""
+    found, stack = [], [(base, 0)]
+    while stack:
+        here, level = stack.pop()
+        if os.path.isdir(os.path.join(here, ".crew")):
+            found.append(here)
+        if level < 2:
+            try:
+                names = sorted(os.listdir(here), reverse=True)
+            except OSError:
+                continue
+            stack += [(os.path.join(here, n), level + 1) for n in names
+                      if n not in SKIP_DIRS and not n.startswith(".")
+                      and os.path.isdir(os.path.join(here, n))]
+    return sorted(found)
+
+
+def fleet(base):
+    lines = ["| Repo | Setup | GAP | UNKNOWN | D10 (rules skipped on Stop) |", "|---|---|---|---|---|"]
+    for repo in crew_checkouts(base):
+        rows = audit(repo)
+        d10 = next((r for r in rows if r["rule"] == "G1"), None)
+        d10_text = {GAP: "YES" if d10 and "SKIPPED" in d10["evidence"] else "no",
+                    PASS: "no", NA: "no map"}.get(d10["status"] if d10 else UNKNOWN, "unknown")
+        lines.append(f"| {os.path.relpath(repo, base)} | {_phase_reached(repo)} | "
+                     f"{sum(r['status'] == GAP for r in rows)} | "
+                     f"{sum(r['status'] == UNKNOWN for r in rows)} | {d10_text} |")
+    if len(lines) == 2:
+        lines.append("| (no crew checkout found) | | | | |")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--strict", action="store_true",
                         help="exit 1 when any rule is GAP or UNKNOWN")
+    parser.add_argument("--stamp", action="store_true",
+                        help="record HEAD in .crew/.qa-audit-at after reporting")
+    parser.add_argument("--all-repos", metavar="ROOT",
+                        help="one line per crew checkout under ROOT, instead of one report")
     args = parser.parse_args(argv)
+    if args.all_repos:
+        if not os.path.isdir(args.all_repos):
+            parser.error(f"--all-repos {args.all_repos!r} is not a directory")
+        sys.stdout.write(fleet(os.path.abspath(args.all_repos)))
+        return 0
     if not os.path.isdir(args.root):
         parser.error(f"--root {args.root!r} is not a directory")
     rows = audit(args.root)
     sys.stdout.write(json.dumps(rows, indent=2) + "\n" if args.json else render(rows))
+    if args.stamp:
+        sha = stamp(os.path.abspath(args.root))
+        sys.stderr.write(f"qa-audit: stamped {sha[:12]} in {STAMP}\n" if sha else
+                         "qa-audit: NOT stamped (no .crew/ here, or git could not name HEAD)\n")
     if args.strict and any(r["status"] in (GAP, UNKNOWN) for r in rows):
         return 1
     return 0
