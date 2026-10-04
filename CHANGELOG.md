@@ -21,14 +21,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 - context-watch's messages that say where to set a value name the main checkout's file by its
   path when it is inherited; unchanged text for an own file.
 - `handoff-write.ps1` honours `context.keepTranscripts` on PowerShell 7, whose `ConvertFrom-Json`
-  reads a JSON integer as Int64; it was dropped there and five copies kept. A value past
-  Int32.MaxValue keeps everything, as in bash. Both flavours now take an integer only, as
-  documented: a digit string such as `"2"`, which bash used to accept, keeps the default 5.
+  reads a JSON integer as Int64 (BigInteger past Int64); it was dropped there and five copies
+  kept. Both flavours clamp a larger value to Int32.MaxValue (2,147,483,647 kept, in effect
+  all). Both now take an integer only, as documented: a digit string such as `"2"`, which bash
+  used to accept, a float or a bool keeps the default 5.
 - `context.handoffPath` stays inside the checkout in every flavour, by the Python readers' rule
   (`crew_state.handoff_path`): an absolute, `..` or symlinked value that leaves it (in a lane,
-  one naming the main checkout's file) is the default `.work/HANDOFF.md`, with a warning, so a
-  lane never writes or prints the main checkout's note. PowerShell, which cannot resolve a
+  one naming the main checkout's file), or one naming a directory, is the default
+  `.work/HANDOFF.md`, with a warning, so a lane never writes or prints the main checkout's
+  note; context-watch's message says so too. The path is printed with forward slashes on
+  every OS. PowerShell, which cannot resolve a
   link as `realpath` does, treats any link on the way as leaving.
+- `auto-clear.ps1` lists `wrapUp` among `context.autoClear`'s known keys, so it no longer logs
+  that recognised key as unrecognised.
 - **Not in this release:** the harness readers (`verify-gate.*`, `scope-guard.*`,
   `completion-audit.*`, `review_gate.py`), L-0681, a tooling PR.
 - Tests: `plugin/crew/tests/test_worktree_config_shell.py` (both flavours and the no-python

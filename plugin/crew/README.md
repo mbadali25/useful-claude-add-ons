@@ -1044,7 +1044,10 @@ checkout's `notify` settings, so several lanes ping the same channel unless one
 writes its own config, and an inherited `context.handoffPath`,
 `keepTranscripts` or threshold applies in the lane while the handoff path
 stays inside the lane: a relative one names a file there, and one that leaves
-it (absolute, `..`) is the lane's `.work/HANDOFF.md`, with a warning. What they write (transcripts, markers, the
+it (absolute, `..`, a symlink out) or names a directory is the lane's
+`.work/HANDOFF.md`, with a warning. The PowerShell hooks are stricter on links:
+Windows PowerShell 5.1 cannot resolve one as `realpath` does, so any symlink or
+junction on the way counts as leaving, even one that points back inside. What they write (transcripts, markers, the
 handoff note) stays in the lane, and `context-watch` still needs a `.crew/`
 directory there before it measures. **Not yet covered** (they read only the
 worktree's own file): the verify gate, the scope and completion wrappers, and
