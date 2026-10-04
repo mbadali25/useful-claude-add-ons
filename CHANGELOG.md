@@ -26,22 +26,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   `environments` are read ignoring case too (the `.sh` read them case-sensitively, so
   `"RequireHuman": true` required a human on PowerShell and nobody on bash); `"deploy": null` and
   a list or object `requireHuman` refuse the map in both; `"deploy": []` and `[""]` declare nothing
-  (the `.ps1` unrolled `[]` to null and blocked every PowerShell command); a comparison that throws
-  blocks instead of skipping the environment.
+  (the `.ps1` unrolled `[]` to null and blocked every PowerShell command); an environment name that
+  is empty, holds a control character or holds `,` refuses the map (the `.sh` split `"a\nb"` into
+  the lax environments `a` and `b`); a comment or a single-quoted or unquoted key refuses the map on
+  the `.ps1` as python's json does on the `.sh` (a trailing comma is still read by the `.ps1` only);
+  a comparison that throws blocks instead of skipping the environment. The `.ps1`'s key scan
+  (`Find-DuplicateJsonKey`) costs about 5 ms on a small map and 256 ms on this repository's
+  129 KB `.crew/verify.json` (pwsh 7.4, 4-CPU Linux, load 4.4), per PowerShell tool call.
 - Matched several environments: the strictest union of their requirements applies - every
   matched environment's `requires`, `rollback` and `requireHuman` - named together (`staging,prod`)
   in the block message and the in-flight marker, so the PROMOTIONS row that clears the Stop check
   names `staging,prod`. Before, the first match won (prod's command could be gated as staging); a
   short command inside two deploys (`git push`) is now gated by both, not locked out.
-- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 106 cases. 45 run by default:
+- Tests: `plugin/crew/tests/test_promote_gate_literal_match.py`, 134 cases. 55 run by default:
   every `.sh` case and one agreement map through both gates. The other `.ps1` cases are `slow`, and
   CI runs them in `crew-shell-matrix (ubuntu-latest)` and `crew-windows-slow`. There are
-  must-block and must-allow cases, plus a sh/ps1 agreement table over 18 maps run through both
-  real gates. Each rule was sabotaged and confirmed red in the CI slow selection, then restored:
+  must-block and must-allow cases, plus a sh/ps1 agreement table run through both
+  real gates (26 maps). Each rule was sabotaged and confirmed red in the CI slow selection, then restored:
   the `.ps1` unrolling `[]` again; first-match instead of the union (`.sh`, `.ps1`); exact
   duplicates accepted (`.sh`, `.ps1`); a list or object `requireHuman` accepted (`.sh`, `.ps1`); the
   `.sh` verdict reading keys case-sensitively; the `.sh` reading only `environments`; the `.ps1`
-  skipping a null `deploy`; the `.sh` accepting case twins. Earlier rounds: `-like` back in the
+  skipping a null `deploy`; the `.sh` accepting case twins; the bad-name check dropped (`.sh`, `.ps1`); the `.ps1`'s strict-JSON
+  check dropped. Earlier rounds: `-like` back in the
   `.ps1`, and the `.ps1` swallowing a comparison exception.
 - Rule time: the promote/verify rule in `.crew/verify.json` was chronic before this change (over
   60s). Its `.ps1` cases in `test_verify_gate_ci_mode.py`, `test_promote_gate_effective_tree.py` and

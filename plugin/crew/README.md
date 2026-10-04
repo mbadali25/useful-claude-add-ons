@@ -2582,6 +2582,11 @@ working map and, when that is dirty, the committed map alike (L-1503):
 - a `deploy` that is not a command or a list of commands - `null` included -
   or a `requireHuman` that is a list or an object refuses the map and the
   command blocks; `"deploy": []` and `[""]` declare nothing
+- an environment name that is empty, holds a control character (a newline, a
+  tab) or holds a comma refuses the map; `-`, `_` and `.` are fine
+- the map must be strict JSON in both: a comment or a single-quoted or
+  unquoted key refuses it. One difference is left: PowerShell reads a
+  trailing comma that the bash flavour refuses
 - if more than one environment matches, the strictest union of their
   requirements applies: every matched environment's `requires`, `rollback`
   and `requireHuman` must hold. They are named together - `staging,prod` - in
