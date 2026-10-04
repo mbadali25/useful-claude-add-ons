@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:31 UTC
+Last updated: 2026-10-04 16:36 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:36: WAVE2 #456 L-0677 built -> e7c8b073 (crew_memory save: crash-safe write/readback/pointer; 54 tests; 11 sabotages; one-line pointer memory verified with real claude CLI 2.1.289 - CLI IS present in container, so drift-detection.sh may be runnable). Review started. Needs re-merge of #450's new head at land-prep.
 - 16:31: WAVE2 #421 T-0083 built -> 61198189 (vault_recall relevance: archive/userIgnoreFilters excluded, stop words, term floor, project ranking; obsidian-vault 0.4.17 placeholder, spec says 0.5.0; 71 suite tests; 7 sabotages). Review started. Unverified: userIgnoreFilters format vs real vault.
 - 16:22: #407 round-4 6cada04c: 0 BLOCK / 1 low FIX ([!-[] range accepted by check but throws in pwsh) / 3 NIT -> ready to land; carry the low FIX at land-prep. L-1503 WIDER: any literal [set] in a deploy string (e.g. jq .items[0]) makes ps1 gate never match itself -> no gate. Started L-1503 build (new branch L-1503-build, draft PR, 1.0.408).
 - 16:21: CI analysis: Linux tests on self-hosted run ~3.5 min but queued up to 80 min today (91-draft flood + verify-gate receipts + builder pushes); Windows shards are GitHub-hosted, ~14 min run each = the long pole per landing. Decision: builder/fixer pushes to drafts use [skip ci] on the head commit; CI only on land-prep pushes. BUILD.md updated.
