@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 10:08 UTC
+Last updated: 2026-10-04 10:09 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -63,6 +63,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:09: #342 delta review f42ed026: 0/0/0 CLEAN. Waits CI.
 - 10:08: #342 CI red on 41b113c6: build (3.12) pylint C0302 test_crew_config.py 3401/3400 (merge-caused). Fixed by hand: comment rewrap -> 3400, crew 1.0.331, head f42ed026; delta review started. WATCH: #351/#355/#360 also grow test_crew_config.py - check line cap at each re-merge.
 - 10:07: #371 merge review 147c3f5d: 0/0/0 CLEAN (dropped heading was stale T-0061 leftover). Waits CI.
 - 10:07: #351 merge review f542d4f4: 2 FIX (CONFIG 'Measured' para 72/130 should be 73/131; config read/write diagram + codemap crew_config.py line cites stale by 10-14) + 3 NIT (since 1.0.320 placeholder; renders fine - FAILs are layout-check only, container-dependent). Fixer started (1.0.330).
