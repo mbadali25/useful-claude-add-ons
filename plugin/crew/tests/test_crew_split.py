@@ -1,0 +1,922 @@
+"""T-0052: `crew_split.py`, the one split rulebook behind `/crew:split`.
+
+    python3 -m pytest plugin/crew/tests/test_crew_split.py -q
+
+`measure` and `triggers` say whether a ticket is worth a look (an unreadable
+measure is `None` and reported as `unknown:<name>`, never as "not fired");
+`check_proposal` holds a `split.md` to the rules `/crew:split` states (2-5
+children, every parent criterion placed verbatim exactly once, exclusions,
+`separable-criteria`); `confirm` refuses unless a human prompt has arrived
+since `check` passed on an unchanged proposal; `apply --via command` keeps the
+parent's spec as `spec.pre-split.md`, mints each child through
+`crew_ticket.mint`, and only then marks the parent `superseded`.
+
+`split_fixtures/t0004_spec_pre_split.md` is RECONSTRUCTED, not a byte copy:
+`.work/tickets/T-0004/spec.pre-split.md` is gitignored and was not in the
+cloud container this was built in. It keeps the measured shape the spec
+records (12 acceptance checks, 18 Touch entries, one subsystem, four groups:
+next/resume staying on the parent, the approval and question policies
+(T-0010), ship (T-0011) and goal minting (T-0012)). Replace it with the real
+file's bytes when one is to hand; the counts the tests assert are the spec's.
+
+Every repository is built under tmp_path; nothing touches the real one,
+a real vault or ~/.claude.
+"""
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_context
+import crew_split
+import crew_ticket
+import crew_tracker
+import pytest
+from crew_fixtures import make_repo
+from test_crew_tracker import _lane_of, _make_vault
+
+SCRIPTS = os.path.dirname(os.path.abspath(crew_split.__file__))
+SCRIPT = os.path.join(SCRIPTS, "crew_split.py")
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "split_fixtures",
+                       "t0004_spec_pre_split.md")
+COMMAND = os.path.join(os.path.dirname(SCRIPTS), os.pardir, "commands", "split.md")
+SESSION = "sess-split-1"
+
+
+def _fixture_text():
+    with open(FIXTURE, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _criteria(text=None):
+    return crew_split.parent_criteria(text if text is not None else _fixture_text())
+
+
+# --- the T-0004 three-way split (must-allow) ----------------------------------------
+
+def _t0004_proposal(crit=None, drop=None, extra_child=None, children=None, evidence=None,
+                    stays=None):
+    """A `split.md` placing the fixture's twelve criteria as T-0004's split
+    did: approval and questions (T-0010), ship (T-0011), goal minting
+    (T-0012), and next/resume plus bookkeeping staying on the parent."""
+    crit = list(crit or _criteria())
+    groups = children or [
+        ("autopilot approval and question policies", "high", crit[4:7]),
+        ("autopilot ship policy", "high", crit[7:10]),
+        ("autopilot goal: tickets from a goal file", "med", crit[10:11]),
+    ]
+    if extra_child:
+        groups = groups + extra_child
+    stay = stays if stays is not None else crit[0:4] + crit[11:12]
+    lines = ["# T-0004 split          decision: split",
+             "answered: acceptance-count, plan-steps", "", "## Evidence"]
+    lines += [f"- {e}" for e in (evidence or [
+        "acceptance-count: 12 checks, at ACCEPTANCE_LOOK",
+        "separable-criteria: approval, ship and goal minting are verified apart from next/resume"])]
+    lines += ["", "## Children"]
+    for number, (title, risk, items) in enumerate(groups, 1):
+        lines += [f"### Child {number}: {title}", f"risk: {risk}", "subsystem: crew", "Criteria:"]
+        lines += [f"- {c}" for c in items if c != drop]
+        lines += ["Excludes:", "- next/resume, which stays on T-0004", ""]
+    lines += ["## Stays on parent"] + [f"- {c}" for c in stay if c != drop]
+    return "\n".join(lines) + "\n"
+
+
+def test_t0004_three_way_split_ok():
+    decision, problems = crew_split.check_proposal(_criteria(), _t0004_proposal())
+
+    assert (decision, problems) == ("split", [])
+
+
+def test_not_too_big_with_evidence_ok():
+    text = ("# T-0004 split          decision: not-too-big\nanswered: acceptance-count\n\n"
+            "## Evidence\n- acceptance-count: 12, but every check is verified by one suite\n")
+
+    assert crew_split.check_proposal(_criteria(), text) == ("not-too-big", [])
+
+
+def test_jira_criteria_file_ok(tmp_path):
+    root = _files_repo(tmp_path)
+    criteria = root / "crit.md"
+    criteria.write_text("- [ ] one thing works\n- [x] another thing works\n- third thing\n",
+                        encoding="utf-8")
+    proposal = root / ".work" / "tickets" / "PROJ-12" / "split.md"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text(_proposal_two(["one thing works"], ["another thing works"],
+                                      ["third thing"]), encoding="utf-8")
+
+    got = crew_split.check(str(root), "PROJ-12", criteria_file=str(criteria), session=SESSION)
+
+    assert got == ("split", [])
+
+
+def _proposal_two(first, second, stays, decision="split"):
+    lines = [f"# X split          decision: {decision}", "", "## Evidence",
+             "- separable-criteria: the two halves share no files", "", "## Children"]
+    for number, items in enumerate((first, second), 1):
+        lines += [f"### Child {number}: part {number}", "risk: low", "subsystem: crew",
+                  "Criteria:"] + [f"- {c}" for c in items] + ["Excludes:", "- the other part", ""]
+    lines += ["## Stays on parent"] + ([f"- {c}" for c in stays] or ["- none"])
+    return "\n".join(lines) + "\n"
+
+
+# --- the proposal check (must-block) -------------------------------------------------
+
+def test_one_child_refused():
+    crit = _criteria()
+    text = _t0004_proposal(children=[("everything", "high", crit[4:11])])
+
+    _, problems = crew_split.check_proposal(crit, text)
+
+    assert any("1 child" in p and "2-5" in p for p in problems), problems
+
+
+def test_six_children_refused():
+    crit = _criteria()
+    groups = [(f"part {i}", "low", crit[4 + i:5 + i]) for i in range(6)]
+    text = _t0004_proposal(children=groups, stays=crit[0:4] + crit[10:12])
+
+    _, problems = crew_split.check_proposal(crit, text)
+
+    assert any("6 children" in p and "2-5" in p for p in problems), problems
+
+
+def test_five_children_allowed():
+    crit = _criteria()
+    groups = [(f"part {i}", "low", crit[4 + i:5 + i]) for i in range(5)]
+    text = _t0004_proposal(children=groups, stays=crit[0:4] + crit[9:12])
+
+    assert crew_split.check_proposal(crit, text) == ("split", [])
+
+
+def test_paraphrased_criterion_refused():
+    crit = _criteria()
+    changed = list(crit)
+    changed[7] = crit[7] + " and says so"
+    text = _t0004_proposal(crit=changed)
+
+    _, problems = crew_split.check_proposal(crit, text)
+
+    assert any("not placed" in p and crit[7] in p for p in problems), problems
+
+
+def test_whitespace_only_difference_is_verbatim():
+    crit = _criteria()
+    spaced = [c.replace(" ", "  ", 1) for c in crit]
+
+    assert crew_split.check_proposal(crit, _t0004_proposal(crit=spaced)) == ("split", [])
+
+
+def test_dropped_criterion_refused_and_named():
+    crit = _criteria()
+
+    _, problems = crew_split.check_proposal(crit, _t0004_proposal(drop=crit[8]))
+
+    assert problems == [f"criterion not placed in any child or on the parent: {crit[8]}"]
+
+
+def test_duplicate_placement_refused():
+    crit = _criteria()
+    stays = crit[0:4] + crit[11:12] + crit[7:8]
+
+    _, problems = crew_split.check_proposal(crit, _t0004_proposal(stays=stays))
+
+    assert problems == [f"criterion placed 2 times (exactly once is the rule): {crit[7]}"]
+
+
+def test_child_without_exclusions_refused():
+    text = _t0004_proposal().replace("Excludes:\n- next/resume, which stays on T-0004\n\n"
+                                     "### Child 2", "\n### Child 2", 1)
+
+    _, problems = crew_split.check_proposal(_criteria(), text)
+
+    assert problems == ["child 1 (autopilot approval and question policies) states no "
+                        "exclusion (an Excludes: bullet)"]
+
+
+def test_child_missing_title_risk_subsystem_refused():
+    text = (_t0004_proposal().replace("### Child 1: autopilot approval and question policies",
+                                      "### Child 1:", 1)
+            .replace("risk: high", "risk: huge", 1).replace("subsystem: crew\n", "", 1))
+
+    _, problems = crew_split.check_proposal(_criteria(), text)
+
+    assert problems == [
+        "child 1 has no title", "child 1 has no risk: low|med|high (got 'huge')",
+        "child 1 names no subsystem"]
+
+
+def test_split_without_separable_evidence_refused():
+    text = _t0004_proposal(evidence=["acceptance-count: 12 checks"])
+
+    _, problems = crew_split.check_proposal(_criteria(), text)
+
+    assert problems == ["a split needs a separable-criteria evidence line: criteria that "
+                        "cannot be verified together"]
+
+
+def test_unknown_evidence_key_only_refused():
+    text = ("# T-0004 split          decision: not-too-big\n\n## Evidence\n"
+            "- gut-feeling: it looks big\n")
+
+    _, problems = crew_split.check_proposal(_criteria(), text)
+
+    assert problems == [
+        "evidence key 'gut-feeling' is not one of " + ", ".join(crew_split.EVIDENCE_KEYS),
+        "## Evidence names no known evidence key (" + ", ".join(crew_split.EVIDENCE_KEYS) + ")"]
+
+
+def test_invented_criterion_refused():
+    crit = _criteria()
+    stays = crit[0:4] + crit[11:12] + ["a criterion the parent never had"]
+
+    _, problems = crew_split.check_proposal(crit, _t0004_proposal(stays=stays))
+
+    assert problems == ["placed text is not a parent criterion: a criterion the parent never had"]
+
+
+def test_unreadable_parent_refused():
+    _, problems = crew_split.check_proposal(None, _t0004_proposal())
+
+    assert problems == ["the parent's acceptance criteria could not be read; nothing can be "
+                        "checked as placed"]
+
+
+def test_unknown_decision_refused():
+    text = _t0004_proposal().replace("decision: split", "decision: maybe", 1)
+
+    decision, problems = crew_split.check_proposal(_criteria(), text)
+
+    assert (decision, problems[0]) == (None, "decision: 'maybe' is not one of split, slices, "
+                                       "not-too-big (on the # header line)")
+
+
+def test_not_too_big_with_children_refused():
+    text = _t0004_proposal().replace("decision: split", "decision: not-too-big", 1)
+
+    _, problems = crew_split.check_proposal(_criteria(), text)
+
+    assert problems == ["decision not-too-big takes no ## Children section"]
+
+
+def test_minted_section_is_not_a_placement():
+    text = _t0004_proposal() + "\n## Minted\n- Child 1: T-0099\n"
+
+    assert crew_split.check_proposal(_criteria(), text) == ("split", [])
+
+
+# --- measures and triggers ----------------------------------------------------------
+
+def _ticket(root, ticket, spec, plan=None):
+    folder = root / ".work" / "tickets" / ticket
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "spec.md").write_text(spec, encoding="utf-8", newline="\n")
+    if plan is not None:
+        (folder / "plan.md").write_text(plan, encoding="utf-8", newline="\n")
+    return folder
+
+
+def _plan(steps):
+    return "# plan\n\n" + "".join(f"### Step {i}: s\nFiles: a\n\n" for i in range(1, steps + 1))
+
+
+def _codemap(root, subs):
+    folder = root / ".crew" / "codemap"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "INDEX.md").write_text("# index\n", encoding="utf-8")
+    for name, path in subs.items():
+        (folder / f"{name}.md").write_text(f"anchor: x@abc1234\npaths: {path}**\n\n# {name}\n",
+                                           encoding="utf-8")
+
+
+def test_measure_counts_acceptance_steps_touch(tmp_path):
+    root = make_repo(tmp_path)
+    spec = ("# T-0001 x          status: spec   risk: low\n## Touch\n- `src/a.py`\n- `doc/b.md`\n"
+            "## Acceptance checks\n- [ ] one\n- [x] two\n- not a checkbox\n")
+    _ticket(root, "T-0001", spec, _plan(3))
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert {k: got[k] for k in ("plan_steps", "acceptance", "touch")} == {
+        "plan_steps": 3, "acceptance": 2, "touch": 2}
+
+
+def test_measure_pre_split_t0004_fixture(tmp_path):
+    root = make_repo(tmp_path)
+    _ticket(root, "T-0004", _fixture_text())
+
+    got = crew_split.measure(str(root), "T-0004")
+
+    assert (got["acceptance"], got["touch"]) == (12, 18)
+    assert "acceptance-count" in crew_split.triggers(got, "spec")
+
+
+def test_measure_subsystems_from_codemap(tmp_path):
+    root = make_repo(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "a.py").write_text("x\n", encoding="utf-8")
+    (root / "doc").mkdir()
+    (root / "doc" / "b.md").write_text("x\n", encoding="utf-8")
+    _codemap(root, {"code": "src/", "docs": "doc/"})
+    spec = "# T-0001 x\n## Touch\n- `src/a.py`\n- `doc/b.md`\n## Acceptance checks\n- [ ] one\n"
+    _ticket(root, "T-0001", spec)
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert got["subsystems"] == 2
+    assert "subsystems" in crew_split.triggers(got, "spec")
+
+
+def test_unreadable_spec_measures_none(tmp_path):
+    root = make_repo(tmp_path)
+    (root / ".work" / "tickets" / "T-0001").mkdir(parents=True)
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert {k: got[k] for k in ("acceptance", "touch", "subsystems", "plan_steps")} == {
+        "acceptance": None, "touch": None, "subsystems": None, "plan_steps": None}
+
+
+def test_missing_codemap_subsystems_none(tmp_path):
+    root = make_repo(tmp_path)
+    _ticket(root, "T-0001", "# T-0001 x\n## Touch\n- `src/a.py`\n## Acceptance checks\n- [ ] a\n")
+
+    assert crew_split.measure(str(root), "T-0001")["subsystems"] is None
+
+
+def test_no_metrics_reads_none_never_zero(tmp_path):
+    root = make_repo(tmp_path)
+    _ticket(root, "T-0001", "# T-0001 x\n## Touch\n- `a`\n## Acceptance checks\n- [ ] a\n")
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert (got["findings_rate"], got["tickets_too_large"]) == (None, None)
+
+
+def test_high_findings_rate_fires_both_repo_triggers(tmp_path):
+    root = make_repo(tmp_path, metrics=[("T-1", 3, 2), ("T-2", 2, 1)])
+    _ticket(root, "T-0001", "# T-0001 x\n## Touch\n- `a`\n## Acceptance checks\n- [ ] a\n")
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert (got["findings_rate"], got["tickets_too_large"]) == (4.0, True)
+    assert {"findings-rate", "tickets-too-large"} <= set(crew_split.triggers(got, "spec"))
+
+
+def test_none_measure_reports_unknown_not_quiet():
+    measures = dict.fromkeys(crew_split.MEASURES)
+
+    assert crew_split.triggers(measures, "plan") == [
+        "unknown:acceptance-count", "unknown:subsystems", "unknown:findings-rate",
+        "unknown:tickets-too-large", "unknown:plan-steps"]
+
+
+def test_quiet_measures_fire_nothing():
+    measures = {"plan_steps": 8, "acceptance": 11, "touch": 40, "subsystems": 1,
+                "findings_rate": 2.0, "tickets_too_large": False}
+
+    assert crew_split.triggers(measures, "plan") == []
+
+
+def test_plan_steps_only_at_plan_stage():
+    measures = {"plan_steps": 9, "acceptance": 1, "touch": 1, "subsystems": 1,
+                "findings_rate": 0.5, "tickets_too_large": False}
+
+    assert (crew_split.triggers(measures, "spec"), crew_split.triggers(measures, "plan")) == (
+        [], ["plan-steps"])
+
+
+def test_thresholds_have_evidence_comments():
+    with open(SCRIPT, encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+    for name in ("PLAN_STEPS_LOOK", "ACCEPTANCE_LOOK", "SUBSYSTEMS_LOOK", "CHILDREN_MIN"):
+        at = next(i for i, line in enumerate(lines) if line.startswith(f"{name} ") or
+                  line.startswith(f"{name},"))
+        above = []
+        for line in reversed(lines[:at]):
+            if not line.startswith("#"):
+                break
+            above.append(line)
+        assert re.search(r"T-\d{4}|split\.md", " ".join(above)), name
+
+
+def test_bad_stage_refused():
+    with pytest.raises(crew_split.SplitError):
+        crew_split.triggers(dict.fromkeys(crew_split.MEASURES), "implement")
+
+
+# --- tracker mode -------------------------------------------------------------------
+
+def _files_repo(tmp_path, tracker="files"):
+    root = make_repo(tmp_path)
+    (root / ".crew" / "config.json").write_text(json.dumps({"tracker": tracker}),
+                                                encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("tracker", ["files", "jira", "sdp"])
+def test_tracker_mode_reads_config(tmp_path, tracker):
+    assert crew_split.tracker_mode(str(_files_repo(tmp_path, tracker))) == tracker
+
+
+def test_tracker_mode_default_files(tmp_path):
+    assert crew_split.tracker_mode(str(make_repo(tmp_path))) == "files"
+
+
+def test_tracker_mode_unreadable_is_unknown(tmp_path):
+    root = make_repo(tmp_path)
+    (root / ".crew" / "config.json").write_text("{not json", encoding="utf-8")
+
+    assert crew_split.tracker_mode(str(root)) == "unknown"
+
+
+# --- confirm and apply --------------------------------------------------------------
+
+def _turn(root, turn_id, session=SESSION):
+    path = crew_context._session_file(str(root), session)  # pylint: disable=protected-access
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps({"epoch": 0, "seen": {}, "turn": {"id": turn_id, "used": 0}}))
+    return path
+
+
+def _parent(root):
+    """Mint T-0004's stand-in through the real tracker, give it the fixture
+    spec, and move it to `spec`. Returns its id."""
+    got = crew_ticket.mint(str(root), "crew autopilot", status="ready", direction="go")
+    ticket = got["ticket"]
+    folder = root / ".work" / "tickets" / ticket
+    (folder / "spec.md").write_text(_fixture_text().replace("T-0004", ticket),
+                                    encoding="utf-8", newline="\n")
+    report = crew_tracker.move(str(root), ticket, "spec")
+    assert crew_tracker.exit_code(report) == 0, report
+    return ticket
+
+
+def _staged(root, ticket, text=None):
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    path.write_text(text if text is not None else _t0004_proposal(), encoding="utf-8",
+                    newline="\n")
+    return path
+
+
+def _checked(root, ticket, turn="turn-1"):
+    _turn(root, turn)
+    _staged(root, ticket)
+    assert crew_split.check(str(root), ticket, session=SESSION) == ("split", [])
+    _turn(root, "turn-2")
+
+
+def _index_status(root, ticket):
+    for line in (root / ".work" / "INDEX.md").read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.split("|")]
+        if cells and cells[0] == ticket:
+            return cells[1]
+    return None
+
+
+def test_confirm_after_new_human_turn(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+
+    assert crew_split.confirm(str(root), ticket, session=SESSION)["ok"] is True
+
+
+def test_confirm_refuses_same_turn(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _turn(root, "turn-1")
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "no human prompt has arrived since" in got["reason"]) == (False, True)
+
+
+def test_confirm_refuses_without_turn_record(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    os.remove(crew_context._session_file(str(root), SESSION))  # pylint: disable=protected-access
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "no turn record" in got["reason"]) == (False, True)
+
+
+def test_confirm_refuses_without_session(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    monkeypatch.delenv(crew_split.SESSION_ENV, raising=False)
+
+    got = crew_split.confirm(str(root), ticket)
+
+    assert (got["ok"], crew_split.SESSION_ENV in got["reason"]) == (False, True)
+
+
+def test_confirm_refuses_unreadable_turn_record(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    path = crew_context._session_file(str(root), SESSION)  # pylint: disable=protected-access
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("{torn")
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "could not be read" in got["reason"]) == (False, True)
+
+
+def test_confirm_refuses_empty_turn_id(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _turn(root, "")
+
+    assert crew_split.confirm(str(root), ticket, session=SESSION)["ok"] is False
+
+
+def test_confirm_refuses_when_check_saw_no_turn(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _staged(root, ticket)
+    assert crew_split.check(str(root), ticket, session=SESSION) == ("split", [])
+    _turn(root, "turn-2")
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "check recorded no turn" in got["reason"]) == (False, True)
+
+
+def test_confirm_refuses_edited_proposal(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    path.write_text(path.read_text(encoding="utf-8") + "- one more line\n", encoding="utf-8")
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "changed since check" in got["reason"]) == (False, True)
+
+
+def test_confirm_refuses_without_check(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _staged(root, ticket)
+    _turn(root, "turn-2")
+
+    got = crew_split.confirm(str(root), ticket, session=SESSION)
+
+    assert (got["ok"], "no passing check" in got["reason"]) == (False, True)
+
+
+def test_confirm_refuses_other_session(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _turn(root, "turn-9", session="sess-other")
+
+    got = crew_split.confirm(str(root), ticket, session="sess-other")
+
+    assert (got["ok"], "another session" in got["reason"]) == (False, True)
+
+
+def test_failed_check_writes_no_record(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn(root, "turn-1")
+    _staged(root, ticket, _t0004_proposal(drop=_criteria()[8]))
+
+    decision, problems = crew_split.check(str(root), ticket, session=SESSION)
+
+    assert (decision, len(problems), os.path.exists(crew_split.check_record_path(str(root), ticket))
+            ) == ("split", 1, False)
+
+
+def _spec_bytes(root, ticket):
+    return (root / ".work" / "tickets" / ticket / "spec.md").read_bytes()
+
+
+def test_apply_via_command_files_mode_mints_children(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    before = _spec_bytes(root, ticket)
+    _checked(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    kids = got["children"]
+    assert len(kids) == 3
+    spec = _spec_bytes(root, ticket).decode("utf-8").splitlines()
+    assert re.search(r"status: superseded(\s|$)", spec[0]), spec[0]
+    assert spec[1] == "split-into: " + ", ".join(kids)
+    assert _index_status(root, ticket) == "superseded"
+    pre = root / ".work" / "tickets" / ticket / "spec.pre-split.md"
+    assert pre.read_bytes() == before
+    crit = _criteria()
+    for kid, items in zip(kids, (crit[4:7], crit[7:10], crit[10:11])):
+        direction = (root / ".work" / "tickets" / kid / "direction.md").read_text(encoding="utf-8")
+        assert f"origin: split of {ticket}" in direction
+        assert f".work/tickets/{ticket}/spec.pre-split.md" in direction
+        assert all(f"- {c}" in direction for c in items)
+        assert "- next/resume, which stays on T-0004" in direction
+        assert _index_status(root, kid) == "ready"
+    minted = (root / ".work" / "tickets" / ticket / "split.md").read_text(encoding="utf-8")
+    assert all(f"- Child {n}: {kid}" in minted for n, kid in enumerate(kids, 1))
+
+
+def test_apply_cli_prints_children(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    env = dict(os.environ, **{crew_split.SESSION_ENV: SESSION})
+
+    run = subprocess.run([sys.executable, SCRIPT, "apply", "--root", str(root), "--ticket", ticket,
+                          "--via", "command"], capture_output=True, text=True, env=env,
+                         check=False)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert len(re.findall(r"^child=T-\d{4}$", run.stdout, re.M)) == 3, run.stdout
+    assert f"parent={ticket} status=superseded" in run.stdout
+
+
+def test_apply_via_command_obsidian_mode(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = make_repo(tmp_path)
+    (root / ".crew" / "crew.json").write_text(json.dumps({"tracker": {
+        "kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo",
+                                         "board": "Board.md"}}}), encoding="utf-8")
+    (root / ".work" / "INDEX.md").write_text("T-0059 | done | - | r | old\n", encoding="utf-8")
+    ticket = _parent(root)
+    _checked(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    board = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+    assert len(got["children"]) == 3
+    assert all(_index_status(root, kid) == "ready" for kid in got["children"])
+    assert _index_status(root, ticket) == "superseded"
+    assert _lane_of(board, ticket) == "Done"
+
+
+def test_pre_split_byte_identical(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    spec = root / ".work" / "tickets" / ticket / "spec.md"
+    spec.write_bytes(spec.read_bytes().replace(b"\n", b"\r\n") + b"\xef\xbb\xbftrailing")
+    before = spec.read_bytes()
+    _checked(root, ticket)
+
+    crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert (root / ".work" / "tickets" / ticket / "spec.pre-split.md").read_bytes() == before
+
+
+@pytest.mark.parametrize("tracker,word", [("sdp", "service desk"), ("jira", "MCP")])
+def test_apply_refuses_tracker(tmp_path, tracker, word):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    (root / ".crew" / "config.json").write_text(json.dumps({"tracker": tracker}),
+                                                encoding="utf-8")
+
+    with pytest.raises(crew_split.SplitError, match=word):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+
+
+def test_apply_refuses_sdp(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    (root / ".crew" / "config.json").write_text(json.dumps({"tracker": "sdp"}), encoding="utf-8")
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    with pytest.raises(crew_split.SplitError, match=crew_split.SDP_STOP):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert (minted, (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()) == (
+        [], False)
+
+
+def test_apply_refuses_jira(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    (root / ".crew" / "config.json").write_text(json.dumps({"tracker": "jira"}), encoding="utf-8")
+
+    with pytest.raises(crew_split.SplitError, match="jira"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+
+def test_apply_refuses_unknown_tracker(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    (root / ".crew" / "config.json").write_text("{torn", encoding="utf-8")
+
+    with pytest.raises(crew_split.SplitError, match="could not be told"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+
+def test_apply_refuses_via_other_than_command(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+
+    with pytest.raises(crew_split.SplitError, match="via autopilot"):
+        crew_split.apply(str(root), ticket, "autopilot", session=SESSION)
+
+
+def test_apply_refuses_when_confirm_refuses(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _turn(root, "turn-1")
+
+    with pytest.raises(crew_split.SplitError, match="confirm refused"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+
+
+def test_apply_refuses_failing_proposal(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    _staged(root, ticket, _t0004_proposal(drop=_criteria()[8]))
+
+    with pytest.raises(crew_split.SplitError, match="not placed"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+
+def test_apply_refuses_not_too_big(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn(root, "turn-1")
+    _staged(root, ticket, "# x split          decision: not-too-big\n\n## Evidence\n"
+                          "- acceptance-count: fine\n")
+    assert crew_split.check(str(root), ticket, session=SESSION)[1] == []
+    _turn(root, "turn-2")
+
+    with pytest.raises(crew_split.SplitError, match="decision is not-too-big"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+
+def test_apply_refuses_existing_different_pre_split(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    (root / ".work" / "tickets" / ticket / "spec.pre-split.md").write_text("other\n",
+                                                                          encoding="utf-8")
+
+    with pytest.raises(crew_split.SplitError, match="differs"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+
+def test_apply_refuses_already_superseded(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    crew_split.apply(str(root), ticket, "command", session=SESSION)
+    _turn(root, "turn-3")
+
+    with pytest.raises(crew_split.SplitError, match="already superseded"):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+
+def test_pre_split_written_before_first_mint(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real, seen = crew_ticket.mint, []
+    pre = root / ".work" / "tickets" / ticket / "spec.pre-split.md"
+
+    def spy(*args, **kwargs):
+        seen.append(pre.exists())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", spy)
+    crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert seen == [True, True, True]
+
+
+def test_mint_failure_leaves_parent_status(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    before = _spec_bytes(root, ticket)
+    _checked(root, ticket)
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+    with pytest.raises(crew_split.SplitError) as raised:
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    message = str(raised.value)
+    assert "disk full" in message and "minted: Child 1" in message
+    assert "not minted: Child 2, Child 3" in message
+    assert _spec_bytes(root, ticket) == before
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_rerun_after_mint_failure_skips_minted_children(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _checked(root, ticket)
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "command", session=SESSION)
+    _turn(root, "turn-3")
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert (len(calls), len(got["children"]), len(set(got["children"]))) == (4, 3, 3)
+
+
+# --- /crew:split's prose ------------------------------------------------------------
+
+def _command():
+    with open(COMMAND, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _frontmatter(text):
+    return text.split("---", 2)[1]
+
+
+def test_split_command_model_invocable():
+    assert "disable-model-invocation" not in _frontmatter(_command())
+
+
+def test_split_command_description_not_jira_only():
+    front = _frontmatter(_command())
+    assert "Jira" not in re.search(r"^description:(.*)$", front, re.M).group(1)
+    assert "argument-hint: <ticket-id-or-ISSUE-KEY> [--dry-run]" in front
+
+
+def test_split_command_runs_confirm_before_create():
+    text = _command()
+    confirm = text.index("crew_split.py confirm --root . --ticket <KEY>")
+    create = text.index("Create each child")
+    assert confirm < create
+
+
+def test_split_command_names_rulebook_check():
+    text = _command()
+    assert "crew_split.py check --root . --ticket <id>" in text
+    assert "crew_split.py apply --root . --ticket <id> --via command" in text
+    assert "HEALTHY_HIGH" not in text  # the evidence table is the rulebook's now
+
+
+def test_split_command_no_jira_only_precondition():
+    assert "Jira only, on purpose" not in _command()
+
+
+def test_split_command_sdp_stops():
+    text = _command()
+    assert crew_split.SDP_STOP in text
+
+
+def test_split_command_stops_under_autopilot():
+    assert "/crew:autopilot split <id>" in _command()
+
+
+def test_split_command_keeps_jira_steps():
+    text = _command()
+    for line in ("Prefer real sub-tasks", "Comment once on the parent",
+                 ".work/cache/<KEY>.md", "Never fall back to files mode",
+                 "Do not transition the parent", "jira.cloudId"):
+        assert line in text, line
+
+
+def test_check_record_holds_sha_and_turn(tmp_path):
+    root = _files_repo(tmp_path)
+    ticket = _parent(root)
+    _turn(root, "turn-1")
+    path = _staged(root, ticket)
+    crew_split.check(str(root), ticket, session=SESSION)
+
+    with open(crew_split.check_record_path(str(root), ticket), encoding="utf-8") as handle:
+        record = json.load(handle)
+
+    assert (record["proposal_sha256"], record["turn"], record["session"]) == (
+        hashlib.sha256(path.read_bytes().rstrip()).hexdigest(), "turn-1", SESSION)

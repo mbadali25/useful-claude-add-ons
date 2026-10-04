@@ -4,6 +4,125 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.374: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+
+- **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
+  `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
+  acceptance checks, Touch, codemap subsystems and the repo findings rate;
+  an unreadable measure is `None`, reported `unknown:<name>`, never "not
+  fired"), `check_proposal` (2-5 children, each with a title, risk,
+  subsystem, criteria and exclusions; every parent acceptance criterion
+  placed verbatim exactly once across the children and `## Stays on parent`;
+  a `separable-criteria` evidence line for a split; "not too big" is a
+  result), and `check` / `confirm` / `apply`. `/crew:split` drops "Jira
+  only": in **files and Obsidian mode** it writes `split.md`, runs `check`,
+  asks one confirmation, then `apply --via command` keeps the parent's text
+  as `spec.pre-split.md`, mints each child `ready` through
+  `crew_ticket.mint` with a direction pointing back, and only after every
+  mint returned marks the parent `superseded` (T-0037's word) with a
+  `split-into:` line. Its **Jira** steps are unchanged, now with `check`
+  before the confirmation and `confirm` before the first create. **SDP
+  stops**: "SDP is a service desk, not where this work gets decomposed".
+- **The confirmation refuses without a new human turn.** `/crew:split` stays
+  model-invocable. `check`, on a pass, records the proposal's sha256 and the
+  session's current human-turn id (the context hook's `turn.id`, found
+  through `CLAUDE_CODE_SESSION_ID`); `confirm`, and `apply` through it,
+  passes only when the proposal is unchanged and a different turn id is
+  readable for the same session. No session id, an absent or unreadable turn
+  record, or a check that saw no turn is a refusal; under `/crew:autopilot`
+  the command stops and names T-0058's `/crew:autopilot split <id>`.
+- **Thresholds, with their evidence** (constants, not config):
+  `PLAN_STEPS_LOOK = 9`, `ACCEPTANCE_LOOK = 12`, `SUBSYSTEMS_LOOK = 2`,
+  measured 2026-09-26 on 19 review ledgers and documented in the README's
+  "Splitting a ticket" section. A trigger means look, never split. Not
+  re-measured here: the ledgers live in the owner's git common dir, not in
+  this container.
+- **Why.** The owner's 2026-09-26 direction: one split rulebook that
+  `/crew:split` and autopilot both use, so autopilot gets no rules of its own
+  that could drift. T-0058 (autopilot's size check and `/crew:autopilot
+  split`) and T-0059 (plan PR slices) build on this API.
+- **Decisions on the spec.** `crew_ticket.mint` takes no `risk` argument, so
+  the child's `risk:` rides in its direction body (as `assign` does), and
+  `crew_ticket.py` (HARNESS) is not edited. An unconfigured tracker reads
+  `files` for the prose but `apply` refuses it, because `mint` does. Under
+  Obsidian, `mint` now writes the card itself; `/crew:obsidian-sync` is named
+  only when a warning names the board. A failed mint records the minted
+  children under `## Minted` in `split.md`, and a re-run after a new check
+  and yes skips them rather than minting duplicates. An unknown evidence key
+  is refused even beside a known one.
+- **Tests.** `test_crew_split.py` (74 cases): must-block and must-allow for
+  every rule, the confirm gate, `apply` in files and Obsidian mode, and the
+  command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
+  entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
+  Ten mutations (child bound, substring placement, duplicates, exclusions,
+  `separable-criteria`, `None` as 0, the sdp stop, mint order, parent-status
+  order, the confirm turn check) were run by hand, each red on its named
+  test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
+  paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
+  maps `crew_split.py`, its test, the fixture and `split.md`.
+
+### Changed — `crew` 1.0.367: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
+
+- **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
+  gains three rows beside `STATUS_ORDER`: `OWNER_STATUSES = ("needs-owner",)`
+  (open, waiting on the owner, Obsidian Backlog lane) and
+  `CLOSED_STATUSES = ("cancelled", "superseded")` (closed, Done lane,
+  checked). `move --to` any of them is accepted; any move out of `done`,
+  `cancelled` or `superseded` needs `--reopen` and is otherwise refused with
+  nothing written, and `needs-owner` moves to and from any open word without
+  it. The closed words close a ticket in every reader: `crew_state`'s table
+  and prose readers (the session brief, `crew_ticket.resolve_active`'s INDEX
+  fallback, and approval precheck through `_index_closed`, with
+  `crew_ticket.py` unedited), autopilot's `INDEX_DONE` and a new
+  `HEADER_CLOSED` (`done`, `cancelled`, `superseded`; a header `merged` still
+  does not close), and `/crew:status`, which lists them on no line. A closed
+  reason quotes the spec's `split-into: <ids>` (T-0052) or `superseded-by:
+  <id>` line. Autopilot stops an INDEX `needs-owner` row as phase
+  `needs-owner`, waiting on `owner`, naming the ticket's unanswered
+  `## Open questions` or saying none is recorded - never as "cannot tell
+  whether direction is approved". `/crew:status` prints
+  `owner    <ids> (needs-owner)`. The README gains a "Ticket statuses" table;
+  `obsidian-sync.md`, `status.md`, `autopilot.md`, the memory-and-obsidian
+  guide's lane table and `crew_keys.py`'s `obsidian.columns.backlog`/`.done`
+  summaries (so the generated configuration reference) name the words.
+- **Why.** Nothing on main knew these words: a `cancelled` INDEX row read as
+  OPEN, so the session brief could name a cancelled ticket as the current
+  one, autopilot stopped on it as "cannot tell whether direction is
+  approved", and `move --to cancelled` refused with "maps to no lane".
+  T-0052, T-0058 and T-0059 (#364, #365, #366) cite this vocabulary, and
+  T-0039 and T-0040 name `needs-owner`.
+- **Approval is unchanged.** `crew_ticket.STATUS_VALUES` keeps its seven
+  values and `approval_digest` is untouched, so a blocking hook accepts
+  nothing new. `in-progress` and every other `STATUS_VALUES` word keep an
+  approval (T-0059's non-final slice); a header edit to `cancelled` or
+  `superseded` stales it on purpose, and `needs-owner` (never a header word)
+  stales it like any unknown word. Tests pin both and the tuple's literal
+  value.
+- **Trackers.** Jira and SDP push none of the three (`_PUSH_AT` stays
+  `in-progress`, `done`): the line says "nothing to push" and exits 0, and
+  the owner closes a cancelled Jira or SDP item by hand. No `obsidian.columns`
+  key is added, so a cancelled card sits checked in Done. No new command: a
+  ticket is cancelled with `crew_tracker.py move --to cancelled`.
+- **Owner approval.** The owner approved (2026-10-04) every `OWNER CHECK:`
+  choice in T-0037's reconstructed spec as written: `needs-owner` is never a
+  spec header word; `STATUS_VALUES` is unchanged; the Obsidian closed words go
+  to the `done` lane, checked; Jira/SDP push nothing; no separate needs-owner
+  queue (a non-ticket item is minted `ready`, then moved); two PRs.
+- **Tests.** `test_status_vocabulary.py` (new) holds `CLOSED_STATUSES` to
+  `crew_state._TABLE_DONE_WORDS`, `_DONE_RE`, `crew_autopilot.INDEX_DONE` and
+  `HEADER_CLOSED`, keeps it and `needs-owner` out of `STATUS_VALUES`, and
+  checks the `obsidian-sync.md` and README tables list every
+  `LANE_FOR_STATUS` key. Must-block and must-allow cases in
+  `test_crew_tracker.py`, `test_crew_state.py`, `test_crew_ticket.py`,
+  `test_approval_digest.py`, `test_crew_autopilot.py`,
+  `test_crew_autopilot_status.py` and `test_status.py`. A new
+  `.crew/verify.json` rule maps the four scripts, `obsidian-sync.md` and the
+  README to the vocabulary, precheck and approval suites.
+- **Two PRs (owner rule T-0087).** This is PR A, the feature: it changes no
+  `HARNESS` path. Its 19 sabotage mutations were run by hand, each red on its
+  named test, and are registered in `sabotage_*.py` by PR B
+  (`T-0037-sabotage`), a tooling PR that lands alone after this one.
+
 ### Fixed — `crew` 1.0.324: a concurrent mint no longer dies on a delete-pending lock name (Windows)
 
 - **What changed.** `crew_config_files.Lock` waits on a `PermissionError`

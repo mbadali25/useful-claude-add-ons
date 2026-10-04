@@ -61,9 +61,10 @@ force says `take`. Exit 0 valid, 1 not.
 
   no direction.md                        brainstorm          stop
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
-  INDEX status done/merged/closed/...    closed              stop
+  INDEX status `needs-owner` (T-0037)    needs-owner         stop (names open questions)
+  INDEX status done/cancelled/superseded closed              stop (and merged/closed/...)
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
-  spec header `status: done`             closed              stop
+  spec header done/cancelled/superseded  closed              stop (quotes split-into:)
   `## Open questions` with an item       open-questions      stop
   no spec.md                             spec                /crew:spec <id>
   spec fails crew_ticket.validate        spec                stop
@@ -180,7 +181,17 @@ REFRESH_UNAVAILABLE = "refresh-artifacts unavailable (T-0008 not landed)"
 # `direction`").
 DIRECTION_APPROVED = ("ready", "open", "spec", "planned", "approved", "in-progress",
                       "implement", "review")
-INDEX_DONE = ("done", "closed", "merged", "shipped", "complete", "completed")
+# `cancelled` and `superseded` are T-0037's closed words (crew_tracker.CLOSED_STATUSES).
+INDEX_DONE = ("done", "closed", "merged", "shipped", "complete", "completed", "cancelled", "superseded")
+# spec.md header words that close a ticket. `merged` is not one: a header
+# `merged` keeps its old meaning here (T-0037 left it as it was).
+HEADER_CLOSED = ("done", "cancelled", "superseded")
+# T-0037's open status that waits on the owner (crew_tracker.OWNER_STATUSES):
+# INDEX and tracker only, never a spec header word.
+NEEDS_OWNER = "needs-owner"
+# The line under a closed spec's header naming what replaced it (T-0037,
+# T-0052): `split-into: T-2, T-3` or `superseded-by: T-9`.
+_SUCCESSOR = re.compile(r"^(?:split-into|superseded-by)\s*:\s*\S.*$", re.IGNORECASE)
 
 # Stops `next` enforces in code, beyond the ones the phase table names.
 FIXED_STOPS = (
@@ -279,6 +290,16 @@ def open_index_tickets(top):
                 and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             seen.append(ticket)
     return seen
+
+
+def _successor(folder):
+    """` (split-into: ...)` from spec.md's lines above its first `##`, or ''."""
+    for line in (read_text(os.path.join(folder, "spec.md")) or "").splitlines()[1:]:
+        if line.startswith("##"):
+            break
+        if _SUCCESSOR.match(line.strip()):
+            return f" ({line.strip()})"
+    return ""
 
 
 def _header_status(spec_text):
@@ -430,9 +451,15 @@ def _phase(root, ticket, policy=True):
                       f"direction is approved: .work/INDEX.md has no table row for {ticket} "
                       "(Jira and ServiceDesk Plus modes write none). The human adds "
                       f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
+    if status == NEEDS_OWNER:
+        questions = _open_questions(folder)
+        return answer("needs-owner", True, f".work/INDEX.md marks {ticket} `{NEEDS_OWNER}`: it waits "
+                      "on an owner decision - " + ("; ".join(f"{name}: {item}" for name, item in questions[:4])
+                                                    if questions else "no open question recorded - the "
+                                                    "owner says what is needed"))
     if status in INDEX_DONE:
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
-                      "re-driven, whatever spec.md's header says")
+                      "re-driven, whatever spec.md's header says" + _successor(folder))
     if status not in DIRECTION_APPROVED:
         return answer("direction-approval", True, f"cannot tell whether {ticket}'s "
                       f"direction is approved: its .work/INDEX.md status is `{status}`, not one "
@@ -440,10 +467,11 @@ def _phase(root, ticket, policy=True):
                       "direction.md is agreed")
     contract = crew_ticket.read_contract(top, ticket)
     evidence.append(_rel(top, os.path.join(folder, "spec.md")))
-    if contract["spec.md"] is not None and _header_status(
-            crew_ticket._text(contract["spec.md"])) == "done":  # pylint: disable=protected-access
-        return answer("closed", True, "spec.md header is `status: done`: nothing left "
-                      "in this ticket (ship is T-0011)")
+    header = None if contract["spec.md"] is None else _header_status(
+        crew_ticket._text(contract["spec.md"]))  # pylint: disable=protected-access
+    if header in HEADER_CLOSED:
+        return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
+                      "in this ticket (ship is T-0011)" + _successor(folder))
     questions = _open_questions(folder)
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
@@ -1350,7 +1378,7 @@ def route_args(root, text):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done")}
+    "done", NEEDS_OWNER)}
 WAITING["closed"] = "nobody"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
@@ -1441,7 +1469,7 @@ def _drive(ticket):
 
 def _closed(top, ticket):
     """Whether either fact `next` closes a ticket on says so: INDEX.md's status
-    or spec.md's `status: done` header. Read directly, because `_phase` checks
+    or spec.md's closed header (HEADER_CLOSED). Read directly, because `_phase` checks
     direction.md first and a closed ticket without one reads `brainstorm`."""
     if _index_status(top, ticket) in INDEX_DONE:
         return True
@@ -1452,7 +1480,7 @@ def _closed(top, ticket):
                                                      "spec.md")):
         return None
     return spec is not None and _header_status(
-        crew_ticket._text(spec)) == "done"  # pylint: disable=protected-access
+        crew_ticket._text(spec)) in HEADER_CLOSED  # pylint: disable=protected-access
 
 
 def _review(top, ticket):
