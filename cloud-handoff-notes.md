@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 21:51 UTC
+Last updated: 2026-10-04 21:59 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 21:59: Batch 3 merge review clean (FIXes are harness follow-ups). MERGED #481 T-0074 -> main a92dc59a, crew 1.0.339 (19 merged). #493 slow 1/3 red: test_cloud_guard 2304 (2nd occurrence today, not this PR) -> commented, re-ran once; minted L-1512 (cloud-guard 2304 flake) and L-1513 (broken sabotage anchor on main + argparse/usage writer-check gap).
 - 21:51: Batch 3 land-prepped: #481 5fba02f6 1.0.339 (real conflicts with T-0053 sleep work), #493 874c00e5 1.0.340, #427 26b6fc93 1.0.341 (real conflicts: four-writer prose/test, test name kept for harness sabotage anchors), #489 00612550 1.0.342. Merge-resolution review spawned; CI running.
 - 21:41: #400 round-3 at 0fe83674: 0 BLOCK, 1 FIX (ps1 Get-CrewHandoffPath converts \ to / AFTER containment -> on POSIX pwsh '..\main\...' escapes the lane; real Windows unaffected), 2 NIT. Sent back to builder: convert only when DirectorySeparatorChar is '\'.
 - 21:32: #400 L-0680 at 0fe83674, CI all green (6+3 Windows). Windows causes: backslash handoff path, hidden .git file in test, Git Bash /c/ path in test. N1-N5 + wrapUp known key + stale cites carried. Behaviour changes -> round-3 review sent to a9a5cd1; candidate for batch 4.
