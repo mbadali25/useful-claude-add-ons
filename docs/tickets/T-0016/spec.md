@@ -1,4 +1,5 @@
 # T-0016 auto-clear that is safe for child processes          status: spec (reconstructed)   risk: high
+owner: APPROVED 2026-10-04 (Matthew Badali) every `OWNER CHECK:` below as written, with the recommended options: macOS via `ps` with `procStart` unchecked; keep `windowTitle`'s global fallback but refuse it when another live session record exists or the window's pid is <= 1; resume typing in scope; no `allowHeadless`-style key; entrypoint allowlist `{"cli"}` plus a tty.
 blocks: T-0017 (#356, branch T-0017-build)
 ## Intent
 Auto-clear (and T-0013's resume typing, which uses the same resolver) types only into a terminal that is **provably this session's own**:
