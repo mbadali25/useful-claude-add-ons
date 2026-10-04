@@ -64,6 +64,10 @@ jobs:
       # kills every negation below it - each get a case here.
       - name: crew ignore-policy suite
         run: python3 scripts/_test/crew-ignore-policy.py
+      # check_verifying_doc: every path VERIFYING.md names exists. Must-fail cases
+      # include a misspelt top-level directory and a path inside a fenced block.
+      - name: VERIFYING.md path suite
+        run: python3 scripts/_test/verifying-doc.py
       # The version-drift check resolves "when was this version set" by walking
       # marketplace.json's history, and that walk is only monotonic on a linear
       # one. Across a merge it can stop at the merge commit, which then diffs
@@ -183,6 +187,13 @@ jobs:
       # up as a version bump here, not a silent behaviour change.
       - name: Install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code@2.1.278
+      # _verify/smoke.sh holds two checks no other step runs: the crew-setup
+      # canon() round-trip and version agreement across pyproject.toml,
+      # plugin.json, marketplace.json and every Python-source copy. It runs
+      # after the CLI install so its own `claude plugin validate` check runs
+      # rather than skipping. Found by crew's QA audit (L-0618, item E7).
+      - name: Smoke checks (_verify/smoke.sh)
+        run: bash _verify/smoke.sh
       - name: claude plugin validate --strict
         run: |
           claude plugin validate --strict .
