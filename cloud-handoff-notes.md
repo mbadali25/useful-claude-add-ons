@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 16:38 UTC
+Last updated: 2026-10-04 16:40 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:40: L-1503 built -> draft PR #489 head f346f763 (Test-DeployMatch literal case-insensitive both ways, throw blocks; 39 tests, 20 red-before; 2 sabotages red). Review started. Landing-order interaction with #407 _gate_pick to settle.
 - 16:38: WAVE2 #420 L-0662 built -> 76aba34a (wave/split/sleep/wake rows; merge did T-0057's _route carry; 66 new cases, route rule 516; 10 mutations). Review started (rule time 61s > 60 Stop - check).
 - 16:36: WAVE2 #456 L-0677 built -> e7c8b073 (crew_memory save: crash-safe write/readback/pointer; 54 tests; 11 sabotages; one-line pointer memory verified with real claude CLI 2.1.289 - CLI IS present in container, so drift-detection.sh may be runnable). Review started. Needs re-merge of #450's new head at land-prep.
 - 16:31: WAVE2 #421 T-0083 built -> 61198189 (vault_recall relevance: archive/userIgnoreFilters excluded, stop words, term floor, project ranking; obsidian-vault 0.4.17 placeholder, spec says 0.5.0; 71 suite tests; 7 sabotages). Review started. Unverified: userIgnoreFilters format vs real vault.
