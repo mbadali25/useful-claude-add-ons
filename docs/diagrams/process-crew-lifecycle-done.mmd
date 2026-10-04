@@ -1,0 +1,43 @@
+%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Anchors: plugin/crew/commands/done.md, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_train.py
+%% Purpose: /crew:done's four checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
+%% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
+%% Arrow-shaped nodes ("next:" / "back:" / "again:") stand for a node drawn in the named part.
+%% --
+%% Every node cites the command file's own line; files are named repo-relative
+%% here and by basename in the nodes (all under plugin/crew/commands/ unless
+%% named otherwise):
+%%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
+%%     review receipt (--check-receipt); :21-29 check 2 verify gate via
+%%     crew_status.py; :37-40 check 3 completion audit (:45-50: a refresh artifact
+%%     not admitted is listed with its reason); :52-63 check 4
+%%     crew_refresh_check.py (:55), read-only, refuses on stale/unknown/fresh-uncommitted and never
+%%     refreshes; :65-71 all pass -> spec.md `status: done`, keeping the approval
+%%     (:67-68), then crew_tracker.py move --to done (:69); :76 crew_metrics record.
+%% --
+%% Note dn3: (refresh artifacts: re-anchor or regeneration the change reaches)
+%% Note dn4: spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done,
+%%    crew_metrics record
+%% Note ln1: crew_train.py check-land: holds the train, merge-tree clean, base unmoved in
+%%    Touch, receipt + gate
+%% Note ln2: --merge --match-head-commit sha
+flowchart TB
+    subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
+        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
+        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-71"}
+        dn5 -- fresh --> dn4["spec.md 'status: done',<br/>move --to done<br/>:73-85"]
+        dn1 -- fail --> dnx([refuse done])
+        dn2 -- fail --> dnx
+        dn3 -- fail --> dnx
+        dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:92-95"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:97-102"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :103-104"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:105-106" --> to_im5>"back: implement part<br/>then /crew:review last"]
+    end
+%% T-0063 (#368) merges origin/main c9263465 (rerere off): main split this diagram into parts (#375); T-0063's edits re-applied here.
+%% dn5 relabelled (check 4 refuses fresh-uncommitted) and the done subgraph's cites re-read with grep -n on the merged
+%% done.md (check 3 :40-53, check 4 :55-71, all four :73-85, train status :92-95, check-land :97-102, merge :103-104,
+%% catch-up :105-106). No other node or edge changed.
