@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 14:07 UTC
+Last updated: 2026-10-04 14:11 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 14:11: #365 review 20718c87: merge clean, guards hold; 0 BLOCK / 1 FIX (policy except branch untested) / 5 NIT (via-autopilot doc, policy code outside try, split --apply skips answered:, 2 autopilot-path tests, README zero-count stops). All sent to builder. #377 CI: 6 green, 12 queued.
 - 14:07: #366 review fixes pushed -> 1994b788 (step after slices uncovered, glob-vs-glob cannot-tell, verify.json maps crew_autopilot.py, ## Step refused; 1346 tests, 6 mutations red). Re-review started.
 - 14:05: #356 round-2 fixes pushed -> 5e37f872 (rename source dirty, abs handoffPath, utf-8 decode, usage layout; 1296 tests, 23/23 sabotage red). Round-3 review started.
 - 14:04: #365 T-0058 re-merged T-0052 (c59abb2c), autopilot apply path keeps all T-0052 checks but human-turn, fixed apply mkdir crash, fixtures to '- [ ]'/'### Step'; crew 1.0.391 -> head 20718c87; 1838 tests, 27 mutations red. Merge review started. Risk: Touch not covered by codemap now stops autopilot.
