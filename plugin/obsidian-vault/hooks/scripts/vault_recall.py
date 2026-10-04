@@ -10,14 +10,20 @@ its body, per query term:
     title hit  6      heading hit  3 per heading (max 3)      body hit  1 per line (max 5)
 
 Relevance (T-0083). Query terms are the words of three or more characters that
-are not in STOP_WORDS, first MAX_TERMS kept; a joined query word
-(`vault_recall`, `obsidian-vault`) becomes its parts. Terms match whole words
-only (`port` is not found in `support`), where a note's words are each word
-and its parts split on `-`, `.` and `_` (`crew-context.sh` holds `crew`,
-`context`, `sh` and the whole word, so `t-0083` still matches `t-0083`), and a
-term also matches its plural or singular by a trailing `s` or `es`. A note is a hit only when it holds at least
-`need` distinct terms: 1 for a query of one or two terms, 2 for three to five,
-3 for six or more; `--min-terms N` sets it (capped at the term count).
+are not in STOP_WORDS, first MAX_TERMS kept. Terms match whole words only
+(`port` is not found in `support`); a note's words are each word and its parts
+split on `-`, `.` and `_` (`crew-context.sh` holds `crew`, `context`, `sh` and
+the whole word), so `context` finds `crew-context.sh`. A joined query word
+(`t-0083`, `vault_recall.py`) is ONE term: it matches the whole joined word or
+its parts as one contiguous in-order run (`port-collision` finds `port
+collision` and `port-collisions`; never `port ... collision` apart, and
+`t-0083` never finds `l-0083`). Plurals: `es` is added or stripped only after
+s, x, z, ch or sh, a plain `s` is stripped only when four characters remain
+(`news` is not `new`; `bugs` does not find `bug`), and no form is a stop word
+(`notes` never finds `not`). CamelCase is not split: `PortCollision` holds no
+`port`. A note is a hit only when it holds at least `need` distinct terms: 1
+for a query of one or two terms, 2 for three to five, 3 for six or more;
+`--min-terms N` sets it (capped at the term count).
 `wiki/sessions/archive/` (any letter case) is never read, and a symlinked note
 whose real path lies inside it is skipped too; `--include-excluded` turns that
 off. A symlinked note whose real path lies outside the vault, or inside a
@@ -89,25 +95,61 @@ PROJECT_RANK = {"match": 0, "none": 1, "other": 2}
 PART_RE = re.compile(r"[-._]+")
 
 
+ES_ENDINGS = ("s", "x", "z", "ch", "sh")
+MIN_S_STEM = 4
+
+
+def parts_of(word):
+    return [p for p in PART_RE.split(word) if p]
+
+
 def terms_of(query):
-    """Query terms: the parts of each word (split on - . _) of MIN_TERM_CHARS or
-    more that are not stop words, in order, first MAX_TERMS kept."""
+    """Query terms, in order, first MAX_TERMS kept. A plain word counts when it has
+    MIN_TERM_CHARS or more and is not a stop word. A joined word (`t-0083`,
+    `vault_recall.py`) stays ONE term, kept when any of its parts would count."""
     seen = []
     for word in TERM_RE.findall(query.lower()):
-        for term in PART_RE.split(word.strip(".-")):
-            if len(term) >= MIN_TERM_CHARS and term not in STOP_WORDS and term not in seen:
-                seen.append(term)
+        word = word.strip(".-")
+        if any(len(p) >= MIN_TERM_CHARS and p not in STOP_WORDS for p in parts_of(word)) \
+                and word not in seen:
+            seen.append(word)
     return seen[:MAX_TERMS]
 
 
 def variants(term):
-    """The words a term matches: itself, +s, +es, and the singular of an s/es plural."""
-    forms = {term, term + "s", term + "es"}
-    if term.endswith("es") and len(term) > 4:
+    """The words a term matches: itself, its plural (+es only after s, x, z, ch or
+    sh, else +s) and, for a plural, its singular (-es by the same rule; -s only
+    when MIN_S_STEM characters are left, so `news` never becomes `new`). A form
+    that is a stop word is never produced (`notes` never matches `not`)."""
+    forms = {term + "es" if term.endswith(ES_ENDINGS) else term + "s"}
+    if term.endswith("es") and term[:-2].endswith(ES_ENDINGS):
         forms.add(term[:-2])
-    if term.endswith("s") and len(term) > 3:
+    elif term.endswith("s") and not term.endswith("ss") and len(term) - 1 >= MIN_S_STEM:
         forms.add(term[:-1])
-    return frozenset(forms)
+    return frozenset({term} | {f for f in forms if f not in STOP_WORDS})
+
+
+def matcher(term):
+    """A test over a text index (words, part sequence). A plain term matches any
+    word or word part in one of its variants. A joined term matches the whole
+    joined word, or its parts as one contiguous in-order run of the text's part
+    sequence (`port-collision` matches `port collision` prose and
+    `port-collisions`, never `port ... collision` apart); the last part takes
+    plural variants."""
+    parts = parts_of(term)
+    if len(parts) == 1:
+        forms = variants(term)
+        return lambda index: not forms.isdisjoint(index[0])
+    steps = [frozenset({p}) for p in parts[:-1]] + [variants(parts[-1])]
+    width = len(steps)
+
+    def test(index):
+        words, seq = index
+        if term in words:
+            return True
+        return any(all(seq[i + k] in steps[k] for k in range(width))
+                   for i in range(len(seq) - width + 1))
+    return test
 
 
 def need_for(terms, min_terms=None):
@@ -145,13 +187,17 @@ def split_note(text):
 
 
 def words_of(text):
-    """The whole words of a text and each word's parts split on - . _."""
-    words = set()
+    """(words, part sequence) of a text: every whole word and each word's parts
+    split on - . _ as a set, and the parts in reading order as a list. CamelCase
+    is not split (`PortCollision` holds no `port`)."""
+    words, seq = set(), []
     for word in TERM_RE.findall(text.lower()):
         word = word.strip(".-")
+        parts = parts_of(word)
         words.add(word)
-        words.update(part for part in PART_RE.split(word) if part)
-    return words
+        words.update(parts)
+        seq.extend(parts)
+    return words, seq
 
 
 def score_note(terms, title, headings, body):
@@ -160,16 +206,16 @@ def score_note(terms, title, headings, body):
     title_w = words_of(title)
     heads_w = [words_of(h) for h in headings]
     body_w = [words_of(b) for b in body]
-    forms = [variants(t) for t in terms]
-    for form in forms:
-        gained = 6 if not form.isdisjoint(title_w) else 0
-        gained += 3 * min(3, sum(1 for h in heads_w if not form.isdisjoint(h)))
-        gained += min(5, sum(1 for b in body_w if not form.isdisjoint(b)))
+    tests = [matcher(t) for t in terms]
+    for test in tests:
+        gained = 6 if test(title_w) else 0
+        gained += 3 * min(3, sum(1 for h in heads_w if test(h)))
+        gained += min(5, sum(1 for b in body_w if test(b)))
         score += gained
         matched += 1 if gained else 0
     best, best_hits = None, 0
-    for raw, words in zip(body, body_w):
-        hits = sum(1 for f in forms if not f.isdisjoint(words))
+    for raw, index in zip(body, body_w):
+        hits = sum(1 for test in tests if test(index))
         if hits > best_hits:
             best, best_hits = raw, hits
     return score, best, matched
@@ -182,8 +228,12 @@ def snippet_for(terms, best, headings, title):
     low = text.lower()
     found = []
     for term in terms:
-        for form in variants(term):  # the first whole-word hit, not a substring
-            hit = re.search(r"(?<![^\W_])" + re.escape(form) + r"(?![^\W_])", low)
+        parts = parts_of(term)
+        forms = variants(term) if len(parts) == 1 else \
+            {r"[-._\s]+".join(re.escape(p) for p in parts)}
+        for form in forms:  # the first whole-word hit, not a substring
+            pattern = form if len(parts) > 1 else re.escape(form)
+            hit = re.search(r"(?<![^\W_])" + pattern + r"(?![^\W_])", low)
             if hit:
                 found.append(hit.start())
     first = min(found, default=0)

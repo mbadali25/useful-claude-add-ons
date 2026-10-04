@@ -422,6 +422,20 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
                 "pl2.md": "a lone sprocket\n"}),
             "links2": sb.vault("links2", {"wiki/real.md": "a walrus\n", ".trash/n.md": "a walrus\n",
                                           "node_modules/m.md": "a walrus\n"}),
+            "pairs": sb.vault("pairs", {
+                "q00.md": "the release notes\n", "q01.md": "this is not right\n",
+                "q02.md": "the news today\n", "q03.md": "whats new today\n",
+                "q04.md": "the state machine\n", "q05.md": "stat the file\n",
+                "q06.md": "two plans\n", "q07.md": "the planes fly\n",
+                "q08.md": "two boxes\n", "q09.md": "the boxer\n",
+                "q10.md": "ticket T-0083 shipped\n", "q11.md": "ticket L-0083 shipped\n",
+                "q12.md": "see github.com/x\n", "q13.md": "see example.com/x\n",
+                "q14.md": "edit vault_recall.py now\n", "q15.md": "the vault config.py file\n",
+                "q16.md": "a vault, then recall, then py\n",
+                "q17.md": "runs crew-context.sh\n", "q18.md": "the crew wiki\n",
+                "q19.md": "a port collision here\n", "q20.md": "port-collisions again\n",
+                "q21.md": "port moved; one collision\n",
+                "q22.md": "two others here\n", "q23.md": "the other one\n"}),
             "snip": sb.vault("snip", {"s.md": "support " + "filler " * 60 + "the port here\n"}),
             "floor": sb.vault("floor", {
                 "note-a.md": "the port only\n", "note-b.md": "the port and the collision\n"}),
@@ -511,6 +525,30 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
             code, res = _recall_json(["--query", query, "--vaults", "joined"])
             check_true(f"joined words and plurals match ({query!r} finds {want}): got "
                        f"{_paths(res)}", want in _paths(res))
+
+        # Review round 3: every joined-word and plural rule is a must-match paired with a
+        # must-not-match (FIX A: plural forms only by the s/es rule, never a stop word;
+        # FIX B: a joined query word is one term, matched whole or as a contiguous run).
+        # File names are neutral: a note's file name is its title, and so its words.
+        for query, yes, nos in (
+                ("notes", ["q00.md"], ["q01.md"]),           # not 'not'
+                ("news", ["q02.md"], ["q03.md"]),            # not 'new'
+                ("states", ["q04.md"], ["q05.md"]),          # not 'stat'
+                ("plan", ["q06.md"], ["q07.md"]),            # not 'planes'
+                ("box", ["q08.md"], ["q09.md"]),             # boxes, not boxer
+                ("T-0083", ["q10.md"], ["q11.md"]),          # not L-0083
+                ("github.com", ["q12.md"], ["q13.md"]),      # not example.com
+                ("vault_recall.py", ["q14.md"], ["q15.md", "q16.md"]),  # no scatter
+                ("crew-context", ["q17.md"], ["q18.md"]),    # not 'the crew wiki'
+                ("port-collision", ["q19.md", "q20.md"], ["q21.md"]),
+                ("others", ["q22.md"], ["q23.md"])):              # never a stop word
+            code, res = _recall_json(["--query", query, "--vaults", "pairs"])
+            got = _paths(res)
+            check(f"{query!r} must match {yes}", [y for y in yes if y in got], yes)
+            check(f"{query!r} must not match {nos}", [n for n in nos if n in got], [])
+        code, res = _recall_json(["--query", "T-0083 shipped", "--vaults", "pairs"])
+        check("a joined query word is one term for the floor", res.get("terms"),
+              ["t-0083", "shipped"])
 
         if linked:
             for extra in ([], ["--include-excluded"]):
