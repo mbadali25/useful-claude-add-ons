@@ -1,4 +1,4 @@
-"""promote-gate.ps1 picks an environment by a LITERAL substring test (L-1503).
+"""Both promote gates choose an environment by ONE shared rule (L-1503).
 
 The PowerShell flavour matched each declared `deploy` with
 `$cmd -like "*$dep*" -or $dep -like "*$cmd*"`. `-like` reads `*`, `?` and
@@ -11,19 +11,32 @@ The PowerShell flavour matched each declared `deploy` with
   WildcardPatternException, the statement failed, the loop moved on and the
   gate exited 0;
 - a `*` or `?` in one environment's deploy claimed a command that belongs to
-  another, so the wrong environment's preconditions were checked.
+  another.
 
-promote-gate.sh has always used `d in cmd or cmd in d`. The .ps1 now does the
-same test, literally, kept case-insensitive as it was, on the command with its
-CRs removed (the .sh runs `crew_strip_cr` first), and blocks when the
-comparison itself throws instead of skipping that environment.
+Review of the first fix (#489) then found the two gates still chose
+differently: the .sh was case-sensitive and read only a lower-case `deploy`
+key, and both took the FIRST matching environment, so qa `target=Prod` and
+production `target=prod` resolved to different environments per flavour. The
+rule both now share, on the working map and the committed map alike:
+
+- the command is normalised the same way: every CR removed, trailing newlines
+  removed; a command that is then empty or whitespace deploys nothing;
+- a declared command matches when either one contains the other, literally,
+  ignoring case (`*`, `?`, `[` are text);
+- the `deploy` key is read ignoring case, and a map with two keys that differ
+  only by case is refused (PowerShell's ConvertFrom-Json refuses it anyway);
+- more than one matching environment is ambiguous and blocks, naming them all;
+- a comparison that throws blocks rather than skipping the environment.
 
 This is a guard that can BLOCK, so both directions are here (repo CLAUDE.md,
-"Adding a hook"), plus an agreement table: on every map, both flavours choose
-the same environment. Every repository is built under `tmp_path`;
-`CLAUDE_PROJECT_DIR` points at it, never at this repo. The .ps1 runs wherever
-PowerShell 7 resolves, with `OS=Windows_NT` in the child only, as in
-test_promote_gate_effective_tree.py.
+"Adding a hook"), plus an agreement table run through both real gates. Every
+repository is built under `tmp_path`; `CLAUDE_PROJECT_DIR` points at it, never
+at this repo. The .ps1 runs wherever PowerShell 7 resolves, with
+`OS=Windows_NT` in the child only, as in test_promote_gate_effective_tree.py.
+
+Rule time: one case per behaviour runs by default; the rest of the pwsh-heavy
+matrix is marked `slow` (conftest deselects it unless `-m slow` or
+`--run-slow`).
 """
 import json
 import os
@@ -46,15 +59,32 @@ _PWSH = crew_fixtures.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 needs_pwsh = pytest.mark.skipif(_PWSH is None,
                                 reason="no PowerShell 7 on this machine")
-
-FLAVOURS = [pytest.param("sh", marks=needs_bash),
-            pytest.param("ps1", marks=needs_pwsh)]
+_MARKS = {"sh": [needs_bash], "ps1": [needs_pwsh]}
 
 # The repro from the ticket, verbatim.
 _JQ = "./deploy.sh && curl -s https://x/status | jq .items[0]"
 
 # Patterns `-like` cannot parse: each threw WildcardPatternException.
 _UNPARSEABLE = ["ship [", "ship []", "ship [z-a]", "ship [!-[]"]
+
+_AMBIGUOUS = "matches more than one environment"
+
+
+def _cases(values, *, smoke_ps1=1):
+    """(flavour, value) params. Every sh case runs by default; only the first
+    `smoke_ps1` ps1 cases do, the rest are `slow`."""
+    out = []
+    for flavour in ("sh", "ps1"):
+        for i, value in enumerate(values):
+            marks = list(_MARKS[flavour])
+            if flavour == "ps1" and i >= smoke_ps1:
+                marks.append(pytest.mark.slow)
+            out.append(pytest.param(flavour, value, marks=marks,
+                                    id=f"{flavour}-{value!r}"))
+    return out
+
+
+FLAVOURS = [pytest.param(f, marks=_MARKS[f]) for f in ("sh", "ps1")]
 
 
 def _git(cwd, *args):
@@ -63,15 +93,16 @@ def _git(cwd, *args):
                           stdin=subprocess.DEVNULL).stdout.strip()
 
 
-def _env(deploy, human=False):
-    cfg = {"deploy": deploy, "rollback": "none", "rollbackReason": "fixture"}
+def _env(deploy, human=False, key="deploy"):
+    cfg = {key: deploy, "rollback": "none", "rollbackReason": "fixture"}
     if human:
         cfg["requireHuman"] = True
     return cfg
 
 
 class Repo:
-    """A clean, committed checkout gated on the given environments."""
+    """A clean, committed checkout gated on the given environments. `envs`
+    may also be raw JSON text, for maps a dict cannot hold."""
 
     def __init__(self, root, envs):
         self.root = root
@@ -90,19 +121,23 @@ class Repo:
         self.sha = _git(root, "rev-parse", "--short", "HEAD")
 
     def write_map(self, envs):
-        (self.root / ".crew" / "verify.json").write_text(
-            json.dumps({"environments": envs}, indent=2) + "\n",
-            encoding="utf-8")
+        """Write `.crew/verify.json` (committed only by the constructor)."""
+        text = envs if isinstance(envs, str) else (
+            json.dumps({"environments": envs}, indent=2) + "\n")
+        (self.root / ".crew" / "verify.json").write_text(text, encoding="utf-8")
 
     def approve(self, env):
+        """Write the requireHuman marker for `env` at HEAD."""
         (self.root / ".crew" / f".approved-{env}-{self.sha}").write_text(
             "", encoding="utf-8")
 
     def in_flight(self):
+        """The in-flight marker's text, or None."""
         path = self.root / ".crew" / ".deploy-in-flight"
         return path.read_text(encoding="utf-8").strip() if path.exists() else None
 
     def clear_in_flight(self):
+        """Remove the in-flight marker between runs."""
         path = self.root / ".crew" / ".deploy-in-flight"
         if path.exists():
             path.unlink()
@@ -144,8 +179,7 @@ def test_a_deploy_holding_brackets_matches_itself_and_blocks(flavour, tmp_path):
     assert repo.in_flight() is None
 
 
-@pytest.mark.parametrize("deploy", _UNPARSEABLE)
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour,deploy", _cases(_UNPARSEABLE))
 def test_a_pattern_like_cannot_read_still_gates(flavour, deploy, tmp_path):
     """(b) `-like` threw on these, the iteration was skipped, exit 0."""
     repo = Repo(tmp_path / "r", {"prod": _env(deploy, human=True)})
@@ -154,12 +188,10 @@ def test_a_pattern_like_cannot_read_still_gates(flavour, deploy, tmp_path):
     assert repo.in_flight() is None
 
 
-@pytest.mark.parametrize("wild", ["deploy-*", "deploy-pro?"])
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour,wild", _cases(["deploy-*", "deploy-pro?"]))
 def test_a_wildcard_deploy_does_not_claim_another_environments_command(
         flavour, wild, tmp_path):
-    """`stage` is listed first; on the .ps1 its `*`/`?` matched `deploy-prod`
-    and the deploy ran under stage's preconditions, skipping prod's."""
+    """On the .ps1, stage's `*`/`?` matched `deploy-prod` too."""
     repo = Repo(tmp_path / "r", {"stage": _env(wild),
                                  "prod": _env("deploy-prod", human=True)})
     code, err = run_gate(flavour, repo, "deploy-prod")
@@ -167,49 +199,85 @@ def test_a_wildcard_deploy_does_not_claim_another_environments_command(
     assert repo.in_flight() is None
 
 
-@needs_pwsh
-def test_a_comparison_that_throws_blocks_instead_of_skipping(tmp_path):
-    """Fail closed. A command that is not a string has no IndexOf, so the
-    comparison throws; that environment cannot be ruled out, and skipping it
-    is exactly the (b) failure. The sh flavour reads the same payload as the
-    text `12345`, which this map does not name, so this row is .ps1-only."""
-    repo = Repo(tmp_path / "r", {"prod": _env("deploy-prod", human=True)})
-    code, err = run_gate("ps1", repo, 12345)
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_two_environments_matching_one_command_is_ambiguous(flavour, tmp_path):
+    """#489 FIX1. qa `target=Prod` and production `target=prod` both match
+    case-insensitively; first-match picked a different one per flavour. Now
+    neither guesses, and both names are reported."""
+    repo = Repo(tmp_path / "r", {
+        "qa": _env("deploy target=Prod"),
+        "production": _env("deploy target=prod", human=True)})
+    code, err = run_gate(flavour, repo, "deploy target=prod")
     assert code == 2, err
-    assert "could not compare" in err, err
+    assert _AMBIGUOUS in err, err
+    assert "qa" in err and "production" in err, err
     assert repo.in_flight() is None
 
 
-@needs_pwsh
-def test_the_committed_map_matches_case_insensitively_too(tmp_path):
-    """The committed-map path (dirty working map) used `.Contains`, which is
-    case-sensitive, while the working-map path was not. A working-map edit
-    that renames the deploy then let `deploy-prod` match nothing and exit 0
-    on the .ps1. Both paths now share one matcher."""
-    repo = Repo(tmp_path / "r", {"prod": _env("Deploy-Prod", human=True)})
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_capitalised_deploy_key_still_gates(flavour, tmp_path):
+    """#489 FIX2. The .ps1's property access ignores case, the .sh read only
+    `deploy`, so `"Deploy"` gated PowerShell and not bash."""
+    repo = Repo(tmp_path / "r", {"prod": _env("deploy-prod", human=True,
+                                              key="Deploy")})
+    code, err = run_gate(flavour, repo, "deploy-prod")
+    _blocked_as(code, err, "prod")
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_keys_differing_only_by_case_refuse_the_map(flavour, tmp_path):
+    """Which of `deploy` / `Deploy` is policy cannot be told; ConvertFrom-Json
+    refuses the map, and the .sh now refuses it too."""
+    text = ('{"environments": {"prod": {"deploy": "deploy-prod", '
+            '"Deploy": "other", "rollback": "none", "rollbackReason": "f"}}}\n')
+    repo = Repo(tmp_path / "r", text)
+    code, err = run_gate(flavour, repo, "deploy-prod")
+    assert code == 2, err
+    assert "PROMOTION BLOCKED" in err and "casing" in err, err
+    assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_comparison_that_throws_blocks_instead_of_skipping(flavour, tmp_path):
+    """Fail closed. On the .ps1 a command that is not a string has no
+    IndexOf, so the comparison throws. The .sh reads the same payload as the
+    text `12345`, so the map here names that text: both must block."""
+    repo = Repo(tmp_path / "r", {"prod": _env("12345", human=True)})
+    code, err = run_gate(flavour, repo, 12345)
+    assert code == 2, err
+    if flavour == "ps1":
+        assert "could not compare" in err, err
+    assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour,deploy", _cases(["Deploy-Prod", "ship [z-a]"]))
+def test_the_committed_map_uses_the_same_rule(flavour, deploy, tmp_path):
+    """NIT3. With the working map dirty, the committed map is matched too; an
+    uncommitted rename must not let the old command match nothing."""
+    repo = Repo(tmp_path / "r", {"prod": _env(deploy, human=True)})
     repo.write_map({"prod": _env("renamed-in-an-uncommitted-edit")})
-    code, err = run_gate("ps1", repo, "deploy-prod")
+    code, err = run_gate(flavour, repo, deploy.lower())
     _blocked_as(code, err, "prod")
     assert "uncommitted changes" in err, err
 
 
-@needs_pwsh
-def test_the_committed_map_matches_brackets_literally(tmp_path):
-    repo = Repo(tmp_path / "r", {"prod": _env("ship [z-a]", human=True)})
-    repo.write_map({"prod": _env("renamed-in-an-uncommitted-edit")})
-    code, err = run_gate("ps1", repo, "ship [z-a]")
-    _blocked_as(code, err, "prod")
-    assert "uncommitted changes" in err, err
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_the_committed_map_is_ambiguous_too(flavour, tmp_path):
+    repo = Repo(tmp_path / "r", {"qa": _env("deploy target=Prod"),
+                                 "production": _env("deploy target=prod")})
+    repo.write_map({"qa": _env("x-renamed")})
+    code, err = run_gate(flavour, repo, "deploy target=prod")
+    assert code == 2, err
+    assert _AMBIGUOUS in err, err
 
 
 # --- must-allow -------------------------------------------------------------
 
-@pytest.mark.parametrize("deploy", [_JQ] + _UNPARSEABLE)
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour,deploy", _cases([_JQ] + _UNPARSEABLE))
 def test_an_approved_literal_deploy_allows_and_records_its_environment(
         flavour, deploy, tmp_path):
-    """The other half: once approved, the same deploys pass and the in-flight
-    marker names the right environment, so the fix is not 'block all'."""
+    """Once approved, the same deploys pass and the in-flight marker names the
+    right environment, so the fix is not 'block all'."""
     repo = Repo(tmp_path / "r", {"prod": _env(deploy, human=True)})
     repo.approve("prod")
     code, err = run_gate(flavour, repo, deploy)
@@ -217,26 +285,41 @@ def test_an_approved_literal_deploy_allows_and_records_its_environment(
     assert repo.in_flight() == f"prod {repo.sha}"
 
 
-@needs_pwsh
-@pytest.mark.parametrize("command", ["DEPLOY-PROD", "Deploy-Prod --force",
-                                     "deploy"])
-def test_the_ps1_still_matches_case_insensitively(command, tmp_path):
-    """The .ps1 matched case-insensitively before, and still does - in both
-    directions (`deploy` is inside `Deploy-Prod`)."""
+@pytest.mark.parametrize("flavour,command", _cases(
+    ["DEPLOY-PROD --now", "./Deploy-Prod", "deploy"]))
+def test_a_single_case_insensitive_match_allows_once_approved(
+        flavour, command, tmp_path):
+    """Both gates ignore case, in both directions (`deploy` is inside
+    `Deploy-Prod`): on Windows `./Deploy.ps1` and `./deploy.ps1` are one
+    file, so a case-sensitive gate fails open there."""
     repo = Repo(tmp_path / "r", {"prod": _env("Deploy-Prod", human=True)})
-    code, err = run_gate("ps1", repo, command)
+    code, err = run_gate(flavour, repo, command)
     _blocked_as(code, err, "prod")
+    repo.approve("prod")
+    code, err = run_gate(flavour, repo, command)
+    assert code == 0, err
+    assert repo.in_flight() == f"prod {repo.sha}"
 
 
-@needs_pwsh
-def test_a_trailing_cr_is_stripped_before_matching_like_the_sh(tmp_path):
-    """promote-gate.sh runs `crew_strip_cr` on the command before matching,
-    so `deploy-prod\\r` is inside `deploy-prod --force` there. The .ps1 kept
-    the CR and matched nothing."""
+@pytest.mark.parametrize("flavour,command", _cases(
+    ["deploy-prod\n\r", "deploy-prod\r", "deploy-prod\n", "deploy-prod\r\n\n"]))
+def test_crs_and_trailing_newlines_are_normalised_alike(flavour, command, tmp_path):
+    """NIT1. `deploy-prod\\n\\r` kept a newline on the .sh (the command
+    substitution strips trailing newlines before the CR is removed)."""
     repo = Repo(tmp_path / "r", {"prod": _env("deploy-prod --force",
                                               human=True)})
-    code, err = run_gate("ps1", repo, "deploy-prod\r")
+    code, err = run_gate(flavour, repo, command)
     _blocked_as(code, err, "prod")
+
+
+@pytest.mark.parametrize("flavour,command", _cases([" ", "\t\n", "\r\n "]))
+def test_a_whitespace_only_command_deploys_nothing(flavour, command, tmp_path):
+    """NIT2. The .ps1 exited 0 on whitespace; the .sh's `" " in "deploy
+    prod"` matched it."""
+    repo = Repo(tmp_path / "r", {"prod": _env("deploy prod", human=True)})
+    code, err = run_gate(flavour, repo, command)
+    assert code == 0, err
+    assert repo.in_flight() is None
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -250,7 +333,16 @@ def test_an_unrelated_command_passes_untouched(flavour, tmp_path):
 
 # --- agreement --------------------------------------------------------------
 
+def _cfg(value):
+    return value if isinstance(value, dict) else _env(value)
+
+
 _AGREEMENT = [
+    # case-only (FIX1); first, so it is the map that runs by default
+    ({"qa": "deploy target=Prod", "production": "deploy target=prod",
+      "win": "./deploy.ps1"},
+     ["deploy target=prod", "DEPLOY TARGET=PROD", "./Deploy.ps1",
+      "deploy target=staging"]),
     ({"dev": "deploy-dev", "prod": "deploy-prod"},
      ["deploy-prod", "deploy-dev --force", "deploy", "echo hi",
       "deploy-prod-eu"]),
@@ -260,26 +352,43 @@ _AGREEMENT = [
     ({"jq": _JQ, "plain": "./deploy.sh --plain"},
      [_JQ, "./deploy.sh", "./deploy.sh --plain", "jq .items[1]"]),
     ({"w": "ship [!-[]", "x": "ship [z-a]", "y": "ship []", "z": "ship ["},
-     ["ship [z-a]", "ship []", "ship [", "ship [!-[] now", "ship z", "ship"]),
+     ["ship [z-a]", "ship []", "ship [!-[] now", "ship z", "ship"]),
     ({"multi": ["a-cmd [0]", "b-cmd *"], "other": "c-cmd"},
      ["b-cmd *", "a-cmd [0] -v", "b-cmd x", "c-cmd"]),
+    # Deploy-key (FIX2)
+    ({"prod": _env("deploy-prod", key="Deploy"),
+      "qa": _env("deploy-qa", key="DEPLOY")},
+     ["deploy-prod", "deploy-qa", "deploy-"]),
+    # trailing newline / CR / whitespace (NIT1, NIT2)
+    ({"prod": "deploy prod --force"},
+     ["deploy prod\n", "deploy prod\r\n", "deploy prod\n\r", " ", "\n\t",
+      "deploy prod\r\r\n\n"]),
 ]
 
 
 def _chosen(flavour, repo, command):
     repo.clear_in_flight()
     code, err = run_gate(flavour, repo, command)
+    if code == 2 and _AMBIGUOUS in err:
+        return "AMBIGUOUS"
     assert code == 0, f"{flavour} blocked {command!r}: {err}"
     marker = repo.in_flight()
     return marker.split()[0] if marker else None
 
 
-@needs_bash
-@needs_pwsh
-@pytest.mark.parametrize("index", range(len(_AGREEMENT)))
+def _agreement_params():
+    out = []
+    for i in range(len(_AGREEMENT)):
+        marks = [needs_bash, needs_pwsh] + ([pytest.mark.slow] if i else [])
+        out.append(pytest.param(i, marks=marks, id=f"map{i}"))
+    return out
+
+
+@pytest.mark.parametrize("index", _agreement_params())
 def test_both_flavours_pick_the_same_environment(index, tmp_path):
+    """Every map through both real gates; the choice must be identical."""
     deploys, commands = _AGREEMENT[index]
-    repo = Repo(tmp_path / "r", {n: _env(d) for n, d in deploys.items()})
+    repo = Repo(tmp_path / "r", {n: _cfg(d) for n, d in deploys.items()})
     for command in commands:
         sh = _chosen("sh", repo, command)
         ps1 = _chosen("ps1", repo, command)
