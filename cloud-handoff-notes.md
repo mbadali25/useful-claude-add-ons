@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:10 UTC
+Last updated: 2026-10-04 12:13 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:13: #341 FIX1-2 pushed 7dddc79d (archived ticket -> closed; resume names archive; 2 tests red-first; FIX3 harness follow-up in TODO.md; 1.0.363). Re-review started.
 - 12:10: Land-prep onto e9364a70 started: #342 (1.0.364; CONFIG §10 now generated - reconcile), #357 (1.0.365; guide may list focus as coming).
 - 12:10: #368 merge review 29889e98: 0/0/1 CLEAN (on e9364a70).
 - 12:08: #341 L-0509 review f7f052a2: 0/3/4, verdict LAND THIS HALF NOW (no guard weakened; split cases fail closed). FIX1 _phase reads archived ticket's spec as absent; FIX2 resume_target live isdir; FIX3 harness follow-up (check_ticket accepts 'Complete'). FIX1-2 sent to builder (re-version 1.0.363).
