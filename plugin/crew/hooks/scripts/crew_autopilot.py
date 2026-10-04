@@ -782,7 +782,23 @@ def settings(root):
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
                               "approves or takes an answer) and autopilot reads as off")]}
-    return _settings_at(top)
+    result = _settings_at(top)
+    result["warnings"] += _inert_warnings(top)
+    return result
+
+
+def _inert_warnings(top):
+    """`inert: key=value (ticket) - effect` for every `autopilot.*` setting this
+    crew does not act on (T-0070). Warns only, never refuses: an inert key must
+    not block the run it was meant to speed up. A repo `autopilot.deploy` value
+    is left to the deploy warning above, which already names T-0045."""
+    try:
+        entries = crew_config.inert_settings(top)
+    except Exception as exc:  # pylint: disable=broad-except
+        return [f"inert: could not tell which settings are inert ({_failure(exc)})"]
+    return [f"inert: {crew_config.inert_items([e], 10 ** 6)} - {e['effect']}" for e in entries
+            if e["key"].startswith("autopilot.")
+            and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
 
 
 def _settings_at(top):

@@ -1446,3 +1446,66 @@ def test_module_defines_each_function_once():
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
 
     assert sorted({n for n in names if names.count(n) > 1}) == []
+
+
+# --- T-0070: settings names the autopilot keys this crew does not act on ----
+
+def _inert(got):
+    return [w for w in got["warnings"] if w.startswith("inert: ")]
+
+
+def test_settings_warns_on_inert_autopilot_keys(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "ship": "merge", "maxLanes": 3})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert [w.split(" - ")[0] for w in _inert(got)] == [
+        "inert: autopilot.maxLanes=3 (T-0029)", "inert: autopilot.ship=merge (T-0011)"]
+    done = subprocess.run([sys.executable, _SCRIPT, "settings", "--root", str(root)],
+                          capture_output=True, text=True, check=False)
+    lines = done.stdout.splitlines()
+    assert lines[0].startswith("mode=plan")
+    assert "warning: inert: autopilot.ship=merge (T-0011) - would choose how a finished " \
+           "autopilot run ships" in lines
+
+
+def test_settings_names_the_global_layer(tmp_path, monkeypatch):
+    import crew_config  # pylint: disable=import-outside-toplevel
+    path = tmp_path / "global.json"
+    path.write_text(json.dumps({"autopilot": {"deploy": "nonprod"}}), encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.settings(str(root))
+
+    assert [w.split(" - ")[0] for w in _inert(got)] == [
+        "inert: autopilot.deploy=nonprod (global, repo-only)"]
+    assert got["deploy"] == "none"
+
+
+def test_settings_is_quiet_for_implemented_keys(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "maxPhases": 5, "approval": "self", "questions": "risk"})
+
+    assert crew_autopilot.settings(str(root))["warnings"] == []
+
+
+def test_settings_does_not_repeat_the_deploy_warning(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"deploy": "nonprod"})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (len(got["warnings"]), _inert(got)) == (1, [])
+    assert "T-0045" in got["warnings"][0]
+
+
+def test_settings_backlog_mode_names_its_ticket(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "backlog"})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert "'backlog'" in got["warnings"][0]
+    assert [w.split(" - ")[0] for w in _inert(got)] == ["inert: autopilot.mode=backlog (T-0012)"]
