@@ -39,6 +39,11 @@ rule both now share, on the working map and the committed map alike:
   `git push prod main`);
 - a duplicate key - exactly the same, or differing only by case - refuses the
   map; so does a `requireHuman` that is a list or an object;
+- an environment name that is empty, holds a control character (a newline
+  split one name into two environments on the .sh) or holds `,` (the union's
+  join character) refuses the map;
+- PowerShell-only JSON - a comment, a single-quoted or bare key - refuses
+  the map on the .ps1 as python's json refuses it on the .sh;
 - `"deploy": []` and `[""]` declare nothing and pass (the .ps1 read `[]` as
   null and refused every command in the repo);
 - a comparison that throws blocks rather than skipping the environment.
@@ -392,6 +397,59 @@ def test_a_null_deploy_refuses_the_map(flavour, tmp_path):
     assert repo.in_flight() is None
 
 
+_BAD_NAMES = ["a\nb", "a\tb", "", "a,b"]
+
+
+@pytest.mark.parametrize("flavour,name", _cases(_BAD_NAMES))
+def test_a_bad_environment_name_refuses_the_map(flavour, name, tmp_path):
+    """#489 F1. The .sh printed matched names one per line and split them
+    back on lines, so `"a\nb"` became the lax environments `a` and `b` and
+    its requireHuman never applied. `""` passed as nothing matched, and `,`
+    is the union's join character. Both gates now refuse such a map."""
+    repo = Repo(tmp_path / "r", {"a": _env("deploy-a"), "b": _env("deploy-b"),
+                                 name: _env("./deploy.sh prod", human=True)})
+    for command in ("./deploy.sh prod", "echo hi"):
+        code, err = run_gate(flavour, repo, command)
+        assert code == 2, (command, err)
+        assert "environment name" in err, err
+        assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour,name", _cases(["my-env_1.0", "prod.eu-west_2"]))
+def test_an_ordinary_environment_name_still_gates(flavour, name, tmp_path):
+    """Must-allow: `-`, `_` and `.` in a name are fine."""
+    repo = Repo(tmp_path / "r", {name: _env("./deploy.sh prod", human=True)})
+    code, err = run_gate(flavour, repo, "./deploy.sh prod")
+    _blocked_as(code, err, name)
+    repo.approve(name)
+    code, err = run_gate(flavour, repo, "./deploy.sh prod")
+    assert code == 0, err
+    assert repo.in_flight() == f"{name} {repo.sha}"
+
+
+_LAX_JSON = [
+    '{// a note\n"environments": {"prod": {"deploy": "deploy-prod", '
+    '"rollback": "none", "rollbackReason": "f"}}}\n',
+    '{"environments": /* c */ {"prod": {"deploy": "deploy-prod", '
+    '"rollback": "none", "rollbackReason": "f"}}}\n',
+    "{'environments': {\"prod\": {\"deploy\": \"deploy-prod\", "
+    '"rollback": "none", "rollbackReason": "f"}}}\n',
+    '{environments: {"prod": {"deploy": "deploy-prod", '
+    '"rollback": "none", "rollbackReason": "f"}}}\n',
+]
+
+
+@pytest.mark.parametrize("flavour,text", _cases(_LAX_JSON))
+def test_json_only_powershell_reads_refuses_the_map(flavour, text, tmp_path):
+    """#489 N2. ConvertFrom-Json reads comments and single-quoted or bare
+    keys; python's json refuses them. Both refuse now."""
+    repo = Repo(tmp_path / "r", text)
+    code, err = run_gate(flavour, repo, "deploy-prod")
+    assert code == 2, err
+    assert "PROMOTION BLOCKED" in err, err
+    assert repo.in_flight() is None
+
+
 # --- must-allow -------------------------------------------------------------
 
 @pytest.mark.parametrize("flavour,deploy", _cases([_JQ] + _UNPARSEABLE))
@@ -515,6 +573,16 @@ _AGREEMENT = [
     ({"prod": dict(_env("deploy-prod"), requireHuman=[0]),
       "qa": dict(_env("deploy-qa"), requireHuman={})},
      ["deploy-prod", "deploy-qa"]),
+    # environment names (F1) and PowerShell-only JSON (N2)
+    ({"a": "deploy-a", "b": "deploy-b", "a\nb": _env("./deploy.sh prod", human=True)},
+     ["./deploy.sh prod", "echo hi"]),
+    ({"a\tb": "deploy-x"}, ["deploy-x"]),
+    ({"": "deploy-x"}, ["deploy-x", "echo hi"]),
+    ({"a,b": "deploy-x", "a": "deploy-y"}, ["deploy-x"]),
+    ({"my-env_1.0": "deploy-x", "prod.eu": "deploy-y"}, ["deploy-x", "deploy-y", "deploy-"]),
+    (_LAX_JSON[0], ["deploy-prod", "echo hi"]),
+    (_LAX_JSON[2], ["deploy-prod"]),
+    (_LAX_JSON[3], ["deploy-prod"]),
     # trailing newline / CR / whitespace (NIT1, NIT2)
     ({"prod": "deploy prod --force"},
      ["deploy prod\n", "deploy prod\r\n", "deploy prod\n\r", " ", "\n\t",
