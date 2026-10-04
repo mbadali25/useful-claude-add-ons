@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 16:40: #421 T-0083 review 61198189: 0/6/8 (RecursionError kills recall; broken app.json -> silent no-filters; case-sensitive archive; symlink into archive served; version must be 0.5.0; userIgnoreFilters unverified vs spec rule). Sent: drop/opt-in userIgnoreFilters per spec, case-insensitive, realpath, 0.5.0, whole-word match.
 - 16:40: L-1503 built -> draft PR #489 head f346f763 (Test-DeployMatch literal case-insensitive both ways, throw blocks; 39 tests, 20 red-before; 2 sabotages red). Review started. Landing-order interaction with #407 _gate_pick to settle.
 - 16:38: WAVE2 #420 L-0662 built -> 76aba34a (wave/split/sleep/wake rows; merge did T-0057's _route carry; 66 new cases, route rule 516; 10 mutations). Review started (rule time 61s > 60 Stop - check).
 - 16:36: WAVE2 #456 L-0677 built -> e7c8b073 (crew_memory save: crash-safe write/readback/pointer; 54 tests; 11 sabotages; one-line pointer memory verified with real claude CLI 2.1.289 - CLI IS present in container, so drift-detection.sh may be runnable). Review started. Needs re-merge of #450's new head at land-prep.
