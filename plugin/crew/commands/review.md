@@ -545,4 +545,4 @@ loses the most time to.
    whether the bar rests on a fact or on a guess, and that is the whole difference this record
    exists to make visible.
 
-That metrics line is not bookkeeping. `/crew:status` reads it to show whether this setup is actually catching anything.
+That metrics line is crew bookkeeping to the review bundle, the completion audit and the verify gate (`crew_ticket.CREW_BOOKKEEPING_PATHS`), so appending it never stales a receipt; it is not throwaway: `/crew:status` reads it to show whether this setup is actually catching anything.

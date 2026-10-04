@@ -73,8 +73,13 @@ Before every Write, Edit, MultiEdit or NotebookEdit, the guard checks the target
 - Any other file needs a current approval and a path inside Touch.
 - The code map, the diagrams dir, the graph dir and `.claude/rules/` are writable for an approved
   ticket, because `/crew:implement` step 6 refreshes them.
-- Nothing else is exempt: `.crew/` beyond the code map, `TODO.md`, the rest of `.claude/` and
-  crew's own policy files. If the ticket changes one of them, list it in Touch.
+- crew's own bookkeeping is writable with or without an approval: the files a crew script writes
+  for itself under `.crew/` (the metrics files, the verify gate's records, `guard.log`, markers
+  and locks; the list is `crew_ticket.CREW_BOOKKEEPING_PATHS`). The scope base is on that list
+  and is still refused.
+- Nothing else is exempt: `.crew/` beyond the code map and the bookkeeping (`config.json`,
+  `verify.json`, `standards.md`), `TODO.md`, the rest of `.claude/` and crew's own policy files.
+  If the ticket changes one of them, list it in Touch.
 - Approval receipts, the review ledger and the scope base are always refused.
 
 The guard checks the real file a symlink points to and the path as written, so a link cannot
@@ -94,7 +99,9 @@ The guard only sees the editing tools. A `sed -i`, a shell redirect or a formatt
 change files. So when the session stops, the completion audit compares the whole tree with the
 commit the ticket started from. It covers committed, staged, unstaged and untracked changes, and
 both ends of a rename. If any changed path is outside Touch, the audit blocks the stop and lists
-the paths in six lines or fewer. It never blocks the continuation it caused.
+the paths in six lines or fewer. It never blocks the continuation it caused. crew's own bookkeeping
+is never a changed path, whatever `.gitignore` says, so a `.crew/` path the audit lists (say
+`.crew/verify.json`) is a real finding, not crew's noise.
 
 A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a
