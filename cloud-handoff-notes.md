@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 11:34 UTC
+Last updated: 2026-10-04 11:36 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:36: Windows-flaky fix OPENED: #392 (fix-windows-flaky-crew-tests, crew 1.0.350): crew_config_files.Lock treats Windows delete-pending PermissionError as held (real bug; main run 37194523702 traceback PermissionError on .work/INDEX.md.lock), stop_budget test asserts 1..measured+1 (gate rounds up whole seconds), mint tests print full stderr, 5 new tests. #393 (windows-lock-sabotage, stacked on #392, harness-only, crew 1.0.351 placeholder - collides with T-0016 placeholder; re-bump at landing). Review of #392 started. PLAN: land #392 right after #360 (fixes Windows flakiness for every PR), then #393 alone, then train.
 - 11:34: #360 run 37197995041 complete: only crew-windows-default 1/3 (test_concurrent_mints_distinct) + its fan-in red; everything else incl verify-gate green. Standing-down comment posted on #360; the ONE allowed re-run of failed jobs queued (11:34). If it fails again -> wait for the Windows-flaky fix PR, port it into #360. If green -> merge #360, then re-merge main into #377 (next).
 - 11:34: Builders STARTED (owner-approved specs): T-0016-build 1.0.351 (opens PR; unblocks #356), T-0037-build 1.0.352 PR A feature only (PR B harness sabotage = follow-up; unblocks #364/#365/#366), T-0049-build 1.0.353 (measures heartbeat survival in Bash tool first; fallback pre-approved; unblocks #363). Each builder opens its own PR. Also running: #341 L-0509, #346 T-0039 builds; Windows-flaky fix agent. Next: #360 re-run failed jobs when run 37197995041 completes.
 - 11:33: OWNER DECISIONS: (1) CLOSED #274 T-0104 and #275 T-0500 (885 behind; specs kept in docs/handoff/cloud/T-0104.md, T-0500.md; branches kept) - comment on each. (2) APPROVED reconstructed specs T-0016, T-0037, T-0049 as written (all OWNER CHECKs) -> builders starting: T-0016-build (1.0.351), T-0037-build (1.0.352, feature PR; harness sabotage PR separate), T-0049-build (1.0.353). (3) Train: keep 1-by-1 per-PR review+CI, land small/docs-only first, land-prep in parallel.
