@@ -773,7 +773,7 @@ REVIEW_FIX_MUTATIONS = (
         # The owner path forges the auto receipt's string.
         "--accept stops reserving the auto: prefix",
         REVIEW_LEDGER,
-        "    if by.strip().lower().startswith(AUTO_PREFIX):\n",
+        "    if _is_auto_name(by):\n",
         "    if False:\n",
         "tests/test_review_auto_accept.py::test_owner_accept_refuses_the_auto_prefix",
     ),
@@ -1170,7 +1170,7 @@ REVIEW_FIX_MUTATIONS = (
         # (b) A correction writes an `auto:` name without auto_accept's guard.
         "a correction takes an auto: name",
         REVIEW_LEDGER,
-        "    if new.lower().startswith(AUTO_PREFIX):\n",
+        "    if _is_auto_name(new):\n",
         "    if False:\n",
         "tests/test_review_correct_acceptance.py::test_correction_refused",
     ),
@@ -1225,7 +1225,7 @@ REVIEW_FIX_MUTATIONS = (
         # (b) An unattended `auto:` name supersedes an acceptance.
         "--supersede-accepted takes an auto: name",
         REVIEW_LEDGER,
-        "    if supersede_accepted and by.strip().lower().startswith(AUTO_PREFIX):\n",
+        "    if supersede_accepted and _is_auto_name(by):\n",
         "    if False:\n",
         ("tests/test_review_reject_accepted.py::"
          "test_supersede_is_refused_and_changes_nothing"),
@@ -1304,5 +1304,71 @@ REVIEW_FIX_MUTATIONS = (
         '    out = ["== Test receipts (verify gate) =="]\n',
         '    out = ["== Test receipts (verify gate) ==", OVERRIDE_LINE]\n',
         "tests/test_review_prompt.py::test_an_accepted_gate_never_carries_the_override_line",
+    ),
+    # Review of 24cb235c (#418): FIX1, FIX2, N1, N2, N3.
+    (
+        # FIX2: a receipt round of `true` passes as round 1 (True == 1).
+        "--supersede-accepted takes a bool receipt round",
+        REVIEW_LEDGER,
+        "    if not isinstance(number, int) or isinstance(number, bool):\n",
+        "    if not isinstance(number, int):\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX2: a latest row round of 1.0 or true passes as round 1.
+        "--supersede-accepted drops the latest round's type check",
+        REVIEW_LEDGER,
+        "    if not isinstance(latest_round, int) or isinstance(latest_round, bool):\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX1: --supersede-accepted's --by skips the one-line / UTF-8 check,
+        # so a lone surrogate is written and the success line then crashes.
+        "--reject writes a --by it cannot print",
+        REVIEW_LEDGER,
+        '    by = _one_line_arg(by, "--by", "--reject")\n',
+        '    if not isinstance(by, str) or not by.strip():\n'
+        '        raise LedgerError("--reject needs --by <who is rejecting>")\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX1: plain --accept writes a --by it cannot print or that spans lines.
+        "--accept writes a --by it cannot print",
+        REVIEW_LEDGER,
+        '    by = _one_line_arg(by, "--by", "--accept")\n',
+        '    if not isinstance(by, str) or not by.strip():\n'
+        '        raise LedgerError("--accept needs --by <who is accepting>")\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_plain_reject_and_accept_refuse_a_name_they_cannot_write"),
+    ),
+    (
+        # N1: a fullwidth or zero-width lookalike passes the reserved prefix.
+        "the auto: prefix test stops folding lookalikes",
+        REVIEW_LEDGER,
+        '    folded = unicodedata.normalize("NFKC", name).casefold()\n',
+        "    folded = name.lower()\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # N2: only \n and \r count as line breaks again.
+        "a one-line argument may carry a Unicode line break",
+        REVIEW_LEDGER,
+        "    if any(ch in _LINE_BREAKS for ch in value):\n",
+        '    if "\\n" in value or "\\r" in value:\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # N3: argparse prefix matching lets `--super` reach the flag.
+        "review_ledger.py accepts abbreviated flags",
+        REVIEW_LEDGER,
+        "    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], "
+        "allow_abbrev=False)\n",
+        "    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])\n",
+        ("tests/test_review_correct_acceptance.py::"
+         "test_an_abbreviated_flag_is_a_usage_error"),
     ),
 )

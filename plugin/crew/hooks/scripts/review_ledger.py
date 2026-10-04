@@ -115,6 +115,10 @@ non-empty string, a history that is not a list of objects, a `--by` or
 `--reason` that is empty, multi-line or not UTF-8, an `auto:` name, and the
 name already recorded. Rows are only appended; a wrong correction is fixed by
 another. A receipt kept in `superseded` is history and is not corrected.
+Every `--by` (and `--reason`) is checked before the lock: one line (every
+Unicode line break refused) that can be written as UTF-8. The `auto:` test
+folds lookalikes first (NFKC, casefold, format characters stripped). Flags
+are never abbreviated (`allow_abbrev=False`).
 
 Either way the receipt carries the bundle sha256 the reviewer read, and
 `--check-receipt` rebuilds the bundle from the receipt's base and exits
@@ -146,6 +150,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 
 import merged_main
 import review_patch
@@ -442,12 +447,41 @@ def record(root, ticket, number, review):
     return _mutate(root, ticket, change)
 
 
+# Every character `str.splitlines` breaks on: a name or reason carrying one
+# opens a line of its own in --status and in a prompt that quotes it.
+_LINE_BREAKS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+
+
+def _one_line_arg(value, flag, verb="--correct-acceptance"):
+    """`value` stripped, when it is one non-empty line that can be written as
+    UTF-8; else a refusal naming `flag`. Checked before the lock: a lone
+    surrogate would be written and then crash the success line, after the
+    ledger had already changed."""
+    if not isinstance(value, str) or not value.strip():
+        raise LedgerError(f"{verb} needs {flag} <text>")
+    if any(ch in _LINE_BREAKS for ch in value):
+        raise LedgerError(f"{flag} must be one line (it carries a line break)")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise LedgerError(f"{flag} cannot be written as UTF-8 ({exc.reason})") from exc
+    return value.strip()
+
+
+def _is_auto_name(name):
+    """Whether `name` claims the reserved `auto:` prefix, lookalikes included:
+    NFKC (fullwidth letters), casefold, and format characters (zero-width
+    joiners, a BOM) stripped before the test."""
+    folded = unicodedata.normalize("NFKC", name).casefold()
+    folded = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+    return folded.strip().startswith(AUTO_PREFIX)
+
+
 def accept(root, ticket, by):
     """The owner accepts the latest round's FINDINGS. Refuses anything else,
     and refuses when the tree no longer matches the bundle that round read."""
-    if not isinstance(by, str) or not by.strip():
-        raise LedgerError("--accept needs --by <who is accepting>")
-    if by.strip().lower().startswith(AUTO_PREFIX):
+    by = _one_line_arg(by, "--by", "--accept")
+    if _is_auto_name(by):
         raise LedgerError(f"--by {by.strip()!r}: the {AUTO_PREFIX!r} prefix is reserved for "
                           "--auto-accept, which checks the round itself")
 
@@ -845,6 +879,10 @@ def _supersede(data, ticket, by):
         raise LedgerError(f"{ticket}'s receipt round {number!r} is not a round number: "
                           "could not tell what would be superseded")
     latest = (data.get("rounds") or [None])[-1]
+    latest_round = latest.get("round") if isinstance(latest, dict) else None
+    if not isinstance(latest_round, int) or isinstance(latest_round, bool):
+        raise LedgerError(f"{ticket}'s latest round number {latest_round!r} is not a round "
+                          "number: could not tell what would be superseded")
     if (not isinstance(latest, dict) or latest.get("status") != "completed"
             or latest.get("round") != number):
         raise LedgerError(f"{ticket}'s receipt is for round {number}, and the latest round is "
@@ -867,9 +905,8 @@ def reject(root, ticket, by, supersede_accepted=False):
     changes nothing when it refuses. With `supersede_accepted` (T-0109) it
     takes ONLY an ACCEPTED ticket, keeps the receipt in `superseded` and
     clears it; `--by` is a recorded name, never a check of who is calling."""
-    if not isinstance(by, str) or not by.strip():
-        raise LedgerError("--reject needs --by <who is rejecting>")
-    if supersede_accepted and by.strip().lower().startswith(AUTO_PREFIX):
+    by = _one_line_arg(by, "--by", "--reject")
+    if supersede_accepted and _is_auto_name(by):
         raise LedgerError(f"--by {by.strip()!r}: an {AUTO_PREFIX!r} name never supersedes "
                           "an accepted receipt")
 
@@ -891,21 +928,6 @@ def reject(root, ticket, by, supersede_accepted=False):
     return _mutate(root, ticket, change)
 
 
-def _one_line_arg(value, flag):
-    """`value` stripped, when it is one non-empty line that can be written as
-    UTF-8; else a refusal naming `flag`. A lone surrogate would be written and
-    then crash the success line."""
-    if not isinstance(value, str) or not value.strip():
-        raise LedgerError(f"--correct-acceptance needs {flag} <text>")
-    if "\n" in value or "\r" in value:
-        raise LedgerError(f"{flag} must be one line (it carries a line break)")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise LedgerError(f"{flag} cannot be written as UTF-8 ({exc.reason})") from exc
-    return value.strip()
-
-
 def correct_acceptance(root, ticket, by, reason):
     """T-0098: rewrite an `owner-accepted` receipt's `accepted_by` and append
     one row to the top-level `acceptance_corrections`. Nothing else moves:
@@ -913,7 +935,7 @@ def correct_acceptance(root, ticket, by, reason):
     bundle is not rebuilt. Returns the appended row."""
     new = _one_line_arg(by, "--by")
     why = _one_line_arg(reason, "--reason")
-    if new.lower().startswith(AUTO_PREFIX):
+    if _is_auto_name(new):
         raise LedgerError(f"--by {new!r}: the {AUTO_PREFIX!r} prefix is reserved for "
                           "--auto-accept")
 
@@ -1105,7 +1127,9 @@ def utf8_stdio():
 
 def main(argv):
     utf8_stdio()
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # No prefix matching: a shortened flag (`--super`, `--correct`) is a usage
+    # error, never a verb.
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], allow_abbrev=False)
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
     action = parser.add_mutually_exclusive_group(required=True)

@@ -252,6 +252,23 @@ def _latest_not_dict(data):
     data["rounds"][-1] = "round 2"
 
 
+def _round_one(change):
+    """An accepted ROUND 1 ledger, then `change`: with round 1, `True == 1`
+    and `1.0 == 1`, so only the type checks can refuse (review of 24cb235c,
+    FIX2)."""
+    def build(repo):
+        _review(repo)
+        rl.accept(str(repo), T, "the owner")
+        _edit(repo, change)
+    return build
+
+
+def _latest_round(value):
+    def change(data):
+        data["rounds"][-1]["round"] = value
+    return change
+
+
 REFUSALS = {
     "no_by": (_owner_accepted_round_two, ["--reject", "--supersede-accepted"]),
     "by_spaces": (_owner_accepted_round_two, ["--reject", "--supersede-accepted", "--by", "  "]),
@@ -278,6 +295,24 @@ REFUSALS = {
     "latest_round_not_dict": (_with(_latest_not_dict), None),
     "superseded_dict": (_with(lambda data: data.__setitem__("superseded", {})), None),
     "superseded_string": (_with(lambda data: data.__setitem__("superseded", "x")), None),
+    "round_one_receipt_round_bool": (
+        _round_one(lambda data: data["receipt"].__setitem__("round", True)), None),
+    "round_one_latest_round_bool": (_round_one(_latest_round(True)), None),
+    "round_one_latest_round_float": (_round_one(_latest_round(1.0)), None),
+    "round_one_latest_round_string": (_round_one(_latest_round("1")), None),
+    # Review of 24cb235c, FIX1/N1/N2: --by goes through the same one-line,
+    # UTF-8 and reserved-prefix checks as --correct-acceptance, before the lock.
+    "by_surrogate": (_owner_accepted_round_two,
+                     ["--reject", "--supersede-accepted", "--by", "the owner \udc80"]),
+    "by_newline_auto": (_owner_accepted_round_two,
+                        ["--reject", "--supersede-accepted", "--by", "x\nauto:y"]),
+    "by_line_separator": (_owner_accepted_round_two,
+                          ["--reject", "--supersede-accepted", "--by", "x\u2028y"]),
+    "by_fullwidth_auto": (_owner_accepted_round_two,
+                          ["--reject", "--supersede-accepted", "--by", "\uff41uto: x"]),
+    "by_zero_width_auto": (_owner_accepted_round_two,
+                           ["--reject", "--supersede-accepted", "--by", "\u200dauto:x"]),
+    "abbreviated_flag": (_owner_accepted_round_two, ["--reject", "--by", "x", "--super"]),
     "superseded_non_dict_row": (
         _with(lambda data: data.__setitem__("superseded", [{"by": "x"}, 3])), None),
 }
@@ -291,11 +326,32 @@ def test_supersede_is_refused_and_changes_nothing(repo, case):
 
     result = _cli(repo, *args) if args else _supersede(repo)
 
-    assert (result.returncode, _bytes(repo)) == (1, before), result.stdout + result.stderr
+    expected = 2 if case == "abbreviated_flag" else 1
+    assert (result.returncode, _bytes(repo)) == (expected, before), result.stdout + result.stderr
+    if expected == 1:
+        assert result.stderr.startswith("review-ledger: "), result.stderr
     if case == "plain_reject_on_accepted":
         assert "--supersede-accepted" in result.stderr
     if case.startswith("flag_on_") and case != "flag_on_needs_replan":
         assert "nothing accepted to supersede" in result.stderr
+
+
+@pytest.mark.parametrize("args", [
+    ["--reject", "--by", "the owner \udc80"],
+    ["--reject", "--by", "x\ny"],
+    ["--accept", "--by", "the owner \udc80"],
+    ["--accept", "--by", "x\u2028y"],
+    ["--accept", "--by", "\uff41uto: x"]])
+def test_plain_reject_and_accept_refuse_a_name_they_cannot_write(repo, args):
+    """Review of 24cb235c, FIX1: plain --reject and --accept wrote a name the
+    success line then crashed on (or a multi-line one); now refused first."""
+    _review(repo)
+    before = _bytes(repo)
+
+    result = _cli(repo, *args)
+
+    assert (result.returncode, _bytes(repo)) == (1, before), result.stdout + result.stderr
+    assert result.stderr.startswith("review-ledger: "), result.stderr
 
 
 @pytest.mark.parametrize("args", [

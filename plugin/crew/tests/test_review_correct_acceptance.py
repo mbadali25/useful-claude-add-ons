@@ -285,6 +285,19 @@ REFUSALS = {
     "by_auto": (_accepted, {"by": "auto: x"}),
     "by_auto_upper": (_accepted, {"by": "AUTO: x"}),
     "by_same_name": (_accepted, {"by": "a peer"}),
+    # Review of 24cb235c, N2: every Unicode line break, not only \n and \r.
+    "by_vertical_tab": (_accepted, {"by": "the owner\vx"}),
+    "by_form_feed": (_accepted, {"by": "the owner\fx"}),
+    "by_nel": (_accepted, {"by": "the owner\x85x"}),
+    "by_line_separator": (_accepted, {"by": "the owner\u2028x"}),
+    "by_paragraph_separator": (_accepted, {"by": "the owner\u2029x"}),
+    "reason_line_separator": (_accepted, {"reason": "one\u2028two"}),
+    "reason_nel": (_accepted, {"reason": "one\x85two"}),
+    # N1: a lookalike of the reserved prefix (NFKC + casefold, format
+    # characters stripped) is the reserved prefix.
+    "by_fullwidth_auto": (_accepted, {"by": "\uff41\uff55\uff54\uff4f: x"}),
+    "by_zero_width_auto": (_accepted, {"by": "\u200bauto: x"}),
+    "by_bom_auto": (_accepted, {"by": "\ufeffAuTo: x"}),
 }
 
 
@@ -311,6 +324,20 @@ def test_correction_refuses_text_it_cannot_write(repo, by, reason):
         rl.correct_acceptance(str(repo), T, by, reason)
 
     assert _bytes(repo) == before
+
+
+@pytest.mark.parametrize("args", [
+    ["--correct", "--by", "the owner", "--reason", "r"],
+    ["--correct-acceptance", "--by", "the owner", "--reas", "r"]])
+def test_an_abbreviated_flag_is_a_usage_error(repo, args):
+    """Review of 24cb235c, N3: argparse prefix matching is off, so a shortened
+    flag never reaches a verb."""
+    _accepted(repo)
+    before = _bytes(repo)
+
+    result = _cli(repo, *args)
+
+    assert (result.returncode, _bytes(repo)) == (2, before)
 
 
 def test_a_superseded_receipt_is_not_corrected(repo):
