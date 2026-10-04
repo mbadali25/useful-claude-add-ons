@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:10 UTC
+Last updated: 2026-10-04 15:12 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:12: H1 #418 review 24cb235c: 0 BLOCK / 3 FIX (supersede --by skips one-line check -> write then crash; vacuous bool-round test; codemap anchor) / 6 NIT. Reviewer AGREES T-0109 Q3 does not loosen the gate (only widening: non-auto caller can push round-1 ACCEPTED to NEEDS_REPLAN; blocks work, never grants). Sent to builder.
 - 15:10: #352 T-0069 land-prep started (merge main f3f319d1, crew 1.0.327). Then merge-only review + CI + merge.
 - 15:10: MERGED #377 (L-0522) at f3f319d1 (crew 1.0.326; CI 24/24 green, merge-only review clean). main = f3f319d1. Next free version 1.0.327. #416 fixes -> 38bb1825 (structural _screen; 61 cases, 59 red-before), re-review started. #407 fixes -> 8ec0d228 (ambiguous-environment both directions; 99 tests, 56 mutations), re-review started.
 - 15:04: #450 re-review da00137e: 1 BLOCK (dangling-symlink config read as absent -> other vault; regression from F1 fix) / 2 FIX (crew-side wrong shape falls through; unreadable note = resolved) / 6 NIT. Sent back with 3 structural rules (absent only by lstat ENOENT; up-front schema validator; open-not-stat, S_ISREG only).
