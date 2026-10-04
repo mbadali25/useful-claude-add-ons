@@ -33,6 +33,97 @@ All notable changes to this repository are documented here. Format follows [Keep
   date" (file times only when there is no `.src`, said as "(freshness by mtime only)"); tables
   escape `<`, `>` and `&` so GitHub keeps text like `<repo>`.
 
+### Added — crew 1.0.233: crew-setup ships `crew-verify.yml`, the verify gate as a pull-request workflow
+
+- `plugin/crew/skills/crew-setup/templates/github/crew-verify.yml`: a GitHub Actions workflow for the
+  consumer repo. It runs on `pull_request` and `workflow_dispatch`, with `permissions: contents: read`,
+  no secrets, cancel-superseded `concurrency` and a 30-minute timeout. It checks the repo out
+  (`actions/checkout@v4`, `persist-credentials: false`), then fetches crew with plain git, no
+  credentials, at a pinned commit (`CREW_SHA: __CREW_SHA__`, never a branch) into `$RUNNER_TEMP/crew`,
+  OUTSIDE the workspace. A recursive map command (`pytest`, `ruff .`, `eslint .`) therefore never
+  collects crew's files, which a checkout inside the workspace could not avoid, since
+  `actions/checkout` cannot write outside it. It sets up Python 3.12 (`actions/setup-python@v5`),
+  leaves a marked step for the repo's own check tools (with a `fetch-depth: 0` hint), and runs
+  `bash "$RUNNER_TEMP/crew/plugin/crew/hooks/scripts/verify-gate.sh" --ci < /dev/null` on
+  `ubuntu-latest`. The header also says: Ubuntu only (Windows would need `verify-gate.ps1 -Ci`);
+  actions are pinned by major tag, an accepted trade; and a PR can edit its own map AND this workflow
+  file, which only CODEOWNERS review or a ruleset on `.github/workflows/` prevents.
+- crew-setup `SKILL.md` §3 lists it in the Create tree as opt-in, and says how to install it: copy the
+  template, then resolve the SHA through five checks in order. (a) The marketplace checkout is its
+  own git top level, never a parent repo's. (b) Its `origin` is `mbadali25/useful-claude-add-ons`.
+  (c) `HEAD` is 40 hex characters. (d) The commit is on a remote branch. (e) The commit's crew is
+  a gate that has `--ci` (checked by grepping that commit's `verify-gate.sh`, not by version). If any check fails, ask the user; never write a branch.
+  `phases.md` Phase 5 offers the workflow once the map exists. `commands/verify.md` and the crew
+  README mention `--ci` and the workflow.
+- `plugin/crew/tests/test_crew_verify_workflow.py` covers the template's shape: triggers,
+  permissions, the checkout and setup-python versions, Python 3.12, credentials, no secrets, the
+  pinned SHA and the `$RUNNER_TEMP` paths. It runs the fetch script, parsed from the YAML with the
+  URL pointed at this repository, and checks the commit and the gate it leaves. It runs the gate
+  command from a fixture repo with crew in a `RUNNER_TEMP` outside it, `"unmapped": "fail"` and a
+  recursive map rule that fails on crew's files: exit 0. With crew inside the workspace (the old
+  layout) the same command exits 2.
+- Install step 0 checks that the map runs unattended before the workflow is offered. `--ci` excludes
+  every rule with no `reach` that the scanner cannot clear, so a map of `bash _verify/cases/*.sh`
+  rules exits 2 on every PR with "zero commands to run". This was measured on a real consumer map:
+  16 rules, 15 excluded for reach, and one with an empty `run`. The step runs
+  `/crew:verify --stamp-reach` as a dry run, has the user declare each wrapper rule's reach, writes
+  the result with `--apply --set N=...`, commits the stamped map, and offers the workflow only once a local `--ci` run executes commands.
+- The job only reports until it is made a required status check (branch protection or a ruleset on
+  the default branch). Setup cannot set that, and its install steps now tell the user so.
+- A feature PR: no harness path changes (T-0087).
+
+### Added — crew 1.0.232: `verify-gate.sh --ci` / `verify-gate.ps1 -Ci`, the verify gate as a PR's CI job
+
+- **Scope is the whole map, over tracked files:** every file `git ls-files` lists (staged deletions
+  and renames included), no Stop budget, no fingerprint skip. Untracked files are left out, so a crew
+  checkout, a `.venv` or build output in the CI workspace cannot trip `"unmapped": "fail"`.
+- **Reach is Stop's:** a `network`/`host` rule, an undeclared one the scan cannot clear, and an
+  `always`/`default` command the same scan excludes are not run on a CI runner. Each is named as on
+  Stop, and one `verify-gate --ci:` line counts them and says they run only under `--all`. They do not
+  fail the run. A new `REACH_FILTER` (`$reachFilter` in the `.ps1`) carries this, so the budget, the
+  tree-pass cache and `requiresCleanTree` stay Stop-only. A `requiresCleanTree` rule **runs** under
+  `--ci`, because a CI checkout is clean.
+- **The verdict is stricter:** a failing command exits 2 as before; a command exiting 77 now exits 2
+  (`N command(s) exited 77 (SKIP) - a skip is not a pass in CI`), and so does any deferral.
+- **Nothing checked is never green under `--ci`.** Every path that would end having checked nothing
+  exits 2 with a named `verify-gate --ci:` reason, where Stop exits 0: `verifyGate: false`; no
+  `.crew/verify.json` and no `_verify/smoke.sh`; a project directory the gate cannot enter; no tracked
+  files (not a git work tree, git refusing the checkout, or nothing tracked); zero commands to run
+  (every matched rule reach-excluded, no rule matching anything with `always`/`default` adding
+  nothing, or every command blank); a lock held by another gate run; and the `.ps1` called with `-Ci`
+  off Windows, where its flavour guard used to stand down silently. With no map, a passing smoke
+  harness still passes (unscoped, as on Stop).
+- **Stop-only stand-downs are skipped:** `--ci` reads no stdin, so a `stop_hook_active` payload cannot
+  end it; the emergency lane does not stand it down (an `.crew/incident.json` is named and the rules
+  run); and the `.deploy-in-flight` check neither runs nor removes the marker.
+- **The verified marker and the fingerprint are never written.** `.crew/.verify-verified-at` and
+  `.crew/.verify-gate.fingerprint` stay as they were, even on a full pass. The pass line says why: some
+  reach-excluded rules did not run, or, when none were excluded, that `--ci` never writes them by
+  design. The gate's other machine-local files are still written: the per-rule record (synced with
+  `all` false, since the matcher and the sync receive `--ci`, never `--all`), and the timings and
+  tree-pass caches, updated as on any other run.
+- **Arguments are checked strictly in every mode:** the `.sh` accepts only `--all` and `--ci` (in any
+  position) and `--price` (first only); anything else (`-ci`, `--CI`, `--ci=1`) exits 2, so a misspelt
+  `--ci` cannot run as a Stop gate in CI. The `.ps1` has no `[CmdletBinding()]`, so PowerShell itself
+  let an unknown argument through (into `$args`, or a bare word into `-PriceTarget`) and the gate ran
+  as Stop; that now exits 2 too. `--all` with `--ci`, `--ci` with `--price` (both orders), `-All -Ci`
+  and `-Ci -Price` are usage errors. The Stop hook passes no argument and `/crew:verify` passes
+  `--all`.
+- `plugin/crew/tests/test_verify_gate_ci_mode.py`: must-block and must-allow cases for each behaviour
+  above, in both flavours. The `.ps1` cases run wherever `pwsh` exists, past the flavour guard with
+  `OS=Windows_NT`. The suite joins `.crew/verify.json`'s gate rule. `sabotage_tooling.py` registers 22
+  `--ci` mutations against the `.sh` and 19 against the `.ps1` (appended where `pwsh` exists); each one
+  turns the suite red.
+- Review (Sonnet 5.5): round 1, 2 BLOCK (zero commands and an empty file list both passed) and 6 FIX;
+  round 2, 1 BLOCK (`.ps1 -Ci` off Windows stood down green; `pwsh` ships on ubuntu runners), 2 FIX
+  (blank commands passed; a false doc example), 4 NIT. All fixed but two lock-reclaim paths that
+  no test can reach.
+- The `.ps1` refuses `-Ci` off Windows at parameter binding (`ValidateScript`, exit 1), not with a
+  statement: `hooks/scripts/_test/test_flavour_guard.py` requires the flavour guard to stay the first
+  executable statement and the hook pair's stand-down to run nothing past it. CI caught the first
+  placement.
+- A harness change under T-0087, so it lands alone.
+
 ### Added — `crew` 1.0.230: QA standards for repositories crew sets up (L-0618)
 
 - E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,

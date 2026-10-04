@@ -365,6 +365,11 @@ them is half the value of this phase.
   writing form mutates the tree mid-gate, which makes `README.md` a changed file
   on the next run and trips `unmapped: fail` in a loop. Run the writing form by
   hand, or from `/crew:docs`.
+- **CI job (opt-in).** Once the map exists, offer the pull-request workflow,
+  `.github/workflows/crew-verify.yml`, and install it only on a yes - the steps
+  (declare `reach` on the map's rules first, or `--ci` checks nothing; pin
+  `__CREW_SHA__` to the installed crew's commit, never a branch) are in
+  `SKILL.md` §3.
 
 **Re-run the resolver once the map exists**, because now it can read the map
 rather than being told:
