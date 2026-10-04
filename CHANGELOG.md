@@ -4,6 +4,48 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.300: crew's own bookkeeping never trips the completion audit or stales a review receipt (T-0068)
+
+TSS-510's `/crew:done` deadlocked in a repository whose `.gitignore` does not ignore `.crew/*`: the
+completion audit listed `.crew/.scope-base` and `.crew/metrics.md` as out of Touch, and running the
+verify gate wrote `.crew/.verify-gate.record.json` and `.timings.json` untracked, which changed the
+review bundle and staled the accepted receipt with no round left.
+
+- **One list.** `crew_ticket.CREW_BOOKKEEPING_PATHS`: every path a crew script writes for itself
+  under `.crew/` (the scope base, the gate's records, fingerprint, lock and marker, `metrics.md`,
+  `metrics.jsonl`, `guard.log`, the auto-clear and handoff markers, incident files, and the
+  transcript, handoff, incident, backup, event-claim and tfplan dirs), each entry naming its
+  writer, as root-anchored `:(exclude,top,glob)` pathspecs. `CREW_CONTENT_PATHS` lists what crew
+  reads as config, policy, approval or a map (`config.json`, `crew.json`, `verify.json`,
+  `endpoints.json`, `standards.md`, `.approved-*`, the code map, the archive), which stays
+  reviewable. `test_crew_bookkeeping.py` walks every crew hook script's `.crew/` names and
+  requires each in exactly one list, and pins the matcher against git's own reading of the
+  pathspecs.
+- **Four consumers.** The review bundle (`review_patch.py`, so `review_ledger.py
+  --check-receipt`) and the completion audit leave the list out whatever `.gitignore` says; the
+  scope guard allows a Write/Edit to it with or without an approval when both the real and the
+  named path are on it (`.crew/.scope-base` stays refused, rule 2 runs first); the verify gate, in
+  both flavours, drops it from the changed list. A nested `sub/.crew/.scope-base`, `.crew/verify.json`
+  and `.crew/config.json` are still judged everywhere.
+- **Refresh artifacts are mapped.** The gate never reports a refresh artifact (`.crew/codemap/`, the
+  diagrams dir, the graph dir, `.claude/rules/`) as unmapped; a rule that names one still runs.
+  `completion_audit.classify_paths` is the one judgement: `verify-gate.sh` imports it, and
+  `verify-gate.ps1` pipes its changed list to `completion_audit.py --classify`. If it cannot
+  answer, every path stays `other` (unmapped, never mapped) and the gate says so.
+- **One re-review after the upgrade, in such a repository.** A receipt accepted over a tree that
+  held a non-ignored bookkeeping file reads stale once the rebuilt bundle drops that file. Accepted
+  as risk (spec, Unknowns).
+- Must-block and must-allow tests for each consumer; 29 new sabotage mutations in
+  `sabotage_refresh.py`, `sabotage_review.py` and `sabotage_scope.py` (4 of them `.ps1` ones, joined
+  where pwsh exists), each red on its named test. `.crew/verify.json` gains a rule for
+  `review_patch.py` / `review_ledger.py`, and rules 4 and 12 run the new suites.
+- A harness change under T-0087, so it lands alone. The list lives in `crew_ticket.py` and the
+  classifier in `completion_audit.py` (both harness) rather than the plan's `crew_common.py` and
+  `crew_refresh_check.py`, so no production file outside the harness moves. **Harness follow-ups**
+  (filed in `TODO.md`): the prose in `commands/done.md` checks 1-3, `commands/verify.md:95-102` and
+  `commands/implement.md` step 6, which are prompts outside the harness; `verify.knownFailures`
+  (TSS F496) and `.gitignore` writes from `/crew:init` / `/crew:migrate` stay out, as the spec says.
+
 ### Added — `crew` 1.0.242: a measured readability standard for every diagram crew draws
 
 - `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the

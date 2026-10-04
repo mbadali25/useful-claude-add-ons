@@ -1581,11 +1581,30 @@ then the train is advisory.
 - `review_ledger.py`, `review_patch.py` — part of the review pipeline
   `/crew:review` and `/crew:done` depend on — were opened only at the T-0087
   and T-0092 lines cited below; the rest was not re-read.
-- DERIVED (T-0092, crew 1.0.54): `EXCLUDED` and `_EXCLUDE_SPEC`
-  (`plugin/crew/hooks/scripts/review_patch.py:111`,
-  `plugin/crew/hooks/scripts/review_patch.py:112`) name `.work/`, the
-  generated `graphify-out/` and, since L-0578, `.crew/metrics.md`, root-anchored, on every diff and listing but
-  never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
+- DERIVED (T-0092, crew 1.0.54; T-0068): `EXCLUDED` and `_EXCLUDE_SPEC`
+  (`plugin/crew/hooks/scripts/review_patch.py:117`,
+  `plugin/crew/hooks/scripts/review_patch.py:118`) name `.work/`, the
+  generated `graphify-out/` and, since T-0068, every entry of
+  `crew_ticket.CREW_BOOKKEEPING_PATHS` (which took over L-0578's single
+  `.crew/metrics.md`), on every diff and listing but never on `git add`; the
+  manifest's `excluded` is `list(EXCLUDED)`.
+- DERIVED (T-0068): crew's own bookkeeping is ONE list,
+  `CREW_BOOKKEEPING_PATHS` (`plugin/crew/hooks/scripts/crew_ticket.py:429`),
+  beside `CREW_CONTENT_PATHS` (`plugin/crew/hooks/scripts/crew_ticket.py:463`,
+  what crew reads: config, verify map, endpoints, standards, approvals, the
+  code map, the archive). `_crew_listed` (`plugin/crew/hooks/scripts/crew_ticket.py:494`)
+  matches whole segments from the root, refuses an unnormalised path, and
+  agrees with git's glob (a trailing `/**` is one or more segments);
+  `bookkeeping_excludes` (`plugin/crew/hooks/scripts/crew_ticket.py:522`)
+  returns one `:(exclude,top,glob)` pathspec per entry. Its four consumers:
+  the bundle (above), the completion audit's `_ONLY`
+  (`plugin/crew/hooks/scripts/completion_audit.py:94`), the scope guard's
+  rule 5a (`plugin/crew/hooks/scripts/scope_guard.py:205`, after rule 2's
+  `protected`, so `.crew/.scope-base` stays refused) and the verify gate's
+  changed list, through `completion_audit.classify_paths`
+  (`plugin/crew/hooks/scripts/completion_audit.py:211`). Lives in
+  `crew_ticket.py` rather than `crew_common.py` because every consumer is
+  review/gate harness (`scripts/check-tooling-pr.py` `HARNESS`).
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
   an empty list as `excluded (never in the bundle): none`, and a missing
   key or anything but a list of non-blank strings as
