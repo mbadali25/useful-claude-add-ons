@@ -60,8 +60,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Review round 2 (0 BLOCK / 1 FIX).** The killed/unknown must-block tests
   no longer skip on native Windows for want of a `/proc` in Python: the two
   that find the wrapper's pid probe `/proc/$BASHPID/stat` and `mkfifo` inside
-  the rule's own bash and skip only when that bash lacks them. The sh gate
-  reads the record as hex bytes, so `0<NUL><LF>` is no record (it read as 0).
+  the rule's own bash and skip only when that bash lacks them. They now run on
+  Windows CI and hold there; an MSYS bash.exe killed by SIGKILL reports 2304
+  (`9 << 8`) to pwsh, still "could not tell". The sh gate reads the record
+  with the `read` builtin delimited by NUL (no `od`: not on every rule's
+  PATH), so `0<NUL><LF>` is no record (it read as 0).
   The standalone runners in `sabotage_event_claim.py`, `sabotage_autocycle.py`
   and `sabotage_resume.py` use the per-entry bound too.
 - **T-0080, why.** The azureProfile cloud-guard entry reads /dev/zero without

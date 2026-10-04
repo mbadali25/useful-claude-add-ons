@@ -22,6 +22,7 @@ this test. The native-Windows run the spec asks for is not done here.
 """
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -127,6 +128,21 @@ def _marker(root):
     return p.read_text(encoding="utf-8").strip() if p.exists() else None
 
 
+# The wrapper's status as its parent sees it: 137 from bash, and from a
+# native Windows parent (pwsh) of an MSYS bash.exe ended by SIGKILL, 2304 -
+# MSYS hands the signal back as `9 << 8` (measured on CI's windows-latest).
+# Either way the reason, and the could-not-tell outcome, are the same.
+_RUNNER_KILLED = re.compile(r"the rule's runner ended with status (137|2304) before it "
+                            r"recorded a result")
+
+
+def _says(stderr, reason, cmd):
+    """The COULD NOT TELL line for `cmd`, with `reason` a string or a pattern."""
+    if isinstance(reason, str):
+        return f"{_TELL}{reason}): {cmd}" in stderr
+    return re.search(re.escape(_TELL) + reason.pattern + re.escape(f"): {cmd}"), stderr) is not None
+
+
 def _wrapper_pid(flavour):
     """Shell text that sets $w to the pid of the rule's wrapper: the parent of
     the subshell the rule is evaluated in. Under [sh] that must never be the
@@ -210,7 +226,7 @@ def test_no_completion_record_could_not_tell(flavour, how, tmp_path):
     reports exit 0 would leave, which only the record can catch."""
     if how == "wrapper-killed":
         cmd = _wrapper_pid(flavour) + 'kill -KILL "$w"; sleep 1'
-        reason = "the rule's runner ended with status 137 before it recorded a result"
+        reason = _RUNNER_KILLED
     else:
         cmd = 'ln -sf /dev/null "$RULE_DONE_FILE"; echo pointed-away'
         reason = "no completion record"
@@ -221,7 +237,7 @@ def test_no_completion_record_could_not_tell(flavour, how, tmp_path):
     assert res.returncode == 2, res.stderr
     assert "refusing-to-signal-the-gate" not in res.stderr
     assert f"VERIFY FAILED: {cmd}" in res.stderr
-    assert f"{_TELL}{reason}): {cmd}" in res.stderr
+    assert _says(res.stderr, reason, cmd), res.stderr
     assert _marker(root) is None
 
 
@@ -280,14 +296,14 @@ def test_a_rule_timed_out_from_outside_is_failed(flavour, where, tmp_path):
         reason = "exit status 137: ended by signal 9, or the rule's own status"
     else:
         cmd = _wrapper_pid(flavour) + '( sleep 1; kill -KILL "$w" ) & sleep 4'
-        reason = "the rule's runner ended with status 137 before it recorded a result"
+        reason = _RUNNER_KILLED
     root = _repo(tmp_path, [cmd])
 
     res = _run(flavour, root)
 
     assert res.returncode == 2, res.stderr
     assert f"VERIFY FAILED: {cmd}" in res.stderr
-    assert f"{_TELL}{reason}): {cmd}" in res.stderr
+    assert _says(res.stderr, reason, cmd), res.stderr
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)

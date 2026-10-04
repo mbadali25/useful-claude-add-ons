@@ -484,8 +484,9 @@ that changed shape or are newly documented here:
   so absence means "not written"; `:2101` is the wrapper
   `( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) ... &` - the inner
   subshell keeps a rule's own `exit N` isolated, the outer writes the record
-  once the rule has ended. `:2110` reads it once, bounded (`head -c 8`; the
-  rule can see the path), as hex bytes (`od`, so a NUL is not dropped), and
+  once the rule has ended. `:2114` reads it once, bounded (`head -c 8`; the
+  rule can see the path), with `read -d '' -n 8` (a NUL or the bound is no
+  record; no external `od`), and
   accepts exactly `0|[1-9][0-9]{0,2}` and a newline, then
   removes the directory whole (a wrapper a signalled gate left running finds
   nowhere to write; a killed `.ps1` gate has no trap and can leave it). `:2127` starts the decision table: wrapper status not 0,

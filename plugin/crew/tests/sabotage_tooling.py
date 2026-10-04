@@ -1121,8 +1121,8 @@ TOOLING_MUTATIONS += (
     (
         "(a) sh: pass on the wrapper status alone (record not read)",
         GATE_SH,
-        "    RULE_REC_HEX=$(head -c 8 \"$RULE_DONE_FILE\" 2>/dev/null | od -An -v -tx1 | tr -d ' \\n\\r')\n",
-        "    RULE_REC_HEX=$(printf '%s\\n' \"$RULE_WRAP_RC\" | od -An -v -tx1 | tr -d ' \\n\\r')\n",
+        "    LC_ALL=C IFS= read -r -d '' -n 8 RULE_REC < \"$RULE_DONE_FILE\" 2>/dev/null || RULE_REC_EOF=1\n",
+        "    RULE_REC=\"$RULE_WRAP_RC\"$'\\n'; RULE_REC_EOF=1\n",
         _DONE + "test_a_rule_killed_mid_run_could_not_tell[sh]",
     ),
     (
@@ -1135,8 +1135,8 @@ TOOLING_MUTATIONS += (
     (
         "(c) sh: a missing record reads as 0",
         GATE_SH,
-        '    RULE_REC=""\n    case "$RULE_REC_HEX" in\n',
-        '    RULE_REC=0\n    case "$RULE_REC_HEX" in\n',
+        '      *) RULE_REC="" ;;\n',
+        "      *) RULE_REC=0 ;;\n",
         _DONE + "test_no_completion_record_could_not_tell[record-vanished-sh]",
     ),
     (
@@ -1191,16 +1191,16 @@ TOOLING_MUTATIONS += (
     (
         "sh: a record with a leading zero is read",
         GATE_SH,
-        "      300a|3[1-9]0a|3[1-9]3[0-9]0a|3[1-9]3[0-9]3[0-9]0a)\n",
-        "      3[0-9]0a|3[0-9]3[0-9]0a|3[0-9]3[0-9]3[0-9]0a)\n",
+        "      0$'\\n'|[1-9]$'\\n'|[1-9][0-9]$'\\n'|[1-9][0-9][0-9]$'\\n') RULE_REC=${RULE_REC%$'\\n'} ;;\n",
+        "      [0-9]$'\\n'|[0-9][0-9]$'\\n'|[0-9][0-9][0-9]$'\\n') RULE_REC=${RULE_REC%$'\\n'} ;;\n",
         _DONE + "test_unreadable_record_could_not_tell[leading-zero-sh]",
     ),
     (
         "sh: the record goes through command substitution (a NUL is dropped)",
         GATE_SH,
-        "    RULE_REC_HEX=$(head -c 8 \"$RULE_DONE_FILE\" 2>/dev/null | od -An -v -tx1 | tr -d ' \\n\\r')\n",
-        "    RULE_REC_HEX=$(v=$(head -c 8 \"$RULE_DONE_FILE\" 2>/dev/null; printf x); "
-        "printf '%s' \"${v%x}\" | od -An -v -tx1 | tr -d ' \\n\\r')\n",
+        "    LC_ALL=C IFS= read -r -d '' -n 8 RULE_REC < \"$RULE_DONE_FILE\" 2>/dev/null || RULE_REC_EOF=1\n",
+        "    RULE_REC=$(head -c 8 \"$RULE_DONE_FILE\" 2>/dev/null; printf x); "
+        "RULE_REC=${RULE_REC%x}; RULE_REC_EOF=1\n",
         _DONE + "test_unreadable_record_could_not_tell[nul-sh]",
     ),
     (

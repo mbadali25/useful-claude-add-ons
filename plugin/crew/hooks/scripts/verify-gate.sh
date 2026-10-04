@@ -2104,23 +2104,23 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     RULE_WRAP_RC=$?
     RULE_IN_FLIGHT=""
     # Bounded read (8 bytes): the rule can see this path and could point it
-    # at something endless. Read ONCE, as hex bytes: command substitution
-    # drops a NUL, so `0<NUL><LF>` would read as `0` (review round 2); every
-    # byte is matched here, the same as verify-gate.ps1's byte read.
-    RULE_REC_HEX=$(head -c 8 "$RULE_DONE_FILE" 2>/dev/null | od -An -v -tx1 | tr -d ' \n\r')
+    # at something endless. Read ONCE with the `read` builtin, delimited by
+    # NUL: command substitution would drop a NUL, so `0<NUL><LF>` read as `0`
+    # (review round 2), and an external like `od` is not on every PATH a
+    # rule runs under. `read` returns 0 only when it stopped at a NUL or at
+    # the 8-byte bound - neither is a record - and non-zero at end of file.
+    RULE_REC=""
+    RULE_REC_EOF=0
+    LC_ALL=C IFS= read -r -d '' -n 8 RULE_REC < "$RULE_DONE_FILE" 2>/dev/null || RULE_REC_EOF=1
     rm -rf -- "$RULE_DONE_DIR"
     RULE_DONE_DIR=""
     RULE_DONE_FILE=""
-    # Exactly `0|[1-9][0-9]{0,2}` and a newline (review N4): no leading zero,
-    # nothing else. ASCII digits are 30-39, the newline 0a.
-    RULE_REC=""
-    case "$RULE_REC_HEX" in
-      300a|3[1-9]0a|3[1-9]3[0-9]0a|3[1-9]3[0-9]3[0-9]0a)
-        RULE_REC_HEX=${RULE_REC_HEX%0a}
-        while [ -n "$RULE_REC_HEX" ]; do
-          RULE_REC="$RULE_REC${RULE_REC_HEX:1:1}"
-          RULE_REC_HEX=${RULE_REC_HEX:2}
-        done ;;
+    # Exactly `0|[1-9][0-9]{0,2}` and a newline, then end of file (review N4
+    # and round 2): no leading zero, no NUL, nothing else.
+    [ "$RULE_REC_EOF" -eq 1 ] || RULE_REC=""
+    case "$RULE_REC" in
+      0$'\n'|[1-9]$'\n'|[1-9][0-9]$'\n'|[1-9][0-9][0-9]$'\n') RULE_REC=${RULE_REC%$'\n'} ;;
+      *) RULE_REC="" ;;
     esac
     [ -n "$RULE_REC" ] && [ "$RULE_REC" -gt 255 ] && RULE_REC=""
     # The decision table, in this order, the same in verify-gate.ps1.
