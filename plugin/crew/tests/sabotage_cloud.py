@@ -565,7 +565,7 @@ CLOUD_GUARD_MUTATIONS += (
      "            if False:\n",
      _OP + "[Get-Content-prod-ps1-iex-terraform-apply-p-t]"),
     # T-0080: the unbounded reader (json.load on /dev/zero). It grew one
-    # python3 to ~20 GB before sabotage_bound's per-entry RLIMIT_AS; under the
+    # python3 to ~20 GB before sabotage_bound's per-entry RLIMIT_DATA; under the
     # 4096 MiB default it goes RED on the test's "unknown" assertion (peak 3.7 GiB).
     ("cloud guard r1: azureProfile.json opened whatever it is", GUARD,
      "        data = json.loads(_read_small(path, _AZ_PROFILE_MAX_BYTES)\n"

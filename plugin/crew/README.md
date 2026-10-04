@@ -2952,8 +2952,8 @@ why the startup refusal exists.
 Each entry also runs **bounded** (T-0080, `tests/sabotage_bound.py`), because a
 mutation can turn a bounded read into an unbounded one: an uncapped run once
 grew one python3 past 19 GB and the OOM killer took the session with it. The
-entry's pytest starts in its own process group under an address-space cap
-(`RLIMIT_AS`, default 4096 MiB per process, `CREW_SABOTAGE_MEM_MB`; `0` means no
+entry's pytest starts in its own process group under a data-segment cap
+(`RLIMIT_DATA`, default 4096 MiB per process, `CREW_SABOTAGE_MEM_MB`; `0` means no
 cap) that every process the test spawns inherits, and a wall-clock limit
 (default 600 s per entry, `CREW_SABOTAGE_TIMEOUT_S`). Over the cap the test
 fails on its own assertion, so the entry is `RED (good)` for real; a timeout

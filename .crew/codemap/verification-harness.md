@@ -393,13 +393,15 @@ measurements, except where a command was actually re-run above.
 
 - **The sabotage runner bounds each entry (T-0080, H2a).** DERIVED at the H2a
   branch head. `plugin/crew/tests/sabotage.py:3098-3099` - `run_test` keeps its
-  signature and hands pytest to `plugin/crew/tests/sabotage_bound.py:139`
-  (`run`): own session/process group, `RLIMIT_AS` set before exec on Linux
+  signature and hands pytest to `plugin/crew/tests/sabotage_bound.py:142`
+  (`run`): own session/process group, `RLIMIT_DATA` set before exec on Linux
+  (not `RLIMIT_AS`: pwsh 7.4.6 dies under any address-space cap tried up to
+  30 GiB, which failed 1121 unmutated crew tests under a 4 GiB one)
   (default 4096 MiB, `CREW_SABOTAGE_MEM_MB`, 0 = none), wall-clock limit
   (default 600 s, `CREW_SABOTAGE_TIMEOUT_S`), a timeout stopping the whole
-  group and returning `TIMED_OUT` (`:46`). `sabotage.py:3345-3349` reads the
+  group and returning `TIMED_OUT` (`:49`). `sabotage.py:3345-3349` reads the
   limits once (an unreadable value refuses the run, exit 2) and prints the
-  `bound:` line; `:3372` classifies through `sabotage_bound.verdict` (`:100`),
+  `bound:` line; `:3372` classifies through `sabotage_bound.verdict` (`:103`),
   which now holds the pytest exit-code reasoning (finding 13) that used to sit
   in `sabotage.py` - 3400 -> 3381 lines. Measured: the azureProfile entry
   (`sabotage_cloud.py`) peaked at 3.7 GiB under the cap where it reached the

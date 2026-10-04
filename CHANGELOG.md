@@ -29,13 +29,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   entries; joins rule 4's `run`. Not here: a per-rule deadline (L-0674, held)
   and the CI receipt's parser (L-0673).
 - **T-0080, what changed.** `tests/sabotage.py` runs each entry through the new
-  `tests/sabotage_bound.py`: its own process group, an `RLIMIT_AS` cap every
+  `tests/sabotage_bound.py`: its own process group, an `RLIMIT_DATA` cap every
   spawned process inherits (Linux; default 4096 MiB, `CREW_SABOTAGE_MEM_MB`, 0 =
   none) and a wall-clock limit (default 600 s, `CREW_SABOTAGE_TIMEOUT_S`). A
   timeout stops the whole group and reads `RED BUT UNPROVEN -- timed out`; an
   unreadable limit refuses the run (exit 2). The run prints a `bound:` line
   first, `memory cap absent` off Linux. `sabotage.py` shrank 3400 -> 3381
   lines (the exit-code classification moved to `sabotage_bound.verdict`).
+  `RLIMIT_DATA`, not the spec's `RLIMIT_AS`: under a 4 GiB address-space cap
+  1121 unmutated crew tests failed (pwsh 7.4.6 dies under any `RLIMIT_AS` tried
+  up to 30 GiB); the spec's fallback, taken. Under `ulimit -d 4194304` the crew
+  suite (`-n 4 --run-slow`, not wallclock) gives 11608 passed, 294 skipped - the
+  same as without it.
 - **T-0080, why.** The azureProfile cloud-guard entry reads /dev/zero without
   bound: measured 5.9 GiB at a 6 GiB wrapper cap before, 3.7 GiB peak and
   `RED (good)` under the new default with no wrapper. The plan-dev-zero entry
