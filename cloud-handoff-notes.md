@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 12:27 UTC
+Last updated: 2026-10-04 12:28 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 12:28: Started: build #347 T-0047 (1.0.368; blocking guard, must-block/allow + sabotage; harness check), land-prep #361 T-0050 (1.0.369; old base 38adba44, heavy conflicts expected), land-prep #348 T-0041 (1.0.370). Running also: #395 fix, #396 review. Placeholders in use up to 1.0.370.
 - 12:27: #393 review 81a7b991: 0/0/0 CLEAN. Waits CI (check-in 12:50).
 - 12:27: #393 land-prep: merged main ce235468, crew 1.0.325 last -> 81a7b991; PR retargeted to main. check-tooling-pr 'OK - 1 harness path'; tooling-pr suite 17/17; 3 mutations hand-run RED; anchors test 17 passed. Review started.
 - 12:25: MERGED #392 (Windows lock fix) at ce235468 (crew 1.0.324; all CI green incl Windows 3/3 first try; verify-gate n/a - only runs on L-/T-/W- branch pushes). main = ce235468. #353 merge review b04bd6b3: 0/0/1 CLEAN (NIT daily-workflow.md:106 '(crew never merges)' -> 'the train never merges' + rebuild; carry at landing). Next: #393 (harness, alone) -> 1.0.325, then #377.
