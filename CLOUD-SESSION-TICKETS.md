@@ -49,6 +49,7 @@ Next free untracked ID: **L-1507**.
 | T-0084 | #450 | 6dead441 | 1.0.331 |
 | T-0053 | #403 | a27c5e38 | 1.0.332 (slice 1) |
 | L-1506 | #491 | 9c8c0418 | none (CI workflow only: Windows 3 -> 6 shards) |
+| T-0016 | #396 | f1cace4a | 1.0.333 |
 
 ## Closed without merging (your instruction)
 
@@ -92,7 +93,6 @@ Next free untracked ID: **L-1507**.
 | T-0063 | #368 | 29889e98 | |
 | T-0037 | #394 | 96080457 | carry: status-vocabulary test covers memory-and-obsidian guide |
 | T-0049 | #395 | 1b6a6046 | carry: ctypes argtypes; stop Windows walk at a reused parent |
-| T-0016 | #396 | 0a880a5d | landing in batch 2 (crew 1.0.333); carry: CONFIG §14 shared-tty note |
 
 Untouched by owner request: #324 (L-0590, owner WIP). The docs-only notes PR #391 merges last.
 
