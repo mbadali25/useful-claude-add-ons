@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 01:31 UTC
+Last updated: 2026-10-03 01:32 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 01:32: #375 fix r2 review on f4045346: CLEAN (0 BLOCK, 0 FIX, 1 NIT stale timing). Waiting on CI (Windows is the real proof).
 - 01:31: #375 fix review on 25f64976: FIX - test passed C:/... dir; render.sh rewrites non-/ dirs to ./C:/... -> still red on Windows. Fixed: cwd=tmp_path + relative docs/diagrams, probe timeout; crew 1.0.241; pushed f4045346; Sonnet r2 started. Follow-up ticket: render.sh treats a drive-letter dir as relative (affects real Windows callers too). Next free: 1.0.242.
 - 01:29: #375 CI red on a8752c4e: crew-windows-default (1/3) test_render_sh_records_the_source_hash... - shutil.which('bash') = WSL launcher (no distro, exit 1). This PR's test. Fixed with crew_fixtures.resolve_bash() + sha256 probe via that bash; crew 1.0.240; pushed. Sonnet review of fix next. Next free: 1.0.241.
 - 01:14: #375 merge-only review on a8752c4e: CLEAN (0 BLOCK, 0 FIX, 2 NIT: process-qa-gates.mmd says 49 rules (main's file); README only reproducible with local renders, by design). Waiting on CI.
