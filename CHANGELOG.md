@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.397: refresh admission refuses an artifact removed from the index (L-0688)
+### Fixed — `crew` 1.0.329: refresh admission refuses an artifact removed from the index (L-0688)
 
 - **What changed.** `crew_refresh_check._on_disk` refuses an artifact whose
   base copy exists and which the index no longer holds while the file stays
