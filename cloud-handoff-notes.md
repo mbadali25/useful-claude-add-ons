@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 19:03 UTC
+Last updated: 2026-10-04 19:06 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 19:06: Owner: create a ticket for the Windows bugs. Wrote L-1508 (docs/tickets/L-1508: HANDOFF, direction, spec) -> draft PR #493 at fd93ea4e. 19 bare-name subprocess sites in crew hooks (5 harness); plan: shared resolve_tool + AST lint, PR A feature then PR B harness. #492 L-1507 docs fixed at 8c9d38ed; review spawned.
 - 19:03: #492 L-1507 opened at b7b37e12: slow set 3-shard matrix, checker check_partition shared, --slow-shards required, old layout fails; windows-shards 44 passed, 2 sabotages red. Builder adding stale codemap/AGENTS.md shard-layout fixes (stale since L-1506).
 - 19:01: #356 Windows fail-open root cause: crew_autocycle._git_out ran bare 'git' (CreateProcess .exe only) while tests/stub used git.cmd via PATHEXT -> veto judged the real git -> clean -> clear sent. Fix 9a34b335 (coordinator reviewed: runs which('git'), unresolvable = refuse; 2 new tests red without fix). New heads: #356 01fa9021, #347 aa75b561, #456 70b02f6e. Minted L-1508 (audit bare-name subprocess pattern).
 - 18:58: Owner: also split the Windows slow job. Minted L-1507; builder spawned (slow set -> 3 shards, fan-in checker generalised fail-closed, suite cases + sabotage).
