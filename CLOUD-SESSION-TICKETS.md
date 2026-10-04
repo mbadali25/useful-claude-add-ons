@@ -30,7 +30,7 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | L-1504 | Harness-only: approval hook / scope guard accept only the owner's typed `/crew:autopilot sleep`, then unlock loosening in manual sleep (L-0652 ships tighten-only until then). Owner decision 2026-10-04. | none yet | needs ticket in your tracker |
 | L-1505 | Harness-only: when a deploy command matches several environments (L-1503 union rule), verify-gate.sh records one PROMOTIONS row per matched environment instead of the joined name `staging,prod`, so a later `requires: [prod]` is satisfied. Fails closed until then. Also: verify-gate.sh:192/:207 parse the in-flight marker with `read -r DENV DSHA` (a name with a space splits) and :208 greps $DENV as a regex (`a|b` matches row `apple`, `.` matches any char) - escape the name and parse the marker by its last field (found in #489 round-4 review). | none yet | needs ticket in your tracker |
-| L-1506 | CI: crew Windows default set split into 6 shards instead of 3 (owner request 2026-10-04, rush speed-up) | #491 | open, CI running |
+| L-1506 | CI: crew Windows default set split into 6 shards instead of 3 (owner request 2026-10-04, rush speed-up) | #491 | MERGED 9c8c0418 (no plugin version; CI-only) |
 
 Next free untracked ID: **L-1507**.
 
@@ -48,6 +48,7 @@ Next free untracked ID: **L-1507**.
 | T-0096 (slice 0) | #398 | 3c4ccd2f | 1.0.330 |
 | T-0084 | #450 | 6dead441 | 1.0.331 |
 | T-0053 | #403 | a27c5e38 | 1.0.332 (slice 1) |
+| L-1506 | #491 | 9c8c0418 | none (CI workflow only: Windows 3 -> 6 shards) |
 
 ## Closed without merging (your instruction)
 
