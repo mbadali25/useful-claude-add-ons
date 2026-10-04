@@ -491,16 +491,23 @@ it was:</p>
 <td>1</td>
 </tr>
 <tr>
-<td><code>kept-full-text: another save is in progress</code>, <code>note write failed</code>, <code>the note changed during save</code>, <code>note not readable after write</code>, <code>the memory file changed during save</code>, <code>the memory file cannot be read again</code>, <code>pointer write failed</code></td>
+<td><code>kept-full-text: another save is running now</code>, <code>lock failed</code>, <code>note write failed</code>, <code>the note changed during save</code>, <code>note not readable after write</code>, <code>the memory file changed during save</code>, <code>the memory file cannot be read again</code>, <code>pointer write failed</code></td>
 <td>untouched</td>
 <td>1</td>
 </tr>
 </tbody>
 </table>
-<p>Two <code>save</code> runs never interleave: each holds a lock file beside the note
-and beside the memory (<code>.&lt;name&gt;.crew-save.lock</code>; one older than 10 minutes is
-removed as left by a save that died). The memory and an existing note are
-compared again right before each rename. An edit by another program in the
+<p>Two <code>save</code> runs by the same user on the same machine do not interleave:
+each holds two kernel locks, one for the note and one for the memory, on files
+in <code>~/.cache/crew/memory-locks</code> (<code>$XDG_CACHE_HOME</code> when set;
+<code>%LOCALAPPDATA%\crew\memory-locks</code> on Windows), never in the vault. The
+operating system drops a lock when its save exits or is killed, so
+<code>another save is running now</code> means one is running; a lock that cannot be
+taken at all (an unwritable cache, a full disk) is <code>lock failed</code>. The lock
+does not cover a save on another machine that syncs the same vault, or an
+edit by Claude Code, Obsidian or any other program, none of which take it.
+For those, the memory and an existing note are compared again right before
+each rename. An edit by another program in the
 instant between that compare and the rename is not detected: a rename cannot
 compare and swap. An existing note keeps every byte, a BOM and CRLF line
 endings included; only its <code>updated:</code> value changes and the passage is

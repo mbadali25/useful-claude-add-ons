@@ -23,13 +23,24 @@ All notable changes to this repository are documented here. Format follows [Keep
   fsynced; it is read back and the pointer resolved; only then is the native body replaced
   (frontmatter bytes kept, mode kept) through a temp file and `os.replace`. Every refusal and
   every failure prints `kept-full-text: <reason>` and leaves the memory byte-identical; a
-  dangling pointer is never written. `MEMORY.md` is not edited and is refused as `--file`; no
-  hook, no config key.
-- Concurrency (review round 1): a save holds two `O_EXCL` lock files, `.<name>.crew-save.lock`
-  beside the note and beside the memory, note first, for its whole write sequence; a held lock
-  is `kept-full-text: another save is in progress`, and one older than `LOCK_TTL` (600 s) is
-  removed as left by a dead save. The memory and an existing note are re-compared right before
-  each `os.replace`. Not guaranteed: an edit by a program that is not `save` in the instant
+  dangling pointer is never written. `MEMORY.md` is not edited: as `--file` it is
+  `kept-full-text: MEMORY.md is the index`, exit 1, in text and `--json` (review round 2; it was
+  a usage error on stderr, exit 2). A `memory.md` is the index only where the file system folds
+  case and it is the same file; on Linux it is an ordinary memory. No hook, no config key.
+- Concurrency (review round 2): a save holds two kernel locks, note first, for its whole write
+  sequence, one non-blocking try each: `flock(LOCK_EX|LOCK_NB)` on POSIX, `msvcrt.locking
+  (LK_NBLCK)` on Windows, on files named by the sha256 of each guarded file's real path in
+  `$XDG_CACHE_HOME` or `~/.cache` (`%LOCALAPPDATA%` on Windows) under `crew/memory-locks`. The OS
+  drops a lock when its save exits or is killed, so there is no TTL, no stale-lock takeover for
+  two saves to race (round 1's `.<name>.crew-save.lock` files could be taken over by two saves at
+  once, and released by a save that did not own them), no lock file in a synced vault, and no
+  user file is ever mistaken for a lock. A held lock is `kept-full-text: another save is running
+  now`; any other error taking one (unwritable cache, full disk, read-only file system) is
+  `kept-full-text: lock failed`, exit 1, with every lock already taken released - round 1
+  crashed with a traceback there and left the note's lock behind. It excludes saves by the same
+  user on the same machine only: not a save on another machine syncing the vault, nor Claude
+  Code or Obsidian, which never take it. The memory and an existing note are re-compared right
+  before each `os.replace`. Not guaranteed: an edit by a program that is not `save` in the instant
   between that last compare and the rename (a rename cannot compare-and-swap). A second save of
   the same memory that finds it already a resolving pointer reports `already-pointer`.
 - Edge cases (review round 1): an existing note that is not strict UTF-8 is refused; an append

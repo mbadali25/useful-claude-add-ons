@@ -378,12 +378,19 @@ it was:
 | `kept-full-text: vault unavailable`, `no primary`, `several primaries`, `not a vault`, `config unreadable` | untouched | 1 |
 | `kept-full-text: collision`, `ascii-required`, `outside-vault`, `bad-note-path`, `the existing note is not UTF-8` | untouched | 1 |
 | `kept-full-text: MEMORY.md is the index`, `the memory file is a symlink`, `the memory has no body to save` | untouched | 1 |
-| `kept-full-text: another save is in progress`, `note write failed`, `the note changed during save`, `note not readable after write`, `the memory file changed during save`, `the memory file cannot be read again`, `pointer write failed` | untouched | 1 |
+| `kept-full-text: another save is running now`, `lock failed`, `note write failed`, `the note changed during save`, `note not readable after write`, `the memory file changed during save`, `the memory file cannot be read again`, `pointer write failed` | untouched | 1 |
 
-Two `save` runs never interleave: each holds a lock file beside the note
-and beside the memory (`.<name>.crew-save.lock`; one older than 10 minutes is
-removed as left by a save that died). The memory and an existing note are
-compared again right before each rename. An edit by another program in the
+Two `save` runs by the same user on the same machine do not interleave:
+each holds two kernel locks, one for the note and one for the memory, on files
+in `~/.cache/crew/memory-locks` (`$XDG_CACHE_HOME` when set;
+`%LOCALAPPDATA%\crew\memory-locks` on Windows), never in the vault. The
+operating system drops a lock when its save exits or is killed, so
+`another save is running now` means one is running; a lock that cannot be
+taken at all (an unwritable cache, a full disk) is `lock failed`. The lock
+does not cover a save on another machine that syncs the same vault, or an
+edit by Claude Code, Obsidian or any other program, none of which take it.
+For those, the memory and an existing note are compared again right before
+each rename. An edit by another program in the
 instant between that compare and the rename is not detected: a rename cannot
 compare and swap. An existing note keeps every byte, a BOM and CRLF line
 endings included; only its `updated:` value changes and the passage is
