@@ -54,11 +54,11 @@
 #   pwsh -File auto-clear.ps1 -Session ID           # apply the conditions, then send
 #   pwsh -File auto-clear.ps1 -Session ID -DryRun   # print the plan, send nothing
 #   pwsh -File auto-clear.ps1 -Force                # skip the handoff conditions
+#   pwsh -File auto-clear.ps1 -Resume -Session ID -Source clear -Python PY [-DryRun]
 #
 # -Force skips the handoff conditions AND the T-0017 wrap-up check. It is for
 # testing by hand only: hooks.json and context-watch.ps1 never pass it, and no
 # repo or machine config key can turn it on.
-#   pwsh -File auto-clear.ps1 -Resume -Session ID -Source clear -Python PY [-DryRun]
 #
 # `-Resume` (T-0013) is started by the context hook on SessionStart: it types
 # T-0006's rendered resume prompt instead of /clear. Consent is `resume.auto`

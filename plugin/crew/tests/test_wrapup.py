@@ -401,6 +401,42 @@ def test_check_does_not_exempt_a_top_level_namesake_from_a_subdirectory(tmp_path
     assert not ok and "1 tracked file is modified (.work/HANDOFF.md)" in why
 
 
+def test_check_counts_the_source_of_a_rename_onto_the_handoff(tmp_path):
+    # `git mv sub/work.py sub/.work/HANDOFF.md`: the destination is exempt,
+    # the staged deletion of its source is uncommitted work and must block.
+    top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    _git(top, "rm", "-q", "sub/.work/HANDOFF.md")
+    (sub / "work.py").write_text("print('work')\n", encoding="utf-8")
+    _git(top, "add", "sub/work.py")
+    _git(top, "commit", "-q", "-m", "work")
+    (sub / ".work").mkdir(exist_ok=True)
+    _git(top, "mv", "sub/work.py", "sub/.work/HANDOFF.md")
+    write_handoff()
+    ok, why = crew_autocycle.wrapup_check(str(sub), cfg)
+    assert not ok, why
+    assert "1 tracked file is modified (sub/work.py)" in why
+
+
+def test_check_exempts_an_absolute_handoff_path_inside_the_root(tmp_path):
+    handoff = tmp_path / "top" / "sub" / ".work" / "HANDOFF.md"
+    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path, str(handoff))
+    write_handoff()
+    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
+
+
+def test_git_output_is_decoded_as_utf8_whatever_the_locale(monkeypatch, tmp_path):
+    # Windows' locale encoding (cp1252) would mangle a UTF-8 -z path or raise.
+    seen = {}
+
+    def fake(cmd, *args, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(crew_autocycle.subprocess, "run", fake)
+    crew_autocycle._git_out(str(tmp_path), "status")  # pylint: disable=protected-access
+    assert seen.get("encoding") == "utf-8"
+    assert seen.get("errors") == "surrogateescape"
+
+
 def test_check_exempts_a_handoff_path_git_would_quote(tmp_path):
     _top, sub, cfg, write_handoff = _subdir_repo(tmp_path, ".work/HANDÖFF notes.md")
     write_handoff()

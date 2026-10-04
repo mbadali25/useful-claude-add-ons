@@ -412,7 +412,10 @@ def wrapup_armed(cfg, root, session_id):
 def _git_out(root, *args):
     """stdout of `git <args>` in `root`; raises RuntimeError naming the failure."""
     try:
+        # UTF-8 whatever the locale: a -z path is UTF-8 bytes, and Windows'
+        # cp1252 default would mangle it or raise.
         done = subprocess.run(("git", *args), cwd=root, capture_output=True, text=True,
+                              encoding="utf-8", errors="surrogateescape",
                               stdin=subprocess.DEVNULL, timeout=_GIT_TIMEOUT, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"could not run git {args[0]} ({exc.__class__.__name__})") from exc
@@ -427,26 +430,31 @@ def _handoff_field(regex, text):
     return found.group(1) if found else None
 
 
-def _top_relative(prefix, rel):
-    """`rel` (relative to the crew root) as git names it from the repo top."""
-    joined = (prefix or "") + str(rel).replace("\\", "/")
-    return os.path.normcase(os.path.normpath(joined).replace("\\", "/"))
+def _top_relative(toplevel, path):
+    """The contained handoff `path` (absolute, resolved) as git names it from
+    the repository top -- whether handoffPath was relative or absolute."""
+    rel = os.path.relpath(path, os.path.realpath(toplevel.strip()))
+    return os.path.normcase(rel.replace("\\", "/"))
 
 
 def _porcelain_z_paths(text):
-    """The changed paths in `git status --porcelain=v1 -z` output. A rename or
-    copy entry is followed by its source as a field of its own, skipped."""
+    """(paths, sources) from `git status --porcelain=v1 -z`. A rename or copy
+    entry is followed by its source as a field of its own: returned apart,
+    because a source is never the handoff -- its staged deletion is
+    uncommitted work even when the destination is the exempt handoff."""
     fields = text.split("\0")
-    out, index = [], 0
+    paths, sources, index = [], [], 0
     while index < len(fields):
         entry = fields[index]
         index += 1
         if len(entry) < 4:
             continue
-        out.append(entry[3:])
+        paths.append(entry[3:])
         if set(entry[:2]) & {"R", "C"}:
+            if index < len(fields) and fields[index]:
+                sources.append(fields[index])
             index += 1
-    return out
+    return paths, sources
 
 
 def wrapup_check(root, cfg):
@@ -477,9 +485,9 @@ def wrapup_check(root, cfg):
     try:
         branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
         head = _git_out(root, "rev-parse", "HEAD").strip().lower()
-        prefix = _git_out(root, "rev-parse", "--show-prefix").strip()
-        # -z: paths verbatim (never octal-quoted) and, like --show-prefix,
-        # relative to the repository top, whatever directory root is.
+        toplevel = _git_out(root, "rev-parse", "--show-toplevel")
+        # -z: paths verbatim (never octal-quoted) and relative to the
+        # repository top, whatever directory root is.
         status = _git_out(root, "status", "--porcelain=v1", "-z", "--untracked-files=no")
     except RuntimeError as exc:
         return False, str(exc)
@@ -493,8 +501,9 @@ def wrapup_check(root, cfg):
         return False, "the handoff's head: is not HEAD - commit first, then rewrite the handoff"
     # The handoff itself is exempt: its head: is HEAD, so it is written after
     # the commit, and in a repo that tracks it, it is always modified.
-    own = _top_relative(prefix, rel)
-    dirty = [path for path in _porcelain_z_paths(status) if os.path.normcase(path) != own]
+    own = _top_relative(toplevel, path)
+    changed, sources = _porcelain_z_paths(status)
+    dirty = [p for p in changed if os.path.normcase(p) != own] + sources
     if dirty:
         noun = "file is" if len(dirty) == 1 else "files are"
         return False, (f"{len(dirty)} tracked {noun} modified ({dirty[0]}"

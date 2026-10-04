@@ -20,8 +20,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   claim: the handoff's `head:` is HEAD, its `branch:` is the checkout, no
   tracked file is modified (untracked files and the handoff itself do not
   count; paths are compared from the repository top via `git status -z` and
-  `--show-prefix`, so a crew root in a subdirectory exempts only its own
-  handoff), and its `resume:` line parses under T-0006's grammar or is
+  `--show-toplevel`, so a crew root in a subdirectory, or an absolute
+  handoffPath, exempts only its own handoff, and the source of a rename onto
+  the handoff always counts), and its `resume:` line parses under T-0006's grammar or is
   `resume: none`. `--force` / `-Force` (testing by hand only, never passed by
   a hook) skips this check with the handoff checks. git failing, `crew_resume` missing, or (native Windows) no
   python refuses. A refusal is logged, shown as a `systemMessage`
@@ -37,7 +38,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Windows.** `context-watch.ps1` and `auto-clear.ps1` now carry the shared
   `Resolve-CrewPython` (added to `test_ps1_python_probe.py`'s carriers); it is
   probed only when the machine file arms the wrap-up.
-- **Tests.** `plugin/crew/tests/test_wrapup.py` (99 cases with pwsh, both
+- **Tests.** `plugin/crew/tests/test_wrapup.py` (102 cases with pwsh, both
   flavours: arming, the check's must-allow and must-block cases, unarmed
   byte-identity, the procedure and its parity, escalation once and never on
   `stop_hook_active`, the refusal before the claim, `handoff.md` and

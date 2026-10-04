@@ -8,8 +8,9 @@ be wrong can be closed on evidence.
   chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
   being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run
   (`plugin/crew/tests/test_wrapup.py` drives the hooks with fixtures only). (b) Harness follow-up, its
-  own harness-only tooling PR (T-0087, no feature work beside it): the 22 hand sabotages of
-  T-0017's PR as `plugin/crew/tests/sabotage_wrapup.py` (drafted outside the repo as the build
+  own harness-only tooling PR (T-0087, no feature work beside it): the 23 hand sabotages of
+  T-0017's PR (the 22 of its first round plus "a rename source onto the handoff is not counted",
+  red on `test_check_counts_the_source_of_a_rename_onto_the_handoff`) as `plugin/crew/tests/sabotage_wrapup.py` (drafted outside the repo as the build
   session's `sabotage_t0017.py`: label, target, find, replace, named test), registered in
   `plugin/crew/tests/sabotage.py`, with `test_every_wrapup_sabotage_anchor_is_present_exactly_once`. (c) Real Windows: the python
   resolution `context-watch.ps1` and `auto-clear.ps1` now carry (`Resolve-CrewPython`) ran only under
