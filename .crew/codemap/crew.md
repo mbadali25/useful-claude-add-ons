@@ -1635,7 +1635,7 @@ writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, 
 
 - DERIVED `plugin/crew/hooks/scripts/crew_memory.py:92` - the pointer grammar, one line
   `vault: <name> | note: <path>`; `:137` `_path_problem` refuses an absolute, backslash, `:`
-  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:102`
+  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:106`
   `_invisible`); `:199` `classify` - a pointer attempt (`:160` `_attempt`: the first non-blank
   line, Cf removed and stripped, starts `vault` + optional whitespace + `:` in any case, and
   `note:`/`|` (`:97` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
