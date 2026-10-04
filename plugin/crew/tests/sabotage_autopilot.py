@@ -627,8 +627,8 @@ STATUS_MUTATIONS = (
     # read STILL GREEN on 60f4593e). The in-script guard has its own mutation,
     # "the direct CLI writes bytecode", below.
     ("the command's route invocation writes bytecode", COMMAND,
-     "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route ",
-     "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route ",
+     "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route",
+     "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route",
      _S + "test_every_autopilot_invocation_in_command_skips_bytecode"),
     ("the command's status invocation writes bytecode", COMMAND,
      "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status ",
@@ -933,3 +933,186 @@ POLICY_MUTATIONS = (
      "def _one_line(value):\n    return value\n\n\ndef _line(**fields):\n",
      "tests/test_crew_autopilot.py::test_module_defines_each_function_once"),
 )
+
+# ---- T-0019: `crew_ticket.mint` and `crew_ticket.assign` (the `assign` route is L-0611's).
+# One per refusing branch, each red on its named test, plus one in the
+# allowing direction: an origin rule put back into approval_policy, which the
+# owner removed on 2026-09-26 ("Follow the policy"). Appended to
+# AUTOPILOT_MUTATIONS, which sabotage.py registers, the way STATUS_MUTATIONS
+# is; test_crew_autopilot.py holds every anchor to exactly one match.
+_M = "tests/test_crew_ticket_mint.py::"
+_A = "tests/test_crew_autopilot_assign.py::"
+
+ASSIGN_MUTATIONS = (
+    ("mint: the folder claim is not exclusive", TICKET,
+     "            os.mkdir(folder)\n",
+     "            os.makedirs(folder, exist_ok=True)\n",
+     _M + "test_mint_skips_existing_folder"),
+    ("mint: INDEX rows are dropped from the id scan", TICKET,
+     '    for line in (text or "").splitlines():\n        found = _MINT_ROW_RE.search(line)\n',
+     '    for line in []:\n        found = _MINT_ROW_RE.search(line)\n',
+     _M + "test_mint_never_takes_an_index_only_id"),
+    ("mint: a tracker `id taken` reads as a written row", TICKET,
+     '        return "taken", report\n',
+     '        return "written", report\n',
+     _M + "test_mint_moves_on_when_the_tracker_says_id_taken"),
+    ("mint: the title check is skipped", TICKET,
+     "    problem = _mint_title_problem(title)\n    if problem:\n",
+     "    problem = _mint_title_problem(title)\n    if False:\n",
+     _M + "test_mint_rejects_bad_title[a|b]"),
+    ("mint: the status check is skipped", TICKET,
+     "    if status not in MINT_STATUSES:\n",
+     "    if False:\n",
+     _M + "test_mint_rejects_unknown_status"),
+    ("mint: the tracker is asked before the direction is written", TICKET,
+     "    if direction is not None:\n        try:\n            _mint_write_direction(",
+     ("    crew_tracker.create(top, ticket, title)\n"
+      "    if direction is not None:\n        try:\n            _mint_write_direction("),
+     _M + "test_mint_half_written_direction_leaves_no_ticket"),
+    ("mint: an unreadable INDEX reads as no rows", TICKET,
+     "    if text is None and os.path.lexists(index):\n",
+     "    if False:\n",
+     _M + "test_mint_unreadable_index_refuses"),
+    ("mint: the tracker-kind gate is skipped", TICKET,
+     "    _mint_gate(top)\n",
+     "    pass\n",
+     _M + "test_mint_refuses_under_a_delegated_or_unknown_tracker[jira]"),
+    ("mint: a failed create leaves the folder behind", TICKET,
+     "f\"{'; '.join(lines)}{_mint_release(folder)}\")",
+     "f\"{'; '.join(lines)}\")",
+     _M + "test_mint_failed_tracker_create_leaves_no_ticket"),
+    ("assign: mints without its staging-file check", TICKET,
+     "    if problems:\n        raise TicketError(f\"{direction_file}: \"",
+     "    if False:\n        raise TicketError(f\"{direction_file}: \"",
+     _A + "test_assign_refuses_missing_section_and_mints_nothing[ask]"),
+    ("assign: an empty section is accepted", TICKET,
+     "        elif not found[name]:\n",
+     "        elif False:\n",
+     _A + "test_assign_refuses_empty_ask"),
+    ("assign: the armed check is skipped", TICKET,
+     "    if not _assign_armed(top):\n",
+     "    if False:\n",
+     _A + "test_assign_refuses_when_not_armed"),
+    ("assign: the staging-path check is skipped", TICKET,
+     "    if not real.startswith(staging + os.sep):\n",
+     "    if False:\n",
+     _A + "test_assign_refuses_direction_file_outside_staging[/tmp/x.md]"),
+    ("assign: an unknown risk is written low", TICKET,
+     '        risk = "high"\n',
+     '        risk = "low"\n',
+     _A + "test_assign_unknown_risk_is_high"),
+    # The allowing direction: the 2026-09-25 origin rule, put back.
+    ("approval_policy: an assigned ticket always waits for the human", AUTOPILOT,
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n'
+      '    if crew_ticket.ORIGIN_ASSIGN in (read_text(os.path.join(\n'
+      '            crew_ticket.ticket_dir(top, ticket), "direction.md")) or ""):\n'
+      '        return {"allow": False, "policy": HUMAN, "risk": "high", "known": False,\n'
+      '                "warnings": [], "reason": "an assigned ticket waits for the human"}\n'
+      '    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     _A + "test_assigned_ticket_self_approved_under_self"),
+    ("approval_policy: the origin line changes the answer", AUTOPILOT,
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n'
+      '    if crew_ticket.ORIGIN_ASSIGN in (read_text(os.path.join(\n'
+      '            crew_ticket.ticket_dir(top, ticket), "direction.md")) or ""):\n'
+      '        return {"allow": False, "policy": HUMAN, "risk": "high", "known": False,\n'
+      '                "warnings": [], "reason": "an assigned ticket waits for the human"}\n'
+      '    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     _A + "test_origin_line_changes_no_policy[self]"),
+    # Round-1 review's FIX and NIT lines, each red on its named test; the
+    # neighbouring case is the second entry where there is one.
+    ("FIX: mint writes INDEX without its lock", TICKET,
+     ('        with crew_config_files.Lock(os.path.join(top, ".work", "INDEX.md"), '
+      "_MINT_LOCK_WAIT):\n"),
+     "        if True:\n",
+     # The unpaused test_index_rows_intact_after_concurrent_mints loses a row
+     # under this mutation 1 run in 3 (measured); the paused one 6 in 6.
+     _M + "test_index_rows_intact_after_concurrent_slow_mints"),
+    ("FIX: mint's create runs outside the INDEX lock", TICKET,
+     ('        with crew_config_files.Lock(os.path.join(top, ".work", "INDEX.md"), '
+      "_MINT_LOCK_WAIT):\n"),
+     "        if True:\n",
+     _M + "test_mint_create_runs_under_the_index_lock"),
+    ("FIX: mint's move to ready runs after the INDEX lock is released", TICKET,
+     ('            if outcome == "written" and status == "ready":\n'
+      "                state, moved = _mint_ready(top, ticket)\n"
+      "    except crew_config_files.Busy as exc:\n"),
+     ("            pass\n"
+      "    except crew_config_files.Busy as exc:\n"
+      "        raise\n"
+      '    if outcome == "written" and status == "ready":\n'
+      "        state, moved = _mint_ready(top, ticket)\n"
+      "    try:\n        pass\n"
+      "    except crew_config_files.Busy as exc:\n"),
+     _M + "test_mint_ready_move_runs_under_the_index_lock"),
+    ("NIT: a create that raises is not unwound", TICKET,
+     "        except BaseException as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     "        except ZeroDivisionError as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     _M + "test_mint_create_that_raises_leaves_no_ticket[RuntimeError]"),
+    ("NIT: a KeyboardInterrupt in create is not unwound", TICKET,
+     "        except BaseException as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     "        except Exception as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     _M + "test_mint_create_that_raises_leaves_no_ticket[KeyboardInterrupt]"),
+    ("NIT: a row written before create raised is released anyway", TICKET,
+     "            if indexed is False:\n",
+     "            if indexed is not None:\n",
+     _M + "test_mint_create_that_raises_after_writing_the_row_keeps_the_ticket"),
+    ("NIT: a move to ready that raises escapes mint", TICKET,
+     ("    except Exception as exc:  # pylint: disable=broad-except  # noqa: BLE001\n"
+      '        warnings = [f"tracker: move to ready raised'),
+     ("    except ZeroDivisionError as exc:  # pylint: disable=broad-except  # noqa: BLE001\n"
+      '        warnings = [f"tracker: move to ready raised'),
+     _M + "test_mint_ready_move_that_raises_leaves_direction_row_and_warns"),
+    ("NIT: a BOM hides the staging file's title", TICKET,
+     '    text = (text or "").removeprefix("\\ufeff")\n',
+     '    text = text or ""\n',
+     _A + "test_check_direction_takes_a_title_after_a_bom"),
+    ("NIT: mint's --direction-file keeps a BOM", TICKET,
+     'handle = os.fdopen(fd, encoding="utf-8-sig")',
+     'handle = os.fdopen(fd, encoding="utf-8")',
+     _M + "test_mint_cli_direction_file_bom_is_not_carried"),
+    ("NIT: argparse refuses a bad --status with exit 2", TICKET,
+     '                        help=f"mint: the new row\'s status, ',
+     '                        choices=MINT_STATUSES, help=f"mint: the new row\'s status, ',
+     _M + "test_mint_cli_bad_status_is_refused_exit_1[spec]"),
+    ("NIT: assign's CLI resolves a relative file against the cwd", TICKET,
+     "            got = assign(root, args.direction_file)\n",
+     "            got = assign(root, os.path.abspath(args.direction_file))\n",
+     _A + "test_assign_cli_relative_direction_file_resolves_under_root"),
+    # Review round 2's BLOCK and FIX lines (Codex), each red on its named test.
+    ("R2 BLOCK: a row the failed move set to ready is not put back", TICKET,
+     '    if _mint_row_status(top, ticket) == "ready":\n        try:\n            back',
+     '    if False:\n        try:\n            back',
+     _M + "test_mint_board_failure_on_move_reports_the_rows_status"),
+    ("R2 BLOCK: the reported state is not the INDEX row's", TICKET,
+     "    state = _mint_row_status(top, ticket)\n    if state is None:\n",
+     '    state = "direction"\n    if state is None:\n',
+     _M + "test_mint_board_failure_on_move_whose_revert_fails_says_ready"),
+    ("R2 FIX: a create whose card failed is a successful mint", TICKET,
+     '        return ("incomplete" if crew_tracker.exit_code(report) else "written"), report\n',
+     '        return "written", report\n',
+     _M + "test_mint_board_failure_on_create_is_not_a_successful_mint"),
+    ("R2 FIX: a lock error leaves the claimed folder", TICKET,
+     "        if entered:\n            raise\n        tail = _mint_release(folder)\n",
+     "        raise\n        tail = _mint_release(folder)\n",
+     _M + "test_mint_lock_error_releases_the_claimed_folder"),
+    ("R2 FIX: a create that wrote no row leaves its obsidian note", TICKET,
+     '    if outcome in ("taken", "failed") and made_note:\n',
+     "    if False:\n",
+     _M + "test_mint_failed_index_write_under_obsidian_removes_its_note"),
+    ("R2 FIX: a staging file that is not regular is read", TICKET,
+     "        if not stat.S_ISREG(os.fstat(fd).st_mode):\n",
+     "        if False:\n",
+     _A + "test_assign_refuses_a_fifo_staging_file_without_waiting"),
+    ("R2 FIX: assign ignores --title", TICKET,
+     "                if value is not None:\n                    raise TicketError(f\"assign takes no",
+     "                if False:\n                    raise TicketError(f\"assign takes no",
+     _A + "test_assign_cli_refuses_a_mint_only_option[title]"),
+)
+
+AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS

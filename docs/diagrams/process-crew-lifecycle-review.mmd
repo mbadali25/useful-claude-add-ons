@@ -1,0 +1,59 @@
+%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Anchors: plugin/crew/commands/review.md, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/review_verdict.py, plugin/crew/hooks/scripts/crew_standards.py
+%% Purpose: /crew:review: the preflight, pre-review and self-check gates that run before a round is spent, then the review rounds and their verdicts, ending in a receipt or NEEDS_REPLAN.
+%% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
+%% Arrow-shaped nodes ("next:" / "back:" / "again:") stand for a node drawn in the named part.
+%% --
+%% Every node cites the command file's own line; files are named repo-relative
+%% here and by basename in the nodes (all under plugin/crew/commands/ unless
+%% named otherwise):
+%%   plugin/crew/commands/review.md:25-28 two rounds per ticket, a third is refused
+%%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
+%%     4 NEEDS_REPLAN / 2 not run; :451 Claude fallback; :482 the verdict is the
+%%     script's; :485-486 an INCOMPLETE's class and the tool-failure refund;
+%%     :502-504 round 2 is the last (rounds not refunded); :505-506 a final 0-BLOCK
+%%     round auto-accepts (--auto-accept --follow-up, L-0510); :507 anything else stops
+%%     for the owner with 2-4 options; :508 --accept --by <who>; :510 a CLEAN
+%%     round writes its receipt itself.
+%% --
+%% Note pf0: preflight first (#264): a CLEAN receipt covers this bundle? verify gate passed
+%%    this tree? review_run.py:672, :846
+%% Note pr0: no linter finding the bundle adds against its base? could every configured linter
+%%    check? review_run.py prereview_gate :731
+%% Note rv0: self-check stamped for this bundle and standards set? review_run.py standards_gate
+%% Note rv1: on one bundle; prompt carries the standards checklist, then the recurring-findings checklist, then any web tests
+%% Note rv3: report findings and every ignored line verbatim (:498-500); final round, 0 BLOCK?
+%%    else fix, or the owner accepts :503, :505-508
+%% Note pr0->fx0: NEW finding: exit 5, no round spent, not overridable; or COULD NOT CHECK: exit 5
+%%    unless --allow-unverified
+%% Note pf0->replan: the budget refusal answers first, no pre-review checks, no self-check
+%% Note rv2->rv3: FINDINGS (stray prose beside findings ignored and named: review_verdict.py:210-213)
+%% Note rv3->rcpt: auto-accept (L-0510): eligible, no specialist/control BLOCK; one follow-up ticket
+%%    :505-506 - or the owner accepts :508
+flowchart TB
+    subgraph review["/crew:review - two rounds per ticket"]
+        pf0{"preflight (#264):<br/>receipt, gate, budget?"}
+        pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
+        pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
+        vg0 --> to_im5
+        pf0 -- "go on" --> pr0{"pre-review checks<br/>pass? (L-0574)"}
+        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 5, no round spent<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
+        fx0 --> to_im5
+        pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check<br/>stamped?"}
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:850-861" --> replan
+        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> to_sc1
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Copilot /<br/>crew:reviewer fallback<br/>review.md:25-28, :451"]
+        rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
+        rv2 -- "CLEAN (exact: no other line)" --> rcpt["receipt written<br/>:510"]
+        rv2 -- "FINDINGS (stray prose<br/>ignored and named)" --> rv3{"final round,<br/>0 BLOCK?"}
+        rv3 -- "auto-accept or owner :508" --> rcpt
+        rv3 -- "fix, round 2" --> again_rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> again_rv1
+        rv2 -- "INCOMPLETE (reviewer / tree, a contract-like<br/>or shortfall stray line): counts" --> again_rv1
+        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
+    end
+
+    again_rv1>"again: reserve a round,<br/>run the reviewers (above)"]
+    to_im5>"back: implement part<br/>then /crew:review last"]
+    to_sc1>"back: implement part<br/>required standards self-check"]
+    rcpt --> to_dn1>"next: done part<br/>1 review receipt"]
