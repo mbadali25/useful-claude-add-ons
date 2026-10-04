@@ -518,6 +518,38 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   <code>AWS_ACCESS_KEY_ID</code> credentials and <code>Remove-Az*</code>'s saved PowerShell context are <strong>always</strong>
   unknown — the guard has no way to read either — so pinning does not silence those; only removing
   the static keys or naming the account through <code>--profile</code>/<code>--subscription</code> does.</p>
+<h3 id="unattended-launch-refuses">Unattended Launch Refuses</h3>
+<p><code>crew_unattended.py launch -- claude ...</code> starts an unattended session holding sealed, owner-named
+cloud credentials, or refuses and starts nothing (plugin README, "Unattended runs: sealed cloud
+credentials"). Run <code>python3 "&lt;crew&gt;/hooks/scripts/crew_unattended.py" check --root .</code> to see every
+check without launching. Each line is <code>ready</code>, <code>refuse</code> or <code>unknown</code> (could not tell, which also
+refuses).</p>
+<ul>
+<li><strong><code>config: no read-only identity named</code></strong> (or <code>no unattendedCloud in the machine config</code>). The
+  defaults name nothing. <strong>Fix:</strong> name the read-only role in <code>~/.claude/crew/config.json</code>, never in
+  the repo (a repo copy is ignored and reported): set <code>unattendedCloud.aws.readOnly.profile</code> and
+  <code>unattendedCloud.aws.readOnly.identity</code>, the assumed-role ARN prefix ending in <code>/</code>.</li>
+<li><strong><code>config: environment X is not nonProd</code></strong> or <strong><code>no machine entry for nonProd environment X</code>.</strong>
+  <code>--environment</code> needs both the repo's <code>environments.nonProd</code> to match the name and a machine
+  <code>unattendedCloud.aws.nonProd</code> entry for it. There is no production entry, by design.</li>
+<li><strong><code>provider not implemented</code>.</strong> Only <code>aws</code> is read; remove the other key.</li>
+<li><strong><code>export: no SessionToken ...: these are static keys</code>.</strong> The profile resolves to long-lived
+  keys. <strong>Fix:</strong> point it at an SSO or assume-role profile; crew never runs <code>aws sso login</code> for you.</li>
+<li><strong><code>export: credentials expire in under 15 minutes</code></strong> or <code>export ... exited</code>: refresh the
+  profile's session yourself (<code>aws sso login</code>), then retry.</li>
+<li><strong><code>identity: STS says ..., expected ...</code>.</strong> The exported credentials are a different role than the
+  one named; a <code>:user/</code> ARN is a long-lived IAM user and always refuses. Fix the profile, or the
+  prefix if the role was renamed.</li>
+<li><strong><code>sandbox: unavailable: apply-seccomp: write /proc/self/setgroups ...</code>.</strong> Claude Code's sandbox
+  starts but cannot run commands on this host (measured with
+  <code>kernel.apparmor_restrict_unprivileged_userns = 1</code>). Every launch refuses until the host owner
+  makes the sandbox usable or runs unattended work as a separate OS user or container.</li>
+<li><strong><code>sandbox: the session can read a store: OPEN &lt;path&gt;</code>.</strong> The sealed settings did not hold for that
+  path (a repo or user setting may be widening it). Nothing launches; find the setting.</li>
+<li><strong><code>sandbox: store not reported</code>, <code>could not tell</code>, or <code>probe made no tool call</code>.</strong> The probe did
+  not measure every store; retry, and treat a repeat as a host problem, not a pass.</li>
+<li><strong><code>refuse command: ...</code>.</strong> <code>launch</code> runs <code>claude</code> only, and supplies <code>--settings</code> itself.</li>
+</ul>
 <h2 id="obsidian">Obsidian</h2>
 <p>See <a href="memory-and-obsidian.md">Memory and Obsidian</a> for setup. What goes wrong day to day:</p>
 <ul>

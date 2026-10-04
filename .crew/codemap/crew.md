@@ -328,6 +328,23 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
 
+**Unattended launches hold sealed credentials (T-0044, read at `e50ca97b`).**
+`plugin/crew/hooks/scripts/crew_unattended.py` is the one entry point that starts an unattended
+session with its own environment: `run_checks` (`:479`) runs platform, config, export, identity
+and sandbox in order and stops at the first that is not `ready`; `unknown` refuses like `refuse`
+and keeps its label. Config is `resolve_target` (`:287`) over the machine file alone, with
+`cloud_guard.environments_config`'s repo `nonProd` as the second layer for `--environment`.
+`judge_export` (`:237`) refuses static keys and under 15 minutes; `judge_identity` (`:263`) is a
+prefix match that refuses `:user/`; `judge_probe` (`:196`) reads stream-json `tool_result`
+blocks only. The child gets `sealed_env` (`:331`: no inherited `AWS_*`, IMDS off,
+`CREW_UNATTENDED=1`) and `sealed_settings` (`:349`) over `stores` (`:105`); `_command_problem`
+(`:553`) refuses anything but `claude` and a `--settings` override. The block is
+`crew_state.UNATTENDED_CLOUD_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:731`), global
+template only; `crew_config.unattended_cloud_block_problem` (`plugin/crew/hooks/scripts/crew_config.py:1084`)
+validates it and `_without_machine_only` (`:1719`) drops a repo copy from `resolve_config` and
+`explain_config`. DERIVED from the code cited. JUDGEMENT: nothing here changes `cloud_guard.py`'s
+decisions; the guard still reads command lines, and this is the credential boundary beside it.
+
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls
 `_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2785`, called at `:2834`, and only at

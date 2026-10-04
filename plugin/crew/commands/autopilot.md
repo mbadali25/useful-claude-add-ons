@@ -25,6 +25,7 @@ a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (a
 never read as a ticket; `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020). `sub=status`:
 section 1 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
 arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
+Unattended cloud work is started by `crew_unattended.py launch -- claude ...` (README), never from a running session.
 
 ## 1. status
 

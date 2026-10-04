@@ -153,8 +153,11 @@ applets, git `!` aliases, an interpreter (`python -c`, `node -e`), a script
 file, an unlisted wrapper (`strace`, `aws-vault exec`) or a container's
 entrypoint. No command-line guard can, because unattended work must run
 interpreters and scripts. The real boundary is the credentials an unattended
-run holds: scope them (T-0044). The full list is in the plugin README, "What
-the guard does not catch".
+run holds: start unattended cloud work with `crew_unattended.py launch --
+claude ...`, which hands the session short-lived credentials for an
+owner-named read-only identity and seals the machine's credential stores, or
+refuses. The full list is in the plugin README, "What the guard does not
+catch", and the launcher in "Unattended runs: sealed cloud credentials".
 
 ---
 

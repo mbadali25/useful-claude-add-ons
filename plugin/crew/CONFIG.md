@@ -1624,8 +1624,9 @@ strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
 -e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
 entrypoint. No command-line guard can: unattended work must run interpreters
-and scripts. The real boundary is the credentials an unattended run holds,
-which is T-0044. README, "What the guard does not catch", lists the commands.
+and scripts. The real boundary is the credentials an unattended run holds:
+`crew_unattended.py launch` and `unattendedCloud` below. README, "What the
+guard does not catch", lists the commands.
 
 **The always-stops.** A destroy is never applied unattended at any setting —
 `terraformApply: allow` and `prodUnattended: true` included. So is an apply of
@@ -1659,6 +1660,43 @@ read from the session's project directory even when the deploy runs from a
 linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
+
+### `unattendedCloud` — the identity an unattended run holds (machine only)
+
+Read by `hooks/scripts/crew_unattended.py` (T-0044) from the machine file
+`~/.claude/crew/config.json` **alone**. It is in `default_global_config()` and
+`templates/global.template.json`, and absent from the repo shape: a repo's
+`.crew/config.json` copy is dropped by `resolve_config`, reported as
+`repoIgnored` by `/crew:config --show`, and named as ignored by the launcher. A
+repo travels inside a clone written by someone else, so it must never choose
+credentials on this machine — stronger than `resume.auto`, where a repo may at
+least veto.
+
+```json
+"unattendedCloud": {
+  "aws": {
+    "readOnly": {"profile": "ro", "identity": "arn:aws:sts::123456789012:assumed-role/ReadOnlyAccess/", "region": "eu-west-1"},
+    "nonProd": {"dev": {"profile": "dev-writer", "identity": "arn:aws:sts::123456789012:assumed-role/DevWriter/"}}
+  }
+}
+```
+
+- `identity` is the assumed-role ARN **prefix** exactly as `aws sts
+  get-caller-identity` prints it, ending in `/`. STS's ARN must start with it.
+- `profile` is the `~/.aws/config` profile `aws configure export-credentials`
+  exports; it must yield temporary credentials (`SessionToken` and
+  `Expiration`). `region` defaults to `us-east-1`.
+- `nonProd` maps an environment name to the same three keys, for
+  `launch --environment NAME`. A name is usable only when the repo's
+  `environments.nonProd` also classifies it as nonProd: both layers agree, as
+  with `prodUnattended`. There is no production entry and none can be written.
+- Any provider key other than `aws` refuses as not implemented (the provider
+  seam for Azure and TFC/HCP).
+
+The defaults name nothing (`profile`, `identity`, `region` all `null`,
+`nonProd` empty), so every launch refuses with `no read-only identity named`
+until the owner names one. README, "Unattended runs: sealed cloud
+credentials", lists every check and refusal.
 
 ### The ratchet is one table, not five copies
 

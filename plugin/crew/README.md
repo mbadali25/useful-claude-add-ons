@@ -1442,7 +1442,77 @@ No command-line guard can close these: unattended work has to run
 interpreters, scripts and build tools, and any of them can start terraform
 under another name, so a guard that refused them would refuse the work
 itself. The real boundary is the credentials an unattended run holds — scope
-them so the run cannot destroy what it must not. That is T-0044.
+them so the run cannot destroy what it must not. That is
+`crew_unattended.py launch`, next.
+
+#### Unattended runs: sealed cloud credentials
+
+`hooks/scripts/crew_unattended.py` (T-0044) starts an unattended Claude
+session holding short-lived credentials for ONE identity the machine owner
+named, with the machine's credential stores unreadable to it, or refuses and
+starts nothing. It holds whatever the command line says, because it decides
+what the process can authenticate as and what it can read.
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_unattended.py check  --root . [--environment dev] [--json]
+python3 plugin/crew/hooks/scripts/crew_unattended.py launch --root . [--environment dev] -- claude [args...]
+```
+
+The owner (or the owner's scheduler) runs it. Crew never starts an unattended
+session by itself, and a hook cannot change the environment of a session that
+is already running, so `/crew:autopilot` touching the cloud unattended is
+started this way. The identity comes from `unattendedCloud` in the machine
+file `~/.claude/crew/config.json` only (CONFIG.md, "`unattendedCloud`"); a
+repo copy is ignored and reported. Five checks run in order, and the first that
+is not `ready` refuses with its reason printed verbatim. `unknown` ("could not
+tell") refuses exactly like `refuse` and keeps its own label:
+
+1. **platform** -- native Windows refuses: `sandbox probe not implemented for native Windows`.
+2. **config** -- no identity or profile named, a provider other than `aws`, or
+   `--environment NAME` without both a machine `nonProd` entry and the repo's
+   `environments.nonProd` classifying `NAME` as nonProd. There is no
+   production entry.
+3. **export** -- `aws configure export-credentials --format process`, read
+   into memory only. No `SessionToken` or `Expiration` (static keys), under 15
+   minutes of lifetime, a non-zero exit, a timeout or non-JSON output refuses.
+4. **identity** -- `aws sts get-caller-identity` in the sealed environment
+   must print an ARN that starts with the named prefix (an assumed role ending
+   in `/`); a `:user/` ARN or any other role refuses.
+5. **sandbox** -- one headless `claude -p` call in the sealed settings, from
+   the repo root with the repo's own settings loaded, runs a probe that tries
+   `head -c1`/`ls` and `python3 open()` on every store that exists. The verdict
+   is read from the stream-json tool results, never the model's prose: any
+   `OPEN` refuses; a missing nonce, a store not reported, an `ERR` or no tool
+   call is `unknown`.
+
+The launched session gets: no inherited `AWS_*` variable; the exported
+temporary credentials; `AWS_EC2_METADATA_DISABLED=true`; `CREW_UNATTENDED=1`
+(so T-0005's guard judges it unattended); `AWS_CONFIG_FILE` at a region-only
+file and `AWS_SHARED_CREDENTIALS_FILE` at a path that does not exist, both in a
+mode-0700 `crew-sealed-*` temp directory that holds no credential; and
+`--settings` with `sandbox.enabled`, `failIfUnavailable: true`,
+`allowUnsandboxedCommands: false`, and every store (`~/.aws` whole, `~/.azure`,
+`~/.terraform.d/credentials.tfrc.json`, `~/.claude/crew/config.json`, from both
+`$HOME` and the account's real home) in `sandbox.filesystem.denyRead` and as a
+`Read(...)` deny. A command other than `claude`, or one passing its own
+`--settings`/`--setting-sources`, refuses. It prints the checks and the ARN,
+never a credential.
+
+**Host requirement.** Claude Code's sandbox has to run commands on the host.
+Where it starts but cannot run anything -- measured on a host with
+`kernel.apparmor_restrict_unprivileged_userns = 1`, every Bash call failing with
+`apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`
+-- the probe finds no nonce and every launch refuses with `sandbox: unavailable`
+and that line. Making it usable (or running unattended work as a separate OS
+user or container) is the host owner's call.
+
+**Accepted risks.** Credentials that expire mid-run fail closed. Grep/Glob
+tools that ignore `Read(...)` denies, if a later Claude Code adds them, are
+unmeasured. `/proc/<pid>/environ` of other root processes is outside the
+session. The probe nonce is in the prompt, so a model that chose to fake the
+probe's output could; the probe guards against an unusable or leaky sandbox,
+not against an adversarial probe session. Azure and TFC/HCP are a provider seam
+only: any key other than `aws` refuses as not implemented.
 
 ### §11c. `change` — change requests, added by schema 7
 

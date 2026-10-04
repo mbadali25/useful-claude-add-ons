@@ -4,6 +4,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.305: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
+
+- New launcher `plugin/crew/hooks/scripts/crew_unattended.py` (`check` / `launch -- claude ...`).
+  It starts an unattended Claude session with temporary AWS credentials for ONE identity the
+  machine owner named, no inherited `AWS_*` variable, IMDS off, `CREW_UNATTENDED=1`, a region-only
+  `AWS_CONFIG_FILE`, and `--settings` that turn the sandbox on with no escape hatch and deny every
+  credential store (`~/.aws` whole, `~/.azure`, `~/.terraform.d/credentials.tfrc.json`, crew's
+  machine config) to Bash and the file tools. Before it starts anything it proves the identity
+  comes from the machine file, the credentials are temporary with 15+ minutes left, `aws sts
+  get-caller-identity` returns the named role prefix, and a real sandboxed Bash probe cannot open
+  any store. "Could not tell" is its own `unknown` state and refuses; it never falls back to
+  ambient credentials and never writes or prints a credential. This is the boundary T-0005's
+  command-line guard cannot be.
+- New machine-only config block `unattendedCloud` (`~/.claude/crew/config.json` and
+  `templates/global.template.json` only). A repo copy is dropped from `resolve_config` and reported
+  as `repoIgnored` by `explain_config`. The defaults name nothing, so every launch refuses until the
+  owner names a role. Any provider other than `aws` refuses as not implemented.
+- Nothing existing changes behaviour: `cloud_guard.py`'s decisions, autopilot, auto-resume and
+  auto-clear are untouched. On a host where Claude Code's sandbox cannot run commands (the
+  AppArmor userns `apply-seccomp` error) every launch refuses with `sandbox: unavailable`.
+- Docs: plugin README ("Unattended runs: sealed cloud credentials"), CONFIG.md, `/crew:autopilot`,
+  crew-cloud and crew-setup skills, the troubleshooting guide (rebuilt HTML/DOCX/PDF), the code map
+  and the config data-flow diagram. `.crew/verify.json` maps the launcher to its suite.
+- Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
+  and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
+  branch instead, and each turned its named test red.
+
 ### Added — `crew` 1.0.242: a measured readability standard for every diagram crew draws
 
 - `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
