@@ -569,7 +569,12 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   Also confirm <code>memory.inject</code> is not <code>false</code> in <code>.crew/config.json</code> — recall and code-map injection
   are on by default since 1.0.0, so "no recall ever appears" with the key set to <code>false</code> is expected.
   <strong>Fix:</strong> <code>$VO recall --query "&lt;words you expect&gt;"</code> directly, to separate "the CLI can't find it"
-  from "the hook isn't calling the CLI".</p>
+  from "the hook isn't calling the CLI". An empty answer can be the CLI's relevance floor or its
+  excluded folders, not a missing note: the obsidian-vault recall CLI drops stop words, needs
+  more than one matching word for a longer query, and never reads <code>wiki/sessions/archive/</code> or
+  the folders your <code>.obsidian/app.json</code> <code>userIgnoreFilters</code> hide. Re-run with <code>--min-terms 1</code>
+  (the floor off) and <code>--include-excluded</code> (read every folder) and read <code>below_floor</code> and
+  <code>excluded_dirs</code> in the <code>--json</code> output to see which one hid it.</p>
 <ul>
 <li>
 <p><strong>Symptom: the gardener seems to be falling behind.</strong>

@@ -504,6 +504,12 @@
       "run": ["python3 -m pytest plugin/crew/tests/test_pwsh_cache_isolation.py -q -p no:cacheprovider"],
       "reach": "local",
       "why": "L-0557. Every pwsh the suites spawn runs with its own XDG_CACHE_HOME, so concurrent pwsh never share the startup profile they race on (-6 'Stack overflow.' / -11 SIGSEGV at start-up). The guard scans every tracked tests/_test *.py and *.sh statically, so a suite outside plugin/crew/tests that gains a pwsh spawn without the variable turns this red, and it needs no pwsh. reach: local - it reads this checkout's files and spawns only git ls-files." },
+    { "paths": ["plugin/obsidian-vault/hooks/scripts/vault_recall.py",
+                "plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py"],
+      "seconds": 7,
+      "run": ["python3 plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py"],
+      "reach": "local",
+      "why": "T-0083. vault_recall.py is the read-only recall CLI crew's context hook calls on every prompt, so its relevance rules decide what lands in <vault-recall>. _t_recall_relevance holds the must-hide cases (an archived session note and a userIgnoreFilters folder are never returned; a note under the floor is dropped and counted; a stop-word-only query returns nothing) and the must-keep cases (--include-excluded reads the archive, a /regex/ filter entry hides nothing, a broken app.json still excludes only the archive, a note of another project is ranked last and never dropped, a note with no project is never hidden, vault priority still beats project and kind), plus the read-only snapshot of every fixture vault; _t_recall's pre-T-0083 expectations are unedited. Sabotage by hand 2026-10-04, seven mutations (no pruning, floor 1, stop words kept, kind rank or project rank dropped from the sort key, another project dropped, a regex entry applied as a prefix), each red on its named label and green on restore. 6.1s and 6.7s wall (whole file, RESULT: 0 failed), measured 2026-10-04 on a 4-CPU Linux cloud container at load average 13-15; re-time rather than trusting it. reach: local - every vault is a throwaway under a temp HOME with a fake Obsidian registry; nothing reads or writes a real vault." },
 
     { "paths": ["plugin/crew/hooks/scripts/crew_shell.py", "plugin/crew/hooks/scripts/crew_status.py",
                 "plugin/crew/tests/test_crew_shell.py", "plugin/crew/tests/test_status.py",

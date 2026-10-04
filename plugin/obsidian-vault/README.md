@@ -227,15 +227,33 @@ any vault, the default vault is the only one read.
 **CLI.**
 
 ```
-python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B] [--max-chars N] [--timeout-ms MS] --json
+python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B] [--project NAME[,NAME]] [--min-terms N] [--include-excluded] [--max-chars N] [--timeout-ms MS] --json
 ```
 
 - `--vaults` is priority order. Omitted: the primary, then every `recall`
   vault in config order. `ignore` vaults are never read.
-- Ranking is vault priority first, then score, so when the budget runs out
-  the lower-priority vault is the one that loses. Score is plain text matching
-  per query term: title (frontmatter `title`, else filename) 6, each heading 3
-  (max 3), each body line 1 (max 5).
+- Query terms are the words of three or more characters that are not common
+  English stop words (`what`, `the`, `for`, `this`, `with`, ...), first 12
+  kept. A query of stop words only has no terms and returns nothing, exit 0.
+- Excluded folders are never read: `wiki/sessions/archive/` and every plain
+  entry of the vault's `.obsidian/app.json` `userIgnoreFilters` (a path
+  prefix; what you hid from Obsidian search is hidden from recall). A `/regex/`
+  entry is not applied, only counted in `skipped_filters`. A missing or broken
+  `app.json` still excludes the archive. `--include-excluded` reads them all.
+- Relevance floor: a note is returned only when it holds enough distinct query
+  terms - 1 for a query of one or two terms, 2 for three to five, 3 for six or
+  more. `--min-terms N` sets the floor (capped at the term count); `--min-terms 1`
+  is the old "any term" rule. An empty answer is an honest "no hit".
+- Ranking is vault priority first, so when the budget runs out the
+  lower-priority vault is the one that loses. Inside a vault: project, then
+  note kind, then score, then path. Project: with `--project crew` (comma-separated,
+  repeatable, case-insensitive) a note whose frontmatter `project:` or any
+  folder of its path is `crew` ranks first (`match`), a note with no project
+  next (`none`), a note whose `project:` names another project last (`other`;
+  ranked last, never dropped). Kind: `wiki/concepts/` and `wiki/decisions/`
+  notes, then other notes, then `wiki/sessions/` notes. Score is plain text
+  matching per query term: title (frontmatter `title`, else filename) 6, each
+  heading 3 (max 3), each body line 1 (max 5).
 - `--max-chars` (default 4000) bounds `sum(len(line) + 1)` over the results;
   the last result may be cut short to fit.
 - `--timeout-ms` (default 1500) and 20,000 notes per vault bound the walk.
@@ -252,13 +270,22 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
   "results": [
     { "vault": "memory", "path": "wiki/concepts/Port collisions break the bridge.md",
       "title": "Port collisions break the bridge", "score": 23,
+      "kind": "concept", "project": "none", "matched": 2,
       "snippet": "Two vaults on one port: the loser never binds.",
       "line": "[memory] wiki/concepts/Port collisions break the bridge.md: Two vaults on one port: the loser never binds." }
   ],
   "chars": 104, "max_chars": 4000, "truncated": false,
-  "errors": [ { "vault": "nosuch", "error": "not a configured vault (or its path is not on disk)" } ]
+  "errors": [ { "vault": "nosuch", "error": "not a configured vault (or its path is not on disk)" } ],
+  "project": [], "need": 1, "below_floor": 0, "excluded_dirs": 1, "skipped_filters": 0
 }
 ```
+
+`kind` is `concept`, `decision`, `session` or `other`; `project` is `match`,
+`none` or `other`; `matched` is the distinct query terms the note holds. At the
+top, `project` lists the names asked for, `need` is the floor applied,
+`below_floor` counts notes that scored but missed it, `excluded_dirs` counts
+folders pruned unread and `skipped_filters` counts `userIgnoreFilters` regex
+entries not applied.
 
 `path` is vault-relative with forward slashes. `line` is the text to inject.
 `truncated` is true when the budget, the timeout or the file cap cut anything.

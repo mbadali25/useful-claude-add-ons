@@ -4,6 +4,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `obsidian-vault`: vault recall relevance (T-0083)
+
+- **Behaviour change: default recall results.** `vault_ops.py recall` (the CLI crew's context hook
+  calls on every prompt) returns fewer, more relevant notes for every caller, with no crew change:
+  - it never reads `wiki/sessions/archive/` or the plain-path entries of the vault's
+    `.obsidian/app.json` `userIgnoreFilters`; `/regex/` entries are counted, not applied, and a
+    missing or broken `app.json` still excludes the archive;
+  - stop words and words under three characters are not query terms; a stop-word-only query
+    returns nothing, exit 0;
+  - a note must hold 1 distinct term for a query of one or two terms, 2 for three to five, 3 for
+    six or more;
+  - inside a vault the order is project, note kind (`wiki/concepts/` and `wiki/decisions/`, then
+    other notes, then `wiki/sessions/`), score, path. Vault priority still comes first.
+- New options: `--project NAME[,NAME]` (a note whose `project:` or a path folder matches ranks
+  first; another project's notes rank last and are never dropped), `--min-terms N` (`1` restores
+  the old floor) and `--include-excluded`.
+- New JSON keys, existing ones unchanged: `kind`, `project` and `matched` per result; `project`,
+  `need`, `below_floor`, `excluded_dirs` and `skipped_filters` at the top.
+- crew passing its project to `--project` is L-0675, a separate change.
+
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
 - `crew-best-practices`' `practices.md` no longer says a repository's attribution requirement adds

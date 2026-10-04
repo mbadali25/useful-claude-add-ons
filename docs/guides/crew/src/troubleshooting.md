@@ -406,7 +406,12 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
   Also confirm `memory.inject` is not `false` in `.crew/config.json` — recall and code-map injection
   are on by default since 1.0.0, so "no recall ever appears" with the key set to `false` is expected.
   **Fix:** `$VO recall --query "<words you expect>"` directly, to separate "the CLI can't find it"
-  from "the hook isn't calling the CLI".
+  from "the hook isn't calling the CLI". An empty answer can be the CLI's relevance floor or its
+  excluded folders, not a missing note: the obsidian-vault recall CLI drops stop words, needs
+  more than one matching word for a longer query, and never reads `wiki/sessions/archive/` or
+  the folders your `.obsidian/app.json` `userIgnoreFilters` hide. Re-run with `--min-terms 1`
+  (the floor off) and `--include-excluded` (read every folder) and read `below_floor` and
+  `excluded_dirs` in the `--json` output to see which one hid it.
 
 - **Symptom: the gardener seems to be falling behind.**
   It runs in bounded passes on purpose, not continuously: **at most 5 items or 10 minutes per run**,
