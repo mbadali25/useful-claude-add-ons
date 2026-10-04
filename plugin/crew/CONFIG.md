@@ -144,8 +144,28 @@ the heal path creates nothing there again.
 The writers never follow it: `crew_platform` (heal and `platform-sync`),
 `crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
 keep their own-path behaviour, and the heal path creates nothing in a worktree
-that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
-routed yet and read only the worktree's own file.
+that inherits a config, or in one where git could not tell.
+
+**The shell and PowerShell resolvers (crew 1.0.330, T-0096).** `crew_repo_config_dir` in
+`hooks/scripts/_common.sh` sets `CREW_CFG_DIR` and `CREW_CFG_SOURCE` (`own`, `main`
+or `unknown`) by rules 1-4 above, with no python; `Get-CrewRepoConfigDir`, one
+body copied verbatim into `cloud-guard.ps1`, `promote-gate.ps1` and
+`auto-clear.ps1`, is its PowerShell twin. `tests/test_worktree_config_shell.py`
+holds both to `crew_common.repo_config_dir` case by case and the copies
+byte-identical. Windows PowerShell 5.1 cannot resolve a symlink the way
+`realpath` does, so on every PowerShell (7 as well) a symlink, a junction, or an
+ancestor `Get-Item` cannot read (likely a UNC share's root) in either path the
+PowerShell resolver compares reads `unknown`, never `main`. It pins
+`[Console]::OutputEncoding` to UTF-8 around its git call, so a non-ASCII path
+survives a console on the OEM code page. In the cloud guard's bash fallback a
+missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
+`crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
+in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
+veto. Still own-file only: the session hooks (`notify`, `handoff-read`,
+`handoff-write`, `context-watch`), the verify gate, the scope and completion
+wrappers, and `review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
+lane's own `emergency.standDown` while the bash verify gate and
+`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 
@@ -166,12 +186,12 @@ descending at a template **leaf**.
 leaves. `leaf_paths(default_config())` yields **136**, so **61** are repo-only.
 For all 136, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on L-0652's branch after merging main 86d96fa1 and T-0053-build 610deaea; the
-repo-only `autopilot.sleep.schedule`, `.approval` and `.questions` are the three
-T-0053 added. 75 / 133 / 58 on T-0066's branch after merging main e9364a70,
-which changed no config key; `git.forbiddenTrailers` is the
-key T-0066 added to both layers, and the generated tables in §10 and §11 state
-the same 75 / 133 / 58. 74 / 132 / 58 on main after T-0013 added
+on T-0053's branch after merging main 86d96fa1; the repo-only
+`autopilot.sleep.schedule`, `.approval` and `.questions` are the three T-0053
+added, and the generated tables in §10 and §11 state the same 75 / 136 / 61.
+75 / 133 / 58 on T-0066's branch after merging main e9364a70, which changed no
+config key; `git.forbiddenTrailers` is the key T-0066 added to both layers.
+74 / 132 / 58 on main after T-0013 added
 `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers, while
 this paragraph still said 72 / 130. 72 / 130 / 58 on T-0061's branch after merging
 main 34d9f267; the repo-only
@@ -2647,8 +2667,8 @@ driven is a fact about that checkout.
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
-| `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an unreadable one, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
-| `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` keeps the day value too, with a warning; it never reads as `human` or as permission. |
+| `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an override that is not a policy or cannot be read, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
+| `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` (`"Human"` included) counts as `human`, the strictest, with a warning: it applies asleep and, under could not tell, is the stricter value; it never reads as permission. |
 | `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
@@ -2683,8 +2703,9 @@ own, and its value rendered bounded in a warning: one that cannot be read at
 all counts as `human`, and the other key keeps its own. An `autopilot.sleep`
 that is not an object has no night value to read, so both keys read as
 `human` (review round 2, owner decision taken on the recommendation). An
-override that is readable but not a policy (`"always"`, `true`) keeps the day
-value. `settings`' third line ends with `applied=<keys|->` under `unknown`. A key under `autopilot.sleep` this version does not have
+override that is readable but not a policy (`"always"`, `true`, `"Human"`)
+counts as `human` too, asleep and under `unknown`, rather than keeping the day
+value (landing decision, consistent with review round 2's). `settings`' third line ends with `applied=<keys|->` under `unknown`. A key under `autopilot.sleep` this version does not have
 (`deploy`, `reviewPolicy`, held pings) is named "not available in this crew
 version" and has no effect. An override can lower authority as well as raise
 it. Everything else still binds asleep: `scope.allowCliApproval` exactly

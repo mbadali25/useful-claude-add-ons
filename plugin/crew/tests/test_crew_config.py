@@ -357,8 +357,7 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # by running this test after merging main edb2b8ff.
     # 136 with T-0053's repo-only `autopilot.sleep.schedule`,
     # `autopilot.sleep.approval` and `autopilot.sleep.questions` on top of
-    # T-0066's 133, measured by running this test on L-0652-build after
-    # merging main 86d96fa1 and T-0053-build 610deaea.
+    # those 133, measured by running this test after merging main 86d96fa1.
     assert "git.forbiddenTrailers" in declared
     assert {"autopilot.sleep.schedule", "autopilot.sleep.approval",
             "autopilot.sleep.questions"} <= declared

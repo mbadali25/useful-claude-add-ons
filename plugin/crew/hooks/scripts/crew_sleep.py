@@ -106,10 +106,11 @@ def render(value):
 
 def read_overrides(block, policies):
     """`(overrides, warnings)`, each key read on its own: a valid override,
-    or None (null, or a value that is not a policy, with a warning). A key
-    whose override cannot be read at all counts as STRICTEST, and so does
-    every key of a block that is not an object (review round 2): what crew
-    cannot read never loosens a policy. `crew_autopilot` also calls this on
+    None for null, or STRICTEST for a non-null value that is not a policy
+    (with a warning; `"Human"` included). A key whose override cannot be
+    read at all counts as STRICTEST too, and so does every key of a block
+    that is not an object (review round 2): what crew cannot read never
+    loosens a policy. `crew_autopilot` also calls this on
     its own when `resolve` raised, so a stricter night value still counts."""
     if not isinstance(block, dict):
         return {key: STRICTEST for key in OVERRIDES}, []
@@ -126,12 +127,16 @@ def read_overrides(block, policies):
 
 
 def _override(block, key, policies):
-    """`(override, warning)` for one key of a sleep block."""
+    """`(override, warning)` for one key of a sleep block. A non-null value
+    that is not a policy is a night value crew cannot read, so it counts as
+    STRICTEST (landing decision, consistent with review round 2's N7): it
+    applies asleep, and under unknown as the stricter value, never looser."""
     value = block.get(key)
     if value is None or (isinstance(value, str) and value in policies):
         return value, ""
-    return None, (f"autopilot.sleep.{key} is {render(value)}, not one of "
-                  f"{'|'.join(policies)} or null; autopilot.{key} keeps its day value")
+    return STRICTEST, (f"autopilot.sleep.{key} is {render(value)}, not one of "
+                       f"{'|'.join(policies)} or null; it counts as {STRICTEST}, the "
+                       "strictest policy, inside the window")
 
 
 _STRICTER = "per key the stricter of the day value and the night value applies"
