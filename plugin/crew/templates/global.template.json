@@ -78,7 +78,8 @@
       "delaySeconds": 3,
       "minHandoffLines": 5,
       "onlyRepos": null,
-      "onlySessions": null
+      "onlySessions": null,
+      "wrapUp": null
     }
   },
   "resume": {

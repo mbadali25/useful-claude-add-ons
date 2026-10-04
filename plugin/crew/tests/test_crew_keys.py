@@ -231,7 +231,7 @@ def _machine(tmp_path, cfg):
     ("true", "true", False),  # an undeclared value (a string) never arms
 ])
 def test_machine_armed_values_agree_with_the_readers(tmp_path, repo, machine, armed):
-    for key in ("resume.auto", "context.autoClear.enabled"):
+    for key in ("resume.auto", "context.autoClear.enabled", "context.autoClear.wrapUp"):
         declared = crew_keys.values_of(key)
         assert crew_keys.layer_of(key) == "machine-arms"
         block, leaf = key.rsplit(".", 1)
@@ -246,7 +246,7 @@ def test_machine_armed_values_agree_with_the_readers(tmp_path, repo, machine, ar
         if key == "resume.auto":
             got = crew_resume.settings(root, global_path=gpath)["armed"]
         else:
-            got = crew_autocycle.settings(root, global_path=gpath)["enabled"]
+            got = crew_autocycle.settings(root, global_path=gpath)[leaf]
         assert got is armed, (key, repo, machine)
         if armed:
             assert machine in declared

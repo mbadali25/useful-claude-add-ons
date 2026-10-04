@@ -243,6 +243,12 @@ KEY_META = {
                                            "both must match.", "type", since="1.0.25",
                                            source=_S + "crew_autocycle.py",
                                            type_="list of session ids, or null"),
+    "context.autoClear.wrapUp": _row("Auto wrap-up before auto-clear (T-0017): the warning "
+                                     "becomes the wrap-up procedure and the clear waits for "
+                                     "its results. Only the machine file arms it (exactly "
+                                     "`true`), only where `enabled` is armed; a repo `false` "
+                                     "vetoes it.", "branch", (None, True, False), "1.0.373",
+                                     _S + "crew_autocycle.py"),
     "context.autoWrapUp": _unv("Ask for a wrap-up when the budget runs low.", "0.19.10",
                                _S + "context-watch.sh", "boolean"),
     "context.autoResume": _unv("Retired: read by nothing since 1.0.0; kept so "
@@ -453,9 +459,6 @@ COMING = (
     _coming("autopilot.mode", "T-0012", "changes values",
             "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
             ("off", "plan", "backlog")),
-    _coming("context.autoClear.wrapUp", "T-0017", "new key",
-            "Machine opt-in for the automatic wrap-up; only exactly `true` arms it.",
-            "null", "machine-arms"),
     _coming("guards.deployWorkflow", "T-0009", "new key",
             "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
     _coming("environments.workflows", "T-0009", "new key",

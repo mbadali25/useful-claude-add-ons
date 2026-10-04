@@ -352,7 +352,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # merging main 34d9f267.
     assert "tickets.baseBranch" in declared
     # 132 with both, measured after merging main into T-0013.
-    assert len(declared) == 132
+    # 133 with T-0017's `context.autoClear.wrapUp`, measured by running this
+    # test on T-0017-build after merging main and T-0016-build.
+    assert "context.autoClear.wrapUp" in declared
+    assert len(declared) == 133
 
 
 def test_tickets_base_branch_is_repo_only_and_null_by_default():
@@ -1699,7 +1702,8 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
                               "context.autoClear.delaySeconds",
                               "context.autoClear.minHandoffLines",
                               "context.autoClear.onlyRepos",
-                              "context.autoClear.onlySessions"]
+                              "context.autoClear.onlySessions",
+                              "context.autoClear.wrapUp"]
     assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 
@@ -2014,6 +2018,7 @@ def _repo_bytes(root):
     ("context.autoClear.onlySessions", ["y"]),
     ("autopilot.frobnicate", 1),
     ("context.autoClear.enabled", True),
+    ("context.autoClear.wrapUp", True),
     ("resume.auto", True),
     # `0 == False` in Python; the readers test `is False`, so 0 vetoes nothing.
     ("context.autoClear.enabled", 0),

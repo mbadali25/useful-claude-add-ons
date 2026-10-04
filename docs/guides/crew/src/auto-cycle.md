@@ -9,7 +9,8 @@ cleanly, clear, and pick up where it stopped.
 1. **Wrap-up.** When the context window crosses its threshold, the `Stop` hook blocks once. It asks
    the session to finish or park the change in flight, write `.work/HANDOFF.md`, and update the
    ticket. This happens once for each threshold crossing in each session. It never happens on the
-   forced continuation that follows a block.
+   forced continuation that follows a block. With `context.autoClear.wrapUp` armed (below), the
+   block carries the wrap-up procedure instead, and the clear waits for its results.
 2. **Clear, or notify.** After the handoff is written, auto-clear acts on it. What it does depends
    on `method` (below): `notify` (the default on native Windows) prints a message telling you the
    handoff is written and it is safe to run `/clear` (or `/compact`) yourself — it types nothing.
@@ -89,7 +90,8 @@ in the machine-global config, because it drives this machine's keyboard:
 | `.crew/config.json` (the repo) | `context.autoClear.enabled` | `false` | switches auto-clear off in this repo. A repo can switch it off, but `true` here does not switch it on. |
 | `~/.claude/crew/config.json` | `resume.auto` | `true` | names the next command from the handoff's `resume:` line after `/clear` or a manual `/compact` (off by default) |
 | `.crew/crew.json` or `.crew/config.json` (the repo) | `resume.auto` | `false` | vetoes auto-resume in this repo. `true` here does not switch it on. |
-| `.crew/config.json` | `context.autoWrapUp` | `false` | replaces the wrap-up instruction with a plain handoff request. It still blocks once. |
+| `~/.claude/crew/config.json` | `context.autoClear.wrapUp` | `true` | turns the wrap-up into the wrap-up procedure and makes the clear wait for its results (off by default; acts only where `enabled` is armed). A repo `false` vetoes it; a repo `true` does nothing. |
+| `.crew/config.json` | `context.autoWrapUp` | `false` | replaces the wrap-up instruction with a plain handoff request. It still blocks once. Armed `wrapUp` supersedes both wordings. |
 | `.crew/config.json` | `context.enabled` | `false` | turns off the whole context watcher, wrap-up included |
 | `.crew/config.json` | `memory.inject` | `false` | `handoff-read` prints the handoff for you to read, without extracting the next action. `context.autoResume` is no longer read. |
 
@@ -99,6 +101,28 @@ before anything is written. To turn the cycle off on a machine, set `context.aut
 `false` or delete the key. In a repo the menu offers only the veto (`false`) or `null` for
 `context.autoClear.enabled` and `resume.auto`, and shows `onlyRepos`/`onlySessions` read-only,
 because only the machine file can arm or narrow them.
+
+### Armed wrap-up (`context.autoClear.wrapUp`)
+
+A hook cannot make the session do anything; it can only refuse to clear. So with `wrapUp` armed the
+threshold block sends one procedure — start no new step; run the step's `Test:` command (the
+active ticket's plan step, or the checks for the tracked diff with no ticket); commit only if it
+passes; if it cannot pass, leave the tree and write `resume: none` with the reason under **Verify
+first**; run `/crew:handoff --wrap-up`; end the turn — and auto-clear acts only when, beside the
+checks above:
+
+- the handoff's `head:` is HEAD, so it was written after the commit;
+- its `branch:` is the checked-out branch;
+- no tracked file is modified (untracked files, and the handoff itself, do not count);
+- its `resume:` line parses, or is `resume: none`.
+
+Anything crew cannot tell — git failing, no `crew_resume`, on native Windows no python — refuses.
+A refusal is logged, shown to you as `crew wrap-up: not clearing - <reason>`, and handed back to
+the session once, at its next ordinary Stop. Crew checks that the commit happened, not that the
+test passed: the verify gate stands down on the turn the commit is made on.
+
+The chain end to end: wrap-up (T-0017) → the target proven from this session's own process
+(T-0016) → clear → `resume.auto` decides (T-0006) → the command is typed (T-0013).
 
 ### Arming one scratch repo while other sessions are live
 

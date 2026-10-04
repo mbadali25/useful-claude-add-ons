@@ -627,6 +627,33 @@ Read in full on `T-0016-build` before its version commit; line citations taken w
 - JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
   sabotage anchors); `prove_target` is the stricter proof and the one that decides.
 
+### Auto wrap-up before the clear (T-0017, crew 1.0.373)
+
+Read in full on `T-0017-build` (stacked on `T-0016-build`) before its version commit; line
+citations taken with `grep -n` there.
+
+- DERIVED: `context.autoClear.wrapUp` is read by `settings` with `enabled`'s machine-opt-in rule
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:210`) and arms only through `wrapup_armed`
+  (`:402`: `enabled`, `wrapUp` and `in_scope`). Its default is `None`
+  (`plugin/crew/hooks/scripts/crew_state.py:717`) and a repo may only veto it
+  (`plugin/crew/hooks/scripts/crew_config.py:3015`).
+- DERIVED: `plan` runs `wrapup_check` (`crew_autocycle.py:425`) after `verify_handoff` and before
+  `resolve_method` (`:1073`), so a refusal (reason prefixed `wrap-up: `, `:397`) never reaches the
+  binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:256` also prints it as a
+  `systemMessage`. `plugin/crew/hooks/scripts/auto-clear.ps1:723` reads `wrapUp` natively and runs
+  the same check through `crew_autocycle.py wrapup-check` (`:730`); no python refuses.
+- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:475`) instead of either
+  `autoWrapUp` text when armed (`plugin/crew/hooks/scripts/context-watch.sh:597`,
+  `plugin/crew/hooks/scripts/context-watch.ps1:630`), and in the marker branch escalates a failed
+  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:528`,
+  `context-watch.ps1:515`); the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1297`).
+  SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`,
+  `plugin/crew/hooks/scripts/handoff-read.ps1:200`).
+- DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:36`) is the one wrap-up
+  procedure; `/crew:autopilot`'s context-watch step names it (`plugin/crew/commands/autopilot.md:106`).
+- JUDGEMENT: the only enforcement is the clear. Crew checks the commit and the handoff's fields,
+  never that the step's test passed (verify-gate stands down on `stop_hook_active`).
+
 ## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43)
 
 `plugin/crew/hooks/scripts/crew_resume.py` owns the `resume:` line a handoff

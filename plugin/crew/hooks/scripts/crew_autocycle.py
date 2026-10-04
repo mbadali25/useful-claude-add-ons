@@ -66,6 +66,10 @@ command, delay, key. Never raises; an internal error is a refusal.
 is T-0013's: the same eight lines with the rendered resume prompt as the
 command, then timeout, marker and decision, then ".". `probe` reads a
 `tmux capture-pane -p -e` on stdin and prints ready|busy|nonempty|noprompt.
+T-0017's wrap-up verbs, for context-watch and auto-clear.ps1: `wrapup-armed
+--root R --session S` prints on|off; `wrapup-check --root R` prints ok or the
+refusal reason; `wrapup-message --root R --session S --pct N` prints the
+wrap-up procedure when armed and nothing otherwise. None of them raises.
 """
 
 import argparse
@@ -96,7 +100,7 @@ _DEFAULTS = {"method": "auto", "windowTitle": "", "command": "/clear",
 # does nothing today, which is exactly the "unknown collapsing into the
 # safe-looking default" shape this file's warnings exist to surface.
 _RECOGNIZED_AUTOCLEAR_KEYS = frozenset(_DEFAULTS) | {
-    "enabled", "onlyRepos", "onlySessions", "unsafeFocus"}
+    "enabled", "onlyRepos", "onlySessions", "unsafeFocus", "wrapUp"}
 _ANCESTOR_LIMIT = 16
 PROC_STUB_ENV = "CREW_AUTOCLEAR_PROC_STUB"
 # Measured 2026-10-04, Claude Code 2.1.289 on Linux
@@ -201,6 +205,9 @@ def settings(root, global_path=None):
         text = str(out[key] or "").splitlines()
         out[key] = text[0] if text else _DEFAULTS[key]
     out["enabled"] = machine.get("enabled") is True and repo.get("enabled") is not False
+    # T-0017: the same machine-opt-in rule. It arms nothing on its own: it
+    # acts only where `enabled` is armed and in scope (`wrapup_armed`).
+    out["wrapUp"] = machine.get("wrapUp") is True and repo.get("wrapUp") is not False
     # Machine only, and deliberately not in the repo-then-machine loop above.
     out["onlyRepos"] = machine.get("onlyRepos")
     out["onlySessions"] = machine.get("onlySessions")
@@ -377,6 +384,120 @@ def verify_handoff(root, session_id, cfg):
         return False, (f"{cfg['handoffPath']} has {lines} non-blank lines, "
                        f"minHandoffLines is {cfg['minHandoffLines']}")
     return True, ""
+
+
+# --------------------------------------------------------------------------
+# T-0017: auto wrap-up. A hook cannot make the model do anything, so the one
+# enforcement point is the clear itself: armed, it happens only when the
+# wrap-up's results are on disk. Crew checks the commit, the handoff's
+# `head:`/`branch:`, a clean tracked tree and a parseable `resume:` line; it
+# never claims the step's test passed (verify-gate stands down on the
+# forced-continuation turn the commit is made on). No hook commits.
+
+WRAPUP_PREFIX = "wrap-up: "
+ESCALATED_PREFIX = ".wrapup-escalated-"
+_GIT_TIMEOUT = 10
+
+
+def wrapup_armed(cfg, root, session_id):
+    """Machine `wrapUp: true`, no repo veto, and `enabled` armed and in scope."""
+    return bool(cfg.get("enabled") and cfg.get("wrapUp") and in_scope(cfg, root, session_id))
+
+
+def _git_out(root, *args):
+    """stdout of `git <args>` in `root`; raises RuntimeError naming the failure."""
+    try:
+        done = subprocess.run(("git", *args), cwd=root, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, timeout=_GIT_TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"could not run git {args[0]} ({exc.__class__.__name__})") from exc
+    if done.returncode != 0:
+        detail = " ".join((done.stderr or "").split())[:160]
+        raise RuntimeError(f"git {args[0]} failed ({detail or 'exit ' + str(done.returncode)})")
+    return done.stdout
+
+
+def _handoff_field(regex, text):
+    found = regex.search(text)
+    return found.group(1) if found else None
+
+
+def wrapup_check(root, cfg):
+    """(ok, reason): are the wrap-up's results on disk? First failure wins.
+    Every "could not tell" -- an unreadable handoff, crew_resume missing, git
+    failing -- is a refusal, never a pass."""
+    rel = cfg["handoffPath"]
+    path = _contained(root, rel)
+    if path is None:
+        return False, "handoffPath points outside the repository"
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        return False, f"{rel} has not been written"
+    except OSError:
+        return False, f"{rel} is unreadable"
+    try:
+        import crew_resume  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        return False, "T-0006's crew_resume is not installed"
+    parsed = crew_resume.parse_resume(text)
+    if not parsed.get("ok") and parsed.get("reason") != "resume: none":
+        return False, f"resume line: {parsed.get('reason') or 'could not be read'}"
+    import crew_state  # pylint: disable=import-outside-toplevel
+    noted_branch = _handoff_field(crew_state._HANDOFF_BRANCH_RE, text)  # pylint: disable=protected-access
+    noted_head = _handoff_field(crew_state._HANDOFF_HEAD_RE, text)  # pylint: disable=protected-access
+    try:
+        branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        head = _git_out(root, "rev-parse", "HEAD").strip().lower()
+        status = _git_out(root, "status", "--porcelain", "--untracked-files=no")
+    except RuntimeError as exc:
+        return False, str(exc)
+    if noted_branch is None:
+        return False, f"{rel} has no branch: line"
+    if noted_branch != branch:
+        return False, f"the handoff's branch: is {noted_branch}, but {branch} is checked out"
+    if noted_head is None:
+        return False, f"{rel} has no head: line - commit first, then rewrite the handoff"
+    if not head.startswith(noted_head.lower()):
+        return False, "the handoff's head: is not HEAD - commit first, then rewrite the handoff"
+    # The handoff itself is exempt: its head: is HEAD, so it is written after
+    # the commit, and in a repo that tracks it, it is always modified.
+    own = os.path.normcase(os.path.normpath(rel))
+    dirty = [line for line in status.splitlines()
+             if line.strip() and os.path.normcase(os.path.normpath(line[3:].strip('"'))) != own]
+    if dirty:
+        noun = "file is" if len(dirty) == 1 else "files are"
+        return False, f"{len(dirty)} tracked {noun} modified - the step was not committed"
+    return True, ""
+
+
+def wrapup_message(root, pct):
+    """The one wrap-up procedure context-watch sends, in both flavours."""
+    try:
+        import crew_ticket  # pylint: disable=import-outside-toplevel
+        ticket, _source = crew_ticket.active_ticket(root)
+        step = (f"Active ticket: {ticket} - the step is its plan step in flight." if ticket
+                else "No active ticket - the step is the tracked diff (git status).")
+    except Exception:  # pylint: disable=broad-except
+        step = "The active ticket could not be read - treat the step as the tracked diff (git status)."
+    return "\n".join((
+        f"crew wrap-up (context.autoClear.wrapUp) - context at {pct}%.",
+        "Do not start a new step.",
+        step,
+        "1. Run the step's Test: command now (no ticket: the checks that cover the tracked diff).",
+        "2. Commit only if it passes.",
+        "3. If it cannot pass now, do not commit: leave the tree as it is, and the handoff",
+        "   says resume: none with the reason under Verify first.",
+        "4. Run /crew:handoff --wrap-up.",
+        "5. End the turn. Do not ask the user to /clear.",
+        "Auto-clear clears only when all four hold:",
+        "- the handoff's head: is HEAD;",
+        "- its branch: is the checked-out branch;",
+        "- no tracked file is modified;",
+        "- its resume: line parses (T-0006's grammar), or is resume: none.",
+        "Crew checks the commit, not that the test passed.",
+    ))
 
 
 # --------------------------------------------------------------------------
@@ -947,6 +1068,13 @@ def plan(root, session_id, force=False, global_path=None, env=None):
         if not ok:
             out["reason"] = why
             return out
+        # T-0017: after the handoff checks, before the method -- and so before
+        # the binding and the sender's claim. Unarmed, nothing here runs.
+        if wrapup_armed(cfg, root, session_id):
+            ok, why = wrapup_check(root, cfg)
+            if not ok:
+                out["reason"] = WRAPUP_PREFIX + why
+                return out
     got = resolve_method(cfg, env)
     if not got["ok"]:
         out["reason"] = got["reason"]
@@ -1166,6 +1294,29 @@ def probe_input_line(capture):
     return "noprompt"
 
 
+def _wrapup_cli(args):
+    """T-0017's three CLI verbs. Never raise: an error reads as unarmed for
+    `wrapup-armed` / `wrapup-message` (today's message is sent) and as a
+    refusal for `wrapup-check`."""
+    root = os.path.abspath(args.root)
+    if args.cmd == "wrapup-check":
+        try:
+            ok, why = wrapup_check(root, settings(root))
+        except Exception as exc:  # pylint: disable=broad-except
+            ok, why = False, f"internal error: {exc.__class__.__name__}"
+        print("ok" if ok else " ".join(why.splitlines()))
+        return 0
+    try:
+        armed = wrapup_armed(settings(root), root, args.session)
+    except Exception:  # pylint: disable=broad-except
+        armed = False
+    if args.cmd == "wrapup-armed":
+        print("on" if armed else "off")
+    elif armed:
+        print(wrapup_message(root, args.pct))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="crew_autocycle.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1181,7 +1332,18 @@ def main(argv=None):
     p_resume.add_argument("--source", default="")
     p_resume.add_argument("--flavour", default="sh", choices=("sh", "ps1"))
     sub.add_parser("probe")
+    p_armed = sub.add_parser("wrapup-armed")
+    p_armed.add_argument("--root", default=".")
+    p_armed.add_argument("--session", default="")
+    p_check = sub.add_parser("wrapup-check")
+    p_check.add_argument("--root", default=".")
+    p_msg = sub.add_parser("wrapup-message")
+    p_msg.add_argument("--root", default=".")
+    p_msg.add_argument("--session", default="")
+    p_msg.add_argument("--pct", default="?")
     args = parser.parse_args(argv)
+    if args.cmd in ("wrapup-armed", "wrapup-message", "wrapup-check"):
+        return _wrapup_cli(args)
     if args.cmd == "key":
         print(session_key(args.session))
         return 0

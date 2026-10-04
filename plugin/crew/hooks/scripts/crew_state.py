@@ -702,10 +702,8 @@ AUTOCLEAR_DEFAULTS = {
     "command": "/clear",
     "delaySeconds": 3,
     "minHandoffLines": 5,
-    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
-    # at `:187`. Missed on the first pass because the .ps1 consumers never
-    # read it, and the first pass read the Windows scripts -- a default set
-    # from one platform's consumer is a default half-derived.
+    # Wayland only (`auto-clear.sh`, the `wtype` method). The first pass read only
+    # the .ps1 consumers: a default from one platform's consumer is half-derived.
     "unsafeFocus": False,
     # NARROWING-ONLY, and read from the machine file only
     # (`crew_autocycle.in_scope`, `auto-clear.ps1`'s twin): null arms every
@@ -715,6 +713,8 @@ AUTOCLEAR_DEFAULTS = {
     # be widening, which is exactly what `enabled` forbids.
     "onlyRepos": None,
     "onlySessions": None,
+    # T-0017: auto wrap-up. The `enabled` rule, and it arms only where `enabled` does.
+    "wrapUp": None,
 }
 
 # The `resume` block (T-0006): auto-resume after /clear or a manual /compact.

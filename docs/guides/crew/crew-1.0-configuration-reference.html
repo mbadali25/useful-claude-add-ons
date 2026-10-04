@@ -139,7 +139,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>132 keys</strong>: 74 settable in the machine-global file, 58 repo-only.</p>
+<p><strong>133 keys</strong>: 75 settable in the machine-global file, 58 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -775,6 +775,14 @@ the plugin.</p>
 <td>list of session ids, or null (coerced in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
 <td>1.0.25</td>
 <td>As <code>onlyRepos</code>, for session ids; with both set, both must match.</td>
+</tr>
+<tr>
+<td><code>context.autoClear.wrapUp</code></td>
+<td>machine-arms</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
+<td>1.0.373</td>
+<td>Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly <code>true</code>), only where <code>enabled</code> is armed; a repo <code>false</code> vetoes it.</td>
 </tr>
 <tr>
 <td><code>context.autoWrapUp</code></td>
@@ -1770,29 +1778,6 @@ the plugin.</p>
 <td>off</td>
 <td><code>off</code> | <code>plan</code> | <code>backlog</code></td>
 <td>Adds <code>backlog</code>: work a goal's tickets one at a time.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="t-0017">T-0017</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>context.autoClear.wrapUp</code></td>
-<td>new key</td>
-<td>machine-arms</td>
-<td>null</td>
-<td></td>
-<td>Machine opt-in for the automatic wrap-up; only exactly <code>true</code> arms it.</td>
 </tr>
 </tbody>
 </table>

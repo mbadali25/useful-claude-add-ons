@@ -232,7 +232,7 @@ existed.
   "budgetTokens": null,
   "reserveTokens": 100000,
   "handoffPath": ".work/HANDOFF.md",
-  "autoWrapUp": false,
+  "autoWrapUp": true,
   "keepTranscripts": 5,
   "staleHandoff": {
     "maxAgeHours": 72,
@@ -249,7 +249,13 @@ session reasonably picks a handoff back up after a quiet weekend.
 
 `keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
 kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` is
-off by default. So is `autoClear`, which is
+on by default (`true`) and only chooses the warning's wording. `autoClear` is
+off by default, and so is its `wrapUp` (T-0017, machine opt-in): armed, the
+warning becomes the wrap-up procedure — finish the step, commit only if its
+`Test:` passes, run `/crew:handoff --wrap-up`, end the turn — and the clear
+waits until the handoff's `head:` is HEAD, its `branch:` matches, no tracked
+file is modified and its `resume:` line parses (or is `resume: none`). Crew
+checks the commit, not the test (CONFIG.md §14). `autoClear` is
 experimental and presses a key on the user's behalf; its own block is
 `context.autoClear` and it refuses rather than guessing whenever it cannot
 identify what it would be typing into.
