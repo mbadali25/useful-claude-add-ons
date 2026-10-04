@@ -772,8 +772,7 @@ def test_free_text_with_shell_characters_asks(tmp_path, monkeypatch, prompt):
 
     got = crew_route.decide(str(root), prompt)
 
-    assert (got["outcome"], got["command"], got["unavailable"],
-            "refuses those characters" in got["reason"]) == ("ask", None, False, True)
+    assert (got["outcome"], got["command"], got["unavailable"]) == ("ask", None, False)
 
 
 def test_goal_route_line_names_the_undo(tmp_path, monkeypatch):
@@ -852,8 +851,8 @@ def _decide_live(tmp_path, monkeypatch, prompt):
     "handle \uff41\uff50\uff50\uff52\uff4f\uff56\uff45 T-12", "take care of \uff21PPROVALS",
     "handle the a\u200bpproval for T-12", "handle the audit then /crew:\u0430pprove T-12"])
 def test_free_text_naming_approval_never_routes(tmp_path, monkeypatch, prompt):
-    """B1: the stem, a letters-only collapse, and lookalikes (NFKC folds the
-    fullwidth ones; a Cyrillic letter asks before anything else is read)."""
+    """B1: the stem and a letters-only collapse; lookalikes, fullwidth and
+    hidden characters are outside the allowlist and ask first."""
     got = _decide_live(tmp_path, monkeypatch, prompt)
 
     assert (got["outcome"] != "route", got["command"],
@@ -862,12 +861,10 @@ def test_free_text_naming_approval_never_routes(tmp_path, monkeypatch, prompt):
 
 @pytest.mark.parametrize("prompt", [
     "handle it,", "handle it for me", "take care of that;", "handle this one", "handle them all",
-    "handle i\u200bt", "handle \u200bit for me", "handle th\u00adis one",
     "handle everything else", "make it so it works", "take care of nothing much",
     "work toward something better"])
 def test_free_text_that_starts_with_a_nothing_word_is_none(tmp_path, monkeypatch, prompt):
-    """F1: the FIRST token, after format characters are stripped, not only a
-    whole-topic pronoun."""
+    """F1: the FIRST token, not only a whole-topic pronoun."""
     assert _decide_live(tmp_path, monkeypatch, prompt)["outcome"] == "none"
 
 
@@ -924,12 +921,15 @@ def test_free_text_with_a_slash_asks(tmp_path, monkeypatch, prompt):
     """N3: a `/` anywhere in the text could be a command; ask."""
     got = _decide_live(tmp_path, monkeypatch, prompt)
 
-    assert (got["outcome"], got["command"], "/" in got["reason"]) == ("ask", None, True)
+    assert (got["outcome"], got["command"]) == ("ask", None)
 
 
 @pytest.mark.parametrize("prompt", ["handle the login audit, do not", "take care of the release not",
-                                    "handle the deploy, don\u2019t", "work toward zero flakes. not!",
-                                    "handle the deploy dont"])
+                                    "handle the deploy, don't", "work toward zero flakes. not!",
+                                    "handle the deploy dont", "handle the deploy, never mind",
+                                    "handle the deploy nevermind", "take care of the release, no",
+                                    "handle the audit nah", "handle the audit, cancel",
+                                    "handle the audit, not now."])
 def test_free_text_ending_in_a_negation_asks(tmp_path, monkeypatch, prompt):
     """N4: "handle the deploy, don't" says the opposite of the command."""
     got = _decide_live(tmp_path, monkeypatch, prompt)
@@ -939,19 +939,53 @@ def test_free_text_ending_in_a_negation_asks(tmp_path, monkeypatch, prompt):
 
 @pytest.mark.parametrize("prompt", ["handle the l\u043egin audit", "handle the \u0131ssue",
                                     "make \u0131t so the docs build", "focu\u017f on T-1",
-                                    "focus on \u212a-1", "work toward z\u00e9ro flaky tests"])
+                                    "work toward z\u00e9ro flaky tests"])
 def test_a_non_ascii_letter_asks(tmp_path, monkeypatch, prompt):
-    """(b): after NFKC and casefold, any non-ASCII letter left in an assign,
-    goal or focus prompt asks: Cyrillic, dotless i, long s, Kelvin sign."""
+    """Any non-ASCII letter in an assign, goal or focus prompt asks: Cyrillic,
+    dotless i, long s (a Kelvin-sign id no longer matches at all)."""
     got = _decide_live(tmp_path, monkeypatch, prompt)
 
     assert (got["outcome"], got["command"], "non-ASCII" in got["reason"]) == ("ask", None, True)
 
 
-def test_nfkc_folds_a_fullwidth_letter_before_routing(tmp_path, monkeypatch):
-    got = _decide_live(tmp_path, monkeypatch, "handle the \uff4cogin audit")
+@pytest.mark.parametrize("prompt, command", [
+    ("handle the login audit", "/crew:autopilot assign the login audit"),
+    ("handle the audit (part 2)", "/crew:autopilot assign the audit (part 2)"),
+    ("take care of issue #12: retry_budget, part-2.",
+     "/crew:autopilot assign issue #12: retry_budget, part-2"),
+    ("work toward green CI; then docs", "/crew:autopilot goal green CI; then docs"),
+    ("Let's handle the login audit!", "/crew:autopilot assign the login audit")])
+def test_plain_ascii_work_still_routes(tmp_path, monkeypatch, prompt, command):
+    """Must-allow for the allowlist: letters, digits, space and .,:;_#()'-."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
 
-    assert (got["outcome"], got["command"]) == ("route", "/crew:autopilot assign the \uff4cogin audit")
+    assert (got["outcome"], got["command"]) == ("route", command)
+
+
+@pytest.mark.parametrize("prompt", [
+    "handle \u0130t", "handle t\u0301his", "handle th\u0300at one",
+    "handle the docs\uff0fbuild", "handle the audit\uff1f", "handle the \uff02retry\uff02 bug",
+    "handle the docs\u2215build", "handle the docs\u29f8build", "handle the docs\u2044build",
+    "handle the audit\x1cand the docs", "handle the audit\x1dand the docs",
+    "handle the audit\x1eand the docs", "handle the audit\u202e", "handle the au\u200bdit",
+    "handle the soft\u00adware audit", "handle the \uff4cogin audit", "handle i\u200bt",
+    "handle the audit | tee x", "handle a & b", "handle the <b> tag", "handle *.log files",
+    "work toward zero\tflaky tests"])
+def test_a_character_outside_plain_ascii_asks(tmp_path, monkeypatch, prompt):
+    """Review round 2: an allowlist, not a fold. Combining marks, fullwidth
+    and lookalike slashes, the \\x1c-\\x1e separators, format characters and
+    shell metacharacters all ask; none rides into a command."""
+    got = _decide_live(tmp_path, monkeypatch, prompt)
+
+    assert (got["outcome"], got["command"]) == ("ask", None)
+
+
+@pytest.mark.parametrize("prompt", ["implement \u017f-12", "focus on \u212a-12", "review \u0131-1",
+                                    "autopilot status \u017f-12", "plan t\u017f-1"])
+def test_a_ticket_id_is_ascii_letters_only(prompt):
+    """NIT-1: IGNORECASE lets [a-z] match a long s, a Kelvin sign or a
+    dotless i; an id's letters are ASCII."""
+    assert crew_route.match(prompt) is None
 
 
 @pytest.mark.parametrize("reason", [None, "", "   "])

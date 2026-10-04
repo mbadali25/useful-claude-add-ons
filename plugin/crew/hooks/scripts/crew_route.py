@@ -55,12 +55,13 @@ row goes live the day its ticket adds the name to `crew_autopilot.AVAILABLE`.
                                                          on a quote, $, ` or \\
   pick the goal back up                           ask    never picks a slug (T-0056)
 
-Assign, goal and focus pass `_screen` first: one structural rule on the text
-folded with NFKC and casefold, format characters removed. A Unicode line
+Assign, goal and focus pass `_screen` first, an allowlist: any character
+in the prompt other than ASCII letters, digits, space and .,:;_#()'- asks,
+so what routes is exactly what was typed. On that ASCII, a Unicode line
 break, a first token like "it" or "everything", or the stem "approv" (also
-with every non-letter removed) is no match; a non-ASCII letter, a `/` or a
-trailing negation asks. `?` is accepted only where a pattern spells it (the
-two status questions), and a router answer naming another subcommand asks.
+with every non-letter removed) is no match, and a trailing negation asks.
+`?` is accepted only where a pattern spells it (the two status questions),
+and a router answer naming another subcommand asks.
 
 `crew_ticket.resolve_active`'s own INDEX fallback takes the FIRST open line,
 so it is never the answer here: `crew_autopilot.open_index_tickets` (T-0004)
@@ -75,7 +76,6 @@ import os
 import re
 import string
 import sys
-import unicodedata
 
 import crew_autopilot
 import crew_common
@@ -97,7 +97,8 @@ MAX_LINE_CHARS = 1400
 FIELD_CHARS = {"intent": 32, "ticket": 64, "source": 80, "phase": 48, "command": 200,
                "reason": 480, "candidate": 48}
 
-_ID = r"(?P<id>[a-z][a-z0-9]*-[0-9]+)"
+# ASCII only: under IGNORECASE `[a-z]` also matches a long s, a Kelvin sign and a dotless i.
+_ID = r"(?P<id>(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+)"
 _REF = rf"(?:it|this|{_ID})"
 # T-0057: an autopilot row's free text. No `?`: a question is never a command.
 _TEXT = r"(?P<topic>[^?]+)"
@@ -138,19 +139,20 @@ _PREFIXES = ("please ", "ok ", "now ", "let's ")
 _WS = re.compile(r"\s+")
 _CREW_COMMAND = re.compile(r"^/crew:([a-z][a-z0-9-]*)(?:\s+(.*))?$")
 _APPROVE = re.compile(r"approve", re.IGNORECASE)
-# T-0057: free text (assign, goal) and focus pass one structural check, `_screen`,
-# on the prompt folded by `_fold` (NFKC, casefold, format characters gone).
-# None (no line): a Unicode line break; text whose first token is one of
-# _NOTHING; text naming the stem `approv`, also with every non-letter removed.
-# Ask: a non-ASCII letter (lookalikes) in the folded text or the raw fixed
-# words, a `/`, or a
-# trailing negation. Never a list of bad phrases.
+# T-0057: assign, goal and focus prompts pass `_screen`, an allowlist. Any
+# character outside _PLAIN in the raw prompt asks (lookalikes, combining
+# marks, format characters, fullwidth or lookalike slashes, separators, shell
+# metacharacters), so the text that routes is the text the user typed. On that
+# ASCII: no line for a Unicode line break, a first token in _NOTHING, or the
+# stem `approv` (also letters-only); ask on a trailing negation.
+_PLAIN = frozenset(string.ascii_letters + string.digits + " .,:;_#()'-")
 _NOTHING = ("it", "this", "that", "them", "these", "those", "everything", "nothing",
             "something", "anything", "whatever")
 _LINE_BREAKS = ("\u2028", "\u2029", "\x85", "\x0b", "\x0c")
 _APPROV = "approv"
 _TOKEN = re.compile(r"[a-z0-9]+")
-_NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|don't|don\u2019t)$")
+_NEGATION = re.compile(r"(?:^|[^a-z0-9])(?:not|never|dont|don't|no|nah|cancel|never ?mind"
+                       r"|not now)$")
 # The characters `commands/autopilot.md` section 0 refuses in its arguments.
 _SHELL = re.compile(r"['\"$`\\]")
 _ROUTE_SHAPE = ("sub", "stop", "reason")
@@ -204,7 +206,7 @@ def match(prompt):
             topic = (groups.get("topic") or "").strip() or None
             refuse = ""
             if rule in ("autopilot-text", "autopilot-ticket"):
-                verdict, refuse = _screen(prompt, text, topic if rule == "autopilot-text" else None)
+                verdict, refuse = _screen(prompt, topic if rule == "autopilot-text" else None)
                 if verdict == "none":
                     continue
             return {"intent": intent, "command": command, "rule": rule,
@@ -213,34 +215,25 @@ def match(prompt):
     return None
 
 
-def _fold(text):
-    """NFKC, casefolded, with every format (Cf) character removed."""
-    folded = unicodedata.normalize("NFKC", text).casefold()
-    return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
-
-
-def _screen(prompt, text, topic):
+def _screen(prompt, topic):
     """("none" | "ask" | "ok", reason) for an assign, goal or focus match.
     `topic` is the free text, None for focus."""
     if any(mark in prompt for mark in _LINE_BREAKS):
         return "none", ""
-    if topic is not None:
-        folded = _fold(topic)
-        letters = "".join(ch for ch in folded if ch.isalpha())
-        tokens = _TOKEN.findall(folded.rstrip(string.punctuation + " \u2019"))
-        if _APPROV in folded or _APPROV in letters or not tokens or tokens[0] in _NOTHING:
-            return "none", ""
-    # The fixed words and the id are read raw (NFKC would turn a Kelvin sign
-    # into the K of an id); the free text after folding.
-    rest = text.replace(topic, "", 1) if topic else text
-    if any(ch.isalpha() and not ch.isascii() for ch in rest + _fold(topic or "")):
-        return "ask", ("the prompt holds a non-ASCII letter, which routing never reads as a "
-                       "command word (a lookalike can hide one); ask the user to retype it")
+    raw = prompt.strip()
+    if raw[-1:] == "!":  # `normalise` drops one, and so may this
+        raw = raw[:-1]
+    if any(ch not in _PLAIN for ch in raw):
+        return "ask", ("the prompt holds a non-ASCII or special character; only letters, "
+                       "digits, space and .,:;_#()'- route. Ask the user to retype it")
     if topic is None:
         return "ok", ""
-    if "/" in topic:
-        return "ask", "the text holds a / and could name a command; ask the user to type it"
-    if _NEGATION.search(_fold(topic).rstrip(string.punctuation + " ")):
+    text = topic.casefold()
+    letters = "".join(ch for ch in text if ch.isalpha())
+    tokens = _TOKEN.findall(text)
+    if _APPROV in letters or not tokens or tokens[0] in _NOTHING:
+        return "none", ""
+    if _NEGATION.search(text.rstrip(string.punctuation + " ")):
         return "ask", "the text ends in a negation; ask the user what they meant"
     return "ok", ""
 
