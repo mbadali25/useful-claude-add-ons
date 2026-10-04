@@ -144,13 +144,13 @@ does. It is a tripwire in front of scoped credentials, not a substitute.
 
 The terraform rule is for an agent's accidental or direct command, not
 deliberate evasion. It catches `terraform`, `terragrunt` and `tofu` written
-directly — bare or path-qualified, behind `env`, `sudo`, `timeout`, `xargs`
-and the other listed wrappers, inside `bash -c` and `eval`, with options such
+directly — bare or path-qualified, behind `env`, `sudo`, `timeout`, `xargs`,
+`aws-vault exec`, `unbuffer` and the other listed wrappers, inside `bash -c` and `eval`, with options such
 as `-chdir=` or `--working-dir infra` before the subcommand, and PowerShell's
 `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to catch a
 program renamed by alias, function, symlink or copy, `env -S` escapes, BusyBox
 applets, git `!` aliases, an interpreter (`python -c`, `node -e`), a script
-file, an unlisted wrapper (`strace`, `aws-vault exec`) or a container's
+file, an unlisted wrapper (`strace`, `systemd-run`) or a container's
 entrypoint. No command-line guard can, because unattended work must run
 interpreters and scripts. The real boundary is the credentials an unattended
 run holds: scope them (T-0044). The full list is in the plugin README, "What

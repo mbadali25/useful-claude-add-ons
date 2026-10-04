@@ -71,6 +71,245 @@ All notable changes to this repository are documented here. Format follows [Keep
   save, `.` segments allowed, no JSON decode of `memory_id`, a stale lock never cleared, locks
   not released.
 
+### Fixed — `crew` 1.0.335: round-8 terraform guard spellings, and three ordinary lines no longer refused (T-0047)
+
+- **What changed.** The cloud guard's terraform rule closes the four
+  spellings T-0005's review round 8 found it allowed: `xargs -rn 1 -Iplan
+  terraform plan` (the `-I` replace string is now found wherever getopt finds
+  it), `parallel --timeout 60 terraform destroy ::: -auto-approve` and
+  `parallel --delay 1 tofu workspace delete ::: production` (`xargs` and
+  `parallel` are read with complete option tables, and an option neither
+  table knows makes a terraform line could-not-tell, naming the wrapper and
+  the option), PowerShell `Invoke-Expression -Command:"terraform destroy"`
+  (the colon-bound value is read), and PowerShell `env`/`sudo`/`timeout`
+  in front of terraform (PowerShell now strips the same listed wrappers as
+  bash, through the same `_unwrap`). `aws-vault exec` and `unbuffer` are
+  listed wrappers now; `strace`, `systemd-run`, `git bisect run`, `rg --pre`
+  and `docker run` stay in "What the guard does not catch".
+- **First review of #347.** Also caught now, each measured allowed first:
+  `xargs --max-lines terraform destroy` (GNU xargs's `--max-lines` takes a
+  value only attached, as `-l`); an `Invoke-Expression` whose script is not a
+  literal string (`-Command:$c`, `"$a $b"`, `($c)`) or that carries a
+  parameter crew does not know, with the common parameters (`-ErrorAction`,
+  `-OutVariable`, `-Verbose`, ...) read as PowerShell binds them; a call with
+  no space before `(` (`iex("...")`, `terraform('destroy')`) and `.'terraform'`;
+  a `workspace select` that `xargs`/`parallel` may append `-or-create` to, or
+  whose PowerShell arguments are a variable or splat; `sem` (`parallel
+  --semaphore`) as a listed wrapper; and terragrunt's `apply-all`,
+  `destroy-all`, `stack run apply|destroy`, `graph apply|destroy` and `exec --
+  terraform destroy`.
+- **Second review of #347: a structural backstop.** On a PowerShell line
+  whose raw text names terraform, tofu or terragrunt, a command the guard
+  does not read whole is could-not-tell whatever else it found: a splat, a
+  call by `&`/`.` whose command word is not a plain name (`&'terraform'destroy`,
+  `& (gcm terraform) destroy`), a command word a group makes, an alias
+  definition (`Set-Alias x iex`), Invoke-Expression given a group or a
+  variable (`iex ("terraform","destroy" -join " ")`, `iex("terraform plan")`
+  included), and a group among terraform's own arguments (`workspace select
+  (gc f)`, or a bare array such as `-or-create,production`). A call after an assignment (`$x = iex("...")`, `$x = & "terraform"
+  destroy`) is read as one. `terragrunt exec [--] cmd` is a wrapper: what it
+  runs goes back through every rule (`env`/`sudo` before terraform, `aws s3
+  rm`, `az group delete`), and an option before the command with no `--` is
+  could-not-tell. `terragrunt stack [opts] run apply|destroy` and `terragrunt
+  backend delete` are judged.
+- **Third review of #347: every mention accounted for.** The PowerShell shape
+  list is replaced by one rule: each mention of terraform, tofu or
+  terragrunt in a PowerShell line (any case, a word or a path's last part,
+  `.exe` and backtick spellings included, comments dropped) must be the
+  command word of a command the guard judged, a literal script given to
+  `Invoke-Expression`, or -- when nothing on the line can run a value made at
+  run time -- a literal argument of a plainly named command or a string that
+  is only printed or assigned. Anything else is could-not-tell: `return` or
+  `throw` before the tool, a launcher given a run-time scriptblock or
+  variable (`icm ([scriptblock]::Create($c))`, `Start-Process $t destroy`),
+  `[Diagnostics.Process]::Start("terraform","destroy")`, a function named
+  after the tool. Decision: a literal argument of ANY plainly named
+  non-launcher command is data, not only `Write-Output`/`Write-Host`/`echo`,
+  because T-0005's documented direct-use scope already allows `git commit -m
+  "terraform destroy"`, `Select-String terraform` and `rg terraform`.
+  `terragrunt graph run apply|destroy` is judged.
+- **No longer refused.** `terragrunt --non-interactive plan -out="p.tfplan"`
+  (terragrunt's boolean options take no value), `terraform workspace select
+  "staging"` (read-only unless an `-or-create` on it is anything but false),
+  and PowerShell string expressions such as `Write-Output ("terraform" + "
+  destroy")` (a quoted first word with no `&`/`.` is printed, not run).
+  Not BREAKING: these become allows only on read-only lines, and every other
+  change refuses more.
+- **Docs.** CONFIG.md's literal-word paragraph no longer says a quoted
+  commit message or `terraform plan 2>$null` is refused; CONFIG.md, the crew
+  README and the crew-cloud skill list `aws-vault exec` and `unbuffer` as
+  caught, with `sem`.
+- **Tests.** `R8_MUST_BLOCK` and `R8_MUST_ALLOW` in
+  `test_cloud_guard_environments.py`, each with bash and pwsh samples, and
+  `test_round8_unknown_option_is_could_not_tell`; 79 of them failed before
+  the fix, and the 35 rows the first review added were all allowed before
+theirs, and so were the second review's 30. Each fix was sabotaged (21 + 17
+  + the second review's, every one RED) through
+  `sabotage.py`'s own `run_test`; the entries are not committed, because
+  `plugin/crew/tests/sabotage*.py` is review harness (T-0087) and lands in
+  its own PR.
+- **Not verified.** Native Windows (the pwsh cases ran on Linux pwsh 7.4.6).
+  GNU `parallel`, `aws-vault`, `unbuffer` and `terragrunt` are not installed
+  where this was built: their option sets come from upstream source and
+  documentation, cited above each table.
+
+### Added — `crew` 1.0.334: auto wrap-up before auto-clear (T-0017)
+
+- **What changed.** A new machine opt-in, `context.autoClear.wrapUp` (default
+  `null`, off): only the machine file's exact `true` arms it, a repo `false`
+  vetoes it, a repo `true` alone does nothing, and it acts only where
+  `context.autoClear.enabled` is armed and in scope. Armed, context-watch's
+  high-context warning becomes one wrap-up procedure (both flavours, the same
+  text, from `crew_autocycle.py wrapup-message`): start no new step; run the
+  step's `Test:` command (the active ticket's plan step, or the checks for the
+  tracked diff); commit only if it passes, otherwise leave the tree and write
+  `resume: none` with the reason under **Verify first**; run
+  `/crew:handoff --wrap-up`; end the turn. Auto-clear then also requires, after
+  the handoff checks and before the method, T-0016's binding and the sent-marker
+  claim: the handoff's `head:` is HEAD, its `branch:` is the checkout, no
+  tracked file is modified (untracked files and the handoff itself do not
+  count; paths are compared from the repository top via `git status -z` and
+  `--show-toplevel`, so a crew root in a subdirectory, or an absolute
+  handoffPath, exempts only its own handoff, and the source of a rename onto
+  the handoff always counts), and its `resume:` line parses under T-0006's grammar or is
+  `resume: none`. `--force` / `-Force` (testing by hand only, never passed by
+  a hook) skips this check with the handoff checks. git failing, `crew_resume` missing, or (native Windows) no
+  python refuses. A refusal is logged, shown as a `systemMessage`
+  (`crew wrap-up: not clearing - <reason>`), and fed back to the model once at
+  the next ordinary Stop (`.crew/.wrapup-escalated-<session>`, cleared at
+  SessionStart and on re-arm); a `stop_hook_active` Stop never blocks.
+- **One path.** `/crew:handoff --wrap-up` is the only wrap-up procedure, and
+  `/crew:autopilot`'s context-watch step now runs it.
+- **Unchanged.** With `wrapUp` unarmed every output is byte-identical;
+  `context.autoWrapUp` keeps its meaning (the warning's wording, default
+  `true`) - the crew-context skill's "off by default" is corrected. No hook
+  commits; crew checks the commit, not that the test passed.
+- **Windows.** `context-watch.ps1` and `auto-clear.ps1` now carry the shared
+  `Resolve-CrewPython` (added to `test_ps1_python_probe.py`'s carriers); it is
+  probed only when the machine file arms the wrap-up.
+- **Tests.** `plugin/crew/tests/test_wrapup.py` (103 cases with pwsh, both
+  flavours: arming, the check's must-allow and must-block cases, unarmed
+  byte-identity, the procedure and its parity, escalation once and never on
+  `stop_hook_active`, the refusal before the claim, `handoff.md` and
+  `autopilot.md`); `test_crew_config.py` (137 leaves after the merge of main, a repo writer refuses
+  `wrapUp: true`) and `test_crew_keys.py` (the key moves from `COMING` to
+  `KEY_META`). 22 hand sabotages (python, bash, PowerShell) each turned their
+  named test red; the `sabotage*.py` entries are a separate tooling PR.
+- **Built on T-0016** (stacked on its branch): its session-record fixtures,
+  and its order (the wrap-up check runs before the binding).
+- **Non-ASCII reasons.** `crew_autocycle.py`'s CLI writes stdout with
+  `errors="backslashreplace"`, so a refusal reason naming a non-ASCII branch
+  or path prints escaped on a cp1252 console instead of crashing the print
+  (`test_check_cli_prints_a_non_ascii_reason_on_a_cp1252_console`).
+
+### Fixed — `crew` 1.0.333: auto-clear and resume typing bind to the session's own terminal (T-0016)
+
+- **What changed.** Both senders (`crew_autocycle.py` for `auto-clear.sh`, and
+  the same rules natively in `auto-clear.ps1`) bind the session to its OWN
+  process before anything is typed: the nearest ancestor of the hook named by
+  a Claude Code session record, `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`,
+  whose `sessionId` is the payload's and whose `procStart` matches that
+  process's start time where one can be read. It is classified `terminal`
+  (kind `interactive`, entrypoint `cli`, a controlling tty on POSIX),
+  `headless` (an `sdk*` entrypoint, a non-interactive kind, or `tty_nr` 0) or
+  `unknown` (everything else). The pane or window is then proven by walking
+  up from that process, refusing when the walk passes through another Claude
+  Code process or live session record, when the chain could not be read to
+  the end, when an X11 window's owner also hosts another tty or session (or
+  the scan fails), when a console window's owner is also above another live
+  session, and when a title-only or pid-less window is chosen while another
+  session is live. The binding runs after the handoff checks and the method
+  and before the sent-marker claim (T-0017's order).
+- **What each session gets.** Headless, whatever the method: the new method
+  `notify-headless` types nothing and prints one `systemMessage` naming the
+  handoff and its `resume:` line and saying the process that started the
+  session must start a new one; claimed once per session like `notify`, and
+  logged in full. Unknown: `notify` unchanged, `auto` falls back to plain
+  `notify` (logged with the reason), an explicit typing method refuses
+  ("could not identify this session's process" / "could not tell whether
+  this session has a terminal of its own"); it never says "no terminal".
+  T-0013's resume typing takes the same binding for a typing method. With
+  `context.autoClear.enabled` off nothing changed: silent, no record read.
+- **Why.** Every target check was anchored on the hook, so a `claude -p` child
+  started from a session's Bash tool inherited `$TMUX`, found its parent's
+  pane pid among its own ancestors, and typed `/clear` into the parent's pane
+  at its wrap-up (or the resume command at its SessionStart).
+- **Measured.** `plugin/crew/docs/session-record-spike.md` (Claude Code 2.1.289,
+  Linux): `-p` records entrypoint `sdk-cli` with or without a pty, kind is
+  `interactive` for every case, `sessionId` follows `/clear`, a killed session
+  leaves its record behind. Windows' entrypoint and macOS are unmeasured: on
+  Windows an entrypoint outside `cli` is unknown and `procStart` is unchecked;
+  macOS reads `ps` and leaves `procStart` unchecked.
+- **Tests.** `test_autoclear_binding.py` (110 cases, both flavours on the same
+  fixtures), and `crew_fixtures.write_session_record` / `proc_stub` /
+  `bind_session`, which T-0017 builds on. `CREW_AUTOCLEAR_PROC_STUB` replaces
+  the whole process table in tests, so no case reads the real tree;
+  conftest clears an ambient `CLAUDE_CONFIG_DIR`. The existing must-fire
+  helpers in `test_auto_cycle.py`, `test_auto_clear.py`,
+  `test_auto_clear_review_fixes.py` and `test_resume_typing.py` bind their
+  session (and the three spawn tests use `CREW_AUTOCLEAR_INHIBIT=spawn`); no
+  assertion changed. 49 hand sabotages (python, bash and PowerShell) each
+  turned their named test red; the `sabotage*.py` entries
+  are a separate tooling PR.
+- **Review round 1.** tmux now also requires every process from the session
+  up to the pane to be on the session's tty (or none), so an interactive
+  child on its own pty under its parent's pane is refused even when the
+  parent's record is in another config dir and its name is not `claude`; a
+  version-named process (`2.1.289`, a native install) ends the walk like
+  `claude`; a live process whose record cannot be read means no other session
+  can be ruled out; the PowerShell walk tells an exited parent (the top) from
+  an unreadable one (refuse). The process and window stubs are read only
+  while `CREW_AUTOCLEAR_INHIBIT` is set, and `CREW_AUTOCLEAR_INHIBIT=spawn`
+  spawns the bash sender but stops it before any keystroke.
+- **Owner decisions.** Approved 2026-10-04 as the spec recommended: macOS via
+  `ps` with `procStart` unchecked; `windowTitle`'s global fallback kept but
+  refused while another live session record exists or the window's pid is
+  ≤ 1; resume typing in scope; no `allowHeadless`-style escape hatch; the
+  entrypoint allowlist is `{"cli"}` plus a tty.
+
+### Added — `crew` 1.0.332: autopilot sleep schedule overlays `approval` and `questions` (T-0053, slice 1)
+
+- **What changed.** `autopilot.sleep` in `.crew/config.json` (repo only, all
+  three keys default `null`): `schedule` is one `HH:MM-HH:MM` window in the
+  machine's local time (start inclusive, end exclusive, may cross midnight),
+  and `approval` / `questions` are the night values of `autopilot.approval` /
+  `autopilot.questions` (`human|self|risk`, or `null` to keep the day value).
+  The new `hooks/scripts/crew_sleep.py` parses the window and resolves
+  `off|awake|asleep|unknown`; `crew_autopilot._settings_at` applies the
+  overrides inside it and re-resolves on every read, so a run that crosses the
+  end of the window is back on the day values at its next decision.
+  `crew_autopilot.py settings` prints a third line,
+  `sleep=<state> schedule=<window|none> approval=<override|-> questions=<override|->`,
+  and `--json` adds `day` and `sleep`. While asleep the reason of a policy a
+  night override set, and `approve`'s line, end with
+  `(asleep <window>; day value <day>)`; `approve`'s receipt, line and
+  `crew_ticket.approve` re-check use one decision.
+- **Fail closed.** A schedule outside the grammar, an `autopilot.sleep` that is
+  not an object, a clock or resolver that fails: `unknown`, with a warning
+  naming the key, and per key the stricter of the day value and a valid night
+  override (`human` over `risk` over `self`) — never a looser value, and never
+  a tightening dropped. Each override is read on its own and rendered bounded;
+  one that cannot be read counts as `human`, and a non-object
+  `autopilot.sleep` reads `human` for both keys. An override that is not a policy (`"Human"`,
+  `"always"`, `true`) counts as `human` too, asleep and under unknown (landing decision; it used
+  to keep the day value). A key this version does not have (`deploy`, `reviewPolicy`, held
+  pings) is named "not available in this crew version" and has no effect.
+  There is no environment variable or flag that moves the clock.
+- **Unchanged.** `scope.allowCliApproval` exactly `true`, autopilot armed and a
+  readable ledger still gate every self-approval; every stop binds asleep;
+  `deploy_allowed` answers the same asleep and awake; review acceptance is as
+  before. A receipt written asleep stops standing when the window ends if the
+  day value would not have approved it (`crew_ticket.accepted` re-asks the
+  policy), so that ticket waits for `/crew:approve <id>` in the morning.
+- **Not yet.** Manual `sleep` / `wake`, the sleep log and morning summary, the
+  `deploy` override, and the committed sabotage mutations for this slice are
+  L-0652, L-0653, L-0654 and L-0651.
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_sleep.py` (117 cases; the landing decision's
+  must-block cases asleep and unknown were red before it);
+  `test_crew_config.py` (136 declared leaves after main's `git.forbiddenTrailers`), `test_config_menu.py`,
+  `test_crew_keys.py` and `test_crew_autopilot.py` cover the config surface.
+  `.crew/verify.json`'s policy rule maps `crew_sleep.py` and the new file.
+
 ### Added — `crew` 1.0.331: native memories as vault pointers, read side (T-0084)
 
 - `plugin/crew/hooks/scripts/crew_memory.py` (new): a native Claude Code memory file may hold one
@@ -129,6 +368,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   `malformed`, not `full-text` (`_BARE`'s name is optional).
   `test_a_first_line_of_only_vault_colon_is_malformed` (three bodies) was red before; the
   `crew-memory` skill, the memory guide (rebuilt HTML, DOCX, PDF) and the code map say so.
+- **Windows CI.** Two tests assumed POSIX: the `MEMORY.md`/`memory.md` case now probes the
+  filesystem for case folding (one file there, the index, so only `upper.MD` is listed), and the
+  mode-000 note test mocks the open whenever a probe can still read the file (root, or Windows,
+  where chmod sets only the read-only bit) instead of only when euid is 0.
 
 ### Fixed — `crew` 1.0.330: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
 

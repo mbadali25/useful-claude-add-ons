@@ -95,7 +95,7 @@ line is exact and must be the whole body: a first line that starts `vault` and `
 any case, indent or spacing, is a pointer attempt when `note:` or `|` is on that line,
 or the next line starts with `|` or `note:` (a pointer wrapped before its `|`), or the
 line is a bare vault name alone (`vault: work`) or nothing after the colon (`vault:`); anything less than the full grammar is then `malformed`. With
-neither it is prose (`Vault: keep client notes in the work vault` is a memory, not a
+neither it is prose (`Vault: keep client notes in the work vault, not personal.` is a memory, not a
 pointer). A config file counts as missing
 only when it is not there at all; one that is there and does not read, parse or match
 its expected shape (or has a duplicate key, nests too deep or is over 1 MiB) is

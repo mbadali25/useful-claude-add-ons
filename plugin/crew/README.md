@@ -914,9 +914,11 @@ An assigned ticket is approved under `autopilot.approval` like any other ticket 
 
 **Stops.** Always a person: `brainstorm` and `review-acceptance` — accepting review FINDINGS with any BLOCK, or a round `review_ledger.py --auto-accept` refuses, is the owner's (`review_ledger.py --accept`), at any setting; only a final 0-BLOCK round is accepted by the ledger's guarded verb. `plan-approval` and `open-questions` are a person unless the owner's policy below allows. Enforced by `next` from disk: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`, `max-phases`, `no-progress` (the command just run is named again; not `/crew:review` after a refunded tool-failure round, which is a new round each time it records one). Enforced by the command's procedure, not by `next` — which sees them only as `no-progress` if the same command comes round again: `review-verdict`, `failed-done-check`, `failed-phase`. And every `AUTONOMOUS_STOPS` entry — `offboard-role`, `delete-map`, `rewrite-metrics`, `git-destruction` — which `commands/autopilot.md` names and a test pins against `crew_state.AUTONOMOUS_STOPS`. `crew_autopilot.py stops` lists them all from code. No deploy, merge, PR or new ticket: T-0005, T-0011, T-0012; the one new ticket is step 3.3's follow-up after `--auto-accept`.
 
-**Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. `autopilot.deploy` — `none` (default), `nonprod` or `all`: where a deploy may run without asking. Production needs `all` **and** `environments.prodUnattended: true` in **both** config layers, with `guards.cloudGuard` armed in `block`; anything crew cannot tell asks, and an active emergency refuses. `crew_autopilot.py deploy-allowed --env <name> --class <class>` answers `allow`, `ask` or `refuse` and prints a report line for every production decision. Nothing in this version dispatches a deploy — the key is inert until T-0045 consumes it (CONFIG.md §20). An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force: `mode`, `maxPhases` and `deploy` on its first line, `approval` and `questions` on the second, and all five with `--json`.
+**Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. `autopilot.deploy` — `none` (default), `nonprod` or `all`: where a deploy may run without asking. Production needs `all` **and** `environments.prodUnattended: true` in **both** config layers, with `guards.cloudGuard` armed in `block`; anything crew cannot tell asks, and an active emergency refuses. `crew_autopilot.py deploy-allowed --env <name> --class <class>` answers `allow`, `ask` or `refuse` and prints a report line for every production decision. Nothing in this version dispatches a deploy — the key is inert until T-0045 consumes it (CONFIG.md §20). An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force: `mode`, `maxPhases` and `deploy` on its first line, `approval` and `questions` on the second, the sleep window's `sleep=` line on the third, and all of it with `--json`.
 
 **Approval and questions policies** (T-0010). `autopilot.approval` and `autopilot.questions` are `human`, `self` or `risk` (default `risk`); any other value reads as `human`, with a warning, and `human` always stops. At the plan-approval phase autopilot runs `crew_autopilot.py approve --root . --ticket <id>`: `self` approves at any risk, `risk` only when the spec's header says `risk: low` (a missing or unparseable risk is `high`). **Every `autopilot.approval` setting also needs `scope.allowCliApproval: true`** (`autopilot.questions` does not), a readable config (a `.crew/config.json` that exists but cannot be read as a JSON object, or an `autopilot` value that is not an object, reads both policies as `unknown` — could not tell — so `approve` refuses, a question stops and autopilot reads as off; an absent file or block still reads the defaults), autopilot armed, and a readable review ledger. A NEEDS_REPLAN ledger does not refuse: approving a different successor plan is its only way out, and the ledger still refuses a plan approved before (`crew_autopilot.py approve` exits 3 and says so). The receipt says `approved_via: "autopilot"`, the command prints `self-approved <id> under approval=<policy>, risk=<risk>`, and `crew_ticket.accepted` re-asks the policy on every read — a later spec edit, `approval: human` or `allowCliApproval: false` demotes it. The scope guard allows only that bare command, only while the policy says yes; `crew_ticket.py approve` stays refused. Autopilot never uses the group confirm ("Approving several tickets at once"): that stays the owner's own prompt, and `crew_ticket.approve` refuses an `autopilot` approval that carries a group's hashes, whatever the policy says. At an open question autopilot researches it (crew:explorer, crew:researcher), writes `.work/tickets/<id>/questions.md` — 2-4 options per question, the recommendation first, each with a `Cost:`, plus a `Research:` line — and `crew_autopilot.py questions-check --root . --ticket <id>` validates it and prints `action=take|stop`: `self` takes the recommendation, `risk` only on `risk: low`, `human` stops. A taken answer is recorded as `taken: Option <id> by autopilot (<policy>)`, naming the policy that took it; the check refuses one naming a policy that never takes (only `self` or `risk` does), and every `taken:` line while the policy in force says `stop` — a later switch between `self` and `risk` does not void an earlier honest record. Every self-approval and taken answer is reported by name.
+
+**Sleep schedule** (T-0053). `autopilot.sleep.schedule` (`HH:MM-HH:MM`, machine local time, may cross midnight; default `null`, off) names one nightly window. Inside it, `autopilot.sleep.approval` and `autopilot.sleep.questions` (`human`, `self`, `risk`, or `null` for "keep the day value") replace the two day values, so an overnight run can approve its own plan or take a recommendation where the day setting would stop. The window is re-read from the clock at every decision, so a run that crosses the end of the window is back on the day values at its next one. A schedule, `sleep` block, clock or resolver crew cannot read is `unknown`, with a warning: per key the stricter of the day value and a valid night override applies (`human` over `risk` over `self`), never a looser one; an override that is not a policy (`"Human"` included) or cannot be read at all counts as `human`, and a non-object `autopilot.sleep` reads `human` for both keys. The clock is local time in the process's `TZ`, and `approve` / `questions-check` run in the model's shell environment. A window may be up to 23h59, and a looser night value applies for all of it; `scope.allowCliApproval: true` and every stop still bind asleep. `crew_autopilot.py settings` prints `sleep=<off|awake|asleep|unknown> schedule=... approval=... questions=...`, and a policy a night override set ends its reason with `(asleep <window>; day value <day>)`. **A receipt written asleep stops standing when the window ends** if the day value would not have approved it: `crew_ticket.accepted` re-asks the policy, so in the morning that ticket waits for `/crew:approve <id>` (the overnight work stays). CONFIG.md §20 has the details.
 
 ### Plain-text lifecycle: short prompts that name a command
 
@@ -1432,11 +1434,27 @@ command, not a sandbox against deliberate evasion (owner decision,
 2026-09-26). It catches `terraform`, `terragrunt` and `tofu` written directly:
 bare or path-qualified, behind the listed wrappers (`env`, `sudo`, `doas`,
 `nice`, `ionice`, `timeout`, `stdbuf`, `nohup`, `command`, `exec`, `time`,
-`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`),
-inside `bash|sh|zsh -c` and `eval` strings, with global options before the
+`xargs`, `parallel`, `sem`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`,
+`pwsh -c`, `aws-vault exec`, `unbuffer`), inside `bash|sh|zsh -c` and `eval` strings, with global options before the
 subcommand (`-chdir=`, terragrunt's `--working-dir`), and PowerShell's `&`,
-`.`, `terraform.exe` and `Start-Process`. It does not try to catch a program
-renamed or started some other way. Each of these runs unjudged:
+`.`, `terraform.exe` and `Start-Process`. PowerShell strips the same listed
+wrappers. An option a listed `xargs`, `parallel`, `sem`, `aws-vault` or
+`unbuffer` does not know makes a line that names terraform could-not-tell:
+crew cannot tell where the command starts. So does an `Invoke-Expression`
+whose script is not a literal string. terragrunt's `apply-all`,
+`destroy-all`, `stack run`, `graph` and `backend delete` are read as the
+apply or destroy they run, and `terragrunt exec -- cmd` is unwrapped like any
+listed wrapper. On a PowerShell line, every mention of terraform, tofu or
+terragrunt must be one crew accounts for -- the command word of a command it
+judged, a literal script given to `Invoke-Expression`, or, when nothing on the
+line can run a value made at run time, a literal argument of a plainly named
+command (`git commit -m "terraform destroy"`) or a string it only prints or
+assigns -- or the line is could-not-tell (`return terraform destroy`,
+`$t="terraform"; Start-Process $t destroy`,
+`[Diagnostics.Process]::Start("terraform","destroy")`). A mention inside a
+comment is dropped before counting; a name built at run time from parts is
+still not read (above). It does not try to catch a program renamed or
+started some other way. Each of these runs unjudged:
 
 - a rename by alias, function, symlink or copy, unless the same line makes a
   plain copy or link and runs it by that name: `env ln -sf /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
@@ -1450,9 +1468,7 @@ renamed or started some other way. Each of these runs unjudged:
 - a script file: `bash deploy.sh`
 - a wrapper not in the list above: `strace -f terraform destroy`,
   `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
-  `aws-vault exec p -- terraform destroy`,
-  `aws-vault exec prod -- terraform "destroy" -auto-approve`,
-  `unbuffer terraform destroy`, `systemd-run terraform destroy`
+  `systemd-run terraform destroy`
 - a program that runs another it is handed: `git bisect run terraform destroy`,
   `git -C infra bisect run terraform destroy`,
   `git -C add bisect run terraform destroy`, `rg --pre terraform destroy .`
@@ -1994,6 +2010,14 @@ stopping point — finish or safely abandon the change in flight, write the
 handoff, update the ticket — before telling you it's ready. Off, it just asks
 you to write the handoff.
 
+With `context.autoClear.wrapUp` armed (machine file only, and only where
+auto-clear is armed), the warning becomes the one wrap-up procedure — finish
+the step, commit only if its `Test:` passes, run `/crew:handoff --wrap-up`,
+end the turn — and auto-clear waits until the handoff's `head:` is HEAD, its
+`branch:` matches, no tracked file is modified and its `resume:` line parses
+(or is `resume: none`). A refusal is shown to you and fed back to the session
+once. Crew checks the commit, not the test (CONFIG.md §14).
+
 It blocks **once per threshold crossing per session**: keyed on the payload's
 `session_id`, never on a `stop_hook_active` continuation, and re-armed only
 when a measured reading drops back under the threshold (a compaction). It is
@@ -2031,10 +2055,10 @@ every repo. The other keys layer normally, repo over machine.
 
 | Method | How it finds the target | Confidence |
 |---|---|---|
-| `tmux` | `$TMUX_PANE`, and only when that pane's pid is an ancestor of the hook | **Exact.** No focus involved. Use this if you can. |
-| `xdotool` | the one window owned by the nearest ancestor process; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window | Activates that window id, re-checks it is active, then types. |
+| `tmux` | `$TMUX_PANE`, and only when that pane's pid is this session's own process or an ancestor of it | **Exact.** No focus involved. Use this if you can. |
+| `xdotool` | the one window owned by the nearest ancestor of this session's own process, hosting no other terminal; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window (and refuses while another session is live) | Activates that window id, re-checks it is active, then types. |
 | `notify` | no window — types nothing | Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured command yourself. Never claims anything was cleared or compacted, because nothing was. `auto` resolves here on native Windows with no tmux pane. |
-| `sendkeys` | the same rule through `EnumWindows` (renamed from the pre-1.0 `"windows"` literal); at send time that exact window handle must have foreground | **Opt-in only — `auto` never resolves here.** Windows Terminal hosts every tab in one window and nothing outside UI Automation can tell which tab is active, so a Windows-Terminal-owned target declines and falls back to `notify`, logged to `.crew/.autoclear.log`. Request it by name after reading what it does. |
+| `sendkeys` | the same rule, from this session's own process, through `EnumWindows` (renamed from the pre-1.0 `"windows"` literal); at send time that exact window handle must have foreground | **Opt-in only — `auto` never resolves here.** Windows Terminal hosts every tab in one window and nothing outside UI Automation can tell which tab is active, so a Windows-Terminal-owned target declines and falls back to `notify`, logged to `.crew/.autoclear.log`. Request it by name after reading what it does. |
 | `wtype` | cannot identify a window | **Refused**, whatever `unsafeFocus` says. |
 
 #### What has to be true before it types anything
@@ -2049,10 +2073,23 @@ every repo. The other keys layer normally, repo over machine.
    the Windows low-context `/clear` — is unknown, and unknown never clears.
 4. The handoff exists, is **newer** than the request, has at least
    `minHandoffLines` non-blank lines, and is not PreCompact's automatic skeleton.
-5. The target window is identified uniquely (the table above). Zero or several
-   candidates is a refusal, never a guess — this step does not apply to
-   `notify`, which identifies no window because it types nothing.
-6. Nothing has claimed this session's one attempt (`.crew/.autoclear-sent-<session_id>`).
+5. This session is bound to its **own** process (T-0016): the nearest ancestor
+   named by a Claude Code session record
+   (`${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`) with this session's
+   id and that process's start time. A headless session — `claude -p`
+   (entrypoint `sdk-cli`) or one with no controlling terminal — types
+   nothing whatever the method: it gets one `notify-headless` message naming
+   the handoff and its `resume:` line and saying the process that started it
+   must start a new one. A session that cannot be identified, or whose
+   entrypoint was never measured, types nothing either (`auto` falls back to
+   plain `notify`). [CONFIG.md §14](CONFIG.md) has every rule.
+6. The target window is identified uniquely (the table above), walking up
+   from that process: through another Claude Code session, past a chain that
+   could not be read, or into a window that hosts another terminal, it
+   refuses. Zero or several candidates is a refusal, never a guess — this
+   step does not apply to `notify`, which identifies no window because it
+   types nothing.
+7. Nothing has claimed this session's one attempt (`.crew/.autoclear-sent-<session_id>`).
 
 Fail any of those and it writes a line to `.crew/.autoclear.log` saying which,
 and does nothing. That log exists because a `Stop` hook's stderr is invisible
@@ -2875,7 +2912,7 @@ with three hooks registered and unlisted.
 | `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
-| `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
+| `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on; with `context.autoClear.wrapUp` armed, sends the wrap-up procedure and feeds a refused wrap-up back once |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
 

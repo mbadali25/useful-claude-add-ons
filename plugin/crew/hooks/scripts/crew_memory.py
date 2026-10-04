@@ -93,7 +93,7 @@ _POINTER = re.compile(r"vault: ([A-Za-z0-9][A-Za-z0-9 ._-]{0,63}) \| note: (.*)"
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
 _ATTEMPT = re.compile(r"vault\s*:", re.IGNORECASE)
 # Without one of these a `vault:` line is prose ("Vault: keep client notes in
-# the work vault"), not a pointer attempt.
+# the work vault, not personal."), not a pointer attempt.
 _ATTEMPT_MARK = re.compile(r"\bnote\s*:|\|", re.IGNORECASE)
 _WRAPPED = re.compile(r"\||note\s*:", re.IGNORECASE)
 # A bare vault name, or nothing at all after the colon (a pointer broken
@@ -428,7 +428,10 @@ def resolve_pointer(name, note, root):
 
 def _listed(name):
     """A memory file `check` lists: `*.md` (suffix in any case) other than
-    the index `MEMORY.md`, whatever it is."""
+    the index `MEMORY.md`, whatever it is. The name is compared exactly as
+    the folder lists it: on a case-insensitive filesystem (Windows, default
+    macOS) `memory.md` and `MEMORY.md` are one file, the index, so skipping
+    it there is right."""
     return name != "MEMORY.md" and name.lower().endswith(".md")
 
 
