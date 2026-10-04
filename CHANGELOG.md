@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.300: crew's own bookkeeping never trips the completion audit or stales a review receipt (T-0068)
+### Fixed — `crew` 1.0.310: crew's own bookkeeping never trips the completion audit or stales a review receipt (T-0068)
 
 TSS-510's `/crew:done` deadlocked in a repository whose `.gitignore` does not ignore `.crew/*`: the
 completion audit listed `.crew/.scope-base` and `.crew/metrics.md` as out of Touch, and running the
