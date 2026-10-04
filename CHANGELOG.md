@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew`: the gate round takes the merge train (exit 6) and the reviewer sees rerere replays (L-0526)
+### Changed — `crew` 1.0.371: the gate round takes the merge train (exit 6) and the reviewer sees rerere replays (L-0526)
 
 - **What changed.** Once a clone's merge train is armed (`crew_train.py arm`), `review_run.py`
   calls `crew_train.acquire` after the CLEAN-receipt short-circuit and the verify gate and before
