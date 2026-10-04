@@ -93,7 +93,7 @@
       "reach": "local",
       "why": "7s for ten registration invariants, including check 10 (every copy of a plugin's version agrees, pyproject.toml included) and the install-script menu parity both directions. Sabotage-proven here: crew's version set to 9.9.9 in marketplace.json -> exit 1. reach: local - _verify/smoke.sh's own header says there is no service to curl and no live host this repo reaches; every check runs against files already in this checkout." },
 
-    { "paths": ["README.md", "CLAUDE.md", "AGENTS.md", "TODO.md", "CHANGELOG.md", "INSTALLATION.md",
+    { "paths": ["README.md", "CLAUDE.md", "AGENTS.md", "TODO.md", "pending-tickets.md", "cloud-handoff-notes.md", "CHANGELOG.md", "INSTALLATION.md",
                 "plugin/PLUGINS.md", "plugin/README.md", "plugin/*/README.md",
                 "docs/**", "MARKETPLACE.md", "SECURITY.md",
                 "Skill-Authoring-Standard.md", "Skill-Pipeline.md", "VERIFYING.md"],
