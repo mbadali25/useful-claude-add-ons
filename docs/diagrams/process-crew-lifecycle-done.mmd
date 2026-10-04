@@ -8,12 +8,12 @@
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
-%%     review receipt (--check-receipt); :21-29 check 2 verify gate via
-%%     crew_status.py; :37-40 check 3 completion audit (:45-50: a refresh artifact
-%%     not admitted is listed with its reason); :52-63 check 4
-%%     crew_refresh_check.py (:55), read-only, refuses on stale/unknown/fresh-uncommitted and never
-%%     refreshes; :65-71 all pass -> spec.md `status: done`, keeping the approval
-%%     (:67-68), then crew_tracker.py move --to done (:69); :76 crew_metrics record.
+%%     review receipt (--check-receipt); :21-27 check 2 verify gate via
+%%     crew_status.py; :40-53 check 3 completion audit (:48-51: a refresh artifact
+%%     not admitted is listed with its reason); :55-71 check 4
+%%     crew_refresh_check.py (:58), read-only, refuses on stale/unknown/fresh-uncommitted and never
+%%     refreshes; :73-85 all pass -> spec.md `status: done`, keeping the approval
+%%     (:75-76), then crew_tracker.py move --to done (:77); :80-85 crew_metrics record.
 %% --
 %% Note dn3: (refresh artifacts: re-anchor or regeneration the change reaches)
 %% Note dn4: spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done,
