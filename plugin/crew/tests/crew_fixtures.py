@@ -1276,9 +1276,12 @@ def write_shim(directory, name, sh_body="#!/bin/sh\nexit 0\n",
 def shim_env(flavor, bindir, **extra):
     """`{"PATH": ...}` with `bindir` first, built for `flavor`, plus `extra`."""
     env = {"PATH": shell_path(flavor, [bindir])}
-    # Built from scratch, so the per-test pwsh cache (L-0557) is copied in.
-    if "XDG_CACHE_HOME" in os.environ:
-        env["XDG_CACHE_HOME"] = os.environ["XDG_CACHE_HOME"]
+    # Built from scratch, so the per-test pwsh cache (L-0557) and the
+    # per-test temp directory (T-0065, conftest `_isolated_tmpdir`) are
+    # copied in: without them a hook's mktemp lands in the real /tmp.
+    for name in ("XDG_CACHE_HOME", "TMPDIR", "TEMP", "TMP"):
+        if name in os.environ:
+            env[name] = os.environ[name]
     env.update(extra)
     return env
 

@@ -28,6 +28,18 @@ PASS=0; FAIL=0
 fail() { printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 pass() { PASS=$((PASS+1)); }
 
+# Every temp file or directory this suite makes goes on this one list, and
+# ONE EXIT trap removes them all (T-0065, item 7). Before, a later `trap ...
+# EXIT` replaced the jq mirror's, three fixtures were never removed, and four
+# were removed only on the straight-line path: about 206 runs of this suite
+# left 824 directories in the /tmp TSS shares. A function, not
+# `rm -rf "${_CREW_TEST_TMP[@]}"` inline: under `set -u` an empty array is an
+# unbound variable on bash < 4.4. Do NOT add another `trap ... EXIT` below;
+# append to the list instead.
+_CREW_TEST_TMP=()
+_crew_test_cleanup() { [ "${#_CREW_TEST_TMP[@]}" -eq 0 ] || rm -rf "${_CREW_TEST_TMP[@]}"; }
+trap _crew_test_cleanup EXIT
+
 # Resolve a python for building JSON payloads.
 PY=$(command -v python3 || command -v python || command -v py) || {
   echo "SKIP: no python available to build test payloads" >&2; exit 0; }
@@ -114,7 +126,7 @@ if [ -n "$JQ_BIN" ]; then
   # are not what a bare `jq` resolves to, and hiding them would be a
   # different, unasked-for change.
   JQ_SHADOW=$(mktemp -d) || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
-  trap 'rm -rf "$JQ_SHADOW"' EXIT
+  _CREW_TEST_TMP+=("$JQ_SHADOW")
   for _scrub_f in "$JQ_DIR"/*; do
     [ -e "$_scrub_f" ] || continue          # unmatched glob in an empty dir
     _scrub_b=${_scrub_f##*/}
@@ -202,6 +214,7 @@ fi
 
 echo "== verify-gate.sh =="
 D=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$D")
 (
   cd "$D" || exit 1
   git init -q .
@@ -236,6 +249,7 @@ echo '{"stop_hook_active":true}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&
 # must-BLOCK, and must say PARSE: a genuinely corrupt verify.json (python exits 3
 # from the explicit json.load guard).
 CORRUPT=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$CORRUPT")
 (
   cd "$CORRUPT" || exit 1
   git init -q .
@@ -279,6 +293,7 @@ unset CLAUDE_PROJECT_DIR
 # CHANGES"), not "could not RUN the matcher" - the fixture had gone stale
 # against the product, not the other way around.
 UNRUNNABLE=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$UNRUNNABLE")
 (
   cd "$UNRUNNABLE" || exit 1
   git init -q .
@@ -338,6 +353,7 @@ unset CLAUDE_PROJECT_DIR
 # was 74 files / 2.6KB of paths against a 7.9KB environment, which argv alone
 # would not have reproduced.
 BIG=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$BIG")
 (
   cd "$BIG" || exit 1
   git init -q .
@@ -377,6 +393,7 @@ unset CLAUDE_PROJECT_DIR
 # it could not read the ticket is worse than none, because the empty line is
 # also what "checked, nothing outside" looks like.
 SCOPEFX=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$SCOPEFX")
 (
   cd "$SCOPEFX" || exit 1
   git init -q .
@@ -459,7 +476,7 @@ rm -rf "$SCOPEFX"
 
 echo "== promote-gate.sh =="
 PD=$(mktemp -d) || exit 1
-trap 'rm -rf "$D" "$PD"' EXIT
+_CREW_TEST_TMP+=("$PD")
 (
   cd "$PD" || exit 1
   git init -q .
@@ -706,7 +723,7 @@ if [ -f "$A" ]; then
   case "$OUT" in *"all template sections present"*) pass ;;
     *) fail "claude-md-audit: template should report all sections present" ;; esac
 
-  L=$(mktemp -d); printf '# legacy\n\n## Commands\nx\n' > "$L/CLAUDE.md"
+  L=$(mktemp -d) && _CREW_TEST_TMP+=("$L"); printf '# legacy\n\n## Commands\nx\n' > "$L/CLAUDE.md"
   OUT=$(bash "$A" "$L/CLAUDE.md" 2>&1); rm -rf "$L"
   case "$OUT" in *"MISSING  ## Promotion"*) pass ;;
     *) fail "claude-md-audit: a legacy file should report the Promotion section missing" ;; esac
@@ -714,6 +731,7 @@ fi
 
 echo "== resolve-tools.sh: bash <script> resolution =="
 RD=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$RD")
 (
   cd "$RD" || exit 1
   mkdir -p .crew _verify
@@ -742,9 +760,15 @@ rm -rf "$RD"
 # ---------------------------------------------------------------------------
 echo "== crew_state.py: diagrams =="
 "$PY" - "$SCRIPTS" <<'PYEOF' && pass || fail "crew_state: diagram cases"
-import os, subprocess, sys, tempfile
+import atexit, os, shutil, subprocess, sys, tempfile
 sys.path.insert(0, sys.argv[1])
 import crew_state
+
+# T-0065: this block's own temp dirs, removed however it exits.
+def _tmpdir():
+    path = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, path, True)
+    return path
 
 ok = True
 
@@ -754,7 +778,7 @@ def check(cond, label):
         print(f"  unit FAIL: {label}")
         ok = False
 
-root = tempfile.mkdtemp()
+root = _tmpdir()
 run = lambda *a: subprocess.run(a, cwd=root, capture_output=True, text=True)
 run("git", "init", "-q")
 run("git", "config", "user.email", "t@t")
@@ -794,7 +818,7 @@ check(got["missing"] == ["data-flow", "process"],
 
 # A directory with no diagrams at all reports every kind missing, and must not
 # raise on the absent directory.
-empty = crew_state.read_diagrams(tempfile.mkdtemp(), {})
+empty = crew_state.read_diagrams(_tmpdir(), {})
 check(empty["total"] == 0, "absent diagrams dir must read as zero, not raise")
 check(set(empty["missing"]) == set(crew_state.DIAGRAM_KINDS),
       f"absent dir must report all kinds missing, got {empty['missing']}")
@@ -828,6 +852,7 @@ PYEOF
 # allow (the guard never prints `allow`).
 echo "== cloud-guard.sh =="
 CG=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$CG")
 mkdir -p "$CG/repo/.crew" "$CG/home"
 printf '{"guards":{"cloudGuard":"block"}}' > "$CG/repo/.crew/config.json"
 cguard_raw() {  # $1 = raw stdin -> the wrapper's stdout
@@ -954,6 +979,7 @@ rm -rf "$CG"
 # run it the same way. Must-block and must-allow for each check; the pwsh twin
 # is _test/webtest-guard.ps1.
 WT=$(mktemp -d) || exit 1
+_CREW_TEST_TMP+=("$WT")
 WG="$SCRIPTS/webtest_guard.py"
 wt_git() { git -C "$WT" "$@" >/dev/null 2>&1; }
 wt_git init -q -b main
