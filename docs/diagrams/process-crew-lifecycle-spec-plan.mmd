@@ -1,0 +1,42 @@
+%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Anchors: plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/hooks/scripts/crew_tracker.py
+%% Purpose: /crew:spec writes spec.md from the approved direction, then /crew:plan writes plan.md, amending the spec's Touch list first when a step reaches outside it, and stops for approval.
+%% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
+%% Arrow-shaped nodes ("next:" / "back:" / "again:") stand for a node drawn in the named part.
+%% --
+%% Every node cites the command file's own line; files are named repo-relative
+%% here and by basename in the nodes (all under plugin/crew/commands/ unless
+%% named otherwise):
+%%   plugin/crew/commands/spec.md:10 refuses without direction.md; :15 writes spec.md;
+%%     :38-43 Touch feeds the scope guard, one path per bullet; :45-48
+%%     crew_tracker.py move --to spec;
+%%     :49 plan/implement/review/done all refuse without spec.md; :57 amending
+%%     scope needs a fresh plan approval.
+%%   plugin/crew/commands/plan.md:16 refuses without spec.md; :22 optional second
+%%     opinion; :27 writes plan.md; :43 self-review (every Files: inside Touch);
+%%     :48 show and stop; :54 ask the user to type /crew:approve, never run
+%%     crew_ticket.py approve; :59 spec.md header `status: planned`, then
+%%     crew_tracker.py move --to planned (:60); :61-62 never add a status: to
+%%     plan.md (a token added where there was none stales it).
+%% --
+%% Note sp2: write spec.md: Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks
+%%    :15; Touch one path per bullet :38-43
+%% Note sp3: (INDEX, board -> Ready)
+%% Note pl1: optional second opinion :22
+flowchart TB
+    subgraph spec["/crew:spec"]
+        sp1{"direction.md?<br/>spec.md:10"}
+        sp1 -- missing --> spx([refuse: run /crew:brainstorm])
+        sp1 -- yes --> sp2["write spec.md<br/>Touch one path per bullet<br/>:15, :38-43"]
+        sp2 --> sp3["crew_tracker.py move --to spec<br/>:45-48"]
+    end
+
+    subgraph plan["/crew:plan"]
+        sp3 --> pl1["write plan.md: steps with<br/>Files / Test / Risk / Standards<br/>plan.md:27, :36"]
+        pl1 --> pl2{"every Files: entry<br/>inside Touch?<br/>:44"}
+        pl2 -- no --> amend["amend spec Touch first<br/>spec.md:57"]
+        amend --> pl1
+        pl2 -- yes --> pl3["show the plan, STOP<br/>:49"]
+    end
+
+    pl3 --> to_ap0>"next: approve part<br/>user types /crew:approve id"]
