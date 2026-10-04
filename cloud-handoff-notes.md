@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 15:15 UTC
+Last updated: 2026-10-04 15:17 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -64,6 +64,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 15:17: #450 round-2 fixes -> 22271e7d (lstat-only absent, up-front schema, O_NONBLOCK+fstat S_ISREG; 102 tests, 24 red-before; 15 sabotages). Round-3 review started.
 - 15:15: #407 re-review 8ec0d228: 1 BLOCK (plain deploy of production contains staging's prefix when staging has shaInput -> prod runs unattended) / 1 FIX (ps1 -like wildcards in plain deploy strings) / 3 NIT. Sent back: replace pairwise overlap with _gate_pick simulating BOTH gates over every env's commands (+agreement test vs real gates).
 - 15:15: #416 re-review 38bb1825: 0/2/6 (combining marks bypass pronoun/non-ASCII; fullwidth/lookalike / ? quotes and Cf ride into raw command). Sent back: replace fold+screen with printable-ASCII allowlist on free text (else ask) + ASCII-only _ID + merge main.
 - 15:14: #352 land-prep -> e50a37af (merged main f3f319d1, crew 1.0.327; docx/pdf rebuilt; 392+55 tests + gates pass). Merge-only review + CI next; subscribed.
