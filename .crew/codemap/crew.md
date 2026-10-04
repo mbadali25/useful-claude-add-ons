@@ -623,10 +623,10 @@ rule that raises as stale; `resume_line` (`:688`) renders the one injected
 line. Nothing starts on its own - the command is named, never sent as
 `initialUserMessage`. On `PreCompact` both `handoff-write` flavours call its
 `precompact` CLI (`write_precompact_record`,
-`plugin/crew/hooks/scripts/crew_resume.py:648`); `decide` trusts a `manual`
+`plugin/crew/hooks/scripts/crew_resume.py:655`); `decide` trusts a `manual`
 record for 600 s and never one it could not have replaced
-(`_compact_was_manual`, `:714`). A record a later PreCompact could neither remove nor empty
-is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:623`, `_mark_stuck` `:631`;
+(`_compact_was_manual`, `:721`). A record a later PreCompact could neither remove nor empty
+is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:630`, `_mark_stuck` `:638`;
 the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:52-53`,
 `plugin/crew/hooks/scripts/handoff-write.ps1:330-331`), and a compact is not manual while that
 marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out with the records.
@@ -636,23 +636,23 @@ A handoff resumes only in the session that wrote it (T-0042). On an armed machin
 `crew_context.record_handoff_author` (`plugin/crew/hooks/scripts/crew_context.py:616`, called
 through the never-raising `_record_author_logged` `:1022` from `run` `:997`, before the
 `memory.inject` gate) into `<git-common-dir>/crew/handoff-author.json` (`record_author`,
-`plugin/crew/hooks/scripts/crew_resume.py:271`: the note's sha256, `session_id`, and
-`session_process()` `:221` - the nearest `claude` ancestor as `{pid, start}`, `None` on any host
+`plugin/crew/hooks/scripts/crew_resume.py:280`: the note's sha256, `session_id`, and
+`session_process()` `:230` - the nearest `claude` ancestor as `{pid, start}`, `None` on any host
 without `/proc`). A recorder that cannot take the author lock, or whose write fails - including
 one that was only REMOVING this worktree's entry - drops the whole file (`_drop_author` `:351`:
-unlinked by `_unlink_author` `:392`, or, where the directory refuses that, blanked in place by
-`_blank` `:702`, which reads as unreadable and waits - T-0069). When even that fails it leaves
+unlinked by `_unlink_author` `:398`, or, where the directory refuses that, blanked in place by
+`_blank` `:709`, which reads as unreadable and waits - T-0069). When even that fails it leaves
 `handoff-author.json.stuck` (`_mark_author_stuck` `:370`, `author_stuck_path` `:204`), which
 `_author_refusal` waits on (present or unknown) until a later record lands and removes it; a
 marker that cannot be written either leaves `_author_refusal`'s replaceability check - a record
 neither its file nor its directory lets anyone replace or remove is not trusted. So the previous
-entry never vouches for a note another session wrote last (T-0042 review rounds 1-2, T-0069). `decide` asks `_author_refusal` (`:472`) after the command checks and before
+entry never vouches for a note another session wrote last (T-0042 review rounds 1-2, T-0069). `decide` asks `_author_refusal` (`:479`) after the command checks and before
 the state file: `compact` must match the session id, `clear` the process; a missing, unreadable
 or sha-mismatched record, or an unidentifiable process, is a `wait`, never a match. `record_run`
-(`:799`) is the only writer of
+(`:806`) is the only writer of
 `<git-common-dir>/crew/resume-state.json`, and nothing in the plugin calls it
 yet (T-0013's contract). A state file that exists and cannot be read or is not
-the shape `record_run` writes is an unknown (`_read_state` `:420`, `_entry` `:442`
+the shape `record_run` writes is an unknown (`_read_state` `:426`, `_entry` `:448`
 return `None`): `decide` waits and `record_run` refuses rather than overwriting it. A PARTIAL
 record is that shape too (T-0042, before review round 2): a file with no `worktrees` key, or an
 entry of this worktree missing `consumed`, `last`, or last's string `prompt`/`fingerprint`, is
