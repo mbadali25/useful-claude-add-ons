@@ -128,12 +128,16 @@ def _marker(root):
     return p.read_text(encoding="utf-8").strip() if p.exists() else None
 
 
-# The wrapper's status as its parent sees it: 137 from bash, and from a
-# native Windows parent (pwsh) of an MSYS bash.exe ended by SIGKILL, 2304 -
-# MSYS hands the signal back as `9 << 8` (measured on CI's windows-latest).
-# Either way the reason, and the could-not-tell outcome, are the same.
-_RUNNER_KILLED = re.compile(r"the rule's runner ended with status (137|2304) before it "
-                            r"recorded a result")
+def _runner_killed(flavour):
+    """The wrapper's status as its parent sees it: 137 from bash, and from a
+    native Windows parent (pwsh) of an MSYS bash.exe ended by SIGKILL, 2304 -
+    MSYS hands the signal back as `9 << 8` (measured on CI's windows-latest).
+    2304 is accepted only there: [sh], and [ps1] off Windows, still 137 only.
+    Either way the reason, and the could-not-tell outcome, are the same."""
+    msys = flavour == "ps1" and sys.platform.startswith("win")
+    status = "(137|2304)" if msys else "137"
+    return re.compile(r"the rule's runner ended with status " + status
+                      + r" before it recorded a result")
 
 
 def _says(stderr, reason, cmd):
@@ -226,7 +230,7 @@ def test_no_completion_record_could_not_tell(flavour, how, tmp_path):
     reports exit 0 would leave, which only the record can catch."""
     if how == "wrapper-killed":
         cmd = _wrapper_pid(flavour) + 'kill -KILL "$w"; sleep 1'
-        reason = _RUNNER_KILLED
+        reason = _runner_killed(flavour)
     else:
         cmd = 'ln -sf /dev/null "$RULE_DONE_FILE"; echo pointed-away'
         reason = "no completion record"
@@ -244,8 +248,10 @@ def test_no_completion_record_could_not_tell(flavour, how, tmp_path):
 @pytest.mark.skipif(not _BASH_FIFO, reason=f"the rule's bash ({_BASH}) cannot make a FIFO "
                                               "with mkfifo")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-@pytest.mark.parametrize("value", ["", "abc\\n", "256\\n", "007\\n", "0\\n0\\n", "0\\0\\n"],
-                         ids=["empty", "text", "256", "leading-zero", "two-lines", "nul"])
+@pytest.mark.parametrize("value", ["", "abc\\n", "256\\n", "007\\n", "0\\n0\\n", "0\\0\\n",
+                                   "0\\n\\0"],
+                         ids=["empty", "text", "256", "leading-zero", "two-lines", "nul",
+                              "nul-after-newline"])
 def test_unreadable_record_could_not_tell(flavour, value, tmp_path):
     """The record path is a shell variable the rule can see. The rule points
     it at a FIFO and leaves a background job that outlives it: the job drains
@@ -296,7 +302,7 @@ def test_a_rule_timed_out_from_outside_is_failed(flavour, where, tmp_path):
         reason = "exit status 137: ended by signal 9, or the rule's own status"
     else:
         cmd = _wrapper_pid(flavour) + '( sleep 1; kill -KILL "$w" ) & sleep 4'
-        reason = _RUNNER_KILLED
+        reason = _runner_killed(flavour)
     root = _repo(tmp_path, [cmd])
 
     res = _run(flavour, root)

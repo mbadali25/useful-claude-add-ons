@@ -25,7 +25,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **T-0082, why.** A Windows run saw a rule hang, the runner killed, and no
   `VERIFY FAILED` line for it: the gate decided pass from the absence of a
   failure line, an unknown collapsing into the safe-looking value.
-  `test_verify_gate_rule_completion.py` (32 cases, sh and ps1) and 14 sabotage
+  `test_verify_gate_rule_completion.py` (45 cases with `--run-slow`, sh and ps1) and 14 sabotage
   entries; its own `.crew/verify.json` rule (16s; the [ps1] halves are `slow`
   apart from a smoke set of three). Not here: a per-rule deadline (L-0674, held)
   and the CI receipt's parser (L-0673).
