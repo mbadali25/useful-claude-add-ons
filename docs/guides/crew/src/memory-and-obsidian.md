@@ -308,7 +308,7 @@ to its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not used. The
 line is exact and must be the whole body: a first line that starts `vault` and
 `:`, in any case, indent or spacing, is a pointer attempt when `note:` or `|`
 is on that line, or the next line starts with `|` or `note:` (a pointer wrapped
-before its `|`), or the line is a bare vault name alone (`vault: work`); a
+before its `|`), or the line is a bare vault name alone (`vault: work`) or nothing after the colon (`vault:`); a
 table or a `Note:` line further down does not count; anything less than the full
 grammar is then `malformed`. With neither the line is prose: `Vault: keep client notes in the work vault` is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
 that is there but does not read, parse or have the expected shape (a `vaults`

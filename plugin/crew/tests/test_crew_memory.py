@@ -1085,3 +1085,21 @@ def test_long_prose_starting_vault_is_full_text(host, capsys, body):
     mem = host.memory(body)
     code, out = resolve(host, mem, capsys)
     assert (code, state_of(out)) == (0, "full-text"), out
+
+
+# --- landing NIT (5080f05c) -------------------------------------------------
+
+@pytest.mark.parametrize("body", [
+    "vault:\nwork | note: notes/fact.md\n",
+    "Vault :  \nwork | note: notes/fact.md\n",
+    "vault:\n",
+], ids=["empty-then-pointer", "capital-spaced-empty", "empty-alone"])
+def test_a_first_line_of_only_vault_colon_is_malformed(host, capsys, body):
+    """Must-block: a first line that is only `vault` + optional whitespace +
+    `:` is a pointer attempt with nothing after the colon - a pointer broken
+    after `vault:` - so it is malformed, never full text."""
+    host.obsidian({"vaults": {"work": {"path": str(host.vault("work"))}}})
+    mem = host.memory(body)
+    code, out = resolve(host, mem, capsys)
+    _assert_degraded(code, out, "malformed")
+    assert "if this is prose, reword the first line" in reason_of(out), out

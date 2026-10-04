@@ -35,7 +35,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   falling back to a recall vault, no changed-meanwhile check, no ASCII rule, no temp cleanup, no
   path grammar, no `.obsidian/` check, rewriting an unchanged note.
 
-### Added — `crew` 1.0.398: native memories as vault pointers, read side (T-0084)
+### Added — `crew` 1.0.331: native memories as vault pointers, read side (T-0084)
 
 - `plugin/crew/hooks/scripts/crew_memory.py` (new): a native Claude Code memory file may hold one
   line in place of its body, `vault: <name> | note: <vault-relative path>`. `resolve --file`
@@ -88,6 +88,70 @@ All notable changes to this repository are documented here. Format follows [Keep
   uncaught; a non-regular note read as missing; the mark looked for on the first line only; no
   bare-name rule; every `vault:` line an attempt; no prose hint; the mark searched over the whole
   body; no word boundary before `note`; a mark anywhere on line 2): each turned a named test red.
+- **Landing NIT.** A first line that is only `vault` + optional whitespace + `:`, nothing
+  after the colon, is a pointer attempt: `vault:\nwork | note: notes/fact.md` reads as
+  `malformed`, not `full-text` (`_BARE`'s name is optional).
+  `test_a_first_line_of_only_vault_colon_is_malformed` (three bodies) was red before; the
+  `crew-memory` skill, the memory guide (rebuilt HTML, DOCX, PDF) and the code map say so.
+
+### Fixed — `crew` 1.0.330: in a lane worktree, the shell guards' no-python fallbacks read the main checkout's config (T-0096, slice 0)
+
+- **What changed.** `_common.sh` gains `crew_repo_config_dir` (and
+  `crew_repo_config_file`), and the `.ps1` hooks that need it carry one copied
+  body, `Get-CrewRepoConfigDir`: the shell twins of
+  `crew_common.repo_config_dir` (T-0088), with no python. Own `config.json` or
+  `crew.json` wins whole; a linked worktree with neither reads the main
+  checkout's; `unknown` (git cannot name it) inherits nothing. Routed through
+  them: the `emergency.standDown` read (`crew_incident_active` for every bash
+  gate, `promote-gate.ps1`), both cloud-guard no-python fallbacks, where
+  `unknown` now counts as armed, and `auto-clear.ps1`'s repo veto. The bash
+  fallback also counts a missing resolver (`_common.sh` failed to source) as
+  armed, and the PowerShell resolver pins UTF-8 around its git call so a
+  non-ASCII path does not read `unknown` on an OEM-code-page console.
+- **Why.** `.crew/*` is gitignored, so a lane has no config of its own. The
+  cloud guard's fallback took an absent file as proof of off: in a lane whose
+  main checkout says `cloudGuard: block`, a session with no usable python ran
+  commands unjudged while the Python guard would have blocked them. The
+  stand-down read and `auto-clear.ps1` disagreed with their Python halves the
+  same way.
+- **Behaviour change.** Inheritance can loosen as well as tighten: an
+  inherited `cloudGuard: off` applies in a lane. A lane whose git cannot name
+  its main checkout, with no usable python, refuses Bash until one of them
+  works, even when no config layer arms the guard (`unknown` is armed).
+- **Not yet covered.** The session hooks (`notify`, `handoff-read`,
+  `handoff-write`, `context-watch`), the verify gate, the scope and completion
+  wrappers and `review_gate.py` still read the lane's own file (L-0680, L-0681).
+  Until then `verify-gate.ps1` reads the lane's own `emergency.standDown` while
+  the bash gate and `crew_incident.py` read the inherited one.
+- **Tests.** `plugin/crew/tests/test_worktree_config_shell.py`: both resolvers
+  against the Python one on ten cases, the copies byte-identical, must-block
+  and must-allow cases for the cloud-guard fallback in both flavours, the
+  stand-down and the auto-clear veto. Sabotaged by hand (the mutations go to
+  the sabotage suite with L-0681).
+
+### Fixed — `crew` 1.0.329: refresh admission refuses an artifact removed from the index (L-0688)
+
+- **What changed.** `crew_refresh_check._on_disk` refuses an artifact whose
+  base copy exists and which the index no longer holds while the file stays
+  on disk (`git rm --cached`): `artifact_verdicts` returns `False` with
+  "removed from the index, so the commit deletes it". The `--cached` raw diff
+  prints `:100644 000000 ... D` for it, which the mode check skipped. A new
+  artifact with no base copy, untracked or staged, is judged as before. The
+  module docstring stops naming L-0540 as pending: `completion_audit.audit`
+  is the caller and its docstring states what it admits.
+- **Why.** T-0094 review round 8 (BLOCK, accepted 2026-09-30): the verdict
+  called a re-anchor what the commit records as a deletion. No hook calls
+  `artifact_verdicts` yet; this lands before L-0540 wires it into the
+  completion audit.
+- **Tests.** `test_refresh_admission.py` gains the refusal for a map, a
+  diagram source and a graph file (red on main) and two must-allow cases (a
+  new untracked rendered file, a new staged one). The permanent sabotage
+  entry lands with L-0540; the refusal was hand-run red here.
+- **Review NIT.** A conflicted merge's unmerged artifact prints the same
+  `:100644 000000 ... U` modes in the `--cached` pass; it is still refused,
+  now as "unmerged in the index (resolve the conflict first)" rather than as
+  a deletion. `test_an_artifact_unmerged_in_the_index_is_refused_as_unmerged`
+  (a map and a diagram, each from a real merge conflict) was red before.
 
 ### Changed — `crew` 1.0.328: `git.forbiddenTrailers` and the `/crew:done` trailer report (T-0066)
 
