@@ -1,5 +1,44 @@
 # Cloud handoff notes
 
+## >>> RESUME HERE ("read Cloudhead") <<<
+
+Written 2026-10-04 22:20 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at the owner's request to clear and restart.
+A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
+
+### State
+- **main = a31ac3bb, crew 1.0.342.** 22 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
+- Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
+
+### Owner rules in force (all sessions)
+- Merge only with 0 BLOCK + 0 FIX on the current head, CI green on that head, in order. Merge commits only; never squash/rebase/force-push. Commits carry only `Claude-Session: <url>`; never Co-Authored-By. No `[skip ci]` (withdrawn: the permission system treats it as a CI bypass).
+- Harness paths (`HARNESS` in scripts/check-tooling-pr.py) land ALONE (T-0087). Docs-only PRs need no gates.
+- PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets L-15xx ids (next free: **L-1514**).
+- **Batches of 5-6** (raised 2026-10-04 evening).
+- **Version: ONE bump per batch** during cloud sessions (2026-10-04 late): only the last PR of a batch carries the version-only commit. See `procedures/LANDPREP.md` "Version rule".
+- **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
+- Notes after every action; present decisions with a recommendation and tables (owner has ADHD: concise).
+
+### In flight at handoff (verify each on GitHub first)
+| Item | Where | State | Next |
+|---|---|---|---|
+| Batch 4 land-prep | #400 L-0680 -> #421 T-0083 -> #394 T-0037 -> #364 T-0052 | agent was running (heads before: 897f3faf, 41b1d576, 96080457, 1b0de3cb); may have pushed with OLD per-PR versions 1.0.343+ | Re-check heads. Re-do versions per the new one-bump-per-batch rule. Send real content conflicts (#394/#364 catch-up likely) for review. Merge in order when green |
+| L-1512 build | branch `L-1512-build`, placeholder 1.0.412 | agent was running (cloud-guard bash tests exit 2304 on Windows) | Find its PR (`L-1512:` title); review; harness-check; land |
+| #416 T-0057 | `T-0057-build` | Windows pre-flight dispatched 22:14 | Check result; it is review-clean |
+| L-1508 PR B | not started | 9 harness files allowlisted "L-1508 PR B" in test_tool_resolution.py | Build as harness-only PR |
+| #407 T-0045 | `T-0045-build` | review-clean | Must adopt L-1503's UNION rule in `_gate_pick` before landing; carry `[!-[]` FIX |
+
+### Ready / next up
+- Review-clean, need Windows pre-flight: #421 (green), #364 (green), #416, #407 (after rework), #365/#366 (stacked on #364/#354), plus the 18 older ones in `CLOUD-SESSION-TICKETS.md`.
+- New tickets to build (feature unless noted): L-1509 (bare-name calls outside crew), L-1511 (tracker create/move take INDEX lock), L-1513 (harness: broken sabotage anchor + argparse/usage gap), L-1505 (harness: per-env PROMOTIONS rows + marker parsing), L-1504 (harness: owner-typed sleep only).
+- The 91 spec drafts: plan in `docs/handoff/cloud/WAVES-2026-10-04.md`. Owner answered the blocking questions 2026-10-04 (see `CLOUD-SESSION-TICKETS.md` "Owner decisions, 2026-10-04 evening"); T-0029/T-0030 and their 8 dependents are DEFERRED; L-0674 not built (#404 closed).
+
+### CI facts
+- Windows: 6 default shards + 3 slow shards (L-1506/L-1507). PR CI ~9-13 min; queueing at the 20-job limit is now the main cost.
+- Read job logs with `mcp__github__get_job_logs` (blob downloads are blocked by the proxy). `gh pr checks` returns 403; use `gh api repos/.../commits/<sha>/check-runs`.
+- Mark ready via `gh api -X POST repos/mbadali25/useful-claude-add-ons/pulls/<n>/ccr/ready_for_review`, then merge with `-f merge_method=merge -f sha=<full sha>`.
+- pwsh 7.4.6 may be at `find /tmp -name pwsh -type f` (re-download if the container is new); the claude CLI is at /opt/node22/bin/claude.
+
+
 Live log of the cloud session working ALL open PRs (session
 `session_016wQA2o38aSB65bpjaGpMVJ` since 11:06 UTC 2026-10-04; before it `session_01YVvVmFJquzLKR26dG6oSQS`, branch `ccr-b039f2bb-6jks7g`, which carries only this file and
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
