@@ -49,7 +49,7 @@ Next free untracked ID: **L-1503**.
 
 | Ticket | PR | Head | Status | Notes |
 |---|---|---|---|---|
-| T-0066 | #351 | 75a0d5db | landing now | Merged main b863b773, crew 1.0.328; merge-only review + CI. Part 1 of 2. |
+| T-0066 | #351 | 75a0d5db | landing now | Merged main b863b773, crew 1.0.328; review clean; CI red (done.md 123 > 120 lines after merge) being fixed. Part 1 of 2. |
 | T-0017 | #356 | 5e37f872 | ready to land | Stacked on #396 (T-0016). Carry NIT: stdout backslashreplace for non-ASCII refusal reasons. |
 | T-0059 | #366 | e14b5a45 | ready to land | Stacked on T-0052 (#364). |
 | T-0058 | #365 | 16228584 | ready to land | Stacked on #364/#354. Carry: `_gate_stage` must pick stage like `_phase`; `split_report current=` from `_not_current`. Decision: absent sources read as unmeasured (owner-approved). |
@@ -59,9 +59,9 @@ Next free untracked ID: **L-1503**.
 | T-0045 | #407 | 3e2afb49 | in review | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
 | T-0053 | #403 | 610deaea | in review | Slice 1. Decisions taken for you: unknown sleep state = strictest of day and night per key; non-object sleep block = human. |
 | T-0047 | #347 | 877ef4b8 | in review | PowerShell fail-closed backstop added. |
-| T-0074 | #481 | b573d4c9 | in review | Slice 1 of 3. Q4 (security-adjacent): under `approval: self` a guard/production ticket can be auto-rejected and replanned; off by default. Q7 open. |
-| T-0057 | #416 | 2eaac674 | in review | Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
-| T-0084 | #450 | 9350f997 | fixing | Final narrowing of pointer detection. Decisions taken for you: near-miss pointers = malformed; legacy `vaultPath` ignored when a `vaults` block exists. |
+| T-0074 | #481 | b573d4c9 | fixing | Slice 1 of 3. OWNER DECIDED Q4 (2026-10-04): as specified, follows autopilot.approval. F1 (typed reject name skips policy checks) being fixed. Q7 open. |
+| T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
+| T-0084 | #450 | 5080f05c | ready to land | Review clean (round 6). Carry: treat a bare `vault:` first line as a pointer attempt. Decisions taken for you: near-miss pointers = malformed; legacy `vaultPath` ignored when a `vaults` block exists. |
 | T-0082, T-0080 | #399 (H2a bundle) | ed58c3d9 | building | Harness-only. #475 (T-0080) closes at landing. |
 
 ## Review-clean on older bases (catch-up merge + version at their turn)
