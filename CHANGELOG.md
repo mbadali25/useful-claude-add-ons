@@ -42,6 +42,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   plus a bounded sample, prints indices with the nonce first and an end marker last, and no longer
   refuses a store with many entries. A stale `crew-sealed-<pid>-*` directory is removed by the next
   launch once its process has exited. Accepted residual risks are listed in the README.
+- Round-2 review fixes: a new `version` check (after `settings`) runs `<claude> --version` on the
+  same file the probe and the launch use and refuses as `unknown` below Claude Code 2.1.246 (where
+  `--setting-sources` starts keeping an excluded source's sandbox entries out), on output that does
+  not parse, a non-zero exit or a timeout. In a linked git worktree the settings check also reads
+  the main checkout's `.claude/settings.local.json` (Claude Code reads that file there), and a
+  `.git` file whose main checkout cannot be found is `unknown`. The stale-directory sweep's owner
+  check and its refusal to follow a symlink now have tests. README residuals add that the sweep
+  cannot see processes in another PID namespace sharing `/tmp`.
 - Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.

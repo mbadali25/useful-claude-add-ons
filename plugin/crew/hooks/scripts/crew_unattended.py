@@ -32,13 +32,18 @@ Checks, in order; the first that is not `ready` stops the chain:
   3. settings  fail closed on the settings files around the sealed ones: a
                repo file with a `sandbox` key or a `Read` allow rule, or a
                user file with `sandbox.excludedCommands`, an `allowRead` that
-               could re-open a store, or `filesystem.disabled: true`.
-  4. export    `aws configure export-credentials --format process`, read into
+               could re-open a store, or `filesystem.disabled: true`. In a
+               linked worktree the main checkout's local file is read too.
+  4. version   `<claude> --version` must print a version at or above
+               `MIN_CLAUDE_VERSION`: `--setting-sources` drops a source's
+               sandbox entries only from 2.1.246 on. Older, unparseable, a
+               non-zero exit or a timeout is `unknown`.
+  5. export    `aws configure export-credentials --format process`, read into
                memory only. No SessionToken or Expiration is static keys:
                refuse. Under 15 minutes left: refuse.
-  5. identity  `aws sts get-caller-identity` in the sealed environment must
+  6. identity  `aws sts get-caller-identity` in the sealed environment must
                print an ARN that STARTS WITH the named identity prefix.
-  6. sandbox   one headless `claude -p` call in the sealed settings, from the
+  7. sandbox   one headless `claude -p` call in the sealed settings, from the
                repo root, runs a probe script that tries to open every store
                root that exists and a bounded sample inside each. Its verdict
                is parsed from the stream-json TOOL RESULTS only, never from
@@ -74,8 +79,21 @@ import crew_config
 import crew_state
 
 READY, REFUSE, UNKNOWN = "ready", "refuse", "unknown"
-CHECKS = ("platform", "config", "settings", "export", "identity", "sandbox")
+CHECKS = ("platform", "config", "settings", "version", "export", "identity",
+          "sandbox")
 
+# `--setting-sources` makes Claude Code ignore an excluded source's
+# `sandbox.filesystem` entries, `Edit` rules and `Read` deny rules when it
+# builds the sandbox only from this version on (code.claude.com/docs/en/
+# sandboxing, "Requires Claude Code v2.1.246 or later"). Below it, a repo's
+# settings could still shape the sealed sandbox, so the launch refuses.
+MIN_CLAUDE_VERSION = (2, 1, 246)
+# `claude --version` prints `2.1.289 (Claude Code)`; the suffix is optional,
+# anything else (a pre-release tag, extra words, a second line first) does
+# not parse and is `unknown`.
+_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?: \(Claude Code\))?$")
+
+VERSION_TIMEOUT = 30
 EXPORT_TIMEOUT = 60
 STS_TIMEOUT = 30
 PROBE_TIMEOUT = 300
@@ -464,16 +482,60 @@ def _git_top(root):
         here = up
 
 
+def _main_checkout(top):
+    """`(main, why)` for the git root `top`. When `top/.git` is a file (a
+    linked worktree), `main` is the main checkout: the parent of the common
+    git directory its `gitdir:` names (through `commondir`). `main` is ""
+    when `top` is not a linked worktree (`.git` a directory, or a gitdir with
+    no `commondir`, as a submodule has). `why` names a `.git` file or
+    `commondir` that cannot be read, which the caller treats as unknown."""
+    dotgit = os.path.join(top, ".git")
+    if not os.path.isfile(dotgit):
+        return "", ""
+    try:
+        with open(dotgit, encoding="utf-8") as handle:
+            first = handle.readline().strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        return "", f"`{dotgit}` cannot be read ({type(exc).__name__})"
+    if not first.startswith("gitdir:") or not first[7:].strip():
+        return "", f"`{dotgit}` has no `gitdir:` line"
+    gitdir = os.path.join(top, first[7:].strip())
+    common_file = os.path.join(gitdir, "commondir")
+    try:
+        with open(common_file, encoding="utf-8") as handle:
+            common = handle.readline().strip()
+    except FileNotFoundError:
+        if os.path.isdir(gitdir):
+            return "", ""
+        return "", f"`{dotgit}` names `{gitdir}`, which is not a directory"
+    except (OSError, UnicodeDecodeError) as exc:
+        return "", f"`{common_file}` cannot be read ({type(exc).__name__})"
+    if not common:
+        return "", f"`{common_file}` is empty"
+    common = os.path.realpath(os.path.join(gitdir, common))
+    return os.path.dirname(common), ""
+
+
 def repo_settings_files(root):
-    """The project and local settings files Claude Code would read for a
-    session started in `root`: `.claude/settings.json` from the working
-    directory, `.claude/settings.local.json` from it and from the git root."""
+    """`(files, why)`: the project and local settings files Claude Code
+    would read for a session started in `root` -- `.claude/settings.json`
+    from the working directory, `.claude/settings.local.json` from it and
+    from the git root, and, in a linked worktree, from the MAIN checkout's
+    root too (code.claude.com/docs/en/settings: "In a worktree, it uses the
+    file at the main checkout's root"). `why` is non-empty when a worktree's
+    main checkout cannot be found: could not tell which files load."""
     out = [os.path.join(root, ".claude", "settings.json"),
            os.path.join(root, ".claude", "settings.local.json")]
     top = _git_top(root)
     if top and os.path.realpath(top) != os.path.realpath(root):
         out.append(os.path.join(top, ".claude", "settings.local.json"))
-    return out
+    if top:
+        checkout, why = _main_checkout(top)
+        if why:
+            return out, why
+        if checkout and os.path.realpath(checkout) != os.path.realpath(top):
+            out.append(os.path.join(checkout, ".claude", "settings.local.json"))
+    return out, ""
 
 
 def _load_settings(path):
@@ -577,8 +639,12 @@ def judge_settings(repo_files, user_file, homes, store_paths):
 
 
 def run_settings(root, store_paths, homes):
+    files, why = repo_settings_files(root)
+    if why:
+        return UNKNOWN, (f"settings: cannot find the main checkout of this "
+                         f"worktree, so its local settings are unchecked: {why}")
     repo = []
-    for path in repo_settings_files(root):
+    for path in files:
         obj, why = _load_settings(path)
         repo.append((path, obj, why))
     user = _user_settings_path()
@@ -643,6 +709,38 @@ def run_identity(identity, env):
         return UNKNOWN, "identity: STS output is not JSON", ""
     state, why = judge_identity(obj, identity)
     return state, why, (obj.get("Arn", "") if state == READY else "")
+
+
+def judge_version(returncode, stdout):
+    """`(state, why)` for `claude --version`. Ready only for a clean exit
+    whose first non-blank line parses as a version at or above
+    `MIN_CLAUDE_VERSION`; everything else is `unknown`, since the sealed
+    settings cannot be shown to keep a repo's sandbox entries out."""
+    floor = ".".join(str(n) for n in MIN_CLAUDE_VERSION)
+    if returncode != 0:
+        return UNKNOWN, f"version: `claude --version` exited {returncode}"
+    line = _first_line(stdout)
+    match = _VERSION_RE.match(line)
+    if not match:
+        return UNKNOWN, (f"version: cannot parse `claude --version` output "
+                         f"{line[:80]!r}; need {floor} or later")
+    got = tuple(int(part) for part in match.groups())
+    text = ".".join(str(n) for n in got)
+    if got < MIN_CLAUDE_VERSION:
+        return UNKNOWN, (f"version: Claude Code {text} is older than {floor}, "
+                         "below which `--setting-sources` does not keep a "
+                         "repo's sandbox settings out of the sealed session")
+    return READY, f"version: Claude Code {text}"
+
+
+def run_version(exe, root, env):
+    """The version of the SAME executable the probe and the launch use."""
+    if exe is None:
+        return UNKNOWN, "version: `claude` is not on PATH, so nothing can be probed"
+    proc, why = _run([exe, "--version"], env, VERSION_TIMEOUT, cwd=root)
+    if proc is None:
+        return UNKNOWN, f"version: `claude --version` {why}"
+    return judge_version(proc.returncode, proc.stdout)
 
 
 def sealed_flags(settings_path):
@@ -803,12 +901,16 @@ def run_checks(root, environment, exe=None):
     if not done("settings", state, why):
         return finish(), None
 
+    if exe is None:
+        exe = resolve_exe("claude", os.environ.get("PATH"))
+    state, why = run_version(exe, root, stripped_env(dict(os.environ)))
+    if not done("version", state, why):
+        return finish(), None
+
     state, why, creds = run_export(target["profile"], dict(os.environ))
     if not done("export", state, why):
         return finish(), None
 
-    if exe is None:
-        exe = resolve_exe("claude", os.environ.get("PATH"))
     targets = probe_targets(store_paths)
     sealed, settings = _make_sealed(target["region"], store_paths)
     env = sealed_env(dict(os.environ), creds, target["region"], sealed)
@@ -816,10 +918,6 @@ def run_checks(root, environment, exe=None):
     try:
         state, why, arn = run_identity(target["identity"], env)
         if not done("identity", state, why):
-            return finish(), None
-        if exe is None:
-            done("sandbox", UNKNOWN, "sandbox: `claude` is not on PATH, so "
-                 "nothing can be probed")
             return finish(), None
         if any("\n" in t or "\r" in t for t in targets):
             done("sandbox", UNKNOWN, "sandbox: a store path holds a newline "

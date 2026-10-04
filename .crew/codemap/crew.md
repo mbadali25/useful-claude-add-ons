@@ -330,17 +330,17 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 
 **Unattended launches hold sealed credentials (T-0044, read at `ce400de3` plus its review fixes).**
 `plugin/crew/hooks/scripts/crew_unattended.py` is the one entry point that starts an unattended
-session with its own environment: `run_checks` (`:767`) runs platform, config, settings, export,
+session with its own environment: `run_checks` (`:865`) runs platform, config, settings, version, export,
 identity and sandbox in order and stops at the first that is not `ready`; `unknown` refuses like `refuse`
-and keeps its label. Config is `resolve_target` (`:287`) over the machine file alone, with
+and keeps its label. Config is `resolve_target` (`:363`) over the machine file alone, with
 `cloud_guard.environments_config`'s repo `nonProd` as the second layer for `--environment`.
-`judge_export` (`:295`) refuses static keys and under 15 minutes; `judge_identity` (`:321`) is a
-prefix match that refuses `:user/`; `judge_probe` (`:253`) reads stream-json `tool_result`
-blocks only (indexed lines, nonce first, end marker last); `judge_settings` (`:528`) refuses a repo
-settings file with a `sandbox` key or `Read` allow and a user file that widens the sandbox. The child gets `sealed_env` (`:396`: `stripped_env` drops cloud and forge credential variables, IMDS off,
-`CREW_UNATTENDED=1`) and `sealed_settings` (`:414`: read and write denies) over `stores` (`:155`);
+`judge_export` (`:313`) refuses static keys and under 15 minutes; `judge_identity` (`:339`) is a
+prefix match that refuses `:user/`; `judge_probe` (`:271`) reads stream-json `tool_result`
+blocks only (indexed lines, nonce first, end marker last); `judge_settings` (`:590`) refuses a repo
+settings file with a `sandbox` key or `Read` allow and a user file that widens the sandbox; `repo_settings_files` (`:519`) adds a linked worktree's main-checkout local file, and an unreadable `.git` file is `unknown`. `judge_version` (`:714`) needs `claude --version` at or above `MIN_CLAUDE_VERSION` (2.1.246), else `unknown`. The child gets `sealed_env` (`:414`: `stripped_env` drops cloud and forge credential variables, IMDS off,
+`CREW_UNATTENDED=1`) and `sealed_settings` (`:432`: read and write denies) over `stores` (`:173`);
 the session and the probe both get `--setting-sources user` and start in `--root`;
-`_command_problem` (`:848`) refuses anything but `claude` and a `--settings` override. The block is
+`_command_problem` (`:946`) refuses anything but `claude` and a `--settings` override. The block is
 `crew_state.UNATTENDED_CLOUD_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:731`), global
 template only; `crew_config.unattended_cloud_block_problem` (`plugin/crew/hooks/scripts/crew_config.py:1084`)
 validates it and `_without_machine_only` (`:1719`) drops a repo copy from `resolve_config` and

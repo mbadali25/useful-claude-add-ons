@@ -1463,7 +1463,7 @@ session by itself, and a hook cannot change the environment of a session that
 is already running, so `/crew:autopilot` touching the cloud unattended is
 started this way. The identity comes from `unattendedCloud` in the machine
 file `~/.claude/crew/config.json` only (CONFIG.md, "`unattendedCloud`"); a
-repo copy is ignored and reported. Six checks run in order, and the first that
+repo copy is ignored and reported. Seven checks run in order, and the first that
 is not `ready` refuses with its reason printed verbatim. `unknown` ("could not
 tell") refuses exactly like `refuse` and keeps its own label:
 
@@ -1481,14 +1481,23 @@ tell") refuses exactly like `refuse` and keeps its own label:
    the sealed ones, so `sandbox.excludedCommands` (those commands run
    unsandboxed), a `sandbox.filesystem.allowRead` entry at or under a store or
    holding a glob, or `sandbox.filesystem.disabled: true` refuses. A settings
-   file that exists but is not a JSON object is `unknown`.
-4. **export** -- `aws configure export-credentials --format process`, read
+   file that exists but is not a JSON object is `unknown`. In a linked git
+   worktree Claude Code reads `.claude/settings.local.json` from the MAIN
+   checkout's root, so that file is checked too; a `.git` file whose main
+   checkout cannot be found is `unknown`.
+4. **version** -- `<claude> --version`, the same file the probe and the
+   launch use, must print a version (`2.1.289 (Claude Code)`) at or above
+   2.1.246: below it `--setting-sources` does not keep an excluded source's
+   `sandbox.filesystem` entries, `Edit` rules and `Read` denies out of the
+   sandbox. An older version, output that does not parse (a pre-release tag
+   included), a non-zero exit or a timeout is `unknown`.
+5. **export** -- `aws configure export-credentials --format process`, read
    into memory only. No `SessionToken` or `Expiration` (static keys), under 15
    minutes of lifetime, a non-zero exit, a timeout or non-JSON output refuses.
-5. **identity** -- `aws sts get-caller-identity` in the sealed environment
+6. **identity** -- `aws sts get-caller-identity` in the sealed environment
    must print an ARN that starts with the named prefix (an assumed role ending
    in `/`); a `:user/` ARN or any other role refuses.
-6. **sandbox** -- one headless `claude -p` call, made by the same `claude`
+7. **sandbox** -- one headless `claude -p` call, made by the same `claude`
    file the launch will exec, from `--root`, with the same leading flags,
    runs a probe that tries `head -c1`/`ls` and `python3 open()` on every store
    root that exists plus a bounded sample of files inside each (two per
@@ -1556,7 +1565,12 @@ and MCP servers run outside the sandbox: the user settings' ones are yours and
 load; a repo's `.claude/settings.json` hooks do not load, and a repo's
 `.mcp.json` servers are not inspected by the launcher. `--setting-sources`
 excluding project settings from the sandbox build needs Claude Code 2.1.246 or
-later, and the admin-required behaviour 2.1.285 or later. Azure and TFC/HCP
+later, which the version check enforces; the admin-required behaviour needs
+2.1.285 or later and is not checked, since the settings check already refuses
+what it would ignore. The stale-directory sweep asks `kill(pid, 0)` in its own
+PID namespace: a process in another namespace sharing the same `/tmp` is
+invisible to it, so a sealed directory still in use there can be removed (its
+settings file is already loaded; the session keeps running). Azure and TFC/HCP
 are a provider seam only: any key other than `aws` refuses as not implemented.
 
 ### §11c. `change` — change requests, added by schema 7

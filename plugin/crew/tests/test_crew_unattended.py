@@ -94,6 +94,16 @@ sys.exit(2)
 _CLAUDE_SHIM = r'''#!/usr/bin/env python3
 import json, os, re, shlex, sys, time
 args = sys.argv[1:]
+if args == ["--version"]:
+    rec = os.environ.get("FAKE_VERSION_SEEN")
+    if rec:
+        with open(rec, "w") as fh:
+            json.dump({"argv0": sys.argv[0], "env": dict(os.environ),
+                       "cwd": os.getcwd()}, fh)
+    if os.environ.get("FAKE_VERSION_SLEEP"):
+        time.sleep(float(os.environ["FAKE_VERSION_SLEEP"]))
+    sys.stdout.write(os.environ.get("FAKE_VERSION", "2.1.289 (Claude Code)") + "\n")
+    sys.exit(int(os.environ.get("FAKE_VERSION_RC", "0")))
 if "-p" in args:
     prompt = args[args.index("-p") + 1]
     targets = [shlex.split(line)[2] for line in prompt.splitlines()
@@ -612,11 +622,76 @@ def test_core_repo_settings_files_include_the_git_root_local_file(tmp_path):
     (tmp_path / ".git").mkdir()
     sub = tmp_path / "pkg"
     sub.mkdir()
-    got = cu.repo_settings_files(str(sub))
+    got, why = cu.repo_settings_files(str(sub))
+    assert why == ""
     assert str(sub / ".claude" / "settings.json") in got
     assert str(sub / ".claude" / "settings.local.json") in got
     assert os.path.join(os.path.realpath(str(tmp_path)), ".claude",
                         "settings.local.json") in got
+
+
+def _linked_worktree(base):
+    """A main checkout and a linked worktree of it, laid out the way `git
+    worktree add` leaves them: the worktree's `.git` is a FILE naming
+    `<main>/.git/worktrees/<name>`, whose `commondir` points back at
+    `<main>/.git`."""
+    main = base / "main"
+    admin = main / ".git" / "worktrees" / "lane"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    lane = base / "lane"
+    lane.mkdir()
+    (lane / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    return main, lane
+
+
+def test_core_repo_settings_files_include_the_main_checkout_in_a_worktree(tmp_path):
+    """Claude Code reads a linked worktree's `.claude/settings.local.json`
+    from the MAIN checkout's root, so that file is checked too."""
+    main, lane = _linked_worktree(tmp_path)
+    got, why = cu.repo_settings_files(str(lane))
+    assert why == ""
+    assert os.path.join(os.path.realpath(str(main)), ".claude",
+                        "settings.local.json") in got
+    assert str(lane / ".claude" / "settings.local.json") in got
+
+
+@pytest.mark.parametrize("dotgit,needle", [
+    ("not a gitdir line\n", "no `gitdir:`"),
+    ("gitdir: /nowhere/at/all\n", "not a directory"),
+])
+def test_core_repo_settings_files_unknown_when_the_main_checkout_is_hidden(
+        tmp_path, dotgit, needle):
+    _main, lane = _linked_worktree(tmp_path)
+    (lane / ".git").write_text(dotgit, encoding="utf-8")
+    _got, why = cu.repo_settings_files(str(lane))
+    assert needle in why, why
+
+
+CORE_VERSION = [
+    # (name, returncode, stdout, expected state, text)
+    ("one-below", 0, "2.1.245\n", "unknown", "older than 2.1.246"),
+    ("one-below-suffixed", 0, "2.1.245 (Claude Code)\n", "unknown", "older"),
+    ("older-minor", 0, "2.0.999 (Claude Code)\n", "unknown", "older"),
+    ("garbage", 0, "command not found: claude\n", "unknown", "cannot parse"),
+    ("empty", 0, "", "unknown", "cannot parse"),
+    ("pre-release", 0, "2.1.300-beta.1 (Claude Code)\n", "unknown",
+     "cannot parse"),
+    ("non-zero-exit", 1, "2.1.289 (Claude Code)\n", "unknown", "exited 1"),
+    ("floor", 0, "2.1.246\n", "ready", "2.1.246"),
+    ("real-format", 0, "2.1.289 (Claude Code)\n", "ready", "2.1.289"),
+    # A string comparison reads 2.1.1000 as older than 2.1.246.
+    ("wide-patch", 0, "2.1.1000 (Claude Code)\n", "ready", "2.1.1000"),
+    ("next-major", 0, "3.0.0 (Claude Code)\n", "ready", "3.0.0"),
+]
+
+
+@pytest.mark.parametrize("name,rc,stdout,state,text", CORE_VERSION,
+                         ids=[r[0] for r in CORE_VERSION])
+def test_core_version(name, rc, stdout, state, text):
+    got, why = cu.judge_version(rc, stdout)
+    assert got == state, (name, why)
+    assert text in why, why
 
 
 # --- MUST_REFUSE: every case exits non-zero, execs nothing, names its reason --
@@ -626,6 +701,29 @@ def _repo_only(world):
     world.set_repo({"environments": {"nonProd": ["dev"]},
                     "unattendedCloud": {"aws": {"readOnly": {
                         "profile": "admin", "identity": IDENT}}}})
+
+
+def _lane_of_a_main_with_settings(world):
+    """`--root` is a linked worktree; the MAIN checkout's local settings
+    widen the sandbox. Claude Code reads that file for the worktree."""
+    (world.repo / ".git").write_text(
+        f"gitdir: {_main_admin(world)}\n", encoding="utf-8")
+    local = world.tmp / "main" / ".claude" / "settings.local.json"
+    local.parent.mkdir(parents=True)
+    local.write_text(json.dumps(
+        {"sandbox": {"excludedCommands": ["cat"]}}), encoding="utf-8")
+
+
+def _lane_with_a_broken_dotgit(world):
+    _main_admin(world)
+    (world.repo / ".git").write_text("gitdir:\n", encoding="utf-8")
+
+
+def _main_admin(world):
+    admin = world.tmp / "main" / ".git" / "worktrees" / "repo"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    return admin
 
 
 MUST_REFUSE = {
@@ -700,6 +798,23 @@ MUST_REFUSE = {
         ("--environment", "staging"), ["not nonProd"]),
     "windows": (lambda w: w.mp.setattr(cu, "_os_name", lambda: "nt"), (),
                 ["native Windows"]),
+    # `--setting-sources` keeps a repo's sandbox entries out only from
+    # Claude Code 2.1.246 on; anything that does not prove that refuses.
+    "version-too-old": (lambda w: w.mp.setenv(
+        "FAKE_VERSION", "2.1.245 (Claude Code)"), (),
+        ["version: Claude Code 2.1.245 is older than 2.1.246"]),
+    "version-garbage": (lambda w: w.mp.setenv("FAKE_VERSION", "garbage"), (),
+                        ["cannot parse", "garbage"]),
+    "version-fails": (lambda w: w.mp.setenv("FAKE_VERSION_RC", "3"), (),
+                      ["`claude --version` exited 3"]),
+    "version-times-out": (lambda w: (w.mp.setenv("FAKE_VERSION_SLEEP", "5"),
+                                     w.mp.setattr(cu, "VERSION_TIMEOUT", 0.5)),
+                          (), ["version: `claude --version` timed out"]),
+    "worktree-main-local-sandbox": (_lane_of_a_main_with_settings, (),
+                                    ["main", "settings.local.json",
+                                     "sets `sandbox`"]),
+    "worktree-dotgit-unreadable": (_lane_with_a_broken_dotgit, (),
+                                   ["cannot find the main checkout"]),
 }
 
 
@@ -805,6 +920,8 @@ def test_must_launch(world, capsys, case):
     world.mp.setenv("FAKE_AWS_EXPORT_SEEN", str(export_seen))
     world.mp.setenv("FAKE_AWS_STS_SEEN", str(sts_seen))
     world.mp.setenv("FAKE_PROBE_SEEN", str(probe_seen))
+    version_seen = world.tmp / "version-seen.json"
+    world.mp.setenv("FAKE_VERSION_SEEN", str(version_seen))
     for name, value in FOREIGN_CREDENTIAL_ENV.items():
         world.mp.setenv(name, value)
     code = world.run(*extra)
@@ -832,6 +949,10 @@ def test_must_launch(world, capsys, case):
         assert rec["env"].get("AWS_PROFILE") is None
     probe = json.loads(probe_seen.read_text(encoding="utf-8"))
     assert os.path.realpath(probe["cwd"]) == os.path.realpath(str(world.repo))
+    # The version that was checked is the version of the file exec'd.
+    version = json.loads(version_seen.read_text(encoding="utf-8"))
+    assert version["argv0"] == file_
+    assert not [k for k in version["env"] if k.startswith("AWS_")]
     assert probe["argv"][probe["argv"].index("--settings") + 1] == argv[2]
     assert probe["argv"][probe["argv"].index("--setting-sources") + 1] == "user"
     assert probe["argv0"] == file_
@@ -902,13 +1023,44 @@ def test_launch_sweeps_stale_sealed_directories(world, capsys):
     assert os.path.dirname(sealed) == str(world.tmpdir)
 
 
+def test_sweep_leaves_a_symlink_at_a_dead_pid_name(world, capsys):
+    """A `crew-sealed-<deadpid>-*` name that is a SYMLINK is not a sealed
+    directory: the sweep must not follow it into what it points at."""
+    victim = world.tmp / "victim"
+    victim.mkdir()
+    (victim / "keep.txt").write_text("keep", encoding="utf-8")
+    link = world.tmpdir / f"crew-sealed-{_dead_pid()}-link"
+    link.symlink_to(victim, target_is_directory=True)
+    assert world.run() == 0
+    capsys.readouterr()
+    assert (victim / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert link.is_symlink()
+
+
+def test_sweep_leaves_a_directory_another_user_owns(world, monkeypatch):
+    """A dead-pid sealed directory owned by someone else is left alone; the
+    same directory is removed once it is ours, so the owner check is what
+    kept it."""
+    stale = world.tmpdir / f"crew-sealed-{_dead_pid()}-theirs"
+    stale.mkdir()
+    (stale / "settings.json").write_text("{}", encoding="utf-8")
+    real_uid = os.getuid()
+    with monkeypatch.context() as patch:
+        patch.setattr(cu.os, "getuid", lambda: real_uid + 1)
+        assert cu.sweep_stale_sealed(str(world.tmpdir)) == []
+    assert (stale / "settings.json").exists()
+    assert cu.sweep_stale_sealed(str(world.tmpdir)) == [str(stale)]
+    assert not stale.exists()
+
+
 def test_check_runs_every_check_and_execs_nothing(world, capsys):
     code = cu.main(["check", "--root", str(world.repo), "--json"])
     out = capsys.readouterr().out
     rows = json.loads(out)
     assert code == 0 and not world.execs
     assert [r["check"] for r in rows] == ["platform", "config", "settings",
-                                          "export", "identity", "sandbox"]
+                                          "version", "export", "identity",
+                                          "sandbox"]
     assert all(r["state"] == "ready" for r in rows)
 
 
