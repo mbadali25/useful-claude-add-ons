@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 00:44 UTC
+Last updated: 2026-10-03 00:45 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:45: #352 r3 re-review on 113eccbf: CLEAN (0 BLOCK, 0 FIX, 1 NIT wording). Waits its turn in merge order.
 - 00:44: #358 r3 re-review on 88e7295f: CLEAN (0 BLOCK, 0 FIX, 2 NIT cosmetic). Waits its turn in merge order (needs main merge + re-bump + merge-only review at front).
 - 00:44: #352 fixes pushed: 113eccbf (crew 1.0.231; accepted-risk sentence + docstring + test, stuck-marker clear hint). Sonnet re-review r3 started.
 - 00:42: #358 fixes pushed: 88e7295f (crew 1.0.232; corrupt base -> unknown; cat-file-only + README GitFailed tests, sabotage red). Sonnet re-review r3 started.
