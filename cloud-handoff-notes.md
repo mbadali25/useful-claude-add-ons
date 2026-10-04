@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 00:47 UTC
+Last updated: 2026-10-03 00:48 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 00:48: #353 r2 re-review on 50685af5: PASS, 1 FIX (codemap Ship paragraph still said MERGED=closed) + 2 NIT. Fixed by hand: ea342f1f (codemap + verify.json why 153 + rules regen; plugin/crew untouched, version commit stays last). Gates green. Sonnet r3 started.
 - 00:47: #367 fixes pushed: 156a2702 (crew 1.0.234; nested repo/symlink -> unknown, backslash rules, --write literals for case, write keeps mode/symlink/CRLF; 8 sabotages red). Side-effect to judge: appended literal overrides a user's ! negation. Sonnet re-review r2 started.
 - 00:45: #353 fix pushed: 50685af5 (crew 1.0.233; _merged_phase: closed only if merged headRefOid == HEAD, else stop; 7 sabotage-red tests). Sonnet re-review r2 started.
 - 00:45: #352 r3 re-review on 113eccbf: CLEAN (0 BLOCK, 0 FIX, 1 NIT wording). Waits its turn in merge order.
