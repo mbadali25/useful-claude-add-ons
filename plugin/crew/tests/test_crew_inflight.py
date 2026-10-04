@@ -746,9 +746,10 @@ def test_no_proc_later_call_in_same_session_is_mine(repo, tmp_path, claude_pid, 
         assert done.returncode == 0, done.stdout + done.stderr
         got = _bash_cli(repo, env, "holds", "--ticket", T, "--runner", "autopilot")
         assert got.stdout.startswith("state=mine "), got.stdout + got.stderr
-        if claude_pid:
-            with open(_path(repo), encoding="utf-8") as handle:
-                assert json.load(handle)["pid"] == os.getpid()
+        with open(_path(repo), encoding="utf-8") as handle:
+            pid = json.load(handle)["pid"]
+        # Without ps nothing can walk the chain, so the hint is never trusted.
+        assert pid == (None if no_ps else os.getpid() if claude_pid else pid)
     finally:
         _kill_beat(done.stdout)
 
@@ -980,3 +981,73 @@ def test_release_log_failure_keeps_marker(repo, monkeypatch):
     monkeypatch.setattr(crew_inflight, "_log", broken)
     code, _text = crew_inflight.release(str(repo), T)
     assert (code, os.path.exists(_path(repo))) == (3, True)
+
+
+# --- review round 2: Windows CLAUDE_PID, overflow, the log's recovery -------------------
+
+def _windows(monkeypatch, chain, starts, session="sess-w"):
+    """A Windows host: `_win_ancestors` answers `chain` (or None: the walk
+    failed) and `_win_process` the creation times in `starts`."""
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_inflight, "_platform", lambda: "nt")
+    monkeypatch.setattr(crew_inflight, "_win_ancestors", lambda: chain)
+    monkeypatch.setattr(crew_inflight, "_win_process",
+                        lambda pid: ("running", starts.get(pid)))
+    monkeypatch.setenv("CLAUDE_PID", "4242")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+
+
+def test_windows_claude_pid_ancestor_is_the_holder(monkeypatch):
+    _windows(monkeypatch, [(os.getppid(), "bash.exe"), (4242, "claude.exe")],
+             {4242: 100, os.getpid(): 900})
+    assert crew_inflight._holder_pid() == 4242  # pylint: disable=protected-access
+
+
+def test_windows_claude_pid_not_an_ancestor_is_refused(monkeypatch):
+    """FIX: a CLAUDE_PID from project settings naming an unrelated process."""
+    _windows(monkeypatch, [(os.getppid(), "bash.exe"), (77, "explorer.exe")],
+             {4242: 100, os.getpid(): 900})
+    assert crew_inflight._holder_pid() is None  # pylint: disable=protected-access
+
+
+def test_windows_walk_failure_never_trusts_the_hint(monkeypatch):
+    _windows(monkeypatch, None, {4242: 100, os.getpid(): 900})
+    assert crew_inflight._holder_pid() is None  # pylint: disable=protected-access
+
+
+def test_windows_walk_failure_lane_uses_its_parent(monkeypatch):
+    _windows(monkeypatch, None, {4242: 100}, session="")
+    assert crew_inflight._holder_pid() == os.getppid()  # pylint: disable=protected-access
+
+
+def test_windows_hint_created_after_the_claimer_is_refused(monkeypatch):
+    """A reused pid: the ancestor slot names a process born after this one."""
+    _windows(monkeypatch, [(os.getppid(), "bash.exe"), (4242, "cmd.exe")],
+             {4242: 950, os.getpid(): 900})
+    assert crew_inflight._holder_pid() is None  # pylint: disable=protected-access
+
+
+def test_windows_claude_exe_ancestor_without_hint(monkeypatch):
+    _windows(monkeypatch, [(os.getppid(), "bash.exe"), (555, "Claude.exe")],
+             {555: 100, os.getpid(): 900})
+    monkeypatch.delenv("CLAUDE_PID")
+    assert crew_inflight._holder_pid() == 555  # pylint: disable=protected-access
+
+
+def test_marker_pid_out_of_range_is_unknown(repo):
+    _put(repo, _marker(repo, pid=2 ** 70, pid_start=None))
+    assert "range" in _unknown(repo)["why"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX kill")
+def test_probe_overflowing_pid_is_unmeasured(repo, no_proc):  # pylint: disable=unused-argument
+    me = crew_inflight.identity(str(repo), SESSION)
+    assert crew_inflight.probe(dict(me, pid=2 ** 63, pid_start=None), me) == "unmeasured"
+
+
+def test_broken_event_log_refusal_names_the_recovery(repo):
+    """NIT: a log that cannot be written refuses, and says how to recover."""
+    os.makedirs(os.path.join(_folder(repo), "events.jsonl"))
+    code, text = crew_inflight.claim(str(repo), T, "autopilot", spawn=_no_beat)
+    assert (code, "events.jsonl" in text, "then retry" in text,
+            os.path.exists(_path(repo))) == (3, True, True, False)

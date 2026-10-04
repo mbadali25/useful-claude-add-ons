@@ -27,8 +27,10 @@ so two claimers cannot both win. Every rewrite is a temp file + `os.replace`.
 
 HOLDER. `session` is `CLAUDE_CODE_SESSION_ID` when the environment has it.
 `pid` is the long-lived process that holds the claim: `CLAUDE_PID` when it is
-an ancestor of the claiming CLI (or, where ancestry cannot be walked -
-Windows - whenever it is set), else the nearest ancestor named `claude`; with
+an ancestor of the claiming CLI that started before it (the chain is walked
+with /proc, `ps`, or a Windows process snapshot; a hint that cannot be checked
+is never trusted, since any environment - a project's settings included - can
+set it), else the nearest ancestor named `claude` (`claude.exe`); with
 neither, a Claude Code session (the session id is set) records no pid, and
 anything else (a lane's script) records the CLI's parent, its own shell.
 `pid_start` is that process's start time (Linux /proc, `ps -o lstart` on other
@@ -36,7 +38,7 @@ POSIX, the creation time on Windows); `pidns` and `boot_id` say which pid
 space the number belongs to. `mine` needs the same worktree, host, session,
 pid and pid start (and runner, when the reader names one): a session id alone
 would let `claude --resume` take a working claim. Only where no pid could be
-named on either side (both None) does a non-empty session id decide.
+named on EITHER side (both None) does a non-empty session id decide alone.
 
 STATES. `holds(root, ticket)` answers exactly one of STATES and writes nothing:
   unknown    anything that cannot be read, parsed, probed or trusted: the
@@ -77,7 +79,10 @@ A busy lock or a transient OSError (Windows refuses `os.replace` while a
 reader has the file open) skips that beat. The loop also stops once its holder
 has not been confirmed alive for more than TTL_SECONDS - an unmeasurable
 holder, or beats that keep failing - so the marker then goes stale on its own:
-the TTL decides whenever the pid cannot. Measured 2026-10-04 on Linux (Claude
+the TTL decides whenever the pid cannot. The bound, where the holder cannot be
+probed: the last beat lands at most TTL + one heartbeat after the last
+confirmation (2400 s), and the marker reads stale a TTL after that, so a dead
+holder reads stale within 2 x TTL + HEARTBEAT_SECONDS (4200 s, 70 minutes). Measured 2026-10-04 on Linux (Claude
 Code 2.1.42, cloud container, no pid namespace): a child started this way
 outlives the Bash tool call that started it, reparented to pid 1, beating for
 2+ minutes across later calls. Not measured on Windows, macOS or a sandboxed
@@ -127,6 +132,10 @@ class InflightError(Exception):
 
 class LockBusy(InflightError):
     """The per-ticket lock stayed held past its wait."""
+
+
+class LogError(InflightError):
+    """events.jsonl could not be written; the message names the recovery."""
 
 
 # --- small helpers --------------------------------------------------------------------
@@ -264,14 +273,63 @@ def _process(pid):
     return ("zombie" if state == "Z" else "running"), start, ppid, name
 
 
-_PROBE_ERRORS = (OSError, ValueError, IndexError, subprocess.SubprocessError)
+_PROBE_ERRORS = (OSError, ValueError, OverflowError, IndexError, subprocess.SubprocessError)
+MAX_PID = 2 ** 32
+
+
+def _win_ancestors():  # pragma: no cover - exercised on Windows only
+    """[(pid, exe name)] from this process's parent upward, read from one
+    CreateToolhelp32Snapshot (PROCESSENTRY32W.th32ParentProcessID), or None
+    when the snapshot cannot be taken or read."""
+    import ctypes  # pylint: disable=import-outside-toplevel
+    from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+
+    class Entry(ctypes.Structure):  # PROCESSENTRY32W
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", ctypes.c_wchar * 260)]
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        snap = kernel.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+        if not snap or snap == wintypes.HANDLE(-1).value:
+            return None
+        parents = {}
+        try:
+            entry = Entry(dwSize=ctypes.sizeof(Entry))
+            ok = kernel.Process32FirstW(snap, ctypes.byref(entry))
+            while ok:
+                parents[entry.th32ProcessID] = (entry.th32ParentProcessID, entry.szExeFile)
+                ok = kernel.Process32NextW(snap, ctypes.byref(entry))
+        finally:
+            kernel.CloseHandle(snap)
+    except (OSError, AttributeError, ValueError):
+        return None
+    chain, pid = [], os.getppid()
+    for _ in range(64):
+        if pid not in parents or pid in (p for p, _ in chain):
+            break
+        ppid, name = parents[pid]
+        chain.append((pid, name))
+        pid = ppid
+    return chain or None
+
+
+def _name(raw):
+    """A process name as HOLDER_NAMES compares it: no path, no `.exe`, lower case."""
+    base = os.path.basename(str(raw)).lower()
+    return base[:-4] if base.endswith(".exe") else base
 
 
 def _ancestors():
     """[(pid, name)] from this process's parent upward, or None where the
-    chain cannot be walked (Windows, or a probe that fails)."""
+    chain cannot be walked (a failed probe or snapshot)."""
     if _platform() == "nt":
-        return None
+        return _win_ancestors()
     chain, pid = [], os.getppid()
     for _ in range(64):
         if pid <= 1:
@@ -287,21 +345,26 @@ def _ancestors():
     return chain
 
 
+def _born_before_me(pid):
+    """True when `pid` started no later than this process: a reused pid in
+    an ancestor slot started after it. Could-not-tell is False."""
+    theirs, mine = _pid_start(pid), _pid_start(os.getpid())
+    return theirs is not None and mine is not None and theirs <= mine
+
+
 def _holder_pid():
-    """The long-lived process the claim belongs to, or None (see HOLDER)."""
+    """The long-lived process the claim belongs to, or None (see HOLDER).
+    `CLAUDE_PID` is a hint any environment can set (a project's settings
+    included), so it counts only when it is an ancestor of this process and
+    started before it; when the chain cannot be walked it is never trusted."""
     try:
         hinted = int(os.environ.get("CLAUDE_PID", ""))
     except ValueError:
         hinted = None
-    hinted = hinted if hinted and hinted > 1 else None
-    chain = _ancestors()
-    if chain is None:
-        if hinted:
-            return hinted
-    else:
-        for pid, name in chain:
-            if pid == hinted or name in HOLDER_NAMES:
-                return pid
+    hinted = hinted if hinted and 1 < hinted < MAX_PID else None
+    for pid, name in _ancestors() or []:
+        if (pid == hinted or _name(name) in HOLDER_NAMES) and _born_before_me(pid):
+            return pid
     if os.environ.get("CLAUDE_CODE_SESSION_ID"):
         return None
     return os.getppid()
@@ -432,6 +495,10 @@ def _shape(marker, ticket):
         return None, "marker names another ticket than its file"
     if not marker["token"] or not marker["worktree"]:
         return None, "marker has an empty token or worktree"
+    if marker["pid"] is not None and not 0 < marker["pid"] < MAX_PID:
+        return None, "marker pid is out of range"
+    if marker["pid_start"] is not None and not 0 <= marker["pid_start"] < 2 ** 63:
+        return None, "marker pid_start is out of range"
     for key in ("since", "heartbeat_at"):
         if _parse_time(marker[key]) is None:
             return None, f"marker field {key} is not an ISO 8601 time with a zone"
@@ -626,15 +693,19 @@ def _log(folder, kind, ticket, **fields):
                        sort_keys=True) + "\n").encode("utf-8")
     path = os.path.join(folder, "events.jsonl")
     created = not os.path.lexists(path)
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
-                 0o644)
     try:
-        size = os.fstat(fd).st_size
-        if os.write(fd, line) != len(line):
-            os.ftruncate(fd, size)
-            raise OSError(f"short write to {path}")
-    finally:
-        os.close(fd)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
+                     0o644)
+        try:
+            size = os.fstat(fd).st_size
+            if os.write(fd, line) != len(line):
+                os.ftruncate(fd, size)
+                raise OSError(f"short write to {path}")
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise LogError(f"{path} could not be written ({exc}); nothing was changed - fix it, or "
+                       "move it aside, by hand, then retry") from exc
     return {"path": path, "size": size, "end": size + len(line), "created": created,
             "kind": kind, "ticket": ticket}
 
@@ -650,7 +721,7 @@ def _unlog(entry):
                 os.truncate(entry["path"], entry["size"])
             return
         _log(os.path.dirname(entry["path"]), "undone", entry["ticket"], of=entry["kind"])
-    except OSError:
+    except (OSError, LogError):
         pass
 
 
@@ -731,7 +802,7 @@ def claim(root, ticket, runner, session=None, spawn=spawn_beat):
                 _unlog(entry)
                 raise
     except (InflightError, OSError) as exc:
-        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing claimed")
+        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing claimed", 600)
     beat = spawn(top, ticket, marker["token"])
     tail = f"heartbeat pid {beat}" if beat else "heartbeat did not start; the TTL decides"
     return EXIT_OK, f"{word} {ticket} as {runner} ({tail})"
@@ -777,7 +848,7 @@ def release(root, ticket, runner=None, session=None):
             _remove_logged(folder, path, "release", ticket, runner=marker["runner"],
                            token=marker["token"])
     except (InflightError, OSError) as exc:
-        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing released")
+        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing released", 600)
     return EXIT_OK, f"released {ticket}"
 
 
@@ -810,7 +881,7 @@ def clear(root, ticket, by, reason):
                            reason=clean(reason, 500), state=current["state"],
                            why=current["why"], runner=clean((marker or {}).get("runner", "")))
     except (InflightError, OSError) as exc:
-        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing cleared")
+        return EXIT_REFUSED, clean(f"refused: unknown - {exc}; nothing cleared", 600)
     return EXIT_OK, f"cleared {ticket} ({current['state']}) by {clean(by)}"
 
 
