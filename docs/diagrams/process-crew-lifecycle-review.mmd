@@ -1,5 +1,5 @@
 %% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
-%% Anchors: plugin/crew/commands/review.md, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/review_verdict.py, plugin/crew/hooks/scripts/crew_standards.py
+%% Anchors: plugin/crew/commands/review.md, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/review_verdict.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/crew_autopilot.py
 %% Purpose: /crew:review: the preflight, pre-review and self-check gates that run before a round is spent, then the review rounds and their verdicts, ending in a receipt or NEEDS_REPLAN.
 %% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
 %% Arrow-shaped nodes ("next:" / "back:" / "again:") stand for a node drawn in the named part.
@@ -30,6 +30,9 @@
 %% Note rv2->rv3: FINDINGS (stray prose beside findings ignored and named: review_verdict.py:210-213)
 %% Note rv3->rcpt: auto-accept (L-0510): eligible, no specialist/control BLOCK; one follow-up ticket
 %%    :505-506 - or the owner accepts :508
+%% Note replan: also reached from rv3 under autopilot (T-0074): out of rounds with a BLOCK,
+%%    autopilot.maxAutoReplans 1 or more and the successor plan self-approvable, crew_autopilot.py
+%%    auto-reject (auto_replan_policy) rejects it; at the cap it stops for the owner
 flowchart TB
     subgraph review["/crew:review - two rounds per ticket"]
         pf0{"preflight (#264):<br/>receipt, gate, budget?"}
@@ -50,7 +53,7 @@ flowchart TB
         rv3 -- "fix, round 2" --> again_rv1
         rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> again_rv1
         rv2 -- "INCOMPLETE (reviewer / tree, a contract-like<br/>or shortfall stray line): counts" --> again_rv1
-        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
+        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan<br/>or autopilot auto-reject])
     end
 
     again_rv1>"again: reserve a round,<br/>run the reviewers (above)"]

@@ -162,10 +162,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
-leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
-For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **74**
+leaves. `leaf_paths(default_config())` yields **133**, so **59** are repo-only.
+For all 133, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on T-0074's branch after merging main baf193aa; the repo-only
+`autopilot.maxAutoReplans` is the one T-0074 added, and this paragraph said
+72 / 130 / 58 until then, behind main's 74 / 132 / 58. 72 / 130 / 58 was measured
 on T-0061's branch after merging main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
@@ -694,7 +697,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-74 of 132 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
+74 of 133 keys are settable in the machine-global file (generated; 59 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -809,7 +812,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-58 of 132 keys are repo-only (generated; 74 are global-settable, section 10).
+59 of 133 keys are repo-only (generated; 74 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -873,6 +876,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
 | `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
 | `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
+| `autopilot.maxAutoReplans` | repo | non-negative integer (checked in `hooks/scripts/crew_autopilot.py`) | `0` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -2632,14 +2636,15 @@ driven is a fact about that checkout.
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
+| `autopilot.maxAutoReplans` | `0` | `crew_autopilot.auto_replan_policy` (T-0074): how many successor plans one ticket may have before an out-of-rounds BLOCK round stops for the owner again; `0` is off | Anything but a non-negative integer (`true`, `"2"`, `2.5`, `-1`, `null`) reads as `0`, with a warning naming the value; an unreadable config or non-object block reads as `0`. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
 adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
-no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
-line, `approval` and `questions` on its second, and all five with `--json`.
+no word. `settings` prints `mode`, `maxPhases`, `deploy` and `maxAutoReplans` on its
+first text line, `approval` and `questions` on its second, and all six with `--json`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
@@ -2673,14 +2678,34 @@ ticket at a time: a group approval and its `/crew:approve --confirm` stay the
 owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
 group's hashes.
 
-**The one writer.** `crew_autopilot.py` is read-only except `approve`, and
-only when `autopilot.approval` allows it (a ticket `assign` mints is written by
+**Auto-reject and replan (T-0074).** With `autopilot.maxAutoReplans` at 1 or
+more, autopilot armed, and `approval_policy` allowing the successor plan (so
+under `risk` only a `risk: low` ticket, which leaves guard and
+production-authority tickets to the owner), a final review round that is
+FINDINGS with at least one BLOCK and no round left is no longer a stop. `next`
+answers `auto-replan` with `crew_autopilot.py auto-reject --root . --ticket <id>`,
+which moves the ledger REVIEWED -> NEEDS_REPLAN through `review_ledger.reject`
+under the fixed name `autopilot (policy: autopilot.maxAutoReplans)` and prints
+every BLOCK and FIX line; `next` then names `/crew:plan` for a successor plan
+that quotes each of them, the approve phase approves it under
+`autopilot.approval`, and review starts again with fresh rounds. It refuses,
+writing nothing, on an INCOMPLETE round, a same-family or unknown reviewer
+(`review_ledger`'s own family rule), counts and finding lines that disagree, a
+round still left, or anything it cannot tell. The cap counts every successor
+plan on the ledger, owner-approved ones included; at the cap `next` stops at
+`accept-review` (`auto-replan-cap`), naming the cap and each successor plan.
+A BLOCK is never accepted by autopilot at any setting. The recommended value
+when you turn it on is `2`.
+
+**The two writers.** `crew_autopilot.py` is read-only except `approve` and
+`auto-reject`. `approve` writes only when `autopilot.approval` allows it (a ticket `assign` mints is written by
 `crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger
 is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
+`auto-reject` writes only the review ledger, REVIEWED -> NEEDS_REPLAN.
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
 T-0072's `deploy-allowed` write nothing, and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
