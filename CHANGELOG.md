@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.181: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
+### Changed — `crew` 1.0.247: the scope base follows the repo's integration branch, not `origin/HEAD` (T-0061, harness half)
 
 - `scope_base.py` measures a ticket against the repo-only key `tickets.baseBranch` in
   `.crew/config.json` (read straight from the file by `read_base_branch` / `base_branch`): the value
