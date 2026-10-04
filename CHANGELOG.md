@@ -49,6 +49,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   skipping a null `deploy`; the `.sh` accepting case twins; the bad-name check dropped (`.sh`, `.ps1`); the `.ps1`'s strict-JSON
   check dropped. Earlier rounds: `-like` back in the
   `.ps1`, and the `.ps1` swallowing a comparison exception.
+- Windows: `promote-gate.sh` strips CRs from the matched environment names. Windows python writes
+  them as `qa\r\nprod` and Git Bash drops only the final CRLF, so on Windows every
+  multi-environment match named `qa\r` and blocked as a malformed map. A test reproduces it on
+  Linux with a `python3` that writes CRLF.
 - Rule time: the promote/verify rule in `.crew/verify.json` was chronic before this change (over
   60s). Its `.ps1` cases in `test_verify_gate_ci_mode.py`, `test_promote_gate_effective_tree.py` and
   the new file are now `slow`, except one parity case per file; every `.sh` case stays in the
