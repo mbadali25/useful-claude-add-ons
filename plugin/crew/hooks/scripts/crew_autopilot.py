@@ -145,6 +145,7 @@ import json
 import os
 import re
 import sys
+import threading
 
 if __name__ == "__main__":
     # Before the sibling imports: the direct CLI writes no bytecode either.
@@ -782,7 +783,8 @@ def settings(root):
                 "approval": UNKNOWN, "questions": UNKNOWN,
                 "day": {"approval": UNKNOWN, "questions": UNKNOWN},
                 "sleep": {"state": crew_sleep.UNKNOWN, "schedule": None,
-                          "overrides": {key: None for key in crew_sleep.OVERRIDES}},
+                          "overrides": {key: None for key in crew_sleep.OVERRIDES},
+                          "applied": []},
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
                               "approves or takes an answer) and autopilot reads as off")]}
@@ -870,7 +872,7 @@ def _sleep_at(top, block):
     on every call and never cached. A raising read, clock or resolve is
     could-not-tell: state unknown, with the overrides still read where the
     block can be, so `_overlay` keeps a stricter one; and a warning."""
-    sleep, found = None, {key: None for key in crew_sleep.OVERRIDES}
+    sleep, found = None, {key: crew_sleep.STRICTEST for key in crew_sleep.OVERRIDES}
     try:
         sleep = _sleep_block(top, block)
         return crew_sleep.resolve(sleep, crew_sleep.now(), POLICIES)
@@ -881,8 +883,8 @@ def _sleep_at(top, block):
             pass
         return {"state": crew_sleep.UNKNOWN, "schedule": None, "overrides": found,
                 "warnings": [f"autopilot.sleep could not be resolved ({type(exc).__name__}: "
-                             f"{_safe_text(exc, str)}); the day values apply, or a stricter "
-                             "autopilot.sleep override"]}
+                             f"{_safe_text(exc, str)[:120]}); per key the stricter of the day "
+                             "value and the night value applies"]}
 
 
 def _exact(value, allowed):
@@ -1119,7 +1121,7 @@ def approval_policy(root, ticket):
     While asleep (T-0053) the policy is the night value, and `reason` and
     `sleep` say so."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    pinned = _PINNED.get((top, ticket))
+    pinned = _pinned().get((top, ticket))
     if pinned is not None:
         return dict(pinned)
     return _noted(_approval_policy(top, ticket))
@@ -1130,7 +1132,12 @@ def approval_policy(root, ticket):
 # and the check that lets the write happen are the same read of the clock, so
 # a window edge between two reads cannot make them disagree. Process-local,
 # set and cleared inside `approve` only.
-_PINNED = {}
+_PINNED = threading.local()
+
+
+def _pinned():
+    """This thread's pinned decisions, `{(top, ticket): decision}`."""
+    return getattr(_PINNED, "decisions", {})
 
 
 def _approval_policy(root, ticket):
@@ -1242,12 +1249,12 @@ def approve(root, ticket):
     got = approval_policy(top, ticket)
     if not got["allow"]:
         return 2, f"refused: {got['reason']}; {human}"
-    _PINNED[(top, ticket)] = got
+    _PINNED.decisions = {(top, ticket): got}
     try:
         _receipt, successor = crew_ticket.approve(
             top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
     finally:
-        _PINNED.pop((top, ticket), None)
+        _PINNED.decisions = {}
     text = (f"self-approved {ticket} under approval={got['policy']}, "
             f"risk={got['risk'] if got['known'] else 'unknown (high)'}{got.get('sleep', '')}")
     if successor is not None and not successor[0]:
@@ -1705,8 +1712,12 @@ def _line(**fields):
 
 def _sleep_line(sleep):
     """`settings`' third line (T-0053): the window's state and overrides."""
-    return _line(sleep=sleep["state"], schedule=sleep["schedule"] or "none",
+    line = _line(sleep=sleep["state"], schedule=sleep["schedule"] or "none",
                  **{key: sleep["overrides"][key] or "-" for key in crew_sleep.OVERRIDES})
+    if sleep["state"] == crew_sleep.UNKNOWN:
+        # Which night values the stricter rule applied (`--json`'s `applied`).
+        line += " " + _line(applied=",".join(sleep.get("applied") or []) or "-")
+    return line
 
 
 def _policy_main(args):

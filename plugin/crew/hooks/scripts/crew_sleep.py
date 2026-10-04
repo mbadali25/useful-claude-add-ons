@@ -31,10 +31,16 @@ does see a different hour, which is the documented risk of local time.
 """
 import datetime
 import re
+import reprlib
 
 OVERRIDES = ("approval", "questions")
 KEYS = ("schedule",) + OVERRIDES
 OFF, AWAKE, ASLEEP, UNKNOWN = "off", "awake", "asleep", "unknown"
+# What an override crew cannot read counts as: the strictest policy, the
+# first of crew_autopilot.STRICTNESS (a test holds the two equal).
+STRICTEST = "human"
+_REPR = reprlib.Repr()
+_REPR.maxlevel, _REPR.maxstring, _REPR.maxother = 3, 60, 60
 
 # The whole string, ASCII digits only (`[0-9]`, never `\d`, which matches
 # other scripts' digits too). Hours are range-checked after the match.
@@ -70,54 +76,78 @@ def in_window(start, end, minute):
     return minute >= start or minute < end
 
 
+def render(value):
+    """`value` for a warning, bounded: `reprlib` caps the nesting depth and
+    the length, so a config value nested hundreds deep, or a huge string,
+    never raises RecursionError or floods a line; anything that still cannot
+    be rendered is named by its type."""
+    try:
+        return _REPR.repr(value)[:120]
+    except Exception:  # pylint: disable=broad-except
+        return f"<unprintable {type(value).__name__}>"
+
+
 def read_overrides(block, policies):
-    """`(overrides, warnings)`: each valid override of `block` or None. A
-    block that is not an object has none. `crew_autopilot` also calls this
-    on its own when `resolve` raised, so a stricter night value still counts."""
-    warnings = []
+    """`(overrides, warnings)`, each key read on its own: a valid override,
+    or None (null, or a value that is not a policy, with a warning). A key
+    whose override cannot be read at all counts as STRICTEST, and so does
+    every key of a block that is not an object (review round 2): what crew
+    cannot read never loosens a policy. `crew_autopilot` also calls this on
+    its own when `resolve` raised, so a stricter night value still counts."""
     if not isinstance(block, dict):
-        return {key: None for key in OVERRIDES}, warnings
-    return _overrides(block, policies, warnings), warnings
-
-
-def _overrides(block, policies, warnings):
-    found = {}
+        return {key: STRICTEST for key in OVERRIDES}, []
+    found, warnings = {}, []
     for key in OVERRIDES:
-        value = block.get(key)
-        if value is None or (isinstance(value, str) and value in policies):
-            found[key] = value
-            continue
-        found[key] = None
-        warnings.append(f"autopilot.sleep.{key} is {value!r}, not one of "
-                        f"{'|'.join(policies)} or null; autopilot.{key} keeps its day value")
-    return found
+        try:
+            found[key], warning = _override(block, key, policies)
+        except Exception as exc:  # pylint: disable=broad-except
+            found[key] = STRICTEST
+            warning = (f"autopilot.sleep.{key} could not be read ({type(exc).__name__}); it "
+                       f"counts as {STRICTEST}, the strictest policy")
+        warnings += [warning] if warning else []
+    return found, warnings
+
+
+def _override(block, key, policies):
+    """`(override, warning)` for one key of a sleep block."""
+    value = block.get(key)
+    if value is None or (isinstance(value, str) and value in policies):
+        return value, ""
+    return None, (f"autopilot.sleep.{key} is {render(value)}, not one of "
+                  f"{'|'.join(policies)} or null; autopilot.{key} keeps its day value")
+
+
+_STRICTER = "per key the stricter of the day value and the night value applies"
 
 
 def resolve(block, when, policies):
     """`{"state", "schedule", "overrides", "warnings"}` for `autopilot.sleep`
     (`block`, after the defaults are merged) at the naive local datetime
     `when`. `schedule` is the string only when it parsed; `overrides` holds
-    each valid override or None, whatever the state."""
-    none = {key: None for key in OVERRIDES}
+    each key's override (`read_overrides`), whatever the state."""
     if not isinstance(block, dict):
-        return {"state": UNKNOWN, "schedule": None, "overrides": none,
-                "warnings": [f"autopilot.sleep is {block!r}, not an object, so whether "
-                             "autopilot is asleep cannot be told; the day values apply"]}
-    warnings = [f"autopilot.sleep.{key} is not available in this crew version; it has no "
-                "effect" for key in sorted(k for k in block if k not in KEYS)]
-    overrides = _overrides(block, policies, warnings)
+        return {"state": UNKNOWN, "schedule": None,
+                "overrides": read_overrides(block, policies)[0],
+                "warnings": [f"autopilot.sleep is {render(block)}, not an object, so whether "
+                             "autopilot is asleep cannot be told; no night value can be read, "
+                             f"so both policies take the stricter of the day value and "
+                             f"{STRICTEST}"]}
+    warnings = [f"autopilot.sleep.{str(key)[:60]} is not available in this crew version; it "
+                "has no effect" for key in sorted(k for k in block if k not in KEYS)]
+    overrides, problems = read_overrides(block, policies)
+    warnings += problems
     value = block.get("schedule")
     if value is None:
         return {"state": OFF, "schedule": None, "overrides": overrides, "warnings": warnings}
     start, end, reason = parse_schedule(value)
     if reason:
-        warnings.append(f"autopilot.sleep.schedule is {value!r}: {reason}, so whether "
-                        "autopilot is asleep cannot be told; the day values apply")
+        warnings.append(f"autopilot.sleep.schedule is {render(value)}: {reason}, so whether "
+                        f"autopilot is asleep cannot be told; {_STRICTER}")
         return {"state": UNKNOWN, "schedule": None, "overrides": overrides,
                 "warnings": warnings}
     if not isinstance(when, datetime.datetime):
-        warnings.append(f"autopilot.sleep.schedule: the clock read {when!r}, not a time, so "
-                        "whether autopilot is asleep cannot be told; the day values apply")
+        warnings.append(f"autopilot.sleep.schedule: the clock read {render(when)}, not a "
+                        f"time, so whether autopilot is asleep cannot be told; {_STRICTER}")
         return {"state": UNKNOWN, "schedule": value, "overrides": overrides,
                 "warnings": warnings}
     state = ASLEEP if in_window(start, end, when.hour * 60 + when.minute) else AWAKE

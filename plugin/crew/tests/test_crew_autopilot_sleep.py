@@ -233,11 +233,12 @@ def test_a_bad_approval_override_keeps_the_day_value(tmp_path, clock, value):
 
 @pytest.mark.parametrize("value", ["22:00-07:00", ["22:00-07:00"], 1, True])
 def test_a_sleep_value_that_is_not_an_object_is_unknown(tmp_path, clock, value):
+    """Review round 2 (N7, owner decision): both policies read human."""
     clock(NIGHT)
     got = _day_values(_repo(tmp_path, sleep=value))
 
     assert (got[:5], any("autopilot.sleep " in w for w in got[5])) == (
-        (False, "stop", "risk", "risk", "unknown"), True)
+        (False, "stop", "human", "human", "unknown"), True)
 
 
 @pytest.mark.parametrize("allow", [False, "true", 1, None])
@@ -394,7 +395,8 @@ def test_asleep_human_refuses(tmp_path, clock):
     (_night(questions=None), DAY,
      "sleep=awake schedule=22:00-07:00 approval=self questions=-"),
     (_night(schedule=None), NIGHT, "sleep=off schedule=none approval=self questions=self"),
-    (_night(schedule="22"), NIGHT, "sleep=unknown schedule=none approval=self questions=self"),
+    (_night(schedule="22"), NIGHT,
+     "sleep=unknown schedule=none approval=self questions=self applied=-"),
     (MISSING, NIGHT, "sleep=off schedule=none approval=- questions=-"),
 ])
 def test_settings_cli_prints_the_sleep_line(tmp_path, clock, capsys, sleep, now, line):
@@ -417,7 +419,7 @@ def test_settings_cli_prints_unknown_for_an_unreadable_config(tmp_path, capsys):
     crew_autopilot.main(["settings", "--root", str(root)])
 
     assert capsys.readouterr().out.splitlines()[2] == (
-        "sleep=unknown schedule=none approval=- questions=-")
+        "sleep=unknown schedule=none approval=- questions=- applied=-")
 
 
 def test_a_schedule_set_keeps_approve_the_only_writer(tmp_path, clock, monkeypatch, capsys):
@@ -498,15 +500,19 @@ def test_unknown_sleep_takes_the_strictest_per_key(tmp_path, clock, day, night, 
 
 
 def test_unknown_sleep_from_a_non_object_block_has_no_override_to_read(tmp_path, clock):
-    """The fourth unknown source: nothing under it can be read, so the day
-    values stand (never a looser value)."""
+    """The fourth unknown source: nothing under it can be read, so since
+    review round 2 (N7) both keys read human, whatever the day values."""
     clock(NIGHT)
-    root = _repo(tmp_path, approval="human", questions="risk", sleep=["human"])
+    root = _repo(tmp_path, approval="human", questions="self", sleep=["human"])
 
     conf = crew_autopilot.settings(str(root))
 
     assert (conf["sleep"]["state"], conf["approval"], conf["questions"]) == (
-        "unknown", "human", "risk")
+        "unknown", "human", "human")
+
+
+def test_strictest_is_the_first_of_strictness():
+    assert crew_sleep.STRICTEST == crew_autopilot.STRICTNESS[0]
 
 
 # N1: the asleep note goes only on a key whose override applied.
@@ -554,3 +560,150 @@ def test_the_pinned_decision_does_not_outlive_approve(tmp_path, monkeypatch):
 
     assert (code, crew_autopilot.approval_policy(str(root), T)["allow"],
             crew_ticket.accepted(str(root), T)["status"]) == (0, False, "unaccepted")
+
+
+# --- review round 2 -------------------------------------------------------------
+# F2: an override value crew cannot render must not drop the other overrides,
+# and an override that cannot be read counts as `human` under unknown.
+
+def _deep_text(levels=985):
+    """`["self"]` nested `levels` deep, as JSON text: json.dumps of the
+    nested list itself would hit the recursion limit inside pytest."""
+    return "[" * levels + '"self"' + "]" * levels
+
+
+@pytest.mark.parametrize("deep_key", ["approval", "questions"])
+def test_a_deeply_nested_override_drops_no_other_override(tmp_path, clock, deep_key):
+    clock(NIGHT)
+    other = "questions" if deep_key == "approval" else "approval"
+    sleep = {"schedule": "22:00-7:00", deep_key: "DEEP", other: "human"}
+    root = _repo(tmp_path, approval="self", questions="self", sleep=sleep, risk="low")
+    path = root / ".crew" / "config.json"
+    base = path.read_text(encoding="utf-8")
+    # The reviewer's repro: the deepest value the config reader still decodes
+    # at this stack depth, which an unbounded repr further down cannot render.
+    # The depth that decodes varies with the stack (pytest, xdist), so it is
+    # found, not fixed: step down from 999 until settings reads the file.
+    conf = None
+    for levels in range(999, 600, -1):
+        _write(path, base.replace('"DEEP"', _deep_text(levels)))
+        try:
+            conf = crew_autopilot.settings(str(root))
+        except RecursionError:
+            continue
+        break
+
+    # The deep value itself is not a policy: it keeps the day value when it
+    # can be rendered, and counts as human when even that cannot be done at
+    # this depth. Either way the OTHER key's tightening stands.
+    assert (conf["sleep"]["state"], conf[other], conf[deep_key] in ("self", "human"),
+            crew_autopilot.approval_policy(str(root), T)["allow"]) == (
+        "unknown", "human", True, False)
+
+
+def test_an_override_that_cannot_be_read_counts_as_human(tmp_path, clock, monkeypatch):
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="self", questions="self",
+                 sleep={"schedule": "22", "approval": "risk", "questions": "self"},
+                 risk="low")
+    real = crew_sleep._override  # pylint: disable=protected-access
+
+    def flaky(block, key, policies):
+        if key == "questions":
+            raise RecursionError("cannot read")
+        return real(block, key, policies)
+    monkeypatch.setattr(crew_sleep, "_override", flaky)
+
+    conf = crew_autopilot.settings(str(root))
+
+    assert (conf["sleep"]["state"], conf["approval"], conf["questions"],
+            any("autopilot.sleep.questions" in w for w in conf["warnings"])) == (
+        "unknown", "risk", "human", True)
+
+
+def test_a_rendering_that_raises_is_still_bounded():
+    class Loud:  # pylint: disable=too-few-public-methods
+        def __repr__(self):
+            raise ValueError("no")
+    text = crew_sleep.render(Loud())
+    long = crew_sleep.render("x" * 5000)
+
+    assert ("Loud" in text, len(long) < 200) == (True, True)
+
+
+# N7 (owner decision, taken on the recommendation): a non-object
+# autopilot.sleep reads `human` for both keys under unknown.
+
+@pytest.mark.parametrize("value", ["22:00-07:00", ["self"], 1])
+def test_a_non_object_sleep_reads_human_for_both_keys(tmp_path, clock, value):
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="self", questions="self", sleep=value, risk="low")
+
+    conf = crew_autopilot.settings(str(root))
+
+    assert (conf["sleep"]["state"], conf["approval"], conf["questions"],
+            crew_autopilot.approval_policy(str(root), T)["allow"]) == (
+        "unknown", "human", "human", False)
+
+
+# N6: an unknown warning does not claim the day values applied.
+
+@pytest.mark.parametrize("sleep", [{"schedule": "22", "approval": "human"}, "x"])
+def test_unknown_warnings_name_the_stricter_rule(tmp_path, clock, sleep):
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="self", questions="self", sleep=sleep)
+
+    warnings = [w for w in crew_autopilot.settings(str(root))["warnings"]
+                if w.startswith("autopilot.sleep")]
+
+    assert (warnings != [], any("the day values apply" in w for w in warnings),
+            all("stricter" in w for w in warnings)) == (True, False, True)
+
+
+# N8: approve's pinned decision is visible to its own thread only.
+
+def test_the_pin_is_not_seen_by_another_thread(tmp_path, monkeypatch):
+    import threading  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, sleep=_night(), risk="high")
+    when = {"now": NIGHT}
+    monkeypatch.setattr(crew_sleep, "now", lambda: when["now"])
+    inside, release, seen = threading.Event(), threading.Event(), {}
+    original = crew_ticket.approve
+
+    def slow_approve(*args, **kwargs):
+        inside.set()
+        release.wait(10)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(crew_ticket, "approve", slow_approve)
+
+    worker = threading.Thread(target=lambda: seen.update(
+        code=crew_autopilot.approve(str(root), T)[0]))
+    worker.start()
+    inside.wait(10)
+    when["now"] = DAY
+    other = crew_autopilot.approval_policy(str(root), T)
+    when["now"] = NIGHT
+    release.set()
+    worker.join(10)
+
+    assert (other["allow"], other["policy"], seen.get("code")) == (False, "risk", 0)
+
+
+# N9: the settings text line names the overrides applied under unknown.
+
+@pytest.mark.parametrize("sleep,tail", [
+    (TIGHT, "applied=approval,questions"),
+    ({"schedule": "22", "approval": "self", "questions": "human"}, "applied=questions"),
+    ({"schedule": "22", "approval": "self"}, "applied=-"),
+])
+def test_the_unknown_sleep_line_names_what_applied(tmp_path, clock, capsys, sleep, tail):
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="risk", questions="risk", sleep=sleep)
+
+    crew_autopilot.main(["settings", "--root", str(root)])
+    line = capsys.readouterr().out.splitlines()[2]
+    crew_autopilot.main(["settings", "--root", str(root), "--json"])
+    applied = json.loads(capsys.readouterr().out)["sleep"]["applied"]
+
+    assert (line.split()[0], line.split()[-1], line.split()[-1]) == (
+        "sleep=unknown", tail, "applied=" + (",".join(applied) or "-"))
