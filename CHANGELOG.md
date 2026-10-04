@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.238: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
+### Changed — `crew` 1.0.378: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
 
 - **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always
   exits 0) replaces the send logic that `notify.sh` and `notify.ps1` each carried. The two are now thin
