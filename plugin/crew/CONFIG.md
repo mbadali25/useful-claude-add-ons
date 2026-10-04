@@ -1826,15 +1826,18 @@ nobody does and denied under `block`; a live one-shot marker for that exact
 text still lets it through under `ask`/`allow`. Nothing else below is
 consulted for it (guard.log policy `could-not-tell`). Unusual quoting on a
 terraform line is asked about, not allowed; unattended, it is refused — which
-includes `terraform apply "p.tfplan"`, `terraform plan 2>$null` and a commit
-message that quotes the word terraform. Plain lines are read exactly as
-before.
+includes `terraform apply "p.tfplan"`. A read-only subcommand (`terraform plan
+2>$null`, `terraform workspace select "staging"`) and a line that only
+mentions terraform (a commit message quoting it) are not gated for their
+quoting (below). Plain lines are read exactly as before.
 
 **Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
-`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
-delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
+`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy` (and
+terragrunt's `destroy-all`, `stack run destroy`, `graph destroy`, and `exec --
+terraform destroy`), `workspace delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
 whose sidecar lists none, `workspace new`, `select -or-create`. Everything
-else is `unknown` — an apply with no saved plan, any terragrunt apply, a plan
+else is `unknown` — an apply with no saved plan, any terragrunt apply
+(`apply-all`, `stack run apply` and `graph apply` included), a plan
 with no sidecar, a stale one (the plan's sha256 changed), a malformed or
 unreadable one, a plan path that is not a literal, a plan over 64 MiB, and a
 saved-plan apply that is **not the only command** in the invocation. The plan
@@ -1895,12 +1898,31 @@ subcommand are skipped as terraform and terragrunt read them (`terragrunt
 --working-dir infra destroy` is a destroy).
 
 **What the guard does not catch.** It catches terraform, terragrunt and tofu
-written directly: bare or path-qualified, behind the listed wrappers, inside
+written directly: bare or path-qualified, behind the listed wrappers
+(`aws-vault exec`, `unbuffer` and `sem` among them; an option a listed
+`xargs`, `parallel`, `sem`, `aws-vault` or `unbuffer` does not know makes the
+line `could-not-tell`, and so does a `workspace select` that `xargs` or
+`parallel` may append `-or-create` to), inside
 `bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
-PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
+PowerShell's `&`, `.`, `terraform.exe`, `Start-Process` and `Invoke-Expression`
+(a script that is not a literal string, or a parameter crew does not know,
+is `could-not-tell`). On a PowerShell line, **every mention of terraform,
+tofu or terragrunt must be accounted for** (any case, a word or a path's last
+part, `.exe` and backtick spellings included), or the line is
+`could-not-tell`: the command word of a command the guard judged (after an
+optional `$x =` and a `&`/`.` with a plain name), a literal script given to
+`Invoke-Expression`, or, when nothing on the line can run a value made at run
+time (a launcher, an eval, an alias definition, `return`/`throw`/`exit`, or a
+command word that is not a plain name), a literal argument of a plainly named
+command or a string that is only printed or assigned. So `git commit -m
+"terraform destroy"` and `Write-Output ("terraform" + " destroy")` are data,
+while `return terraform destroy`, `$t="terraform"; Start-Process $t destroy`
+and `[Diagnostics.Process]::Start("terraform","destroy")` are not. A group or
+an array among terraform's own arguments is `could-not-tell` too.
+`terragrunt exec -- cmd` is unwrapped like any listed wrapper. It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
--e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
+-e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
 entrypoint. No command-line guard can: unattended work must run interpreters
 and scripts. The real boundary is the credentials an unattended run holds,
@@ -2777,6 +2799,18 @@ losing only history, never fabricating a clean rule that never ran (see
 read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
 than removing the budget. See `commands/verify.md` for the full mechanism and
 `hooks/scripts/verify_record.py` / `verify_price.py` for the code.
+
+**A rule passes only on a completion record (T-0082), not a config key.** Each
+rule's wrapper writes the rule's exit status to a temp record file after the
+rule ends. The rule passes only when the wrapper ended 0 and the record exists
+and says 0. A rule killed or signalled (record above 128), a wrapper that
+ended before writing (killed, or never started on `.ps1`), or a record that is
+missing or unreadable is FAILED as "could not tell": `VERIFY FAILED` plus
+`verify-gate: COULD NOT TELL (<reason>)`, status `unknown` in the command log,
+counted in a summary line, and neither marker advances. Exit 77 is still SKIP
+and a plain non-zero still a plain failure. The gate still has no per-rule
+deadline: a hung rule is waited for. See `docs/guides/crew/src/troubleshooting.md`
+("Verify gate says COULD NOT TELL") for each reason.
 
 **Limitation (1.0): the gate does not reap background processes a rule
 leaves behind; a rule must not background work — a rule that does can keep
