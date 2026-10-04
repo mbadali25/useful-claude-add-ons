@@ -133,8 +133,9 @@ GUIDE_HTML = os.path.join(
     ROOT, "docs", "guides", "crew", "archive",
     "crew-progress-report-2026-09-20.html")
 # What each schema migration does. test_upgrade.py checks the entry for the
-# CURRENT hop exists, so the mutation below deletes exactly that entry.
-UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
+# CURRENT hop exists, so the mutation below deletes it, in whichever doc ships it.
+UPGRADE_DOC = next((p for p in (os.path.join(CREW, "skills", "crew-setup", "upgrade-report.md"),)
+                    if os.path.isfile(p)), os.path.join(CREW, "commands", "upgrade.md"))  # T-0038 moves it
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
 REVIEW_VERDICT = os.path.join(CREW, "hooks", "scripts", "review_verdict.py")
@@ -819,8 +820,8 @@ MUTATIONS = (
         UPGRADE_DOC,
         "- **Schema 6 \u2192 7**",
         "- **The change-request migration**",
-        "tests/test_upgrade.py::"
-        "test_upgrade_md_documents_the_current_migration",
+        "tests/test_upgrade.py::" + ("test_upgrade_report_documents_the_current_migration"
+            if UPGRADE_DOC.endswith("upgrade-report.md") else "test_upgrade_md_documents_the_current_migration"),
     ),
     (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"

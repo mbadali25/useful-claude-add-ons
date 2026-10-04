@@ -5,7 +5,7 @@ Live log of the cloud session working ALL open PRs #323-#379 (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-04 04:46 UTC
+Last updated: 2026-10-04 05:19 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -27,34 +27,28 @@ Last updated: 2026-10-04 04:46 UTC
 
 ### Landing train (in order)
 
-| # | PR | Branch | State | Version |
-|---|---|---|---|---|
-| - | #374 | pending-tickets | MERGED b1e9bd7e | - |
-| - | #375 | crew-diagram-standard | MERGED 38adba44 | 1.0.242 |
-| 1 | #339 | L-0563-build | re-merged main, merge-only review CLEAN, CI running on 210901b0 | 1.0.246 |
-| 2 | #378 | T-0061-harness | review CLEAN (prev session); needs re-merge | next |
-| 3 | #350 | T-0061-build | review CLEAN; after #378 | |
-| 4 | #371 | T-0100-build | review CLEAN; contains #378 | |
-| 5 | #351 | T-0066-build | review CLEAN | |
-| 6 | #355 | T-0013-build | review CLEAN | |
-| 7 | #360 | T-0048-build | review CLEAN | |
-| 8 | #368 | T-0063-build | review CLEAN | |
-| 9 | #376 | L-0604-build | r1: 1 FIX in review_verdict.py docstring (a harness file: lands as its own tooling PR) | |
-| 10 | #377 | L-0522-build | not reviewed yet | |
-| 11 | #352 #353 #357 #358 #359 #362 #367 | various | review CLEAN (prev session), need re-merge | |
-| 12 | #333 #331 #336 | harness PRs | not reviewed; each lands alone | |
-| 13 | #338 | L-0582-build | WIP port needed | |
-| 14 | #324 | L-0590-build | owner WIP (timings), left alone unless owner says | |
+Merged this session: #374, #375, #385, #386, #387, #388 (notes), #378, #339, #379, #389 (tooling).
+
+| # | PR | State |
+|---|---|---|
+| 1 | #350 T-0061 feature | 8917caf9 crew 1.0.256, merge-only review + CI running |
+| 2 | #371 T-0100 | review CLEAN (prev session), needs re-merge |
+| 3 | #351 #355 #360 #368 | review CLEAN (prev session), need re-merge |
+| 4 | #376 L-0604 | r1 1 FIX was a harness docstring (review_verdict.py) -> needs its own tooling PR or ruling |
+| 5 | #377 #352 #353 #357 #358 #359 #362 #367 | review CLEAN, need re-merge |
+| 6 | #361 T-0050, #348 T-0041, #349 T-0065, #369 T-0044, #370 T-0038 | built + review CLEAN (#370 r2 running) |
+| 7 | harness (each alone): #333, #331, #336 (split sabotage_cloud.py first), #343 T-0068 (r3 running) | |
+| 8 | #338 L-0582 WIP port; #324 owner WIP | |
 
 ### Builds (worktrees /home/user/pr-<n>)
 
 | PR | Ticket | State |
 |---|---|---|
-| #343 | T-0068 (PRIORITY) | building |
-| #361 | T-0050 (PRIORITY) | building |
-| #379 | T-0019 | fixing r2 BLOCK + 5 FIX |
-| #369 #370 #348 #349 #340 #341 #342 #346 #347 #344->#345 | | queued |
-| #354 #356 #363 #364 #365 #366 | | BLOCKED: T-0016, T-0037, T-0049 have no ticket or spec (owner) |
+| #354 | T-0012 | built 803c656a, review running |
+| #344 | T-0035 | building |
+| #342 | T-0070 | building |
+| #340 #341 #346 #347 #345 | L-0526, L-0509, T-0039, T-0047, T-0036 | queued |
+| #356 #363 #364 #365 #366 | | BLOCKED: T-0016, T-0037, T-0049 have no ticket/spec (owner) |
 
 ## How to resume
 
@@ -64,6 +58,7 @@ Last updated: 2026-10-04 04:46 UTC
 
 ## Log (newest first)
 
+- 05:19: BATCH (written while the branch carried #389): MERGED #388 (notes). OWNER chose waiver for #370's 1-line harness retarget, BUT a waiver keeps verify-gate red (check-tooling-pr), so instead opened tooling PR #389 (crew 1.0.254): sabotage UPGRADE_DOC resolves to upgrade-report.md if present else upgrade.md - lands alone first, then #370 is green without a harness edit. #370 dup crash-test anchor fixed in-branch (1acdeba3, 1.0.313). #369 r2: 2 FIX (no claude --version check for --setting-sources >=2.1.246; sweep owner check untested) -> fixer. #343 r2: 1 FIX (guard.log still deadlocks the audit -> bookkeeping) -> fixer. #350 CI running. #369 r2 FIXes pushed ea6bc6c9 (claude --version >=2.1.246 check, worktree main-checkout settings.local.json, sweep tests; 1.0.314); r3 started. #389 tooling review CLEAN (0/0/2). #349 T-0065 built 187e2d48 (1.0.309; verify_agents.py, provider_probe.py, UPGRADE.md history, per-test TMPDIR; full suite 9251 passed; harness follow-ups: verify-gate cleanup, sabotage entries, review.md names). Review started. #349 r1 CLEAN (0/0/2). #369 r3 CLEAN (0/0/4). #350 CI red on 459b9724: test_scope_discipline pins 'not from the verify gate's own marker' which #350's implement.md edit dropped (all 4 red checks same test) - fixed 9a3df424 crew 1.0.255, review + CI again. #350 fix review CLEAN; waits CI. #343 r2 FIX fixed -> 741cbce2 (guard.log/.autoclear.log/.cloud-guard-unpinned-noted -> bookkeeping; decision markers stay state, pinned; 4 mutations red; full suite 9380 passed; 1.0.315); r3 started. MERGED #389 at 11dcb99d (tooling, crew 1.0.254). #350 re-merged -> 8917caf9 crew 1.0.256 (merge-only review + CI). #370 re-merged (with #389) -> f6db6878 crew 1.0.257, BUDGETS 22,335/140; r2 review. #354 T-0012 built 803c656a (narrowed scope; minting moved to L-0541; harness follow-up: approval_hook goal:<slug> token) - review started. Next free 1.0.258. 
 - 04:46: #370 r1 on 03f99760: 0 BLOCK, 1 FIX (sabotage anchors: (a) upgrade.md stub lost '- **Schema 6 → 7**' -> needs harness retarget of UPGRADE_DOC in sabotage.py; (b) duplicate crash-test anchor -> fixed in-branch by rewording test_migrate.py:598, 1.0.313). (a) awaits OWNER decision: waive tooling rule for the 1-line retarget in #370, or land #370 with that test red then a tooling PR.
 - 04:45: #350 merge-only review on 459b9724: CLEAN (0/0/2 NIT: codemap says 1.0.184; stray CHANGELOG blank line). Fits #378's scope_base exactly. Waiting CI.
 - 04:44: #343 3 FIX fixed -> 1292b863 (four lists: bookkeeping/write-allowed(metrics.md only)/state/content; rule 2 refuses gate files even in Touch; 13 new mutations, 40/40 red; full suite 9305 passed). r2 started incl. guard.log bookkeeping-vs-state question.

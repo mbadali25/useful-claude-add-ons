@@ -344,7 +344,20 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # by running this test on T-0040-land after merging main 844bfc36.
     assert "qa.kimi.model" in declared
     assert "dev.kimi.model" in declared
-    assert len(declared) == 129
+    # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
+    # merging main 34d9f267.
+    assert "tickets.baseBranch" in declared
+    assert len(declared) == 130
+
+
+def test_tickets_base_branch_is_repo_only_and_null_by_default():
+    """T-0061. Which branch ticket branches are cut from is a fact about one
+    repository, so a machine-global file may not set it, and `null` keeps
+    today's origin/HEAD default for every repo that never names it."""
+    assert crew_config.default_config()["tickets"] == {"baseBranch": None}
+    assert "tickets.baseBranch" not in set(
+        crew_config.leaf_paths(crew_config.default_global_config()))
+    assert not crew_config.is_global_path("tickets.baseBranch")
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
