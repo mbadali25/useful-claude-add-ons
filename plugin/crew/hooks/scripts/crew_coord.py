@@ -792,6 +792,9 @@ def _key_part(text):
     return "".join(chr(b) if chr(b) in _KEY_LITERAL else f"_{b:02x}" for b in text.encode("utf-8"))
 
 
+# The port a scheme implies; spelled or not, it is the same repository.
+_DEFAULT_PORTS = {"ssh": "22", "git+ssh": "22", "ssh+git": "22", "https": "443", "http": "80",
+                  "git": "9418"}
 _SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^/]*)(.*)$")
 _SCP_RE = re.compile(r"^(?:[^/\\@:]+@)?([^/\\@:]+):(.*)$")
 _DRIVE_RE = re.compile(r"^[A-Za-z]:[/\\]")
@@ -832,16 +835,22 @@ def _local_path(url):
 def _split_url(url):
     """(host, path segments) of a network remote URL -- https/ssh, or
     scp-like `[user@]host:path` (read the same as `ssh://[user@]host/path`).
-    The host is lowercased with userinfo and port dropped ('' when nothing is
-    left, which owner_name refuses); the last segment loses a trailing `.git`,
+    The host is lowercased with userinfo dropped ('' when nothing is left,
+    which owner_name refuses). A port stays as `host:<port>` unless it is the
+    scheme's default (_DEFAULT_PORTS; owner decision, rush g0): two
+    repositories on one host behind two ports are two keys, while `:443` on
+    https, or no port at all, is one. The last segment loses a trailing `.git`,
     because a hosting service serves both spellings as one repository.
     Credentials in the URL are never kept. A local path or file:// URL is
     _local_segments' job, not this one's."""
     text = (url or "").strip()
     found = _SCHEME_RE.match(text)
     if found:
-        _, authority, path = found.groups()
-        host = re.sub(r":[0-9]*$", "", authority.rpartition("@")[2])
+        scheme, authority, path = found.groups()
+        host, port = re.match(r"^(.*?)(?::([0-9]*))?$", authority.rpartition("@")[2]).groups()
+        port = str(int(port)) if port else ""
+        if host and port and port != _DEFAULT_PORTS.get(scheme.lower()):
+            host = f"{host}:{port}"
     else:
         host, path = _SCP_RE.match(text).groups()
     segments = [p for p in re.split(r"[/\\]+", path) if p]
@@ -956,7 +965,8 @@ def owner_name(url):
                           "is not percent-encoded UTF-8")
         parts = [_key_part(p) for p in ["dev.azure.com"] + names]
     elif host:
-        if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in [host] + segments):
+        name = host.partition(":")[0]  # a non-default port, kept by _split_url
+        if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in [name] + segments):
             return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a part of it is not "
                           "letters, digits, '.', '_', '-' (at most 64)")
         parts = [_key_part(p.lower()) for p in [host] + segments]

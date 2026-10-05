@@ -2403,8 +2403,10 @@ python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --tick
 **The `<repo>` half of the key is derived, never typed:** it is the `origin`
 remote's URL as git resolves it — `git remote get-url origin`, so
 `url.<base>.insteadOf` applies and an alias names the repository it points
-at — reduced to its host and every path segment, lowercased, with `.git`, any
-user or token and any port removed. Each of those parts is written so it can
+at — reduced to its host and every path segment, lowercased, with `.git` and any
+user or token removed, and a port removed only when it is the scheme's default (ssh 22,
+https 443, http 80, git 9418): `ssh://host:2222/team/repo` gives `host_3a2222.team.repo`,
+so two repositories behind two ports of one host are two keys. Each of those parts is written so it can
 be read back one way only — every byte outside `a-z`, `0-9` and `-` becomes
 `_` and two hex digits, so `.` is `_2e` and `_` is `_5f` — and the parts are
 joined with a dot (`https://github.com/Owner/Repo.git`,

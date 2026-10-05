@@ -2904,3 +2904,26 @@ def test_a_claim_with_no_heartbeat_stamp_never_crashes_status_lines(state):
 
     assert ("an unknown time ago" in crew_coord.describe(claim), crew_coord.is_stale(claim, 30)) == (
         True, state == "working")
+
+
+# --- Owner decision (rush g0): a non-default port is part of the repo key ---------
+
+@pytest.mark.parametrize("first,second", [
+    ("ssh://git@example.test:2222/team/repo.git", "ssh://git@example.test:2223/team/repo.git"),
+    ("https://example.test:8443/team/repo", "https://example.test/team/repo"),
+    ("ssh://git@example.test:2222/team/repo.git", "git@example.test:team/repo.git"),
+])
+def test_two_ports_on_one_host_are_two_keys(first, second):
+    one, two = crew_coord.owner_name(first)[0], crew_coord.owner_name(second)[0]
+
+    assert (one is not None, two is not None, one != two) == (True, True, True)
+
+
+@pytest.mark.parametrize("spellings", [
+    ("ssh://git@example.test:22/team/repo.git", "ssh://git@example.test/team/repo.git",
+     "git@example.test:team/repo.git", "https://example.test:443/team/repo",
+     "https://example.test/team/repo.git", "http://example.test:80/team/repo",
+     "git://example.test:9418/team/repo", "https://example.test:0443/team/repo"),
+])
+def test_the_default_port_spelled_or_not_is_one_key(spellings):
+    assert len({crew_coord.owner_name(url) for url in spellings}) == 1
