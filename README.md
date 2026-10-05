@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.8**: Pre-review checks, L-0574's round-10 follow-ups. The pre-review linter checks and the review runner no longer crash on Windows timeouts, an unreadable output file or a swapped manifest, escape bidirectional control characters in status lines, and on Linux end a clean linter's leftover background processes before reaping it.
-- **crew 1.1.8**: Review ledger supersede and accepter correction, and the override line in the review prompt. An owner can now send an accepted review back to replanning with one recorded command, correct who accepted a round without voiding it, and the review prompt tells the reviewer when a round ran under a recorded gate override instead of leaving a bare MISSING to be read as a defect.
+- **crew 1.1.4**: Pre-review checks, L-0574's round-10 follow-ups. The pre-review linter checks and the review runner no longer crash on Windows timeouts, an unreadable output file or a swapped manifest, escape bidirectional control characters in status lines, and on Linux end a clean linter's leftover background processes before reaping it.
+- **crew 1.1.4**: Review ledger supersede and accepter correction, and the override line in the review prompt. An owner can now send an accepted review back to replanning with one recorded command, correct who accepted a round without voiding it, and the review prompt tells the reviewer when a round ran under a recorded gate override instead of leaving a bare MISSING to be read as a defect.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
