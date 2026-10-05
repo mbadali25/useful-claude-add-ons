@@ -13,7 +13,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 - **Summary.** A pull request that changes only plain documentation, or only one plugin or skill,
   now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite
-  still runs on push to main, the nightly schedule and workflow_dispatch.
+  still runs on push to main, on workflow_dispatch and on any schedule.
 - **The rule, in one place.** `scripts/ci-select.py` reads `git diff --name-only --no-renames
   HEAD^1 HEAD` on the PR merge commit and prints what to run; `pytest-crew.yml`, `pylint.yml`,
   `shell-suites.yml` and `mcp-servers.yml` all gate on it. A path inside a component (crew,

@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **repository**: PRs run only the heavy CI suites their changes reach. A pull request that changes only plain documentation, or only one plugin or skill, now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite still runs on push to main, the nightly schedule and workflow_dispatch.
+- **repository**: PRs run only the heavy CI suites their changes reach. A pull request that changes only plain documentation, or only one plugin or skill, now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite still runs on push to main, on workflow_dispatch and on any schedule.
 - **crew 1.0.346**: Cloud-guard bash tests no longer flake with exit 2304 on Windows. Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343, 0.8s into a run bounded at 120s, empty stderr) and ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
