@@ -1057,3 +1057,21 @@ def test_merged_slice_decision_matches_the_oracle(monkeypatch, shape):
         if got != want:
             wrong.append((combo, got, want))
     assert not wrong, f"{len(wrong)} combinations disagree; first: {wrong[:3]}"
+
+
+@pytest.mark.parametrize("name", ["default", "verdict", "pr"])
+def test_a_branch_named_like_a_memo_key_is_read_live(monkeypatch, name):
+    """Oracle review r1 FIX: one-read memo keys never collide with a branch
+    name; slice 1 on a branch called `default` is read from gh."""
+    monkeypatch.setattr(crew_ship, "_default_branch", lambda top: "main")
+    monkeypatch.setattr(crew_ship, "_gh", lambda top, args: {
+        "state": "MERGED", "baseRefName": "main"} if args[2] == name else None)
+    slices = [{"n": 1, "name": "a", "steps": [1], "base": "main", "files": []},
+              {"n": 2, "name": "b", "steps": [2], "base": 1, "files": []}]
+    ctx = {"error": "", "slices": slices, "m": 2, "piece": slices[1], "state": {
+        "current": 2, "done": [], "shipped": [{"slice": 1, "pr": 1, "branch": name,
+                                               "base": "main", "merge_sha": None}]}}
+
+    merged, why = crew_autopilot_slices.merged_slices("/r", ctx, 2)
+
+    assert merged == {1}, why

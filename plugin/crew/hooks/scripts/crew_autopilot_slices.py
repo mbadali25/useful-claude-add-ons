@@ -179,11 +179,12 @@ class _Stop(Exception):
 
 
 def _default(top, memo):
-    if "default" not in memo:
-        memo["default"] = crew_ship._default_branch(top)  # pylint: disable=protected-access
-    if not isinstance(memo["default"], str) or not memo["default"]:
+    # Tuple keys: a branch may be named anything, `default` included.
+    if ("default",) not in memo:
+        memo[("default",)] = crew_ship._default_branch(top)  # pylint: disable=protected-access
+    if not isinstance(memo[("default",)], str) or not memo[("default",)]:
         raise _Stop("could not read the default branch")
-    return memo["default"]
+    return memo[("default",)]
 
 
 def _entry(ctx, j):
@@ -206,10 +207,10 @@ def _entry(ctx, j):
 
 def _live(top, branch, memo, j):
     """One live read of slice j's PR (on `branch`): `(state, destination)`."""
-    if branch not in memo:
-        memo[branch] = crew_ship._gh(top, ["pr", "view", branch,  # pylint: disable=protected-access
-                                           "--json", "state,baseRefName"])
-    view = memo[branch]
+    if ("pr", branch) not in memo:
+        memo[("pr", branch)] = crew_ship._gh(top, ["pr", "view", branch,  # pylint: disable=protected-access
+                                                   "--json", "state,baseRefName"])
+    view = memo[("pr", branch)]
     state = view.get("state") if isinstance(view, dict) else None
     found = view.get("baseRefName") if isinstance(view, dict) else None
     if state not in _PR_STATES:
