@@ -21,6 +21,7 @@ import yaml
 import context  # noqa: F401  pylint: disable=unused-import
 import ci_receipt as cr
 import crew_fixtures
+import tool_fixtures
 from review_fixtures import git, init_repo
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
@@ -251,6 +252,30 @@ def test_check_accepts_a_matching_receipt_from_a_successful_run_at_head(tmp_path
     state, reason, head = _check(root)
 
     assert (state, head) == (cr.VERIFIED, git(root, "rev-parse", "HEAD")), reason
+
+
+def test_check_runs_the_git_which_resolves(tmp_path, monkeypatch):
+    # L-1508: every probe judges the git PATH resolves the way bash, pwsh and
+    # shutil.which do (PATHEXT: git.cmd), not whatever a bare "git" reaches.
+    # The failing git is NOT on PATH: a bare "git" runs the real one and the
+    # matching receipt reads VERIFIED.
+    root = _repo(tmp_path)
+    api = _api(root)
+    tool_fixtures.which_only(monkeypatch, tmp_path / "resolved", "git")
+
+    state, reason, _ = _check(root, api)
+
+    assert (state, "fatal: broken" in reason) == (cr.UNKNOWN, True), reason
+
+
+def test_check_could_not_tell_when_git_does_not_resolve(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    api = _api(root)
+    tool_fixtures.which_none(monkeypatch, "git")
+
+    state, reason, _ = _check(root, api)
+
+    assert (state, "git is not on PATH" in reason) == (cr.UNKNOWN, True), reason
 
 
 def _older_pass_newer_fail(root):

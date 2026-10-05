@@ -1,6 +1,6 @@
 ---
 name: crew-best-practices
-description: Community best practices for working with Claude Code - context management, planning, TDD, hooks, skills, subagents, slash commands and MCP - with what crew already does, where crew departs on purpose, and what is genuinely unsettled. Use when asked how to use Claude Code well, whether a practice is worth adopting, why crew is built the way it is, or when auditing a repo's CLAUDE.md, hooks or skill layout against community consensus.
+description: Community best practices for working with Claude Code - context management, planning, TDD, hooks, skills, subagents, slash commands and MCP - with what crew already does, where crew departs on purpose, and what is genuinely unsettled. Use when asked how to use Claude Code well, whether a practice is worth adopting, why crew is built the way it is, or when auditing a repo's CLAUDE.md, hooks or skill layout against community consensus. Also use before stating a fact about code, config, history or state that has not been verified this session.
 ---
 
 # Claude Code best practices, and where crew stands on each
@@ -72,6 +72,20 @@ Full detail in `references/practices.md`. The short form:
    model family. A clone inherits the blind spot.
 5. **Keep CLAUDE.md small.** 100–200 lines at the root, under ~2000 tokens.
    `references/claude-md.md` has the anti-patterns, which are the useful part.
+
+## Verify before you state
+
+**Verify before you state.** A claim about code, config, history or state is
+either verified in this session (a `path:line` you read, the command you ran and
+what it printed, or the ref you measured at) or labelled `not verified` or
+`inferred`. "Could not tell" is an answer. Never fill the gap with the likely
+value. Before proposing to change something, look up whether it was already
+decided (`CHANGELOG.md`, `docs/adr/`, the ticket's `direction.md`) and cite what
+you found, or say you found nothing. Quoted output, errors and fixtures move by
+copying the bytes, never by re-typing them.
+
+This rule is crew's own: its agents and skills carry it, and crew does not
+write it into the repos it sets up.
 
 ## What the document gets wrong for this repo
 

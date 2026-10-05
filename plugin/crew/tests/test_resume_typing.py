@@ -107,6 +107,9 @@ class Fixture:
         self.tmux_log = tmp_path / "tmux-argv.log"
         self.pane = tmp_path / "pane.txt"
         self.pane.write_text(READY, encoding="utf-8")
+        # T-0016: SESSION bound to its own Claude Code process, in its own
+        # terminal; the stub tmux reports that terminal as the pane's pid.
+        self.binding = crew_fixtures.bind_session(self.home, SESSION)
 
     def machine(self, auto=True, auto_clear=None, resume=None):
         block = {"auto": auto, "typeDelaySeconds": 0, "readyTimeoutSeconds": 2}
@@ -128,6 +131,7 @@ class Fixture:
         env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home), CREW_AUTOCLEAR_INHIBIT="1",
                    CLAUDE_PROJECT_DIR=str(self.root), PATH=str(self.bin) + os.pathsep + os.environ["PATH"],
                    CREW_TEST_TMUX_LOG=str(self.tmux_log), CREW_TEST_PANE=str(self.pane),
+                   CREW_TEST_PANE_PID=str(crew_fixtures.TERMINAL_PID), **self.binding,
                    CREW_VAULT_OPS=str(self.tmp / "absent-vault-ops.py"),
                    CREW_OBSIDIAN_CONFIG=str(self.tmp / "absent-obsidian.json"))
         for name in ("TMUX", "TMUX_PANE", "DISPLAY", "WAYLAND_DISPLAY", "OS"):
@@ -141,7 +145,8 @@ class Fixture:
         """resume_plan in-process, with this fixture's environment."""
         env = self.env(tmux=tmux, **extra)
         monkeypatch.setenv("PATH", env["PATH"])
-        for name in ("CREW_TEST_TMUX_LOG", "CREW_TEST_PANE", "CREW_TEST_PANE_PID"):
+        for name in ("CREW_TEST_TMUX_LOG", "CREW_TEST_PANE", "CREW_TEST_PANE_PID",
+                     crew_fixtures.PROC_STUB_ENV, "CREW_AUTOCLEAR_INHIBIT"):
             if name in env:
                 monkeypatch.setenv(name, env[name])
         return crew_autocycle.resume_plan(str(self.root), SESSION, "compact", global_path=str(self.global_path),
@@ -158,7 +163,8 @@ class Fixture:
 
     def ps1(self, *args, method="sendkeys", **extra):
         stub = self.tmp / "windows.json"
-        stub.write_text(json.dumps([{"id": 4242, "pid": os.getpid(), "title": "crew session"}]), encoding="utf-8")
+        stub.write_text(json.dumps([{"id": 4242, "pid": crew_fixtures.TERMINAL_PID, "title": "crew session"}]),
+                        encoding="utf-8")
         env = self.env(tmux=False, OS="Windows_NT", CREW_AUTOCLEAR_WINDOW_STUB=str(stub), **extra)
         if method is not None:
             self.machine(auto_clear={"method": method})
@@ -381,7 +387,8 @@ def test_both_flavours_type_at_most_once_sh_and_ps1(fx):
     without claiming, the .ps1 one claims, records and reaches the keys."""
     fx.machine(auto_clear={"method": "sendkeys"})
     stub = fx.tmp / "windows.json"
-    stub.write_text(json.dumps([{"id": 4242, "pid": os.getpid(), "title": "crew session"}]), encoding="utf-8")
+    stub.write_text(json.dumps([{"id": 4242, "pid": crew_fixtures.TERMINAL_PID, "title": "crew session"}]),
+                    encoding="utf-8")
     sh_env = fx.env(tmux=False, OS="Windows_NT")
     ps_env = fx.env(tmux=False, OS="Windows_NT", CREW_AUTOCLEAR_WINDOW_STUB=str(stub))
     outs = _race(fx, ([_BASH, os.path.join(_SCRIPTS, "auto-clear.sh"), "--resume", "--session", SESSION,

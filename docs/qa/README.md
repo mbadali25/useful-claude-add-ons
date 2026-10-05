@@ -5,12 +5,12 @@
 
 | Item | Value |
 |---|---|
-| Commit | `c5fd58de` |
-| Generated | 2026-10-03 |
-| Verify map | ok (49 rule(s)) |
+| Commit | `69de978c` |
+| Generated | 2026-10-04 |
+| Verify map | ok (52 rule(s)) |
 | Environments | none declared |
 | CI files | `.github/workflows/instruction-budgets.yml`, `.github/workflows/marketplace.yml`, `.github/workflows/mcp-servers.yml`, `.github/workflows/plugin-evals.yml`, `.github/workflows/publish-mcp-servers.yml`, `.github/workflows/pylint.yml`, `.github/workflows/pytest-crew.yml`, `.github/workflows/runner-autostart.yml`, `.github/workflows/shell-suites.yml`, `.github/workflows/verify-gate.yml` |
-| Audit | 3 GAP, 0 UNKNOWN, 11 PASS, 6 N/A |
+| Audit | 2 GAP, 0 UNKNOWN, 12 PASS, 6 N/A |
 
 ## How a change is checked
 
@@ -18,7 +18,7 @@ Every change passes the Stop gate, review and CI before it merges. Dashed red bo
 
 ```mermaid
 flowchart TD
-  edit(["change"]) --> stop["Stop gate<br/>49 rule(s) in .crew/verify.json"]
+  edit(["change"]) --> stop["Stop gate<br/>52 rule(s) in .crew/verify.json"]
   stop -->|red| fix1["fix, then the Stop gate runs again"]
   stop -->|green| review["review<br/>(/crew:review)"]
   review --> ci["CI<br/>10 workflow file(s)"]
@@ -35,7 +35,7 @@ The audit reports and never blocks. During setup, a phase with an open GAP is `p
 ```mermaid
 flowchart LR
   trig["qaAuditStale<br/>at session start"] --> run["qa_audit.py"]
-  run --> result["3 GAP, 0 UNKNOWN"]
+  run --> result["2 GAP, 0 UNKNOWN"]
   result --> act["fix one GAP<br/>through the gate<br/>open GAP: phase partial"]
   act --> stamp["qa_audit.py --stamp"]
 ```
@@ -68,7 +68,7 @@ flowchart LR
 | 9 | `plugin/crew/tests/conftest.py`, `plugin/crew/tests/crew_fixtures.py`, `plugin/crew/tests/context.py`, `plugin/crew/tests/sabotage.py` | `sh -c 'if python3 -c "import xdist" >/dev/null 2>&1; then python3 -m p` | local | 377 |
 | 10 | `plugin/crew/tests/poll_fixtures.py`, `plugin/crew/tests/test_poll_fixtures.py` | `python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_poll_f` | local | 24 |
 | 11 | `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py`, `plugin/crew/tests/test_upgrade.py`, `plugin/crew/tests/test_sabotage_harness.py` | `python3 -m pytest plugin/crew/tests/test_upgrade.py plugin/crew/tests/` | local | 5 |
-| 12 | `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/tests/test_approval_digest.py` | `python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_approv` | local | 5 |
+| 12 | `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/tests/test_approval_digest.py`, `plugin/crew/tests/test_scope_base_branch.py` | `python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_approv` | local | 5 |
 | 13 | `plugin/crew/commands/**`, `plugin/crew/agents/**`, `plugin/crew/skills/**`, `plugin/crew/hooks/hooks.json` | `(cd plugin/crew && python3 hooks/scripts/_test/validate-prompts.py)` | local | 1 |
 | 14 | `plugin/crew/skills/crew-diagrams/**` | `bash plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` | local | 8 |
 | 15 | `**/*.ps1`, `**/*.psm1` | `sh -c 'for c in pwsh pwsh.exe "/c/Program Files/PowerShell/7/pwsh" "/c` | local | 2 |
@@ -97,7 +97,7 @@ flowchart LR
 | 38 | `plugin/crew/hooks/scripts/crew_train.py`, `plugin/crew/tests/test_crew_train.py` | `python3 -m pytest plugin/crew/tests/test_crew_train.py -q` | local | 8 |
 | 39 | `plugin/crew/hooks/scripts/review_*.py`, `plugin/crew/hooks/scripts/verify-gate.sh`, `plugin/crew/hooks/scripts/verify-gate.ps1`, `plugin/crew/hooks/scripts/verify_record.py` | `python3 scripts/check-tooling-pr.py`<br/>`python3 scripts/_test/tooling-pr.py`<br/>`python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_review` | local | 7 |
 
-9 more rule(s) in `.crew/verify.json`.
+12 more rule(s) in `.crew/verify.json`.
 
 ## QA audit findings
 
@@ -105,20 +105,20 @@ UNKNOWN means the audit could not tell. It is not a pass.
 
 | Rule | Status | Check | Evidence |
 |---|---|---|---|
-| H2 | GAP | Parallel test runner | pytest without -n on a large suite: .github/workflows/pytest-crew.yml:286 (5781 tests), .github/workflows/pytest-crew.yml:289 (5781 tests), .github/workflows/pytest-crew.yml:337 (4656 tests), .github/workflows/pytest-crew.yml:380 (4656 tests); serial and small enough that workers would cost more: .github/workflows/pytest-crew.yml:146 (137 tests), .github/workflows/pytest-crew.yml:160 (31 tests) |
+| H2 | GAP | Parallel test runner | pytest without -n on a large suite: .github/workflows/pytest-crew.yml:286 (5994 tests), .github/workflows/pytest-crew.yml:289 (5994 tests), .github/workflows/pytest-crew.yml:337 (4869 tests), .github/workflows/pytest-crew.yml:380 (4869 tests); serial and small enough that workers would cost more: .github/workflows/pytest-crew.yml:146 (137 tests), .github/workflows/pytest-crew.yml:160 (31 tests) |
 | H6 | GAP | Fast linter: rule set named, version pinned | ruff installed unpinned at .github/workflows/verify-gate.yml:69 |
-| E7 | GAP | CI runs the _verify entry points the gate runs | run locally, never in CI (mark the rule `localOnly` if that is deliberate): _verify/smoke.sh |
 | H3 | PASS | Wall-clock tests run serially | parallel runs exclude a marker that a serial run selects; not judged (select a marker subset): .github/workflows/pytest-crew.yml:209, .github/workflows/pytest-crew.yml:386 |
 | H4 | PASS | Fixtures isolated from global git config | conftest/fixture modules pin commit.gpgsign, maintenance.auto |
 | H5 | PASS | Deep linter parallel, explicit job count | 1 pylint invocation(s) with an explicit -j |
 | H7 | PASS | CI runs the configured fast linter | ruff runs at .github/workflows/pylint.yml:74, .github/workflows/pylint.yml:97 |
 | R9 | PASS | Always-loaded instructions stay small | CLAUDE.md is 11076 chars (~2769 tokens, loaded every session; threshold 12000) |
 | R11 | PASS | Repo carries a steward skill | .claude/skills/steward/SKILL.md present |
-| G1 | PASS | Every gate rule declares reach and seconds | all 49 rule(s) declare reach and seconds |
-| G2 | PASS | No fire-and-forget commands in the verify map | 63 command(s); none fire-and-forget |
+| G1 | PASS | Every gate rule declares reach and seconds | all 52 rule(s) declare reach and seconds |
+| G2 | PASS | No fire-and-forget commands in the verify map | 67 command(s); none fire-and-forget |
 | G3 | PASS | _verify scripts: explicit env, strict flags, zero checks fails | 3 script(s); none carry the template's known defects |
 | G4 | PASS | Generated directories are ignored (or tracked on purpose) | 1 generated dir(s) handled; tracked (a decision to confirm, not a gap): graphify-out |
 | G5 | PASS | .gitignore carries crew's .crew/* block | `.crew/*`, `.crew/.approved-*` and `.work/` all present |
+| E7 | PASS | CI runs the _verify entry points the gate runs | 1 _verify entry point(s) also run in CI |
 | E1 | N/A | Non-production environments declare data provenance | no environments block |
 | E2 | N/A | Every environment has a rehearsed rollback | no environments block |
 | E3 | N/A | Deploys name the promoted SHA, not the checkout's HEAD | no environments block and no deploy workflow |

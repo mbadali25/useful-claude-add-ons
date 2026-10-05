@@ -92,17 +92,22 @@ crew_py() {
       set -m
       "$candidate" -c pass </dev/null >/dev/null 2>&1 &
       pid=$!
-      (
-        sleep "$probe_timeout" 2>/dev/null || exit 0
-        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
-          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
-        fi
-        kill -9 -- "-$pid" || kill -9 "$pid"
-      ) </dev/null >/dev/null 2>&1 &
-      watchdog=$!
+      set +m
+      exec 3> >(
+        {
+          line=
+          read -r -t "$probe_timeout" line
+          [ "$line" = done ] && exit 0
+          if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+            MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+          fi
+          kill -9 -- "-$pid" || kill -9 "$pid"
+        } >/dev/null 2>&1
+      )
       wait "$pid"
       status=$?
-      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      trap '' PIPE
+      echo done >&3 2>/dev/null
       exit "$status"
     ) || continue
     printf '%s\n' "$candidate"
@@ -181,28 +186,60 @@ crew_py_strict() {
     # Bash, so a watchdog kills at 3s instead; `wait` returns the moment the
     # candidate exits, so a working interpreter costs no added latency.
     # `set -m` puts the candidate in its own process group, which the kill
-    # takes whole -- on a timeout, and after a normal exit too, for any child
-    # it left behind. Under MSYS a native child is outside that group, so
-    # `taskkill /T` takes the Windows tree when /proc exposes its winpid
-    # (MODELLED, not observed on a Windows host). No `sleep` at all means no
-    # watchdog: unbounded, as before, rather than killing every candidate.
+    # takes whole on a timeout. Under MSYS a native child is outside that
+    # group, so `taskkill /T` takes the Windows tree when /proc exposes its
+    # winpid (MODELLED, not observed on a Windows host).
+    # The watchdog is the builtin `read -t` in a process substitution, on a
+    # pipe whose only writer is fd 3 of this subshell, which writes `done`
+    # once the candidate has exited. That line alone stands the watchdog
+    # down; a timeout, EOF without it, or an error kills -- bash 3.2 answers
+    # a timed-out `read -t` with 1, as EOF does, so the status cannot decide.
+    # No kill runs after a clean exit, not even at the reaped candidate's
+    # group: a child it left behind is not killed (under MSYS a native one
+    # never was), and one holding stdout is bounded by the hook's own
+    # timeout, not by this probe. The candidate's stdout is a process
+    # substitution that reads ONE line, bounded by the same `read -t`, and
+    # prints it to this `$()`: a child the candidate leaves holding its
+    # stdout holds that pipe, not this `$()`'s, so it cannot keep the probe
+    # waiting for EOF past the hook's timeout (review round 2). Not a temp
+    # file: that made every hook's python depend on `mktemp`, whose failure
+    # the hooks handle on purpose. The reader is in the candidate's group,
+    # so a timeout's kill takes it too.
+    # `trap '' PIPE`: a watchdog that already timed out is gone, and
+    # writing to it must not signal this subshell. A same-user process can
+    # write `done` through /proc/<probe>/fd/3 and stand the watchdog down
+    # early; that is the user's own processes, outside what this bounds.
+    # L-1512: the previous `sleep`
+    # watchdog was SIGKILLed, group and all, on EVERY call, while still
+    # alive; on Windows CI a SIGKILL sent there ended the hook's own bash.exe
+    # (exit 2304, `9 << 8`, empty stderr), which PreToolUse reads as
+    # non-blocking -- a guard that never judged, letting the command through.
     # stdin is /dev/null: the candidate must not read the hook payload or
     # this loop's own input.
     real=$(
       set -m
-      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
+      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null > >(
+        line=
+        IFS= read -r -t "$_crew_py_strict_probe_timeout" line
+        printf '%s\n' "$line"
+      ) &
       pid=$!
-      (
-        sleep "$_crew_py_strict_probe_timeout" 2>/dev/null || exit 0
-        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
-          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
-        fi
-        kill -9 -- "-$pid" || kill -9 "$pid"
-      ) </dev/null >/dev/null 2>&1 &
-      watchdog=$!
+      set +m
+      exec 3> >(
+        {
+          line=
+          read -r -t "$_crew_py_strict_probe_timeout" line
+          [ "$line" = done ] && exit 0
+          if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+            MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+          fi
+          kill -9 -- "-$pid" || kill -9 "$pid"
+        } >/dev/null 2>&1
+      )
       wait "$pid"
       status=$?
-      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      trap '' PIPE
+      echo done >&3 2>/dev/null
       exit "$status"
     ) || continue
     # A trailing CR must not survive into the `-x` test below: a real native
@@ -312,6 +349,87 @@ crew_py_strict() {
   return 1
 }
 
+# --- The repo config's directory (T-0096) ---------------------------------
+#
+# Sets CREW_CFG_DIR (the `.crew/` to read config.json or crew.json from) and
+# CREW_CFG_SOURCE (own, main or unknown) for the checkout at $1 (default: the
+# cwd). The twin of crew_common.repo_config_dir (T-0088), held to it case by
+# case by tests/test_worktree_config_shell.py, and of Get-CrewRepoConfigDir in
+# the .ps1 hooks. No python: the guards' no-python fallbacks read through it.
+# Own files win whole and are never merged. `.git` not a regular file is own
+# with no git call. Git names the common directory; a submodule (git dir ==
+# common dir) or a bare repository (common dir not named .git) is own. When
+# git cannot tell, the source is `unknown`, CREW_CFG_DIR is the own `.crew/`,
+# and nothing is inherited -- a guard must not read that as "absent".
+# Only READS follow this: markers, logs and incident.json stay in the own .crew/.
+crew_repo_config_dir() {
+  local root="${1:-.}" n out g c nl='
+'
+  CREW_CFG_DIR="$root/.crew" CREW_CFG_SOURCE=own
+  for n in crew.json config.json; do
+    { [ -e "$root/.crew/$n" ] || [ -L "$root/.crew/$n" ]; } && return 0
+  done
+  [ -f "$root/.git" ] || return 0
+  CREW_CFG_SOURCE=unknown
+  # No --path-format: git before 2.31 echoes it back as a line of its own.
+  out=$(git -C "$root" rev-parse --git-dir --git-common-dir 2>/dev/null) || return 0
+  case "$out" in *"$nl"*"$nl"*) return 0 ;; *"$nl"*) ;; *) return 0 ;; esac
+  g=$(CDPATH=; cd -- "$root" 2>/dev/null && cd -P -- "${out%%"$nl"*}" 2>/dev/null && pwd -P) || return 0
+  c=$(CDPATH=; cd -- "$root" 2>/dev/null && cd -P -- "${out#*"$nl"}" 2>/dev/null && pwd -P) || return 0
+  CREW_CFG_SOURCE=own
+  [ "$g" != "$c" ] && [ "${c##*/}" = ".git" ] || return 0
+  for n in crew.json config.json; do
+    if [ -e "${c%/*}/.crew/$n" ] || [ -L "${c%/*}/.crew/$n" ]; then
+      CREW_CFG_DIR="${c%/*}/.crew" CREW_CFG_SOURCE=main
+      return 0
+    fi
+  done
+}
+
+# Print the resolved path of repo config file $1 (default config.json) for the
+# checkout at $2 (default: the cwd).
+crew_repo_config_file() {
+  crew_repo_config_dir "${2:-.}"
+  printf '%s/%s\n' "$CREW_CFG_DIR" "${1:-config.json}"
+}
+
+# Print where the handoff note lives, relative to the cwd (the checkout root):
+# context.handoffPath from config file $2, read with python $1 through
+# crew_state.handoff_path -- the Python readers' own containment
+# (crew_freshness.contained_path): a value that leaves the checkout (absolute,
+# `..`, a symlink out) is the default .work/HANDOFF.md, with a warning on
+# stderr; so is one naming a directory (`.`, `notes/`, an existing folder),
+# which cannot hold the note. Printed with forward slashes on every OS. Matters most in a linked worktree that inherits the main checkout's
+# config (L-0680): an absolute path there would name the main checkout's file.
+# Any failure prints the default, which is inside the checkout.
+crew_handoff_path() {
+  "$1" - "$(dirname "${BASH_SOURCE[0]}")" "$2" << 'PY'
+import json, os, sys
+default = ".work/HANDOFF.md"
+try:
+    sys.path.insert(0, sys.argv[1])
+    from crew_state import handoff_path
+    try:
+        with open(sys.argv[2], encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except Exception:
+        cfg = {}
+    cfg = cfg if isinstance(cfg, dict) else {}
+    root = os.path.realpath(os.getcwd())
+    got = handoff_path(root, cfg)
+    ctx = cfg.get("context")
+    value = ctx.get("handoffPath") if isinstance(ctx, dict) else None
+    if isinstance(value, str) and value and os.path.realpath(os.path.join(root, value)) != got:
+        sys.stderr.write("crew: context.handoffPath leaves this checkout - using %s\n" % default)
+    elif got == root or os.path.isdir(got) or (isinstance(value, str) and value.endswith(("/", os.sep))):
+        sys.stderr.write("crew: context.handoffPath names a directory - using %s\n" % default)
+        got = os.path.join(root, default)
+    print(os.path.relpath(got, root).replace(os.sep, "/"))
+except Exception:
+    print(default)
+PY
+}
+
 # --- Emergency lane -------------------------------------------------------
 #
 # Is an incident open, unexpired, and allowed to stand the gates down?
@@ -321,7 +439,8 @@ crew_py_strict() {
 #
 # Four separate conditions, deliberately not collapsed:
 #   1. a state file exists
-#   2. emergency.standDown is not false (a repo can forbid stand-downs)
+#   2. emergency.standDown is not false (a repo can forbid stand-downs; read
+#      from the resolved repo config, so a lane inherits the main checkout's)
 #   3. it PARSES as JSON, in full
 #   4. the clock has not passed the expiry
 #
@@ -338,7 +457,8 @@ crew_py_strict() {
 # its own state must not assume it has been told to stand down.
 crew_incident_active() {
   [ -f .crew/incident.json ] || return 1
-  grep -q '"standDown"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null && return 1
+  crew_repo_config_dir .
+  grep -q '"standDown"[[:space:]]*:[[:space:]]*false' "$CREW_CFG_DIR/config.json" 2>/dev/null && return 1
   local py exp now
   py=$(crew_py) || return 1
   exp=$("$py" - << 'PY' 2>/dev/null

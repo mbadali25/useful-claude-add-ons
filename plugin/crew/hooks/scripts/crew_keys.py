@@ -22,7 +22,8 @@ What this module does NOT hold:
 - defaults: `crew_config.default_config()` / `default_global_config()` own
   them, and the generator reads them from there;
 - the layer: `layer_of` derives it from `crew_config.is_global_path`, the
-  ratchet tables and `crew_config.REPO_VETO_ONLY`, so it follows the code.
+  ratchet tables, `crew_guards.PERSONAL_KEYS` and `crew_config.REPO_VETO_ONLY`,
+  so it follows the code.
 
 `COMING` holds keys from approved tickets that have not landed, each naming
 its ticket. A test fails when one of them is in the code, so the landing
@@ -47,6 +48,9 @@ KINDS = ("tuple", "ratchet", "branch", "type", "open-table", "prose", "unvalidat
 # Built once, so `values_of("qa.provider")` is the same object every call and
 # its tail holds `QA_PROVIDERS`' own items.
 QA_PROVIDER_VALUES = ("auto",) + crew_state.QA_PROVIDERS
+# T-0053: a sleep override is a policy or null ("not overridden"); its tail
+# holds `crew_autopilot.POLICIES`' own items.
+SLEEP_OVERRIDE_VALUES = (None,) + crew_autopilot.POLICIES
 
 
 def _union_in_order(table):
@@ -169,7 +173,8 @@ KEY_META = {
                               _S + "crew_tracker.py", "path or null"),
     "obsidian.board": _unv("Board file name.", FIRST, _S + "crew_tracker.py",
                            "file name"),
-    "obsidian.columns.backlog": _unv("Board column for backlog tickets.", FIRST,
+    "obsidian.columns.backlog": _unv("Board column for backlog tickets "
+                                     "(`direction`, `ready`, `needs-owner`).", FIRST,
                                      _S + "crew_tracker.py", "string"),
     "obsidian.columns.ready": _unv("Board column for ready tickets.", FIRST,
                                    _S + "crew_tracker.py", "string"),
@@ -177,7 +182,8 @@ KEY_META = {
                                         _S + "crew_tracker.py", "string"),
     "obsidian.columns.review": _unv("Board column for tickets in review.", FIRST,
                                     _S + "crew_tracker.py", "string"),
-    "obsidian.columns.done": _unv("Board column for done tickets.", FIRST,
+    "obsidian.columns.done": _unv("Board column for closed tickets "
+                                  "(`done`, `cancelled`, `superseded`; each checked).", FIRST,
                                   _S + "crew_tracker.py", "string"),
     # --- memory
     "memory.mode": _unv("Where memory lives (`repo`, or a vault).", FIRST,
@@ -243,6 +249,12 @@ KEY_META = {
                                            "both must match.", "type", since="1.0.25",
                                            source=_S + "crew_autocycle.py",
                                            type_="list of session ids, or null"),
+    "context.autoClear.wrapUp": _row("Auto wrap-up before auto-clear (T-0017): the warning "
+                                     "becomes the wrap-up procedure and the clear waits for "
+                                     "its results. Only the machine file arms it (exactly "
+                                     "`true`), only where `enabled` is armed; a repo `false` "
+                                     "vetoes it.", "branch", (None, True, False), "1.0.334",
+                                     _S + "crew_autocycle.py"),
     "context.autoWrapUp": _unv("Ask for a wrap-up when the budget runs low.", "0.19.10",
                                _S + "context-watch.sh", "boolean"),
     "context.autoResume": _unv("Retired: read by nothing since 1.0.0; kept so "
@@ -347,6 +359,16 @@ KEY_META = {
                                      "0.19.30", "commands/promote.md", "boolean"),
     "github.mergeGate.branch": _unv("Branch the GitHub merge gate protects.", "0.19.30",
                                     "commands/promote.md", "string or null"),
+    # --- git
+    "git.forbiddenTrailers": _row("Commit trailer tokens the owner forbids, reported by "
+                                  "`/crew:done`. The two layers combine by union, so a "
+                                  "repo can add a token and never remove the machine "
+                                  "owner's; a value that is not a list of tokens makes "
+                                  "the list unknown, never empty (CONFIG.md section 22).",
+                                  "branch", since="1.0.328",
+                                  source=_S + "crew_trailers.py",
+                                  type_="list of trailer tokens (letters, digits and "
+                                        "`-`, no `:`)"),
     # --- install and guards (ratcheted: the tiers live in crew_guards)
     "install.policy": _rat("Whether crew may install a missing prerequisite.", "0.19.18"),
     "guards.terraformApply": _rat("`terraform apply` and friends.", "0.19.30"),
@@ -414,6 +436,25 @@ KEY_META = {
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),
+    "autopilot.maxAutoReplans": _row("Successor plans autopilot may start by rejecting an "
+                                     "out-of-rounds BLOCK review itself; 0 is off, and "
+                                     "anything but a non-negative integer reads as 0, and "
+                                     "above 5 as 5, with a warning.", "branch", None, "1.0.339",
+                                     _S + "crew_autopilot.py", type_="non-negative integer"),
+    "autopilot.sleep.schedule": _row("A nightly window, `HH:MM-HH:MM` in machine local time "
+                                     "(may cross midnight); inside it the two sleep "
+                                     "overrides apply. Anything else is could not tell: "
+                                     "only a stricter override applies.", "branch",
+                                     since="1.0.332", source=_S + "crew_sleep.py",
+                                     type_="HH:MM-HH:MM or null"),
+    "autopilot.sleep.approval": _row("`autopilot.approval` inside the sleep window; null "
+                                     "keeps the day value; anything else counts as human, "
+                                     "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                     "1.0.332", _S + "crew_sleep.py"),
+    "autopilot.sleep.questions": _row("`autopilot.questions` inside the sleep window; null "
+                                      "keeps the day value; anything else counts as human, "
+                                      "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
+                                      "1.0.332", _S + "crew_sleep.py"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
@@ -453,9 +494,6 @@ COMING = (
     _coming("autopilot.mode", "T-0012", "changes values",
             "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
             ("off", "plan", "backlog")),
-    _coming("context.autoClear.wrapUp", "T-0017", "new key",
-            "Machine opt-in for the automatic wrap-up; only exactly `true` arms it.",
-            "null", "machine-arms"),
     _coming("guards.deployWorkflow", "T-0009", "new key",
             "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
     _coming("environments.workflows", "T-0009", "new key",
@@ -472,11 +510,14 @@ COMING = (
     _coming("coord.channel", "T-0030", "new key",
             "Where sessions coordinate.", "set when T-0030 lands",
             "set when T-0030 lands"),
-    _coming("autopilot.mode", "T-0050", "changes layer",
-            "The personal autopilot keys become settable in the global file; the "
-            "stricter layer wins.", "off", "both, stricter wins"),
+    # T-0050 landed the five personal `autopilot` keys (`layer_of` now says
+    # `both, stricter wins` for them, from `crew_guards.PERSONAL_KEYS`). This
+    # row is the part of its spec it left out under the T-0087 harness rule:
+    # the reader, `crew_ticket.cli_approval_allowed`, is review harness.
     _coming("scope.allowCliApproval", "T-0050", "changes layer",
-            "Becomes settable in the global file; the stricter layer wins.", "false",
+            "Becomes settable in the global file, the stricter layer winning, once "
+            "its reader (`crew_ticket.cli_approval_allowed`) reads the global layer "
+            "in a harness-only follow-up to T-0050.", "false",
             "both, stricter wins"),
 )
 
@@ -506,13 +547,16 @@ def layer_of(key):
     """Which layer may set `key`, derived from the code that enforces it:
     `machine-arms` (`crew_config.REPO_VETO_ONLY`: only the machine file arms
     it, a repo may only veto), `machine-only` (read from the machine file
-    alone), `repo`, `both, ratchet`, `both, widening warned` or `both`."""
+    alone), `repo`, `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
+    `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"
     if key in _MACHINE_ONLY:
         return "machine-only"
     if not crew_config.is_global_path(key):
         return "repo"
+    if key in crew_guards.PERSONAL_KEYS:
+        return "both, stricter wins"
     if crew_guards.ratchet_spec(key) is not None:
         return "both, ratchet"
     if key in crew_config._RATCHETED:  # pylint: disable=protected-access

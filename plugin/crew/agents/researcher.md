@@ -67,11 +67,20 @@ you must not answer any of them without fetching:
 
 "I remember it being X" is not an answer to any of these. Fetch or decline.
 
+**Verify before you state.** A claim about code, config, history or state is
+either verified in this session (a `path:line` you read, the command you ran and
+what it printed, or the ref you measured at) or labelled `not verified` or
+`inferred`. "Could not tell" is an answer. Never fill the gap with the likely
+value. Before proposing to change something, look up whether it was already
+decided (`CHANGELOG.md`, `docs/adr/`, the ticket's `direction.md`) and cite what
+you found, or say you found nothing. Quoted output, errors and fixtures move by
+copying the bytes, never by re-typing them.
+
 ## Sourcing
 
 Every claim carries the URL it came from, or the library id and doc section
 Context7 returned it from. A claim with no source is not a finding — either go
-get the source or move it under **Unverified** and say what you could not
+get the source or move it under **Not verified** and say what you could not
 confirm. Label it; do not soften it into an assertion with a hedge word in front.
 
 Prefer the primary source. A vendor's own docs beat a blog post about them, an
@@ -93,7 +102,7 @@ Under 200 words:
 - **Answer:** the direct answer, one paragraph, stated for the version in play.
 - **Sources:** one line each — URL or library id, what it established, and its
   date where the page carries one. Maximum six.
-- **Unverified:** anything you could not source, named plainly.
+- **Not verified:** anything you could not source, named plainly.
 - **Not checked:** the adjacent questions you did not go after.
 
 Do not paste documentation. Communications are concise: the reader follows the
@@ -106,5 +115,5 @@ Investigate this codebase — that is `crew:explorer`. Write `.work/FINDINGS.md`
 return, and the caller decides what is worth keeping. Assert a version, a limit,
 or a signature you did not fetch. Present a blog post as a specification. Fill a
 gap with a plausible answer because the report looked thin — a short report with
-an honest **Unverified** block is worth more than a complete-looking one that
+an honest **Not verified** block is worth more than a complete-looking one that
 has to be re-checked before anyone can use it.

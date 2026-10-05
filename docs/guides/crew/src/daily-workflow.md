@@ -79,7 +79,11 @@ docs and the self-check; without a current stamp the review refuses before it
 spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,
 whichever survives the author-family strike), reports BLOCK/FIX/NIT lines,
 and you fix the BLOCKs. Two rounds total, ticket-wide — a third is refused and
-the ticket becomes `NEEDS_REPLAN`. Each round's findings go into a
+the ticket becomes `NEEDS_REPLAN`. Under `/crew:autopilot`, a final round with a
+BLOCK stops for you unless you set `autopilot.maxAutoReplans` (default `0`, off):
+then autopilot rejects it itself, writes a successor plan that quotes every BLOCK
+and FIX line, approves it under `autopilot.approval` and reviews again, at most
+that many successor plans per ticket. Each round's findings go into a
 `standards-proposals-r<N>.md` file, one row per finding; you approve or reject
 each proposed standard, and nothing is added to a standards file on its own.
 
@@ -103,7 +107,12 @@ appends a metrics row, marks the ticket done, and clears a stale handoff.
 With the train armed, landing is part of done: `crew_train.py check-land --ticket T-0091 --pr
 <n>` refuses unless T-0091 holds the train, `git merge-tree` against the base is clean, the base
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
-`gh pr merge <n> --merge --match-head-commit <sha>` for you to run (crew never merges). After the
+`gh pr merge <n> --merge --match-head-commit <sha>` for you to run (crew never merges). When it
+refuses, land in this order: `crew_train.py catch-up` (resolve any conflict), bump the version one
+past the base's, refresh the artifacts, commit, gate the merged head, review it again if
+`review_ledger.py --check-receipt` reads stale, then `check-land` again, so the tree the gate
+passed is the tree that lands. After the review, a re-anchor changes only the
+`anchor:` sha and regenerates the rules; its provenance goes in the ticket's `notes.md`. After the
 merge, `crew_train.py release --ticket T-0091 --merged <merge sha>` frees the train and tells every
 overlapping lane to merge the base now.
 
@@ -177,6 +186,7 @@ reasons unrelated to the change under test. Outside that image the visual rule r
 | a write is blocked outside Touch | the file isn't in the spec's declared scope | amend `spec.md`'s Touch and re-approve the plan, or don't make the edit |
 | `/crew:review` exits 2 with `review-run: self-check: ...` | the standards self-check is missing, incomplete, or stamped for an earlier state of the change | answer `.work/tickets/<id>/selfcheck.md`, run `crew_standards.py stamp --root . --ticket <id>`, rebuild the bundle and run the round again; no round was spent |
 | `/crew:done` reports `NEEDS_REPLAN` | the review budget (two rounds) is spent | `/crew:plan <id>` for a successor plan; no third round |
+| `/crew:autopilot` stops at `auto-replan-cap` naming `autopilot.maxAutoReplans (<n>) reached` | the ticket already has that many successor plans on its review ledger, yours included | read the listed plans and decide: accept, fix, or redesign; raising the cap is your call, up to 5 (a larger value reads as 5, with a warning) |
 | `/crew:done` fails the completion audit | a path outside scope changed, including one a shell command wrote | file it to `TODO.md`, not to this ticket, then rerun |
 
 See [Troubleshooting](troubleshooting.md) for the rest.

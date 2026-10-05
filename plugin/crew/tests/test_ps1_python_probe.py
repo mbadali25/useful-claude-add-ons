@@ -51,7 +51,7 @@ needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the p
 # Every crew .ps1 that resolves python carries this function byte for byte.
 _CARRIERS = ("role-write-guard", "completion-audit", "scope-guard", "approval-hook",
              "crew-context", "platform-sync", "cloud-guard", "verify-gate", "handoff-read",
-             "notify", "handoff-write")
+             "notify", "handoff-write", "context-watch", "auto-clear")
 _NAMES = ("python3", "python", "py")
 
 
