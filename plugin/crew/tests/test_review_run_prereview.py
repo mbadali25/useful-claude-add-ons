@@ -301,7 +301,6 @@ def test_the_record_is_bound_to_the_manifest_the_checks_read(tmp_path, fake, mon
     manifest as the linted entries. A manifest replaced while the linters run
     cannot have the results recorded against it."""
     import argparse  # pylint: disable=import-outside-toplevel
-    import review_run  # pylint: disable=import-outside-toplevel
     repo, scratch = _setup(tmp_path, [_ruff(fake)], py_text="x\n")
     manifest = scratch / "manifest.json"
     checked = json.loads(manifest.read_text(encoding="utf-8"))["bundle_sha256"]
@@ -353,7 +352,6 @@ def test_a_symlinked_parts_directory_is_never_read_as_the_bundle(tmp_path, fake)
     """Neighbour of review round 7 BLOCK :172 in review_run: the parts live in
     `<out>.parts/`, and that directory swapped for a link to an identical copy
     is a bundle problem, not a bundle."""
-    import review_run  # pylint: disable=import-outside-toplevel
     _, scratch = _setup(tmp_path, [_ruff(fake)])
     manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
     parts = os.path.dirname(manifest["parts"][0]["path"])
@@ -384,7 +382,6 @@ def test_a_manifest_behind_a_symlinked_scratch_subdirectory_is_could_not_check(t
 def test_a_path_inside_scratch_is_checked_from_scratch(tmp_path):
     """So a symlinked directory between scratch and the manifest or output is
     seen; a path the operator put elsewhere is checked from its own folder."""
-    import review_run  # pylint: disable=import-outside-toplevel
     scratch = tmp_path / "s"
 
     assert (review_run._trusted(str(scratch / "sub" / "m.json"), str(scratch)),  # pylint: disable=protected-access
@@ -393,7 +390,6 @@ def test_a_path_inside_scratch_is_checked_from_scratch(tmp_path):
 
 
 def _review_run_module():
-    import review_run  # pylint: disable=import-outside-toplevel
     return review_run
 
 

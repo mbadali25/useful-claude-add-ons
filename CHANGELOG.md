@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.12 — L-0527: /crew:review launches Kimi Code (tooling half of T-0028)
+
+- **Summary.** `/crew:review` can now run Kimi Code as the independent reviewer: it probes Kimi
+  before spending a round, and since `kimi -p` cannot be made read-only, it fingerprints the working
+  tree and refuses a round in which Kimi wrote.
+- **What changed.** `review_run.py --provider kimi` (`kimi` in `LAUNCHED` and `PROVIDERS`, which is
+  what makes the launch gate admit it): when the ledger's status shows no round left it exits 4
+  before any probe; otherwise it fingerprints the tree and resolves `graph.out`, runs
+  `kimi_probe.probe` (only `ok` goes on; any other state exits 2, a probe that changed the tree exits
+  8, `EXIT_PROBE_CHANGED`), all before `preflight` and `reserve`; launches with the read-only agent
+  file and flags and `kimi_env`; stops any process it left running; fingerprints again; and a write
+  makes the round INCOMPLETE, naming the paths (`graph.out`, and while gitignored IDE state and
+  crew's hook logs, are set aside). The stream is read by `kimi_probe.final_message`, the one parser.
+  A Kimi round is not retried in-process (L-0514). `commands/review.md`: the Kimi probe and strike
+  rows, step 2e, exits 2 and 8, and `$ELIGIBLE` keeps `kimi`. Tests: `test_review_run_kimi.py`, the
+  review.md checks in `test_kimi_docs.py`, `test_worktree_config.py`'s graph_out cases, and the
+  launch-gate tests rewritten (a provider review_run cannot launch is ineligible; kimi now is).
+  `sabotage_kimi.py`'s `KIMI_MUTATIONS` are registered, with eight owed from T-0028 rounds 6-7 and
+  the launch gate. Follow-up feature PR (outside this lane's paths): crew-providers `SKILL.md`,
+  `alternative-providers.md` and the `kimi_probe.py` / `crew_config.review_launchable` docstrings.
+
 ### crew 1.1.12 — L-0522 PR 2: the delta gate (tooling only; keeps nothing until the merge train is armed)
 
 - **Summary.** A review receipt can now survive a catch-up merge, a version bump and an anchor-only

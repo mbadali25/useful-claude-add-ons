@@ -1921,7 +1921,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
 
-## The Kimi Code provider (T-0028, feature half; the review launch is L-0527)
+## The Kimi Code provider (T-0028 feature half; the review launch, L-0527)
 
 - **DERIVED** at `c43a54c1`: `kimi` is in both provider tuples
   (`plugin/crew/hooks/scripts/crew_state.py:1487-1488`), second in the default `qa.order`
@@ -1951,10 +1951,17 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   provider outside it ("/crew:review cannot launch `kimi` yet") and None admits nothing. It is the
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
-- **DERIVED**: nothing launches Kimi for a review yet. `review_run.py`'s `--provider` choices are
-  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:941`), and
-  `commands/review.md` has no Kimi row; L-0527 (tooling only) adds the launch, and adding `kimi`
-  to `review_run.LAUNCHED` makes Kimi eligible with no crew_config change.
+- **DERIVED** (L-0527): the review launch. `review_run.LAUNCHED` and `PROVIDERS` include `kimi`
+  (`plugin/crew/hooks/scripts/review_run.py`), which is what makes the launch gate admit it.
+  `run` takes the "before" `tree_fingerprint` and resolves `graph_out` first, then `_probe_kimi`
+  (`kimi_probe.probe` with `_probe_runner`, which stops survivors), all before `preflight` and
+  `reserve`; a probe that changed the tree is `EXIT_PROBE_CHANGED` (8). `_run_kimi` launches with
+  `kimi_probe.read_only_flags` and `kimi_env`, `stop_survivors`, fingerprints again, and
+  `reviewer_changes` splits the changed paths from those set aside (graph.out, and ignored
+  IDE_DIRS / CREW_LOGS / CREW_MARKERS); the stream is read by `kimi_probe.final_message`, the one
+  parser. A Kimi round returns before L-0514's retry loop, so it is never retried in-process.
+  `commands/review.md` carries the Kimi probe row, step 2e and exits 2/8; `test_review_run_kimi.py`
+  and `sabotage_kimi.py` (registered in `sabotage.py`) hold the cases and mutations.
 
 ## The merge train (L-0520, crew 1.0.86; L-0558 fixes, crew 1.0.102)
 

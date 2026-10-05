@@ -414,7 +414,6 @@ def test_a_self_check_gate_whose_incident_read_fails_exits_2_not_1(
     """N4: an exception from the incident read is "not run" (2), never a
     traceback and exit 1, which /crew:review would read as FINDINGS."""
     _selfcheck(repo, "missing")
-    import crew_incident  # pylint: disable=import-outside-toplevel
 
     def broken(*_args, **_kwargs):
         raise PermissionError(13, "Permission denied", ".crew/incident.json")
@@ -432,7 +431,6 @@ def test_a_self_check_gate_whose_skip_log_fails_exits_2_not_1(
     """N4: during an active incident, a skip log that cannot be written (an
     unwritable .crew/) is "not run" too, and the gate does not stand down."""
     _selfcheck(repo, "missing")
-    import crew_incident  # pylint: disable=import-outside-toplevel
     crew_incident.declare(str(repo), "prod is down")
 
     def broken(*_args, **_kwargs):
