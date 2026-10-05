@@ -549,15 +549,21 @@ def _refuse_foreign_target(top, target):
     ignore file: a `.graphifyignore` symlink to ~/.bashrc, `.git/config` or
     `.claude/settings.json` would be appended to and replaced. A symlink is
     written through only to a file inside the repository, outside any `.git`
-    directory, whose name ends in `ignore`."""
+    directory, whose name ends in `ignore` and is not another tool's
+    dot-named ignore file: `.gitignore`, `.dockerignore` and the like change
+    what git or that tool sees, so only `.graphifyignore` itself may be one."""
     inside = os.path.normcase(os.path.realpath(top))
     where = os.path.normcase(target)
     if os.path.commonpath([inside, where]) != inside:
         raise _Unknown(f"{IGNORE_FILE} resolves outside the repository ({shown(target)}); "
                        "not written - make it a regular file in the repository")
     rel = os.path.relpath(where, inside)
-    if ".git" in rel.split(os.sep) or not os.path.basename(where).lower().endswith("ignore"):
+    name = os.path.basename(where).lower()
+    if ".git" in rel.split(os.sep) or not name.endswith("ignore"):
         raise _Unknown(f"{IGNORE_FILE} resolves to {shown(rel)}, which is not an ignore file; "
+                       "not written - make it a regular file in the repository")
+    if name.startswith(".") and name != IGNORE_FILE:
+        raise _Unknown(f"{IGNORE_FILE} resolves to {shown(rel)}, another tool's ignore file; "
                        "not written - make it a regular file in the repository")
 
 

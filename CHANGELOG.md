@@ -61,7 +61,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   A symlink is judged by its target too, and
   `Read(.\secrets\**)` is read as `Read(./secrets/**)`.
 - `--write` writes through a symlinked `.graphifyignore` only to an ignore file inside the
-  repository and never into `.git`; anything else is unknown, exit 2, nothing written. A
+  repository, never into `.git` and never to another tool's dot-named one (`.gitignore`,
+  `.dockerignore`); anything else is unknown, exit 2, nothing written. A
   `.graphifyignore` line holding a backslash never counts as covering (git un-escapes it, graphify
   does not), and a denylisted file a nested `.gitignore` `!` line re-includes is uncovered,
   because graphify applies that negation after the root `.graphifyignore` (the root `.gitignore`

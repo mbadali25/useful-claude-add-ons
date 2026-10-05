@@ -556,6 +556,22 @@ def test_write_refuses_a_graphifyignore_symlinked_to_a_non_ignore_file(tmp_path,
     assert (code, after == before, "which is not an ignore file" in out) == (2, True, True), out
 
 
+@pytest.mark.parametrize("rel", [".gitignore", ".dockerignore", "sub/.npmignore", ".GitIgnore"])
+def test_write_refuses_a_graphifyignore_symlinked_to_another_tools_ignore_file(tmp_path, capsys, rel):
+    """Group review r6 (g1-ports): `.graphifyignore -> .gitignore` would have
+    appended the denylist (a `*` in it included) to git's own ignore file."""
+    root = _repo(tmp_path, {".env": "PW=x\n", ".claude/secrets-denylist": "*\n", rel: "build/\n"})
+    target = os.path.join(str(root), *rel.split("/"))
+    _symlink(root, target, ".graphifyignore")
+
+    code = _main(root, "--write")
+    out = capsys.readouterr().out
+    with open(target, "rb") as handle:
+        after = handle.read()
+
+    assert (code, after, "another tool's ignore file" in out) == (2, b"build/\n", True), out
+
+
 def test_write_keeps_crlf_line_endings(tmp_path, capsys):
     root = _repo(tmp_path, {".env": "PW=x\n"})
     target = os.path.join(str(root), ".graphifyignore")
