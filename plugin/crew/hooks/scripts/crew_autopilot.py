@@ -149,7 +149,8 @@ force says `take`. Exit 0 valid, 1 not.
   latest round still reserved            review              stop
   latest round FINDINGS, not accepted    accept-review       stop, unless auto-replan
   no receipt and no round left           review              stop, never a third reserve
-  latest round INCOMPLETE                accept-review       stop
+  accepted FINDINGS, receipt staled      (the receipt-not-current rows below; T-0043)
+  latest round INCOMPLETE or no verdict  accept-review       stop
   artifacts fresh-uncommitted            commit-refresh      git add, git commit -- <paths>
                                                              (stop when it names no path)
   receipt not current, artifacts stale   refresh             the refresh command
@@ -1385,7 +1386,8 @@ def _review_phase(top, ticket, evidence, answer):
                if refusal is None else f"review_ledger.py --auto-accept refuses it ({refusal}): ")
         return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS; "
                       f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
-                      "or fixes then /crew:review")
+                      "or fixes, then runs crew_refresh_check.py --root . --ticket "  # T-0043
+                      f"{ticket} and commits each `refresh with` it names, then /crew:review {ticket}")
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
@@ -1401,6 +1403,8 @@ def _review_phase(top, ticket, evidence, answer):
                                f"round {latest.get('round')} was a tool failure and "
                                "was refunded; ")
         return dict(found, refunded_rerun=found["phase"] == "review")
+    if latest.get("verdict") == "FINDINGS":  # T-0043: its receipt stood; an edit staled it
+        return _toward_review(top, ticket, answer, ok, message)
     if latest.get("verdict") != "CLEAN" and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "

@@ -9,6 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.1.22: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
+
+- **Summary.** After a FINDINGS review the autopilot stop now tells you to refresh before the next
+  round, and a review you accepted that a later edit staled goes back through refresh and review
+  instead of being reported as unfinished.
+- **FIX 1.** The un-accepted FINDINGS stop's reason ends `or fixes, then runs crew_refresh_check.py
+  --root . --ticket <id> and commits each `refresh with` it names, then /crew:review <id>`. The
+  L-0510 auto-accept clause in front of it is unchanged; it is still a stop, with no new stop id.
+  `commands/autopilot.md` and the README no longer claim `next` refreshes before every later round:
+  it does so only for a round it reaches itself.
+- **FIX 2.** A FINDINGS round whose receipt stands (owner- or auto-accepted) and was then staled by
+  an edit goes through `_toward_review` (refresh, then `/crew:review`), the same as a stale CLEAN
+  receipt, instead of "the reviewer did not finish reading". A round that is INCOMPLETE or has no
+  verdict still stops; the INCOMPLETE line, a sabotage anchor, is byte-identical.
+- **Also.** `_settles`' refreshable guard gets a failing control test, and `INSTALLATION.md`'s crew
+  command count (36) carries a `plugin-commands:crew` claim marker, so `check_self_claims` checks it.
+- **Not in this entry.** The sabotage mutations for these fixes are harness (T-0087) and land with
+  L-0643.
+
 ### Added — crew 1.1.2: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
 
 Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main.

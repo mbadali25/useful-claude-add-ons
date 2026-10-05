@@ -311,6 +311,41 @@ def test_next_owner_accepted_findings_move_on(tmp_path, monkeypatch):
     assert _next(root)["phase"] == "done"
 
 
+def test_next_accept_review_names_the_refresh_before_the_next_round(tmp_path):
+    """T-0043 FIX 1: the human who fixes after a FINDINGS stop is told to run
+    the refresh check (and commit what it names) before the next round."""
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "FINDINGS")], state="REVIEWED")
+
+    got = _next(root)
+    reason = got["reason"]
+    refresh = f"crew_refresh_check.py --root . --ticket {T}"
+
+    assert (got["phase"], got["stop"], got["command"]) == ("accept-review", True, "")
+    assert refresh in reason and f"/crew:review {T}" in reason
+    assert reason.index(refresh) < reason.index(f"/crew:review {T}")
+    assert "review_ledger.py --accept --by <owner>" in reason
+
+
+@pytest.mark.parametrize("refresh,expected", [
+    ("stale", ("refresh", False, "/crew:diagram refresh")),
+    ("fresh", ("review", False, f"/crew:review {T}"))])
+def test_next_accepted_findings_then_an_edit_goes_through_refresh(tmp_path, monkeypatch,
+                                                                   refresh, expected):
+    """T-0043 FIX 2: an owner-accepted FINDINGS round whose receipt a later edit
+    staled goes to refresh, then review - never a false INCOMPLETE stop."""
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "FINDINGS")], state="ACCEPTED",
+            receipt=_receipt(1, "owner-accepted"))
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, refresh)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == expected
+    assert "INCOMPLETE" not in got["reason"] and "did not finish reading" not in got["reason"]
+
+
 LINE = "FIX|src/app.py:1|the loop never stops|run it offline"
 
 
@@ -470,8 +505,10 @@ def test_next_closed(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("refresh", ["fresh", "stale"])
 @pytest.mark.parametrize("second,state,receipt", [
-    ("CLEAN", "ACCEPTED", _receipt(2)), ("INCOMPLETE", "REVIEWED", None)],
-    ids=["round-2-clean-gone-stale", "round-2-incomplete"])
+    ("CLEAN", "ACCEPTED", _receipt(2)), ("INCOMPLETE", "REVIEWED", None),
+    ("FINDINGS", "ACCEPTED", _receipt(2, "owner-accepted"))],
+    ids=["round-2-clean-gone-stale", "round-2-incomplete",
+         "round-2-findings-accepted-gone-stale"])
 def test_next_budget_spent_without_a_receipt_stops(tmp_path, monkeypatch, refresh, second,
                                                    state, receipt):
     """Round 2 CLEAN whose receipt went stale, or round 2 INCOMPLETE (round
@@ -497,6 +534,22 @@ def test_next_incomplete_round_stops(tmp_path, monkeypatch):
     got = _next(root)
 
     assert (got["phase"], got["stop"], "INCOMPLETE" in got["reason"]) == (
+        "accept-review", True, True)
+
+
+def test_next_round_without_a_verdict_stops(tmp_path, monkeypatch):
+    """T-0043 must-block: a completed round with no verdict is still a stop;
+    only an accepted FINDINGS round goes back through refresh."""
+    root = _approved(tmp_path)
+    row = _round(1, "CLEAN")
+    del row["verdict"]
+    _ledger(root, [row], state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "without a verdict" in got["reason"]) == (
         "accept-review", True, True)
 
 
@@ -832,6 +885,21 @@ def test_refresh_unknown_other_cause_stops(tmp_path, monkeypatch, artifact):
     got = _next(root)
 
     assert (got["phase"], got["stop"], got["command"]) == ("refresh", True, "")
+
+
+def test_refresh_stale_artifact_marked_not_refreshable_stops(monkeypatch):
+    """T-0043: `_settles`' refreshable guard has a failing control."""
+    _freshness(monkeypatch, "stale",
+               ("diagram", "flow", "stale", "src/a.py changed", "/crew:diagram refresh", False))
+
+    assert _state()["state"] == "unsettled"
+
+
+def test_refresh_stale_artifact_without_the_key_settles(monkeypatch):
+    _freshness(monkeypatch, "stale",
+               ("diagram", "flow", "stale", "src/a.py changed", "/crew:diagram refresh", None))
+
+    assert (_state()["state"], _state()["command"]) == ("stale", "/crew:diagram refresh")
 
 
 def test_refresh_unknown_with_no_artifact_stops(monkeypatch):
