@@ -2525,6 +2525,12 @@ def _ps_argv_trigger(words, normal, helpers, depth, copies, cmd=None,
             return None if named is None else (named, fed.unknown)
         if not argv:
             return None
+        tail = words[len(words) - len(argv):]
+        if [str(w) for w in tail] == argv:
+            # The words the wrapper left, so `symbolic` reads gh's own
+            # arguments, not the wrapper's (T-0009 port review). When they do
+            # not line up, the two readings disagree: could not tell.
+            words = tail
     first, args = argv[0], argv[1:]
     sym = tool.symbolic(argv, words, normal)
     if not _PS_NAME_RE.match(first):

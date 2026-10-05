@@ -1178,6 +1178,17 @@ MUST_BLOCK_DEPLOY += R2_MUST_BLOCK_DEPLOY + GRAMMAR_MUST_BLOCK \
     + R3_MUST_BLOCK_DEPLOY + R4_MUST_BLOCK_DEPLOY + R5_MUST_BLOCK_DEPLOY
 MUST_ALLOW_DEPLOY += GRAMMAR_MUST_ALLOW + R3_MUST_ALLOW_DEPLOY \
     + R4_MUST_ALLOW_DEPLOY + R5_MUST_ALLOW_DEPLOY
+
+# Port onto release/1.2.0 (review of the T-0009 port): main's PowerShell
+# reader strips the wrappers bash strips (T-0047), and the dispatch reader
+# must read gh's own arguments after them, not the wrapper's -- else the two
+# readings disagree and a literal staging dispatch is could-not-tell.
+MUST_ALLOW_DEPLOY += [
+    ("port-ps-aws-vault-wrapper", "PowerShell",
+     "aws-vault exec prod -- " + S_RUN, _d(log="env:nonProd:staging")),
+    ("port-ps-unbuffer-wrapper", "PowerShell",
+     "unbuffer " + S_RUN, _d(log="env:nonProd:staging")),
+]
 ASK_DEPLOY += GRAMMAR_ASK + R3_ASK_DEPLOY + R4_ASK_DEPLOY
 
 _DB_SAMPLE = ("prod-input", "powershell-prod", "api-prod-input",
