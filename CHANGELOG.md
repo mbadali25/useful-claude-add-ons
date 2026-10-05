@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.346: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
+### Added — `crew` 1.0.395: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
 
 - **What changed.** A `.crew/verify.json` environment may carry a `github`
   entry (one object or a list): `workflow` (a `.yml`/`.yaml` filename),
