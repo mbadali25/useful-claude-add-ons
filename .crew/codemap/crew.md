@@ -1005,7 +1005,7 @@ so its approve and open-questions reasons are the fixed `POLICY_FREE_APPROVE` /
 `POLICY_FREE_QUESTIONS` (`:2276`, `:2279`) and at the approve phase it names `/crew:approve <id>`
 under every setting (`test_route_and_status_unaffected_by_approval_policy`,
 `test_status_at_approve_reads_the_same_under_an_allowing_policy`); the one policy effect it shows is
-`crew_ticket.accepted`'s demotion of an `autopilot` receipt the policy no longer allows. Its `resume:` line reads usable
+`crew_ticket.accepted`'s demotion of an `autopilot` receipt the policy no longer allows. T-0027: a policy value that is not a policy is warned about by `settings` only - `_settings_at` returns those warnings as `policyWarnings` too (`plugin/crew/hooks/scripts/crew_autopilot.py:1881`), `settings` (`:1759`) adds the inert entries under `autopilot.approval`/`autopilot.questions` from `crew_config.autopilot_inert_split`, and `status` (`:3091`) leaves `policyWarnings` out, keeping every other warning (the could-not-tell one included); `approve`, unarmed because the config could not be read, names `_unreadable_autopilot`'s cause (`:2315`). Its `resume:` line reads usable
 only where bare `/crew:autopilot` - `resume_target` itself - would take it (`_resume_line`,
 `:3027`; `_takes`, `:2928`), asked only after `_resume_line`'s own read of the handoff passes the
 branch, head and folder checks, so a file rewritten after `resume_target` read it is never

@@ -17,8 +17,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **status.** `settings` returns the approval/questions value warnings (`"bogus", not one of
   human|self|risk`) in a new `policyWarnings` key as well as in `warnings`; `status` leaves those
   out and keeps every other warning, including the single could-not-tell one for an unreadable
-  `.crew/config.json` or a non-object `autopilot` block. `settings`, `approval_policy` and
-  `question_policy` still carry the value warning.
+  `.crew/config.json` or a non-object `autopilot` block. An object-valued policy key
+  (`approval: {"x": "self"}`) also leaves its `inert:` entries out of `status`
+  (`crew_config.autopilot_inert_split`). `settings`, `approval_policy` and `question_policy`
+  still carry the value warning.
 - **approve.** Unarmed because the config could not be read (not JSON, not an object, or an
   `autopilot` value that is not an object), `approve` refuses with that cause; a plain unarmed
   config keeps today's "autopilot.mode is not plan" refusal.

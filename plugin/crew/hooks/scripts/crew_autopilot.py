@@ -1803,7 +1803,9 @@ def settings(root):
                               "approves or takes an answer) and autopilot reads as off")],
                 "policyWarnings": []}
     result = _settings_at(top)
-    result["warnings"] += crew_config.autopilot_inert_warnings(top, _failure)  # T-0070
+    inert, policy = crew_config.autopilot_inert_split(top, _failure, ("approval", "questions"))
+    result["warnings"] += inert  # T-0070
+    result["policyWarnings"] += policy  # T-0027: an object policy value names its inert keys
     return result
 
 

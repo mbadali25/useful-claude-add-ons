@@ -1212,7 +1212,8 @@ def _status_both(root):
 
 
 @pytest.mark.parametrize("key", ["approval", "questions"])
-@pytest.mark.parametrize("value", ["bogus", True, ["self"]], ids=["string", "bool", "list"])
+@pytest.mark.parametrize("value", ["bogus", True, ["self"], {"bogus": "self"}],
+                         ids=["string", "bool", "list", "object"])
 def test_status_prints_no_policy_value_warning(tmp_path, key, value):
     from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
     root = _repo(tmp_path, risk="low")

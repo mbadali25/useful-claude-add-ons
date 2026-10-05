@@ -2419,13 +2419,25 @@ def autopilot_inert_warnings(top, failure=lambda exc: f"{type(exc).__name__}: {e
     up. A repo `autopilot.deploy` value is left to autopilot's deploy warning,
     which already names T-0045. `failure` renders an exception (autopilot's
     `_failure`); anything that raises is one could-not-tell warning."""
+    return autopilot_inert_split(top, failure)[0]
+
+
+def autopilot_inert_split(top, failure=lambda exc: f"{type(exc).__name__}: {exc}",
+                          policy_keys=()):
+    """`(warnings, policy)`: `autopilot_inert_warnings`' list, and the entries
+    of it under one of `policy_keys` (`autopilot.<key>` or below it), which
+    `crew_autopilot.status` leaves out (T-0027). A could-not-tell warning is
+    never a policy entry."""
+    under = tuple(f"autopilot.{key}" for key in policy_keys)
     try:
-        return [f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}"
-                for e in inert_settings(top)
-                if e["key"].startswith("autopilot.")
-                and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
+        rendered = [(e, f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}")
+                    for e in inert_settings(top) if e["key"].startswith("autopilot.")
+                    and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
     except Exception as exc:  # pylint: disable=broad-except
-        return [f"inert: could not tell which settings are inert ({failure(exc)})"]
+        return [f"inert: could not tell which settings are inert ({failure(exc)})"], []
+    return [text for _e, text in rendered], [
+        text for e, text in rendered
+        if any(e["key"] == key or e["key"].startswith(key + ".") for key in under)]
 
 
 def inert_items(entries, room):
