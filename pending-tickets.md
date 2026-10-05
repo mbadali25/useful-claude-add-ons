@@ -23,22 +23,22 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 
 | # | Group | Branch | PRs | Placeholder crew | Status |
 |---|---|---|---|---|---|
-| 0 | G0 coord + wave (prerequisites, lands first) | `rush/g0-coord-wave` | T-0030 (#517, `T-0030-coord`, "1 of 3"), T-0029 (#516, `T-0029-wave`), feature halves; harness halves go to H1/H2 | 1.1.9 | building |
-| 1 | G1 ports: tracker, gitignore, graph, migrate | `rush/g1-ports` | #478, #464, #376, #346, #367, #370 | 1.1.1 | building |
-| 2 | G1b ports: reference, hygiene, help, archive, CI | `rush/g1b-ports` | #345, #349, #359, #341, #324 | 1.1.6 | building |
-| 3 | G2 autopilot ports | `rush/g2-autopilot` | #354, #395, #342, #358, #369, #363, #365, #366 | 1.1.2 | building |
-| 4 | G3 contracts / ticket state | `rush/g3-contracts` | #408, #412, #410, #409, #411 | 1.1.3 | building |
-| 5 | G3b bridge / recall / config / graph | `rush/g3b-bridge` | #434, #437, #442, #425, #414, #447, #455 | 1.1.7 | building |
-| 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.4 | building |
-| 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
+| 0 | G0 coord + wave (prerequisites, lands first) | `rush/g0-coord-wave` | T-0030 (#517, `T-0030-coord`, "1 of 3"), T-0029 (#516, `T-0029-wave`), feature halves; harness halves go to H1/H2 | 1.1.6 | landing (re-merged release; group review in progress) |
+| 1 | G1 ports: tracker, gitignore, graph, migrate | `rush/g1-ports` | #478, #464, #376, #346, #367, #370 | 1.1.2 | **merged into release/1.2.0** (#541, 3dbc033b) |
+| 2 | G1b ports: reference, hygiene, help, archive, CI | `rush/g1b-ports` | #345, #349, #359, #341, #324 | next free | built, waiting to land |
+| 3 | G2 autopilot ports | `rush/g2-autopilot` | #354, #395, #342, #358, #369, #363, #365, #366 | next free | built, waiting to land |
+| 4 | G3 contracts / ticket state | `rush/g3-contracts` | #408, #412, #410, #409, #411 | 1.1.5 | **merged into release/1.2.0** (#543, 2c911427) |
+| 5 | G3b bridge / recall / config / graph | `rush/g3b-bridge` | #434, #437, #442, #425, #414, #447, #455 | 1.1.8 (provisional) | landing |
+| 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.7 (provisional) | landing (built: 11/11, all CLEAN) |
+| 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | next free | built, waiting to land |
 | 4b | G3c contracts on coord/wave | `rush/g3c-contracts` | #408 T-0031, #410 L-0633, #412 L-0634 (base: G0 + release) | next free | building |
 | 4c | G3d bridge and graph | `rush/g3d-bridge` | #434 T-0032, #437 L-0636, #442 L-0637, #455 L-0667 (base: G0 + release) | next free | building |
-| 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | waiting on PRs |
+| 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | built, waiting to land |
 | 8 | G6a autopilot core | `rush/g6a-autopilot` | #485, #486, #397, #426, #449, #443, #446, #453, #483 (base: G2 + G0 + release) | next free | building |
 | 8b | G6b goals and sleep | `rush/g6b-goals-sleep` | L-0541 (#515), #459, #463, #469, then sleep #435, #431, #444 (base: G2 + release) | next free | building |
 | 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511 PR 1, L-0530 (L-0511 PR 2 deferred) | 1.1.1 | **merged into release/1.2.0** (#539, c510b764) |
-| 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
-| 9b | H3 review-harness tickets (to main, alone) — built, head ddb96134, crew 1.1.12; T-0033 on hold (owner question) | `rush/h3-review` | L-0528, L-0514, T-0033, L-0518 (tooling half), L-0522 PR 2 of 3 (#538, never reviewed), L-0527 | next free | waiting on PRs |
+| 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.4 | **merged into main** (#542, 7cb44221); #402 L-0540 still waits on the seed |
+| 9b | H3 review-harness tickets (to main, alone) — built, head ddb96134, crew 1.1.12; T-0033 on hold (owner question) | `rush/h3-review` | L-0528, L-0514, T-0033, L-0518 (tooling half), L-0522 PR 2 of 3 (#538, never reviewed), L-0527 | 1.1.3 | **merged into main** (#540, 97dda0bd) |
 | 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
 | - | Last | | #479 (T-0507 code-map refresh) | | regenerated at the end |
 
@@ -116,6 +116,10 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0042 | PWSH sabotage entries: the four `STANDARDS_MUTATIONS` for `sabotage_standards.py` (in `.work/tickets/L-0534/notes.md`) | G7 report | L-0534 on main; L-0539 | H lane |
 | C-0043 | Owner supplies publishable Earned-by text for NG-07, NODE-08, DOTNET-08/-13/-15 (they reach the bar privately) so they can be promoted from candidates | G7 report | owner research files | owner action |
 | C-0044 | `docs/tickets/L-0534/direction.md:21` says every `.ps1` is ASCII-only, but two `exo_preflight.ps1` files start with a BOM (owner's doc, left unedited) | G7 report | none | owner action |
+| C-0045 | T-0009 PowerShell reader does not follow text piped into a shell: `echo gh workflow run ... \| bash` reads "none" under the ps1 reader but could-not-tell under bash, so the cloud guard and promote-gate.ps1 miss that dispatch | G4 report | none | needs ticket |
+| C-0046 | L-0650 wiring: hook `ghdeploy_mutations.py` (~180 entries) and `promote_tree_mutations.py` into `sabotage.py` | G4 report | none (harness: H lane) | needs ticket |
+| C-0047 | Harness half of T-0009: land `sabotage_cloud.py` (patch `$S/harness-T-0009.patch`, +741/-106) with its anchors moved to `crew_dispatch.py` | G4 report | T-0009 feature half (G4) on main | H2 |
+| C-0048 | Retire `sabotage_autopilot.py`'s "the inert warning is gone" entry and let `settings` drop its armed-deploy warning | G4 report | L-0649 (G4) on main | H lane |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
