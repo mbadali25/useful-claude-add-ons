@@ -21,6 +21,7 @@ _T = "tests/test_crew_ghdeploy.py::"
 _P = _T + "test_entry_problem[{}]"
 _C = _T + "test_check_applies_the_gates_union_rule[{}]"
 _S = _T + "test_simulate_gate_agrees_with_the_real_gate[map{}-sh]"
+_R = _T + "test_prepare_refuses[{}]"
 
 GHDEPLOY_MUTATIONS = (
     # --- exit 2: entry problems -------------------------------------------
@@ -311,4 +312,49 @@ GHDEPLOY_MUTATIONS = (
      "    line = prefix(entry)\n",
      '    line = prefix(entry).replace(" --ref ", " -r ")\n',
      _T + "test_dispatch_matches_promote_gate"),
+    # --- prepare (L-0644): one per refusing branch, then must-allow ---------
+    ("ghdeploy prepare: an environment with no github entry is let through", GH,
+     '        raise Refused("github-none", f"environment {env!r} has no github entry")\n',
+     '        return {}\n',
+     _T + "test_prepare_refuses_an_environment_without_a_github_entry"),
+    ("ghdeploy prepare: an unmapped workflow is treated as mapped", GH,
+     "    if klass is None:\n        raise Refused(\"unmapped-workflow\",",
+     "    if klass is None:\n        return crew_dispatch.ENV_NONPROD\n        raise Refused(\"unmapped-workflow\",",
+     _R.format("unmapped-workflow")),
+    ("ghdeploy prepare: an unknown environment is let through", GH,
+     "    if config.get(\"problem\") or klass[0] == crew_dispatch.ENV_UNKNOWN:\n",
+     "    if False:\n",
+     _R.format("unknown-environment")),
+    ("ghdeploy prepare: a class mismatch is let through", GH,
+     "    if klass[0] != named:\n",
+     "    if False:\n",
+     _R.format("class-mismatch")),
+    ("ghdeploy prepare: an unreadable actor is let through", GH,
+     "    if not isinstance(login, str) or not login or not _fits(login):\n",
+     "    if False:\n",
+     _R.format("actor-unreadable")),
+    ("ghdeploy prepare: a sha missing on the remote is let through", GH,
+     '    if not isinstance(remote, dict) or remote.get("sha") != sha:\n',
+     '    if False:\n',
+     _R.format("sha-not-on-remote")),
+    ("ghdeploy prepare: a branch tip that is not HEAD is let through", GH,
+     "        if tip != sha:\n",
+     "        if False:\n",
+     _R.format("branch-tip-not-head")),
+    ("ghdeploy prepare: an unreadable snapshot is let through", GH,
+     "    if not isinstance(runs, list) or not all(\n",
+     "    if False and not all(\n",
+     _R.format("snapshot-unreadable")),
+    ("ghdeploy prepare: a classifier crash is a pass", GH,
+     "        raise Refused(\"classifier-failed\", f\"the dispatch classifier failed: \"\n",
+     "        return crew_dispatch.ENV_NONPROD\n        raise Refused(\"classifier-failed\", f\"the dispatch classifier failed: \"\n",
+     _T + "test_prepare_classifier_crash_refuses"),
+    ("ghdeploy prepare: the state file is written in place", GH,
+     "        os.replace(tmp, path)\n",
+     "        os.rename(tmp, path)\n",
+     _T + "test_prepare_state_is_atomic"),
+    ("ghdeploy prepare: the snapshot drops the run ids", GH,
+     '             "snapshot": sorted(r["databaseId"] for r in runs),\n',
+     '             "snapshot": [],\n',
+     _T + "test_nonprod_prepare"),
 )

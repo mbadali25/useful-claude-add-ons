@@ -1,6 +1,7 @@
 """GitHub Actions deploys for `/crew:promote`, as data in `.crew/verify.json`.
 
-    python3 crew_ghdeploy.py check --root DIR --env NAME
+    python3 crew_ghdeploy.py check   --root DIR --env NAME
+    python3 crew_ghdeploy.py prepare --root DIR --env NAME [--index N]
 
 T-0045 slice 1. An environment in `.crew/verify.json` may carry a `github`
 entry -- one object or a list of them -- that describes a
@@ -89,6 +90,7 @@ import re
 import secrets
 import subprocess
 import sys
+import time
 import unicodedata
 
 import crew_common
@@ -242,14 +244,15 @@ def prefix(entry):
     return " ".join(parts)
 
 
-def dispatch(entry, env, sha):
-    """The one literal dispatch for `sha`: prefix, sha input, correlation id."""
+def dispatch(entry, env, sha, corr=None):
+    """The one literal dispatch for `sha`: prefix, sha input, correlation id
+    (`corr`, or a fresh one when the entry names a `correlationInput`)."""
     line = prefix(entry)
     if entry.get("shaInput"):
         line += f" -f {entry['shaInput']}={sha}"
     if entry.get("correlationInput"):
-        line += (f" -f {entry['correlationInput']}="
-                 f"crew-{env}-{sha[:7]}-{secrets.token_hex(4)}")
+        corr = corr or f"crew-{env}-{sha[:7]}-{secrets.token_hex(4)}"
+        line += f" -f {entry['correlationInput']}={corr}"
     return line
 
 
@@ -539,13 +542,13 @@ def _head(root):
     return sha
 
 
-def check(root, env):
-    """Lines to print for `check`; raises Refused or CouldNotTell."""
-    envs = _environment(root, env)
+def validated(envs, env):
+    """The environment's entries, each validated, with `deploy` exactly
+    their prefixes; None when it has no `github` key. Raises Refused."""
     cfg = envs[env]
     found = entries(cfg)
     if found is None:
-        return [f"environment {env!r} has no github entry", "result=ok github=none"]
+        return None
     for index, entry in enumerate(found):
         problem = entry_problem(entry, env)
         if problem:
@@ -556,6 +559,15 @@ def check(root, env):
         raise Refused("deploy-prefix-mismatch",
                       f"{env!r}: `deploy` must list exactly these prefixes, and nothing "
                       f"else: {sorted(wanted)}")
+    return found
+
+
+def check(root, env):
+    """Lines to print for `check`; raises Refused or CouldNotTell."""
+    envs = _environment(root, env)
+    found = validated(envs, env)
+    if found is None:
+        return [f"environment {env!r} has no github entry", "result=ok github=none"]
     sha = _head(root)
     lines = []
     for entry in found:
@@ -565,20 +577,189 @@ def check(root, env):
     return lines + [f"result=ok entries={len(found)} sha={sha}"]
 
 
+# --- prepare (L-0644) ------------------------------------------------------
+#
+# `prepare` decides whether one dispatch may be attempted and records what
+# `identify` needs to find its run: who dispatches, which runs of that
+# workflow on that ref already exist, and that the sha is on the remote. It
+# refuses (exit 2, nothing written) on the first problem, in this order:
+# the entry's config (`check`'s validator, then `deploy-prefix-mismatch`),
+# `unmapped-workflow`, `unknown-environment`, `class-mismatch`,
+# `actor-unreadable`, `sha-not-on-remote`, `branch-tip-not-head` (no
+# `shaInput` only) and `snapshot-unreadable`. The class comes from T-0009's
+# classifier (`crew_dispatch.dispatch_scopes`, `dispatch_environment`),
+# called read-only; `prepare` decides no authority and never reads
+# unattended state. It never dispatches: its only `gh` calls are `api user`,
+# two GETs and `run list`. The session runs the printed command as its own
+# Bash call, so the cloud guard and promote-gate judge it.
+
+STATE_DIR = os.path.join(".crew", ".ghdeploy")
+SNAPSHOT_LIMIT = 50
+
+
+def _run_gh(args, root):
+    """`(exit status, stdout)` of `gh <args>` in `root`; the one seam every
+    `gh` call goes through, stubbed by the tests. A gh that cannot start is
+    exit 127."""
+    try:
+        proc = subprocess.run([crew_common.require_tool("gh")] + list(args), cwd=root,
+                              capture_output=True, text=True, check=False,
+                              stdin=subprocess.DEVNULL, timeout=600)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 127, str(exc)
+    return proc.returncode, proc.stdout
+
+
+def _clock():
+    return time.time()
+
+
+def _sleep(seconds):
+    time.sleep(seconds)
+
+
+def _gh_json(args, root):
+    """`gh <args>`'s stdout as JSON, or None when it failed or is not JSON."""
+    code, out = _run_gh(args, root)
+    if code != 0:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def state_path(root, env, index):
+    return os.path.join(root, STATE_DIR, f"{env}-{index}.json")
+
+
+def write_state(path, state):
+    """The state file, written whole: a temp file then `os.replace`, so a
+    failure leaves the old file (or none) and never a partial one."""
+    text = json.dumps(state, indent=2, sort_keys=True) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def _entry(root, env, index):
+    """`check`'s validated entry `index` of `env`; raises."""
+    found = validated(_environment(root, env), env)
+    if found is None:
+        raise Refused("github-none", f"environment {env!r} has no github entry")
+    if not 0 <= index < len(found):
+        raise Refused("index-range", f"{env!r} has {len(found)} github entries; "
+                                     f"--index {index} is not one of them")
+    return found[index]
+
+
+def classify(root, env, command):
+    """T-0009's class for the dispatch `command`, compared with the class of
+    the environment's own name. Raises Refused; a classifier that raises is
+    a refusal too, never a pass."""
+    try:
+        import cloud_guard  # pylint: disable=import-outside-toplevel
+        import crew_dispatch  # pylint: disable=import-outside-toplevel
+        config = cloud_guard.environments_config(root)
+        scopes = crew_dispatch.dispatch_scopes(command.split()[1:])
+        klass = crew_dispatch.dispatch_environment(scopes[0], config) \
+            if len(scopes) == 1 else (crew_dispatch.ENV_UNKNOWN, None,
+                                      "the dispatch did not read as one", None)
+        named = crew_dispatch._dispatch_class(  # pylint: disable=protected-access
+            env, config.get("nonProd", []))
+    except Exception as exc:  # pylint: disable=broad-except
+        raise Refused("classifier-failed", f"the dispatch classifier failed: "
+                                           f"{type(exc).__name__}: {exc}") from exc
+    if klass is None:
+        raise Refused("unmapped-workflow",
+                      "environments.workflows in .crew/config.json lists no key "
+                      "matching this workflow; an unlisted workflow is never nonProd")
+    if config.get("problem") or klass[0] == crew_dispatch.ENV_UNKNOWN:
+        raise Refused("unknown-environment", "the classifier cannot name the "
+                      f"environment: {config.get('problem') or klass[2]}")
+    if klass[0] != named:
+        raise Refused("class-mismatch",
+                      f"the dispatch classifies as {klass[0]} ({klass[1]!r}) but the "
+                      f"environment {env!r} is {named}")
+    return klass[0]
+
+
+def _actor(root):
+    user = _gh_json(["api", "user"], root)
+    login = user.get("login") if isinstance(user, dict) else None
+    if not isinstance(login, str) or not login or not _fits(login):
+        raise Refused("actor-unreadable", "`gh api user` gave no login")
+    return login
+
+
+def prepare(root, env, index):
+    """Lines to print for `prepare`; writes the state file last."""
+    entry = _entry(root, env, index)
+    sha = _head(root)  # the dispatch deploys HEAD
+    corr = (f"crew-{env}-{sha[:7]}-{secrets.token_hex(4)}"
+            if entry.get("correlationInput") else None)
+    command = dispatch(entry, env, sha, corr)
+    klass = classify(root, env, command)
+    actor = _actor(root)
+    remote = _gh_json(["api", f"repos/{{owner}}/{{repo}}/commits/{sha}"], root)
+    if not isinstance(remote, dict) or remote.get("sha") != sha:
+        raise Refused("sha-not-on-remote", f"{sha} is not on the remote; push it first")
+    if not entry.get("shaInput"):
+        tip = _gh_json(["api", f"repos/{{owner}}/{{repo}}/branches/{entry['ref']}"], root)
+        tip = tip.get("commit", {}).get("sha") if isinstance(tip, dict) else None
+        if tip != sha:
+            raise Refused("branch-tip-not-head",
+                          f"with no `shaInput` the workflow deploys {entry['ref']!r}'s tip "
+                          f"({tip or 'unreadable'}), which is not HEAD {sha}")
+    runs = _gh_json(["run", "list", "-w", entry["workflow"], "-b", entry["ref"],
+                     "-e", "workflow_dispatch", "-u", actor, "-L", str(SNAPSHOT_LIMIT),
+                     "--json", "databaseId"], root)
+    if not isinstance(runs, list) or not all(
+            isinstance(r, dict) and isinstance(r.get("databaseId"), int) for r in runs):
+        raise Refused("snapshot-unreadable", "`gh run list` gave no list of runs")
+    t0 = int(_clock())
+    watch = entry.get("watchMinutes", RANGES["watchMinutes"][2])
+    state = {"env": env, "index": index, "workflow": entry["workflow"],
+             "ref": entry["ref"], "sha": sha, "actor": actor, "t0": t0,
+             "snapshot": sorted(r["databaseId"] for r in runs),
+             "correlationId": corr, "command": command, "class": klass,
+             "identifySeconds": entry.get("identifySeconds",
+                                          RANGES["identifySeconds"][2]),
+             "watchMinutes": watch, "deadline": t0 + watch * 60}
+    write_state(state_path(root, env, index), state)
+    return [f"state: {os.path.join(STATE_DIR, f'{env}-{index}.json')}",
+            f"snapshot: {len(runs)} existing run(s)", command,
+            f"result=ok class={klass} sha={sha}"]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="crew_ghdeploy.py")
     sub = parser.add_subparsers(dest="command", required=True)
     cmd = sub.add_parser("check", help="validate the github entry and print the dispatch")
     cmd.add_argument("--root", default=".")
     cmd.add_argument("--env", required=True)
+    cmd = sub.add_parser("prepare", help="refuse, or snapshot before the dispatch (L-0644)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
     args = parser.parse_args(argv)
     # A name or key in a message may hold any character, and a Windows
     # console or pipe is cp1252: an unencodable one must not turn a verdict
     # into a traceback with no result line (#407 CI, U+0131 / U+1F88).
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="backslashreplace")
+    root = os.path.abspath(args.root)
     try:
-        lines = check(os.path.abspath(args.root), args.env)
+        if args.command == "prepare":
+            lines = prepare(root, args.env, args.index)
+        else:
+            lines = check(root, args.env)
     except Refused as exc:
         print(exc)
         print(f"result=refused reason={exc.reason}")

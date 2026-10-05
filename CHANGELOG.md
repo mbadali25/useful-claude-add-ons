@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch (L-0644)
+
+- **Summary.** Before a `github` environment's dispatch, `prepare` checks the entry, asks T-0009's
+  classifier which environment the dispatch deploys to, and confirms the actor, the sha on the remote
+  and (with no `shaInput`) the branch tip; it then records the actor's existing runs so the new one
+  can be found afterwards, and prints the dispatch for the session to run itself.
+- **Refusals** (exit 2, nothing written), in order: an entry problem or `github-none`,
+  `deploy-prefix-mismatch`, `unmapped-workflow`, `unknown-environment`, `class-mismatch`,
+  `actor-unreadable`, `sha-not-on-remote`, `branch-tip-not-head`, `snapshot-unreadable`; a classifier
+  that raises is `classifier-failed`.
+- **State.** `.crew/.ghdeploy/<env>-<N>.json`, written through a temp file and `os.replace`. Its only
+  `gh` calls are `api user`, two GETs and `run list`; it never dispatches. `check` and `prepare` now
+  share one entry validator (`validated`).
+
 ### Added — `crew` 1.1.4: promote-gate gates a workflow dispatch of a declared deploy, in either spelling (T-0062)
 
 - **Summary.** On the Bash tool, `gh workflow run <wf>` with its inputs in any order and its REST

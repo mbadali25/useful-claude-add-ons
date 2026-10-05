@@ -465,8 +465,27 @@ refused as `gate-refuses-map`. Each printed dispatch carries `gated-as:
 non-ASCII case pairs in another environment's deploy string).
 It prints the literal dispatch for HEAD, writes nothing and runs no `gh`. Exit 0 is valid (or no `github` entry), 2 is refused with
 `result=refused reason=<code>`, 3 is could-not-tell (map, environment or HEAD
-unreadable). **The dispatch sequence is not built yet:** nothing dispatches,
-finds the run, watches it or records it. Run the printed command by hand.
+unreadable).
+
+**`prepare` (L-0644)** - `crew_ghdeploy.py prepare --root . --env <name>
+[--index N]` - runs before the dispatch and refuses (exit 2, nothing written)
+on the first of: an entry problem `check` refuses (or no `github` entry,
+`github-none`), `deploy-prefix-mismatch`, `unmapped-workflow` (no
+`environments.workflows` key in `.crew/config.json` matches the workflow; an
+unlisted workflow is never nonProd), `unknown-environment` (T-0009's
+classifier cannot name one), `class-mismatch` (the dispatch classifies prod
+under a nonProd environment name, or the reverse), `actor-unreadable` (`gh
+api user`), `sha-not-on-remote`, `branch-tip-not-head` (no `shaInput` and the
+ref's tip is not HEAD) and `snapshot-unreadable` (`gh run list`); a classifier
+that raises is `classifier-failed`. Otherwise it writes
+`.crew/.ghdeploy/<env>-<N>.json` atomically - the workflow, ref, sha, actor,
+`t0`, the ids of this actor's existing `workflow_dispatch` runs on that ref,
+the correlation id, the command, `identifySeconds`, `watchMinutes` and the
+deadline - and prints the dispatch as its last line before `result=`. It
+never dispatches: its only `gh` calls are `api user`, two GETs and `run
+list`. Run the printed command as its own Bash call, so the cloud guard and
+promote-gate judge it. **Not built yet:** finding the run, watching it and
+recording it.
 
 ### The promotion record
 

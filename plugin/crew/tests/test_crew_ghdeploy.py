@@ -11,6 +11,8 @@ The cases are the spec's acceptance checks. The mutations that prove each
 refusing branch is tested are in `ghdeploy_mutations.py` (unwired; L-0650
 wires them into the sabotage harness).
 """
+import contextlib
+import io
 import json
 import os
 import re
@@ -877,3 +879,265 @@ def test_a_non_ascii_name_in_a_message_survives_a_cp1252_stdout(tmp_path, label)
     proc = _check(root, env="production", encoding="cp1252")
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert _last(proc) == "result=refused reason=gate-refuses-map"
+
+
+# --- the github sequence (L-0644 to L-0647): shared fixtures ------------------
+#
+# Every `gh` call goes through `crew_ghdeploy._run_gh`, which these tests
+# replace with `FakeGh`: it answers from a table keyed by the call's leading
+# words and records every argv, so `test_helper_never_dispatches` can prove no
+# scenario dispatched, cancelled, re-ran, merged or sent a mutating `api`.
+
+_SEQ_SHA_ENTRY = {"workflow": "deploy.yml", "ref": "main",
+                  "inputs": {"target": "staging"}, "shaInput": "sha"}
+_ACTOR = "octo-bot"
+_SCENARIOS = []         # every sequence scenario, for the never-dispatches test
+
+
+def _scenario(fn):
+    _SCENARIOS.append(fn)
+    return fn
+
+
+class FakeGh:  # pylint: disable=too-few-public-methods
+    """`_run_gh`'s stand-in. `answers` maps a tuple of leading words to
+    `(status, stdout)` or to a list of them, consumed one call at a time
+    (the last one repeats)."""
+
+    def __init__(self, answers):
+        self.answers = {k: list(v) if isinstance(v, list) else [v]
+                        for k, v in answers.items()}
+        self.calls = []
+
+    def __call__(self, args, _root):
+        args = list(args)
+        self.calls.append(args)
+        for key in sorted(self.answers, key=len, reverse=True):
+            if tuple(args[:len(key)]) == key:
+                queue = self.answers[key]
+                return queue.pop(0) if len(queue) > 1 else queue[0]
+        return 1, ""
+
+
+def _ok(obj):
+    return 0, json.dumps(obj)
+
+
+def _seq_repo(tmp_path, monkeypatch, entry=None, env="staging", workflows=None,
+              non_prod=("staging",)):
+    """A committed repo whose `env` carries `entry`, with the repo layer's
+    `environments` block, the machine layer pointed at an empty file, and
+    the clock at 1,000,000."""
+    entry = dict(_SEQ_SHA_ENTRY if entry is None else entry)
+    root = _repo(tmp_path, _doc(entry, env=env))
+    config = {"environments": {"nonProd": list(non_prod), "workflows": (
+        {"deploy.yml": "input:target"} if workflows is None else workflows)}}
+    (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    glob = tmp_path / "global.json"
+    glob.write_text("{}", encoding="utf-8")
+    import crew_config  # pylint: disable=import-outside-toplevel
+    import crew_state  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(glob))
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(glob))
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: 1_000_000)
+    monkeypatch.setattr(crew_ghdeploy, "_sleep", lambda _s: None)
+    return root
+
+
+def _prepare_answers(sha, **over):
+    answers = {("api", "user"): _ok({"login": _ACTOR}),
+               ("api", f"repos/{{owner}}/{{repo}}/commits/{sha}"): _ok({"sha": sha}),
+               ("api", "repos/{owner}/{repo}/branches/main"): _ok({"commit": {"sha": sha}}),
+               ("run", "list"): _ok([{"databaseId": 11}, {"databaseId": 12}])}
+    answers.update({tuple(k.split(" ")): v for k, v in over.items()})
+    return answers
+
+
+def _run(monkeypatch, gh, *argv):
+    """`crew_ghdeploy.main(argv)` in-process with `gh`: `(exit, stdout lines)`."""
+    monkeypatch.setattr(crew_ghdeploy, "_run_gh", gh)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = crew_ghdeploy.main(list(argv))
+    return code, out.getvalue().splitlines()
+
+
+def _forbidden(argv):
+    """A `gh` call the helper must never make: a dispatch, a cancel, a re-run,
+    a merge, or an `api` call with a method other than GET."""
+    if argv[:2] in (["workflow", "run"], ["run", "cancel"], ["run", "rerun"],
+                    ["pr", "merge"]):
+        return True
+    if argv[:1] == ["api"]:
+        for i, word in enumerate(argv):
+            method = (argv[i + 1] if word in ("-X", "--method") and i + 1 < len(argv)
+                      else word[2:] if word.startswith("-X") and len(word) > 2
+                      else word.split("=", 1)[1] if word.startswith("--method=")
+                      else None)
+            if method is not None and method.upper() != "GET":
+                return True
+    return False
+
+
+def _state(root, env="staging", index=0):
+    path = root / ".crew" / ".ghdeploy" / f"{env}-{index}.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+# --- prepare (L-0644) ---------------------------------------------------------
+
+def _prepare(monkeypatch, root, gh, env="staging"):
+    return _run(monkeypatch, gh, "prepare", "--root", str(root), "--env", env)
+
+
+@_scenario
+def test_nonprod_prepare(tmp_path, monkeypatch):
+    """must-allow: exit 0, the dispatch is the last line before `result=`,
+    the state holds the snapshot and t0, and gh saw exactly three calls."""
+    root = _seq_repo(tmp_path, monkeypatch)
+    sha = _head(root)
+    gh = FakeGh(_prepare_answers(sha))
+    code, lines = _prepare(monkeypatch, root, gh)
+    assert code == 0, lines
+    assert lines[-1].startswith("result=ok class=nonProd")
+    assert lines[-2] == f"gh workflow run deploy.yml --ref main -f target=staging -f sha={sha}"
+    state = _state(root)
+    assert state["snapshot"] == [11, 12] and state["t0"] == 1_000_000
+    assert state["actor"] == _ACTOR and state["sha"] == sha
+    assert state["deadline"] == 1_000_000 + 60 * 60
+    assert state["command"] == lines[-2]
+    assert [c[:2] for c in gh.calls] == [
+        ["api", "user"], ["api", f"repos/{{owner}}/{{repo}}/commits/{sha}"],
+        ["run", "list"]]
+
+
+@_scenario
+def test_prepare_with_a_correlation_input_records_the_id(tmp_path, monkeypatch):
+    entry = dict(_SEQ_SHA_ENTRY, correlationInput="crew_id")
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 0, lines
+    corr = _state(root)["correlationId"]
+    assert re.fullmatch(r"crew-staging-[0-9a-f]{7}-[0-9a-f]{8}", corr)
+    assert lines[-2].endswith(f"-f crew_id={corr}")
+
+
+def _no_branch_entry():
+    return {k: v for k, v in _SEQ_SHA_ENTRY.items() if k != "shaInput"}
+
+
+_PREPARE_BLOCKS = {
+    # name: (entry, deploy override, config workflows, nonProd, gh overrides, reason)
+    "config-problem": (dict(_SEQ_SHA_ENTRY, workflow="Deploy"), None, None,
+                       ("staging",), {}, "workflow-not-filename"),
+    "deploy-prefix-mismatch": (None, ["gh workflow run deploy.yml"], None,
+                               ("staging",), {}, "deploy-prefix-mismatch"),
+    "unmapped-workflow": (None, None, {"other.yml": "staging"}, ("staging",), {},
+                          "unmapped-workflow"),
+    "unknown-environment": (None, None, {"deploy.yml": "input:region"},
+                            ("staging",), {}, "unknown-environment"),
+    "class-mismatch": (None, None, {"deploy.yml": "production"}, ("staging",), {},
+                       "class-mismatch"),
+    "actor-unreadable": (None, None, None, ("staging",),
+                         {"api user": (1, "")}, "actor-unreadable"),
+    "sha-not-on-remote": (None, None, None, ("staging",),
+                          {"api commits": None}, "sha-not-on-remote"),
+    "branch-tip-not-head": ("no-sha", None, None, ("staging",),
+                            {"api repos/{owner}/{repo}/branches/main":
+                             _ok({"commit": {"sha": "0" * 40}})},
+                            "branch-tip-not-head"),
+    "snapshot-unreadable": (None, None, None, ("staging",),
+                            {"run list": (1, "")}, "snapshot-unreadable"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_PREPARE_BLOCKS))
+def test_prepare_refuses(tmp_path, monkeypatch, name):
+    """must-block: exit 2 and nothing under `.crew/.ghdeploy/`."""
+    entry, deploy, workflows, non_prod, over, reason = _PREPARE_BLOCKS[name]
+    entry = _no_branch_entry() if entry == "no-sha" else entry
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry, workflows=workflows,
+                     non_prod=non_prod)
+    if deploy is not None:
+        doc = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+        doc["environments"]["staging"]["deploy"] = deploy
+        (root / ".crew" / "verify.json").write_text(json.dumps(doc), encoding="utf-8")
+    sha = _head(root)
+    answers = _prepare_answers(sha)
+    for key, value in over.items():
+        if key == "api commits":
+            answers[("api", f"repos/{{owner}}/{{repo}}/commits/{sha}")] = _ok({"sha": "1" * 40})
+        else:
+            answers[tuple(key.split(" "))] = value
+    code, lines = _prepare(monkeypatch, root, FakeGh(answers))
+    assert code == 2, lines
+    assert lines[-1] == f"result=refused reason={reason}"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+for _name in sorted(_PREPARE_BLOCKS):
+    _scenario(lambda t, m, _n=_name: test_prepare_refuses(t, m, _n))
+
+
+def test_prepare_refuses_an_environment_without_a_github_entry(tmp_path, monkeypatch):
+    root = _seq_repo(tmp_path, monkeypatch)
+    doc = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+    del doc["environments"]["staging"]["github"]
+    (root / ".crew" / "verify.json").write_text(json.dumps(doc), encoding="utf-8")
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=github-none"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+def test_prepare_classifier_crash_refuses(tmp_path, monkeypatch):
+    import crew_dispatch  # pylint: disable=import-outside-toplevel
+    root = _seq_repo(tmp_path, monkeypatch)
+
+    def boom(*_a):
+        raise RuntimeError("classifier exploded")
+    monkeypatch.setattr(crew_dispatch, "dispatch_environment", boom)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=classifier-failed"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+def test_prepare_state_is_atomic(tmp_path, monkeypatch):
+    """A failure while writing leaves no partial state file."""
+    root = _seq_repo(tmp_path, monkeypatch)
+    real = os.replace
+
+    def fail(src, dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", fail)
+    with pytest.raises(OSError):
+        _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", real)
+    left = list((root / ".crew" / ".ghdeploy").iterdir())
+    assert left == []
+
+
+def test_helper_never_dispatches(tmp_path, monkeypatch):
+    """Across every registered scenario of every subcommand, no recorded gh
+    argv dispatches, cancels, re-runs, merges or sends a mutating `api`."""
+    seen = []
+    real = FakeGh.__call__
+
+    def spy(self, args, root):
+        seen.append(list(args))
+        return real(self, args, root)
+    monkeypatch.setattr(FakeGh, "__call__", spy)
+    for index, scenario in enumerate(_SCENARIOS):
+        where = tmp_path / f"scenario-{index}"
+        where.mkdir()
+        with monkeypatch.context() as patch:
+            scenario(where, patch)
+    assert seen, "no scenario reached gh"
+    assert [a for a in seen if _forbidden(a)] == []
+    for bad in (["workflow", "run", "x.yml"], ["run", "cancel", "1"],
+                ["run", "rerun", "1"], ["pr", "merge", "1"],
+                ["api", "-X", "POST", "x"], ["api", "--method=DELETE", "x"],
+                ["api", "-XPATCH", "x"]):
+        assert _forbidden(bad), bad
+    assert not _forbidden(["api", "user"])
