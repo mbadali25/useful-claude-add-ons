@@ -54,7 +54,7 @@ python3 "<crew plugin root>/hooks/scripts/crew_context.py" --slice-for-subagent 
   exits 2; crew then asks once more without it, inside the same 4-second budget, and the log's
   `recall` record says so: `project` is the list sent, `projectUsed` is `true` when the answer came
   from the call with the project, `false` when it came from the retry without it, and `null` when
-  no project was sent or no call answered. Set `memory.recall.projects` when the vault's `project:`
+  no project was sent or no call answered with JSON. Set `memory.recall.projects` when the vault's `project:`
   values do not match the checkout's folder name.
 - crew calls obsidian-vault's read-only CLI:
   `vault_ops.py recall --query ... --vaults a,b --max-chars N --json [--project=a,b]`. If the plugin is missing, or

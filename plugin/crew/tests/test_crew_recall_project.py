@@ -178,6 +178,7 @@ def test_only_exit_2_is_retried(tmp_path, stub, make, reason):
 
     assert len(seen) == 1
     assert (result["status"], result["reason"]) == ("miss", reason)
+    assert result["projectUsed"] is None
 
 
 def test_the_retry_shares_one_time_budget(tmp_path, stub, monkeypatch):

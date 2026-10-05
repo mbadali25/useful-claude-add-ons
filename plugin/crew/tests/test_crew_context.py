@@ -199,7 +199,7 @@ def test_a_repo_list_cannot_resurrect_an_ignored_vault(stub):
 
 
 @pytest.mark.parametrize("mode, reason, used", [("exit", "cli-exit-2", None),
-                                                ("badjson", "cli-bad-json", True)])
+                                                ("badjson", "cli-bad-json", None)])
 def test_a_broken_cli_is_a_logged_miss_not_a_failure(tmp_path, stub, monkeypatch, mode, reason, used):
     root = make_repo(tmp_path)
     monkeypatch.setenv("STUB_MODE", mode)
@@ -208,8 +208,8 @@ def test_a_broken_cli_is_a_logged_miss_not_a_failure(tmp_path, stub, monkeypatch
 
     assert "ALPHA-LANDMINE" in text
     # L-0675: the repo's directory name is sent as the project; a CLI that
-    # exits 2 both with and without it is the same miss as before, and one
-    # that answered the `--project` call with bad JSON did use the project.
+    # exits 2 both with and without it is the same miss as before, and bad
+    # JSON is no answer, so neither says whether the project was used.
     assert log_records(root)[-1]["recall"] == {"status": "miss", "reason": reason, "snippets": 0,
                                                "dropped": 0, "vaults": ["primary-v", "recall-v"],
                                                "project": ["repo"], "projectUsed": used}

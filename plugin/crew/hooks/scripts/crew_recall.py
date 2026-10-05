@@ -273,7 +273,7 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None)
 
     `project` is the list sent as `--project`; `projectUsed` is true when the
     answer came from a call carrying it, false when it came from the retry
-    without it, None when no project was sent or no call answered.
+    without it, None when no project was sent or no call answered with JSON.
     """
     result = {"status": "skipped", "reason": "", "snippets": [], "dropped": 0, "vaults": [],
               "project": [], "projectUsed": None}
@@ -320,8 +320,6 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None)
         # only while the one shared deadline leaves time for it.
         if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:
             break
-    if done.returncode == 0 and names:
-        result["projectUsed"] = answered_by == 0
     if done.returncode != 0:
         result.update(status="miss", reason=f"cli-exit-{done.returncode}")
         return result
@@ -329,6 +327,9 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None)
     if snippets is None:
         result.update(status="miss", reason="cli-bad-json")
         return result
+    # Only a parsed answer counts as one: bad JSON leaves `projectUsed` None.
+    if names:
+        result["projectUsed"] = answered_by == 0
     result["dropped"] = dropped
     if not snippets:
         result.update(status="miss", reason="no-hits")
