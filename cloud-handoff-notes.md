@@ -24,7 +24,7 @@ main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | review 1 BLOCK (combined pytest = one session; subset hides cross-suite breaks) + 2 FIX (lint config files; unpinned !cancelled()) -> builder fixing | re-check, land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
-| T-0020 #357 | `T-0020-build` 50a0104b | reworked: explicit focus marker (autopilot-focus.json), unknown marker refuses; Windows green; only red = missing bump (by design) | re-review 0 BLOCK 2 FIX (no way out on corrupt marker; unlocked read-modify-write loses focus, fails open) -> builder fixing + merging main 47f71e93 | re-check, batch 7 |
+| T-0020 #357 | `T-0020-build` 50a0104b | reworked: explicit focus marker (autopilot-focus.json), unknown marker refuses; Windows green; only red = missing bump (by design) | 38bd282e: F1 (removal commands), F2 (crew_config_files.Lock), N1, N2 fixed + main 47f71e93 merged; full crew 12074 passed; Windows partly green | focused re-check running; batch 7 |
 | Batch 7 (next) | - | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
 | Windows-RED review-clean PRs | #344, #342, #341, #346, #362, #395, #363(+deps) | red on OLD 3-shard runs (shell-matrix + default shards): possibly the L-1512 exit-2304 flake fixed in #497 | catch-up merge main + re-run Windows before batching |
 | Harness, land alone | #340 L-0526 (Windows green; needs catch-up + graphify update), #418 H1 (needs pre-flight) | | after #496 |
@@ -47,7 +47,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 03:22 UTC
+Last updated: 2026-10-05 03:27 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -106,6 +106,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 04:20: #357 at 38bd282e with F1/F2/N1/N2 + main merge; sabotage: no lock -> 3 red, focus-off-offer -> 12 red. Focused re-check started (stale-lock + hostile-path checks). Subscribed to #357.
 - 04:02: note.sh: stamp file via git rev-parse --git-dir (worktree .git is a file).
 - 04:00: owner approved all 3: notes push every ~30 min + at merges (note.sh changed), Windows-red sweep after batch 7, crew 1.1.0 + guide rename last (C-0006 minted).
 - 03:50: owner confirmed: plain-text 'focus on T-1' turning focus on counts as explicit (T-0020 N3). Row stays.
