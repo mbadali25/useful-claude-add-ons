@@ -158,7 +158,15 @@ def test_ring_bad_ref_exits_2(world, capsys, ref):
     assert not any(line.startswith("crew-doorbell/") for line in lines)
 
 
-def test_ring_line_over_200_characters_exits_2():
+def test_ring_line_over_200_characters_exits_2(world, capsys):
+    _, work, seed, tip = world
+    channel = "c" * 64
+    git(seed, "push", "-q", "origin", f"{tip}:refs/heads/crew-coord/{channel}")
+    code, lines = run(work, ["ring", "--channel", channel, "--remote", "origin", "--kind", "question",
+                             "--ref", "r" * 64], capsys=capsys)
+    assert code == 2
+    assert lines and lines[0].startswith("usage:") and "over 200" in lines[0]
+    assert not any(line.startswith("crew-doorbell/") for line in lines)
     with pytest.raises(crew_coord.UsageError):
         crew_bridge.compose("c" * 64, "a" * 64, "question", "r" * 64)
 
@@ -304,6 +312,15 @@ def test_a_non_doorbell_is_printed_only_as_safe_peer_data(world, capsys, message
     quoted = [line for line in lines if line.endswith(crew_coord.PEER)]
     assert len(quoted) == 1
     assert not any(line.startswith("/crew:") for line in lines)
+
+
+def test_a_long_non_doorbell_is_printed_capped(world, capsys):
+    code, lines = receive(world[1], capsys, "A" * 3000 + "TAIL")
+    _not_a_doorbell(code, lines)
+    quoted = [line for line in lines if line.endswith(crew_coord.PEER)]
+    assert len(quoted) == 1
+    assert "TAIL" not in quoted[0] and "..." in quoted[0]
+    assert len(quoted[0]) < 260
 
 
 # --- isolation and secrets -------------------------------------------------------------
