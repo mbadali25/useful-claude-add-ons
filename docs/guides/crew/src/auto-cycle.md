@@ -31,6 +31,11 @@ cleanly, clear, and pick up where it stopped.
    **Crew neither causes nor tunes Claude Code's own auto-compact.** That is a separate, built-in
    behaviour that fires whenever Claude Code itself decides to; this cycle only reacts to a handoff
    once one exists, and nothing here makes auto-compact happen sooner, later, or at all.
+   While an autopilot goal runs, the handoff names the goal, not the ticket in hand: every writer
+   (autopilot's low-context stop, `/crew:handoff`, the PreCompact skeleton) asks
+   `crew_autopilot.py handoff-resume`, which answers `resume: /crew:autopilot --goal <slug>` for
+   the one running goal. Two running goals or an unreadable goal file give `resume: none`: it could
+   not tell which goal runs, and it never falls back to the ticket form, which would drop the goal.
 3. **Resume.** The new session starts with the handoff and its next action already in context,
    within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
    `initialUserMessage`, so you press Enter to continue. Claude Code 2.1.282 drops it in an

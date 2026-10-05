@@ -460,3 +460,28 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
+
+
+def test_autopilot_low_context_handoff_uses_handoff_resume():
+    """T-0056: the low-context stop writes the line `handoff-resume` prints, so a
+    running goal's `--goal` line wins; the ticket form is no longer the only form."""
+    flat = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+    section = flat[flat.index("## 5. Context runs low"):flat.index("## 6.")]
+
+    assert ("crew_autopilot.py handoff-resume --root . --ticket <ticket>" in section,
+            "written as printed" in section,
+            "with `resume: /crew:autopilot <ticket>` as its resume line" in section,
+            "goal-mark --root . --goal <slug> --state stopped" in section,
+            "goal-mark --root . --goal <slug> --state running --ticket <ticket>" in flat) == (
+        True, True, False, True, True)
+
+
+def test_handoff_command_asks_handoff_resume():
+    flat = " ".join(_read(os.path.join(COMMANDS, "handoff.md")).split())
+    skill = " ".join(_read(os.path.join(os.path.dirname(COMMANDS), "skills", "crew-context",
+                                        "SKILL.md")).split())
+
+    assert ("crew_autopilot.py handoff-resume --root ." in flat,
+            "a goal line it prints wins over the next command" in flat,
+            "crew_autopilot.py handoff-resume --root ." in skill,
+            "wins over the next command" in skill) == (True, True, True, True)

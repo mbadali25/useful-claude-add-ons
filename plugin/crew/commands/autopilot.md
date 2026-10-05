@@ -60,7 +60,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
 ```
 
 It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop.
-- `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
+- `stop=0` - announce `phase <p>: <c>` (a goal run first runs `crew_autopilot.py goal-mark --root . --goal <slug> --state running --ticket <ticket>`) and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
   named and commit it, or run `commit-refresh`'s `git add -- ... && git commit ... -- ...` exactly as printed; then the tracker step (below). `auto-replan`: run its `auto-reject` line, report every line verbatim, send them as `review.md` step 5's notification. A `replan` that does not stop: `/crew:plan` writes a successor plan whose steps quote every BLOCK and FIX line of the rejected round verbatim, each with a neighbouring-case check, and differs from every plan approved before. `phase=ship` (T-0011) or `next-slice` (T-0059, a sliced plan's next PR slice): print the lines of
   `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py <p> --root . --ticket <ticket>`; `stop=1`/`ok=0` stops. Then `LAST=<c>`, `N+=1`, again.
@@ -100,7 +100,8 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 
 ## 5. Context runs low, and the report
 
-When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with `resume: /crew:autopilot <ticket>` (a goal run: `resume: /crew:autopilot --goal <slug>`) as its resume line, then stop. At every stop after the claim, first run section 2's `crew_inflight.py release --root . --ticket <ticket>`. Then, at every stop, `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py run-stop --root . --ticket <ticket> --phase <p> --reason "<r>"` (it decides what pings). Report the ticket and its source, each phase run with its command, the PR, every `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.
+When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with, as its resume line, the first line of
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py handoff-resume --root . --ticket <ticket>`, written as printed (a running goal's line, the ticket's `resume: /crew:autopilot <ticket>`, or `resume: none`; T-0056), then stop. At every stop after the claim, first run section 2's `crew_inflight.py release --root . --ticket <ticket>`; in a goal run also `crew_autopilot.py goal-mark --root . --goal <slug> --state stopped --reason "<r>"` (`goal-run` marks `running` and `done` itself). Then, at every stop, `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py run-stop --root . --ticket <ticket> --phase <p> --reason "<r>"` (it decides what pings). Report the ticket and its source, each phase run with its command, the PR, every `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.
 
 ## 6. focus - a scope lock on one ticket (T-0020)
 

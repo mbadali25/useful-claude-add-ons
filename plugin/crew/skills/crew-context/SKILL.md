@@ -104,7 +104,11 @@ takes nothing. `resume: none` when no allowlisted command is next. Exactly one
 `resume:` line, nothing after the argument: a second line, trailing text, an
 unknown command, or an excluded one (`/crew:approve`, `/crew:brainstorm`,
 `/crew:fix`, `/crew:emergency`, `/crew:gate`, `/crew:promote`,
-`/crew:migrate`, `/crew:change`) is refused, never guessed at.
+`/crew:migrate`, `/crew:change`) is refused, never guessed at. When the
+plugin ships autopilot, ask it first: `crew_autopilot.py handoff-resume --root .
+[--ticket <id>]` prints the line to write (T-0056). A running goal's
+`resume: /crew:autopilot --goal <slug>` wins over the next command; its
+`resume: none` with `kind=unknown` means it could not tell which goal runs.
 
 **Why pointers rather than a summary.** A session at 85% of its context is the
 least reliable narrator of what it just did — that is precisely when detail has

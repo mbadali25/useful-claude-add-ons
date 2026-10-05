@@ -12,6 +12,7 @@ is built under tmp_path; nothing touches the real one or ~/.claude.
 can fail.
 """
 import hashlib
+import importlib
 import json
 import os
 import subprocess
@@ -972,6 +973,9 @@ def render(parsed):
 def stub_resume(tmp_path, monkeypatch):
     where = tmp_path / "stub"
     _write(where / "crew_resume.py", textwrap.dedent(_STUB_RESUME))
+    # Import the real module first, so monkeypatch records it and puts it back:
+    # otherwise the stub stays in sys.modules for every later test in the worker.
+    importlib.import_module("crew_resume")
     monkeypatch.syspath_prepend(str(where))
     monkeypatch.delitem(sys.modules, "crew_resume", raising=False)
     return where

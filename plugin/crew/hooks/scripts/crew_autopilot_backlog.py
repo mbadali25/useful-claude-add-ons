@@ -65,6 +65,8 @@ from crew_common import read_text
 CLOSED = ("done", "closed", "merged", "shipped", "complete", "completed")
 SETTLED = ("cancelled", "superseded")
 WAITING = (ap.NEEDS_OWNER,)
+# Every other status crew writes for an open ticket; anything else is unknown.
+OPEN = ap.DIRECTION_APPROVED + ("direction",)
 HEADER_CLOSED = ("done",)
 TOKEN_FIELDS = ("input_tokens", "output_tokens")
 RESUME = "resume: /crew:autopilot --goal {slug}"
@@ -137,6 +139,8 @@ def ticket_state(top, ticket):
         return "settled", f"{ticket} is {status} in .work/INDEX.md"
     if status in WAITING:
         return "waiting", f"{ticket} is {status} in .work/INDEX.md: it waits on the owner"
+    if status not in OPEN:
+        return "unknown", f"{ticket}'s INDEX status {status!r} is not one crew writes"
     spec = os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")
     text = read_text(spec)
     if text is None and os.path.lexists(spec):
@@ -285,9 +289,6 @@ def mint_goal(root, slug):
                                            direction=_direction(goal, slug, n))
                     ticket = got["ticket"]
                     out["warnings"] += list(got.get("warnings") or [])
-                    if got.get("status") != "ready":
-                        out["warnings"].append(f"{ticket} was minted at {got.get('status')}, "
-                                               "not ready")
                 if goal_mod.goal_digest(goal_mod.read_goal(top, slug)) != digest:
                     raise goal_mod.GoalError("the proposal changed while its tickets were "
                                              "being minted")
@@ -299,6 +300,12 @@ def mint_goal(root, slug):
                 return dict(out, stop=True, reason=f"minting ticket {n + 1} of "
                             f"{len(tickets)} stopped: {exc}")
             out["minted"].append((n + 1, ticket, entry["title"]))
+    behind = [ticket for _n, ticket, _t in out["minted"]
+              if ap._index_status(top, ticket) == "direction"]  # pylint: disable=protected-access
+    if behind:
+        return dict(out, stop=True, reason=f"{', '.join(behind)} minted but left at `direction` "
+                    "(the move to ready did not land): the human moves each with "
+                    "crew_tracker.py move --root . --ticket <id> --to ready")
     return out
 
 
@@ -330,9 +337,13 @@ def transcript_for(session):
 
 
 def session_tokens(transcript):
-    """`(tokens, why)`: input + output tokens in `transcript`, or None with why."""
-    tokens = importlib.import_module("crew_metrics").transcript_tokens(
-        transcript, fields=TOKEN_FIELDS)
+    """`(tokens, why)`: input + output tokens in `transcript`, or None with why --
+    a count that raises (a usage value that is not a number) included."""
+    try:
+        tokens = importlib.import_module("crew_metrics").transcript_tokens(
+            transcript, fields=TOKEN_FIELDS)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return None, f"the transcript {transcript} could not be counted ({type(exc).__name__})"
     if isinstance(tokens, bool) or not isinstance(tokens, int):
         return None, f"the transcript {transcript} could not be read for token usage"
     return tokens, ""
@@ -358,9 +369,31 @@ def goal_run(root, slug, session=None, transcript=None):
         return dict(base, reason="autopilot.mode is not plan or backlog, so no goal runs")
     picked = ap.resume_target(top, goal=slug)
     if picked["stop"]:
-        return dict(base, **{k: picked[k] for k in ("source", "fallthrough")},
-                    done=bool(picked.get("done")), reason=picked["reason"])
+        return _marked(top, slug, dict(base, **{k: picked[k] for k in ("source", "fallthrough")},
+                                       done=bool(picked.get("done")), reason=picked["reason"]))
+    return _marked(top, slug, _run_caps(top, slug, conf, picked, session, transcript))
+
+
+def _marked(top, slug, result):
+    """T-0056: the run state `result` leaves -- `running` with its ticket,
+    `done`, or `stopped` with its reason -- noted in the goal file, best
+    effort: a note that cannot be written is a warning, never a second stop."""
+    state = "done" if result["done"] else "stopped" if result["stop"] else "running"
+    try:
+        importlib.import_module("crew_autopilot_handoff").goal_mark(
+            top, slug, state, result["ticket"], "" if state == "running" else result["reason"])
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        result = dict(result, warnings=[f"the goal's run state was not written ({exc})"])
+    return result
+
+
+def _run_caps(top, slug, conf, picked, session,  # pylint: disable=too-many-arguments,too-many-positional-arguments
+              transcript):
+    """`goal_run` from the picked ticket on: the caps, then the run record."""
     ticket = picked["ticket"]
+    base = {"ticket": None, "source": f"goal:{slug}", "stop": True, "hint": "",
+            "disagreement": "", "fallthrough": [], "next": None, "activate": False,
+            "goal": slug, "done": False, "run": None}
     if not transcript:
         transcript, why = transcript_for(session)
         if transcript is None:
@@ -415,6 +448,7 @@ def goal_run_text(result):
         run = result["run"]
         text += "\n" + ap._line(tickets=f"{len(run['tickets'])}/{run['maxTicketsPerRun']}",
                                 tokens=f"{run['tokens']}/{run['maxTokensPerSession']}")
+    text += "".join(f"\nwarning: {w}" for w in result.get("warnings") or [])
     if result["stop"] and not result["done"]:
         text += "\n" + RESUME.format(slug=result["goal"])
     return text

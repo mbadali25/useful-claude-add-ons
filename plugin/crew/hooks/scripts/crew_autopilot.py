@@ -2446,9 +2446,9 @@ def questions_text(result):
 GOAL_ROUTE_FIRST = "goal takes free text, never on a shell line: the command runs route --root . --first goal"
 # Script actions whose code (parsers, usage and `main`) lives in a sibling module.
 EXTRA_ACTIONS = {"goal-propose": "crew_autopilot_goal", "goal-approve": "crew_autopilot_goal",
-                 "goal-run": "crew_autopilot_goal",
-                 "tracker": "crew_autopilot_docs", "sleep": "crew_autopilot_sleep",
-                 "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split",
+                 "goal-run": "crew_autopilot_goal", "goal-mark": "crew_autopilot_handoff",
+                 "handoff-resume": "crew_autopilot_handoff", "tracker": "crew_autopilot_docs",
+                 "sleep": "crew_autopilot_sleep", "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split",
                  "slice": "crew_autopilot_slices", "slice-done": "crew_autopilot_slices",
                  "next-slice": "crew_autopilot_slices"}
 
@@ -3119,8 +3119,8 @@ def _one_line(value):
 
 def status_text(result):
     """At most STATUS_MAX_LINES lines; every field folded onto one line."""
-    lines = [f"mode: plan, maxPhases {result.get('maxPhases')}"
-             if result.get("mode") == "plan" else
+    lines = [f"mode: {result.get('mode')}, maxPhases {result.get('maxPhases')}"
+             if result.get("mode") in ("plan", BACKLOG) else
              "mode: off - `autopilot.mode: plan` in .crew/config.json arms it"]
     if result.get("ticket"):
         lines.append(f"ticket: {result['ticket']} (from {result.get('source')})")

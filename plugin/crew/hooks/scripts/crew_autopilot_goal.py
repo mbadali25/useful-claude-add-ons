@@ -511,19 +511,21 @@ def split_approved(root, slug):
     warnings = list(policy["warnings"]) + ([why] if why else [])
     # The note goes onto the proposal the policy judged, and only while the
     # file still holds it: an edit since the read is never approved or overwritten.
+    # L-0541: under the goal lock, onto the file as it is now, so a run the
+    # goal-run writer recorded since the first read is kept.
     try:
-        same = goal_digest(read_goal(top, slug)) == digest
+        with importlib.import_module("crew_autopilot_backlog").goal_lock(top, slug):
+            current = read_goal(top, slug)
+            if goal_digest(current) != digest:
+                return dict(base, reason="the proposal changed while its split was being "
+                                         "approved; nothing was written - ask again")
+            _write_json_atomic(goal_path(top, slug), dict(current, approval={
+                "via": via, "proposal_sha256": digest}))
+    except OSError as exc:
+        warnings.append(f"the approval note was not written to the goal file ({exc})")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return dict(base, reason=f"could not re-read the goal file before noting the approval "
                                  f"({type(exc).__name__}: {exc})")
-    if not same:
-        return dict(base, reason="the proposal changed while its split was being approved; "
-                                 "nothing was written - ask again")
-    try:
-        _write_json_atomic(goal_path(top, slug), dict(goal, approval={
-            "via": via, "proposal_sha256": digest}))
-    except OSError as exc:
-        warnings.append(f"the approval note was not written to the goal file ({exc})")
     return dict(base, approved=True, via=via, owner="", warnings=warnings,
                 reason=policy["reason"])
 

@@ -1400,7 +1400,10 @@ automatic PreCompact skeleton (its Changed files list is bare `git` output, so
 a file named `resume: ...` would otherwise be read as the line); no `resume:`
 line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
-`.work/autopilot/<slug>.json`; a command not installed in the plugin; a
+`.work/autopilot/<slug>.json`; a command not installed in the plugin (a
+`--goal` line is written only while that goal's `run.state` is `running`,
+T-0056: `crew_autopilot.py handoff-resume` decides every writer's line, and its
+`resume: none` with `kind=unknown` means it could not tell which goal runs); a
 `handoff-author.json` that could not be read; no record of which session wrote
 this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be

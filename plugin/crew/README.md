@@ -2569,7 +2569,20 @@ own approval, scope, verify and review gates still decide.
 A handoff written while `/crew:autopilot` drives a ticket carries
 `resume: /crew:autopilot <id>`; typing `/crew:autopilot` with no argument in
 the next session reads that line and recomputes the phase from disk (see
-"Autopilot").
+"Autopilot"). **While a goal runs (T-0056), every handoff names the goal
+instead.** The goal file `.work/autopilot/<slug>.json` keeps a `run` block
+(`state` `running`, `stopped` or `done`, the current `ticket`, a `reason`,
+`at`), written through a temp file and `os.replace` by `crew_autopilot.py
+goal-mark` and by `goal-run` itself. One function,
+`crew_autopilot.py handoff-resume --root . [--ticket <id>]`, decides the line
+for every writer: autopilot's low-context stop, `/crew:handoff`, and the
+PreCompact skeleton (`handoff-write.sh`/`.ps1`, which adds the line after
+`head:` only while exactly one goal runs). One running goal: `resume:
+/crew:autopilot --goal <slug>`, even when a ticket is in hand. No running goal:
+the ticket form, or `resume: none`. Two running goals, or a goal file it
+cannot read: `resume: none` with `kind=unknown` and the reason — **could not
+tell which goal runs, so it names none rather than dropping the goal for the
+ticket**. A `stopped` or `done` goal never produces the goal line.
 
 ### Housekeeping
 

@@ -850,3 +850,86 @@ def test_injection_off_still_records_the_author(tmp_path, monkeypatch):
     path = _post_in_process(tmp_path, monkeypatch, root)
 
     assert os.path.isfile(path)
+
+
+# --- T-0056: the PreCompact skeleton names a running goal --------------------------
+
+def _goal_file(root, slug, run):
+    data = {"schema": 1, "slug": slug, "goal": "g", "tickets": [], "runs": []}
+    if run is not None:
+        data["run"] = run
+    path = root / ".work" / "autopilot" / f"{slug}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(run if isinstance(run, str) else json.dumps(data), encoding="utf-8")
+
+
+def _skeleton_after(flavor, root, goals, no_python=False):
+    (root / ".work" / "HANDOFF.md").unlink()
+    for slug, run in goals:
+        _goal_file(root, slug, run)
+    payload = _precompact(root, "s-skel", "auto")
+    if no_python:
+        # `PYTHONHOME` pointing nowhere makes every interpreter fail to start,
+        # which is what each flavour's own resolver probe sees (test_cloud_guard.py).
+        env = dict(_env(root), PYTHONHOME=str(root.parent / "nonexistent-python-home"))
+        cmd = ([_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")] if flavor == "sh" else
+               [_PWSH, "-NoProfile", "-NonInteractive", "-File",
+                os.path.join(_SCRIPTS, "handoff-write.ps1")])
+        if flavor == "ps1":
+            env["OS"] = "Windows_NT"
+        subprocess.run(cmd, cwd=str(root), env=env, input=json.dumps(payload),
+                       capture_output=True, text=True, check=False, timeout=120)
+    else:
+        _run(flavor, "handoff-write", root, payload)
+    return (root / ".work" / "HANDOFF.md").read_text(encoding="utf-8").splitlines()
+
+
+_RUNNING = {"state": "running", "ticket": "T-0002", "reason": "", "at": "x"}
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_skeleton_names_the_one_running_goal(tmp_path, flavor):
+    root = _repo(tmp_path)
+
+    lines = _skeleton_after(flavor, root, [("ship-it", _RUNNING)])
+
+    at = next(n for n, line in enumerate(lines) if line.startswith("head:"))
+    assert ([line for line in lines if line.startswith("resume:")], lines[at + 1]) == (
+        ["resume: /crew:autopilot --goal ship-it"], "resume: /crew:autopilot --goal ship-it")
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+@pytest.mark.parametrize("goals", [
+    [],
+    [("a", _RUNNING), ("b", _RUNNING)],
+    [("a", _RUNNING), ("b", "{broken")],
+    [("a", dict(_RUNNING, state="stopped"))],
+    [("a", None)],
+], ids=["no-goal", "two-running", "unreadable", "stopped", "not-started"])
+def test_skeleton_without_one_running_goal_has_no_resume_line(tmp_path, flavor, goals):
+    root = _repo(tmp_path)
+
+    lines = _skeleton_after(flavor, root, goals)
+
+    assert ([line for line in lines if line.startswith("resume:")], lines[0], lines[4]) == (
+        [], "# Handoff", "")
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_skeleton_without_python_has_no_resume_line(tmp_path, flavor):
+    root = _repo(tmp_path)
+
+    lines = _skeleton_after(flavor, root, [("ship-it", _RUNNING)], no_python=True)
+
+    assert ([line for line in lines if line.startswith("resume:")], lines[0]) == ([], "# Handoff")
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_skeleton_never_overwrites_an_existing_handoff(tmp_path, flavor):
+    root = _repo(tmp_path)
+    _goal_file(root, "ship-it", _RUNNING)
+    before = (root / ".work" / "HANDOFF.md").read_text(encoding="utf-8")
+
+    _run(flavor, "handoff-write", root, _precompact(root, "s-skel", "auto"))
+
+    assert (root / ".work" / "HANDOFF.md").read_text(encoding="utf-8") == before

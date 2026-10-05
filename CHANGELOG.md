@@ -9,6 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.23: a running autopilot goal is written into every handoff - goal run state and `handoff_resume` (T-0056)
+
+- **Summary.** While an autopilot goal runs, every handoff names the goal (`resume: /crew:autopilot --goal <slug>`) instead of the ticket in hand, so a resume after `/clear` continues the goal.
+- **Run state.** The goal file gains a `run` block (`state` `running|stopped|done`, `ticket`, `reason`, `at`), written by `crew_autopilot.py goal-mark` (temp file and `os.replace`, under the goal lock, every other key kept) and by `goal-run` itself; `running_goals` reads it, an unreadable file as `unknown`.
+- **One decider.** `crew_autopilot.py handoff-resume --root . [--ticket <id>]` (`crew_autopilot_handoff.handoff_resume`): one running goal gives the goal line; none gives the ticket form or `resume: none`; two running goals or an unreadable goal file give `resume: none` with `kind=unknown`, never the ticket form.
+- **Writers.** Autopilot's low-context stop (`autopilot.md` section 5) and `/crew:handoff` step 5 (and the `crew-context` skill) write the line it prints; the PreCompact skeleton in both `handoff-write.sh` and `handoff-write.ps1` adds it after `head:` only while exactly one goal runs, and is otherwise unchanged. The goal loop marks `running` at each phase start and `stopped` at each stop.
+- **Not in this change.** Reading a `--goal` handoff across branches (L-0658), bare-run goal discovery (L-0659), sabotage entries (L-0660, harness), T-0017's wrap-up writer.
+- **Tests.** `test_crew_autopilot_goal_resume.py` (new), the skeleton cases in `test_crew_resume_hook.py` (both flavours; the `.ps1` cases skip without `pwsh`), two command tests in `test_lifecycle_commands.py`.
+
 ### Added — crew 1.1.23: autopilot goal runs - the approved split is minted, the goal's tickets are worked in dependency order with `mode: backlog`, each through its own approval, inside per-run caps, resumable with `--goal` (L-0541)
 
 - **Summary.** Once a goal's split is approved, autopilot mints its tickets and works them one at a time with `/crew:autopilot --goal <slug>`, stopping at each ticket the policy will not approve and at its ticket and token caps.

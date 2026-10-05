@@ -514,6 +514,17 @@ $lines.Add("# Handoff")
 $lines.Add("written: $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) (auto, at $trigger compact)")
 $lines.Add("branch: $branch")
 $lines.Add("head: $head")
+# T-0056: while exactly one autopilot goal runs here, the skeleton names it.
+# crew_autopilot_handoff.handoff_resume decides; only its exact goal line is
+# taken -- `resume: none`, no python, or anything else adds no line.
+if ($resumePy) {
+  try {
+    $goalLine = (& $resumePy -B (Join-Path $PSScriptRoot 'crew_autopilot.py') handoff-resume --root . 2>$null | Select-Object -First 1)
+    if ($goalLine -is [string] -and $goalLine.TrimEnd("`r") -cmatch '^resume: /crew:autopilot --goal [a-z0-9][a-z0-9-]{0,63}$') {
+      $lines.Add($goalLine.TrimEnd("`r"))
+    }
+  } catch { }
+}
 $lines.Add("")
 $lines.Add("## Changed files")
 (git diff --name-only HEAD 2>$null)                  | Select-Object -First 30 | ForEach-Object { $lines.Add($_) }

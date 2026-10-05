@@ -4785,3 +4785,18 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 - JUDGEMENT. The sabotage entries for the picker, the caps and the per-ticket approval are a
   harness-only follow-up (`plugin/crew/tests/sabotage*.py`, T-0087); the line
   `armed = mode == "plan"` stays as written because a shipped mutation anchors on it.
+
+## A running goal is written into every handoff (T-0056, rush/g6b-goals-sleep)
+
+- DERIVED. `plugin/crew/hooks/scripts/crew_autopilot_handoff.py`: `goal_mark` (`:71`) writes the
+  goal file's `run` block under `crew_autopilot_backlog.goal_lock`; `running_goals` (`:105`)
+  sorts this checkout's goal files by `run.state`, an unreadable one into `unknown`;
+  `handoff_resume` (`:148`) is the one decider of a handoff's `resume:` line, rendered through
+  `crew_resume.render` (`_render` `:143`). CLI `goal-mark` and `handoff-resume` (`main` `:174`)
+  dispatch through `EXTRA_ACTIONS` in `plugin/crew/hooks/scripts/crew_autopilot.py`.
+  `crew_autopilot_backlog.goal_run` marks `running`/`stopped`/`done` itself (`_marked`).
+- DERIVED. The PreCompact skeleton asks it in both flavours and takes only an exact goal line:
+  `plugin/crew/hooks/scripts/handoff-write.sh:110-113`,
+  `plugin/crew/hooks/scripts/handoff-write.ps1:522`.
+- JUDGEMENT. The function lives outside `crew_autopilot.py` (the spec names it
+  `crew_autopilot.handoff_resume`) because that module sits at pylint's 3400-line limit.
