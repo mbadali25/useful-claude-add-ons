@@ -27,6 +27,10 @@ main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
 | T-0020 #357 | `T-0020-build` 857188a6 | review-clean (final re-check 0/0); 857188a6 ALL Windows green (only red = bump, by design) | batch 7 member, ready |
 | Batch 7 | `batch-7-build` (builder started 04:45) | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
+| Spec wave A (building, no bump, for batches) | #478 T-0081, #462 L-0678, #433 T-0105, #401 L-0673 | 4 builders started 05:35 | review each, then batch 8/9 |
+| Spec wave A queued | #451 T-0108 (gizmoduck; needs owner call: Nuclei not installable here?), #417+#424 L-0661+L-0663 (harness, alone) | not started (CI capacity) | next |
+| Spec runners-up | T-0106 (after T-0105), T-0502 (after L-0673), L-0689 then L-0665 (promote-gate), T-0103 + L-0675 (after batch 7) | - | later |
+| Held for #501 | T-0102, T-0055, T-0506, T-0054 (edit gate-runner/workflows) | - | after #501 |
 | Windows-RED review-clean PRs | #344, #342, #341, #346, #362, #395, #363(+deps) | red on OLD 3-shard runs (shell-matrix + default shards): possibly the L-1512 exit-2304 flake fixed in #497 | catch-up merge main + re-run Windows before batching |
 | Harness, land alone | #340 L-0526 (Windows green; needs catch-up + graphify update), #418 H1 (needs pre-flight) | | after #496 |
 | Blocked | #365 T-0058 (needs #354 T-0012, not review-clean); #345 (needs red #344) | | |
@@ -48,7 +52,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 04:11 UTC
+Last updated: 2026-10-05 04:16 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +111,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 05:35: spec wave A: builders started for #478 T-0081, #462 L-0678, #433 T-0105, #401 L-0673 (no version bump; batch members). Queued: T-0108 (Nuclei verification question), L-0661+L-0663 harness. Held until #501: T-0102/T-0055/T-0506/T-0054.
 - 05:25: owner asked for batch 8: no eligible members yet (all others red/harness/blocked). Started Windows sweep round 1 now (3 at a time): #344, #362, #395 (merge main, classify old failures, re-run Windows). Round 2 later: #341, #342, #346, #363, #366.
 - 05:20: owner: start the next spec-draft wave in parallel while #501/batch 7 wait. Planner picking 4-5 unbuilt, deps-on-main tickets that avoid batch 7's files.
 - 05:10: owner: crew 1.1.0 (C-0006) closes this rush; next rush = remaining new draft PRs (spec-draft waves).
