@@ -9,6 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — gizmoduck 0.5.7: bootstrap works where the GitHub API is blocked (C-0008)
+
+- **Summary.** `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on
+  networks that refuse `api.github.com`, such as a Claude Code cloud session, and skips tools that are
+  already installed when you run it again.
+- **Version lookup.** Nuclei, Dependency-Check and ZAP still ask the GitHub API for the latest release
+  first; when that fails, `resolve_latest_tag` takes the highest plain `X.Y.Z` tag from
+  `git ls-remote --tags`, skipping rc/beta/alpha, weekly and malformed tags, and names the tool when
+  both fail. `bootstrap.ps1` gets the same lookup as `Resolve-LatestTag`.
+- **Trivy.** Its official install script looks releases up on `github.com/<repo>/releases/<tag>`,
+  which the same networks refuse, so on failure the versioned release tarball is fetched and checked
+  against the release's checksums file.
+- **Templates.** `nuclei -update-templates` was measured exiting 0 with an empty
+  `~/nuclei-templates` when the API is refused. Both bootstraps now check for templates on disk,
+  clone the newest stable `nuclei-templates` tag with git when there are none, and still fail hard
+  when that also fails. `doctor` reports an empty templates directory as a failure instead of OK.
+- **Re-runs.** `bootstrap.sh` reports "already installed" and skips any tool already on PATH;
+  `GIZMODUCK_BOOTSTRAP_FORCE=1` reinstalls everything.
+
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **gizmoduck 0.5.7**: Bootstrap works where the GitHub API is blocked. `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on networks that refuse `api.github.com`, such as a Claude Code cloud session, and skips tools that are already installed when you run it again.
 - **crew 1.0.348**: Four crew changes in one update: a check for GitHub Actions deploy entries, agents that say what they did not verify, review metrics read from the main checkout in a worktree, and personal autopilot defaults you can set once for every repo, with a backup before each config write.
-- **crew 1.0.347**: The review/gate harness runs the git `shutil.which` found. On Windows, crew's review and verify checks now run the same git your shell runs, so a git wrapper earlier on PATH can no longer make a check pass on the wrong answer.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
