@@ -126,6 +126,24 @@ def test_docs_attempts_count_since_the_latest_review_round(tmp_path, monkeypatch
     assert _next(root)["stop"] is False
 
 
+def test_docs_attempts_of_an_earlier_plan_do_not_count(tmp_path, monkeypatch):
+    """T-0022 port review FIX: a successor plan restarts the round count at
+    zero; two attempts at round 0 of the earlier plan are not this plan's."""
+    root = _before_review(tmp_path, monkeypatch)
+    _ledger(root, [_round(1, "BLOCK")], state="IN_REVIEW",
+            successors=[{"after_round": 1, "plan_sha256": "b" * 64}])
+    _docs(monkeypatch, "missing", "SECURITY.md")
+    record = os.path.join(str(root), ".work", "tickets", T, crew_autopilot_docs.DOCS_RECORD)
+    with open(record, "w", encoding="utf-8") as handle:
+        json.dump({"attempts": [{"round": 0}, {"round": 0}]}, handle)
+
+    assert crew_autopilot_docs._docs_attempts(  # pylint: disable=protected-access
+        str(root), T) == 0
+    assert crew_autopilot_docs.record_docs_attempt(str(root), T) == 1
+    with open(record, encoding="utf-8") as handle:
+        assert json.load(handle)["attempts"][-1]["plan"] == 1
+
+
 def test_docs_record_unreadable_reads_spent(tmp_path, monkeypatch):
     root = _before_review(tmp_path, monkeypatch)
     _docs(monkeypatch, "missing", "SECURITY.md")

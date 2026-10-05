@@ -141,19 +141,24 @@ def _docs_record_path(top, ticket):
     return os.path.join(crew_ticket.ticket_dir(top, ticket), DOCS_RECORD)
 
 
-def _review_rounds(top, ticket):
-    """Rounds under the current plan, or -1 when the ledger cannot say."""
+def _review_position(top, ticket):
+    """`(plan, rounds)`: `plan` counts the successor plans the review ledger
+    records, `rounds` the rounds under the current plan. `(-1, -1)` when the
+    ledger cannot say. A successor plan restarts `rounds` at zero, so the plan
+    number keeps an earlier plan's attempts from counting against it."""
     try:
         ap = _ap()
-        return len(ap._current_rounds(  # pylint: disable=protected-access
-            ap.review_ledger.status(top, ticket)))
+        ledger = ap.review_ledger.status(top, ticket)
+        return (len(ledger.get("successors") or []),
+                len(ap._current_rounds(ledger)))  # pylint: disable=protected-access
     except Exception:  # pylint: disable=broad-except
-        return -1
+        return -1, -1
 
 
 def _docs_attempts(top, ticket):
-    """`/crew:docs` runs autopilot recorded since the latest review round. An
-    unreadable record counts as spent: it can only stop, never loop."""
+    """`/crew:docs` runs autopilot recorded since the latest review round of the
+    current plan. An unreadable record counts as spent: it can only stop, never
+    loop. An attempt recorded before plans were numbered reads as plan 0."""
     path = _docs_record_path(top, ticket)
     if not os.path.lexists(path):
         return 0
@@ -161,8 +166,9 @@ def _docs_attempts(top, ticket):
     attempts = data.get("attempts") if isinstance(data, dict) else None
     if not isinstance(attempts, list):
         return DOCS_ATTEMPTS
-    rounds = _review_rounds(top, ticket)
-    return sum(1 for a in attempts if isinstance(a, dict) and a.get("round") == rounds)
+    plan, rounds = _review_position(top, ticket)
+    return sum(1 for a in attempts if isinstance(a, dict) and a.get("round") == rounds
+               and a.get("plan", 0) == plan)
 
 
 def record_docs_attempt(root, ticket):
@@ -182,7 +188,8 @@ def record_docs_attempt(root, ticket):
         raise RuntimeError(f"{ap._rel(top, path)} is unreadable; "  # pylint: disable=protected-access
                            "not overwritten")
     docs = _docs_state(top, ticket)
-    attempts.append({"round": _review_rounds(top, ticket), "missing": docs["missing"],
+    plan, rounds = _review_position(top, ticket)
+    attempts.append({"plan": plan, "round": rounds, "missing": docs["missing"],
                      "state": docs["state"]})
     text = json.dumps({"ticket": ticket, "attempts": attempts}, indent=2) + "\n"
     os.makedirs(os.path.dirname(path), exist_ok=True)

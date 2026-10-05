@@ -112,6 +112,10 @@ def docs_json_path(top, ticket):
     return os.path.join(crew_ticket.ticket_dir(top, ticket), "docs.json")
 
 
+# Every deferral names what it is, why it waits, and what unblocks it.
+DEFERRED_FIELDS = ("key", "why", "unblock")
+
+
 def read_docs_json(top, ticket):
     """`(record, problem)`. Absent -> ({"reasons": {}, "deferred": []}, None);
     unreadable, unparseable or misshapen -> (None, why). Never "no reasons"
@@ -132,9 +136,11 @@ def read_docs_json(top, ticket):
             isinstance(k, str) and isinstance(v, str) for k, v in reasons.items()):
         return None, "docs.json `reasons` is not an object of document -> reason strings"
     if not isinstance(deferred, list) or not all(
-            isinstance(d, dict) and isinstance(d.get("key"), str) and d["key"].strip()
+            isinstance(d, dict) and all(isinstance(d.get(field), str) and d[field].strip()
+                                        for field in DEFERRED_FIELDS)
             for d in deferred):
-        return None, "docs.json `deferred` is not a list of objects with a `key` string"
+        return None, ("docs.json `deferred` is not a list of objects with non-empty "
+                      "`key`, `why` and `unblock` strings")
     return {"reasons": {k: v.strip() for k, v in reasons.items() if v.strip()},
             "deferred": deferred}, None
 
@@ -249,7 +255,7 @@ def _judged(doc, changed_raw, reasons, why_triggered):
 
 def _names_version(line, name, version):
     return (f"`{name}`" in line and bool(version)
-            and re.search(r"(?<![0-9A-Za-z.])" + re.escape(version) + r"(?![0-9A-Za-z])",
+            and re.search(r"(?<![0-9A-Za-z.])" + re.escape(version) + r"(?!\.?[0-9A-Za-z])",
                           line) is not None)
 
 
