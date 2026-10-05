@@ -507,6 +507,12 @@ def write(root, git="git"):
     # A symlinked .graphifyignore is written through: replacing the link
     # with a regular file would leave the file it names untouched.
     target = os.path.realpath(os.path.join(top, IGNORE_FILE))
+    inside = os.path.realpath(top)
+    if os.path.commonpath([os.path.normcase(inside), os.path.normcase(target)]) != os.path.normcase(inside):
+        # A checkout must not be able to aim --write at a file outside itself
+        # (a `.graphifyignore` symlink to ~/.bashrc would be appended to).
+        raise _Unknown(f"{IGNORE_FILE} resolves outside the repository ({shown(target)}); "
+                       "not written - make it a regular file in the repository")
     lines = _ignore_lines(top)
     present = {line.strip() for line in lines}
     missing = []

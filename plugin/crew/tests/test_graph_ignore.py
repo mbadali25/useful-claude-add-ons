@@ -428,6 +428,21 @@ def test_write_goes_through_a_symlinked_graphifyignore(tmp_path, capsys):
             b"\n.env\n" in real) == (0, True, True), real
 
 
+def test_write_refuses_a_graphifyignore_symlinked_outside_the_repository(tmp_path, capsys):
+    """Review: --write must not append to (and replace) a file outside the
+    repository that a checked-out `.graphifyignore` symlink names."""
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"precious\n")
+    root = _repo(tmp_path, {".env": "PW=x\n"})
+    _symlink(root, str(outside), ".graphifyignore")
+
+    code = _main(root, "--write")
+    out = capsys.readouterr().out
+
+    assert (code, outside.read_bytes(), os.path.islink(os.path.join(str(root), ".graphifyignore")),
+            "resolves outside the repository" in out) == (2, b"precious\n", True, True), out
+
+
 def test_write_keeps_crlf_line_endings(tmp_path, capsys):
     root = _repo(tmp_path, {".env": "PW=x\n"})
     target = os.path.join(str(root), ".graphifyignore")
