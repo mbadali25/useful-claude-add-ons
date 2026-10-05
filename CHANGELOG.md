@@ -9,27 +9,31 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — `crew`: the CI receipt lists a command the gate could not judge as UNKNOWN, never PASS (L-0673)
+### Changed — `crew`: the CI receipt lists a command the gate said it could not judge as UNKNOWN (L-0673)
 
 - **Summary.** The CI verify-gate receipt's per-command list now shows UNKNOWN for a command the gate
   could not judge or never finished, and says when the list is partial because the gate died.
 - **What changed.** `ci_receipt.parse_log` reads T-0082's
   `verify-gate: COULD NOT TELL (<reason>): <cmd>` line as the state UNKNOWN, and a command the gate
-  named failed with no elapsed line after it (a gate killed mid-rule) is listed UNKNOWN with
-  `seconds` null instead of being dropped. The receipt records `log_complete`, false when the log
-  ends before the `verify-gate: <N>s total across` line; with a non-zero gate exit the job summary
-  says the list is partial. `/crew:verify` gains "A rule passes only on a completion record": the
-  reasons a rule reads "could not tell", that it fails the turn, and that it never advances the
-  marker.
+  named failed, skipped or could-not-tell with no elapsed line after it (a gate killed mid-rule) is
+  listed UNKNOWN with `seconds` null instead of being dropped. The receipt records `log_complete`,
+  true only when the `verify-gate: <N>s total across` line comes after the last per-rule line, so a
+  total line echoed in a failing rule's output does not count; with a non-zero gate exit and an
+  incomplete log the job summary says the list is partial. `/crew:verify` gains "A rule passes only
+  on a completion record": the reasons a rule reads "could not tell", that it fails the turn, and
+  that it never advances the marker.
 - **What did not change.** What `build` and `check` accept: `pass`, the gate state and rc, the
   outstanding entries and the clean-tree test. No new receipt schema version; nothing reads
-  `commands[].state` for a decision.
+  `commands[].state` for a decision. A failing rule whose own output holds a line shaped like the
+  gate's `verify-gate: <N>s  <cmd>` still adds a row for that text (an older parser limit, not
+  changed here).
 - **Tests.** `test_ci_receipt.py`: a could-not-tell line (including a reason holding `): `) reads
   UNKNOWN; a log without the total line keeps each parsed state, lists the in-flight command
-  UNKNOWN and marks the receipt and summary partial; a real `verify-gate.sh --all` on a rule exiting
-  130 lists it UNKNOWN. Sabotage-tested by hand: dropping the UNKNOWN branch (back to the PASS/FAIL
-  default), dropping the in-flight entry, forcing `log_complete` true, and matching the command only
-  by the regex each turned a test red.
+  UNKNOWN and marks the receipt and summary partial; a total line inside a failing rule's output
+  followed by a killed rule leaves the log incomplete (captured from the real gate); a real
+  `verify-gate.sh --all` on a rule exiting 130 lists it UNKNOWN. Sabotage-tested by hand: dropping
+  the UNKNOWN branch, dropping the in-flight entry, forcing `log_complete` true, letting a per-rule
+  line no longer reset it, and matching the command only by the regex each turned a test red.
 
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 

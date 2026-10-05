@@ -513,11 +513,11 @@ adds <code>verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILE
 <p>The command log carries status <code>unknown</code> for such a rule; the record sync leaves that rule's entry as
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
 rule is not ended by the gate.</p>
-<p>The CI receipt (<code>ci_receipt.py</code>, L-0673) lists such a command as <code>UNKNOWN</code>, never <code>PASS</code>, and so a
-command the gate named failed but never finished (a gate killed mid-rule). A log that ends before
-the <code>verify-gate: &lt;N&gt;s total across</code> line records <code>log_complete: false</code>; when the gate also exited
-non-zero, the job summary says the list is partial. The list is informative only: what the receipt
-accepts did not change.</p>
+<p>The CI receipt (<code>ci_receipt.py</code>, L-0673) lists such a command as <code>UNKNOWN</code>, and so a command the
+gate named failed, skipped or could-not-tell but never finished (a gate killed mid-rule). A log
+whose <code>verify-gate: &lt;N&gt;s total across</code> line does not come after its last per-rule line records
+<code>log_complete: false</code>; when the gate also exited non-zero, the job summary says the list is
+partial. The list is informative only: what the receipt accepts did not change.</p>
 <h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
 <p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
 judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>

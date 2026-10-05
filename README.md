@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew**: The CI receipt lists a command the gate could not judge as UNKNOWN, never PASS. The CI verify-gate receipt's per-command list now shows UNKNOWN for a command the gate could not judge or never finished, and says when the list is partial because the gate died.
+- **crew**: The CI receipt lists a command the gate said it could not judge as UNKNOWN. The CI verify-gate receipt's per-command list now shows UNKNOWN for a command the gate could not judge or never finished, and says when the list is partial because the gate died.
 - **crew 1.0.348**: Four crew changes in one update: a check for GitHub Actions deploy entries, agents that say what they did not verify, review metrics read from the main checkout in a worktree, and personal autopilot defaults you can set once for every repo, with a backup before each config write.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

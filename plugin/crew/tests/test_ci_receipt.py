@@ -144,6 +144,23 @@ def test_parse_log_marks_a_log_without_the_total_line_incomplete(tmp_path):
     assert "partial" not in cr._summary(quiet)  # pylint: disable=protected-access
 
 
+def test_a_total_line_in_a_failing_rules_output_does_not_complete_the_log():
+    """Captured from the real gate (review FIX 1): a failing rule prints a
+    nested gate's total line, which the gate echoes in its last 25 lines of
+    output; then the gate is sent TERM mid-rule and `echo third` never runs.
+    Only a total line after the last per-rule line completes the log."""
+    nested = "sh -c 'echo \"verify-gate: 1s total across 1 rule command(s)\"; exit 1'"
+    log = "\n".join([
+        f"VERIFY FAILED: {nested}",
+        "verify-gate: 1s total across 1 rule command(s)",
+        f"verify-gate: 0s  {nested}",
+        "VERIFY FAILED: sleep 20", _TELL_TERM, "",
+    ])
+    assert cr.log_complete(log) is False
+    assert cr.log_complete(log + "\nverify-gate: 1s total across 3 rule command(s)") is True
+    assert [c["state"] for c in cr.parse_log(log)] == ["FAIL", "UNKNOWN"]
+
+
 @needs_bash
 def test_build_after_a_real_gate_that_could_not_tell_lists_the_rule_unknown(tmp_path):
     root = _repo(tmp_path, run="sh -c 'exit 130'")
@@ -155,7 +172,11 @@ def test_build_after_a_real_gate_that_could_not_tell_lists_the_rule_unknown(tmp_
 
     assert receipt["pass"] is False
     assert receipt["log_complete"] is True
-    assert receipt["commands"] == [{"cmd": "sh -c 'exit 130'", "seconds": 0, "state": "UNKNOWN"}]
+    # `seconds` is whole wall seconds from `date +%s`, so it can read 1 on a
+    # boundary: its type is pinned, not its value.
+    assert [(c["cmd"], c["state"]) for c in receipt["commands"]] == [
+        ("sh -c 'exit 130'", "UNKNOWN")]
+    assert isinstance(receipt["commands"][0]["seconds"], int)
 
 
 # --- build, against the real gate ----------------------------------------------------
