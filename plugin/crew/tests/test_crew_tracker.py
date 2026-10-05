@@ -2878,6 +2878,43 @@ def test_archive_completes_a_note_left_under_both_names(tmp_path):
             (_board_dir(vault) / ARCHIVED / f"{CARD}.md").is_file()) == (0, False, True), got
 
 
+def test_archive_refuses_a_done_lane_card_above_complete(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    board = _board_dir(vault) / "Board.md"
+    text = board.read_text(encoding="utf-8")
+    card = "- [x] [[T-0042]] Fix token refresh on 401\n\ta continuation line the card carries\n"
+    text = text.replace(card, "").replace("## Done\n\n**Complete**\n",
+                                         "## Done\n\n" + card.replace("[x]", "[ ]") + "\n**Complete**\n")
+    board.write_text(text, encoding="utf-8", newline="\n")
+    before = _snapshot(root, vault)
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert (crew_tracker.exit_code(got), _snapshot(root, vault) == before) == (1, True), got
+    assert any("above **Complete**" in (r.get("reason") or "") for r in got["results"]), got
+
+
+def test_a_partly_archived_ticket_reads_as_disagreeing(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    _archive_note(vault)
+
+    got = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (got["disagree"], "partly archived" in (got["reason"] or "")) == (True, True), got
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-unlink move is POSIX only")
+def test_a_note_under_both_names_is_kept_when_a_later_check_refuses(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    (_board_dir(vault) / ARCHIVED).mkdir()
+    os.link(_board_dir(vault) / f"{CARD}.md", _board_dir(vault) / ARCHIVED / f"{CARD}.md")
+    (_board_dir(vault) / "Board.md").write_text("not a board\n", encoding="utf-8")
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert (crew_tracker.exit_code(got), (_board_dir(vault) / f"{CARD}.md").is_file()) == (1, True)
+
+
 def test_an_archived_read_with_an_open_index_row_disagrees(tmp_path):
     root, _vault = _archived_obsidian(tmp_path)
     (root / ".work" / "INDEX.md").write_text(DONE_ROW.replace("done", "review"), encoding="utf-8",

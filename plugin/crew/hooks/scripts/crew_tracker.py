@@ -1000,6 +1000,9 @@ def remove_card(board, ticket):
     done = board["columns"]["done"]
     if card["lane"] != done:
         return None, f"card is in {card['lane']}, not {done}"
+    if card["start"] < _complete_markers(board)[0]:
+        # Above the marker the plugin shows it incomplete (`move_card` agrees).
+        return None, f"card is in {done} above **Complete**, so not complete there"
     lines = board["lines"]
     remaining = lines[:card["start"]] + lines[card["end"]:]
     rest, problem = parse_board("".join(remaining), board["columns"])
@@ -1638,6 +1641,11 @@ def _obsidian_read(root, settings, ticket):
     disagree = card["lane"] != expected
     notes = [f"INDEX status {status} expects {expected}"] if disagree else []
     notes += [f"whose card could not tell: {detail}"] if owner == UNKNOWN else []
+    if where == crew_common.COMPLETE:
+        # The note moved and the board write did not: a half-done archive.
+        disagree = True
+        notes += [f"partly archived: the note is in {crew_common.ARCHIVE_DIR}/ but the card is "
+                  f"still on the board; rerun crew_tracker.py archive --ticket {ticket}"]
     return [files, _result("obsidian", READ, "; ".join(notes) or None, lane=card["lane"], disagree=disagree)]
 
 
@@ -1782,7 +1790,7 @@ def _rename_file_no_replace(src, dst, src_dir_fd=None, dst_dir_fd=None):
     its own OSError: a check-then-rename would leave a window in which a note
     created meanwhile is replaced, so the move is refused instead. A crash
     between the link and the unlink leaves two names of one file, which
-    `_finish_note_link` completes on the next run."""
+    `_obsidian_archive_checks` completes on the next run, after every check."""
     if os.name == "nt":
         os.rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
         return
@@ -1805,19 +1813,17 @@ def _moved_away(fd, inner):
     return None
 
 
-def _finish_note_link(paths):
-    """A note left under both names by a crash between `_rename_file_no_replace`'s
-    link and unlink is ONE file (same device and inode, a regular file, not a
-    link): drop the live name, so the archive can complete. Two different
-    files are left alone for `_note_where` to call could-not-tell."""
+def _one_note_two_names(paths):
+    """True when the live and archived note are ONE file (same device and
+    inode, a regular file, not a link): what a crash between
+    `_rename_file_no_replace`'s link and unlink leaves. Two different files
+    are not, and `_note_where` calls them could-not-tell."""
     try:
         live = os.lstat(paths["note"])
         done = os.lstat(paths["archivedNote"])
     except OSError:
-        return
-    if (stat.S_ISREG(live.st_mode) and (live.st_dev, live.st_ino) == (done.st_dev, done.st_ino)):
-        with contextlib.suppress(OSError):
-            os.unlink(paths["note"])
+        return False
+    return stat.S_ISREG(live.st_mode) and (live.st_dev, live.st_ino) == (done.st_dev, done.st_ino)
 
 
 def _rename_note(paths):
@@ -1889,13 +1895,13 @@ def _obsidian_archive_checks(root, settings, ticket):
     paths, problem = _vault_paths(root, settings, _note_names(settings, ticket))
     if not problem and here is None:
         problem = _no_identity(root)
-    if not problem:
-        _finish_note_link(paths)
     board, problem = (None, problem) if problem else _load_board(paths, settings["columns"])
     if not problem:
         _, why = remove_card(board, ticket)
         problem = None if why == "absent" else why
-    where, why = (None, None) if problem else _note_where(paths)
+    linked = not problem and _one_note_two_names(paths)
+    where, why = (None, None) if problem else (
+        (crew_common.COMPLETE, None) if linked else _note_where(paths))
     if where == crew_common.COULD_NOT_TELL:
         problem = f"could not tell where {ticket}'s note lives: {why}"
     if not problem:
@@ -1903,6 +1909,12 @@ def _obsidian_archive_checks(root, settings, ticket):
         owner, detail, _ = _card_owner(paths, here, label)
         if owner != OURS:
             problem = (_foreign if owner == FOREIGN else _unclaimed)(paths, ticket, detail, here)
+    if not problem and linked:
+        # Every check passed: only now drop the live name a crash left.
+        try:
+            os.unlink(paths["note"])
+        except OSError as exc:
+            problem = f"{paths['noteShown']}: {exc.strerror or exc}"
     return (None, None, problem) if problem else (paths, where, None)
 
 
