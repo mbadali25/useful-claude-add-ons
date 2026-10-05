@@ -5,39 +5,38 @@
 Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at the owner's request to clear and restart.
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
-### State
-- **main = 47f71e93 (batch 6 #502 merged 03:35), crew 1.0.348; before it 8479a837 (#496); before it 2828acef (#497); before it 7ba4c184 (#499); before it efcf4666, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
-- Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
+### State  [refreshed 2026-10-05 10:50 UTC - THIS RUSH IS CLOSED]
+- **main = a555ff37 (#512 C-0006 merged), crew 1.1.0, gizmoduck 0.5.9.** Before it: 5c40ffa7 batch 9 (#513: #478, #395, #510, crew 1.0.352), e84a8bfe #511 (other session, notify, crew 1.0.351), 23fb9d91 batch 8 (#509), 3d4b4b5d #506 C-0008.
+- Guide files are now VERSION-FREE: docs/guides/crew/crew-<name>.{html,docx,pdf} (owner decision; no rename at future versions).
+- Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR`).
 
 ### Owner rules in force (all sessions)
 - Merge only with 0 BLOCK + 0 FIX on the current head, CI green on that head, in order. Merge commits only; never squash/rebase/force-push. Commits carry only `Claude-Session: <url>`; never Co-Authored-By. No `[skip ci]` (withdrawn: the permission system treats it as a CI bypass).
 - Harness paths (`HARNESS` in scripts/check-tooling-pr.py) land ALONE (T-0087). Docs-only PRs need no gates.
-- PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets **C-NNNN** ids (owner 2026-10-05; next free: **C-0001**). L-1500 to L-1518 were minted earlier and keep their IDs.
+- PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets **C-NNNN** ids (owner 2026-10-05; next free: **C-0020**). L-1500 to L-1518 were minted earlier and keep their IDs.
 - **Batches of 5-6** (raised 2026-10-04 evening).
 - **Version: ONE bump per batch via a single BATCH PR** (owner 2026-10-04 23:1x): merge the batch's PR branches into `batch-<n>-build`, reset versions to main's, one version commit last, merge only the batch PR. See `procedures/LANDPREP.md` "Batch PR". Harness PRs still alone. #394 (628f1360, 1.0.344) lands alone as already prepped.
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
 - Notes WRITTEN after every action, PUSHED every ~30 min and at each merge (owner 2026-10-05; `note.sh` commits, `note.sh --push` pushes). Present decisions with a recommendation and tables (owner has ADHD: concise).
-- Plan after batch 7: Windows re-run sweep of the 7 red PRs; C-0002..C-0005, C-0007; then crew 1.1.0 + guide rename (C-0006) last. C-0006 ENDS this rush; the next rush (owner 2026-10-05) takes the remaining new draft PRs / spec-draft waves.
+- Rush closed 2026-10-05 with crew 1.1.0 (C-0006, #512). The next rush takes the Windows sweep PRs and the remaining new draft PRs / spec-draft waves.
 
-### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
-main = d38e2d73 (#501 C-0001 merged), crew 1.0.349.
-| Item | Where | State | Next |
-|---|---|---|---|
-| T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
-| Batch 8 | `batch-8-build` (builder 11:50) | #433 T-0105, #462 L-0678, #401 L-0673, #451 T-0108 (gizmoduck), #344 T-0035 (localgpu), #362 T-0051 (since 1.0.378 -> batch ver) | merge review, CI, merge |
-| Batch 9 (next) | - | #478 T-0081 (final re-check), #395 T-0049 (2 FIX), C-0002..C-0014 follow-ups as they come, sweep round 2 (#341 #342 #346 #363 #366) | after batch 8 |
-| Spec wave A (building, no bump, for batches) | #478 T-0081, #462 L-0678, #433 T-0105, #401 L-0673, #451 T-0108 | 5 builders started 05:35-05:45 (T-0108: owner A, Nuclei verify-or-mark) | review each, then batch 8/9 |
-| Spec wave A queued | #417+#424 L-0661+L-0663 (harness, alone) | not started (CI capacity) | next |
-| Spec runners-up | T-0106 (after T-0105), T-0502 (after L-0673), L-0689 then L-0665 (promote-gate), T-0103 + L-0675 (after batch 7) | - | later |
-| Held for #501 | T-0102, T-0055, T-0506, T-0054 (edit gate-runner/workflows) | - | after #501 |
-| Windows-RED review-clean PRs | #344, #342, #341, #346, #362, #395, #363(+deps) | red on OLD 3-shard runs (shell-matrix + default shards): possibly the L-1512 exit-2304 flake fixed in #497 | catch-up merge main + re-run Windows before batching |
-| Harness, land alone | #340 L-0526 (Windows green; needs catch-up + graphify update), #418 H1 (needs pre-flight) | | after #496 |
-| Blocked | #365 T-0058 (needs #354 T-0012, not review-clean); #345 (needs red #344) | | |
+### Next rush - start here (verify each on GitHub first)
+| Item | State | Next |
+|---|---|---|
+| Windows sweep: #341, #342, #346, #363, #366 | review-clean on older bases; sweep stopped by a container restart | merge main, root-cause Windows reds, then a batch |
+| Spec-draft waves | plan in `docs/handoff/cloud/WAVES-2026-10-04.md` | build -> review -> batches of 5-6 |
+| C-0016 sabotage step red on main (34 entries) | harness | lands ALONE |
+| C-0002/0003/0011 | harness | each lands ALONE |
+| C-0004/0005/0007, C-0010, C-0012..C-0014 | follow-ups | batch members |
+| C-0015.5 (GPG/checksum for dependency-check + ZAP), C-0018 (guide .md link 404s; T-0500/0501/0504 docs name crew-1.0-*), C-0019 (gizmoduck test-isolation NITs) | open | batch members |
+| graphify-out/ | stale (old guide names) | `graphify update .` in a docs PR |
+| Not ours: #508 (CI dispatcher; touches ci-select from C-0001), other-session PRs | - | leave; expect a conflict with ci-select when #508 lands |
+| Held for #501 (now merged): T-0102, T-0055, T-0506, T-0054 | unblocked | build |
 
-### Ready / next up
-- Review-clean, need Windows pre-flight: #421 (green), #364 (green), #416, #407 (after rework), #365/#366 (stacked on #364/#354), plus the 18 older ones in `CLOUD-SESSION-TICKETS.md`.
-- New tickets to build (feature unless noted): L-1509 (bare-name calls outside crew), L-1511 (tracker create/move take INDEX lock), L-1513 (harness: broken sabotage anchor + argparse/usage gap), L-1505 (harness: per-env PROMOTIONS rows + marker parsing), L-1504 (harness: owner-typed sleep only).
-- The 91 spec drafts: plan in `docs/handoff/cloud/WAVES-2026-10-04.md`. Owner answered the blocking questions 2026-10-04 (see `CLOUD-SESSION-TICKETS.md` "Owner decisions, 2026-10-04 evening"); T-0029/T-0030 and their 8 dependents are DEFERRED; L-0674 not built (#404 closed).
+Lessons this rush (also in the log):
+- The classifier refuses (a) cherry-picking an agent's own unpushed commit and (b) merging when the coordinator's own last commits were unreviewed. Fix: write commits fresh, and get an independent review of any coordinator-made commits before merging.
+- A sabotaged gizmoduck test once overwrote real /usr/local/bin binaries; #510 added a tripwire and a hardened sudo stub. Still record `ls -la /usr/local/bin /opt | md5sum` around gizmoduck runs.
+- The GitHub runner checks out under /opt: path guards that call `realpath` on bare words misfire there.
 
 ### CI facts
 - Windows: 6 default shards + 3 slow shards (L-1506/L-1507). PR CI ~9-13 min; queueing at the 20-job limit is now the main cost.
@@ -51,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 09:41 UTC
+Last updated: 2026-10-05 09:43 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -110,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:50: MERGED #512 (C-0006) at e58327df -> main a555ff37, crew 1.1.0. Independent review of my own merge/NIT/version commits: 0/0; CI 29 ok. RUSH CLOSED. RESUME section rewritten for the next rush.
 - 10:45: #512 CI green at e58327df (29 ok, 1 skipped), mergeable clean. My merge was refused by the classifier ('Merge Without Review': my own main-merge + NIT + version commits had no independent review). Not working around it: spawned an independent review of 2514bd58..e58327df; merge after 0/0.
 - 10:20: MERGED #513 (batch 9) at f2aef05a -> main 5c40ffa7, crew 1.0.352 / gizmoduck 0.5.9. Review 0/0 (13 merges replayed, full crew 13184 passed on final head, #511 intact). #512 (C-0006): merged main 5c40ffa7 (CHANGELOG/README only, C-0006 entry on top), NIT label 'is present', version-only crew 1.1.0; gate clean; pushed e58327df, marked ready, subscribed. Merge-only deltas reviewed by coordinator per LANDPREP. Waiting CI.
 - 09:55: main moved: #511 (other session, notify) merged as e84a8bfe and took crew 1.0.351. Merged main into batch-9-build (CHANGELOG both kept, README regen, BUDGETS 24,591), new version commit crew 1.0.352 / gizmoduck 0.5.9, head f2aef05a. Gate clean; 675 targeted tests passed. Reviewer extended to new head. #512 will now be 1.1.0 over 1.0.352.
