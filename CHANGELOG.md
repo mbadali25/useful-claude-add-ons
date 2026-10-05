@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
+### crew — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that
   say what they did not verify, review metrics read from the main checkout in a worktree, and personal

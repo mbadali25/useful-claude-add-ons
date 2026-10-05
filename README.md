@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.0.348**: Four crew changes in one update: a check for GitHub Actions deploy entries, agents that say what they did not verify, review metrics read from the main checkout in a worktree, and personal autopilot defaults you can set once for every repo, with a backup before each config write.
+- **crew**: Four crew changes in one update: a check for GitHub Actions deploy entries, agents that say what they did not verify, review metrics read from the main checkout in a worktree, and personal autopilot defaults you can set once for every repo, with a backup before each config write.
 - **crew 1.0.347**: The review/gate harness runs the git `shutil.which` found. On Windows, crew's review and verify checks now run the same git your shell runs, so a git wrapper earlier on PATH can no longer make a check pass on the wrong answer.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
