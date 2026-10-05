@@ -159,7 +159,9 @@ def test_holds_own_marker_is_mine(repo):
 # --- must-block: another holder -----------------------------------------------------
 
 def test_holds_other_holder_same_worktree_is_live(repo):
-    _put(repo, _marker(repo, session="other", pid=1, pid_start=None))
+    """A live process that is not this one: pytest's parent, on every OS (pid 1
+    exists only on POSIX, so on Windows it read as gone and the state stale)."""
+    _put(repo, _marker(repo, session="other", pid=os.getppid(), pid_start=None))
     got = _state(repo)
     assert (got["state"], got["clear"]) == ("live", "")
 
@@ -252,9 +254,12 @@ def test_holds_other_machine_is_unmeasured_not_gone(repo, field):
 
 
 def test_probe_error_is_unmeasured(monkeypatch, repo):
+    """Every platform's probe raises: /proc, `ps` and the Windows API (patching
+    `_proc_stat` alone left Windows probing pid 12345 for real, which read gone)."""
     def boom(_pid):
         raise PermissionError("denied")
-    monkeypatch.setattr(crew_inflight, "_proc_stat", boom)
+    for probe in ("_proc_stat", "_posix_process", "_win_process"):
+        monkeypatch.setattr(crew_inflight, probe, boom)
     me = crew_inflight.identity(str(repo), SESSION)
     assert crew_inflight.probe(dict(me, pid=12345), me) == "unmeasured"
 
@@ -695,10 +700,11 @@ def _no_proc(monkeypatch):
 
 
 _NO_PS = '''
-import subprocess
+import os.path, subprocess
 _run = subprocess.run
 def _no_ps(args, *a, **k):
-    if args and args[0] == "ps":
+    # By basename: crew_inflight runs the ps require_tool resolved (L-1508).
+    if args and os.path.basename(str(args[0])) in ("ps", "ps.exe"):
         raise FileNotFoundError(2, "no ps here (a sandbox)", "ps")
     return _run(args, *a, **k)
 subprocess.run = _no_ps
