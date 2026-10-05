@@ -75,6 +75,7 @@ Next free untracked ID: **C-0001** (owner rule 2026-10-05: cloud-session tickets
 | L-0680 | #400 | 2aa06aca | 1.0.343 |
 | T-0083 | #421 | cab38cfa | obsidian-vault 0.5.0 |
 | T-0037 (A) | #394 | 189c3b80 | 1.0.344 |
+| T-0052, T-0057, L-0662 (batch 5) | #498 (lands #364, #416, #420) | efcf4666 | 1.0.345 |
 
 ## Closed without merging (your instruction)
 

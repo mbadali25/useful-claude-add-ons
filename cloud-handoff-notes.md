@@ -6,7 +6,7 @@ Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at th
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
 ### State
-- **main = 189c3b80, crew 1.0.344, obsidian-vault 0.5.0.** 26 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
+- **main = efcf4666, crew 1.0.345, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
 - Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
 
 ### Owner rules in force (all sessions)
@@ -18,14 +18,14 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
 - Notes after every action; present decisions with a recommendation and tables (owner has ADHD: concise).
 
-### In flight at handoff (verify each on GitHub first)
+### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 00:50]
 | Item | Where | State | Next |
 |---|---|---|---|
-| Batch 4 land-prep | #400 L-0680 -> #421 T-0083 -> #394 T-0037 -> #364 T-0052 | NOT STARTED: agent stopped at handoff, nothing pushed. Heads unchanged: 897f3faf, 41b1d576, 96080457, 1b0de3cb | Land-prep with the one-bump-per-batch rule (only #364 carries crew 1.0.343 + obsidian-vault bump). #394 must land before #364. Add up to 2 more Windows-green PRs (batch size 5-6) |
-| L-1512 fix (owner asked 2026-10-04 22:18) | not started: agent stopped at handoff, no branch | cloud-guard bash tests exit 2304 on Windows (job 111538994343, test_cloud_guard.py:589) | FIRST JOB of the next session: build `L-1512-build` from main, root-cause with the job log, never skip; feature PR unless it touches HARNESS |
-| #416 T-0057 | `T-0057-build` | Windows pre-flight dispatched 22:14 | Check result; it is review-clean |
-| L-1508 PR B | not started | 9 harness files allowlisted "L-1508 PR B" in test_tool_resolution.py | Build as harness-only PR |
-| #407 T-0045 | `T-0045-build` | review-clean | Must adopt L-1503's UNION rule in `_gate_pick` before landing; carry `[!-[]` FIX |
+| #499 L-1518 README "What's new" | `L-1518-build` 9fac87a2 | merged main (batch 5) + coordinator FIX: parser skipped batch `###` headings (README showed 1.0.344). 15/15 suite, sabotage-tested | focused re-review of 9fac87a2, CI green, then merge alone (repo tooling, no bump) |
+| #497 L-1512 cloud-guard 2304 | `L-1512-build` 108d5da0 | `build (3.12)` failed (job 111569933122) | builder fixing; then focused re-check, land alone |
+| #407 T-0045 | `T-0045-build` 8588ab74 | 6 Windows jobs red | builder merging main + root-causing; batch 6 once green |
+| #496 L-1508 PR B (harness) | `L-1508b-build` 4807695e | only verify-gate ran | builder getting full CI; then review; lands ALONE |
+| Batch 6 | not started | candidates: #407, #353 T-0011 + #366 T-0059 (stacked), more review-clean Windows-green PRs | batch PR per LANDPREP, with the sync-updates step |
 
 ### Ready / next up
 - Review-clean, need Windows pre-flight: #421 (green), #364 (green), #416, #407 (after rework), #365/#366 (stacked on #364/#354), plus the 18 older ones in `CLOUD-SESSION-TICKETS.md`.
@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:32 UTC
+Last updated: 2026-10-05 00:40 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 00:50: MERGED batch PR #498 -> efcf4666 (crew 1.0.345); #364/#416/#420 show merged. #499: merged main, resolved CHANGELOG (L-1518 on top), found + fixed parser skipping batch ### headings (9fac87a2, 15/15, sabotage red 2/15); focused re-review running. Builders re-woken: #497 build(3.12) red, #407 6 Windows red, #496 only verify-gate ran. LANDPREP: sync-updates step added.
 - 00:32: #499 L-1518 at c726f8a1, CI green: README 916->426 lines; generated 'What's new' (2 newest CHANGELOG entries via Summary bullet) + link; UPDATE.md kept for sub-READMEs; 13-case suite. Cost: every PR adding a changelog entry must re-run sync-updates.py (land-prep step). Review spawned.
 - 00:31: L-1518 PR #499 CI green at c726f8a1
 - 00:21: Owner: new cloud tickets are C-NNNN starting C-0001 (L-1500..L-1518 keep their IDs).
