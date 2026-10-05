@@ -687,6 +687,18 @@ def test_tracked_env_template_is_not_a_secret(tmp_path, template):
     assert "needs-owner" not in done.stdout
 
 
+@pytest.mark.parametrize("gitignore", [None, "*.tfstate\n"])
+def test_tracked_terraform_state_is_needs_owner_exit_3(tmp_path, gitignore):
+    """Review round 4: Terraform state holds secrets; tracked, it goes to the
+    owner whether or not .gitignore already covers it."""
+    root = _repo(tmp_path, files={"infra/main.tf": "", "infra/terraform.tfstate": "{}"},
+                 tracked=["infra/terraform.tfstate"], gitignore=gitignore)
+
+    done = _run(root, "check")
+
+    assert (done.returncode, "needs-owner infra/terraform.tfstate" in done.stdout) == (3, True), done.stdout
+
+
 def test_tracked_env_local_is_still_a_secret(tmp_path):
     root = _repo(tmp_path, files={".env.local": "KEY=v\n", ".env.sample": "KEY=\n"},
                  tracked=[".env.local", ".env.sample"])

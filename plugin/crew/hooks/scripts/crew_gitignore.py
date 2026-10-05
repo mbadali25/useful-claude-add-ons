@@ -145,8 +145,10 @@ LANGUAGES = {
         "rows": [
             _row(".terraform/", ".terraform/providers/x", "downloaded providers and modules",
                  "Terraform.gitignore"),
-            _row("*.tfstate", "terraform.tfstate", "local state, which holds secrets", "Terraform.gitignore"),
-            _row("*.tfstate.*", "terraform.tfstate.backup", "state backups", "Terraform.gitignore"),
+            dict(_row("*.tfstate", "terraform.tfstate", "local state, which holds secrets",
+                      "Terraform.gitignore"), secret=True),
+            dict(_row("*.tfstate.*", "terraform.tfstate.backup", "state backups", "Terraform.gitignore"),
+                 secret=True),
             _row("crash.log", "crash.log", "terraform crash log", "Terraform.gitignore"),
             _row("crash.*.log", "crash.1.log", "terraform crash logs", "Terraform.gitignore"),
         ]},
@@ -536,9 +538,9 @@ def measure(root):
                     cand["status"], cand["negation"], cand["where"] = "conflict", hit[0], hit[1]
                 else:
                     cand["status"] = "missing"
-            if cand["status"] == "missing" or cand["lang"] == "secrets":
+            if cand["status"] == "missing" or _secret(cand):
                 cand["tracked"] = _tracked(top, cand["patterns"])
-                if cand["lang"] == "secrets":
+                if _secret(cand):
                     result["needs_owner"] += cand["tracked"]
             result["candidates"].append(cand)
     except Unknown as exc:
@@ -552,6 +554,12 @@ def measure(root):
     else:
         result["state"] = "current"
     return result
+
+
+def _secret(cand):
+    """A row whose tracked match is `needs-owner`: the SECRETS group, and a
+    language row that holds secrets (Terraform state)."""
+    return cand["lang"] == "secrets" or bool(cand.get("secret"))
 
 
 def _missing(result):
@@ -584,7 +592,7 @@ def report(result, applied=False):
             lines.append(f"conflict {pattern} would override {cand['negation']} at {cand['where']} "
                          "- not added")
         tracked = cand.get("tracked") or []
-        if tracked and cand["lang"] != "secrets":
+        if tracked and not _secret(cand):
             lines.append(f"tracked {pattern} matches {len(tracked)} tracked file(s): "
                          f"{', '.join(tracked[:4])} - ignoring does not untrack them")
     for path in result["needs_owner"]:
