@@ -71,7 +71,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0014 | From #501 final re-check (NITs, ci-select): (1) count extension modules (.so/.pyd/importlib.machinery.EXTENSION_SUFFIXES) in the module-name uniqueness scan; (2) deny combined-run top-level names that shadow sys.stdlib_module_names or installed top-level packages; (3) a test inserting a new checkout dir only inside a function is invisible to the collect-only dump (document or detect). | none yet | after #501 |
 
-Next free untracked ID: **C-0015** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0015 | From #506 re-check (NITs, gizmoduck bootstrap): (1) ps1 Install-NucleiTemplatesClone deletes a symlink/junction inside the target instead of refusing like sh; under PS 5.1 Get-ChildItem -Recurse follows junctions (empty dirs outside $Dir could be removed); (2) nikto `--version` exits 0 on "Unknown option" so skip-if-present proves nothing; (3) GIZMODUCK_BIN_DIR/OPT_DIR/APT_LISTS_DIR honoured in real runs: gate behind a test flag or document; (4) doctor should check `hexdump` next to testssl (testssl --version passes without it); (5) dependency-check/ZAP downloads unverified (no checksum asset; GPG/.asc or release-body hashes). | none yet | batch 9 |
+
+Next free untracked ID: **C-0016** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
