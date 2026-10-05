@@ -644,7 +644,9 @@ def _crew_json_bytes(root, crew):
         notes = json.loads(current.decode("utf-8")).get("notes")
     except (ValueError, UnicodeDecodeError, AttributeError):
         return data
-    upgrade_notes = [n for n in notes or [] if isinstance(n, str)
+    if not isinstance(notes, list):
+        return data  # a malformed crew.json stays a conflict, never a crash
+    upgrade_notes = [n for n in notes if isinstance(n, str)
                      and n.startswith(UPGRADE_NOTE_PREFIX)]
     if len(upgrade_notes) != 1:
         return data

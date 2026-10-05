@@ -690,6 +690,20 @@ def test_pre_0_20_second_apply_is_a_no_op(v1_repo, capsys):
             _snapshot(v1_repo, skip_backups=False)) == (0, True, False, before)
 
 
+@pytest.mark.parametrize("notes", [5, "x", {"a": 1}])
+def test_existing_crew_json_with_malformed_notes_is_a_conflict_not_a_crash(v1_repo, capsys, notes):
+    """Review: a non-list `notes` in an existing crew.json is a different
+    target (a conflict found in preview), never an uncaught TypeError."""
+    with open(os.path.join(v1_repo, ".crew", "crew.json"), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps({"schema": 1, "notes": notes}) + "\n")
+    before = _snapshot(v1_repo, skip_backups=False)
+
+    code = crew_migrate.main(["--root", v1_repo, "--preview"])
+
+    assert (code, "CONFLICT" in capsys.readouterr().out, _snapshot(v1_repo, skip_backups=False)) == (
+        1, True, before)
+
+
 def test_upgraded_config_bytes_match_crew_upgrade_run(tmp_path):
     roots = []
     for name in ("via-migrate", "via-upgrade"):
