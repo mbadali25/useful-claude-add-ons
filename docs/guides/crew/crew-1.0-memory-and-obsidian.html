@@ -522,8 +522,59 @@ appended. A new note gets mode 0644 less your umask.</p>
 <p>Claude Code 2.1.289 was seen to keep a one-line pointer body across new
 sessions (it rewrites the frontmatter when it updates the memory, and kept
 the pointer). If a later version rewrites the body with full text, <code>check</code>
-shows it as <code>full-text</code> again; run <code>save</code> again. Converting existing
-memories in bulk arrives in a later version.</p>
+shows it as <code>full-text</code> again; run <code>save</code> again.</p>
+<h3 id="converting-existing-memories">Converting Existing Memories</h3>
+<p><code>migrate</code> runs <code>save</code> over every memory in one folder. It never runs by
+itself, and without <code>--apply</code> it writes nothing:</p>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py migrate --memory-dir &lt;memory dir&gt; --tag &lt;tag&gt;
+python3 plugin/crew/hooks/scripts/crew_memory.py migrate --memory-dir &lt;memory dir&gt; --tag &lt;tag&gt; --apply
+</code></pre>
+<p>The preview has one row per memory file, in name order; <code>MEMORY.md</code> is never
+a row and never edited:</p>
+<table>
+<thead>
+<tr>
+<th>action</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>convert</code></td>
+<td><code>save</code> would create the note shown</td>
+</tr>
+<tr>
+<td><code>append</code></td>
+<td>a note with this <code>memory_id</code> already exists; <code>save</code> would add to it</td>
+</tr>
+<tr>
+<td><code>skip: already a pointer</code></td>
+<td>nothing to do</td>
+</tr>
+<tr>
+<td><code>skip: &lt;state&gt;</code></td>
+<td>a pointer that does not resolve, or a <code>malformed</code> one</td>
+</tr>
+<tr>
+<td><code>refuse: &lt;reason&gt;</code></td>
+<td>anything <code>save</code> refuses, a title that is not a portable file name (<code>: ? * &lt; &gt; \| " \</code>, a trailing dot or space, a device name such as <code>CON</code>), two files that would write one note (<code>duplicate note path</code>), a note that belongs to another project (<code>note belongs to another project</code>), or a folder named like a memory (<code>not a file</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>With <code>--apply</code>, each <code>convert</code> and <code>append</code> row is saved one file at a time.
+A file whose save fails is shown as <code>failed</code> with <code>save</code>'s <code>kept-full-text</code>
+reason, and the others still go ahead. One <code>--tag</code> set covers the run; use
+<code>--only &lt;file name&gt;</code> to run batches with different tags. <code>--note-dir</code>,
+<code>--type</code> and <code>--project</code> work as they do for <code>save</code>; without <code>--project</code>, a
+folder <code>~/.claude/projects/&lt;slug&gt;/memory</code> uses <code>&lt;slug&gt;</code> as the project, so
+two projects' memories never land in one note. Nothing is recorded
+between runs, so running it again converts nothing twice.</p>
+<p><code>restore</code> is the way back for one memory:</p>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py restore --file &lt;memory file&gt; --apply
+</code></pre>
+<p>It puts the note's text back as the memory's body (frontmatter kept) and
+leaves the note alone. Without <code>--apply</code> it shows the first line and the line
+count. A pointer that does not resolve is reported and nothing is written.</p>
 <h2 id="confirming-recall-reaches-your-sessions">Confirming Recall Reaches Your Sessions</h2>
 <p>(written by the context-hook ticket)</p>
 <h3 id="path-scoped-rules-from-the-code-map">Path-Scoped Rules from the Code Map</h3>

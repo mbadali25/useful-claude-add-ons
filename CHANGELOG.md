@@ -64,6 +64,34 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   PATH), and fails unless PATH resolves pytest 8.x. The CORE `ruff` step fails unless PATH
   resolves ruff 0.16.x.
 - Repository tooling outside any plugin, so no version bump.
+### Added — `crew`: `crew_memory.py migrate` converts a memory folder, previewed and opt-in, and `restore` undoes one (L-0678)
+
+- **Summary.** You can now turn every full-text memory in one native memory folder into a vault
+  note plus a pointer in one previewed run, and turn any one pointer back into full text.
+- **What changed.** `crew_memory.py migrate --memory-dir <dir> --tag <tag> [--tag ...] [--only
+  <file name> ...] [--type <type>] [--project <p>] [--note-dir <vault folder>] [--apply]` runs
+  `save` over every memory file in the folder (never `MEMORY.md`), in name order. Without
+  `--apply` it writes nothing and prints one row per file: `convert`, `append` (a note with this
+  `memory_id` exists), `skip: already a pointer`, `skip: <state>` for a pointer that does not
+  resolve or is `malformed`, or `refuse: <reason>` for anything `save` refuses, a title that is
+  not a portable file name (`< > : " / \ | ? *`, a control character, a trailing dot or space,
+  a device name such as `CON`, `COM0` or `LPT1`), two files that would write one note (`duplicate
+  note path`, compared case-folded), an existing note whose frontmatter `project:` is not this
+  run's (`note belongs to another project`), or a folder named like a memory (`not a file`).
+  The project is `--project`, else `<slug>` for a folder `~/.claude/projects/<slug>/memory`,
+  else the repository folder's name, so a second project's folder never appends to the first's
+  notes. With `--apply` each `convert` and `append` row goes through
+  `save`'s apply one file at a time; a failed file is reported with `save`'s `kept-full-text`
+  reason and the rest go on. With no writable vault it prints `nothing to migrate: <reason>`
+  (exit 0 for `no vault configured`, 1 otherwise). Exit 0 only when nothing is pending,
+  refused or failed. No state file is written, so a re-run is a no-op.
+  `crew_memory.py restore --file <memory file> [--apply]` puts a resolving pointer's note text
+  (after its frontmatter, LF-only) back as the body, the pointer file's frontmatter kept byte for
+  byte; it writes through a temp file and `os.replace` under `save`'s lock, then confirms the file
+  reads as `full-text`. Any other state is printed with exit 1 and nothing written; the note is
+  never edited or deleted. Neither runs automatically. Documented in the `crew-memory` skill
+  ("Converting existing memories"), the crew README and the memory guide chapter.
+- **Tests.** `plugin/crew/tests/test_crew_memory_migrate.py`, 52 cases, all under `tmp_path`.
 
 ### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
 
