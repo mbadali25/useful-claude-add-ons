@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: The shortfall rule says its wording list cannot be complete. crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and recovery paragraph, and the troubleshooting guide (HTML rebuilt) no longer say any admission that the review fell short is INCOMPLETE.
 - **crew**: Tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP. On a shared Obsidian board, two repositories whose origins differ only in the case of the user or path are now two owners, and one repository reached through `file://`, `file://localhost` or a bare path is one. Two overlapping moves leave INDEX and the board agreeing, a glued checkbox (`- [ ]T-0042`) is repaired, a stray quote in a note's `repo-id:` is no longer stripped, and `/crew:fix` creates its ticket through MCP under Jira or ServiceDesk Plus.
-- **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

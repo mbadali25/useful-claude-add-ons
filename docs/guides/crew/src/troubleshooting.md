@@ -139,8 +139,10 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   acknowledged and exit 0, no longer does that: the round is FINDINGS, and the ignored lines are
   printed on a `review: FINDINGS kept; ...` line and kept in `review.json`'s `ignored_text` (`ignored_lines` is their count). A
   stray line beside `CLEAN`, a misformatted contract line (`- FIX|...`, `fix|...`, a `|` table row)
-  or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
-  INCOMPLETE `reviewer`.
+  or a line matching the shortfall wording list ("skipped", "truncated", "could not review") is
+  still INCOMPLETE `reviewer`. That list cannot catch every admission: one it misses ("I only
+  inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
+  ignored lines.
   **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
   `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure

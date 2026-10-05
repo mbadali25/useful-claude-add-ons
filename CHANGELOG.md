@@ -9,6 +9,19 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew: the shortfall rule says its wording list cannot be complete (L-0604)
+
+- crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and
+  recovery paragraph, and the troubleshooting guide (HTML rebuilt) no longer say any admission that
+  the review fell short is INCOMPLETE. Only a stray line matching `review_verdict._SHORTFALL` is;
+  that list is wording and cannot be complete, so an admission it misses ("I only inspected one
+  of the nine files") is recovered as prose beside findings, the round is FINDINGS, and the line
+  is reported as ignored.
+- Two tests pin that: `review_verdict.parse` on the repro is FINDINGS with the line in `ignored`,
+  and `proposals` proposes its FIX without the admission. No behaviour change.
+  `commands/review.md`'s Step 2c sentence and `review_verdict.py`'s module docstring say the same
+  thing and are review-harness files, so they follow in their own tooling PR.
+
 ### Fixed — crew: tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP (T-0071)
 
 - **Summary.** On a shared Obsidian board, two repositories whose origins differ only in the case
