@@ -2628,7 +2628,8 @@ python3 hooks/scripts/crew_contract.py status        [--name <n>]
 python3 hooks/scripts/crew_contract.py verify        --ticket <id>
 ```
 
-`--channel`, `--remote` and `--root` default as `crew_coord.py`'s do. A
+`--channel` (not on `verify`, which reads each binding's channel from the
+binding), `--remote` and `--root` default as `crew_coord.py`'s do. A
 version is two files on `crew-coord/<channel>`: `contracts/<n>/v<N>.json`
 (`name`, `version`, `hash` = `sha256:` of the body, `status` `draft` or
 `built-against`, and `built_by`, one `{repo, ticket, hash, at}` per side) and

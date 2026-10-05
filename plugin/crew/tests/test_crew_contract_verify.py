@@ -237,6 +237,17 @@ def test_no_bindings_means_no_fetch(capsys, root, calls):
     assert _channel_calls(calls) == []
 
 
+def test_readme_and_docstring_state_verify_options():
+    """Review round 1: the docs said every command takes --channel."""
+    readme = os.path.join(os.path.dirname(os.path.abspath(context.__file__)), os.pardir, "README.md")
+    with open(readme, encoding="utf-8") as handle:
+        text = " ".join(handle.read().split())
+    assert "`--channel` (not on `verify`, which reads each binding's channel from the binding)" in text
+    assert "every command but `verify` takes `--channel`" in " ".join(crew_contract.__doc__.split())
+    with pytest.raises(SystemExit):
+        crew_contract._parser().parse_args(["verify", "--ticket", "T-1", "--channel", "x"])  # pylint: disable=protected-access
+
+
 def test_verify_usage_is_checked_before_any_git_call(capsys, root, calls):
     code, out = _verify(capsys, root, ticket="../T-1")
 

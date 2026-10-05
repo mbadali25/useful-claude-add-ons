@@ -18,9 +18,10 @@ against that version.
     crew_contract.py verify --ticket <id>
         every binding of the ticket still holds on the channel, read-only
 
-Every command takes `--channel`, `--remote` and `--root`, resolved as
-crew_coord.py resolves them (`coord.channel` / `coord.remote` in the crew
-config, the remote falling back to `origin`).
+Every command takes `--remote` and `--root`, and every command but `verify`
+takes `--channel`, resolved as crew_coord.py resolves them (`coord.channel` /
+`coord.remote` in the crew config, the remote falling back to `origin`).
+`verify` reads each binding's channel from the binding itself.
 
 The record. A version is two files on the channel branch:
 `contracts/<name>/v<N>.json`, `{"name", "version", "hash": "sha256:<hex>",
