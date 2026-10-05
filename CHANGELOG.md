@@ -28,6 +28,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **The allowlist entries are gone.** `plugin/crew/tests/test_tool_resolution.py`
   no longer excuses any harness file, so a bare-name git put back in one fails
   the lint.
+- **Root `README.md` rides along with a harness change.** `scripts/check-tooling-pr.py`'s
+  `ALONGSIDE` now lists `README.md` (the root file only, no glob): its "What's new" block is
+  generated from this changelog (L-1518), so every harness PR that adds an entry carries it,
+  and without the entry `sync-updates --check` and the tooling-alone check could not both pass.
+  New `scripts/_test/tooling-pr.py` cases: harness + root README is allowed; harness + README +
+  `skills/x/SKILL.md` and harness + `skills/x/README.md` are still refused. Removing the entry
+  turns the must-allow case red.
 - **Tests.** New `plugin/crew/tests/test_harness_tool_resolution.py`: for each
   site a failing git reachable only through `shutil.which` (a bare `"git"` runs
   the healthy one and passes), and the guard refuses or reports could-not-tell
