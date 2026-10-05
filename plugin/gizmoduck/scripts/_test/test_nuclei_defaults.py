@@ -30,6 +30,13 @@ _TAG_FLAGS = ("etags", "exclude-tags", "itags", "include-tags")
 # the rate cap. The spec's eight names grew by these nine.
 _ATTACK_FLAGS = ("it", "include-templates", "dast", "fuzz", "dts", "dast-server",
                  "per-host-rate-limit", "rld", "rate-limit-duration")
+# A config or template-profile file can set any of the above unseen.
+_CONFIG_FLAGS = ("config", "tp", "profile")
+
+
+@pytest.fixture(autouse=True)
+def _scratch_home(scratch_nuclei_home):
+    return scratch_nuclei_home
 
 
 @pytest.fixture
@@ -67,7 +74,7 @@ def test_nuclei_argv_order_is_core_target_severity_etags_rate_extra(gz):
     argv = gz.nuclei_argv("nuclei", TARGET, "high", "-timeout 5")
     assert argv == ["nuclei", "-jsonl", "-silent", "-nc", "-u", TARGET,
                     "-severity", "high", "-etags", "dos,intrusive,fuzz",
-                    "-rl", "50", "-timeout", "5"]
+                    "-rl", "50", "-rld", "1s", "-timeout", "5"]
 
 
 def test_nuclei_argv_intrusive_drops_the_tag_exclusion_and_keeps_the_rate_limit(gz):
@@ -121,7 +128,7 @@ def test_nuclei_argv_tag_flags_in_extra_pass_through_when_not_strict(gz):
 
 
 _STRICT_CASES = [f"{dash}{name}{sep}x"
-                 for name in _RATE_FLAGS + _TAG_FLAGS + _ATTACK_FLAGS
+                 for name in _RATE_FLAGS + _TAG_FLAGS + _ATTACK_FLAGS + _CONFIG_FLAGS
                  for dash, sep in (("-", " "), ("--", "="))]
 
 
@@ -137,6 +144,56 @@ def test_strict_list_matches_the_module_constants(gz):
     assert set(_RATE_FLAGS) == gz.NUCLEI_RATE_FLAGS
     assert set(_TAG_FLAGS) == gz.NUCLEI_TAG_FLAGS
     assert set(_ATTACK_FLAGS) == gz.NUCLEI_ATTACK_FLAGS
+    assert set(_CONFIG_FLAGS) == gz.NUCLEI_CONFIG_FLAGS
+    assert gz.NUCLEI_STRICT_FLAGS == set(_RATE_FLAGS + _TAG_FLAGS + _ATTACK_FLAGS
+                                         + _CONFIG_FLAGS)
+
+
+@pytest.mark.parametrize("extra", ["-config x.yaml", "--config=x.yaml", "-tp p.yaml",
+                                   "--tp=p.yaml", "-profile p", "--profile=p"])
+def test_scan_extra_config_flags_stay_raw_passthrough(gz, extra):
+    """Owner, 2026-10-05: scan --extra is the user's own; only the routine refuses."""
+    argv = gz.nuclei_argv("nuclei", TARGET, "", extra)
+    assert argv[-len(extra.split()):] == extra.split()
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"rate_limit": 7}, {"intrusive": True}])
+def test_every_emitted_rate_limit_carries_rld_1s(gz, kwargs):
+    argv = gz.nuclei_argv("nuclei", TARGET, "", "", **kwargs)
+    i = argv.index("-rl")
+    assert argv[i + 2:i + 4] == ["-rld", "1s"]
+    assert argv.count("-rld") == 1
+
+
+@pytest.mark.parametrize("extra", ["-rl 10", "-rlm 600", "-rld 2s", "--rate-limit-duration=2s"])
+def test_no_second_rld_when_scan_extra_owns_the_rate(gz, extra):
+    argv = gz.nuclei_argv("nuclei", TARGET, "", extra)
+    assert argv.count("-rld") + argv.count("--rate-limit-duration=2s") <= 1
+    assert "1s" not in argv
+
+
+@pytest.mark.parametrize("rate", [0, -1, True, False, "50", 1.5])
+def test_nuclei_argv_refuses_a_rate_limit_that_is_not_a_positive_int(gz, rate):
+    with pytest.raises(ValueError, match="nuclei_rate_limit"):
+        gz.nuclei_argv("nuclei", TARGET, "", "", rate_limit=rate)
+
+
+@pytest.mark.parametrize("intrusive", ["false", "true", 1, 0, None])
+def test_nuclei_argv_refuses_an_intrusive_that_is_not_a_bool(gz, intrusive):
+    with pytest.raises(ValueError, match="nuclei_intrusive"):
+        gz.nuclei_argv("nuclei", TARGET, "", "", intrusive=intrusive)
+
+
+@pytest.mark.parametrize("extra", [["-rl", "5"], 5, {"rl": 5}])
+def test_nuclei_argv_refuses_an_extra_that_is_not_a_string(gz, extra):
+    with pytest.raises(ValueError, match="must be a string"):
+        gz.nuclei_argv("nuclei", TARGET, "", extra, strict=True)
+
+
+@pytest.mark.parametrize("rate,intrusive", [(1, False), (1, True), (None, False), (500, True)])
+def test_nuclei_argv_accepts_valid_rate_and_intrusive(gz, rate, intrusive):
+    argv = gz.nuclei_argv("nuclei", TARGET, "", "", rate_limit=rate, intrusive=intrusive)
+    assert argv[argv.index("-rl") + 1] == str(rate or 50)
 
 
 def test_nuclei_argv_strict_allows_other_extra_flags(gz):

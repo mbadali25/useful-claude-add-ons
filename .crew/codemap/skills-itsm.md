@@ -20,7 +20,7 @@ the paper trail, the other pages the person.
   (`skills/notify/SKILL.md:161`); it owns the single Telegram poller so concurrent jobs do not
   fight over replies.
 - `plugin/gizmoduck/scripts/_test/labtarget/labtarget_server.py:264` — module entry point (`main()`), from the graph
-- `plugin/gizmoduck/scripts/gizmoduck.py:1511` — module entry point (`main()`), from the graph
+- `plugin/gizmoduck/scripts/gizmoduck.py:1530` — module entry point (`main()`), from the graph
 - `skills/notify/scripts/telegram_get_chat_id.py:19` — module entry point (`main()`), from the graph
 
 ## Owns data

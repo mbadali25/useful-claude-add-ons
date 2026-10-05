@@ -121,11 +121,18 @@ ending with `.`, at most 64 characters, not a Windows device name (`CON`, `nul.t
 rest, in any case), and not the same as another target's name but for case. The options that
 switch active scanning on (`zap_active`, `nmap_vuln`, `nuclei_intrusive`, `sqlmap`) must be
 YAML `true` or `false`: a quoted `"false"` is refused, because it would read as true.
-`nuclei_rate_limit` must be an integer of 1 or more. Nuclei's `extra` option may not carry a
-tag, rate or attack flag (`-etags`, `-itags`, `-rl`, `-rlm`, `-it`, `-dast`, `-fuzz` and their
-long forms; the full list is `NUCLEI_*_FLAGS` in `gizmoduck.py`): the manifest is refused
-with exit 2, because the recorded mode would otherwise lie - use `nuclei_intrusive` and
-`nuclei_rate_limit`. The manifest is read
+`nuclei_rate_limit` must be an integer of 1 or more. Nuclei's `extra` option must be a string
+and may not carry a tag, rate, attack or config-file flag (`-etags`, `-itags`, `-rl`, `-rlm`,
+`-rld`, `-it`, `-dast`, `-fuzz`, `-config`, `-tp`, `-profile` and their long forms; the full
+list is `NUCLEI_STRICT_FLAGS` in `gizmoduck.py`): the manifest is refused with exit 2, because
+the recorded mode would otherwise lie - use `nuclei_intrusive` and `nuclei_rate_limit`.
+Before Nuclei runs, the routine also reads the Nuclei config file Nuclei itself would merge
+(`<user config dir>/nuclei/config.yaml` - `~/.config/nuclei/config.yaml` or
+`$XDG_CONFIG_HOME/nuclei/config.yaml` on Linux, `%APPDATA%\nuclei\config.yaml` on Windows -
+and `$NUCLEI_CONFIG_DIR/config.yaml`). If it sets `include-tags`, `include-templates`, any
+rate key, `per-host-rate-limit`, `dast`, `fuzz` or `profile`, the Nuclei cell is refused
+(`error:returncode=-1`, naming the file and keys) and nothing is sent; a file that exists but
+cannot be read or parsed is refused the same way. A missing or comment-only file is fine. The manifest is read
 once; what was checked is what runs. `routine` needs PyYAML; without it the command exits 2
 and names it.
 
@@ -204,11 +211,15 @@ The routine's own test suite never runs a real scanner: every tool is a fake inj
 ## Manual CLI (Linux: `python3`, Windows: `python`)
 
 **Nuclei is safe by default** (since T-0108): every scan, from `scan` or `routine`, adds
-`-etags dos,intrusive,fuzz` and `-rl 50` (at most 50 requests per second; Nuclei's own default
-is 150). `scan --intrusive` drops the tag exclusion - pass it only after the target's owner has
+`-etags dos,intrusive,fuzz` and `-rl 50 -rld 1s` (at most 50 requests per second; Nuclei's own
+default is 150). The exclusion is tag-based and best-effort: it skips templates whose `tags`
+name those words, and a template that marks itself intrusive only elsewhere (a few upstream
+templates put it under `info.metadata`) is not excluded. `scan --intrusive` drops the tag exclusion - pass it only after the target's owner has
 authorised intrusive testing - and `scan --rate-limit N` replaces the 50. A rate flag typed in
 `scan --extra` stands in place of the default; together with `--rate-limit` it is a usage error.
-`scan --extra` is otherwise a raw passthrough. In a manifest the same two switches are
+`scan --extra` is otherwise a raw passthrough, and on that path **you own its safety**: a
+`-itags`, `-config`, `-tp` or `-rld` you type there, or your own Nuclei config file, can undo
+both defaults. Only `routine` refuses them. In a manifest the same two switches are
 `nuclei_intrusive` and `nuclei_rate_limit`.
 
 ```bash

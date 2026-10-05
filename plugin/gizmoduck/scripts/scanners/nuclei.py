@@ -55,6 +55,7 @@ begin with - `-silent`'s real signature for "ran, found nothing".
 """
 import json
 import os
+import sys
 
 from . import base
 
@@ -91,6 +92,84 @@ def _gizmoduck():
         return mod
 
 
+# Keys in a Nuclei config.yaml that re-include excluded templates, fuzz, or
+# move the rate cap without any flag on the command line. goflags matches a
+# config key against every registered flag name, short and long, so both are
+# listed. A key set to null, "", [] or false sets nothing; 0 does (rl: 0 is
+# uncapped).
+RISKY_CONFIG_KEYS = frozenset({
+    "itags", "include-tags", "it", "include-templates",
+    "rl", "rate-limit", "rlm", "rate-limit-minute", "rld", "rate-limit-duration",
+    "per-host-rate-limit", "dast", "fuzz", "dts", "dast-server",
+    "config", "tp", "profile",
+})
+
+
+def _go_user_config_dir():
+    """Go's os.UserConfigDir(), or None where Go returns an error."""
+    if os.name == "nt":
+        return os.environ.get("APPDATA") or None
+    if sys.platform == "darwin":
+        home = os.environ.get("HOME")
+        return os.path.join(home, "Library", "Application Support") if home else None
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return xdg if os.path.isabs(xdg) else None
+    home = os.environ.get("HOME")
+    return os.path.join(home, ".config") if home else None
+
+
+def nuclei_config_files():
+    """Every config.yaml Nuclei v3.11.1 may merge into a run: goflags' own
+    (`<UserConfigDir>/nuclei/config.yaml`, else `./nuclei/config.yaml`),
+    nuclei's fallback (`.nuclei-config/nuclei/config.yaml`), and
+    `$NUCLEI_CONFIG_DIR/config.yaml` when that is set."""
+    base_dir = _go_user_config_dir()
+    if base_dir:
+        paths = [os.path.join(base_dir, "nuclei", "config.yaml")]
+    else:
+        paths = [os.path.join(".", "nuclei", "config.yaml"),
+                 os.path.join(".nuclei-config", "nuclei", "config.yaml")]
+    custom = os.environ.get("NUCLEI_CONFIG_DIR")
+    if custom:
+        paths.append(os.path.join(custom, "config.yaml"))
+    return list(dict.fromkeys(paths))
+
+
+def _sets_something(value):
+    return not (value is None or value is False or value == "" or value == [])
+
+
+def check_nuclei_config():
+    """None when no Nuclei config file loosens the safe defaults, else the
+    refusal message. A missing file is fine; one that exists but cannot be
+    read or parsed is refused - "could not tell" is not "nothing set"."""
+    for path in nuclei_config_files():
+        if not os.path.lexists(path):
+            continue
+        try:
+            import yaml
+            with open(path, encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+        except Exception as exc:  # noqa: BLE001 - every failure is "could not tell"
+            return (f"nuclei config {path} exists but could not be read or parsed "
+                    f"({type(exc).__name__}: {exc}); refusing to run, because it may "
+                    f"loosen the safe defaults. Fix or remove it")
+        if data is None:
+            continue
+        if not isinstance(data, dict):
+            return (f"nuclei config {path} is not a YAML mapping; refusing to run, "
+                    f"because what it sets could not be told. Fix or remove it")
+        risky = sorted(k for k, v in data.items()
+                       if isinstance(k, str) and k in RISKY_CONFIG_KEYS and _sets_something(v))
+        if risky:
+            return (f"nuclei config {path} sets {', '.join(risky)}, which would loosen "
+                    f"gizmoduck's safe defaults with no flag to show it; refusing to run. "
+                    f"Remove those keys, and use the manifest options nuclei_intrusive "
+                    f"and nuclei_rate_limit instead")
+    return None
+
+
 def is_available():
     return _gizmoduck().find_nuclei() is not None
 
@@ -123,10 +202,15 @@ def run(target, outdir, opts=None):
     # manifest parse refuses it too; a hand-built Manifest skips that check).
     try:
         cmd = gz.nuclei_argv(exe, target, opts.get("severity") or "", opts.get("extra") or "",
-                             intrusive=bool(opts.get("nuclei_intrusive")),
+                             intrusive=opts.get("nuclei_intrusive", False),
                              rate_limit=opts.get("nuclei_rate_limit"), strict=True)
     except ValueError as exc:
         return None, base.ToolResult(returncode=-1, stdout="", stderr=str(exc),
+                                     timed_out=False)
+
+    refusal = check_nuclei_config()
+    if refusal:
+        return None, base.ToolResult(returncode=-1, stdout="", stderr=refusal,
                                      timed_out=False)
 
     os.makedirs(outdir, exist_ok=True)

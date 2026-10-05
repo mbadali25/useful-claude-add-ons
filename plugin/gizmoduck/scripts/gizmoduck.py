@@ -167,6 +167,14 @@ NUCLEI_TAG_FLAGS = frozenset({"etags", "exclude-tags", "itags", "include-tags"})
 NUCLEI_ATTACK_FLAGS = frozenset({"it", "include-templates", "dast", "fuzz", "dts",
                                  "dast-server", "per-host-rate-limit", "rld",
                                  "rate-limit-duration"})
+# A config or template-profile file can set any of the above (include-tags,
+# rate-limit-duration, include-templates ...) where no flag shows it.
+NUCLEI_CONFIG_FLAGS = frozenset({"config", "tp", "profile"})
+NUCLEI_STRICT_FLAGS = (NUCLEI_RATE_FLAGS | NUCLEI_TAG_FLAGS | NUCLEI_ATTACK_FLAGS
+                       | NUCLEI_CONFIG_FLAGS)
+# Pinned beside every -rl gizmoduck emits: `-rl N` means N per -rld, and a
+# config file's rate-limit-duration would otherwise stretch or shrink it.
+NUCLEI_RATE_DURATION = "1s"
 
 
 def _nuclei_flag_names(tokens):
@@ -181,12 +189,23 @@ def nuclei_argv(exe, target, severity, extra, *, intrusive=False, rate_limit=Non
     Order: `-jsonl -silent -nc`, the target, `-severity`, `-etags` with the
     safe exclusions unless `intrusive`, the rate flag, then `extra` unchanged.
     An explicit `rate_limit` wins; else a rate flag in `extra` stands; else
-    `-rl 50`. ValueError for `rate_limit` plus a rate flag in `extra`, and,
-    with `strict` (the routine), for any tag, rate or attack flag in `extra`."""
+    `-rl 50`; every -rl gizmoduck emits carries `-rld 1s`. ValueError for a
+    `rate_limit` that is not an integer of 1 or more (bool refused), an
+    `intrusive` that is not a real bool, an `extra` that is not a string,
+    `rate_limit` plus a rate flag in `extra`, and, with `strict` (the
+    routine), any tag, rate, attack or config-file flag in `extra`."""
+    if not isinstance(intrusive, bool):
+        raise ValueError(f"nuclei_intrusive must be true or false, not {intrusive!r}")
+    if rate_limit is not None and (isinstance(rate_limit, bool)
+                                   or not isinstance(rate_limit, int) or rate_limit < 1):
+        raise ValueError(f"nuclei_rate_limit must be an integer of 1 or more, "
+                         f"not {rate_limit!r}")
+    if extra is not None and not isinstance(extra, str):
+        raise ValueError(f"nuclei 'extra' must be a string of flags, not {extra!r}")
     tokens = extra.split() if extra else []
     names = _nuclei_flag_names(tokens)
     if strict:
-        bad = sorted(names & (NUCLEI_RATE_FLAGS | NUCLEI_TAG_FLAGS | NUCLEI_ATTACK_FLAGS))
+        bad = sorted(names & NUCLEI_STRICT_FLAGS)
         if bad:
             raise ValueError(f"nuclei 'extra' may not carry {', '.join('-' + b for b in bad)}: "
                              f"the recorded scan mode would not say so. Use the options "
@@ -203,10 +222,10 @@ def nuclei_argv(exe, target, severity, extra, *, intrusive=False, rate_limit=Non
         cmd += ["-severity", severity]
     if not intrusive:
         cmd += ["-etags", ",".join(NUCLEI_SAFE_EXCLUDE_TAGS)]
-    if rate_limit is not None:
-        cmd += ["-rl", str(rate_limit)]
-    elif not extra_rate:
-        cmd += ["-rl", str(NUCLEI_DEFAULT_RATE_LIMIT)]
+    if rate_limit is not None or not extra_rate:
+        cmd += ["-rl", str(rate_limit if rate_limit is not None else NUCLEI_DEFAULT_RATE_LIMIT)]
+        if not names & {"rld", "rate-limit-duration"}:
+            cmd += ["-rld", NUCLEI_RATE_DURATION]
     return cmd + tokens
 
 
@@ -1096,7 +1115,7 @@ def _check_nuclei_options(i, options):
         raise ValueError(f"targets[{i}] option 'nuclei_rate_limit' must be an integer of 1 "
                          f"or more, not {rate!r}")
     extra = options.get("extra")
-    if isinstance(extra, str):
+    if extra is not None:
         try:
             nuclei_argv("nuclei", "x", "", extra, strict=True)
         except ValueError as exc:

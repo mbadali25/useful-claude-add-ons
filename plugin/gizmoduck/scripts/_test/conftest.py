@@ -31,3 +31,17 @@ def fixture():
     def _get(name: str) -> Path:
         return base / name
     return _get
+
+
+@pytest.fixture
+def scratch_nuclei_home(tmp_path, monkeypatch):
+    """Point every place Nuclei looks for a config.yaml at a scratch tree, so
+    the operator's own ~/.config/nuclei/config.yaml never decides a result.
+    Returns the HOME used; nothing is created under it."""
+    home = tmp_path / "scratch-home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("NUCLEI_CONFIG_DIR", raising=False)
+    return home

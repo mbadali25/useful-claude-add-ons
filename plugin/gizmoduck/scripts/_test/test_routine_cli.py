@@ -1269,7 +1269,8 @@ def test_manifest_nuclei_rate_limit_must_be_a_positive_integer(gz, tmp_path, cap
     assert "option 'nuclei_rate_limit' must be an integer of 1 or more" in err
 
 
-@pytest.mark.parametrize("extra", ["-itags dos", "--rl=500", "-exclude-tags x", "-dast"])
+@pytest.mark.parametrize("extra", ["-itags dos", "--rl=500", "-exclude-tags x", "-dast",
+                                   "-config c.yaml", "--tp=p.yaml", "-profile p"])
 def test_manifest_refuses_nuclei_safety_flags_in_extra(gz, tmp_path, capsys, extra):
     err = _bad_nuclei_manifest(gz, tmp_path, capsys, f"{{extra: '{extra}'}}")
     assert "nuclei_intrusive" in err and "nuclei_rate_limit" in err
@@ -1300,3 +1301,9 @@ def test_routine_records_nuclei_mode(gz, fixture, tmp_path):
     coverage = _meta(tmp_path / "out")["coverage"]
     assert coverage["by_status"] == {"ran": 6}
     assert coverage["complete"] is True
+
+
+@pytest.mark.parametrize("extra", ["['-rl', '500']", "5", "{rl: 5}"])
+def test_manifest_refuses_a_nuclei_extra_that_is_not_a_string(gz, tmp_path, capsys, extra):
+    err = _bad_nuclei_manifest(gz, tmp_path, capsys, f"{{extra: {extra}}}")
+    assert "'extra' must be a string" in err

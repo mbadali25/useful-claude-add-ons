@@ -24,15 +24,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   In a routine manifest: `options.nuclei_intrusive` (a real boolean, now a gate option) and
   `options.nuclei_rate_limit`. The Nuclei cell records `ran(safe)` or `ran(safe+intrusive)`
   instead of a bare `ran`; coverage still counts both as `ran`.
-- **Refused in a manifest.** Nuclei's `extra` option may not carry a tag, rate or attack flag:
-  the spec's eight (`-etags`, `-exclude-tags`, `-itags`, `-include-tags`, `-rl`, `-rate-limit`,
-  `-rlm`, `-rate-limit-minute`) plus nine more found in `nuclei -h` on v3.11.1 (`-it`,
-  `-include-templates`, `-dast`, `-fuzz`, `-dts`, `-dast-server`, `-per-host-rate-limit`,
-  `-rld`, `-rate-limit-duration`). The manifest is refused at parse time with exit 2; a
+- **Refused in a manifest.** Nuclei's `extra` option must be a string and may not carry a tag,
+  rate, attack or config-file flag: the spec's eight (`-etags`, `-exclude-tags`, `-itags`,
+  `-include-tags`, `-rl`, `-rate-limit`, `-rlm`, `-rate-limit-minute`), nine more found in
+  `nuclei -h` on v3.11.1 (`-it`, `-include-templates`, `-dast`, `-fuzz`, `-dts`, `-dast-server`,
+  `-per-host-rate-limit`, `-rld`, `-rate-limit-duration`), and `-config`, `-tp`, `-profile`,
+  whose files can set any of those unseen. The manifest is refused at parse time with exit 2; a
   hand-built `Manifest` meets the same refusal in the adapter, recorded `error:returncode=-1`.
-- **Verified against Nuclei v3.11.1** with the template lister (no traffic): `-tags dos` lists
-  11 templates, `-etags dos,intrusive,fuzz -tags dos` lists 0, and `-itags dos` brings 7 back,
-  which is why `-itags` is refused in a manifest.
+  The builder itself refuses a `nuclei_rate_limit` that is not an integer of 1 or more (`0`,
+  `-1`, `true`) and a `nuclei_intrusive` that is not a real boolean (`"false"`).
+- **Your own Nuclei config is checked in a routine run.** Every `-rl` gizmoduck emits carries
+  `-rld 1s`. Before the routine starts Nuclei it reads the config file Nuclei would merge
+  (`<user config dir>/nuclei/config.yaml` and `$NUCLEI_CONFIG_DIR/config.yaml`); one that sets
+  `include-tags`, `include-templates`, a rate key, `per-host-rate-limit`, `dast`, `fuzz` or
+  `profile`, or that exists but cannot be read, refuses the Nuclei cell. `scan --extra` stays a
+  raw passthrough whose safety is the user's.
+- **Best-effort.** The exclusion is tag-based: a template that marks itself intrusive only
+  under `info.metadata` (three upstream templates do) is not excluded.
+- **Verified against Nuclei v3.11.1** with the template lister (no traffic): `-tags intrusive`
+  lists 622 templates and `-etags dos,intrusive,fuzz -tags intrusive` lists 0 (templates at
+  `8ad90da2`; a reviewer's later checkout measured 619 to 0). `dos` and `fuzz` are not used as
+  evidence: Nuclei's own `.nuclei-ignore` already hides most of them.
 
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
