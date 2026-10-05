@@ -795,7 +795,7 @@ merge of `6387ab49`: T-0072's `deploy-allowed`, whose line citations T-0072 re-r
 `plugin/crew/commands/autopilot.md` (110 lines since T-0010, 100 since T-0018,
 `allowed-tools: Read, Write, Edit, Bash, Agent, Skill`, `:4`) first
 routes its whole argument string, single-quoted (`## 0. Route`, `:14-27`), then either
-prints `status` (`## 1. status`, `:29-36`, read-only, armed or not) or drives
+prints `status` (`## 1. status`, `:30-36`, read-only, armed or not) or drives
 one ticket through the phase commands **in-session**, following each
 command's own procedure; the run refuses unless armed (`:46-47`). The reader
 behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (1999 lines), is
@@ -851,6 +851,46 @@ under that constant, refusing with exit 2 and no write otherwise. Tests `plugin/
 JUDGEMENT: the policy is read before `reject` takes the ledger lock (an accepted gap for one
 session per ticket), and the constant can be typed by hand with `review_ledger.py --reject --by`,
 the forge-local-state threat README's "Scope and approval" already states.
+
+**In-flight markers (T-0049, crew 1.0.375).** DERIVED at `3e6ff1e9`. `next_phase`
+(`plugin/crew/hooks/scripts/crew_autopilot.py:1349`) takes `runner`; when set, and only after `_phase`
+returned no stop, `_inflight` (`:1316`, called at `:1368`) lazy-imports `crew_inflight` and asks its
+`next_stop` (`crew_inflight.py:574`), which reads `holds(root, ticket, runner=runner)`: `free`/`mine` return None (the plain result), `elsewhere` is
+phase `handover-elsewhere`, everything else - `live`, `stale`, `unknown`, an unexpected state, an
+import error or a raise - is phase `in-flight`, with the owner's clear command as `command` for stale
+and unknown. `FIXED_STOPS` (`:307`) gains both (`:321`; fourteen with main's since); the CLI's `--runner` (`:3290`, checked at `:3313`) is
+checked lazily by `_runner_ok` (`:3236`: an unknown runner exits 2, an import failure is the stop).
+`plugin/crew/hooks/scripts/crew_inflight.py` owns the marker,
+`<git-common-dir>/crew/inflight/<ticket>.json`: `TTL_SECONDS` 1800 and `HEARTBEAT_SECONDS`
+`min(600, TTL/3)` (`:113-114`), `STATES` and `RUNNERS` (`:118-119`), `CLEAR_COMMAND` (`:121`).
+The holder is `_holder_pid` (`:388`): `CLAUDE_PID` only when `_ancestors` (`:361`) finds it among the
+CLI's ancestors and `_born_before_me` (`:381`) says it started first - the chain comes from /proc, `ps`,
+or a Windows process snapshot (`_win_ancestors` `:290`, whose walk is the pure `walk_parents` `:333`: it stops at a
+link that started after the one below it, or whose start cannot be read), and a hint that cannot be checked is never
+trusted - else the nearest ancestor named `claude` (`HOLDER_NAMES` `:120`, compared by `_name` `:355`,
+so `Claude.exe` counts), else None in a Claude Code session, else the CLI's parent. `_process` (`:270`)
+is the one OS seam: `/proc` (`_proc_stat` `:199`) on Linux, `os.kill` plus
+`ps -o stat=,ppid=,lstart=,comm=` (`_posix_process` `:210`) elsewhere on POSIX,
+OpenProcess/GetExitCodeProcess/GetProcessTimes (`_win_process` `:234`) on Windows; `probe` (`:447`)
+measures only when host, boot_id and pidns are equal, and any probe error (overflow included) is
+unmeasured. `holds` (`:562`) wraps `_assess` (`:596`: git, the directory, the lock wait,
+`load_marker` `:484` with lstat-first, duplicate-key and shape checks `_shape` `:515`, a pid outside
+1..2^32 included) and `_judge` (`:619`: the reader's own worktree unnameable is unknown; a future
+heartbeat unknown; older than the TTL or probed gone stale; `_is_mine` (`:639`, where only when both
+pids are None does a non-empty session decide alone) mine; another worktree elsewhere; else live); any
+raise is unknown. Writers, each under `_Lock` (`:679`), log first (`_log` `:745`, whose failure is
+`LogError` naming the file to fix or move aside; `_unlog` `:769` takes an event back when the effect
+fails): `claim` (`:829`, `_publish` `:867` with `os.link` or a refresh by replace), `release` (`:888`),
+`clear` (`:911`, stale or unknown only - unknown included - via `_remove_logged` `:879`). The
+heartbeat: `beat_once` (`:961`) checks marker, token and holder before the lock (`_beat_check` `:946`)
+and again under it, and skips a beat on a busy lock or any OSError; `beat_loop` (`:984`) stops once
+its holder has gone more than the TTL without a confirmed-alive beat, so an unprobeable dead holder
+reads stale within 2 x TTL + one heartbeat (4200 s); `spawn_beat` (`:801`) starts it detached.
+`crew_status._inflight_lines` (`plugin/crew/hooks/scripts/crew_status.py:170`, called at `:282`)
+prints `survey` (`crew_inflight.py:654`). `AUTONOMOUS_STOPS` gains `clear-inflight`
+(`plugin/crew/hooks/scripts/crew_state.py:1121`). JUDGEMENT: the heartbeat surviving a Bash tool call
+was measured on Linux only (cloud container, no pid namespace); the Windows snapshot, probe and
+creation-time paths are tested only through mocked seams, and macOS only by hiding /proc on Linux.
 
 **Ship (T-0011, crew 1.0.349).** DERIVED on T-0011's merge of main `155fe6d8` (re-derived
 with `grep -n`); the line numbers in this paragraph are that commit's, not the anchor's. After `/crew:done`
@@ -926,46 +966,46 @@ not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal; a findin
 `check_follow_up` (`:756`) reads the follow-up's `direction.md` with `newline=""`, split on `\n` only, never `splitlines()` (review round 4 FIX 2, round 6 FIX 4; a CRLF line drops its one `\r`). `review_run.finish` records
 `findings` and `webtest_open` (`_webtest_open`, `plugin/crew/hooks/scripts/review_run.py:514`)
 and prints `auto_accept_line` (`:523`). JUDGEMENT: autopilot never calls `auto_accept`; the
-command prose (`plugin/crew/commands/autopilot.md:86`) runs it inside the review phase.
+command prose (`plugin/crew/commands/autopilot.md:88`) runs it inside the review phase.
 
-T-0018 (crew 1.0.43) added the router and `status`. `route_args` (`:1328`)
+T-0018 (crew 1.0.43) added the router and `status`. `route_args` (`:2510`)
 takes the command's `$ARGUMENTS` whole - Claude Code 2.1.283 substitutes
 `$0` with the first argument and leaves an out-of-range `$N` literal, so a
-positional `$1`/`$2` never carried the ticket - and `route` (`:1299`) decides
-the subcommand: `SUBCOMMANDS` (`:224`), of which only `status` and `run` are
+positional `$1`/`$2` never carried the ticket - and `route` (`:2473`) decides
+the subcommand: `SUBCOMMANDS` (`:355`), of which only `status` and `run` are
 `AVAILABLE`; `assign`/`goal`/`focus` stop naming T-0019/T-0012/T-0020; a
 bare INDEX-shaped id or existing `.work/tickets/<id>/` is `run`; any other
 word - `approve` and `questions-check` included - a second word that is not a ticket, or a
 third word stops (`run --goal` stops naming T-0012); `route --first <token>` routes one token
-alone. `status` (`:1523`) composes `settings`, `resume_target` or `next_phase`,
-`review_ledger.status` and `crew_resume`, and `status_text` (`:1562`) caps it
-at 12 lines; `--json` prints the same dict as one line of JSON (`main`, `:1662`), inside the
+alone. `status` (`:3072`) composes `settings`, `resume_target` or `next_phase`,
+`review_ledger.status` and `crew_resume`, and `status_text` (`:3111`) caps it
+at 12 lines; `--json` prints the same dict as one line of JSON (`main`, `:3257`), inside the
 cap (round 5); what it cannot tell reads `unknown`. Neither reads the approval policy: `status`
 composes `resume_target` / `next_phase` / `_phase` with `policy=False` (T-0010 review round 3),
 so its approve and open-questions reasons are the fixed `POLICY_FREE_APPROVE` /
-`POLICY_FREE_QUESTIONS` (`:1106`, `:1109`) and at the approve phase it names `/crew:approve <id>`
+`POLICY_FREE_QUESTIONS` (`:2276`, `:2279`) and at the approve phase it names `/crew:approve <id>`
 under every setting (`test_route_and_status_unaffected_by_approval_policy`,
 `test_status_at_approve_reads_the_same_under_an_allowing_policy`); the one policy effect it shows is
 `crew_ticket.accepted`'s demotion of an `autopilot` receipt the policy no longer allows. Its `resume:` line reads usable
 only where bare `/crew:autopilot` - `resume_target` itself - would take it (`_resume_line`,
-`:1478`; `_takes`, `:1382`), asked only after `_resume_line`'s own read of the handoff passes the
+`:3027`; `_takes`, `:2928`), asked only after `_resume_line`'s own read of the handoff passes the
 branch, head and folder checks, so a file rewritten after `resume_target` read it is never
 vouched for by that earlier read (round 5), and says `unknown` when `resume_target` raised, or when
-`.work/HANDOFF.md` exists but cannot be read (`_read_handoff`, `:608`, which `resume`'s
+`.work/HANDOFF.md` exists but cannot be read (`_read_handoff`, `:1432`, which `resume`'s
 fall-through shares - only a file that is not there reads `no .work/HANDOFF.md`; a dangling
 or looping symlink, or a `.work` that is a dangling symlink, is there and reads `unknown`, round 5). A `next` stop
 made on the active-ticket pointer rather than the phase waits on re-pointing it (`_repoint`,
-`:1412`), never on the owner typing the phase's command, and offers driving the active ticket
-only while it is not closed - read by `_closed` (`:1442`) from INDEX.md's status and spec.md's
+`:2961`), never on the owner typing the phase's command, and offers driving the active ticket
+only while it is not closed - read by `_closed` (`:2991`) from INDEX.md's status and spec.md's
 `status: done` header directly, so no `direction.md` cannot hide either; a `spec.md` that exists
 but cannot be read makes `_closed` return None, and the offer becomes "could not tell whether
 <active> is still open" (round 4). A `stop=0` phase names
-bare `/crew:autopilot` only when that drives the same ticket (`_waiting`, `:1388`). Every drive
-suggestion goes through `_drive` (`:1433`), which writes `/crew:autopilot run <id>` for an id that
+bare `/crew:autopilot` only when that drives the same ticket (`_waiting`, `:2934`). Every drive
+suggestion goes through `_drive` (`:2982`), which writes `/crew:autopilot run <id>` for an id that
 is exactly a `SUBCOMMANDS` name - `route` would read the bare name as the subcommand - and the
 bare `/crew:autopilot <id>` otherwise. Its `review:`
-line (`_review`, `:1458`) prints a rounds count only for a ledger state in `LEDGER_STATES`
-(`:1358`); a state of `UNKNOWN`, or one review_ledger never writes, reads `unknown`.
+line (`_review`, `:3007`) prints a rounds count only for a ledger state in `LEDGER_STATES`
+(`:2904`); a state of `UNKNOWN`, or one review_ledger never writes, reads `unknown`.
 `plugin/crew/commands/autopilot.md` runs every `crew_autopilot.py` line as `python3 -B`, and the
 script itself sets `sys.dont_write_bytecode` under `__main__` before its sibling imports
 (`:160-162`), so neither the command nor the direct CLI writes a bytecode cache into the plugin;
@@ -1097,15 +1137,15 @@ refused. `question_policy` (`:1304`) is `take|stop` by the same rule without the
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`
 (`crew_ticket._register_ramp`, `plugin/crew/hooks/scripts/crew_ticket.py:705`, as for every
 route); and, for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger moved
-NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:884`). `questions_check` (`:1246`) validates
-`.work/tickets/<id>/questions.md` against `QUESTIONS_SHAPE` (`:1154`) and refuses a `taken:` line
+NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:884`). `questions_check` (`:2420`) validates
+`.work/tickets/<id>/questions.md` against `QUESTIONS_SHAPE` (`:2328`) and refuses a `taken:` line
 naming a policy that never takes (only `self`/`risk` do; the name is history, not compared with
 today's) or any `taken:` while the policy in force says `stop`. `next` appends
-`_approval_hint` (`:1114`) / `_question_hint` (`:1123`) to the `approve` and `open-questions`
-stops (`:479` for approve), which stay `stop=1`; `commands/autopilot.md` section 3 (`:72-80`)
+`_approval_hint` (`:2284`) / `_question_hint` (`:2293`) to the `approve` and `open-questions`
+stops (`:491` for approve), which stay `stop=1`; `commands/autopilot.md` section 3 (`:70-78`)
 runs the policy on exactly those two `stop=1` lines before stopping, with `python3 -B`, and
-states the `questions.md` shape `questions_check` enforces (review round 2). `main` (`:1662`)
-sends both to `_policy_main` (`:1602`) before T-0018's branches. In
+states the `questions.md` shape `questions_check` enforces (review round 2). `main` (`:3257`)
+sends both to `_policy_main` (`:3164`) before T-0018's branches. In
 `plugin/crew/hooks/scripts/crew_ticket.py`: `AUTOPILOT = "autopilot"` (`:144`), `_autopilot_refusal`
 (`:654`), `accepted` (`:671`) demotes an `autopilot` receipt unless that refusal is None, and
 `approve` (`:724`) refuses an `autopilot` via the policy denies, and refuses `via=autopilot` with
@@ -1282,7 +1322,7 @@ absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:228`). `measure
 times 50 forks and 200 writes per side, each shell reading its own clock (`$EPOCHREALTIME`, a
 pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing is an error,
 never zero. `status_line` (`:923`) reads config and the cache only, and
-`plugin/crew/hooks/scripts/crew_status.py:226` calls it and appends it after the `verify` line. Tests:
+`plugin/crew/hooks/scripts/crew_status.py:286` calls it and appends it after the `verify` line. Tests:
 `plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
 `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) shipped with T-0040 up to
 its landing bump, then split out to follow-up ticket W-0115 per rule 36
@@ -1558,7 +1598,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
-  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:67`).
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:70`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 87 mutations (by `len()` at `8cabe586`; 81 before T-0077) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
@@ -2382,7 +2422,7 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:212`) and `crew_status._verify_line`
-  (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
+  (`plugin/crew/hooks/scripts/crew_status.py:196`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one
   Codex stream), built and machine-locally replayed by
