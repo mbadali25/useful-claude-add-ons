@@ -1829,6 +1829,11 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   covers each included file's set name and bytes, and the overlay's absence.
   The first stack set is `plugin/crew/skills/crew-standards/references/python.md` (set
   `PYTHON`, `applies-to: ["**/*.py"]`, nine standards, T-0086 slice 1); no loader code changed for it.
+  The second is `references/powershell.md` (set `PWSH`, `applies-to: ["**/*.ps1", "**/*.psm1",
+  "**/*.psd1"]`, one standard, PWSH-16, L-0534), so this repository's own hook `.ps1` changes now
+  draw it. SQL, .NET, Terraform, Angular, PHP and Node.js have candidates only, each in its
+  `stack-*` skill's `references/candidates.md` (L-0532..L-0538; JUDGEMENT: public change sets do
+  not count, owner 2026-10-05).
 - **Self-check.** `init` (`:520`) exclusive-creates `.work/tickets/<id>/selfcheck.md`;
   `record_problems` (`:414`) refuses a missing, duplicate or unknown row, a status outside
   `STATUSES` (`:78`) and placeholder evidence; `stamp` (`:535`) validates the rows from one

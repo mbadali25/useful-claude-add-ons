@@ -378,6 +378,59 @@ def test_python_set_applies_to_python_files_only():
         True, True, False, False)
 
 
+# ---- L-0534: the PowerShell set ----------------------------------------------------
+
+# Owner decision 2026-10-05: only PWSH-16's command-resolution half is earned by this
+# repository's own reviews; every other PowerShell rule is a stack-powershell candidate.
+_ADMITTED_PWSH = ["PWSH-16"]
+
+# Hand count of the defects PWSH-16's Why enumerates, each matched to a quoted finding
+# in its Earned by: crew-0.19.69 one, crew-0.19.92 two (no proof run; -All walked past
+# the stub), crew-1.0.23 one. A new or edited standard re-counts, never copies the Why.
+_PWSH_FINDINGS = {"PWSH-16": 4}
+
+
+def test_pwsh_set_parses_with_every_field():
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "powershell.md"))
+
+    assert parsed is not None, problems
+    assert (problems, parsed["set"], parsed["applies_to"],
+            [s["id"] for s in parsed["standards"]]) == (
+        [], "PWSH", ["**/*.ps1", "**/*.psm1", "**/*.psd1"], _ADMITTED_PWSH)
+
+
+def test_pwsh_why_finding_counts_match_their_enumerations():
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "powershell.md"))
+    assert parsed is not None, problems
+
+    stated = {}
+    for std in parsed["standards"]:
+        claim = _WHY_COUNT_RE.search(std["fields"]["Why"])
+        stated[std["id"]] = int(claim.group(1)) if claim else None
+
+    assert stated == _PWSH_FINDINGS
+
+
+def test_pwsh_sources_quote_whole_spans_without_elision():
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "powershell.md"))
+    assert parsed is not None, problems
+
+    elided = [std["id"] for std in parsed["standards"]
+              if re.search(r"\[(\.\.\.|…)\]", std["fields"].get("Source", ""))]
+
+    assert elided == []
+
+
+def test_pwsh_set_applies_to_powershell_files_only():
+    def applies(files):
+        return "PWSH" in cs.effective_set(_REPO_ROOT, files)["sets"]
+
+    assert (applies(["plugin/crew/hooks/scripts/verify-gate.ps1"]), applies(["Mod/Mod.psm1"]),
+            applies(["Mod/Mod.psd1"]), applies(["plugin/crew/hooks/scripts/crew_guards.py"]),
+            applies(["README.md"]), applies(["x.ps1xml"])) == (
+        True, True, True, False, False, False)
+
+
 def test_shipped_sets_cite_no_machine_local_note():
     offenders = []
     for name in sorted(os.listdir(_REFS)):

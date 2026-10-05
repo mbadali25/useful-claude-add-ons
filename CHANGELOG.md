@@ -9,6 +9,37 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: the PowerShell standards set, PWSH-16, and PowerShell candidates (L-0534)
+
+- **Summary.** A change that touches a `.ps1`, `.psm1` or `.psd1` file now answers one
+  PowerShell standard in its pre-review self-check: resolve an external program to an
+  Application that is proven to run, never to whatever name lookup returns first.
+- **Behaviour change.** In this repository every hook-pair change touches a `.ps1`, so it now
+  draws the `PWSH` set. A ticket in flight with a `.ps1` change gets a stale stamp after it
+  merges this, and must add the PWSH-16 row to its self-check and stamp again.
+- **What changed.** New `plugin/crew/skills/crew-standards/references/powershell.md`, set
+  `PWSH` (the loader takes 2-6 capitals), `applies-to: ["**/*.ps1", "**/*.psm1", "**/*.psd1"]`,
+  holds PWSH-16, the command-resolution half of that research rule. It is earned by three of
+  this repository's own reviews: crew 0.19.69 (a security review of the scope layer), 0.19.92
+  (the PowerShell-security-hardening review in PR #200) and 1.0.23 BLOCK B2. Its Source
+  sentences are re-matched against the raw about_Command_Precedence page. New tests in
+  `test_crew_standards.py` cover it: `test_pwsh_set_parses_with_every_field`,
+  `test_pwsh_why_finding_counts_match_their_enumerations`,
+  `test_pwsh_sources_quote_whole_spans_without_elision` and
+  `test_pwsh_set_applies_to_powershell_files_only`. Each was proven red by a hand-run
+  mutation. `stack-powershell` points at the set, and its new `references/candidates.md` lists
+  PWSH-P1 (exit status, and `$null` as failure), PWSH-P2 (literal matching), PWSH-P3 (forced
+  collections), PWSH-04 (explicit bytes at a native boundary), the documentation-only
+  StrictMode half and PWSH-20 as overlay material. `crew-standards/SKILL.md` names both stack
+  sets. No loader, gate or `.ps1` change.
+- **Evidence.** The evidence is this repository's CHANGELOG and commits, plus public-source
+  research from a cloud pass on 2026-10-05, not the owner's original research. Public change
+  sets do not count (owner decision), so PWSH-P1's six public change sets leave it at 1.
+  PWSH-01..PWSH-20 were not all assessed, so the spec's `grep -c '^PWSH-' >= 20` check of the
+  change-set file does not pass. That is a reported deviation. The sabotage entries for the
+  four new tests are a tooling-only follow-up, because `sabotage_standards.py` is a harness
+  path.
+
 ### Added — crew: a `stack-php` skill and PHP candidate standards, no gated PHP set yet (L-0533)
 
 - **Summary.** crew gains a `stack-php` skill with PHP 8 pitfalls and a `php -l` verify rule,

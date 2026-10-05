@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: The PowerShell standards set, PWSH-16, and PowerShell candidates. A change that touches a `.ps1`, `.psm1` or `.psd1` file now answers one PowerShell standard in its pre-review self-check: resolve an external program to an Application that is proven to run, never to whatever name lookup returns first.
 - **crew**: A `stack-php` skill and PHP candidate standards, no gated PHP set yet. crew gains a `stack-php` skill with PHP 8 pitfalls and a `php -l` verify rule, and lists four candidate PHP standards with their sources. None is enforced.
-- **crew**: Angular 2+ candidate standards, no gated set yet. `stack-angular` now lists three candidate Angular 2+ standards with their sources. The one that matters most is NG-07: a failed read shows "could not verify" and blocks the writes it feeds. Nothing is enforced yet.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

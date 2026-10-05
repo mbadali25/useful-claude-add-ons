@@ -21,9 +21,9 @@ cites these ids, and on a conflict the standard wins and the probe is fixed.
   change sets; its `Change sets` line names them.
 - **Stack sets** - further files in `references/` (per language, T-0086),
   each with an `applies-to` glob list; a set applies when a changed file
-  matches one of its globs. The first is `references/python.md`, set
-  `PYTHON`, `applies-to: ["**/*.py"]`; the other stacks follow as further
-  files, under the same three-change-set bar.
+  matches one of its globs: `python.md` (`PYTHON`, `**/*.py`) and
+  `powershell.md` (`PWSH`, `.ps1`/`.psm1`/`.psd1`). Other stacks list
+  candidates in their `stack-*` skill until three change sets earn a set.
 - **The repository overlay** - `.crew/standards.md`, set `REPO`, read when it
   exists. It adds standards (`## REPO-01 <name>`) and `## Supplements
   <GEN-id>` sections carrying the repository's literal commands for a plugin
