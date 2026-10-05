@@ -1164,16 +1164,27 @@ registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json
 (`:355-362`; rule 28 at `:310-316` after T-0094 merged `8ab733d7`, `:307-313` before, until L-0516 inserted rule 10), which also maps `commands/autopilot.md` since review round 2.
 
 **Cross-session messages (T-0032).** DERIVED on `rush/g3d-bridge` (release/1.2.0 plus the T-0030
-port), 2026-10-05. `plugin/crew/hooks/scripts/crew_bridge.py` is the doorbell: `DOORBELL_RE`
-(`:71`) is the closed grammar, `compose` (`:78`) builds the line `ring` prints (`cmd_ring`, `:112`),
-`parse` (`:92`) full-matches stdin (4096 bytes, strict UTF-8, one trailing newline stripped) and
-`cmd_receive` (`:149`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
-`_confirm` (`:130`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`). It writes
+port), 2026-10-05; line numbers re-read after L-0636. `plugin/crew/hooks/scripts/crew_bridge.py` is the doorbell: `DOORBELL_RE`
+(`:93`) is the closed grammar, `compose` (`:100`) builds the line `ring` prints (`cmd_ring`, `:257`),
+`parse` (`:114`) full-matches stdin (4096 bytes, strict UTF-8, one trailing newline stripped) and
+`cmd_receive` (`:294`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
+`_confirm` (`:275`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`). Apart from L-0636's `ring --to` it writes
 nothing and builds only on `crew_coord`'s public names (`Channel.fetch`, `safe`, `peer`, `run_git`,
-the exit codes); `CHANNEL_RE` (`:69`) restates `crew_coord._CHANNEL_RE`, pinned equal by
+the exit codes); `CHANNEL_RE` (`:89`) restates `crew_coord._CHANNEL_RE`, pinned equal by
 `test_channel_rule_is_crew_coords`. `commands/autopilot.md:117` is section 8, the untrusted-data
 rules. JUDGEMENT: `kind` and `ref` change no behaviour on purpose; the receiver always re-reads the
 record, so a lying hint costs a fetch, not an action.
+
+**Unanswered doorbells (L-0636).** DERIVED on `rush/g3d-bridge`, 2026-10-05. `crew_bridge.py
+ring --to <label>` (`cmd_ring_to`, `:152`) appends one `rang` line (`rang_line`, `:146`) through
+`crew_coord.Channel.write`, on `RecordChannel` (`:134`), which remembers the tip of its last fetch
+because `write` hands `change` only the files. `pending` (`cmd_pending`, `:230`) parses the whole
+log (`read_log`, `:184`: a line that is not a JSON object with a string `event` and a `holder`, or a
+`rang` line without its fields, is `unknown`) and keeps each ring of this session id, or this
+machine and worktree, that no later line by a holder other than the ringer and this session
+follows (`pending_rings`, `:212`). `crew_coord.cmd_status` reads only `claims/`, so the new event
+cannot disturb it. JUDGEMENT: matching on machine and worktree as well as the session id is what
+lets the resume step after `/clear` still see a ring.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 

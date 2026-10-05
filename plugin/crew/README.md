@@ -2667,9 +2667,34 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   or `<git-common-dir>/crew/` moves. Neither calls `SendMessage` or
   `ListAgents` (they are Claude Code tools), and neither reads, prints or
   passes on `CLAUDE_CODE_MESSAGING_TOKEN`.
-- **Not covered here:** a held or undelivered message cannot be told apart
-  from a delivered one — the bridge gives no delivery receipt; the record
-  moving is the only acknowledgement.
+- **An unanswered doorbell reads `could not tell`** (L-0636). A held or
+  undelivered message cannot be told apart from a delivered one — the bridge
+  gives no delivery receipt — so the record moving is the only
+  acknowledgement. `ring --to <label>` (the peer's name,
+  `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`) first appends one `rang` line to the
+  channel log (holder, label, announced tip, time, machine, worktree) in one
+  commit on the fetched tip, through the same no-force write path as a claim;
+  a push that still fails after the retries prints `unknown - could not push`
+  (exit 3) and no doorbell. Without `--to`, `ring` writes nothing.
+
+  ```
+  python3 hooks/scripts/crew_bridge.py ring    --channel <c> --remote origin --to <label>
+  python3 hooks/scripts/crew_bridge.py pending --channel <c> --remote origin
+  ```
+
+  `pending` lists every ring of this session — its session id, or this
+  machine and worktree, so a ring survives `/clear` — that no later log line
+  by another holder follows: `could not tell - no record change from <label>
+  since the doorbell at <time> (<age> ago) [peer-written]`, exit 3; with
+  none, `no pending doorbells`, exit 0. Nothing turns a pending ring into
+  consent: no timeout, no retry, no "delivered" state, however old it is. A
+  failed fetch is `unknown - could not fetch` and a log line that is not a
+  log entry is `unknown`, never `no pending doorbells`. `/crew:autopilot`
+  prints it in `status` and in its resume step and reports the lines to you;
+  a pending ring is not a stop. **Limit:** any later log line by a holder
+  other than the ringer and this session clears the ring — a third session on
+  the channel clears it too, because the log does not record which peer a
+  holder is.
 
 ---
 

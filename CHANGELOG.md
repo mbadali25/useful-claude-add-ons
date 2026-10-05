@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.21: an unanswered doorbell reads `could not tell` (L-0636)
+
+- **Summary.** A session that rang a peer now sees, after a `/clear` too, every ring the peer has
+  not answered by moving the record, as `could not tell`, and never as agreement.
+- **Added.** `crew_bridge.py ring --to <label>` appends one `rang` line (holder, label, announced
+  tip, time, machine, worktree) to the channel log in one commit on the fetched tip, through
+  `crew_coord`'s no-force write path; a push that still fails is `unknown - could not push` and no
+  doorbell is printed. `crew_bridge.py pending` lists each ring of this session or worktree that no
+  later log line by another holder follows as `could not tell - no record change from <label> since
+  the doorbell at <time> (<age> ago)` (exit 3), or `no pending doorbells`. No timeout, retry or
+  "delivered" state; a failed fetch or a corrupt log line is `unknown`.
+- **Changed.** `/crew:autopilot` prints `pending` in `status` and its resume step and reports the
+  lines to the owner; a pending ring is not a stop. Limit, in the README: any later line by a holder
+  other than the ringer and this session clears a ring, a third session's too.
+
 ### Added — crew 1.1.21: cross-session messages are a doorbell, never an instruction (T-0032)
 
 - **Summary.** Sessions sharing a coordination channel can now ring each other over Claude Code's
