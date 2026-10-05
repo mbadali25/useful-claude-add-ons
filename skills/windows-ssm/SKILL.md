@@ -32,12 +32,20 @@ Two references and one helper. Read only the reference the task needs.
 Run Command cuts stdout at 24,000 characters and stderr at 8,000 and still reports
 `Success`. Check every result you will parse or act on:
 
+Bash (Linux, macOS, WSL; in Git Bash use the Python that
+`references/windows-tools.md` shows how to pick, since `python3` may be missing):
+
 ```bash
 aws ssm get-command-invocation --command-id "$CMD" --instance-id i-02573cafcfEXAMPLE > inv.json
 python3 scripts/ssm_output.py inv.json
 aws ssm get-command-invocation --command-id "$CMD" --instance-id i-02573cafcfEXAMPLE \
   | python3 scripts/ssm_output.py
 python3 scripts/ssm_output.py inv.json && jq -r .StandardOutputContent inv.json > out.txt
+```
+
+PowerShell:
+
+```powershell
 py scripts\ssm_output.py inv.json; if ($LASTEXITCODE -ne 0) { throw "SSM output not complete" }
 ```
 

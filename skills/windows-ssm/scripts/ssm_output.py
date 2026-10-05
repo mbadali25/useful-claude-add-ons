@@ -85,7 +85,11 @@ def judge(text: str) -> tuple[int, list[str]]:
         if not isinstance(value, str):
             what = "missing" if key not in doc else f"not a string ({type(value).__name__})"
             return UNKNOWN, [f"{key} is {what}: not a get-command-invocation result"]
-        chars, size = len(value), len(value.encode("utf-8"))
+        try:
+            size = len(value.encode("utf-8"))
+        except UnicodeEncodeError:
+            return UNKNOWN, [f"{key} holds text that is not valid Unicode (a lone surrogate)"]
+        chars = len(value)
         if chars >= limit or size >= limit:
             cut = True
             unit = "characters" if chars >= limit else "bytes"

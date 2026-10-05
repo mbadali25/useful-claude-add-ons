@@ -165,6 +165,11 @@ class TestCouldNotTell(unittest.TestCase):
     def test_non_string_content_could_not_tell(self):
         self.assert_unknown(run(invocation(stdout=None)), "StandardOutputContent")
 
+    def test_unencodable_text_could_not_tell(self):
+        raw = json.dumps(invocation()).replace('"hello\\n"', '"bad \\ud800 surrogate"')
+        self.assertIn("ud800", raw)
+        self.assert_unknown(run(raw), "StandardOutputContent")
+
     def test_empty_file_could_not_tell(self):
         self.assert_unknown(run(""), "empty")
 

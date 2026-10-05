@@ -79,6 +79,9 @@ Use `AWS-RunRemoteScript` when the script itself lives in S3 or GitHub.
 
 ## Session Manager
 
-An interactive session ends after the idle timeout above. A long-running job started from
-a session dies with it: start it as a Run Command, a scheduled task or a service instead,
-and poll for its result.
+An interactive session ends after the idle timeout above. Processes already started on the
+node keep running after an idle timeout
+([ending a session](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-end.html)),
+but you lose the terminal that was watching them and their output. For a long job, start it
+as a Run Command, a scheduled task or a service, write its output to a file or S3, and poll
+for the result.
