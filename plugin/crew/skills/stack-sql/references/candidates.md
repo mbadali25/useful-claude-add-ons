@@ -39,9 +39,11 @@ Every `CREATE [OR REPLACE] FUNCTION ... SECURITY DEFINER` sets `SET search_path 
 it runs `REVOKE ALL ON FUNCTION ... FROM PUBLIC` and grants `EXECUTE` only to the roles
 that need it. `CREATE OR REPLACE` does not keep an earlier `SET` clause, so state it again
 every time. It does keep the function's existing grants, and revoking from `PUBLIC` leaves a
-direct grant to any other role in place. A replace therefore lists the current grants (for
-example from `information_schema.routine_privileges`) and revokes every role that should not
-have them. Without the pin, a caller can shadow an object the function uses and run it
+direct grant to any other role in place. A replace therefore reads the function's full ACL
+from `pg_proc.proacl` (for example `SELECT proacl FROM pg_proc WHERE oid =
+'schema.fn(argtypes)'::regprocedure`, or `\df+`) and revokes every role that should not have
+it. `information_schema.routine_privileges` is not enough, because it shows only grants that
+involve currently enabled roles. Without the pin, a caller can shadow an object the function uses and run it
 with the definer's privileges. The default `EXECUTE` grant to `PUBLIC` makes the function
 callable by every role that has `USAGE` on its schema.
 
@@ -137,7 +139,9 @@ behave differently for two kinds of object:
   on the connection that creates it and on every later connection that writes to the
   indexed values: `ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`,
   `CONCAT_NULL_YIELDS_NULL` and `QUOTED_IDENTIFIER` ON, and `NUMERIC_ROUNDABORT` OFF. A
-  writer's connection options are therefore part of the change too.
+  writer with other settings fails. A reader with other settings gets no error, but the
+  optimizer ignores the computed-column index, so the query silently regresses. Writers'
+  and readers' connection options are therefore part of the change too.
 
 Source: https://learn.microsoft.com/en-us/sql/t-sql/statements/set-quoted-identifier-transact-sql?view=sql-server-ver17:
 "When you create a stored procedure, the SET QUOTED_IDENTIFIER and SET ANSI_NULLS settings
@@ -148,7 +152,8 @@ DELETE statements fail on tables with indexes on computed columns, or tables wit
 views." https://learn.microsoft.com/en-us/sql/relational-databases/indexes/indexes-on-computed-columns?view=sql-server-ver17:
 "The connection on which the index is created, and all connections trying INSERT, UPDATE,
 or DELETE statements that will change values in the index, must have six SET options set
-to ON and one option set to OFF."
+to ON and one option set to OFF." "The optimizer ignores an index on a computed column for any
+SELECT statement executed by a connection that doesn't have these same option settings."
 
 ## Not assessed
 

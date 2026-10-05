@@ -23,7 +23,7 @@ v26.10.0 docs, MDN, and the MCP specification 2025-06-18.
 
 Counted toward the bar: 4, in the spec's re-count (one change set in this repository, three
 in a private one). It is held back because the private change sets cannot be cited here yet.
-3 public change sets, which do not count.
+2 public change sets and 1 weak lead, none of which count.
 
 A paging client that stops early (a page, item, size or time cap) returns a value that says
 so: `{ items, truncated: true }`, a cursor, or an explicit note in a tool result. It never
@@ -33,10 +33,11 @@ cap with nothing left is not marked truncated.
 - This repository, commit `c80c68c8` ("mcp-servers: fix Codex QA findings - ... truncation"):
   "getAllPages() silently truncated at maxPages, presenting a partial list as complete. It
   now returns { items, truncated } instead of a bare array".
-- Public leads: devondragon/MotionMCP@53fb3106 (a review-cleanup finding: truncation reported
-  the actual returned count), evdanil/vscode-NexTerminal@f0e739cc (a review finding: an
-  exact-cap fetch is no longer marked truncated), and knpkv/npm@6b460535 (review pagination
-  feedback; weak, because the message does not tie the truncation change to a review item).
+- Public change sets: devondragon/MotionMCP@53fb3106 (a review-cleanup finding: truncation
+  reported the actual returned count) and evdanil/vscode-NexTerminal@f0e739cc (a review
+  finding: an exact-cap fetch is no longer marked truncated). Uncounted lead:
+  knpkv/npm@6b460535 (review pagination feedback, but its message does not tie the
+  truncation change to a review item).
 
 Source: https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/pagination:
 "Clients SHOULD: Treat a missing nextCursor as the end of results". So a server never drops

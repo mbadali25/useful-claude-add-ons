@@ -74,8 +74,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   covers PHP-01 (bound parameters and allow-listed identifiers), PHP-P1 (no `unserialize` of
   data an attacker can influence), PHP-P2 (context escaping) and PHP-P3 (strict comparison).
   Each gives its public change sets, its verdict and a php.net Source sentence, re-matched
-  against the raw page. `test_stack_skills.py` lists `stack-php`, and crew's skill count reads
-  32 everywhere it is stated. No `references/php.md`, loader or gate change, and no
+  against the raw page. `test_stack_skills.py` lists `stack-php`, and crew's skill count moves
+  from 31 to 32 everywhere it is stated (33 after L-0537). No `references/php.md`, loader or gate change, and no
   install-script change.
 - **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
   owner's original research. The owner decided that public change sets do not count toward the
