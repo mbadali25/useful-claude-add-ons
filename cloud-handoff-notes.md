@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:13 UTC
+Last updated: 2026-10-05 00:14 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 00:14: batch 5 PR #498 head d2432c3b green (28/28 + skip): lands #364 T-0052, #416 T-0057, #420 L-0662 at crew 1.0.345; #366 left out (stacked on draft #353 T-0011), #407 dropped by revert merge (deep-JSON tests red by interpreter; own head red too)
 - 00:13: Owner: README should show only latest updates + link to changelog. Minted L-1518; builder spawned (generated 'What's new' block: 2 newest CHANGELOG entries, via sync-updates.py).
 - 00:10: #497 re-check at 71947ce1: 1 FIX (leftover child holding stdout makes $() wait until hook timeout - fail-open; reproduced 40s vs main 0.014s), 1 NIT. Sent back: capture candidate stdout via temp file, fail closed if mktemp fails.
 - 00:06: #497 L-1512 round-1 fixes at 71947ce1, CI green: positive 'done' handshake on fd 3 (bash 3.2 safe), zero kill on clean exit; spy logs all kills. Focused re-check sent to a84a512 (focus: fd 3 inheritance, leftover child holding stdout -> hook timeout fail-open).
