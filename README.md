@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.12 — L-0527**: /crew:review launches Kimi Code. `/crew:review` can now run Kimi Code as the independent reviewer: it probes Kimi before spending a round, and since `kimi -p` cannot be made read-only, it fingerprints the working tree and refuses a round in which Kimi wrote.
-- **crew 1.1.12 — L-0522 PR 2**: The delta gate (tooling only; keeps nothing until the merge train is armed). A review receipt can now survive a catch-up merge, a version bump and an anchor-only refresh that add none of the ticket's own code, so a lane need not spend a review round on them, but only in a clone whose merge train is armed; elsewhere every catch-up still needs a re-review.
+- **crew 1.1.3 — L-0527**: /crew:review launches Kimi Code. `/crew:review` can now run Kimi Code as the independent reviewer: it probes Kimi before spending a round, and since `kimi -p` cannot be made read-only, it fingerprints the working tree and refuses a round in which Kimi wrote.
+- **crew 1.1.3 — L-0522 PR 2**: The delta gate (tooling only; keeps nothing until the merge train is armed). A review receipt can now survive a catch-up merge, a version bump and an anchor-only refresh that add none of the ticket's own code, so a lane need not spend a review round on them, but only in a clone whose merge train is armed; elsewhere every catch-up still needs a re-review.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

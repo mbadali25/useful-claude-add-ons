@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew 1.1.12 — L-0527: /crew:review launches Kimi Code (tooling half of T-0028)
+### crew 1.1.3 — L-0527: /crew:review launches Kimi Code (tooling half of T-0028)
 
 - **Summary.** `/crew:review` can now run Kimi Code as the independent reviewer: it probes Kimi
   before spending a round, and since `kimi -p` cannot be made read-only, it fingerprints the working
@@ -32,7 +32,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the launch gate. Follow-up feature PR (outside this lane's paths): crew-providers `SKILL.md`,
   `alternative-providers.md` and the `kimi_probe.py` / `crew_config.review_launchable` docstrings.
 
-### crew 1.1.12 — L-0522 PR 2: the delta gate (tooling only; keeps nothing until the merge train is armed)
+### crew 1.1.3 — L-0522 PR 2: the delta gate (tooling only; keeps nothing until the merge train is armed)
 
 - **Summary.** A review receipt can now survive a catch-up merge, a version bump and an anchor-only
   refresh that add none of the ticket's own code, so a lane need not spend a review round on them,
@@ -55,7 +55,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   L-0522 entries in `sabotage_review.py`, plus one for the pre-T-0100 plain-diff rebuild.
   `check_land` does not pass its fetched sha yet (PR 3).
 
-### crew 1.1.12 — L-0518 (tooling half): one locked read authorizes a gate skip; a gate that cannot run is exit 2
+### crew 1.1.3 — L-0518 (tooling half): one locked read authorizes a gate skip; a gate that cannot run is exit 2
 
 - **Summary.** `/crew:review` can no longer spend a round with no self-check when a successor plan
   is approved mid-run, and an error escaping the incident lookup or a skip log that cannot be
@@ -71,7 +71,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   The feature half (F1, F3, F4, N1-N3, N5 in `crew_standards.py`) and its sabotage entries and the
   `review.md` F1 wording are not here: that code is not on main yet.
 
-### crew 1.1.12 — L-0514: a refunded tool-failure review round retries once by itself
+### crew 1.1.3 — L-0514: a refunded tool-failure review round retries once by itself
 
 - **Summary.** When Codex or Copilot loses a review round to a tool failure (a failed turn, a
   crash, empty output), `/crew:review` now retries it once on its own instead of stopping, and says
@@ -89,7 +89,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the Claude fallback once on a refunded `tool` round. Autopilot's own refunded rerun is unchanged.
   Thirteen tests in `test_review_refund.py` and seven `sabotage_review.py` entries.
 
-### crew 1.1.12 — L-0528: review exit 5 means only a Codex limit
+### crew 1.1.3 — L-0528: review exit 5 means only a Codex limit
 
 - **Summary.** `/crew:review`'s "not run, verify gate not green or a pre-review check refused it" exit
   moves from 5 to 9, so 5 is only ever the Codex probe's usage limit.
