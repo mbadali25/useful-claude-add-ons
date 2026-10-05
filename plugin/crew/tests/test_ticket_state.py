@@ -143,6 +143,17 @@ def test_bad_depends_on_entry_is_unknown_not_unblocked(tmp_path):
     assert any("not a ticket id" in p for p in got["problems"])
 
 
+@pytest.mark.parametrize("value", ["someone", "[T-0002", "T-0002]", "[T-0002, later]"])
+def test_a_depends_on_entry_that_is_not_a_ticket_id_is_a_spec_problem(tmp_path, value):
+    """Group review round 4: a plain word or an unmatched bracket is a bad
+    entry (the next.md ticket-id rule), not a dependency that cannot be read."""
+    root = _repo(tmp_path)
+    _spec(root, T, line2=f"depends-on: {value}")
+    got = _view(root)
+    assert (got["blocked"], got["depends_on"]) == (None, None)
+    assert any("depends-on:" in p and "not a ticket id" in p for p in got["problems"])
+
+
 def test_unreadable_spec_is_unknown_not_unblocked(tmp_path):
     root = _repo(tmp_path)
     folder = root / ".work" / "tickets" / T
@@ -393,7 +404,9 @@ def test_superseded_without_successor_is_reported(tmp_path):
     assert any(p.startswith("superseded: cannot tell what replaced it") for p in got["problems"])
 
 
-@pytest.mark.parametrize("line", ["split-into: TBD", "superseded-by: later", "split-into: T-0002, ?"])
+@pytest.mark.parametrize("line", ["split-into: TBD", "superseded-by: later", "split-into: T-0002, ?",
+                                  "split-into: T-0002]", "superseded-by: [T-0002",
+                                  "split-into: [[T-0002]]"])
 def test_superseded_with_a_spec_line_naming_no_ticket_is_reported(tmp_path, line):
     """Round 1: a successor line must name ticket ids to count."""
     root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")

@@ -180,7 +180,8 @@ def parse_depends_on(spec_text):
     """`(ids, problem)` from the optional `depends-on:` line, which sits under
     the header and before the first `## ` section. `[T-1, T-2]` and `T-1, T-2`
     both read; `none` or an empty value is no dependency. A second line, or an
-    entry that is not a plain ticket id, is a problem and `ids` is None."""
+    entry that is not a ticket id (`_is_ticket_id`: a plain id with a letter
+    and a digit; an unmatched bracket fails it), is a problem and `ids` is None."""
     found = None
     for line in (spec_text or "").splitlines():
         if line.startswith("## "):
@@ -193,21 +194,25 @@ def parse_depends_on(spec_text):
         found = match.group(1)
     if found is None:
         return [], None
-    value = found.strip()
-    if value.startswith("[") and value.endswith("]"):
-        value = value[1:-1]
+    value = _unbracket(found.strip())
     if value.strip().lower() in ("", "none"):
         return [], None
     ids = []
     for part in value.split(","):
         item = part.strip().strip("`")
-        try:
-            crew_ticket.check_ticket(item)
-        except crew_ticket.TicketError:
+        if not _is_ticket_id(item):
             return None, f"depends-on: entry {part.strip()!r} is not a ticket id"
         if item not in ids:
             ids.append(item)
     return ids, None
+
+
+def _unbracket(value):
+    """`value` without ONE matched pair of enclosing brackets (`[T-1, T-2]`);
+    an unmatched bracket stays, so the entry it sits on is not a ticket id."""
+    if value.startswith("[") and value.endswith("]"):
+        return value[1:-1]
+    return value
 
 
 def dependency_state(top, dep):
@@ -348,7 +353,7 @@ def _spec_names_successor(spec_text):
             break
         match = _SPEC_SUCCESSOR_RE.match(line.strip())
         if match:
-            value = match.group(1).strip().strip("[]")
+            value = _unbracket(match.group(1).strip())
             ids = [part.strip().strip("`") for part in value.split(",")]
             if ids and all(_is_ticket_id(item) for item in ids):
                 return True
