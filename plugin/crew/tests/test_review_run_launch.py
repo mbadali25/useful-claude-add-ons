@@ -140,3 +140,19 @@ def test_post_kill_communicate_is_bounded_and_keeps_the_partial_output(monkeypat
     assert stdout == "partial stdout bytes"
     assert "partial stderr bytes" in stderr
     assert "escaped" in stderr
+
+
+def test_review_run_exit_codes_are_distinct():
+    """L-0528: one number never means two things. EXIT_UNVERIFIED was 5, the
+    same as the probe's EXIT_PROBE_LIMITED, so a caller that did not know
+    which mode ran could not tell "the verify gate has not passed" from "Codex
+    hit a usage limit". Found by introspection, so a code added later is
+    covered without editing this test."""
+    codes = {name: value for name, value in vars(review_run).items()
+             if name.startswith("EXIT_") and isinstance(value, int)}
+    by_value = {}
+    for name, value in sorted(codes.items()):
+        by_value.setdefault(value, []).append(name)
+
+    assert {"EXIT_UNVERIFIED", "EXIT_PROBE_LIMITED"} <= set(codes)
+    assert {v: n for v, n in by_value.items() if len(n) > 1} == {}

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
-- **crew 1.0.352, gizmoduck 0.5.9**: Three changes in one update: a crew vault write refuses a directory on its path that was swapped for another real directory after the checks, one runner drives a crew ticket at a time through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot check: links in the templates dir, a nikto that exits 0 without running, and testssl without `hexdump`.
+- **crew 1.1.3 — L-0527**: /crew:review launches Kimi Code. `/crew:review` can now run Kimi Code as the independent reviewer: it probes Kimi before spending a round, and since `kimi -p` cannot be made read-only, it fingerprints the working tree and refuses a round in which Kimi wrote.
+- **crew 1.1.3 — L-0522 PR 2**: The delta gate (tooling only; keeps nothing until the merge train is armed). A review receipt can now survive a catch-up merge, a version bump and an anchor-only refresh that add none of the ticket's own code, so a lane need not spend a review round on them, but only in a clone whose merge train is armed; elsewhere every catch-up still needs a re-review.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

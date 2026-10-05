@@ -129,6 +129,7 @@ import time
 
 import crew_common
 import merged_main
+import review_delta
 import review_patch
 
 BUDGET = 2
@@ -311,9 +312,19 @@ def _fresh(ticket):
             "refused": [], "receipt": None}
 
 
-def reserve(root, ticket, provider, model=None):
+# L-0518 (F2): `reserve(..., gated=False)` found the ledger no longer spent.
+GATE_CHANGED = ("the ledger changed since the gate decision: the pre-review and standards gates "
+                "were skipped for a spent budget, and a round is now free; run again, nothing spent")
+
+
+def reserve(root, ticket, provider, model=None, gated=True):
     """Reserve the next round BEFORE launching a reviewer. Returns
-    (True, round_number, message) or (False, None, message)."""
+    (True, round_number, message) or (False, None, message).
+
+    `gated` is False when the caller skipped its gates because its unlocked
+    read said the budget was spent (review_run.run). Under the lock, a state
+    that would reserve a round refuses that with GATE_CHANGED, writing
+    nothing: one authorizing fact, read once, under the lock (L-0518 F2)."""
 
     def change(data, state):
         if state == "corrupt":
@@ -332,6 +343,8 @@ def reserve(root, ticket, provider, model=None):
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
             return data, exhausted
+        if not gated:
+            return None, (False, None, GATE_CHANGED)
         number = len(rounds) + 1
         rounds.append({"round": number, "status": "reserved", "reserved_at": _now(),
                        "provider": provider, "model": model or None, "pid": os.getpid()})
@@ -853,9 +866,13 @@ def _merged_note(merged, stale):
     return (f" ({count} path(s) identical to merged main left out)" if count else "") + fork
 
 
-def check_receipt(root, ticket):
-    """(ok, message). ok only when an accepted receipt exists AND the bundle
-    rebuilt now from its base has the same sha256."""
+def check_receipt(root, ticket, base_sha=None):
+    """(ok, message). ok only when an accepted receipt exists, the excluded
+    paths are unchanged (check E, `review_delta.excluded_check`), a pinned
+    `base_sha` is a commit, AND either the bundle rebuilt now from its base has
+    the same sha256 (the fast path) or the delta gate proves the ticket's own
+    delta unchanged (`review_delta.judge`, L-0522). `base_sha` pins the
+    integration commit; no caller passes it yet (L-0522 PR 3 wires check_land)."""
     data, state = _load(ledger_path(root, ticket))
     if state != "ok":
         return False, f"no accepted review receipt for {ticket} (ledger {state})"
@@ -872,15 +889,34 @@ def check_receipt(root, ticket):
         return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
                        "; a receipt stands only on a CLEAN or owner-accepted round, or an "
                        "auto-accepted 0-BLOCK one")
+    # Check E, before EITHER success return: the bundle hash cannot see the
+    # excluded paths, so a change only there must not keep the receipt.
+    ok_e, why_e = review_delta.excluded_check(root, receipt, latest)
+    if not ok_e:
+        return False, f"receipt is stale: {why_e}"
+    if base_sha is not None:
+        ok_b, why_b = review_delta.valid_base_sha(root, base_sha)
+        if not ok_b:
+            return False, f"receipt is stale: {why_b}"
     try:
         current, merged = _current_hash(root, receipt.get("base"))
     except LedgerError as exc:
         return False, f"receipt could not be checked: {exc}"
     if current != receipt["bundle_sha256"]:
-        return False, (f"receipt is stale: round {receipt.get('round')} accepted bundle "
-                       f"{receipt['bundle_sha256'][:12]}, the tree now builds "
-                       f"{(current or 'nothing')[:12]}; the change was edited after review"
-                       f"{_merged_note(merged, stale=True)}")
+        stale = (f"receipt is stale: round {receipt.get('round')} accepted bundle "
+                 f"{receipt['bundle_sha256'][:12]}, the tree now builds "
+                 f"{(current or 'nothing')[:12]}; the change was edited after review")
+        kept, why, detail = review_delta.judge(root, ticket, receipt, latest, base_sha)
+        if not kept:
+            # The merged-main note stays last (T-0100: "; fork: could not tell" ends it).
+            return False, f"{stale}; delta gate: {why}{_merged_note(merged, stale=True)}"
+        names = ", ".join(detail["anchor_only"] + detail["exempt"]) or "none"
+        return True, (f"receipt kept by delta gate: round {receipt.get('round')} "
+                      f"{receipt.get('kind')}, reviewed head {detail['head'][:12]}, base "
+                      f"{detail['base'][:12]} via {detail['ref']}; "
+                      f"{len(detail['identical'])} paths identical, "
+                      f"{len(detail['anchor_only'])} anchor-only, "
+                      f"{len(detail['exempt'])} exempt: {names}")
     return True, (f"receipt current: round {receipt.get('round')} {receipt.get('kind')}, "
                   f"bundle {(current or '')[:12]}{_merged_note(merged, stale=False)}")
 

@@ -293,7 +293,9 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
   INCOMPLETE <code>reviewer</code>.
   <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to two per plan. The line reads
-  <code>review: round N was a tool failure (...); refunded</code>. Only the failed round is given back: the
+  <code>review: round N was a tool failure (...); refunded</code>. <code>review_run.py</code> retries it once by itself
+  (L-0514), except a usage limit or a timeout; <code>review: retry: not retried - &lt;why&gt;</code> says when it
+  did not. Only the failed round is given back: the
   rerun <code>/crew:review</code> reserves a new round, charged like any other unless it is a tool failure
   too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
   Codex is out of quota, use the next eligible provider. A third tool failure under
@@ -317,6 +319,12 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   fails unless the hash still matches, the receipt is for the <strong>latest</strong> recorded round, and the
   state is not <code>NEEDS_REPLAN</code> — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
+  One exception, the delta gate: after a catch-up merge, a version bump or an anchor-only refresh,
+  committed on a clean checkout, the receipt is kept (<code>receipt kept by delta gate: ...</code>) when the
+  ticket's own delta is byte-identical to the reviewed one. Its stale line names what differed
+  (<code>delta gate: &lt;path&gt; ...</code>, <code>excluded path changed</code>, <code>not clean</code>, <code>no train entry binds the
+  integration ref</code> - the merge train is not armed in this clone, so the gate keeps nothing yet); a
+  code map, rules file or diagram may move only its anchor sha after review.
   <strong>Fix:</strong> if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.</p>
 <ul>
@@ -350,8 +358,10 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   <strong>Fix:</strong> wait for the holder to land and release, then acquire again before reviewing; fix an
   undeclared Touch in the spec. <code>merge &lt;base&gt; first</code> means the base moved in this ticket's Touch:
   run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (resolve any conflict), bump the version one past
-  the base's, refresh the artifacts, commit, gate the merged head, review it again if
-  <code>review_ledger.py --check-receipt</code> reads stale, then acquire again. <code>could not tell</code> (exit 3)
+  the base's, refresh the artifacts, commit, gate the merged head, and review it again if
+  <code>review_ledger.py --check-receipt</code> reads stale: the delta gate keeps the receipt only when none
+  of the ticket's own code moved and the clone's merge train is armed (it keeps nothing until
+  <code>crew_train.py arm</code>). Then acquire again. <code>could not tell</code> (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.</p>
 <ul>
 <li><strong>Symptom: a lane holds the train and its session died.</strong> <code>status</code> prints <code>stale?:</code> beside it

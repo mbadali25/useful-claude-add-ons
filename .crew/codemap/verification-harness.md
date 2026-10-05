@@ -355,8 +355,11 @@ Notable rules, re-read directly:
   `test_review_receipt.py` and `test_webtest_guard.py`, and since review round 3 (`33521aa4`)
   `scope_base.py`, `review_patch.py`, `review_verdict.py`, `crew_incident.py`,
   `crew_migrate.py`, `crew_metrics.py` and `crew_ticket.py` (the modules the stamp, the gate,
-  `proposals` and the metric read) → `python3 -m pytest` over the five test files plus
-  `test_review_run_launch.py`, `test_review_ledger.py` and `test_lifecycle_commands.py`,
+  `proposals` and the metric read), and since L-0522 `review_delta.py`, `review_ledger.py` and
+  `test_review_delta.py` (the delta gate; its 33 controls are L-0522's entries at the end of
+  `REVIEW_FIX_MUTATIONS` in `plugin/crew/tests/sabotage_review.py`) → `python3 -m pytest` over the five test files plus
+  `test_review_run_launch.py`, `test_review_ledger.py`, `test_lifecycle_commands.py` and (L-0522)
+  `test_review_delta.py`,
   priced 41s (its `why` records 382 passed, 2 skipped in 41.28s on this host, 2026-09-29, at the
   round-3 fix tree; 327 passed in 40.9s at round 1). Before it `review_run.py` and
   `review_prompt.py` matched only rules 0 and 15. Its mutations live in
@@ -772,8 +775,9 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:81`, `:3062` —
   `sabotage_tooling.py`'s registration.
 - `.crew/verify.json:468-481` (rule 39) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
-  its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
-  since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
+  its tests, `kimi_fixtures.py`, the fixture run and the provider docs), widened by L-0527 to
+  `review_run.py`, `commands/review.md`, `test_review_run_kimi.py` and `sabotage_kimi.py`, whose
+  `KIMI_MUTATIONS` (probe, parser, fingerprint, launch gate) `sabotage.py` registers.
 - `.crew/verify.json:476-480` (rule 40) — L-0513's gate runner
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports

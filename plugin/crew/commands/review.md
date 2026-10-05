@@ -1,5 +1,5 @@
 ---
-description: Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean)
+description: Independent QA review of the current diff (Codex, Kimi, Copilot, or Claude - first that probes clean)
 argument-hint: "[ticket id]"
 allowed-tools: Bash, Read, Agent
 ---
@@ -211,7 +211,8 @@ apply the same strike to the provider you are about to run. When the source is
 |---|---|
 | `claude` (default) | `claude` — the `reviewer` fallback |
 | `codex` | `codex` |
-| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex |
+| `kimi` | `kimi`, and any Copilot pin to a `kimi-*` model |
+| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex, `kimi-*` strikes Kimi |
 
 A family reviewing its own output agrees with itself, and that is the exact
 failure this command exists to catch. Apply the strike at review time. Do not
@@ -228,7 +229,7 @@ What is forbidden is letting a same-family review be *recorded* as an independen
 one. Announce it, and never write it to `.crew/metrics.md` as though a different
 family had looked.
 
-Then, if `qa.provider` names a provider (`codex`, `copilot`, `claude`), use that one
+Then, if `qa.provider` names a provider (`codex`, `kimi`, `copilot`, `claude`), use that one
 and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
 not a cue to fall back. If `qa.provider` is `auto`, walk `qa.order` and take the
 first surviving provider that passes its probe:
@@ -236,6 +237,7 @@ first surviving provider that passes its probe:
 | Provider | Probe | Runs |
 |---|---|---|
 | `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): **a Codex usage limit runs the round on Claude** - step 2c, pinned or not (owner, 2026-09-28: "if we hit a codex limit please use claude ads the reviewer"), announced `same-family (codex limit)`, not independent, with `PROBE_DETAIL` quoted verbatim; the round is spent like any other (a refund is T-0087's). The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
+| `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip it when `qa.provider` is `auto`; a pinned `kimi` hard-fails, as a pinned `codex` does. Exit 8, the probe changed the tree or it could not be checked after the probe: stop | step 2e |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -285,6 +287,7 @@ print(block.get(field) or "")
 QA_MODEL=$(qm codex model)
 QA_EFFORT=$(qm codex reasoningEffort)
 QA_COPILOT_MODEL=$(qm copilot model)
+QA_KIMI_MODEL=$(qm kimi model)
 
 # The author families to strike, from the same report -- never re-derived from
 # dev.provider, which is a default a per-role pin may already have overridden.
@@ -297,10 +300,10 @@ AUTHOR_SOURCE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).g
 # already applied the guard -- this is the list to pick from, in order, and an
 # empty one is the "no independent reviewer" state, not an error.
 ELIGIBLE=$(python3 -c '
-import json, sys  # kimi has no review_run.py runner (T-0028): named on stderr, never tried
+import json, sys  # a provider review_run.py cannot launch: named on stderr, never tried
 report = json.load(open(sys.argv[1])); ok = [c["provider"] for c in report.get("qaFallThrough") or [] if c.get("eligible")]
-[sys.stderr.write("review: " + p + " is eligible but has no review runner - skipped\n") for p in ok if p not in ("codex", "copilot", "claude")]
-print(" ".join(p for p in ok if p in ("codex", "copilot", "claude")))' "$REPORT")
+[sys.stderr.write("review: " + p + " is eligible but has no review runner - skipped\n") for p in ok if p not in ("codex", "copilot", "kimi", "claude")]
+print(" ".join(p for p in ok if p in ("codex", "copilot", "kimi", "claude")))' "$REPORT")
 echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
 ```
 
@@ -425,19 +428,15 @@ $(cat "$SCRATCH/context.txt")
 EOF
 ```
 
-**Step 2a — Codex, 2b — Copilot.** `review_run.py` reserves the round, then
-launches the reviewer with stdin closed (a real run hung on stdin), then
-computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs
-as `codex exec --json --sandbox read-only`, read from its event stream, so a
-failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write
---deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead
-of reporting it. Empty model/effort pass no flag.
+**Step 2a — Codex, 2b — Copilot, 2e — Kimi.** `review_run.py` reserves the round, then launches the reviewer with stdin closed (a real run hung on stdin), then computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs as `codex exec --json --sandbox read-only`, read from its event stream, so a failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write --deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead of reporting it. Empty model/effort pass no flag.
+Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed from before the probe to after the review makes the round INCOMPLETE, naming the paths. The fingerprint hashes each file's contents and permission bits (a chmod counts under `core.filemode=false`), digests a symlink with its target and what it resolves to (a link to a directory outside the repository is could-not-tell), and records a FIFO, socket or device, never opened. A Kimi round is never reserved unprobed: when the ledger's status shows no round left, `review_run.py` exits 4 before the probe. For Kimi the probe also runs before the preflight questions (a CLEAN receipt, then the verify gate), as Codex's `--probe` runs before its round: a Kimi that is not `ok` exits 2 and is skipped even on a tree the gate has not passed, and an `ok` one on such a tree exits 9 with no round reserved. Set aside: `graph.out` (graphify's background rebuild) unless it is or lies under `.crew`, contains a `.crew`, or holds a tracked file other than `graph.json` and `GRAPH_REPORT.md`, and, only while gitignored before and after, `.idea/`, `.vscode/`, `.crew/guard.log`, `.crew/.autoclear.log` and context-watch's markers, which crew's own hooks or an IDE write mid-review. Tool caches such as `__pycache__` and the verify gate's `.crew/` files still count: a later run reads them back. Empty `QA_KIMI_MODEL` means the CLI's `default_model`. A Kimi round is not retried in-process (L-0514).
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
 # or: --provider copilot --model "$QA_COPILOT_MODEL"
-REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 5 gate red, 2 not run
+# or: --provider kimi --model "$QA_KIMI_MODEL"
+REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 9 gate red, 2 not run, 8 kimi probe changed the tree (or could not check it)
 ```
 
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
@@ -446,7 +445,10 @@ denied by policy settings` is org or enterprise policy — report that exact
 cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
 to the next eligible provider), or `review-run: self-check: ...` - the standards
 self-check is missing or stale for this bundle (every provider): answer
-`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5), no round spent, every provider, means one of two things. Either the verify gate has not passed this tree: run the gate first, or pass `--allow-unverified` and say so. Or a pre-review check refused it (`review-run: pre-review checks: ...` lines, L-0574). `FAIL` with `NEW` lines means the bundle adds a linter finding its base did not have: fix it, or suppress it with the tool's own inline directive and a reason, then rebuild. `--allow-unverified` does not override a new finding. `COULD NOT CHECK` means a configured linter could not run or could not parse a changed file. Install or repair it, or pass `--allow-unverified` and say so; `review.json` records `prereview.overridden`. The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for nothing else; an unverified gate is refused with exit 5 before the pre-review checks run; a pre-review refusal (exit 5) comes before the self-check is asked for; only then can exit 2 name a self-check problem. A spent budget skips both. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
+`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. `the ledger changed since the gate decision` or `... gate could not run: ...` (L-0518) is exit 2 too: run again, or repair what it names. Exit 9 (`$REVIEW_STATUS`; 5 is only ever the probe's limit, L-0528), no round spent, every provider, means one of two things. Either the verify gate has not passed this tree: run the gate first, or pass `--allow-unverified` and say so. Or a pre-review check refused it (`review-run: pre-review checks: ...` lines, L-0574). `FAIL` with `NEW` lines means the bundle adds a linter finding its base did not have: fix it, or suppress it with the tool's own inline directive and a reason, then rebuild. `--allow-unverified` does not override a new finding. `COULD NOT CHECK` means a configured linter could not run or could not parse a changed file. Install or repair it, or pass `--allow-unverified` and say so; `review.json` records `prereview.overridden`. The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for nothing else (a receipt the delta gate kept across a catch-up does so only once the verify gate is VERIFIED or NO_GATE on that tree); an unverified gate is refused with exit 9 before the pre-review checks run; a pre-review refusal (exit 9) comes before the self-check is asked for; only then can exit 2 name a self-check problem. A spent budget skips both. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
+
+Exit 2 from `--provider kimi` can also be a kimi probe state other than `ok`, which the message names (`kimi probe: rate-limited - ...`): no round spent; announce it and walk to the next provider, unless `qa.provider` pins `kimi`, which hard-fails instead.
+Exit 8 means the Kimi probe changed the working tree; stop and report the named paths, do not walk to the next provider. A tree that cannot be fingerprinted after the probe, or a probe process that could not be stopped, exits 8 too (it may have changed, or still change): stop and report the reason. No round was spent, but the tree is no longer the one the bundle was built from.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
@@ -469,7 +471,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TI
   --output "$SCRATCH/out.txt" --exit-code 0 --note "codex-probe=${PROBE_STATUS:-not-run}"
 ```
 
-An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 5 above - gate or pre-review checks - or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
+An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 9 above - gate or pre-review checks - or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle (or kept by the delta gate on a gated tree). A round the second call reports as a refunded `tool` failure is re-dispatched once (reserve again, rerun this block); a second failure, or any other INCOMPLETE, stops (L-0514).
 
 The fallback is genuinely weaker than a different family: the same model family reviewing itself
 finds fewer defects. Tell me when it is what ran, so I review harder myself.
@@ -483,7 +485,7 @@ Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back i
 no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray prose (the script ignores it and names
 it on a `review: FINDINGS kept; ...` line); a non-zero exit, empty output, a possibly misformatted contract line,
 a line admitting the review fell short, a skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as
-clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
+clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; 2a/2b retry a refunded round once in-process (L-0514), never a usage limit or a timeout, and `review: retry:` / `review: options:` lines say what stopped it.
 
 **Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
 guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
@@ -507,7 +509,7 @@ loses the most time to.
    Anything else (any BLOCK, a `refused -` line, a specialist BLOCK, an unverified control) stops for me with 2-4 options, recommended first, each with a one-line tradeoff (reject and replan / I accept as is / fix and I grant a round). Disagree with a finding? Say so. If I accept, record it - the receipt names who and when; a `--by` starting `auto:` is refused:
    `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --accept --by "<who>"`.
    Only the most recent round can be accepted, once, and not once the ticket is `NEEDS_REPLAN` (a refused third reservation, or `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`).
-   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since.
+   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since - except where the delta gate (L-0522) proves the ticket's own delta byte-identical across a catch-up merge, a version bump or an anchor-only refresh (`receipt kept by delta gate: ...`, judged on HEAD's tree with a clean checkout, and only where this clone's merge train is armed); anything it cannot prove reads stale.
 4. **Land the verdict as a review, not a comment.** If the change is on a GitHub PR, post the outcome
    with `gh pr review` so it exists as an artifact that tooling and branch protection can see:
 

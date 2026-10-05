@@ -269,7 +269,7 @@ def _entries(root, base_sha, tree):
     return entries
 
 
-def _ticket_base_tree(root, base_sha, working_tree, tmp_dir):
+def _ticket_base_tree(root, base_sha, working_tree, tmp_dir, head="HEAD"):
     """`(tree, merged, dropped, against)`: the tree the bundle diffs from. The
     start commit's tree, unless a merge of main applies; then that tree with
     each path identical to the merged commit in the working state set to its
@@ -278,7 +278,7 @@ def _ticket_base_tree(root, base_sha, working_tree, tmp_dir):
     changes again set to the merged commit's entry -- so main's lines read as
     context and only the ticket's as `+`/`-`. Written from a second temporary
     index. `dropped` and `against` are those `--raw` entries, sorted by path."""
-    merged = merged_main.resolve(root, base_sha)
+    merged = merged_main.resolve(root, base_sha, head)
     base_tree = _run(root, ["rev-parse", base_sha + "^{tree}"]).strip()
     if not merged["applies"]:
         return base_tree, merged, [], []

@@ -63,14 +63,16 @@ be wrong can be closed on evidence.
   section carried into `plugin/crew/hooks/scripts/review_prompt.py`'s brief as "do not re-open".
 - **T-0028 follow-ups (Kimi Code provider).**
   (a) A pre-reserve probe for `copilot`, as codex has had since T-0088 (`review_run.py --probe`)
-  and kimi gets with L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
+  and kimi has since L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
   the only candidate, `KIMI_MODEL_THINKING_EFFORT`, is unverified against a config alias, and
-  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch itself
-  is L-0527 (tooling only, cut from main after this ticket merges); its follow-ups (a
-  fingerprint for codex and copilot, codex stream-error redaction, writes inside `.git`) are
-  recorded there. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
+  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch landed as
+  L-0527 (tooling only). Its follow-ups, each its own ticket: a working-tree fingerprint for
+  codex and copilot; the codex stream error put into review.json reasons unredacted; a write
+  inside `.git` beyond HEAD and the index is not seen; and the docs outside the harness lane
+  (crew-providers `SKILL.md`, `alternative-providers.md`, the `kimi_probe.py` and
+  `crew_config.review_launchable` docstrings), which still say the launch lands later. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
   a follow-up ticket, id to be recorded here when it is filed. (e)
-  `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
+  `plugin/crew/agents/reviewer.md:27`'s order names kimi since the #540 group review (done).
   (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
   `plugin/localgpu/commands/crew.md:30` still state crew's `qa.order` default as
   `["codex", "copilot", "claude"]` and say `/crew:model` validates "exactly those three names";
