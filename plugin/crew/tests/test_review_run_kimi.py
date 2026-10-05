@@ -472,10 +472,10 @@ def test_run_kimi_probes_before_it_reserves(repo, tmp_path, monkeypatch, capsys)
     monkeypatch.setenv("FAKE_KIMI_DUMP", str(dump))
     real, calls_at_reserve = review_run.review_ledger.reserve, []
 
-    def reserve(*args):
+    def reserve(*args, **kwargs):
         calls_at_reserve.append(len(dump.read_text(encoding="utf-8").splitlines())
                                 if dump.exists() else 0)
-        return real(*args)
+        return real(*args, **kwargs)
 
     monkeypatch.setattr(review_run.review_ledger, "reserve", reserve)
 
@@ -1445,9 +1445,14 @@ def test_graph_out_with_a_config_that_does_not_parse_as_an_object_is_none(repo, 
 
 def test_graph_out_with_a_config_that_exists_but_cannot_be_read_is_none(repo, monkeypatch):
     _graph_config(repo, "graphify-out")
-    real = review_run.crew_common.read_text
-    monkeypatch.setattr(review_run.crew_common, "read_text",
-                        lambda p: None if p.endswith("config.json") else real(p))
+    real = review_run.review_checks.read_regular
+
+    def unreadable(path, base):
+        if path.endswith("config.json"):
+            raise PermissionError(13, "denied", path)
+        return real(path, base)
+
+    monkeypatch.setattr(review_run.review_checks, "read_regular", unreadable)
 
     assert review_run.graph_out(str(repo)) is None
 
@@ -1455,3 +1460,41 @@ def test_graph_out_with_a_config_that_exists_but_cannot_be_read_is_none(repo, mo
 def test_graph_out_with_no_config_file_is_the_default(repo):
     """Must-allow: absence is not uncertainty -- no config means the default."""
     assert review_run.graph_out(str(repo)) == "graphify-out"
+
+
+# --- L-0527 review (the port onto main) -----------------------------------------------
+
+def test_run_kimi_with_no_round_left_still_answers_a_clean_receipt(repo, tmp_path):
+    """A CLEAN receipt on the last round answers CLEAN, nothing spent, as for
+    every other provider; the no-round-left refusal comes only without one."""
+    first, _ = _run(repo, tmp_path, mode="findings")
+    second, _ = _run(repo, tmp_path, mode="clean")
+    assert (first.returncode, second.returncode,
+            rl.status(str(repo), "T1")["rounds_left"]) == (1, 0, 0), second.stderr
+
+    third, _ = _run(repo, tmp_path, mode="clean")
+
+    assert (third.returncode, "CLEAN from the existing receipt" in third.stdout,
+            len(rl.status(str(repo), "T1")["rounds"])) == (0, True, 2), (
+        third.stdout + third.stderr)
+
+
+def test_run_kimi_an_incident_skip_logged_by_crews_gates_is_not_the_reviewers(repo, tmp_path):
+    """During an incident the standards gate stands down and appends
+    .crew/incident-skips.log after the "before" fingerprint; that write is
+    crew's own, so a Kimi that wrote nothing still reviews CLEAN."""
+    import crew_incident  # pylint: disable=import-outside-toplevel
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    import scope_base  # pylint: disable=import-outside-toplevel
+    scope_base.record(str(repo), "T1")
+    path = crew_ticket.approval_path(str(repo), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"ticket": "T1", "approved_by": "fixture"}, fh)
+    crew_incident.declare(str(repo), "prod is down")
+
+    result, review = _run(repo, tmp_path)
+
+    assert (result.returncode, review["verdict"],
+            os.path.exists(repo / crew_incident.SKIP_LOG_PATH)) == (0, "CLEAN", True), (
+        result.stdout + result.stderr)

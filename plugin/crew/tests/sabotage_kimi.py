@@ -50,7 +50,7 @@ _SNAPSHOT_CALLS = (
     '    staged = _git_bytes(root, ["ls-files", "--stage", "-z", *scope], env)\n')
 _GIT_CALL = (
     "    try:\n"
-    '        done = subprocess.run(["git", *GIT_OVERRIDES, *args], cwd=root, env=env,\n'
+    '        done = subprocess.run([git, *GIT_OVERRIDES, *args], cwd=root, env=env,\n'
     "                              capture_output=True,\n"
     "                              stdin=subprocess.DEVNULL, timeout=SNAPSHOT_GIT_TIMEOUT,\n"
     "                              check=False)\n"
@@ -232,7 +232,7 @@ KIMI_MUTATIONS = (
     ("review_run: a git that cannot start or hangs raises instead of None",
      RUN,
      _GIT_CALL,
-     '    done = subprocess.run(["git", *args], cwd=root, env=env, capture_output=True,\n'
+     '    done = subprocess.run([git, *args], cwd=root, env=env, capture_output=True,\n'
      "                          stdin=subprocess.DEVNULL, check=False)\n",
      _R + "test_tree_fingerprint_git_that_fails_to_run_is_none"),
     # --- round 1 FIX review_run.py:464: the background graph rebuild ---------
@@ -557,8 +557,8 @@ KIMI_MUTATIONS = (
      _R + "test_run_kimi_files_named_like_the_metadata_keys_are_hashed"),
     ("review_run: a file's digest drops its mode bits (round 4 FIX 4)",
      RUN,
-     '        return f"{digest.hexdigest()}:{stat.S_IMODE(opened):o}"',
-     "        return digest.hexdigest()",
+     '        return f"{hashlib.sha256(data).hexdigest()}:{stat.S_IMODE(mode):o}"',
+     "        return hashlib.sha256(data).hexdigest()",
      _R + "test_run_kimi_a_chmod_under_filemode_false_is_incomplete"),
     ("review_run: a Kimi round is reserved when the status says none (round 4 FIX 5)",
      RUN,
@@ -585,9 +585,8 @@ KIMI_MUTATIONS = (
     ("review_run: a FIFO is opened to be hashed (round 4 FIX 8)",
      RUN,
      "        if not stat.S_ISREG(mode):\n"
-     '            return f"special:{stat.S_IFMT(mode):o}"\n'
-     "        fd = os.open(path, _READ_FLAGS)\n",
-     "        fd = os.open(path, os.O_RDONLY)\n",
+     '            return f"special:{stat.S_IFMT(mode):o}"\n',
+     "        os.close(os.open(path, os.O_RDONLY))\n",
      _R + "test_tree_fingerprint_never_opens_a_fifo"),
     ("kimi probe: a non-string provider reaches providers.get (round 4 FIX 9)",
      PROBE,
@@ -712,8 +711,8 @@ KIMI_MUTATIONS = (
      _R + "test_graph_out_with_a_config_that_does_not_parse_as_an_object_is_none"),
     ("review_run: an unreadable config falls back to the graphify-out exemption (round 5 FIX 6)",
      RUN,
-     "                return None  # round 5 of T-0028: unreadable is could-not-tell\n",
-     "                pass\n",
+     "            return None  # round 5 of T-0028: unreadable is could-not-tell\n",
+     "            continue\n",
      _R + "test_graph_out_with_a_config_that_exists_but_cannot_be_read_is_none"),
     ("kimi_probe.final_message: a non-object content member is skipped (round 5 FIX 7)",
      PROBE,
@@ -777,4 +776,15 @@ KIMI_MUTATIONS = (
      "    return frozenset(QA_PROVIDERS)\n",
      "tests/test_provider_table.py::"
      "test_a_provider_review_run_cannot_launch_is_not_eligible"),
+    # --- L-0527 review (the port onto main) ---
+    ("review_run: kimi with no round left refuses a standing CLEAN receipt again",
+     RUN,
+     "                if review_ledger.check_receipt(args.root, args.ticket)[0] \\\n",
+     "                if False \\\n",
+     _R + "test_run_kimi_with_no_round_left_still_answers_a_clean_receipt"),
+    ("review_run: crew's own incident skip log counts against Kimi again",
+     RUN,
+     "    if before is not None:\n        before = _after_the_gates(args, before)\n",
+     "",
+     _R + "test_run_kimi_an_incident_skip_logged_by_crews_gates_is_not_the_reviewers"),
 )

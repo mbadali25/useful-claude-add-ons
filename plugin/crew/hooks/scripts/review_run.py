@@ -283,10 +283,6 @@ NESTED_DEPTH = 8
 # `:index` were never hashed, because those were the keys).
 HEAD_KEY, INDEX_KEY = "\0HEAD", "\0index"
 _META_SHOWN = {HEAD_KEY: "(HEAD)", INDEX_KEY: "(the index)"}
-# Opening a regular file never blocks and never follows a link swapped in
-# after the lstat (round 4: a FIFO blocked the walk with no deadline).
-_READ_FLAGS = (os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-               | getattr(os, "O_BINARY", 0))
 # What graph.out may hold as a TRACKED file and still be set aside.
 GRAPH_FILES = ("graph.json", "GRAPH_REPORT.md")
 # Crew config: a reviewer write here always counts, even under graph.out -- it
@@ -406,8 +402,11 @@ def prompt_argument(prompt_path, exe=None):
 def _git_bytes(root, args, env):
     """Raw stdout of one git call, or None when git failed, could not start,
     or did not answer within SNAPSHOT_GIT_TIMEOUT."""
+    git = review_checks.resolve_executable("git")  # class a: never a bare `git`
+    if not git:
+        return None
     try:
-        done = subprocess.run(["git", *GIT_OVERRIDES, *args], cwd=root, env=env,
+        done = subprocess.run([git, *GIT_OVERRIDES, *args], cwd=root, env=env,
                               capture_output=True,
                               stdin=subprocess.DEVNULL, timeout=SNAPSHOT_GIT_TIMEOUT,
                               check=False)
@@ -449,6 +448,17 @@ def _link_digest(path, root, depth):
     return None if resolved is None else f"link:{target}\0{resolved}"
 
 
+def _digest_base(path, root):
+    """The directory `read_regular` checks `path` from: the repository root
+    as given when `path` lies under it, its resolved form for a link target
+    (already resolved), else the path's own directory."""
+    if root:
+        for top in (os.path.abspath(root), os.path.realpath(root)):
+            if _inside(os.path.abspath(path), top):
+                return top
+    return os.path.dirname(os.path.abspath(path))
+
+
 def _path_digest(path, root=None, _depth=0):
     """What is at `path` now, never opening anything but a regular file:
 
@@ -472,15 +482,10 @@ def _path_digest(path, root=None, _depth=0):
             return "dir"
         if not stat.S_ISREG(mode):
             return f"special:{stat.S_IFMT(mode):o}"
-        fd = os.open(path, _READ_FLAGS)
-        with os.fdopen(fd, "rb") as fh:
-            opened = os.fstat(fh.fileno()).st_mode
-            if not stat.S_ISREG(opened):
-                return f"special:{stat.S_IFMT(opened):o}"
-            digest = hashlib.sha256()
-            for block in iter(lambda: fh.read(1 << 20), b""):
-                digest.update(block)
-        return f"{digest.hexdigest()}:{stat.S_IMODE(opened):o}"
+        # Class b (L-0574): through read_regular, which never follows a link
+        # and never blocks on a FIFO swapped in after the lstat.
+        data = review_checks.read_regular(path, _digest_base(path, root))
+        return f"{hashlib.sha256(data).hexdigest()}:{stat.S_IMODE(mode):o}"
     except FileNotFoundError:
         return "missing"
     except OSError:
@@ -627,11 +632,12 @@ def graph_out(root):
     cfg = {}
     for name in crew_common.CONFIG_NAMES:
         path = os.path.join(crew_dir, name)
-        text = crew_common.read_text(path)
-        if text is None:
-            if os.path.lexists(path):
-                return None  # round 5 of T-0028: unreadable is could-not-tell
+        try:  # class b: through read_regular
+            text = review_checks.read_regular(path, crew_dir).decode("utf-8")
+        except FileNotFoundError:
             continue
+        except (OSError, UnicodeDecodeError):
+            return None  # round 5 of T-0028: unreadable is could-not-tell
         try:
             cfg = json.loads(text)
         except ValueError:
@@ -931,8 +937,8 @@ def _group_alive(pgid):
             if not name.isdigit():
                 continue
             try:
-                with open(f"/proc/{name}/stat", encoding="ascii", errors="replace") as fh:
-                    fields = fh.read().rsplit(")", 1)[1].split()
+                raw = review_checks.read_regular(f"/proc/{name}/stat", "/proc")  # class b
+                fields = raw.decode("ascii", "replace").rsplit(")", 1)[1].split()
             except (OSError, IndexError):
                 continue
             if len(fields) > 2 and fields[2] == str(pgid) and fields[0] not in ("Z", "X"):
@@ -1183,6 +1189,20 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         _out(auto_accept_line(args.root, args.ticket))
     return {review_verdict.CLEAN: EXIT_CLEAN, review_verdict.FINDINGS: EXIT_FINDINGS}.get(
         result["verdict"], EXIT_INCOMPLETE)
+
+
+def _after_the_gates(args, before):
+    """The "before" fingerprint once crew's own gates have run (L-0527
+    review): during an incident `prereview_gate` and `standards_gate` append
+    `crew_incident.SKIP_LOG_PATH`, between the probe and the launch, with no
+    Kimi process alive (the probe's survivors were stopped). When that log is
+    ALL that changed, the fingerprint taken now is the one the review is
+    judged against; anything else stays counted against `before`."""
+    now = tree_fingerprint(args.root)
+    if now is None:
+        return before
+    changed, _set_aside = reviewer_changes(before, now, args.graph_out)
+    return now if changed and set(changed) <= {crew_incident.SKIP_LOG_PATH} else before
 
 
 def _probe_runner(cmd, env, timeout, cwd):
@@ -1518,6 +1538,11 @@ def run(args):
             # the probe that then ran after `reserve` spent the round). So the
             # status refuses first, before any probe request.
             if not _round_available(args.root, args.ticket):
+                # A CLEAN receipt still answers CLEAN with no round left, as
+                # for every other provider (L-0527 review): nothing is spent.
+                if review_ledger.check_receipt(args.root, args.ticket)[0] \
+                        and preflight(args) == EXIT_CLEAN:
+                    return EXIT_CLEAN
                 _err("review-run: kimi: no round left per the ledger's status; "
                      "re-run once a successor plan is approved; nothing "
                      "launched, no round spent\n")
@@ -1562,6 +1587,8 @@ def run(args):
         if refused is not None:
             return refused
 
+    if before is not None:
+        before = _after_the_gates(args, before)
     # The skip is carried into the locked read (L-0518 F2): a ledger that is
     # no longer spent there refuses rather than reserving an ungated round.
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,

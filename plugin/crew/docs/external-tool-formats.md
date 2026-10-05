@@ -17,7 +17,7 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:771-785`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:777-791`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -109,9 +109,9 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 **What crew calls.** On Windows, `review_checks.resolve_executable("codex")` or
 `resolve_executable("copilot")` (the absolute `PATH` entries only, never the current
 directory) resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:381`) names a provider whose resolved
+(`plugin/crew/hooks/scripts/review_run.py:377`) names a provider whose resolved
 path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:237`), and
-`review_run.prompt_argument` (`:388`) never hands such a provider the prompt
+`review_run.prompt_argument` (`:384`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 
