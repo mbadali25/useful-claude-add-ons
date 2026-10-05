@@ -497,3 +497,92 @@ def test_a_self_check_note_with_a_newline_prints_on_one_line(monkeypatch, capsys
 
     err = capsys.readouterr().err
     assert [l for l in err.splitlines() if "pre-review checks" in l and l.startswith("review-run: pre")] == [], err
+
+
+def _reserve_then_finish(tmp_path, out_path, before_finish=None):
+    """Reserve claude round 1, optionally disturb the scratch, then make the
+    second call with `--output out_path`. Returns (completed, review.json or None)."""
+    repo, scratch = _setup(tmp_path, [_missing()])
+    reserved = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
+    assert "ROUND=1" in reserved.stdout, reserved.stderr
+    if before_finish:
+        before_finish(scratch)
+    done = subprocess.run([sys.executable, _RUN, "--root", str(repo), "--ticket", TICKET,
+                           "--scratch", str(scratch), "--provider", "claude", "--round", "1",
+                           "--output", str(out_path(scratch)), "--exit-code", "0",
+                           "--work-dir", str(tmp_path / "work")],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+                          timeout=120)
+    path = tmp_path / "work" / "review.json"
+    return done, (json.loads(path.read_text(encoding="utf-8")) if path.exists() else None)
+
+
+def _clean_output(scratch, where):
+    manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
+    where.write_text("\n".join("READ|" + p["path"] for p in manifest["parts"]) + "\nCLEAN\n",
+                     encoding="utf-8")
+
+
+@pytest.mark.parametrize("kind", ["symlink", "fifo", "directory"])
+def test_claude_output_that_is_not_a_regular_file_is_incomplete(tmp_path, kind):
+    """L-0605, review round 10 FIX review_run.py:955: an --output that
+    read_regular refuses, after the round was reserved, is an INCOMPLETE
+    round with the reason, never an escaped NotRegularFile."""
+    if kind == "symlink" and os.name == "nt":
+        pytest.skip("symlinks need privileges on Windows")
+    if kind == "fifo" and not hasattr(os, "mkfifo"):
+        pytest.skip("no os.mkfifo here")
+    odd = tmp_path / "odd-out"
+
+    def make(scratch):
+        if kind == "symlink":
+            real = tmp_path / "real-out.txt"
+            _clean_output(scratch, real)
+            os.symlink(real, odd)
+        elif kind == "fifo":
+            os.mkfifo(odd)
+        else:
+            odd.mkdir()
+
+    done, review = _reserve_then_finish(tmp_path, lambda s: odd, make)
+
+    assert (done.returncode, "Traceback" in done.stderr, (review or {}).get("verdict")) == (
+        3, False, "INCOMPLETE"), done.stderr
+    assert any("could not be read" in r and "not a regular file" in r
+               for r in review["reasons"]), review["reasons"]
+
+
+_MALFORMED = {"list": [], "parts-null": {"parts": [None]}, "parts-str": {"parts": "x"},
+              "empty-path": {"parts": [{"path": ""}]}, "sha-int": "SHA5"}
+
+
+@pytest.mark.parametrize("case", ["symlink"] + sorted(_MALFORMED))
+def test_an_unreadable_manifest_at_finish_is_incomplete(tmp_path, case):
+    """L-0605 (F3b, the neighbouring read): the manifest swapped after the
+    reservation, unreadable or malformed, is INCOMPLETE with a manifest
+    reason; review.json is still written and prereview is not-recorded."""
+    if case == "symlink" and os.name == "nt":
+        pytest.skip("symlinks need privileges on Windows")
+
+    def swap(scratch):
+        manifest = scratch / "manifest.json"
+        _clean_output(scratch, tmp_path / "out.txt")
+        if case == "symlink":
+            copy = scratch / "manifest-copy.json"
+            copy.write_bytes(manifest.read_bytes())
+            manifest.unlink()
+            os.symlink(copy, manifest)
+        elif case == "sha-int":
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["bundle_sha256"] = 5
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+        else:
+            manifest.write_text(json.dumps(_MALFORMED[case]), encoding="utf-8")
+
+    done, review = _reserve_then_finish(tmp_path, lambda s: tmp_path / "out.txt", swap)
+
+    expected = "could not be read" if case == "symlink" else "is malformed"
+    assert (done.returncode, "Traceback" in done.stderr, (review or {}).get("verdict"),
+            (review or {}).get("prereview", {}).get("result")) == (
+        3, False, "INCOMPLETE", "not-recorded"), done.stderr
+    assert any("the manifest" in r and expected in r for r in review["reasons"]), review["reasons"]

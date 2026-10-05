@@ -9,6 +9,37 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed - `crew` 1.1.8: pre-review checks, L-0574's round-10 follow-ups (L-0605)
+
+- **Summary.** The pre-review linter checks and the review runner no longer crash on Windows timeouts,
+  an unreadable output file or a swapped manifest, escape bidirectional control characters in status
+  lines, and on Linux end a clean linter's leftover background processes before reaping it.
+- **PSScriptAnalyzer's clean output.** Review round 10 reported that a clean `.ps1` printed `[null]`
+  and read COULD NOT CHECK. It did not reproduce on Linux (pwsh 7.6.5, PSSA 1.25.0) or on Windows
+  (win-repo-2: pwsh 7.6.6 with PSSA 1.24.0 and 1.25.0, Windows PowerShell 5.1 with 1.25.0): a clean
+  file prints `[]`. The script no longer depends on the engine rule that made it so: findings go
+  into a typed list and the output is that list as an array, `[]` when clean. A `null` row is still
+  never read as "no findings". The real-PSSA tests fail instead of skipping under
+  `CREW_REQUIRE_PSSA=1`, and a Windows-only test proves Windows PowerShell 5.1 (unsupported) never
+  passes a new finding.
+- **Windows reviewer timeouts.** With no `taskkill.exe`, `review_run.py`'s timeout path called
+  `os.killpg`, which Windows does not have, and crashed after the round was reserved. It now never
+  reaches `os.killpg` on Windows. Only a job object's successful terminate counts as the tree having
+  ended (`WindowsJob.terminate` raises when `TerminateJobObject` fails); otherwise it falls back to
+  `taskkill /T`, then ends the reviewer process by handle, and says a descendant may have escaped
+  and why.
+- **An unreadable `--output` or a swapped manifest after a reservation.** The claude provider's
+  second call crashed on a symlinked, FIFO or directory `--output`, and `finish` crashed on an
+  unreadable or malformed manifest. Both now record an INCOMPLETE round with the reason.
+- **Bidirectional controls.** `one_line` escapes Unicode's `Bidi_Control` set (U+061C, U+200E,
+  U+200F, U+202A-U+202E, U+2066-U+2069), so a file name or message cannot visually reorder a status
+  line. A rule name holding one is a config problem.
+- **A clean linter's leftovers on Linux (ADR 0005).** After a clean exit the checks read both pipes
+  to EOF and wait for the linter without reaping it (`waitid` `WNOWAIT`), then kill its process
+  group while the zombie still holds the pid, so the group id cannot be anyone else's. A refused
+  signal, a failed read or a selector error is could-not-check, and the cleanup is bounded by one
+  post-kill deadline. macOS (no `os.waitid`) keeps the old behaviour.
+
 ### Changed — `crew` 1.1.8: review ledger supersede and accepter correction, and the override line in the review prompt (H1 harness bundle: T-0098, T-0109, T-0101)
 
 - **Summary.** An owner can now send an accepted review back to replanning with one recorded command,
