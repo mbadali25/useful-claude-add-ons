@@ -1825,10 +1825,11 @@ graphify command is run and autopilot's `_settles` stops on it unchanged. The ch
 `plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:145`), `translate_rule`
 for `Read(...)` deny rules (`:207`), `denylist` (`:272`), `candidates` (`:299`, `git ls-files
 --cached --others`, no `--exclude-standard`), `_judge` (`:343`; an unexcluded `sub/` is
-unknown, a symlink is judged by its target too), `_ignored` (`:365`, git's own `check-ignore
+unknown, a symlink is judged by its target too, and a denylisted file a `.gitignore` `!` line
+re-includes is uncovered: `_reopened`, `:366`), `_ignored` (`:383`, git's own `check-ignore
 --no-index` in a scratch repository with the user's global excludes disabled), `coverage`
-(`:418`), `write` (`:517`, temp file then `os.replace`; a literal only for a `_plain`
-(`:449`) path, never over a `!` line `_reincluded` (`:469`) finds) and `main` (`:606`). `crew_status.py`
+(`:436`), `write` (`:535`, temp file then `os.replace`; a literal only for a `_plain`
+(`:467`) path, never over a `!` line `_reincluded` (`:487`) finds) and `main` (`:624`). `crew_status.py`
 prints the same answer as its `graph-ignore` line (`_graph_ignore_line`,
 `plugin/crew/hooks/scripts/crew_status.py:237`, appended at `:324`). Tests:
 `plugin/crew/tests/test_graph_ignore.py`, `plugin/crew/tests/test_graph_ignore_graphify.py` (real

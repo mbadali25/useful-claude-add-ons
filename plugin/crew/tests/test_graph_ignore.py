@@ -85,6 +85,26 @@ def test_a_backslash_escaped_line_does_not_count_as_covering(tmp_path, capsys):
     assert (code, "!secret.pem" in out) == (1, True), out
 
 
+@pytest.mark.parametrize("gitignore", ["sub/.gitignore", ".gitignore"])
+def test_a_gitignore_negation_reopens_a_covered_secret(tmp_path, capsys, gitignore):
+    """Review round 5: graphify applies a `.gitignore` `!` line after
+    `.graphifyignore`, so `!x.pem` there makes it read `sub/x.pem`."""
+    root = _repo(tmp_path, {"sub/x.pem": "KEY\n", ".graphifyignore": "*.pem\n", gitignore: "!x.pem\n"})
+
+    code, out = _check(root, capsys)
+
+    assert (code, "sub/x.pem" in out) == (1, True), out
+
+
+def test_a_gitignore_negation_elsewhere_leaves_it_covered(tmp_path, capsys):
+    root = _repo(tmp_path, {"sub/x.pem": "KEY\n", ".graphifyignore": "*.pem\n",
+                            "other/.gitignore": "!x.pem\n", ".gitignore": "!.env.example\n"})
+
+    code, out = _check(root, capsys)
+
+    assert code == 0, out
+
+
 def test_a_backslash_inside_a_line_does_not_count_as_covering(tmp_path, capsys):
     """Review round 4: git reads `secret\\ name.py` as `secret name.py`;
     graphify keeps the backslash."""

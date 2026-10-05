@@ -359,7 +359,25 @@ def _judge(top, paths, patterns, lines, git):
     files = sorted(hits.intersection(plain))
     through = {path for path, pair in judged.items() if hits.intersection(pair)}
     uncovered = (set(files) - _ignored(files, lines, git)) | through
+    uncovered |= _reopened(top, paths, files, git)
     return set(files) | through, sorted(uncovered)
+
+
+def _reopened(top, paths, files, git):
+    """The denylisted `files` a `!` line of any `.gitignore` (root or nested)
+    re-includes. graphify applies those negations after `.graphifyignore`, so
+    `sub/.gitignore`'s `!x.pem` makes it read `sub/x.pem` whatever
+    `.graphifyignore` excludes. Matched case-folded, so a doubt counts as
+    re-included, never as covered."""
+    out = set()
+    for rel in [p for p in paths if p.rsplit("/", 1)[-1] == ".gitignore"]:
+        text = _read(top, rel) or ""
+        negs = [line.rstrip("\r")[1:] for line in text.split("\n") if line.startswith("!")]
+        base = rel[:-len(".gitignore")]
+        under = {f[len(base):]: f for f in files if f.startswith(base)}
+        if negs and under:
+            out |= {under[r] for r in _ignored(sorted(under), negs, git, fold_case=True)}
+    return out
 
 
 def _ignored(paths, patterns, git, fold_case=False):
