@@ -3166,6 +3166,37 @@ persists every report. `allow` is necessary, not sufficient: T-0009's hook,
 promote-gate (`requireHuman`, the post-deploy proof) and every other gate
 still decide.
 
+### Inert settings (T-0070)
+
+A setting the installed crew does not act on is **named, never silently
+ignored**. `.crew/config.json` once held `autopilot.approval: self` for days
+before the crew that reads it (T-0010) existed, and nothing said so.
+`crew_config.inert_settings` applies one rule: a resolved key that is not a
+key of `default_config()` is inert — outside `platform.*` (machine facts
+`platform-sync` stamps) and `schema`, and a key under an open table such as
+`dev.roles` counts as known. A small `INERT_PENDING` table adds the ticket
+that brings each known-but-unbuilt key, and the values that do nothing yet:
+
+| Key or value | Brought by |
+|---|---|
+| `reviewPolicy`, `maxLanes` under `autopilot` | T-0029 |
+| `maxTicketsPerRun` under `autopilot`, and `mode: "backlog"` | L-0541 (T-0012 landed `goal`; backlog and the caps follow) |
+| `deploy: "nonprod"` or `"all"` (the key is read; nothing dispatches a deploy yet) | T-0045 |
+
+Any other unknown key is named `(unknown key)`: a typo, or a key from another
+crew version. A path the global filter drops from the machine file (this crew
+does not read it there, so it takes effect nowhere) is named
+`(global, not read)`. An entry leaves the table when its key enters
+`default_config()`, which the landing ticket does; a value-level row is deleted
+by that ticket.
+
+The same list appears in four places: one `Inert settings (crew <version> does
+not act on them): key=value (ticket), ...` line at SessionStart (capped at 300
+characters with `+N more`, emitted with `memory.inject` off too), an `inert`
+line in `/crew:status`, a `warning: inert:` line per `autopilot.*` key from
+`crew_autopilot.py settings`, and `crew_config.py --inert`. It never refuses
+anything: autopilot still runs with an inert key set.
+
 ---
 
 ## 20a. Personal keys and the per-key ratchet (T-0050)

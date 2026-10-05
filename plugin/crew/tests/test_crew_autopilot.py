@@ -1650,6 +1650,92 @@ def test_command_claims_passes_runner_and_releases():
         True, True, True, True)
 
 
+
+
+# --- T-0070: settings names the autopilot keys this crew does not act on ----
+
+def _inert(got):
+    return [w for w in got["warnings"] if w.startswith("inert: ")]
+
+
+def test_settings_warns_on_inert_autopilot_keys(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "reviewPolicy": "fix-and-rereview", "maxLanes": 3})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert [w.split(" - ")[0] for w in _inert(got)] == [
+        "inert: autopilot.maxLanes=3 (T-0029)",
+        "inert: autopilot.reviewPolicy=fix-and-rereview (T-0029)"]
+    done = subprocess.run([sys.executable, _SCRIPT, "settings", "--root", str(root)],
+                          capture_output=True, text=True, check=False)
+    lines = done.stdout.splitlines()
+    assert lines[0].startswith("mode=plan")
+    assert "warning: inert: autopilot.reviewPolicy=fix-and-rereview (T-0029) - would choose " \
+           "what autopilot does with review findings" in lines
+
+
+def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
+    # `settings` warns only, never refuses: when the escaping import that
+    # `inert_items` reaches fails, the run still gets its settings and the
+    # warning says the inert keys could not be told.
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "maxLanes": 3})
+    monkeypatch.setitem(sys.modules, "completion_audit", None)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert got["armed"] is True
+    assert [w.split(" (")[0] for w in _inert(got)] == [
+        "inert: could not tell which settings are inert"], got["warnings"]
+
+
+def test_settings_names_the_global_layer(tmp_path, monkeypatch):
+    import crew_config  # pylint: disable=import-outside-toplevel
+    path = tmp_path / "global.json"
+    path.write_text(json.dumps({"autopilot": {"deploy": "nonprod"}}), encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.settings(str(root))
+
+    # Owner, 2026-10-04: a global `autopilot.deploy` MAY be set (T-0050). Before
+    # T-0050 the filter drops it and the line says it is `not read`; after, the
+    # deploy warning names T-0045. Neither may call it repo-only or forbidden.
+    told = " ".join(got["warnings"])
+    for wrong in ("repo-only", "may not set"):
+        assert wrong not in told, got["warnings"]
+    inert = [w.split(" - ")[0] for w in _inert(got)]
+    assert inert in ([], ["inert: autopilot.deploy=nonprod (global, not read)"]), inert
+    assert inert or "T-0045" in told, got["warnings"]
+    assert got["deploy"] == ("none" if inert else "nonprod")
+
+
+def test_settings_is_quiet_for_implemented_keys(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "maxPhases": 5, "approval": "self", "questions": "risk"})
+
+    assert crew_autopilot.settings(str(root))["warnings"] == []
+
+
+def test_settings_does_not_repeat_the_deploy_warning(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"deploy": "nonprod"})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (len(got["warnings"]), _inert(got)) == (1, [])
+    assert "T-0045" in got["warnings"][0]
+
+
+def test_settings_backlog_mode_names_its_ticket(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "backlog"})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert "'backlog'" in got["warnings"][0]
+    assert [w.split(" - ")[0] for w in _inert(got)] == ["inert: autopilot.mode=backlog (L-0541)"]
 # --- T-0037: cancelled and superseded close; needs-owner waits on the owner ------
 
 def _with_line2(root, line, ticket=T, header=HEADER):

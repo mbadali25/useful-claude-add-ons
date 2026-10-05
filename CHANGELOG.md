@@ -9,6 +9,45 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.2: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
+
+- **Summary.** Settings this crew does not act on are named instead of silently ignored, at session start, in `/crew:status` and in autopilot's settings, and `/crew:status --approvals` lists only the tickets whose approval actually needs you.
+- **Ported to release/1.2.0 (feature rush, PR #342).** Merged onto the T-0012 and T-0049 ports. Autopilot's inert-key warnings are `crew_config.autopilot_inert_warnings` (keeps `crew_autopilot.py` under pylint's 3400-line cap); with T-0012's goal landed, `maxTicketsPerRun` and `mode: backlog` are attributed to L-0541.
+- **What changed.** `crew_config.inert_settings(root)` names every setting the
+  installed crew does not act on: a resolved key outside `default_config()`
+  (not `platform.*` or `schema`; keys under an open table such as `dev.roles`
+  count as known), a value in the small `INERT_PENDING` table, and every path
+  the global filter drops. It appears as one `Inert settings (crew <version>
+  does not act on them): key=value (why), ...` line at SessionStart (300
+  characters, `+N more`, emitted with `memory.inject` off too), an `inert` line
+  in `/crew:status`, a `warning: inert:` line per `autopilot.*` key from
+  `crew_autopilot.py settings`, and `crew_config.py --inert`. It never refuses
+  anything. `/crew:status --approvals` prints one `/crew:approve <id>  (<why>)`
+  line per open ticket whose spec and plan validate and whose approval is
+  missing, stale or unaccepted, and leaves merged, current and spec-only
+  tickets out (`nothing needs approval` when there are none, `could not tell
+  (<reason>)` when `.work/INDEX.md` is missing, unreadable or not UTF-8). A
+  key or value with a control character is shown escaped, never emitted.
+- **Why.** `.crew/config.json` held `autopilot.approval: self` for days before
+  the crew that read it existed, and nothing said so; 13 of 25 approvals typed
+  on 2026-09-27 changed nothing. T-0010 has since landed `approval` and
+  `questions`, and T-0011 `ship`, so they are quiet now. Still named:
+  `autopilot.reviewPolicy` and `maxLanes` (T-0029), `maxTicketsPerRun` and `mode:
+  backlog` (L-0541), and a `deploy` other than `none` (T-0045). A key the
+  global filter drops from `~/.claude/crew/config.json` is named `(global, not
+  read)` instead of being dropped silently; that names what this crew does,
+  not which file may set it (the owner allows a global `autopilot.deploy`).
+- **Not in this change.** The machine-global autopilot preferences (the spec's
+  Step 2 allow-list) are left to T-0050 (#361), which reworks the same global
+  layer with `PERSONAL_KEYS` and decides `autopilot.deploy` differently; only
+  the reporting half landed here. The `pending_approvals` reader lives in
+  `crew_status.py`, not `crew_ticket.py`, to keep this branch off the harness.
+- **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
+  ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
+  and `approval_hook.py`), the bare `/crew:approve` listing what is pending,
+  and the sabotage registrations for this change's tests in
+  `sabotage_autopilot.py` and `sabotage_context.py`.
+
 ### Added — crew 1.1.2: in-flight markers, one runner drives a ticket at a time (T-0049)
 
 - **Summary.** Only one runner drives a ticket at a time: autopilot claims an in-flight marker before it drives a ticket, stops when another live, stale or unreadable holder has it, and `/crew:status` shows who holds each marker.

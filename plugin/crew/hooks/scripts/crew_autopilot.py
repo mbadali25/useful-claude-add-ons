@@ -1638,7 +1638,9 @@ def settings(root):
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
                               "approves or takes an answer) and autopilot reads as off")]}
-    return _settings_at(top)
+    result = _settings_at(top)
+    result["warnings"] += crew_config.autopilot_inert_warnings(top, _failure)  # T-0070
+    return result
 
 
 def _settings_at(top):

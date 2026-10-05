@@ -418,6 +418,114 @@ def test_status_inflight_is_read_only_and_fits(tmp_path):
     assert len(lines) <= 40 and len(_inflight(lines)) == 6
 
 
+# --- T-0070: inert settings, and the approvals that actually need you -------
+
+def test_status_names_inert_settings(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"maxLanes": 3}})
+    lines = [l for l in crew_status.collect(str(root)) if l.startswith("inert")]
+    assert lines == ["inert    autopilot.maxLanes=3 (T-0029)"]
+
+
+def test_status_is_quiet_without_inert_settings(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"mode": "plan", "approval": "self"}})
+    assert [l for l in crew_status.collect(str(root)) if l.startswith("inert")] == []
+
+
+def test_status_escapes_control_characters_in_inert_settings(tmp_path):
+    from test_crew_config_inert import INERT_HOSTILE, assert_inert_escaped  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, config=INERT_HOSTILE)
+    assert_inert_escaped("\n".join(crew_status.collect(str(root))))
+
+
+def _approvals_repo(tmp_path):
+    # pylint: disable=import-outside-toplevel
+    import crew_ticket
+    from scope_fixtures import make_repo as scope_repo, make_ticket
+    root = scope_repo(tmp_path)        # scope.allowCliApproval is unset: false
+    for ticket in ("T-1", "T-2", "T-3", "T-4", "T-5", "T-6", "T-7"):
+        make_ticket(root, ticket, activate=False)
+    t4 = root / ".work" / "tickets" / "T-4" / "spec.md"
+    t4.write_text(t4.read_text(encoding="utf-8").replace(
+        "# T-4\n", "# T-4 widget    status: planned   risk: low\n"), encoding="utf-8")
+    for ticket in ("T-2", "T-4"):
+        crew_ticket.approve(str(root), ticket, by="owner", via=crew_ticket.USER_PROMPT)
+    crew_ticket.approve(str(root), "T-3", by="owner", via=crew_ticket.CLI)
+    plan = root / ".work" / "tickets" / "T-2" / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nmore\n", encoding="utf-8")
+    # T-0026: the header's status value alone never makes a receipt stale.
+    t4.write_text(t4.read_text(encoding="utf-8").replace("status: planned", "status: review"),
+                  encoding="utf-8")
+    (root / ".work" / "tickets" / "T-6" / "plan.md").unlink()
+    spec7 = root / ".work" / "tickets" / "T-7" / "spec.md"
+    spec7.write_text(spec7.read_text(encoding="utf-8").replace("## Intent\n", "## Other\n"),
+                     encoding="utf-8")
+    rows = ["| Ticket | Status | Title |", "| --- | --- | --- |"]
+    rows += [f"| T-{n} | {'merged' if n == 5 else 'open'} | t{n} |" for n in range(1, 8)]
+    (root / ".work" / "INDEX.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return root
+
+
+def test_status_approvals_lists_only_what_needs_you(tmp_path):
+    root = _approvals_repo(tmp_path)
+    done = _run(root, "--approvals")
+    assert done.returncode == 0, done.stderr
+    lines = done.stdout.splitlines()
+    assert [l.split("  (")[0] for l in lines[:3]] == [
+        "/crew:approve T-1", "/crew:approve T-2", "/crew:approve T-3"], lines
+    assert lines[0].endswith("(no approval)")
+    assert lines[1].startswith("/crew:approve T-2  (stale: ")
+    assert lines[2].startswith("/crew:approve T-3  (unaccepted: ")
+    assert lines[3:] == [
+        "1 ticket with a spec and plan that do not validate is not listed: T-7"]
+    for absent in ("T-4", "T-5", "T-6"):
+        assert absent not in done.stdout
+
+
+def test_status_approvals_says_nothing_needs_approval(tmp_path):
+    root = make_repo(tmp_path, config={})
+    (root / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
+                                             encoding="utf-8")
+    done = _run(root, "--approvals")
+    assert (done.returncode, done.stdout.strip()) == (0, "nothing needs approval")
+
+
+def _corrupt_index(index):
+    index.write_bytes(b"| T-1 | open | t\xff\xfe1 |\n")
+
+
+def _index_is_a_directory(index):
+    index.mkdir()
+
+
+# An INDEX crew cannot read is "could not tell", never "nothing needs approval":
+# T-1..T-3 below each still have a spec and a plan that need approving.
+@pytest.mark.parametrize("damage,reason", [
+    (os.unlink, "no .work/INDEX.md"),
+    (_corrupt_index, ".work/INDEX.md is not UTF-8"),
+    # open() on a directory raises IsADirectoryError on POSIX and
+    # PermissionError on Windows (EACCES from CreateFile): both are an
+    # unreadable INDEX, and the reason names what was raised.
+    (_index_is_a_directory, ".work/INDEX.md could not be read: "
+     + ("PermissionError" if os.name == "nt" else "IsADirectoryError")),
+])
+def test_status_approvals_says_unknown_when_the_index_cannot_be_read(tmp_path, damage, reason):
+    root = _approvals_repo(tmp_path)
+    index = root / ".work" / "INDEX.md"
+    index.unlink()
+    if damage is not os.unlink:
+        damage(index)
+    done = _run(root, "--approvals")
+    assert (done.returncode, done.stdout.strip()) == (0, f"could not tell ({reason})"), \
+        done.stdout + done.stderr
+
+
+def test_status_approvals_is_read_only(tmp_path):
+    root = _approvals_repo(tmp_path)
+    before = _stat_tree(root)
+    done = _run(root, "--approvals")
+    assert (done.returncode, _stat_tree(root)) == (0, before)
+
+
 def test_status_tree_runs_the_git_which_resolves(tmp_path, monkeypatch):
     # L-1508: the tree line judges the git PATH resolves the way bash, pwsh
     # and shutil.which do (PATHEXT: git.cmd). The failing git is NOT on PATH:
