@@ -50,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 05:07 UTC
+Last updated: 2026-10-05 05:10 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 08:55: C-0009 #507 built (24051da0; real run: 28/28 tools ok, idempotent; CI green). /tmp now 1777 (was 755 at 06:20; changed by something in-session). Told C-0008 to add apt sandbox opts to bootstrap.sh. #507 review started (pwsh checksum, CORE pytest assert, sandbox scope).
 - 08:45: T-0081 #478 built (cad202e9, all Windows green; Windows handle walk verified natively). One crew_tracker sabotage mutation now survives (L-0672 harness follow-up). Review started incl. whether that reddens CI.
 - 08:40: batch 7 builder final report received (post-merge). Minted C-0011: crew_ship.py into SEAM (harness, alone) + batch-7 NITs as a separate feature PR. #366 Windows pre-flight red (shell-matrix + wallclock) -> Windows sweep round 2.
 - 08:35: MERGED batch 7 #505 -> abddc302 (crew 1.0.349); #357 #353 #368 show merged. CI 28/28. Batch-7 NITs N1-N5 for a follow-up.
