@@ -2367,8 +2367,10 @@ S10_DIRECT_BLOCK = _normalise([
     # behind a wrapper and inside `bash -c`.
     ("s10-tg-unknown-option-value", "Bash",
      "terragrunt --some-option x destroy", _o(**_STAGING)),
+    # An option crew does not list (T-0047 lists `--non-interactive` as
+    # boolean; that spelling is `r8-tg-noninteractive-destroy`).
     ("s10-tg-unknown-option-verb", "Bash",
-     "terragrunt --non-interactive destroy", _o(**_STAGING)),
+     "terragrunt --terragrunt-fetch-dependency-output-from-state destroy", _o(**_STAGING)),
     ("s10-tg-run-all-option-value", "Bash",
      "terragrunt run-all --queue-exclude-dir x destroy", _o(**_STAGING)),
     ("s10-tf-chdir-space", "Bash", "terraform -chdir infra destroy",
@@ -2532,10 +2534,6 @@ DOCUMENTED_NOT_CAUGHT = [
     ("an unlisted wrapper", "strace -f terraform destroy"),
     ("an unlisted wrapper", "strace -f terraform $'\\x64estroy' -auto-approve"),
     ("an unlisted wrapper", "strace =terraform destroy"),
-    ("an unlisted wrapper", "aws-vault exec p -- terraform destroy"),
-    ("an unlisted wrapper",
-     'aws-vault exec prod -- terraform "destroy" -auto-approve'),
-    ("an unlisted wrapper", "unbuffer terraform destroy"),
     ("an unlisted wrapper", "systemd-run terraform destroy"),
     ("a program that runs another", "git bisect run terraform destroy"),
     ("a program that runs another", "git -C infra bisect run terraform destroy"),
@@ -2650,8 +2648,10 @@ def test_step10_tables_are_distinct():
 # denied and pin the other side), and every R7_MUST_ALLOW row was denied.
 R7_MUST_BLOCK = _normalise([
     # BLOCK 1: a boolean option before a valued one.
+    # A boolean crew does not list (round 7's own spelling, with the listed
+    # `--non-interactive`, is `r8-tg-known-bool-then-working-dir`).
     ("r7-tg-bool-then-working-dir", "Bash",
-     f"terragrunt --non-interactive --working-dir infra {_ADESTROY}",
+     f"terragrunt --terragrunt-fetch-dependency-output-from-state --working-dir infra {_ADESTROY}",
      _o(**_STAGING)),
     ("r7-tg-bool-then-tg-working-dir-apply", "Bash",
      "terragrunt --terragrunt-non-interactive --terragrunt-working-dir infra "
@@ -2669,8 +2669,9 @@ R7_MUST_BLOCK = _normalise([
      _o(**_STAGING)),
     ("r7-xargs-slot-var", "Bash",
      f"xargs --process-slot-var SLOT terraform {_ADESTROY}", _o(**_STAGING)),
+    # Judged as the destroy, not could-not-tell: `-rn 1` is read whole.
     ("r7-xargs-cluster", "Bash", f"xargs -rn 1 terraform {_ADESTROY}",
-     _o(**_STAGING)),
+     _o(**_STAGING, why="[terraformApply] terraform destroy")),
     ("r7-xargs-attached", "Bash", f"xargs -n1 terraform {_ADESTROY}",
      _o(**_STAGING)),
     ("r7-timeout-cluster", "Bash", f"timeout -vk 5 60 terraform {_ADESTROY}",
@@ -2787,3 +2788,489 @@ def test_round7_tables_are_distinct():
                + R5_MUST_BLOCK + R5_MUST_ALLOW + S10_DIRECT_BLOCK
                + S10_ORDINARY_ALLOW + R7_MUST_BLOCK + R7_MUST_ALLOW)
     assert len(ids) == len(set(ids))
+
+
+# --- Review round 8 (LKKlDl, T-0047): direct spellings and wrong refusals -----
+#
+# Measured on origin/main 502cb137 (T-0047 spec) and again before the fix on
+# this branch: every R8_MUST_BLOCK row naming a round-8 BLOCK was allowed
+# unattended, and every R8_MUST_ALLOW over-block row was denied. The rest are
+# neighbours that pin the other side of each fix.
+R8_MUST_BLOCK = _normalise([
+    # BLOCK 1: `xargs -I`/`-i`/`--replace`, found wherever getopt finds it.
+    ("r8-xargs-cluster-I", "Bash", "xargs -rn 1 -Iplan terraform plan < verbs.txt",
+     _o(**_STAGING)),
+    ("r8-xargs-rI-cluster", "Bash", "xargs -rI plan terraform plan",
+     _o(**_STAGING)),
+    ("r8-xargs-i-attached", "Bash", "xargs -iplan terraform plan",
+     _o(**_STAGING)),
+    ("r8-xargs-replace-long", "Bash", "xargs -r --replace=plan terraform plan",
+     _o(**_STAGING)),
+    # BLOCK 2: `parallel`'s value options, and an option neither table knows.
+    ("r8-parallel-timeout", "Bash",
+     "parallel --timeout 60 terraform destroy ::: -auto-approve",
+     _o(**_STAGING)),
+    ("r8-parallel-delay-tofu", "Bash",
+     "parallel --delay 1 tofu workspace delete ::: production", _o(**_STAGING)),
+    ("r8-parallel-delay-eq", "Bash",
+     "parallel --delay=1 terraform destroy ::: -auto-approve", _o(**_STAGING)),
+    ("r8-parallel-halt", "Bash",
+     "parallel --halt now,fail=1 terraform destroy ::: -auto-approve",
+     _o(**_STAGING)),
+    ("r8-parallel-unknown-opt", "Bash",
+     "parallel --frobnicate 3 terraform destroy ::: x", _unseen()),
+    # BLOCK 3: Invoke-Expression's colon-bound `-Command:`.
+    ("r8-ps-iex-colon", "PowerShell",
+     'Invoke-Expression -Command:"terraform destroy -auto-approve"',
+     _o(**_STAGING)),
+    ("r8-ps-iex-colon-single", "PowerShell", "iex -Command:'terraform destroy'",
+     _o(**_STAGING)),
+    # BLOCK 4: the listed wrappers, stripped by PowerShell's trigger too.
+    ("r8-ps-env-wrapper", "PowerShell", "env terraform destroy${x} -auto-approve",
+     _o(**_STAGING)),
+    ("r8-ps-sudo-wrapper", "PowerShell",
+     "sudo terraform destroy${x} -auto-approve", _o(**_STAGING)),
+    ("r8-ps-sudo-u", "PowerShell", "sudo -u root terraform destroy${x}",
+     _o(**_STAGING)),
+    ("r8-ps-timeout-wrapper", "PowerShell",
+     "timeout 60 terraform destroy${x} -auto-approve", _o(**_STAGING)),
+    ("r8-ps-stdbuf-attached", "PowerShell", "stdbuf -oL terraform destroy${x}",
+     _o(**_STAGING)),
+    ("r8-ps-vault", "PowerShell", "aws-vault exec prod -- terraform destroy${x}",
+     _o(**_STAGING)),
+    # The two wrappers this ticket lists.
+    ("r8-vault-destroy", "Bash",
+     "aws-vault exec prod -- terraform destroy -auto-approve", _o(**_STAGING)),
+    ("r8-vault-no-dashdash-quoted", "Bash", 'aws-vault exec prod terraform "destroy"',
+     _o(**_STAGING)),
+    ("r8-vault-global-and-duration", "Bash",
+     "aws-vault --debug exec -d 1h prod -- tofu workspace delete production",
+     _o(**_STAGING)),
+    ("r8-vault-unknown-opt", "Bash",
+     "aws-vault exec --frob prod -- terraform destroy", _unseen()),
+    ("r8-unbuffer", "Bash", "unbuffer terraform destroy", _o(**_STAGING)),
+    # Judged as the destroy it is, not could-not-tell: `-p` is unbuffer's.
+    ("r8-unbuffer-p", "Bash", "unbuffer -p terraform destroy",
+     _o(**_STAGING, why="[terraformApply] terraform destroy")),
+    # The over-blocks' neighbours: each fix still refuses the spelling beside
+    # the one it allows.
+    ("r8-tg-noninteractive-destroy", "Bash", "terragrunt --non-interactive destroy",
+     _o(**_STAGING)),
+    ("r8-tg-known-bool-then-working-dir", "Bash",
+     f"terragrunt --non-interactive --working-dir infra {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r8-tg-valued-plan-destroy", "Bash",
+     "terragrunt --terragrunt-log-level plan destroy", _o(**_STAGING)),
+    # Not read-only, so the quoted name is gated (the lexer alone would
+    # refuse these too, so `why` pins the gate's reading).
+    ("r8-ws-select-or-create-quoted", "Bash",
+     'terraform workspace select -or-create "prod"', _gate()),
+    ("r8-ws-select-or-create-true", "Bash",
+     'terraform workspace select -or-create=true "prod"', _gate()),
+    ("r8-ws-select-quoted-then-apply", "Bash",
+     'terraform workspace select "staging" && terraform apply p.tfplan',
+     _o(**_STAGING)),
+    ("r8-ps-amp-paren", "PowerShell", '& ("terraform") destroy', _o(**_STAGING)),
+    ("r8-ps-amp-quoted", "PowerShell", '& "terraform" destroy -auto-approve',
+     _gate()),
+    ("r8-ps-assign-bare", "PowerShell", "$out = terraform destroy",
+     _o(**_STAGING)),
+    # Review of #347 (first round), each measured ALLOWED at ffa8a9ab.
+    # BLOCK 1: GNU xargs's `--max-lines` takes a value only attached (as -l).
+    ("r8-xargs-max-lines", "Bash", "xargs --max-lines terraform destroy",
+     _o(**_STAGING)),
+    ("r8-xargs-max-l", "Bash", "xargs --max-l terraform destroy", _o(**_STAGING)),
+    # BLOCK 2: an Invoke-Expression script that is not a literal string.
+    ("r8-ps-iex-colon-var", "PowerShell",
+     '$c = "terraform destroy"; Invoke-Expression -Command:$c', _o(**_STAGING)),
+    ("r8-ps-iex-colon-quoted-var", "PowerShell",
+     '$c = "terraform destroy"; iex -Command:"$c"', _o(**_STAGING)),
+    ("r8-ps-iex-colon-group", "PowerShell",
+     '$c = "terraform destroy"; iex -Command:($c)', _o(**_STAGING)),
+    ("r8-ps-iex-colon-two-vars", "PowerShell",
+     '$a="terraform"; $b="destroy"; iex -Command:"$a $b"', _o(**_STAGING)),
+    # BLOCK 3: `workspace select` whose arguments arrive at run time.
+    ("r8-ws-select-xargs-n2", "Bash",
+     "echo -or-create production | xargs -n2 terraform workspace select",
+     _o(**_STAGING)),
+    ("r8-ws-select-xargs-a", "Bash", "xargs -a f terraform workspace select",
+     _o(**_STAGING)),
+    ("r8-ws-select-parallel-X", "Bash",
+     "echo -or-create production | parallel -X terraform workspace select",
+     _o(**_STAGING)),
+    ("r8-ws-select-xargs-echo-quoted", "Bash",
+     'echo "-or-create production" | xargs terraform workspace select',
+     _o(**_STAGING)),
+    ("r8-ws-select-xargs-printf", "Bash",
+     "printf '%s\\n' -or-create production | xargs -n2 terraform workspace "
+     "select", _o(**_STAGING)),
+    ("r8-ps-ws-select-splat", "PowerShell", "terraform workspace select @args",
+     _o(**_STAGING)),
+    ("r8-ps-ws-select-args", "PowerShell", "terraform workspace select $args",
+     _o(**_STAGING)),
+    ("r8-ps-ws-select-flag-var", "PowerShell",
+     "terraform workspace select $flag production", _o(**_STAGING)),
+    ("r8-ps-ws-select-array", "PowerShell",
+     'terraform workspace select @("-or-create","production")', _o(**_STAGING)),
+    # FIX 1: Invoke-Expression's common parameters.
+    ("r8-ps-iex-erroraction", "PowerShell",
+     'iex -ErrorAction Stop "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-outvariable", "PowerShell",
+     'iex -OutVariable x "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-warningaction-command", "PowerShell",
+     'iex -WarningAction Ignore -Command "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-ea-colon", "PowerShell",
+     'iex -EA Stop -Command:"terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-iex-informationaction", "PowerShell",
+     'iex -InformationAction SilentlyContinue "terraform destroy"',
+     _o(**_STAGING)),
+    ("r8-ps-iex-unknown-param", "PowerShell",
+     'iex -Frobnicate x "terraform destroy"', _o(**_STAGING)),
+    # FIX 2: a call with no space before `(`, and `.` before a quote.
+    ("r8-ps-iex-paren-call", "PowerShell", 'iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-invoke-expression-paren-call", "PowerShell",
+     "Invoke-Expression('terraform destroy')", _o(**_STAGING)),
+    ("r8-ps-terraform-paren-double", "PowerShell", 'terraform("destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-terraform-paren-single", "PowerShell", "terraform('destroy')",
+     _o(**_STAGING)),
+    ("r8-ps-dot-quoted-nospace", "PowerShell", ".'terraform' destroy",
+     _o(**_STAGING)),
+    # FIX 3: `sem` is `parallel --semaphore`.
+    ("r8-sem", "Bash", "sem terraform destroy", _o(**_STAGING)),
+    ("r8-sem-j1", "Bash", "sem -j1 terraform destroy", _o(**_STAGING)),
+    # NIT: terragrunt's other mutating commands.
+    ("r8-tg-apply-all", "Bash", "terragrunt apply-all", _o(**_STAGING)),
+    ("r8-tg-destroy-all", "Bash", "terragrunt destroy-all", _o(**_STAGING)),
+    ("r8-tg-stack-run-apply", "Bash", "terragrunt stack run apply",
+     _o(**_STAGING)),
+    ("r8-tg-stack-run-destroy", "Bash", "terragrunt stack run destroy",
+     _o(**_STAGING)),
+    ("r8-tg-graph-apply", "Bash", "terragrunt graph apply", _o(**_STAGING)),
+    ("r8-tg-graph-destroy", "Bash", "terragrunt graph destroy", _o(**_STAGING)),
+    ("r8-tg-exec-destroy", "Bash", "terragrunt exec -- terraform destroy",
+     _o(**_STAGING)),
+    # Review of #347, round 2: each measured ALLOWED at d4ec3aa6.
+    # B1: an Invoke-Expression script computed by a group.
+    ("r8-ps-iex-group-join", "PowerShell",
+     'iex ("terraform", "destroy" -join " ")', _o(**_STAGING)),
+    ("r8-ps-iex-group-format", "PowerShell",
+     'iex ("{0} {1}" -f "terraform","destroy")', _o(**_STAGING)),
+    # No guarded name in the raw text, so the backstop is silent: the
+    # Invoke-Expression reading itself must call the script could-not-tell.
+    ("r8-ps-iex-vars-no-name", "PowerShell",
+     '$a="terra"; $b="form"; iex "$a$b destroy"', _o(**_STAGING)),
+    # B2: a splat.
+    ("r8-ps-iex-splat", "PowerShell",
+     "$p=@{Command='terraform destroy'}; iex @p", _o(**_STAGING)),
+    # B3: a call after an assignment.
+    ("r8-ps-assign-iex-paren", "PowerShell", '$x = iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-assign-invoke-expression-paren", "PowerShell",
+     '$x = Invoke-Expression("terraform destroy")', _o(**_STAGING)),
+    ("r8-ps-append-iex-paren", "PowerShell", '$x += iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-env-assign-iex-paren", "PowerShell",
+     '$env:X = iex("terraform destroy")', _o(**_STAGING)),
+    ("r8-ps-assign-terraform-paren", "PowerShell", '$x = terraform("destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-assign-dot-quoted", "PowerShell", "$x = .'terraform' destroy",
+     _o(**_STAGING)),
+    ("r8-ps-assign-call-quoted", "PowerShell", '$x = & "terraform" destroy',
+     _o(**_STAGING)),
+    # B4: a call operator glued to its command word, or a computed one.
+    ("r8-ps-amp-single-glued", "PowerShell", "&'terraform'destroy",
+     _o(**_STAGING)),
+    ("r8-ps-amp-double-glued", "PowerShell", '&"terraform"destroy',
+     _o(**_STAGING)),
+    ("r8-ps-amp-group-glued", "PowerShell", '&("terraform")destroy',
+     _o(**_STAGING)),
+    ("r8-ps-dot-group-glued", "PowerShell", ".('terraform')destroy",
+     _o(**_STAGING)),
+    ("r8-ps-amp-gcm", "PowerShell", "& (gcm terraform) destroy", _o(**_STAGING)),
+    ("r8-ps-assign-dot-glued", "PowerShell", "$x = .'terraform'destroy",
+     _o(**_STAGING)),
+    # B5: `workspace select` given a group.
+    ("r8-ps-ws-select-group-concat", "PowerShell",
+     "terraform workspace select ('-or-'+'create') production", _o(**_STAGING)),
+    ("r8-ps-ws-select-group-gc", "PowerShell",
+     "terraform workspace select (gc f)", _o(**_STAGING)),
+    ("r8-ps-ws-select-bare-array", "PowerShell",
+     "terraform workspace select -or-create,production", _o(**_STAGING)),
+    # B6: terragrunt exec's command, unwrapped like any wrapper's.
+    ("r8-tg-exec-env", "Bash", "terragrunt exec -- env terraform destroy",
+     _o(**_STAGING)),
+    ("r8-tg-exec-nice", "Bash", "terragrunt exec -- nice terraform destroy",
+     _o(**_STAGING)),
+    ("r8-tg-exec-timeout", "Bash",
+     "terragrunt exec -- timeout 5 terraform destroy", _o(**_STAGING)),
+    ("r8-tg-exec-command", "Bash",
+     "terragrunt exec -- command terraform destroy", _o(**_STAGING)),
+    ("r8-tg-exec-sudo", "Bash", "terragrunt exec -- sudo terraform destroy",
+     _o(**_STAGING)),
+    ("r8-tg-exec-nested", "Bash",
+     "terragrunt exec -- terragrunt exec -- env terraform destroy",
+     _o(**_STAGING)),
+    # An option before exec's command with no `--`: where it starts is not
+    # known.
+    ("r8-tg-exec-opt-no-dashdash", "Bash",
+     "terragrunt exec --frob terraform destroy", _unseen()),
+    # F1: options between `stack` and `run`.
+    ("r8-tg-stack-opt-run-apply", "Bash",
+     "terragrunt stack --non-interactive run apply", _o(**_STAGING)),
+    ("r8-tg-stack-opt-run-destroy", "Bash",
+     "terragrunt stack --no-color run destroy", _o(**_STAGING)),
+    ("r8-tg-stack-run-opt-destroy", "Bash",
+     "terragrunt stack run --no-color destroy", _o(**_STAGING)),
+    # F2: an alias for Invoke-Expression.
+    ("r8-ps-set-alias-iex", "PowerShell",
+     'Set-Alias x iex; x "terraform destroy"', _o(**_STAGING)),
+    ("r8-ps-sal-invoke-expression", "PowerShell",
+     'sal y Invoke-Expression; y("terraform destroy")', _o(**_STAGING)),
+    # Round 1 allowed `iex("terraform plan")`; round 2's backstop makes any
+    # group given to Invoke-Expression could-not-tell, plan included.
+    ("r8-ps-iex-paren-plan", "PowerShell", 'iex("terraform plan")',
+     _o(**_STAGING)),
+    # N1: terragrunt's state backend delete.
+    ("r8-tg-backend-delete", "Bash", "terragrunt backend delete",
+     _o(**_STAGING)),
+    ("r8-tg-backend-delete-all", "Bash", "terragrunt backend delete --all",
+     _o(**_STAGING)),
+    # Review of #347, round 3: each measured ALLOWED at 877ef4b8.
+    # BL1: a keyword in front of the tool.
+    ("r8-ps-return-terraform", "PowerShell", "return terraform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-throw-terraform", "PowerShell", "throw terraform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-if-return-ws-new", "PowerShell",
+     "if (1) { return terraform workspace new production }", _o(**_STAGING)),
+    ("r8-ps-return-iex-paren", "PowerShell", 'return iex("terraform destroy")',
+     _o(**_STAGING)),
+    ("r8-ps-return-amp-glued", "PowerShell", "return &'terraform'destroy",
+     _o(**_STAGING)),
+    ("r8-ps-return-tofu", "PowerShell", "return tofu destroy", _o(**_STAGING)),
+    ("r8-ps-throw-terragrunt", "PowerShell", "throw terragrunt destroy",
+     _o(**_STAGING)),
+    # The mention rule's own neighbours: any case, a backtick inside the
+    # name, and a function definition that takes the tool's name.
+    ("r8-ps-return-mixed-case", "PowerShell", "return Terraform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-return-backtick", "PowerShell", "return terr`aform destroy",
+     _o(**_STAGING)),
+    ("r8-ps-function-named-terraform", "PowerShell",
+     "function terraform { Remove-Item -Recurse x }; terraform plan",
+     _o(**_STAGING)),
+    # BL2: a launcher given a run-time scriptblock or variable.
+    ("r8-ps-icm-scriptblock-create", "PowerShell",
+     '$c="terraform destroy"; icm ([scriptblock]::Create($c))', _o(**_STAGING)),
+    ("r8-ps-start-job-scriptblock-create", "PowerShell",
+     '$c="terraform destroy"; Start-Job ([scriptblock]::Create($c))',
+     _o(**_STAGING)),
+    ("r8-ps-start-threadjob-scriptblock-create", "PowerShell",
+     '$c="terraform destroy"; Start-ThreadJob ([scriptblock]::Create($c))',
+     _o(**_STAGING)),
+    ("r8-ps-start-process-var", "PowerShell",
+     '$t="terraform"; Start-Process $t destroy', _o(**_STAGING)),
+    ("r8-ps-start-process-var-spaced", "PowerShell",
+     '$t = "terraform"; Start-Process $t destroy', _o(**_STAGING)),
+    ("r8-ps-saps-filepath-var", "PowerShell",
+     '$t="terraform"; saps -FilePath $t -ArgumentList destroy', _o(**_STAGING)),
+    # F1: a .NET method call.
+    ("r8-ps-process-start", "PowerShell",
+     '[Diagnostics.Process]::Start("terraform","destroy")', _o(**_STAGING)),
+    ("r8-ps-process-start-exe", "PowerShell",
+     '[Diagnostics.Process]::Start("terraform.exe","destroy")', _o(**_STAGING)),
+    ("r8-ps-system-process-start", "PowerShell",
+     '[System.Diagnostics.Process]::Start("terraform","destroy")',
+     _o(**_STAGING)),
+    # N1: `graph run apply`.
+    ("r8-tg-graph-run-apply", "Bash", "terragrunt graph run apply",
+     _o(**_STAGING)),
+])
+
+R8_MUST_ALLOW = _normalise([
+    # FIX 1: a terragrunt boolean option takes no value.
+    ("r8a-tg-noninteractive-plan", "Bash",
+     'terragrunt --non-interactive plan -out="p.tfplan"', _o(**_STAGING)),
+    ("r8a-tg-noninteractive-run-all-plan", "Bash",
+     'terragrunt --non-interactive run-all plan -out="p.tfplan"',
+     _o(**_STAGING)),
+    ("r8a-tg-run-all-noninteractive-plan", "Bash",
+     'terragrunt run-all --non-interactive plan -out="p.tfplan"',
+     _o(**_STAGING)),
+    # FIX 3: `workspace select` with a quoted name, and no creation.
+    ("r8a-ws-select-quoted", "Bash", 'terraform workspace select "staging"',
+     _o(**_STAGING)),
+    ("r8a-ws-select-or-create-false", "Bash",
+     'terraform workspace select -or-create=false "staging"', _o(**_STAGING)),
+    # FIX 2: a quoted first word starts PowerShell's expression mode.
+    ("r8a-ps-write-output-concat", "PowerShell",
+     'Write-Output ("terraform" + " destroy")', _o(**_STAGING)),
+    ("r8a-ps-assign-list", "PowerShell", '$message = "terraform", "destroy"',
+     _o(**_STAGING)),
+    ("r8a-ps-replace-expr", "PowerShell",
+     '"terraform destroy" -replace "destroy","plan"', _o(**_STAGING)),
+    # The BLOCKs' neighbours: each fix still allows the read-only spelling.
+    ("r8a-ps-iex-colon-plan", "PowerShell",
+     "Invoke-Expression -Command:'terraform plan'", _o(**_STAGING)),
+    ("r8a-xargs-cluster-fmt", "Bash", "ls *.tf | xargs -rn 1 terraform fmt",
+     _o(**_STAGING)),
+    # xargs's `-i` takes only an attached value: `X` is the replace string,
+    # not an option crew does not know.
+    ("r8a-xargs-i-attached-fmt", "Bash", "ls *.tf | xargs -iX terraform fmt",
+     _o(**_STAGING)),
+    ("r8a-vault-plan", "Bash", "aws-vault exec prod -- terraform plan",
+     _o(**_STAGING)),
+    ("r8a-unbuffer-plan", "Bash", "unbuffer terraform plan", _o(**_STAGING)),
+    # CONFIG.md's literal-word paragraph (the NIT): these were never refused.
+    ("r8a-commit-message", "Bash", 'git commit -m "terraform destroy"',
+     _o(**_STAGING)),
+    ("r8a-plan-redirect", "Bash", "terraform plan 2>/dev/null", _o(**_STAGING)),
+    ("r8a-ps-plan-redirect", "PowerShell", "terraform plan 2>$null",
+     _o(**_STAGING)),
+    # The first review's neighbours: each fix still allows the read-only form.
+    ("r8a-xargs-max-lines-fmt", "Bash", "ls *.tf | xargs --max-lines terraform fmt",
+     _o(**_STAGING)),
+    ("r8a-ps-iex-erroraction-plan", "PowerShell",
+     'iex -ErrorAction Stop "terraform plan"', _o(**_STAGING)),
+    ("r8a-ps-iex-verbose-plan", "PowerShell",
+     'Invoke-Expression -Verbose "terraform plan"', _o(**_STAGING)),
+    ("r8a-ws-select-literal-after-xargs-plan", "Bash",
+     "ls *.tf | xargs terraform fmt && terraform workspace select staging",
+     _o(**_STAGING)),
+    ("r8a-sem-plan", "Bash", "sem -j1 terraform plan", _o(**_STAGING)),
+    ("r8a-tg-graph-plan", "Bash", "terragrunt graph plan", _o(**_STAGING)),
+    ("r8a-tg-exec-plan", "Bash", "terragrunt exec -- terraform plan",
+     _o(**_STAGING)),
+    # Round 2's neighbours: plain forms the PowerShell backstop still reads.
+    ("r8a-ps-plain-plan", "PowerShell", "terraform plan", _o(**_STAGING)),
+    ("r8a-ps-assign-plan", "PowerShell", "$x = terraform plan", _o(**_STAGING)),
+    ("r8a-ps-call-plain-plan", "PowerShell", "& terraform plan", _o(**_STAGING)),
+    ("r8a-ps-ws-select-plain", "PowerShell", "terraform workspace select staging",
+     _o(**_STAGING)),
+    ("r8a-tg-exec-env-plan", "Bash", "terragrunt exec -- env terraform plan",
+     _o(**_STAGING)),
+    ("r8a-tg-stack-opt-run-plan", "Bash",
+     "terragrunt stack --non-interactive run plan", _o(**_STAGING)),
+    # Round 3's neighbours: every mention accounted for.
+    ("r8a-ps-write-host-mention", "PowerShell",
+     'Write-Host "run terraform plan first"', _o(**_STAGING)),
+    ("r8a-ps-echo-mention", "PowerShell", "echo terraform", _o(**_STAGING)),
+    ("r8a-ps-if-plan", "PowerShell", "if (terraform plan) { Write-Output ok }",
+     _o(**_STAGING)),
+    ("r8a-ps-path-mention", "PowerShell", "Get-Content terraform/main.tf",
+     _o(**_STAGING)),
+    ("r8a-ps-plan-log-file", "PowerShell",
+     "terraform plan *> terraform.log", _o(**_STAGING)),
+    ("r8a-tg-graph-run-plan", "Bash", "terragrunt graph run plan",
+     _o(**_STAGING)),
+])
+
+
+@pytest.mark.parametrize("policy", ["ask", "block", "allow"])
+@pytest.mark.parametrize("case", R8_MUST_BLOCK, ids=_ids(R8_MUST_BLOCK))
+def test_round8_must_block_python(tmp_path, case, policy):
+    over = {"ask": {}, "block": BLOCK_POLICY, "allow": ALLOW_POLICY}[policy]
+    case_id, tool, command, opts = case
+    _deny("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **over}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    R8_MUST_BLOCK, ("r8-parallel-timeout", "r8-vault-destroy"),
+    (tcg.needs_bash,)))
+def test_round8_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    R8_MUST_BLOCK, ("r8-ps-iex-colon", "r8-ps-env-wrapper"),
+    (tcg.needs_pwsh,)))
+def test_round8_must_block_pwsh(tmp_path, case):
+    _deny("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", R8_MUST_ALLOW, ids=_ids(R8_MUST_ALLOW))
+def test_round8_must_allow_python(tmp_path, case):
+    _allow_literal("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", [
+    c for c in R8_MUST_ALLOW if c[0] in (
+        "r8a-tg-noninteractive-plan", "r8a-ws-select-quoted",
+        "r8a-ps-write-output-concat", "r8a-vault-plan")],
+    ids=lambda c: c[0])
+def test_round8_must_allow_under_block(tmp_path, case):
+    case_id, tool, command, opts = case
+    _allow_literal("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **BLOCK_POLICY}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    R8_MUST_ALLOW, ("r8a-ps-write-output-concat", "r8a-ps-iex-colon-plan"),
+    (tcg.needs_pwsh,)))
+def test_round8_must_allow_pwsh(tmp_path, case):
+    _allow_literal("pwsh", tmp_path, case)
+
+
+def test_round8_tables_are_distinct():
+    ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
+               + NOW_NOT_LITERAL + S9_MUST_ALLOW + S9_MUST_BLOCK
+               + R5_MUST_BLOCK + R5_MUST_ALLOW + S10_DIRECT_BLOCK
+               + S10_ORDINARY_ALLOW + R7_MUST_BLOCK + R7_MUST_ALLOW
+               + R8_MUST_BLOCK + R8_MUST_ALLOW)
+    assert len(ids) == len(set(ids))
+
+
+@pytest.mark.parametrize("command, wrapper, option", [
+    ("parallel --frobnicate 3 terraform destroy ::: x", "parallel",
+     "--frobnicate"),
+    ("xargs --frob terraform destroy", "xargs", "--frob"),
+    ("aws-vault exec --frob prod -- terraform destroy", "aws-vault", "--frob"),
+    ("unbuffer -z terraform destroy", "unbuffer", "-z"),
+])
+def test_round8_unknown_option_is_could_not_tell(command, wrapper, option):
+    """An option a listed wrapper's tables do not know: crew cannot tell
+    where the command starts, so the line is could-not-tell, and the reason
+    says which wrapper and which option."""
+    found = cloud_guard._literal_gate("bash", command)  # pylint: disable=protected-access
+    assert found is not None, command
+    assert found.scope["op"] == cloud_guard.OP_UNREADABLE_LINE
+    assert wrapper in found.what and option in found.what, found.what
+    assert "does not know" in found.what, found.what
+
+
+def test_round8_fed_workspace_select_is_judged_by_the_lexer():
+    """`xargs terraform workspace select` may get `-or-create` appended, so
+    the lexer judges it as a creation once the environment layer is engaged
+    (review of #347), as it does a visible `-or-create`."""
+    found = cloud_guard._fed_finding(  # pylint: disable=protected-access
+        ["terraform", "workspace", "select"], {}, "xargs", ("{}",),
+        {"engaged": True})
+    assert found is not None and found.scope["op"] == "ws-create", found
+
+
+@pytest.mark.parametrize("command, rule", [
+    ("terragrunt exec -- aws s3 rm s3://b --recursive", "cloudDestructive"),
+    ("terragrunt exec -- az group delete -n rg", "cloudDestructive"),
+])
+def test_round8_terragrunt_exec_runs_what_it_is_given(command, rule):
+    """`terragrunt exec -- <cmd>` is unwrapped like any listed wrapper, so
+    every rule judges the command it runs (review of #347, round 2)."""
+    assert rule in [f.rule for f in cloud_guard.scan("bash", command)], command
+
+
+@pytest.mark.parametrize("text, words, called", [
+    ('$x = iex("terraform destroy")', ["$x", "=", "iex", "terraform destroy"],
+     False),
+    ('$x = & "terraform" destroy', ["$x", "=", "terraform", "destroy"], True),
+    ("$x = .'terraform' destroy", ["$x", "=", ".", "terraform", "destroy"],
+     False),
+])
+def test_round8_ps_lexer_reads_a_call_after_an_assignment(text, words, called):
+    """`$x = iex(...)`, `$x = & ...` and `$x = .'...'` are one command whose
+    command word follows the assignment (review of #347, round 2)."""
+    cmds, _subs = cloud_guard._lex_ps(text)  # pylint: disable=protected-access
+    assert [[str(w) for w in c.words] for c in cmds] == [words]
+    assert cmds[0].called is called

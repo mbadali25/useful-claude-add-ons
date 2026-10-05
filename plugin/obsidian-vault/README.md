@@ -227,15 +227,52 @@ any vault, the default vault is the only one read.
 **CLI.**
 
 ```
-python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B] [--max-chars N] [--timeout-ms MS] --json
+python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B] [--project NAME[,NAME]] [--min-terms N] [--include-excluded] [--max-chars N] [--timeout-ms MS] --json
 ```
 
 - `--vaults` is priority order. Omitted: the primary, then every `recall`
   vault in config order. `ignore` vaults are never read.
-- Ranking is vault priority first, then score, so when the budget runs out
-  the lower-priority vault is the one that loses. Score is plain text matching
-  per query term: title (frontmatter `title`, else filename) 6, each heading 3
-  (max 3), each body line 1 (max 5).
+- Query terms are the words of three or more characters that are not common
+  English stop words (`what`, `the`, `for`, `this`, `with`, ...), first 12
+  kept. A query of stop words only has no terms and returns nothing, exit 0.
+  Terms match whole words: `port` is not found in `support` or `report`. A
+  note's joined word counts as its parts too (split on `-`, `.`, `_`):
+  `context` finds `crew-context.sh`, `recall` finds `vault_recall.py`. A
+  joined query word is one term: `vault_recall.py`, `t-0083` or
+  `port-collision` match the whole joined word or its parts side by side in
+  order (`port collision`, `port-collisions`), never the parts scattered
+  (`t-0083` does not find `L-0083`; `github.com` does not find `example.com`).
+  Plurals: a consonant + `y` pairs with `ies` (`entry` / `entries`,
+  `policies` / `policy`); `es` is added or stripped only after s, x, z, ch or
+  sh (`box` / `boxes`, but `plan` never finds `planes`); a plain `s` is added
+  or stripped otherwise, also from an `es` word (`releases` / `release`,
+  `caches` / `cache`, `logs` / `log`). No form is shorter than three letters
+  (`uses` never finds the `us` of `us-east-1`), `news` never gains or loses its
+  `s` (an exception list, `news` alone today), and no form is a stop word
+  (`notes` never finds `not`). CamelCase is not split: `PortCollision` does not contain `port`.
+- `wiki/sessions/archive/` (in any letter case) is never read, and a
+  symlinked note whose real path is inside it is skipped too.
+  `--include-excluded` reads it. A symlinked note that resolves outside the
+  vault, or into `.trash`, `.git`, `node_modules` or another dot folder, is
+  always skipped. A hard link cannot be told from an ordinary file, so a hard
+  link into the archive is read; Windows junctions have not been tested. The vault's `.obsidian/app.json` `userIgnoreFilters`
+  are not read: their format has not yet been checked against a real vault.
+- Relevance floor: a note is returned only when it holds enough distinct query
+  terms - 1 for a query of one or two terms, 2 for three to five, 3 for six or
+  more. `--min-terms N` sets the floor (capped at the term count); `--min-terms 1`
+  is the old "any term" rule. An empty answer is an honest "no hit".
+- Ranking is vault priority first, so when the budget runs out the
+  lower-priority vault is the one that loses. Inside a vault: project, then
+  note kind, then score, then path. Project: with `--project crew` (comma-separated,
+  repeatable, case-insensitive) a note whose frontmatter `project:` or any
+  folder of its path is `crew` ranks first (`match`), a note with no project
+  next (`none`), a note whose `project:` names another project last (`other`;
+  ranked last, never dropped). A topic folder that happens to share the
+  project's name also matches; that only promotes a note, never hides one.
+  Kind: `wiki/concepts/` and `wiki/decisions/` notes, then other notes, then
+  `wiki/sessions/` notes (folder names in any letter case). Score is plain text
+  matching per query term: title (frontmatter `title`, else filename) 6, each
+  heading 3 (max 3), each body line 1 (max 5).
 - `--max-chars` (default 4000) bounds `sum(len(line) + 1)` over the results;
   the last result may be cut short to fit.
 - `--timeout-ms` (default 1500) and 20,000 notes per vault bound the walk.
@@ -252,13 +289,22 @@ python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B
   "results": [
     { "vault": "memory", "path": "wiki/concepts/Port collisions break the bridge.md",
       "title": "Port collisions break the bridge", "score": 23,
+      "kind": "concept", "project": "none", "matched": 2,
       "snippet": "Two vaults on one port: the loser never binds.",
       "line": "[memory] wiki/concepts/Port collisions break the bridge.md: Two vaults on one port: the loser never binds." }
   ],
   "chars": 104, "max_chars": 4000, "truncated": false,
-  "errors": [ { "vault": "nosuch", "error": "not a configured vault (or its path is not on disk)" } ]
+  "errors": [ { "vault": "nosuch", "error": "not a configured vault (or its path is not on disk)" } ],
+  "project": [], "need": 1, "below_floor": 0, "excluded_dirs": 1, "skipped_links": 0
 }
 ```
+
+`kind` is `concept`, `decision`, `session` or `other`; `project` is `match`,
+`none` or `other`; `matched` is the distinct query terms the note holds. At the
+top, `project` lists the names asked for, `need` is the floor applied,
+`below_floor` counts notes that scored but missed it, `excluded_dirs` counts
+folders pruned unread and `skipped_links` counts symlinked notes skipped
+(into the archive, a skipped folder, or out of the vault).
 
 `path` is vault-relative with forward slashes. `line` is the text to inject.
 `truncated` is true when the budget, the timeout or the file cap cut anything.

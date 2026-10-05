@@ -127,6 +127,7 @@ import subprocess
 import sys
 import time
 
+import crew_common
 import merged_main
 import review_patch
 
@@ -182,7 +183,7 @@ def common_dir(root):
     """`git rev-parse --git-common-dir`, made absolute."""
     try:
         out = subprocess.run(
-            ["git", "-C", root, "rev-parse", "--git-common-dir"],
+            [crew_common.require_tool("git"), "-C", root, "rev-parse", "--git-common-dir"],
             capture_output=True, text=True, check=False, timeout=30,
             stdin=subprocess.DEVNULL,
         )

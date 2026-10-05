@@ -61,7 +61,6 @@ import io
 import os
 import shutil
 import signal
-import subprocess
 import sys
 
 from sabotage_cloud import CLOUD_GUARD_MUTATIONS
@@ -86,6 +85,7 @@ from sabotage_standards import STANDARDS_MUTATIONS
 from sabotage_shell import SHELL_MUTATIONS
 from sabotage_prereview import PREREVIEW_MUTATIONS
 from sabotage_recurring import RECURRING_MUTATIONS
+import sabotage_bound
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -3070,19 +3070,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS
               + RECURRING_MUTATIONS)
 
-# pytest's own exit codes (documented, not this file's invention): 0 all
-# passed; 1 at least one test FAILED (a real assertion, or an error raised
-# during a test); 2 execution interrupted; 3 an internal pytest error; 4 a
-# usage error, which is what a collection failure -- an import blowing up
-# on a SyntaxError, say -- actually produces; 5 no tests were collected at
-# all. Only 1 is evidence that the TARGET TEST caught the mutation. Finding
-# 13: the previous version of this treated every non-zero code the same,
-# so a mutation that broke the whole file's syntax (crashing collection
-# for every test in the suite, this one included) reported "RED (good)"
-# indistinguishably from a mutation the target test actually caught -- and
-# only 4 of the round's 18 new mutations had been hand-verified as the real
-# thing rather than this.
-_REAL_TEST_FAILURE = 1
+# pytest's exit codes and which one is proof: `sabotage_bound.verdict` (finding 13).
+_REAL_TEST_FAILURE = sabotage_bound.REAL_TEST_FAILURE
 
 
 def run_test(target):
@@ -3103,13 +3092,11 @@ def run_test(target):
     default run deselects (conftest.py). Without it such a target collects
     nothing and exits 5, which is not 1 -- a mutation it would have caught
     would read as surviving.
+    T-0080: bounded per entry (memory cap, wall-clock limit) by `sabotage_bound`.
     """
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    completed = subprocess.run(
-        [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
-         "--run-slow"],
-        cwd=CREW, capture_output=True, text=True, check=False, env=env)
-    return completed.returncode, completed.stdout + completed.stderr
+    return sabotage_bound.run([sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
+                               "--run-slow"], CREW, env, *sabotage_bound.limits(os.environ))
 
 
 def read(target):
@@ -3354,6 +3341,12 @@ def main():
                   f"(the target was never modified)")
             os.remove(partial)
 
+    try:
+        mem_mib, timeout_s = sabotage_bound.limits(os.environ)
+    except ValueError as err:
+        print(f"REFUSING TO RUN -- {err}")
+        return 2
+    print(sabotage_bound.describe(mem_mib, timeout_s))
     install_exit_handlers()
     # The answer key for every restore, on every path. Module state, because
     # the signal and atexit handlers verify too. Taken here, once, from files
@@ -3376,21 +3369,9 @@ def main():
             if not _verify(target):
                 print(f"{'  ^ above, restoring for':40} {label}")
                 ok = False
-        if code == 0:
-            print(f"{'STILL GREEN -- TEST IS VACUOUS':40} {label}")
-            ok = False
-        elif code != _REAL_TEST_FAILURE:
-            # Went red, but not because the target test caught anything --
-            # a collection/import error (SyntaxError, a bad import) crashed
-            # the whole run before the test ever executed, or nothing
-            # matching `test` was even collected. Reported separately, and
-            # counted as a failure of THIS suite, because it proves nothing
-            # about whether the mutation is real.
-            print(f"{'RED BUT UNPROVEN -- exit ' + str(code) + ', not a test failure':40} "
-                  f"{label}")
-            ok = False
-        else:
-            print(f"{'RED (good)':40} {label}")
+        outcome, good = sabotage_bound.verdict(code, timeout_s)
+        print(f"{outcome:40} {label}")
+        ok = ok and good
 
     print("\nSABOTAGE SUITE:", "PASS" if ok else "FAIL")
     return 0 if ok else 1

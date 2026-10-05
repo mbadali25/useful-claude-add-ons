@@ -68,3 +68,92 @@ that cannot rot into irrelevance — only into inaccuracy, which anchors catch.
 Repo-local `.crew/codemap/` is the source of truth; the vault mirrors it. If the
 vault is on the same machine, symlink `.crew/codemap` into the vault rather than
 copying, so there is never a divergence question.
+
+## Native memories as vault pointers
+
+A native memory file (Claude Code's `~/.claude/projects/<project>/memory/<fact>.md`)
+may hold one line in place of its body, with the frontmatter left as it is:
+
+```
+vault: <name> | note: <vault-relative path, forward slashes, ending .md>
+```
+
+The vault is named, never given as an absolute path, so the same file works on
+every machine the vault is synced to. When you meet one, resolve it on this host
+and read the path it prints:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" resolve --file <memory file>
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" check --memory-dir <memory dir>
+```
+
+The name maps to a path through `vaults.<name>.path` in `~/.claude/obsidian/config.json`
+(a `role: ignore` vault is not resolved). Only the name `memory` falls back: to the
+crew config's `memory.vaultPath`, then, only when that file has no `vaults` block, to
+its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not honoured. The pointer
+line is exact and must be the whole body: a first line that starts `vault` and `:` in
+any case, indent or spacing, is a pointer attempt when `note:` or `|` is on that line,
+or the next line starts with `|` or `note:` (a pointer wrapped before its `|`), or the
+line is a bare vault name alone (`vault: work`) or nothing after the colon (`vault:`); anything less than the full grammar is then `malformed`. With
+neither it is prose (`Vault: keep client notes in the work vault, not personal.` is a memory, not a
+pointer). A config file counts as missing
+only when it is not there at all; one that is there and does not read, parse or match
+its expected shape (or has a duplicate key, nests too deep or is over 1 MiB) is
+`no-vault-config`, naming the field. A bad Obsidian config stops every name; a bad crew config stops `memory`, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.
+
+| state | meaning | exit |
+|---|---|---|
+| `resolved` | the note exists; `path:` is printed | 0 |
+| `full-text` | not a pointer; the body is the memory | 0 |
+| `malformed` | a `vault:` first line holding `note:` or `|` (any case, indent or spacing) that fails the grammar or is not alone | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config that cannot be read, does not parse or has a field of the wrong shape | 1 |
+| `vault-unknown` | this host names no such vault, or it is `ignore` | 1 |
+| `vault-unavailable` | the configured path is not an absolute, listable directory here | 1 |
+| `note-missing` | the vault is there, the note is not | 1 |
+| `outside-vault` | a symlink below the vault, or the path leaves it | 1 |
+| `unreadable` | the memory file is not a readable UTF-8 regular file, or a folder or note below the vault cannot be read or opened | 1 |
+
+Any state other than `resolved` or `full-text`: tell the user the state and its
+reason. Do not guess the note, search another vault for it, or treat the pointer
+as the memory.
+
+### Saving a memory as a pointer
+
+Write the memory as usual first. Then read the vault's own `CLAUDE.md` for its
+folder and tag vocabulary, and run `save` without `--apply`; read the plan it
+prints (vault, note, `create` / `append` / `unchanged`, the pointer line):
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" save --file <memory file> --tag <tag> [--tag ...] [--title <t>] [--note <path>] [--type concept|decision|source|meta|project-index] [--project <p>]
+```
+
+Run it again with `--apply`. The note is written (or a dated `## Update` passage
+appended to the note of the same `memory_id`) and read back first; only then is the
+memory's body replaced by the pointer. The writable vault is the single `role:
+primary` vault (without roles, `default: true`, else the first; with no `vaults`
+block, `memory`), never a `recall` or `ignore` vault, never a substitute. Report a
+`kept-full-text` line to the user verbatim: the memory still holds its full text.
+
+| state | native file | exit |
+|---|---|---|
+| `pointer-written` | body replaced by the pointer | 0 |
+| `already-pointer` | untouched | 0 |
+| `kept-full-text: no vault configured` | untouched | 0 |
+| `kept-full-text: vault unavailable` / `no primary` / `several primaries` / `not a vault` / `config unreadable` | untouched | 1 |
+| `kept-full-text: collision` / `ascii-required` / `outside-vault` / `bad-note-path` / `the existing note is not UTF-8` | untouched | 1 |
+| `kept-full-text: MEMORY.md is the index` / `the memory file is a symlink` / `the memory has no body to save` | untouched | 1 |
+| `kept-full-text: another save is running now` / `lock failed` / `note write failed` / `the note changed during save` / `note not readable after write` / `the memory file changed during save` / `the memory file cannot be read again` / `pointer write failed` | untouched | 1 |
+| `malformed`, `unreadable`, or any `resolve` state of a pointer that does not resolve | untouched | 1 |
+
+Two saves by the same user on this machine exclude each other with kernel locks
+(`~/.cache/crew/memory-locks`, `%LOCALAPPDATA%\crew\memory-locks` on Windows) that
+the OS drops when a save exits or is killed, so `another save is running now` is
+true when reported; with no absolute cache folder the save is `lock failed`. Every
+spelling of a file (symlinked folder, `..`, case variant, hard link) takes the same
+lock. The lock does not stop a save on another machine syncing the vault, nor an
+edit by Claude Code or Obsidian: the memory and note are re-compared before each
+rename, and an edit in the instant before the final rename is not detected. If
+Claude Code later rewrites a pointer memory with full text, `check` shows it as
+`full-text` again; run `save` again. On Windows Git Bash there may be no
+`python3`: run the same command with `py -3` or `python`, and if none resolves, say so
+rather than skipping the save silently.

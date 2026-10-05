@@ -1283,6 +1283,92 @@ def shim_env(flavor, bindir, **extra):
     return env
 
 
+# --- T-0016: a Claude Code session record and a stubbed process table -------
+#
+# auto-clear binds a session to its own process through the record Claude Code
+# writes at `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`, and reads
+# every process fact (parent, tty_nr, start time, comm) through
+# CREW_AUTOCLEAR_PROC_STUB when it is set -- the stub is then the WHOLE process
+# table, so no case depends on the real process tree and the same fixture runs
+# on Linux, macOS and native Windows, in both flavours. The pids are above
+# Linux's pid_max (4194304) so none can be a real process.
+
+PROC_STUB_ENV = "CREW_AUTOCLEAR_PROC_STUB"
+HOOK_PID = 5_000_001        # the walk starts here ("self"): the hook
+OWNER_PID = 5_000_002       # the Claude Code process that IS the session
+TERMINAL_PID = 5_000_100    # the terminal above it: owns the pane / window
+TERMINAL_TTY = 34816        # tty_nr of /dev/pts/0, as measured
+OWNER_START = 215501        # /proc/<pid>/stat field 22, as measured
+
+# The keys of a record Claude Code 2.1.289 wrote, measured on Linux 2026-10-04
+# (plugin/crew/docs/session-record-spike.md). The fixture writes all of them
+# so it never tests a shape the real one does not have (GEN-10).
+MEASURED_RECORD_KEYS = (
+    "pid", "sessionId", "cwd", "startedAt", "procStart", "version", "peerProtocol",
+    "peerFeatures", "kind", "entrypoint", "pidDomain", "messagingSocketPath", "name",
+    "nameSource", "nameSince", "status", "updatedAt", "statusUpdatedAt")
+
+
+def write_session_record(config_dir, session_id, pid, *, kind="interactive", entrypoint="cli",
+                         proc_start=OWNER_START, name=None):
+    """`<config_dir>/sessions/<pid>.json` in the measured shape. Returns the path."""
+    sessions = os.path.join(str(config_dir), "sessions")
+    os.makedirs(sessions, exist_ok=True)
+    record = {"pid": pid, "sessionId": session_id, "cwd": "/tmp/fixture", "startedAt": 1791114023546,
+              "procStart": None if proc_start is None else str(proc_start), "version": "2.1.289",
+              "peerProtocol": 1, "peerFeatures": [], "kind": kind, "entrypoint": entrypoint,
+              "pidDomain": "linux:fixture", "messagingSocketPath": f"/tmp/cc-socks/{pid}.sock",
+              "name": name or f"fixture-{pid}", "nameSource": "derived", "nameSince": 1791114023546,
+              "status": "idle", "updatedAt": 1791114023682, "statusUpdatedAt": 1791114023682}
+    path = os.path.join(sessions, f"{pid}.json")
+    text = json.dumps(record)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    return path
+
+
+def proc_entry(ppid, tty=0, start=None, comm="bash"):
+    return {"ppid": ppid, "tty": tty, "start": start, "comm": comm}
+
+
+def proc_stub(directory, table, *, start=HOOK_PID, scan_fails=False):
+    """Write a process-table stub and return `{PROC_STUB_ENV: path}`. `table`
+    maps pid -> `proc_entry(...)` (or None: a pid whose parent cannot be read);
+    `start` is the pid the walk begins at, standing in for the hook."""
+    data = {str(pid): entry for pid, entry in table.items()}
+    data["self"] = start
+    if scan_fails:
+        data["scanFails"] = True
+    os.makedirs(str(directory), exist_ok=True)
+    path = os.path.join(str(directory), "proc-stub.json")
+    text = json.dumps(data)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    return {PROC_STUB_ENV: path}
+
+
+def session_table(*, tty=TERMINAL_TTY, owner=OWNER_PID, terminal=TERMINAL_PID, start=OWNER_START):
+    """hook -> owner (claude) -> terminal -> init: one session in its own terminal."""
+    return {HOOK_PID: proc_entry(owner, tty, 1, "bash"),
+            owner: proc_entry(terminal, tty, start, "claude"),
+            terminal: proc_entry(1, 0, 1, "terminal")}
+
+
+def bind_session(home, session_id, *, tty=TERMINAL_TTY, kind="interactive", entrypoint="cli",
+                 config_dir=None, table=None, scan_fails=False):
+    """Bind `session_id` to OWNER_PID: a session record under `config_dir`
+    (default `<home>/.claude`, the path Claude Code uses when
+    CLAUDE_CONFIG_DIR is unset) plus a process table in which the hook runs
+    under that process, inside TERMINAL_PID. Returns the env to merge:
+    the stub, and CLAUDE_CONFIG_DIR -- always set, to the fixture, so no case
+    can read the developer's real records."""
+    config = str(config_dir) if config_dir is not None else os.path.join(str(home), ".claude")
+    write_session_record(config, session_id, OWNER_PID, kind=kind, entrypoint=entrypoint)
+    env = proc_stub(home, table if table is not None else session_table(tty=tty), scan_fails=scan_fails)
+    env["CLAUDE_CONFIG_DIR"] = config
+    return env
+
+
 def _git(root, *args):
     subprocess.run(
         ("git",) + args, cwd=root, check=True,

@@ -42,7 +42,7 @@ MARKER_LINES = 5  # the marker is on line 1 (md), 2 (html) or 3 (mmd); a quote o
 
 def _git(root, *args):
     try:
-        out = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True,
+        out = subprocess.run([qa_audit_env.require_tool("git"), "-C", root, *args], capture_output=True, text=True,
                              timeout=30, check=False)
     except (OSError, subprocess.SubprocessError):
         return None

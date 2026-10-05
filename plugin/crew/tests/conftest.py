@@ -47,6 +47,11 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     unused = str(tmp_path / "unused-global-config.json")
     monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
+    # T-0050: every crew config write takes a backup first. An ENVIRONMENT
+    # variable rather than a patched attribute, so a test's subprocess (a
+    # hook, the CLI) inherits it too and never writes under the real
+    # `~/.claude/crew/backups`.
+    monkeypatch.setenv("CREW_BACKUP_DIR", str(tmp_path / "crew-backups"))
 
     # Same rule, second environment channel. `pm_brief.main` resolves its root
     # as `payload["cwd"] or $CLAUDE_PROJECT_DIR or os.getcwd()`, so a test that
@@ -64,6 +69,13 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     # afterwards (`monkeypatch.setenv`, or an explicit `env=` for a subprocess)
     # and that still wins; this only removes the ambient value nobody declared.
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    # Same rule for T-0016's session records: auto-clear reads
+    # `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`, and every case points HOME at
+    # a fixture -- so an ambient CLAUDE_CONFIG_DIR would be the one way left to
+    # read the developer's real records. crew_fixtures.bind_session sets it
+    # back, to the fixture, wherever a case wants a record.
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CREW_AUTOCLEAR_PROC_STUB", raising=False)
 
     # Third channel: the developer's GLOBAL git config reaches every fixture
     # `git commit`, and with `commit.gpgsign=true` each one runs their signing

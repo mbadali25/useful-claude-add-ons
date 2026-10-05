@@ -99,7 +99,8 @@
       "minHandoffLines": 5,
       "unsafeFocus": false,
       "onlyRepos": null,
-      "onlySessions": null
+      "onlySessions": null,
+      "wrapUp": null
     },
     "autoWrapUp": true,
     "autoResume": true,
@@ -208,16 +209,20 @@
     "jiraIssueType": "Change",
     "category": null
   },
+  "git": {
+    "forbiddenTrailers": []
+  },
   "scope": {
     "mode": "off",
     "allowCliApproval": false
   },
   "autopilot": {
-    "mode": "off",
-    "maxPhases": 12,
-    "deploy": "none",
-    "approval": "risk",
-    "questions": "risk"
+    "maxAutoReplans": 0,
+    "sleep": {
+      "schedule": null,
+      "approval": null,
+      "questions": null
+    }
   },
   "tickets": {
     "baseBranch": null
