@@ -1121,20 +1121,15 @@ AUTONOMOUS_STOPS = (
      "history rewrite, or rm of a tracked file"),
 )
 
-# `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases
-# `crew_autopilot.py next` names from disk. `mode` is armed only by the exact
-# string `plan`, a typo is `off`; `maxPhases` bounds the phases one run takes.
-# `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is
-# read by crew_autopilot.deploy_allowed. Every AUTONOMOUS_STOPS entry above
-# binds it too: commands/autopilot.md names each, a test iterates the tuple.
-# `approval`/`questions` (T-0010, plan approval and open questions) are
-# `human|self|risk`: `risk` acts only on a spec header saying `risk: low`, any
-# other value reads `human`, approval also needs `scope.allowCliApproval: true`
+# `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases `crew_autopilot.py next` names from disk.
+# `mode` is armed only by the exact string `plan`, a typo is `off`; `maxPhases` bounds the phases one run takes.
+# `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is read by crew_autopilot.deploy_allowed.
+# Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names each, a test iterates the tuple.
+# `approval`/`questions` (T-0010, plan approval and open questions) are `human|self|risk`: `risk` acts only on a spec
+# header saying `risk: low`, any other value reads `human`, approval also needs `scope.allowCliApproval: true`
 # (crew_autopilot.approval_policy). `sleep` (T-0053): crew_sleep.py's window. `maxAutoReplans` (T-0074): 0 off.
-# T-0011's ship phase after `/crew:done`: `ship` is `pr` (push and open the PR)
-# or `merge` (also `gh pr merge <n> --merge` once every required check passes or
-# fails only on a name EXACTLY in `knownFailures`); anything else reads as `pr`.
-# A check still pending after `ciTimeoutMinutes` stops; it never merges.
+# T-0011, after /crew:done: `ship` `pr` opens the PR, `merge` also merges once every required check passes or fails
+# only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
                       "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None},
                       "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}

@@ -175,9 +175,8 @@ ledger bytes they came from) on every poll, stops on a green that lands past
 the deadline, re-checks the review receipt after CI against that same ledger
 hash, refuses a base branch with a merge queue (or one it cannot read), binds
 the merge to the HEAD it checked, and dequeues a PR gh queued anyway.
-`_run_gh` is the only code here that runs gh; gh 2.46's `gh pr checks` has no
---json, so `read_checks` parses its text, names and buckets verbatim, and a row
-that is not exactly five fields makes the whole read unreadable.
+The rule and the gh/git adapter (`_run_gh`, the only code that runs gh, and
+`read_checks`, which parses gh 2.46's text rows) are in crew_ship.py.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -248,7 +247,6 @@ import os
 import re
 import shlex
 import stat
-import subprocess
 import sys
 import threading
 import time
@@ -260,6 +258,7 @@ if __name__ == "__main__":
 import completion_audit
 import crew_common
 import crew_config
+import crew_ship
 import crew_sleep
 import crew_state
 import crew_ticket
@@ -364,273 +363,12 @@ UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
 _INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 
 # --- ship (T-0011) -------------------------------------------------------------
-# A review is same-family when its `model_family` is `claude` or absent: the
-# session's own family is recorded nowhere, so an unknown one counts as the
-# author's -- the refusing direction.
-SAME_FAMILY = ("claude", None)
+# The pure merge rule and the gh/git adapter live in crew_ship.py (batch 7: this
+# module passed pylint's 3400-line cap); what reads the review ledger stays here.
 SHIP_POLICIES = ("pr", "merge")
-# Only these risks may merge on same-family reviews; anything else, an
-# unknown or misspelt risk included, is treated as `high`.
-LOW_RISKS = ("low", "med")
-CHECK_STATES = ("pass", "fail", "pending", "skipping")
-
-
-def _family(value):
-    if isinstance(value, str) and value.strip():
-        return value.strip().lower()
-    return None
-
-
-def ship_decision(policy, risk, checks, families, known_failures):
-    """`{"action": "open-pr"|"merge"|"wait"|"stop", "reason"}` -- the whole
-    rule that lets autopilot merge unattended, with no I/O.
-
-    `checks` is the required checks, `[{"name", "state"}]` with state one of
-    CHECK_STATES, or None when they could not be read. `families` is the
-    `model_family` of every completed review round. Any policy but exactly
-    `merge` opens a PR and stops. A merge needs every required check `pass`,
-    or `fail` with its name EXACTLY in `known_failures`; `skipping` is not
-    `pass`. No check reported yet waits, as pending does; the caller's
-    timeout turns a wait into a stop."""
-    if policy != "merge":
-        return {"action": "open-pr", "reason": f"autopilot.ship is {policy!r}: the PR is "
-                "opened and a person merges it"}
-    if risk not in LOW_RISKS and all(_family(f) in SAME_FAMILY for f in families or ()):
-        return {"action": "stop", "reason": (
-            f"same-family review only on a {risk or 'unknown'}-risk ticket: every completed "
-            f"round is claude or has no model_family ({list(families or ())}), so a "
-            "cross-family review or a person merges it")}
-    if not isinstance(checks, list):
-        return {"action": "stop", "reason": "the required checks could not be read - "
-                "never merged on a state that could not be read"}
-    if not checks:
-        return {"action": "wait", "reason": "no required check reported yet"}
-    known = [k for k in (known_failures if isinstance(known_failures, (list, tuple)) else ())
-             if isinstance(k, str)]
-    rows = [(c.get("name"), c.get("state")) if isinstance(c, dict) else (None, None)
-            for c in checks]
-    unread = [str(n) for n, s in rows if not isinstance(n, str) or s not in CHECK_STATES]
-    if unread:
-        return {"action": "stop", "reason": "could not read the state of required check(s) "
-                + ", ".join(unread) + " - never merged on a state that could not be read"}
-    failed = [n for n, s in rows if s == "fail" and n not in known]
-    if failed:
-        return {"action": "stop", "reason": "required check(s) failed: " + ", ".join(failed)
-                + " (not in autopilot.knownFailures)"}
-    skipped = [n for n, s in rows if s == "skipping"]
-    if skipped:
-        return {"action": "stop", "reason": "required check(s) skipped: " + ", ".join(skipped)
-                + " - skipped is not pass, so a person merges"}
-    pending = [n for n, s in rows if s == "pending"]
-    if pending:
-        return {"action": "wait", "reason": "required check(s) pending: " + ", ".join(pending)}
-    allowed = sorted({n for n, s in rows if s == "fail"})
-    return {"action": "merge", "reason": "every required check passed" + (
-        " except known failure(s) " + ", ".join(allowed) if allowed else "")}
-
-
-# `gh pr checks` (gh 2.46 has no --json for it) prints, off a TTY, one row per
-# check and exits 0 (all passed), 1 (a failure) or 8 (pending). The row is
-# `name<TAB>bucket<TAB>elapsed<TAB>link<TAB>description`: exactly
-# _CHECK_FIELDS fields, the last empty when the check has no description, and
-# no trailing tab. Measured from gh v2.46.0's source, not a live PR (review
-# round 2's port, 2026-10-03: the cloud host has gh 2.89 and no GraphQL, so a
-# real 2.46 run could not be taken there) - `pkg/cmd/pr/checks/output.go`'s
-# non-TTY `addRow` adds those five fields, and go-gh v2.6.0's tsv printer
-# joins a row's fields with one tab and ends it with "\n". gh prints the name
-# and the description unescaped, so a tab inside either shifts every field
-# after it, and no parser can tell such a row apart: any other field count
-# makes the whole read unreadable, and `ship` stops. `cancel` is printed as
-# `fail` by gh itself; it is mapped here too, never to a pass.
-_CHECK_FIELDS = 5
-_BUCKETS = {"pass": "pass", "fail": "fail", "pending": "pending", "skipping": "skipping",
-            "cancel": "fail"}
-_CHECK_EXITS = {0: ("pass", "skipping"), 1: ("fail",), 8: ("pending",)}
-_NO_CHECKS = ("no required checks reported", "no checks reported")
-GH_TIMEOUT = 120
-PUSH_TIMEOUT = 300
 POLL_SECONDS = 30
 _sleep = time.sleep
 _clock = time.monotonic
-DIRTY = "the working tree differs from HEAD - commit or discard first"
-
-
-def merge_argv(number, head):
-    """The one merge `ship` runs, after `gh`: a merge commit (D-028 - a squash or
-    rebase rewrites the commits refresh anchors name), never `--admin`, and
-    bound to `head` - the commit whose checks and receipt were read - so a
-    push that lands after the last read is refused by GitHub, not merged."""
-    return ["pr", "merge", str(number), "--merge", "--match-head-commit", head]
-
-
-_DEQUEUE = "mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}"
-
-
-def dequeue_argv(node_id):
-    """The one GraphQL mutation `ship` ever runs: taking a PR gh queued back
-    out of its merge queue, used only to undo ship's own merge call."""
-    return ["api", "graphql", "-f", "query=" + _DEQUEUE, "-f", f"id={node_id}"]
-
-
-def push_argv(branch):
-    """The one push `ship` runs: never `--force`."""
-    return ["git", "push", "-u", "origin", branch]
-
-
-def _run_gh(top, args):
-    """(returncode, stdout, stderr) of `gh <args>` in `top`, or None when gh
-    could not run at all. The only code in this module that runs `gh`."""
-    try:
-        done = subprocess.run(["gh"] + list(args), cwd=top, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=GH_TIMEOUT,
-                              check=False, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return done.returncode, done.stdout or "", done.stderr or ""
-
-
-def _gh(top, args):
-    """`gh <args>`'s stdout parsed as JSON, or None on any failure."""
-    got = _run_gh(top, args)
-    if got is None or got[0] != 0:
-        return None
-    try:
-        return json.loads(got[1])
-    except ValueError:
-        return None
-
-
-def _push(top, branch):
-    """(ok, detail) of `git push -u origin <branch>`."""
-    try:
-        done = subprocess.run(push_argv(branch), cwd=top, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=PUSH_TIMEOUT,
-                              check=False, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return False, str(exc)
-    return done.returncode == 0, (done.stderr or "").strip()[-400:]
-
-
-def read_pr(top, branch):
-    """`{"number", "state", "url", "headRefOid", "id"}` for `branch`'s PR,
-    `{"state": "NONE"}` when gh says exactly that the branch has none, or
-    None when the state could not be read."""
-    got = _run_gh(top, ["pr", "view", branch, "--json", "number,state,url,headRefOid,id"])
-    if got is None:
-        return None
-    code, out, err = got
-    if code != 0:
-        none = f'no pull requests found for branch "{branch}"'
-        return {"state": "NONE"} if err.strip() == none else None
-    try:
-        data = json.loads(out)
-    except ValueError:
-        return None
-    if not isinstance(data, dict) or isinstance(data.get("number"), bool) \
-            or not isinstance(data.get("number"), int) or not isinstance(data.get("state"), str):
-        return None
-    return data
-
-
-def read_checks(top, number):
-    """`[{"name", "state"}]` for PR `number`'s required checks, `[]` when gh
-    reports none yet, or None when they could not be read -- gh failed, an
-    exit code outside 0/1/8, a row that is not exactly _CHECK_FIELDS fields,
-    anything on stderr beside the rows, or an exit code that disagrees with
-    the rows (0 with a pending one, 1 with no failure, 8 with none pending).
-    Names and buckets are read verbatim: `knownFailures` matches a name
-    exactly, so a padded or re-cased one is a different check, and a bucket
-    gh did not print exactly reads `unknown`."""
-    got = _run_gh(top, ["pr", "checks", str(number), "--required"])
-    if got is None or got[0] not in _CHECK_EXITS:
-        return None
-    code, out, err = got
-    lines = [line for line in out.splitlines() if line.strip()]
-    if not lines:
-        return [] if code == 1 and err.strip().startswith(_NO_CHECKS) else None
-    if err.strip():
-        return None
-    checks = []
-    for line in lines:
-        parts = line.split("\t")
-        if len(parts) != _CHECK_FIELDS or not parts[0].strip():
-            return None
-        checks.append({"name": parts[0],
-                       "state": _BUCKETS.get(parts[1], "unknown")})
-    states = {c["state"] for c in checks}
-    if code == 0 and not states <= set(_CHECK_EXITS[0]):
-        return None
-    if code == 1 and "fail" not in states:
-        return None
-    if code == 8 and "pending" not in states:
-        return None
-    return checks
-
-
-_QUEUE_QUERY = ("query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,"
-                "name:$repo){pullRequest(number:$number){isMergeQueueEnabled isInMergeQueue}}}")
-
-
-def read_merge_queue(top, number):
-    """True when PR `number`'s base branch has a merge queue or the PR is in
-    one, False when GitHub says exactly neither, None when it could not be
-    read. A queue applies its own merge method - a squash or rebase whatever
-    `--merge` asks (D-028) - and keeps merging after `ship` has stopped, so
-    `ship` never hands a PR to one. gh 2.46's `pr view --json` has no queue
-    field, hence the GraphQL read."""
-    data = _gh(top, ["api", "graphql", "-F", "owner={owner}", "-F", "repo={repo}",
-                     "-F", f"number={number}", "-f", "query=" + _QUEUE_QUERY])
-    try:
-        pull = data["data"]["repository"]["pullRequest"]
-    except (TypeError, KeyError):
-        return None
-    if not isinstance(pull, dict):
-        return None
-    flags = [pull.get("isMergeQueueEnabled"), pull.get("isInMergeQueue")]
-    if not all(isinstance(flag, bool) for flag in flags):
-        return None
-    return any(flags)
-
-
-def _dequeue(top, pr):
-    """What became of taking `pr` back out of a merge queue, as text."""
-    node = pr.get("id") if isinstance(pr, dict) else None
-    if not isinstance(node, str) or not node:
-        return "not attempted: the PR's node id could not be read"
-    got = _run_gh(top, dequeue_argv(node))
-    if got is None:
-        return "failed: gh could not run"
-    if got[0] != 0:
-        return "failed: " + ((got[2] or got[1]).strip() or f"exit {got[0]}")
-    return "succeeded"
-
-
-def _branch(top):
-    branch = git_out(top, "rev-parse", "--abbrev-ref", "HEAD")
-    return branch if branch and branch != "HEAD" else None
-
-
-def _default_branch(top):
-    data = _gh(top, ["repo", "view", "--json", "defaultBranchRef"])
-    ref = data.get("defaultBranchRef") if isinstance(data, dict) else None
-    name = ref.get("name") if isinstance(ref, dict) else None
-    return name if isinstance(name, str) and name else None
-
-
-def _clean_tree(top):
-    """True when the working tree is HEAD (ignored files aside), False when it
-    differs, None when git could not tell -- which is a stop too. A receipt
-    can cover uncommitted edits that `git push` does not carry."""
-    out = git_out(top, "status", "--porcelain", "--untracked-files=all")
-    return None if out is None else out == ""
-
-
-def _tree_stop(top):
-    """The reason to stop on the working tree, or ""."""
-    clean = _clean_tree(top)
-    if clean is None:
-        return "could not tell whether the working tree differs from HEAD (git status failed)"
-    return "" if clean else DIRTY
 
 
 def _ledger_hash(top, ticket):
@@ -677,34 +415,6 @@ def ship_command(ticket):
     return f"crew_autopilot.py ship --ticket {ticket}"
 
 
-_SHA = re.compile(r"[0-9a-f]{40}")
-
-
-def _full_sha(value):
-    """`value` lower-cased when it is a full 40-hex SHA, else None."""
-    value = value.strip().lower() if isinstance(value, str) else ""
-    return value if _SHA.fullmatch(value) else None
-
-
-def _merged_phase(top, branch, pr, answer):
-    """A MERGED PR closes the ticket only when it merged this checkout's HEAD
-    (full SHAs). A later commit on the branch, or a head either side cannot
-    read, stops: autopilot never ships a merged branch again, and "could not
-    tell" never reads `closed`."""
-    merged = _full_sha(pr.get("headRefOid"))
-    local = _full_sha(git_out(top, "rev-parse", "HEAD"))
-    if merged and local and merged == local:
-        return answer("closed", True, f"PR #{pr['number']} is merged ({pr.get('url')})")
-    if merged and local:
-        return answer("ship", True, f"{branch} has commits after PR #{pr['number']} merged "
-                      f"(merged head {merged}, HEAD {local}) - ship them on a new branch "
-                      "and PR; autopilot never opens a second PR on a merged branch")
-    return answer("ship", True, f"PR #{pr['number']} for {branch} is merged, but its "
-                  f"merged head ({merged or 'unreadable'}) or this checkout's HEAD "
-                  f"({local or 'unreadable'}) could not be read, so whether commits after "
-                  "the merge remain cannot be told - a human looks")
-
-
 def _ship_phase(top, ticket, answer, why):
     """`next` for a ticket `/crew:done` closed: `closed` once its PR merged
     this HEAD (or, under `ship: pr`, once one is open), `ship` while there is work
@@ -715,25 +425,25 @@ def _ship_phase(top, ticket, answer, why):
         return answer("closed", True, f"{why}: closed by /crew:done. Shipping is "
                       "/crew:autopilot's and autopilot.mode is off, so a person pushes and "
                       "merges")
-    branch = _branch(top)
+    branch = crew_ship._branch(top)
     if not branch:
         return answer("ship", True, "cannot tell which branch ships: HEAD is detached or "
                       "unreadable - a human checks out the ticket's branch")
-    pr = read_pr(top, branch)
+    pr = crew_ship.read_pr(top, branch)
     if pr is None:
         return answer("ship", True, f"could not read the PR state for {branch} (gh pr view "
                       "failed: gh missing, not authenticated, no remote, or an answer that "
                       "is not a PR) - a human looks")
     state = pr["state"]
     if state == "MERGED":
-        return _merged_phase(top, branch, pr, answer)
+        return crew_ship.merged_phase(top, branch, pr, answer)
     if state == "OPEN" and config["ship"] != "merge":
         return answer("closed", True, f"PR #{pr['number']} open, merge by hand "
                       f"({pr.get('url')}; autopilot.ship is {config['ship']})")
     if state not in ("NONE", "OPEN"):
         return answer("ship", True, f"PR #{pr.get('number')} for {branch} is {state}, not "
                       "open or merged - a person decides")
-    tree = _tree_stop(top)
+    tree = crew_ship._tree_stop(top)
     if tree:
         return answer("ship", True, f"{tree}: a push carries only commits, so what was "
                       "reviewed would not be what ships - a human decides")
@@ -761,7 +471,7 @@ def _head_stop(top, branch, head, where):
     if local != head:
         return (f"this checkout's HEAD moved {where} ({local or 'unreadable'} vs {head}): "
                 "the checks read are not for what was reviewed - never merged")
-    now = read_pr(top, branch)
+    now = crew_ship.read_pr(top, branch)
     if now is None or now.get("state") != "OPEN" or now.get("headRefOid") != head:
         return (f"the PR's head is not the commit ship pushed {where} "
                 f"({(now or {}).get('headRefOid') or (now or {}).get('state', 'unreadable')} "
@@ -770,7 +480,7 @@ def _head_stop(top, branch, head, where):
 
 
 def _wait_for_ci(top, ticket, branch, pr, head):
-    """Poll the required checks until `ship_decision` says merge, or return
+    """Poll the required checks until `crew_ship.ship_decision` says merge, or return
     the stop. `(result, decision, checks, gate)`: `result` is a finished
     `_ship_result` when it stopped, else None."""
     gate = _ship_gate(top, ticket)
@@ -781,7 +491,7 @@ def _wait_for_ci(top, ticket, branch, pr, head):
     deadline = _clock() + minutes * 60
     while True:
         moved = _head_stop(top, branch, head, "before a poll")
-        checks = read_checks(top, pr["number"])
+        checks = crew_ship.read_checks(top, pr["number"])
         moved = moved or _head_stop(top, branch, head, "while the checks were read")
         gate = _ship_gate(top, ticket)
         families = gate["families"]
@@ -791,7 +501,7 @@ def _wait_for_ci(top, ticket, branch, pr, head):
         if gate["stop"]:
             return _ship_result(ticket, "stop", True, gate["stop"], pr, checks,
                                 families), None, checks, gate
-        decision = ship_decision(gate["config"]["ship"], gate["risk"], checks, families,
+        decision = crew_ship.ship_decision(gate["config"]["ship"], gate["risk"], checks, families,
                                  gate["config"]["knownFailures"])
         # Read after the checks, not before: a green that arrives past the
         # deadline is a stop, the same as a pending one.
@@ -823,10 +533,10 @@ def _pre_merge_stop(top, ticket, branch, pr, head, gate):
     moved = _head_stop(top, branch, head, "after CI")
     if moved:
         return moved
-    tree = _tree_stop(top)
+    tree = crew_ship._tree_stop(top)
     if tree:
         return f"{tree} - never merged"
-    queue = read_merge_queue(top, pr["number"])
+    queue = crew_ship.read_merge_queue(top, pr["number"])
     if queue is not False:
         return (("the base branch has a merge queue, or the PR is in one" if queue else
                  "could not tell whether the base branch has a merge queue") + ": a queue "
@@ -845,10 +555,10 @@ def _pre_merge_stop(top, ticket, branch, pr, head, gate):
 def ship(root, ticket):
     """Push the branch, open its PR if none, then under `ship: merge` poll
     the required checks every POLL_SECONDS up to `ciTimeoutMinutes`, feeding
-    `ship_decision` from a gate read afresh each poll, and on `merge` - once
+    `crew_ship.ship_decision` from a gate read afresh each poll, and on `merge` - once
     the receipt still stands on the same ledger the families came from, the
     PR's head and this checkout's HEAD are still the commit pushed, the tree
-    is clean and no merge queue is involved - run exactly `merge_argv`. A
+    is clean and no merge queue is involved - run exactly `crew_ship.merge_argv`. A
     merge that leaves the PR not MERGED in a queue is dequeued and stops.
     Runs only when `next` names `ship` -- which it never does unarmed. Every
     answer names the PR, the checks and the review families it rested on."""
@@ -858,16 +568,16 @@ def ship(root, ticket):
     if phase["phase"] != "ship" or phase["stop"]:
         return _ship_result(ticket, "stop", True, f"next names {phase['phase']}"
                             f"{' (stop)' if phase['stop'] else ''}, not ship: {phase['reason']}")
-    branch = _branch(top)
-    default = _default_branch(top)
+    branch = crew_ship._branch(top)
+    default = crew_ship._default_branch(top)
     if not branch or not default or branch == default:
         return _ship_result(ticket, "stop", True, f"will not push {branch or '(no branch)'}: "
                             f"the default branch is {default or 'unreadable'}, and ship "
                             "pushes only a ticket branch that is not it")
-    tree = _tree_stop(top)
+    tree = crew_ship._tree_stop(top)
     if tree:
         return _ship_result(ticket, "stop", True, f"{tree} - nothing pushed")
-    pushed, detail = _push(top, branch)
+    pushed, detail = crew_ship._push(top, branch)
     if not pushed:
         return _ship_result(ticket, "stop", True, f"git push -u origin {branch} failed: "
                             f"{detail}")
@@ -877,14 +587,14 @@ def ship(root, ticket):
     if not head:
         return _ship_result(ticket, "stop", True, "could not read this checkout's HEAD "
                             "after pushing")
-    pr = read_pr(top, branch)
+    pr = crew_ship.read_pr(top, branch)
     if pr is not None and pr["state"] == "NONE":
-        created = _run_gh(top, ["pr", "create", "--head", branch, "--fill"])
+        created = crew_ship._run_gh(top, ["pr", "create", "--head", branch, "--fill"])
         if created is None or created[0] != 0:
             return _ship_result(ticket, "stop", True, "gh pr create failed: "
                                 + ((created[2] or created[1]).strip() if created else
                                    "gh could not run"))
-        pr = read_pr(top, branch)
+        pr = crew_ship.read_pr(top, branch)
     if pr is None or pr["state"] != "OPEN":
         return _ship_result(ticket, "stop", True, "could not read an open PR for "
                             f"{branch} after pushing ({(pr or {}).get('state', 'unreadable')})",
@@ -899,8 +609,8 @@ def ship(root, ticket):
     why = _pre_merge_stop(top, ticket, branch, pr, head, gate)
     if why:
         return _ship_result(ticket, "stop", True, why, pr, checks, families)
-    merged = _run_gh(top, merge_argv(pr["number"], head))
-    after = read_pr(top, branch)
+    merged = crew_ship._run_gh(top, crew_ship.merge_argv(pr["number"], head))
+    after = crew_ship.read_pr(top, branch)
     if merged is not None and merged[0] == 0 and after is not None \
             and after.get("state") == "MERGED":
         return _ship_result(ticket, "merged", False, decision["reason"], pr, checks, families)
@@ -909,9 +619,9 @@ def ship(root, ticket):
               if merged is None or merged[0] != 0 else
               "gh pr merge exited 0 but the PR reads "
               f"{(after or {}).get('state', 'unreadable')}, not MERGED")
-    queue = read_merge_queue(top, pr["number"])
+    queue = crew_ship.read_merge_queue(top, pr["number"])
     if queue is not False:
-        outcome = _dequeue(top, after if isinstance(after, dict) and after.get("id") else pr)
+        outcome = crew_ship._dequeue(top, after if isinstance(after, dict) and after.get("id") else pr)
         return _ship_result(ticket, "stop", True, f"{failed}; " + (
             "the PR is in a merge queue, or its base branch has one" if queue else
             "could not tell whether gh handed the PR to a merge queue")
@@ -2854,7 +2564,10 @@ FOCUS_LOCK_WAIT = 5.0
 
 # PowerShell reads U+2018..U+201B as single quotes too.
 _PS_QUOTES = ("'", "\u2018", "\u2019", "\u201a", "\u201b")
-_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f\u2018-\u201b]|\s{2,}")
+# C0, DEL and C1 controls (a terminal acts on C1 too), the PowerShell quotes,
+# and the bidi embedding/override/isolate controls U+202A..U+202E and
+# U+2066..U+2069 (they reorder what a person reads): the JSON form instead.
+_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f-\x9f\u2018-\u201b\u202a-\u202e\u2066-\u2069]|\s{2,}")
 
 
 def _posix_quoted(path):
@@ -2869,10 +2582,9 @@ def _ps_quoted(path):
 
 def _paste_safe(path):
     """Whether `path` survives into a printed command unchanged: no control
-    character, no run of whitespace (`_one_line` would collapse it), no
+    character (C0, DEL or C1), no bidi control, no run of whitespace (`_one_line` would collapse it), no
     quote PowerShell also reads, and the POSIX command parses back to exactly
     `rm -- <path>`."""
-    import shlex  # pylint: disable=import-outside-toplevel
     if _UNSAFE_PATH.search(path):
         return False
     rm_part = f"rm -- {_posix_quoted(path)}"
@@ -3520,7 +3232,7 @@ def _ship_text(result):
         _one_line("checks: " + (", ".join(f"{c.get('name')}={c.get('state')}" for c in checks)
                                 if checks else "(none read)" if checks is None
                                 else "(none reported)")),
-        _one_line("families: " + (", ".join(_family(f) or "unknown" for f in families)
+        _one_line("families: " + (", ".join(crew_ship._family(f) or "unknown" for f in families)
                                   if families else "(not read)" if families is None
                                   else "(none)"))])
 
