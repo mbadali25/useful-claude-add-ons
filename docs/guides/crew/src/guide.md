@@ -75,7 +75,8 @@ Source: `plugin/crew/commands/init.md` and `plugin/crew/commands/migrate.md`.
 `/crew:init` sets a repository up: it writes `.crew/config.json`, picks a
 tracker, and records the platform. It writes every key of the repo template,
 and a `null` it writes never shadows a value you set in your machine-global
-file. For a new config it sets `scope.mode` to `auto`: the scope guard reports
+file. The template leaves out the five personal `autopilot.*` settings, so your
+machine-wide defaults for them apply. For a new config it sets `scope.mode` to `auto`: the scope guard reports
 for the first ten approved tickets, then blocks.
 
 `/crew:migrate` moves a crew 0.20 repository to the 1.0 layout, once per
@@ -243,8 +244,12 @@ Source: `plugin/crew/commands/autopilot.md` and
 `/crew:autopilot <id>` drives one ticket through spec, plan, approval,
 implement, refresh, review and done. Each turn it asks
 `crew_autopilot.py next` which phase comes next, read from files on disk, so a
-skipped phase is visible. It is off until `autopilot.mode` is exactly `plan`
-in the repo's `.crew/config.json`.
+skipped phase is visible. It is off until `autopilot.mode` is exactly `plan`.
+
+The five `autopilot.*` settings are personal: set them in the repo's
+`.crew/config.json`, or once in the machine-global file as your default for
+every repo. Where both files set one, the stricter value wins, so a repo can
+narrow your default and never widen it.
 
 What always stops for a person, at any setting:
 
@@ -254,7 +259,8 @@ What always stops for a person, at any setting:
 
 Plan approval and open questions stop too, unless `autopilot.approval` and
 `autopilot.questions` allow otherwise. Plan approval also needs
-`scope.allowCliApproval: true`; an open question does not. Autopilot never
+`scope.allowCliApproval: true` in the repo file, even under a machine-wide
+`autopilot.approval: self`; an open question does not. Autopilot never
 merges, pushes, opens a pull request or deploys today. Shipping arrives with
 T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
 `/crew:autopilot status` prints where a ticket stands, read-only.
@@ -384,7 +390,6 @@ guide describes them as present.
 | T-0009 | A ratcheted guard for deploy workflows, and per-environment deploy workflows |
 | T-0011 | Autopilot ships: opens a PR, or merges once required checks are green |
 | T-0012 | Autopilot goals and backlogs, with per-run caps |
-| T-0017 | A machine opt-in for the automatic wrap-up |
 | T-0019 | `/crew:autopilot assign` |
 | T-0020 | `/crew:autopilot focus` |
 | T-0029 | Parallel autopilot lanes and a review policy |
@@ -392,7 +397,6 @@ guide describes them as present.
 | T-0044 | A credentials boundary for what the cloud guard cannot see |
 | T-0045 | Autopilot deploy dispatch (the `autopilot.deploy` setting exists and is inert until then) |
 | T-0046 | Release bookkeeping admitted without a Touch entry |
-| T-0050 | Machine-wide personal defaults for the autopilot settings |
 | T-0054 | A separate autopilot guide with worked examples |
 | T-0506 | The cause of the pwsh profile-cache crash |
 
@@ -403,7 +407,8 @@ The configuration reference lists the settings each of these adds, under
 
 crew reads two files: the machine-global `~/.claude/crew/config.json` and the
 repo's `.crew/config.json`. The repo file wins, except where a setting
-ratchets or only the machine file may arm it.
+ratchets, is personal (the stricter of the two wins), or only the machine file
+may arm it.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.
@@ -412,3 +417,12 @@ ratchets or only the machine file may arm it.
   in. It is generated from the code.
 - `plugin/crew/CONFIG.md` holds the reasoning behind each setting, and ships
   with the plugin.
+
+Every write a crew script makes to either file first copies the old file to
+`~/.claude/crew/backups/` and is refused if that copy fails (a hand edit is
+not backed up);
+`crew_config.py --backups` lists the copies and `--restore <stamp>` puts one
+back. crew also keeps your non-default values in `~/.claude/crew/profile.json`,
+so `crew_config.py --rebuild --repo` (or `--global`) regenerates a lost or
+corrupt config from the template plus that profile, as a dry run until
+`--apply`.

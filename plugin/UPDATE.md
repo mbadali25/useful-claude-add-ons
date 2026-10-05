@@ -5,8 +5,9 @@ it landed in, so a reader can tell what their installed copy actually has. For
 fixes and internal changes, see [`CHANGELOG.md`](../CHANGELOG.md); this file is
 only what is newly *possible*.
 
-Mirrored into [`plugin/README.md`](README.md) and the root
-[`README.md`](../README.md) by `scripts/sync-updates.py`. Edit here, then run it.
+Mirrored into [`plugin/README.md`](README.md) by `scripts/sync-updates.py`. Edit here,
+then run it. The root [`README.md`](../README.md) shows the newest
+[`CHANGELOG.md`](../CHANGELOG.md) entries instead.
 
 ## crew 0.17.0
 

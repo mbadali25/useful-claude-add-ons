@@ -89,6 +89,7 @@ from crew_guards import (
     PROD_LEVELS,  # noqa: F401
     PROD_LEVEL_DEFAULT,  # noqa: F401
     RATCHETED_KEYS,  # noqa: F401
+    PERSONAL_KEYS, REPO_ONLY_AUTOPILOT, effective_personal, personal_rank,  # noqa: F401  (T-0050)
     ROLE_WRITE_DEFAULT,  # noqa: F401
     ROLE_WRITE_GUARD_NAMES,  # noqa: F401
     ROLE_WRITE_POLICIES,  # noqa: F401
@@ -196,8 +197,8 @@ METRICS_WINDOW = 10
 
 _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 
-# Markers that mean a ticket line is finished.
-#
+# Markers that mean a ticket line is finished. T-0037 added `cancelled` and
+# `superseded` here and to `_TABLE_DONE_WORDS` (crew_tracker.CLOSED_STATUSES).
 # Position is NOT the discriminator, which an earlier version of this got wrong.
 # Anchoring a bare keyword to the start of the line still misreads open work:
 # `- Merged conflicts remain in T-8` and `- Complete the T-5 setup` both lead
@@ -217,7 +218,7 @@ _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 # fails loudly rather than silently reading finished tickets as open.
 _DONE_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])?\s*"
-    r"(?:\[x\]|~~|(?:done|closed|merged|shipped|complete[d]?)\s*:)",
+    r"(?:\[x\]|~~|(?:done|closed|merged|shipped|complete[d]?|cancelled|superseded)\s*:)",
     re.IGNORECASE,
 )
 
@@ -236,7 +237,7 @@ _DONE_RE = re.compile(
 # never the row text as a whole, which is what keeps a `done` sitting in the
 # TITLE cell of an open row from closing it.
 _TABLE_DONE_WORDS = frozenset({
-    "done", "closed", "merged", "shipped", "complete", "completed",
+    "done", "closed", "merged", "shipped", "complete", "completed", "cancelled", "superseded",
 })
 
 
@@ -295,25 +296,24 @@ def _verdict(rate):
 def read_metrics(root, window=METRICS_WINDOW):
     """BLOCK+FIX per ticket over the last `window` distinct tickets.
 
-    Rows are appended by /crew:review as
-    `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`. Leading and
-    trailing pipes are tolerated, and any row whose BLOCK/FIX cells are not
-    numeric is skipped -- which is how the header and separator rows are
-    filtered without hard-coding their text.
+    Rows (`<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`) come from
+    the main checkout's file, also from a linked worktree (metrics_md_path);
+    when git cannot name it the verdict is `could not tell: <why>`, rate None,
+    never `no data` (L-0582). Leading/trailing pipes are tolerated; a row whose
+    BLOCK/FIX cells are not numeric is skipped, filtering header and separator.
 
-    A ticket reviewed more than once writes one row per round -- `cells[1]`
-    repeats. Grouping by it is load-bearing: ungrouped, the extra row is a
-    DIVISOR, so the rate reads too LOW (9 findings, 3 rows, 2 tickets: 3.0
-    where the truth is 4.5). `rate` stays findings-per-ticket.
+    A ticket reviewed more than once writes one row per round; grouping by
+    `cells[1]` is load-bearing: ungrouped, the extra row is a DIVISOR and the
+    rate reads too LOW (9 findings, 3 rows, 2 tickets: 3.0, truth 4.5).
 
-    `window` bounds distinct tickets, not rows, and "last" means last
-    REVIEWED: a ticket moves to the end of `by_ticket` on every row for it,
-    so interleaved rounds (T-1, T-2, T-1) window by the most recent row.
+    `window` bounds distinct tickets, not rows; "last" means last REVIEWED: a ticket moves to the
+    end of `by_ticket` on every row for it, so rounds T-1, T-2, T-1 window by the most recent row.
     """
     empty = {"tickets": 0, "findings": 0, "rate": None, "verdict": "no data"}
-    text = read_text(os.path.join(root, ".crew", "metrics.md"))
+    path, problem = crew_common.metrics_md_path(root)
+    text = None if problem else read_text(path)
     if not text:
-        return empty
+        return dict(empty, verdict=f"could not tell: {problem}") if problem else empty
 
     by_ticket = {}
     for line in text.splitlines():
@@ -702,10 +702,8 @@ AUTOCLEAR_DEFAULTS = {
     "command": "/clear",
     "delaySeconds": 3,
     "minHandoffLines": 5,
-    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
-    # at `:187`. Missed on the first pass because the .ps1 consumers never
-    # read it, and the first pass read the Windows scripts -- a default set
-    # from one platform's consumer is a default half-derived.
+    # Wayland only (`auto-clear.sh`, the `wtype` method). The first pass read only
+    # the .ps1 consumers: a default from one platform's consumer is half-derived.
     "unsafeFocus": False,
     # NARROWING-ONLY, and read from the machine file only
     # (`crew_autocycle.in_scope`, `auto-clear.ps1`'s twin): null arms every
@@ -715,6 +713,8 @@ AUTOCLEAR_DEFAULTS = {
     # be widening, which is exactly what `enabled` forbids.
     "onlyRepos": None,
     "onlySessions": None,
+    # T-0017: auto wrap-up. The `enabled` rule, and it arms only where `enabled` does.
+    "wrapUp": None,
 }
 
 # The `resume` block (T-0006): auto-resume after /clear or a manual /compact.
@@ -1127,12 +1127,12 @@ AUTONOMOUS_STOPS = (
 # `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is
 # read by crew_autopilot.deploy_allowed. Every AUTONOMOUS_STOPS entry above
 # binds it too: commands/autopilot.md names each, a test iterates the tuple.
-# `approval` and `questions` (T-0010) are `human|self|risk`: what autopilot
-# does at plan approval and at an open question. `risk` acts only on a spec
-# header saying `risk: low`; any other value reads as `human`, and approval
-# needs `scope.allowCliApproval: true` besides (crew_autopilot.approval_policy).
-AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
-                      "questions": "risk"}
+# `approval`/`questions` (T-0010, plan approval and open questions) are
+# `human|self|risk`: `risk` acts only on a spec header saying `risk: low`, any
+# other value reads `human`, approval also needs `scope.allowCliApproval: true`
+# (crew_autopilot.approval_policy). `sleep` (T-0053): crew_sleep.py's window. `maxAutoReplans` (T-0074): 0 off.
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
+                      "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None}}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work
@@ -2195,7 +2195,7 @@ def in_git_repo(root):
     # is not a work tree. Only a failure to execute is unknown.
     try:
         done = subprocess.run(
-            ("git", "rev-parse", "--is-inside-work-tree"), cwd=root,
+            (crew_common.require_tool("git"), "rev-parse", "--is-inside-work-tree"), cwd=root,
             capture_output=True, text=True, timeout=GIT_TIMEOUT,
             check=False, stdin=subprocess.DEVNULL,
         )

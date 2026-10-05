@@ -28,7 +28,7 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _TICKET_SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_ticket.py")
 T = "T-0001"
 POLICIES = ("human", "self", "risk")
-ASSIGN_COUNT = 34
+ASSIGN_COUNT = 38  # L-1510 added four mint id-scan mutations
 
 STAGED = """title: add a dry-run flag
 risk: {risk}
