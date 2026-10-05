@@ -3395,7 +3395,8 @@ def is_repo_path(dotted):
 
 def repo_widens(dotted, before, after, global_value):
     """`{"widens", "heldDownBy", "heldAt"}` for a repo-layer change, plus
-    `widensTo` (the value in force after) for a personal key.
+    `widensTo` (the value in force after) for a personal key, and `inForce`
+    (the inherited machine value) for a repo `null` on a `_RATCHETED` key.
 
     A ratcheted key compares what is IN FORCE before and after, by rank: a
     repo `block` -> `allow` under a machine `allow` widens, and the same edit
@@ -3429,7 +3430,13 @@ def repo_widens(dotted, before, after, global_value):
     if dotted in _RATCHETED:
         rank = _RATCHETED[dotted][0]
         was = before if before is not None else global_value
-        out["widens"] = rank(after) > rank(was)
+        # T-0103: a repo `null` inherits the machine value (`null_means`), so
+        # what takes effect is that value. `inForce` carries it for the `!`
+        # line's note; the printed token stays the written `null`.
+        now = after if after is not None else global_value
+        out["widens"] = rank(now) > rank(was)
+        if after is None:
+            out["inForce"] = now
         return out
     out["widens"] = _consent_widening(dotted, after) and before != after
     return out
@@ -3566,7 +3573,7 @@ def print_changes(changes):
         elif change["widens"]:
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(change['after']).strip(chr(34))}`: "
-                  + widening_note(change["path"], change["after"]))
+                  + widening_note(change["path"], change.get("inForce", change["after"])))
         if change.get("heldDownBy"):
             unset = (" (unset there, and unset is the floor)"
                      if change.get("globalValue") is None else "")

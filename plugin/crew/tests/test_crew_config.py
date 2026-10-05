@@ -2225,6 +2225,34 @@ def test_repo_ratchet_widening_is_marked(tmp_path, capsys):
     assert crew_config._RATCHETED["guards.forcePush"][2]["allow"] in out  # pylint: disable=protected-access
 
 
+def test_a_repo_null_that_widens_is_described_by_the_value_in_force(tmp_path, capsys):
+    """T-0103 (T-0075 round-6 NIT 2): a repo `null` on `pm.authority`
+    inherits the machine value, so under a wider machine value it widens,
+    and the `!` line's note is the note of the value in force, not of `null`.
+    The `widens to` token stays the written value."""
+    root, gpath = _repo_with_global(
+        tmp_path, {"pm.authority": "report-only"}, {"pm": {"authority": "autonomous"}})
+
+    _, changes = crew_config.plan_repo_write(str(root), {"pm.authority": None}, gpath)
+    code = crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
+                             "--set", "pm.authority=null"])
+
+    out = capsys.readouterr().out
+    notes = crew_config._RATCHETED["pm.authority"][2]  # pylint: disable=protected-access
+    assert (code, [c["widens"] for c in changes]) == (0, [True])
+    assert "! pm.authority widens to `null`: " + notes["autonomous"] in out
+    assert notes["report-only"] not in out
+
+
+def test_a_repo_null_under_a_narrower_machine_value_does_not_widen(tmp_path, capsys):
+    root, gpath = _repo_with_global(
+        tmp_path, {"pm.authority": "act"}, {"pm": {"authority": "report-only"}})
+
+    _, changes = crew_config.plan_repo_write(str(root), {"pm.authority": None}, gpath)
+
+    assert [c["widens"] for c in changes] == [False]
+
+
 def test_repo_value_held_down_by_machine_is_named(tmp_path, capsys):
     root, gpath = _repo_with_global(
         tmp_path, {"guards.forcePush": "ask"}, {"guards": {"forcePush": "block"}})
