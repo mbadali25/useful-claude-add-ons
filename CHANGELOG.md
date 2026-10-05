@@ -9,7 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — `crew`: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
+### crew — batch 6: T-0045, T-0041, L-0582, T-0050
+
+- **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that
+  say what they did not verify, review metrics read from the main checkout in a worktree, and personal
+  autopilot defaults you can set once for every repo, with a backup before each config write.
+
+#### Added — `crew`: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
 
 - **Summary.** `crew_ghdeploy.py check` validates a `github` deploy entry in
   `.crew/verify.json` and prints the `gh workflow run` dispatch for HEAD, with
@@ -60,7 +66,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 
-### Added — `crew`: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
+#### Added — `crew`: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
 
 - **The rule.** `explorer`, `researcher`, `security` and `crew-best-practices` carry "Verify
   before you state": a claim about code, config, history or state is verified this session (a
@@ -88,7 +94,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   Claude fallback in `review.md`'s heredoc; their `validate-prompts.py` checks and
   `sabotage_review.py` entries; the troubleshooting and working-with-codex guide rows.
 
-### Fixed — `crew`: review metrics are read from the main checkout's `.crew/` in a linked worktree (L-0582)
+#### Fixed — `crew`: review metrics are read from the main checkout's `.crew/` in a linked worktree (L-0582)
 
 - **What changed.** One resolver, `crew_common.metrics_crew_dir(root)` ->
   `(crew_dir, problem)`, names the `.crew/` that holds review metrics: the
@@ -131,7 +137,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   paths, left for a separate tooling PR (TODO.md, L-0582 follow-ups).
   Docs: guides none - no guide describes where `metrics.md` is read from.
 
-### Added — `crew`: global defaults for the personal autopilot keys, a backup before every config write, and a rebuild from the owner's profile (T-0050)
+#### Added — `crew`: global defaults for the personal autopilot keys, a backup before every config write, and a rebuild from the owner's profile (T-0050)
 
 - **Behaviour change: a global value can hold a repo value down.** `autopilot.mode`, `maxPhases`,
   `deploy`, `approval` and `questions` are personal (`crew_guards.PERSONAL_KEYS`): settable in
