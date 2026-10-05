@@ -518,6 +518,37 @@ gate named failed, skipped or could-not-tell but never finished (a gate killed m
 whose <code>verify-gate: &lt;N&gt;s total across</code> line does not come after its last per-rule line records
 <code>log_complete: false</code>; when the gate also exited non-zero, the job summary says the list is
 partial. The list is informative only: what the receipt accepts did not change.</p>
+<h2 id="autopilot-in-a-worktree-and-the-refresh-check">Autopilot in a Worktree, and the Refresh Check</h2>
+<ul>
+<li><strong>Symptom: autopilot stops with <code>cannot tell whether &lt;id&gt;'s direction is approved</code> in a
+  worktree.</strong> <code>crew_autopilot.py next</code> looks for the ticket's <code>.work/INDEX.md</code> row in the checkout
+  it runs in, and — since crew 1.0.349 — in the main checkout (the first record of
+  <code>git worktree list --porcelain</code>) when this one has none. <code>.work/</code> is git-ignored, so a lane
+  worktree made from another branch starts with no INDEX at all.
+  <strong>Check:</strong> the stop's reason names every INDEX.md it asked, or why the main checkout could not be
+  read (a failed listing, a bare repository). <code>--json</code> names the file that answered as
+  <code>index_source</code>:</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_autopilot.py&quot; next --root . --ticket &lt;id&gt; --json
+</code></pre>
+<p><strong>Fix:</strong> add <code>&lt;id&gt; | ready | &lt;risk&gt; | &lt;repo&gt; | &lt;title&gt;</code> to either INDEX once the direction is
+  agreed. Two other stops come from the same read: <code>index-disagreement</code> (both INDEX files have a row
+  and the status cells differ — make them agree), and <code>folder-elsewhere</code> (the ticket's folder is
+  only in the main checkout). Copy the folder with the <code>cp -r</code> the reason prints; autopilot never
+  reads a spec or plan from another checkout, because the scope guard reads Touch from this one.</p>
+<ul>
+<li><strong>Symptom: the refresh check says <code>fresh-uncommitted</code>.</strong> Every artifact the ticket reaches is
+  current, but a refreshed file is not committed — the map, a diagram source or render, anything
+  under the graph dir, or any other path under the refresh-artifact dirs (<code>.claude/rules/</code>
+  included). <code>fresh</code> means current <strong>and</strong> committed, so <code>/crew:done</code> check 4 refuses it.
+  <strong>Check:</strong> the <code>uncommitted:</code> line lists the paths:</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_refresh_check.py&quot; --root . --ticket &lt;id&gt;
+</code></pre>
+<p><strong>Fix:</strong> commit exactly those paths and re-run until it says <code>fresh</code>; autopilot does it for you
+  as its <code>commit-refresh</code> phase. The commit changes no byte of the working state the review bundle
+  is built from, so a review receipt stays current and no new round is needed. A file graphify
+  writes and git ignores (<code>manifest.json</code>, <code>cache/</code>) never counts.</p>
 <h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
 <p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
 judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>
