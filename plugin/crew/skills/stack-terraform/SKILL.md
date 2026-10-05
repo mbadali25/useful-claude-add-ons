@@ -49,7 +49,7 @@ No gated Terraform standards set ships yet (L-0536). The spec's re-count of the 
 repositories put no rule above two reviewed change sets, and public change sets do not
 count (owner, 2026-10-05). When a rule is earned, the set is `references/terraform.md` in
 `crew-standards`, set id `TF` (the loader takes 2-6 capitals), keeping the research number.
-The candidates, their sources and the settled questions (`for_each` in `import` needs
+The candidates, the evidence each has and the settled questions (`for_each` in `import` needs
 1.7.0; CMK for log groups; literal ARNs) are in `references/candidates.md`. They are
 guidance, not rows of the self-check.
 
