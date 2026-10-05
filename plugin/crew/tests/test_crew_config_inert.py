@@ -311,3 +311,40 @@ def test_an_unreadable_config_is_could_not_tell_never_none(tmp_path, monkeypatch
 
     assert [e["kind"] for e in entries if e["key"] == where] == ["unreadable"], entries
     assert "could not tell (" in crew_config.format_inert(entries, "1.0.0")
+
+
+def test_an_empty_repo_auto_clear_scope_is_named_inert(tmp_path):
+    """T-0070 port review r5 BLOCK: `[]` matches nothing, so a repo `[]` would
+    narrow everything if read; it is not read, so it is named."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"context": {"autoClear": {"onlyRepos": []}}}, git=False)
+
+    hits = [e for e in crew_config.inert_settings(str(root))
+            if e["key"] == "context.autoClear.onlyRepos"]
+
+    assert [(e["kind"], e["value"]) for e in hits] == [("repo-ignored", [])], hits
+
+
+def test_a_key_holding_a_dot_is_named_with_its_value(tmp_path):
+    """T-0070 port review r5 FIX: `{"autopilot": {"foo.bar": 1}}` is one key,
+    never two levels, and its value formats."""
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"foo.bar": 1}}, git=False)
+
+    entries = crew_config.inert_settings(str(root))
+
+    assert [(e["key"], e["value"]) for e in entries] == [("autopilot.foo.bar", 1)], entries
+    assert "autopilot.foo.bar=1 (unknown key)" in crew_config.format_inert(entries, "1.0.0")
+
+
+def test_an_unreadable_config_survives_the_line_cut(tmp_path, monkeypatch):
+    """T-0070 port review r5 FIX: could-not-tell sorts first, so `+N more`
+    never hides it."""
+    path = tmp_path / "global-config.json"
+    path.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    many = {f"zz{n:02d}": n for n in range(12)}
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": many}, git=False)
+
+    line = crew_config.format_inert(crew_config.inert_settings(str(root)), "1.0.0")
+
+    assert "could not tell (global config" in line and "more" in line, line

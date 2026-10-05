@@ -2299,14 +2299,17 @@ def inert_settings(root, path=None):
             return personal[dotted]
         return "repo" if _dig(repo_cfg, parts) is not _MISSING else "global"
 
-    for dotted in leaf_paths(merged):
-        if dotted.split(".")[0] in _INERT_SKIP:
+    # The path as key TUPLES, not dotted text: a key holding a `.` must not be
+    # read back as two levels (its value would be the _MISSING sentinel).
+    for parts, value in _leaf_items(merged):
+        dotted = ".".join(parts)
+        if parts[0] in _INERT_SKIP:
             continue
-        parts = tuple(dotted.split("."))
-        value = _dig(merged, parts)
         pending = INERT_PENDING.get(dotted)
+        # Any repo value, `[]` and `""` included (an empty scope matches
+        # nothing, so it would narrow everything if it were read).
         if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS and _dig(repo_cfg, parts) not in (
-                None, _MISSING, [], ""):
+                None, _MISSING):
             # Read from the machine file only (crew_autocycle.settings): a
             # repo value narrows nothing.
             entries[(dotted, "inert")] = {
@@ -2332,7 +2335,21 @@ def inert_settings(root, path=None):
             entries[(dotted, "global")] = {"key": dotted, "value": value,
                                            "effect": _GLOBAL_IGNORED_EFFECT, "ticket": None,
                                            "kind": "global-ignored", "layer": "global"}
-    return [entries[k] for k in sorted(entries)]
+    # A could-not-tell first: a line cut at `+N more` must still say it.
+    return [entries[k] for k in sorted(entries, key=lambda k: (k[1] != "unreadable", k))]
+
+
+def _leaf_items(node, prefix=()):
+    """`(key tuple, value)` for every non-dict leaf of `node`, in order (a
+    list is a leaf, as in `leaf_paths`)."""
+    out = []
+    for key, value in node.items():
+        here = prefix + (str(key),)
+        if isinstance(value, dict) and value:
+            out.extend(_leaf_items(value, here))
+        else:
+            out.append((here, value))
+    return out
 
 
 def _escaped(text):
