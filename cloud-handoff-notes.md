@@ -52,7 +52,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 04:33 UTC
+Last updated: 2026-10-05 04:34 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -111,6 +111,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 06:55: #501 re-check 1 BLOCK: a new production module whose name collides across the combined run's shared sys.path breaks main while PR is green (repro 18 failed). Fix: module/package-name uniqueness check in ci-select suite. Pin verified safe. Sent to builder.
 - 06:45: batch 7 PR #505 opened by builder (f07c3559, CI running). Merge-resolution review started early (full crew suite). Noticed #504 (cloud-env-setup bubblewrap) from another session - not ours.
 - 06:40: rerere + ruff verified. Found base-image uv tools shadowing CI pins (ruff 0.15, pytest 9 without xdist): uv tool ruff pinned to 0.16, uv tool pytest removed; setup script now does both and asserts versions; dropped pip --upgrade (Debian PyYAML). Re-tested: all steps ok.
 - 06:25: cloud-env-setup.sh written + tested twice here (all steps ok; /tmp 755 needs APT::Sandbox::User=root); copy in procedures/. Disk was 97% full: cleaned caches + merged-PR worktrees (156 -> 119, 4.8G free). T-0105 #433 built (7bd91f80), Windows pending.
