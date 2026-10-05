@@ -29,7 +29,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   A move's board half re-reads INDEX inside the board's atomic update and places the card in the
   lane for the status INDEX holds then, saying `(INDEX moved on to <status>)` when that differs; a
   row gone or unknown at that point leaves the board alone (`could not tell where INDEX has ...`,
-  exit 1). `_NOTE_REPO_ID` strips a quote only as a matched pair around the whole value. `_BOX`
+  exit 1). After its board write a move reads INDEX again and places the card again if INDEX moved
+  on meanwhile (`_board_following_index`, at most `WRITE_TRIES` times), so a move landing between
+  the board's last re-read and its replace is followed too. `_NOTE_REPO_ID` strips a quote only as a matched pair around the whole value. `_BOX`
   and `_CHECKED` need a space, tab or line end after the marker. `commands/fix.md` step 1 resolves
   the tracker kind first, as `brainstorm.md` does.
 - **Tests.** New in `test_crew_tracker.py`: case-split origins refused, scheme and host folded, the

@@ -1535,16 +1535,21 @@ def _obsidian_move(root, settings, ticket, status, reopen=False):
     if problem:
         return [_result("obsidian", FAILED, problem)]
 
+    placed = {}
+
     def edit(current):
         # T-0071 #3: the card goes where INDEX has the ticket NOW, read inside
         # the board's atomic update, not where this call meant to put it, so
         # two overlapping moves converge on INDEX whichever board write lands
-        # last. `_atomic_update`'s re-read recomputes, and so re-reads INDEX.
+        # last. `_atomic_update`'s re-read recomputes, and so re-reads INDEX;
+        # the check after the write (below) covers a move that lands between
+        # that re-read and the replace.
         held = _files_read(root, ticket)
         if held["state"] != READ or held["status"] not in LANE_FOR_STATUS:
             why = held["reason"] if held["state"] != READ else f"{held['status']!r} is not a status crew knows"
             return None, _result("obsidian", FAILED, f"could not tell where INDEX has {ticket} now ({why})")
         key = LANE_FOR_STATUS[held["status"]]
+        placed["status"] = held["status"]
         note = "" if held["status"] == status else f" (INDEX moved on to {held['status']})"
         new, moved_from, why = move_card(current, ticket, key)
         if why:
@@ -1560,7 +1565,24 @@ def _obsidian_move(root, settings, ticket, status, reopen=False):
     files = _files_move(root, ticket, status, reopen)
     if files["state"] == FAILED:
         return [files]
-    return [files, _board_write(paths, columns, edit)]
+    return [files, _board_following_index(root, ticket, paths, columns, edit, placed)]
+
+
+def _board_following_index(root, ticket, paths, columns, edit, placed):
+    """`_board_write`, repeated while INDEX moved on after the status `edit`
+    placed the card for (T-0071 #3). Every move writes INDEX before its board,
+    so a board write that lands over another move's is followed by an INDEX
+    read that sees that move, and the card is placed again."""
+    for _ in range(WRITE_TRIES):
+        placed.clear()
+        board = _board_write(paths, columns, edit)
+        if board["state"] == FAILED or "status" not in placed:
+            return board
+        after = _files_read(root, ticket)
+        if after["state"] == READ and after["status"] == placed["status"]:
+            return board
+    return _result("obsidian", FAILED, f"could not tell where INDEX has {ticket} now (it changed during "
+                                       f"each of {WRITE_TRIES} board writes); {paths['boardShown']} may lag it")
 
 
 def _obsidian_read(root, settings, ticket):

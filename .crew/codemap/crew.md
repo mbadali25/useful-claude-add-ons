@@ -1479,7 +1479,9 @@ Obsidian vault). A CLI the commands call, not a hook.
   (`:1422`), and a move's board half re-reads INDEX inside the board's
   atomic update and places the card in the lane for the status INDEX holds
   then (T-0071 #3, `_obsidian_move` `edit`), refusing with `could not tell
-  where INDEX has` when the row is gone or unknown, as a create whose INDEX half refuses writes no card (`:1376`).
+  where INDEX has` when the row is gone or unknown, and reads INDEX again
+  after the write, placing the card again while INDEX moved on
+  (`_board_following_index`, at most `WRITE_TRIES`), as a create whose INDEX half refuses writes no card (`:1376`).
   Jira/SDP answer `delegated` with `<sync> <KEY> --push --to <status>` at
   `_PUSH_AT` (`:115`: `in-progress`, `done`) and `nothing to push` otherwise
   (`_push` `:1457`, `_delegated` `:1452`); CLI exit codes 0/1/3/2

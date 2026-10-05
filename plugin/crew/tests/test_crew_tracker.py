@@ -2771,6 +2771,31 @@ def test_overlapping_moves_leave_board_and_index_agreeing(tmp_path, monkeypatch)
         ROW.replace("spec", "done"), "Done", True, True, True, True, 0)
 
 
+def test_a_move_landing_between_the_reread_and_the_replace_is_followed(tmp_path, monkeypatch):
+    """#3, review round 1: move B lands after A's last board re-read and before
+    A's replace, so A's replace puts the card back in Review. A's check of INDEX
+    after its write sees done and places the card again."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    real = os.replace
+    raced = {"done": False}
+
+    def late(src, dst, *args, **kwargs):
+        if not raced["done"] and os.path.basename(str(dst)) == "Board.md":
+            raced["done"] = True
+            other = crew_tracker.move(str(root), CARD, "done")
+            assert crew_tracker.exit_code(other) == 0, other
+        return real(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", late)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+    text = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+
+    assert (raced["done"], _index(root), _lane_of(text, CARD), "INDEX moved on to done" in got["results"][1]["reason"],
+            crew_tracker.exit_code(got)) == (True, ROW.replace("spec", "done"), "Done", True, 0)
+
+
 @pytest.mark.parametrize("index_after", ["", ROW.replace("spec", "bogus")])
 def test_board_is_not_moved_when_index_cannot_be_read_at_write_time(tmp_path, monkeypatch, index_after):
     """#3 could-not-tell: INDEX gone or unknown at board-write time leaves the board alone."""

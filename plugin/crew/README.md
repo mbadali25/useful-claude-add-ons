@@ -1900,7 +1900,13 @@ follows it. Each refusal begins `id taken`, and `/crew:brainstorm` and
 before anything is written under that id. A `move` whose INDEX
 half refuses — another session moved the ticket on meanwhile — leaves the
 board alone, and a card already in its lane is repaired in place (checked in
-Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one).
+Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one,
+and a marker glued to its text, `- [ ]T-0042`, is given its space). The board
+half places the card where INDEX has the ticket when the board is written, not
+where the call meant to put it, and reads INDEX again after the write, so two
+overlapping moves leave the board and INDEX agreeing (since T-0071; the line
+says `(INDEX moved on to <status>)`). INDEX unreadable or holding an unknown
+status at that point leaves the board alone: `could not tell where INDEX has`.
 
 **There is no `.work/cache/` mirror.** The ticket's content lives in
 `.work/tickets/<id>/` for every mode; the board carries status only. The key
