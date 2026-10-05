@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **repository**: PRs run only the heavy CI suites their changes reach. A pull request that changes only plain documentation, or only one plugin or skill, now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite still runs on push to main, on workflow_dispatch and on any schedule.
-- **crew 1.0.348**: Four crew changes in one update: a check for GitHub Actions deploy entries, agents that say what they did not verify, review metrics read from the main checkout in a worktree, and personal autopilot defaults you can set once for every repo, with a backup before each config write.
+- **crew 1.0.349**: Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket until you release it, autopilot can push, open and (only when every required check allows) merge a ticket's pull request after `/crew:done`, and in a worktree it reads the ticket's INDEX row from the main checkout and commits refreshed artifacts itself.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
