@@ -290,7 +290,11 @@ def measure(top, ticket):
         # plan of zero steps.
         got["plan_steps"] = sum(1 for line in plan.splitlines() if _STEP_RE.match(line)) or None
     rate = crew_state.read_metrics(top).get("rate")
-    if rate is not None:
+    path, problem = crew_common.metrics_md_path(top)
+    # A review row read_metrics skipped (too few cells, counts that do not
+    # parse) means the rate it reports leaves a review out: unknown, never a
+    # rate that may read as "small".
+    if rate is not None and not problem and path and not _malformed_rows(path):
         got["findings_rate"] = rate
         got["tickets_too_large"] = rate > crew_state.HEALTHY_HIGH
     return got
@@ -349,6 +353,29 @@ def _row_like(path):
         if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
             continue
         return True
+    return False
+
+
+def _malformed_rows(path):
+    """True when metrics.md holds a table row read_metrics skips: not the
+    header or a `---` separator, and with too few cells or BLOCK/FIX counts
+    that do not parse. Unreadable is True (could not tell)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    for line in lines:
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
+            continue
+        if len(cells) < 5 or crew_state._leading_int(cells[3]) is None \
+                or crew_state._leading_int(cells[4]) is None:  # pylint: disable=protected-access
+            return True
     return False
 
 
@@ -1235,6 +1262,9 @@ def _slice_problems(slices, steps):
     problems += [f"step {step} is in no slice" for step in sorted(steps) if step not in owner]
     last = 0
     for piece in slices:
+        if piece["steps"] != sorted(piece["steps"]):
+            problems.append(f"slice {piece['n']}'s steps {piece['steps']} are not listed in "
+                            "ascending order")
         run = sorted(piece["steps"])
         if run and run != list(range(run[0], run[0] + len(run))):
             problems.append(f"slice {piece['n']}'s steps {run} are not one contiguous run")
@@ -1254,6 +1284,8 @@ def _base_problems(slices, step_files):
         elif base != MAIN_BASE and not 1 <= base < piece["n"]:
             problems.append(f"slice {piece['n']}: Base: slice {base} is not an earlier "
                             "slice")
+        if base != MAIN_BASE and isinstance(base, int) and 1 <= base < piece["n"]:
+            problems += _stack_problems(slices, i, step_files)
         if base != MAIN_BASE or i == 0:
             continue
         unknown = [s for s in piece["steps"] if not step_files.get(s)]
@@ -1271,6 +1303,35 @@ def _base_problems(slices, step_files):
         if shared:
             problems.append(f"slice {piece['n']}: Base: main, but it shares Files with an "
                             f"earlier slice ({', '.join(shared)}) - use Base: slice <k>")
+    return problems
+
+
+def _stack_problems(slices, i, step_files):
+    """A stacked slice's PR holds only its base chain's commits: every earlier
+    slice whose Files it shares (or cannot be shown not to share) must be on
+    that chain (`Base: slice <k>`, k's base, ...), else its PR lacks a
+    dependency once the chain's lower slices merge."""
+    by_n = {s["n"]: s for s in slices}
+    piece, chain, base = slices[i], set(), slices[i]["base"]
+    while isinstance(base, int) and base in by_n and base not in chain:
+        chain.add(base)
+        base = by_n[base]["base"]
+    problems = []
+    for other in slices[:i]:
+        if other["n"] in chain:
+            continue
+        if any(not step_files.get(s) for s in piece["steps"] + other["steps"]):
+            problems.append(f"slice {piece['n']}: Base: slice {piece['base']}, but cannot "
+                            f"tell whether it shares Files with slice {other['n']}, which is "
+                            "not on its base chain")
+            continue
+        shared, unknown = _overlaps(piece["files"], other["files"])
+        if shared or unknown:
+            problems.append(f"slice {piece['n']}: Base: slice {piece['base']} leaves out "
+                            f"slice {other['n']}, which "
+                            + (f"shares Files ({', '.join(shared)})" if shared else
+                               f"may share Files ({'; '.join(unknown)})")
+                            + f" - stack on slice {other['n']}")
     return problems
 
 

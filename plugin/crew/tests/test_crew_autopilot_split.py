@@ -651,3 +651,18 @@ def test_metrics_with_a_short_review_row_is_not_absent(tmp_path):
         encoding="utf-8")
 
     assert "findings-rate" not in crew_split.absent_sources(str(root))
+
+
+def test_a_malformed_row_beside_a_valid_one_leaves_the_rate_unknown(tmp_path):
+    """T-0058 port review r5 BLOCK: read_metrics skips the malformed row and
+    reports a rate that leaves that review out; the measure is unknown."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=1)
+    (root / ".crew" / "metrics.md").write_text(
+        "date | ticket | reviewer | BLOCK | FIX\n2026-01-01 | T-8 | codex | 0 | 0\n"
+        "2026-01-02 | T-9 | codex | many | some\n", encoding="utf-8")
+
+    got = crew_split.measure(str(root), ticket)
+
+    assert (got["findings_rate"], got["tickets_too_large"]) == (None, None), got
+    assert "findings-rate" not in crew_split.absent_sources(str(root))

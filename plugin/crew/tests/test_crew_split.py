@@ -2014,3 +2014,26 @@ def test_base_slice_zero_refused():
     _, problems = crew_split.parse_slices(plan)
 
     assert any("Base: slice 0 is not an earlier" in p for p in problems), problems
+
+
+
+def test_steps_listed_out_of_order_refused():
+    """T-0059 port review r3 BLOCK: `Steps: 1, 3, 2` would print `steps=1-2`
+    to /crew:implement and drop step 3."""
+    plan = _plan_with_slices(_slice(1, "1, 3, 2") + _slice(2, "4-5"))
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("not listed in ascending order" in p for p in problems), problems
+
+
+def test_stacked_slice_must_carry_every_earlier_slice_it_shares_files_with():
+    """T-0059 port review r3 BLOCK: slice 3 on `Base: slice 1` sharing Files
+    with slice 2 would ship without slice 2's changes."""
+    plan = _plan_with_slices(_slice(1, "1") + _slice(2, "2-3", base="main")
+                             + _slice(3, "4-5", base="slice 1"),
+                             files={1: "a.py", 2: "b.py", 3: "c.py", 4: "b.py", 5: "d.py"})
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("leaves out slice 2" in p for p in problems), problems
