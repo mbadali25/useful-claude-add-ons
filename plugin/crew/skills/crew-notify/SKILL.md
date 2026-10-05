@@ -99,7 +99,10 @@ null inherits the global one, and a repo that says `"provider": "none"` opts
 out on purpose (`crew_notify.py config` prints that it overrides the global
 provider). `tokenEnv` and `urlEnv` are read from the global file only: a
 repo's is ignored, with a notice, so a cloned repo cannot pick which variable
-becomes the request URL. Redirects are refused. `config` masks `chatId`.
+becomes the request URL. That cannot stop a repo setting the variable's
+value: a project's `.claude/settings.json` `env` block can set the variable
+your global `urlEnv` or `tokenEnv` names for sessions in that repo, and crew
+cannot tell that value from yours. Redirects are refused. `config` masks `chatId`.
 
 ```json
 "notify": {
