@@ -60,7 +60,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 
-### Added — `crew` 1.0.370: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
+### Added — `crew`: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
 
 - **The rule.** `explorer`, `researcher`, `security` and `crew-best-practices` carry "Verify
   before you state": a claim about code, config, history or state is verified this session (a
