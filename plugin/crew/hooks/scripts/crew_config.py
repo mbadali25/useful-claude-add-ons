@@ -399,7 +399,8 @@ def default_config():
         # `crew_state.PERSONAL_KEYS` row is PERSONAL since T-0050: settable in
         # the machine-global file too, combined per key (the stricter of the
         # layers that set it wins; a silent layer imposes nothing).
-        # `maxAutoReplans` and `sleep` are `crew_state.REPO_ONLY_AUTOPILOT`.
+        # `maxAutoReplans`, `sleep` and T-0011's `ship`, `knownFailures` and
+        # `ciTimeoutMinutes` are `crew_state.REPO_ONLY_AUTOPILOT`.
         # This block is the defaults layer and the prune shape;
         # `template_config` omits the personal keys, so a new repo's file
         # does not shadow the owner's global values. A key added here without

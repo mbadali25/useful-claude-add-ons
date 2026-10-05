@@ -13,7 +13,7 @@
 %%     review receipt (--check-receipt); :21-38 check 2 verify gate via
 %%     crew_status.py (:27); :40-43 check 3 completion audit (:48-53: a refresh artifact
 %%     not admitted is listed with its reason); :55-66 check 4
-%%     crew_refresh_check.py (:58), read-only, refuses on stale/unknown and never
+%%     crew_refresh_check.py (:58), read-only, refuses on stale/unknown/fresh-uncommitted (T-0063) and never
 %%     refreshes; :68-76 the forbidden-trailer report (never refuses); :78-84 all
 %%     pass -> spec.md `status: done`, keeping the approval (:80-81), then
 %%     crew_tracker.py move --to done (:82); :89 crew_metrics record;
@@ -24,6 +24,8 @@
 %%   Batch 6 merge with main (T-0066's trailer report at done.md:68-76): every
 %%     done.md citation above and in the nodes re-taken by grep -n on the merged tree,
 %%     after step 5 and the landing paragraph were re-wrapped to keep done.md at 120 lines.
+%%   Batch 7 merge of T-0063 (#368): check 4 refuses `fresh-uncommitted` too (dn5 relabelled, its
+%%     refusal edge too); done.md re-wrapped back to 120 lines, so every cite above is unchanged.
 %% --
 %% Note dn3: (refresh artifacts: re-anchor or regeneration the change reaches)
 %% Note dn4: first a report, never a check (T-0066, done.md:68-76): crew_trailers.py --check lists
@@ -39,12 +41,12 @@ flowchart TB
         dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
         dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-66"}
         dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-98"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
-        dn5 -- "stale / unknown" --> dnx
+        dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
         dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:100-103"}
         ln0 -- yes --> ln1{"check-land passes?<br/>done.md:105-110"}
         ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
