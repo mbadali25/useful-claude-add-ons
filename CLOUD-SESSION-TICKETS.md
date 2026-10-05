@@ -67,7 +67,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0012 | From #451 re-check (pre-existing, gizmoduck): `base.run_tool` doesn't set stdin=DEVNULL; Nuclei reads targets from stdin when it isn't a TTY, so a routine started with an open stdin pipe hangs until timeout and could scan extra targets fed on stdin. Set stdin=DEVNULL for every scanner subprocess; test with an open pipe. | none yet | batch 9 |
 
-Next free untracked ID: **C-0013** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0013 | From #462 re-check (NITs, crew_memory): (1) migrate with a --memory-dir that is not `<slug>/memory` and no --project should exit 2 requiring --project (closes the only default route to a cross-folder append; reviewer advised against a `source:` frontmatter key). (2) align `save`'s default project with migrate's `_default_project` (slug), so the vault layout isn't split. | none yet | batch 9 |
+
+Next free untracked ID: **C-0014** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
