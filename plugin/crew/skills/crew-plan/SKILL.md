@@ -70,6 +70,10 @@ cheaper than catching it from a refused write.
    check being forgotten under time pressure, not the check itself.
 5. **Standards.** Does every step name the standards its Files and Risk
    trigger (the `crew-standards` skill; `crew_standards.py sets` lists them)?
+6. **Recorded decisions.** A step that changes behaviour someone decided (a
+   default, a model tier, a guard) cites where that decision is recorded
+   (`CHANGELOG.md`, `docs/adr/`, a ticket's `direction.md`), or says it searched
+   and found none. It never reverses a recorded decision silently.
 
 Fix inline. No need to re-review once fixed - just fix and move on. This is a
 checklist you run yourself, not a subagent dispatch.

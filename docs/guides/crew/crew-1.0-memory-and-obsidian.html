@@ -309,7 +309,7 @@ board at the vault root, and a card another repo owns is refused.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>direction</code>, <code>ready</code></td>
+<td><code>direction</code>, <code>ready</code>, <code>needs-owner</code></td>
 <td>Backlog</td>
 </tr>
 <tr>
@@ -328,6 +328,10 @@ board at the vault root, and a card another repo owns is refused.</p>
 <td><code>done</code></td>
 <td>Done, checked, below <code>**Complete**</code></td>
 </tr>
+<tr>
+<td><code>cancelled</code>, <code>superseded</code> (closed; leaving one needs <code>--reopen</code>)</td>
+<td>Done, checked</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Whose card it is.</strong> <code>/crew:brainstorm</code> writes a ticket note beside the board,
@@ -342,6 +346,184 @@ refusal names the exact line: add <code>- repo-id: &lt;the id it prints&gt;</cod
 and run the command again. Crew never rewrites a note for you.</p>
 <p>The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in <code>plugin/crew/README.md</code>.</p>
+<h2 id="native-memories-as-vault-pointers">Native Memories as Vault Pointers</h2>
+<p>Claude Code keeps its own native memory, one Markdown file per fact under
+<code>~/.claude/projects/&lt;project&gt;/memory/</code>. Crew can read such a file whose body is
+a single pointer line into your vault, with the frontmatter left as it is:</p>
+<pre><code>vault: &lt;name&gt; | note: &lt;vault-relative path, forward slashes, ending .md&gt;
+</code></pre>
+<p>The vault is named, not given as a path, so the same file works on every
+machine the vault syncs to. The name is looked up in that machine's
+<code>~/.claude/obsidian/config.json</code> (<code>vaults.&lt;name&gt;.path</code>; a vault with role
+<code>ignore</code> is not looked up). Only the name <code>memory</code> falls back: to crew's
+<code>memory.vaultPath</code>, then, only when the Obsidian config has no <code>vaults</code> block,
+to its legacy top-level <code>vaultPath</code>. <code>OBSIDIAN_VAULT_PATH</code> is not used. The
+line is exact and must be the whole body: a first line that starts <code>vault</code> and
+<code>:</code>, in any case, indent or spacing, is a pointer attempt when <code>note:</code> or <code>|</code>
+is on that line, or the next line starts with <code>|</code> or <code>note:</code> (a pointer wrapped
+before its <code>|</code>), or the line is a bare vault name alone (<code>vault: work</code>) or nothing after the colon (<code>vault:</code>); a
+table or a <code>Note:</code> line further down does not count; anything less than the full
+grammar is then <code>malformed</code>. With neither the line is prose: <code>Vault: keep client notes in the work vault, not personal.</code> is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
+that is there but does not read, parse or have the expected shape (a <code>vaults</code>
+object of objects with a string <code>path</code>, a string <code>vaultPath</code>, crew's <code>memory</code>
+an object with a string or null <code>vaultPath</code>; no duplicate key, not nested too
+deep, at most 1 MiB) is <code>no-vault-config</code>, naming the field. A bad Obsidian config stops every name; a bad crew config stops <code>memory</code>, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.</p>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file &lt;memory file&gt;
+python3 plugin/crew/hooks/scripts/crew_memory.py check --memory-dir &lt;memory dir&gt;
+</code></pre>
+<p><code>resolve</code> prints <code>state:</code> and, when the note is found, <code>path:</code>. <code>check</code> prints
+one row per memory file (not <code>MEMORY.md</code>) and a count per state. Both read
+only; <code>--json</code> gives the same rows as JSON.</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>meaning</th>
+<th>exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resolved</code></td>
+<td>the note exists on this host</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>full-text</code></td>
+<td>not a pointer; the body is the memory</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>malformed</code></td>
+<td>a <code>vault:</code> first line, in any case, indent or spacing, that is not a valid pointer alone in the body (absolute path, <code>:</code>, <code>..</code>, a second field, an invisible character)</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>no-vault-config</code></td>
+<td>no Obsidian config and no <code>memory.vaultPath</code>, or a config file that cannot be read, does not parse or has a field of the wrong shape</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>vault-unknown</code></td>
+<td>this machine names no vault of that name, or marks it <code>ignore</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>vault-unavailable</code></td>
+<td>the configured folder is not there (not mounted, not synced)</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>note-missing</code></td>
+<td>the vault is there, the note is not</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>outside-vault</code></td>
+<td>the path passes through a symlink inside the vault, or leaves it</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>unreadable</code></td>
+<td>the memory file is not a regular file readable as UTF-8 (<code>check</code> never opens a FIFO, device or directory), or a folder or note inside the vault cannot be read or opened</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>An unavailable vault is never replaced by another one that happens to hold a
+note at the same path.</p>
+<h3 id="saving-a-memory-as-a-pointer">Saving a Memory as a Pointer</h3>
+<p><code>save</code> turns one memory that holds its full text into a pointer, note first:</p>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py save --file &lt;memory file&gt; --tag &lt;tag&gt;
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file &lt;memory file&gt; --tag &lt;tag&gt; --apply
+</code></pre>
+<p>Without <code>--apply</code> it prints the plan (the vault, the note, <code>create</code>, <code>append</code>
+or <code>unchanged</code>, and the pointer line) and writes nothing. Read your vault's own
+<code>CLAUDE.md</code> for its folders and tags first; <code>--note</code>, <code>--title</code>, <code>--type</code>
+(<code>concept</code> by default) and <code>--project</code> change the defaults
+(<code>memories/&lt;project&gt;/&lt;title&gt;.md</code>, the title taken from the memory's <code>name:</code>
+line).</p>
+<p>It writes only to the one writable vault: the vault with role <code>primary</code>
+(without roles, the <code>default: true</code> vault, else the first; with no <code>vaults</code>
+block, <code>memory</code>). The folder must hold <code>.obsidian/</code>. A <code>recall</code> or <code>ignore</code>
+vault is never written, and a primary that is not mounted is reported, not
+replaced. The note gets the vault's six frontmatter keys plus <code>project</code> and
+<code>memory_id</code>; saving the same memory again appends a dated <code>## Update</code>
+passage, and a note that belongs to another memory is a <code>collision</code>.</p>
+<p>The order is the point. The note is written through a temp file, read back,
+and the pointer resolved; only then is the memory's body replaced, its
+frontmatter kept byte for byte, through a temp file and a rename. Any refusal
+or failure prints <code>kept-full-text: &lt;reason&gt;</code> and leaves the memory exactly as
+it was:</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>memory file</th>
+<th>exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pointer-written</code></td>
+<td>body replaced by the pointer</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>already-pointer</code></td>
+<td>untouched</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>kept-full-text: no vault configured</code></td>
+<td>untouched</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>kept-full-text: vault unavailable</code>, <code>no primary</code>, <code>several primaries</code>, <code>not a vault</code>, <code>config unreadable</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>kept-full-text: collision</code>, <code>ascii-required</code>, <code>outside-vault</code>, <code>bad-note-path</code>, <code>the existing note is not UTF-8</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>kept-full-text: MEMORY.md is the index</code>, <code>the memory file is a symlink</code>, <code>the memory has no body to save</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>kept-full-text: another save is running now</code>, <code>lock failed</code>, <code>note write failed</code>, <code>the note changed during save</code>, <code>note not readable after write</code>, <code>the memory file changed during save</code>, <code>the memory file cannot be read again</code>, <code>pointer write failed</code></td>
+<td>untouched</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>Two <code>save</code> runs by the same user on the same machine do not interleave:
+each holds kernel locks for the note and for the memory, on files
+in <code>~/.cache/crew/memory-locks</code> (<code>$XDG_CACHE_HOME</code> when set;
+<code>%LOCALAPPDATA%\crew\memory-locks</code> on Windows), never in the vault. The
+operating system drops a lock when its save exits or is killed, so
+<code>another save is running now</code> means one is running; a lock that cannot be
+taken at all (an unwritable cache, a full disk, or no absolute cache folder
+because <code>HOME</code> is unset) is <code>lock failed</code>. A file is locked by its real path,
+case-folded, and by its inode, so a symlinked folder, <code>..</code>, a case variant
+and a hard link all meet the same lock. The lock
+does not cover a save on another machine that syncs the same vault, or an
+edit by Claude Code, Obsidian or any other program, none of which take it.
+For those, the memory and an existing note are compared again right before
+each rename. An edit by another program in the
+instant between that compare and the rename is not detected: a rename cannot
+compare and swap. An existing note keeps every byte, a BOM and CRLF line
+endings included; only its <code>updated:</code> value changes and the passage is
+appended. A new note gets mode 0644 less your umask.</p>
+<p>Claude Code 2.1.289 was seen to keep a one-line pointer body across new
+sessions (it rewrites the frontmatter when it updates the memory, and kept
+the pointer). If a later version rewrites the body with full text, <code>check</code>
+shows it as <code>full-text</code> again; run <code>save</code> again. Converting existing
+memories in bulk arrives in a later version.</p>
 <h2 id="confirming-recall-reaches-your-sessions">Confirming Recall Reaches Your Sessions</h2>
 <p>(written by the context-hook ticket)</p>
 <h3 id="path-scoped-rules-from-the-code-map">Path-Scoped Rules from the Code Map</h3>
@@ -423,6 +605,10 @@ paste in a slice:</p>
   <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json</code>. If the plugin is missing, or
   the CLI fails, times out or prints something other than JSON, the session goes on without recall
   and the log records a miss with the reason.</li>
+<li>An empty recall can be the CLI working as meant: it skips stop words, needs more than one
+  matching word for a query of three or more words, matches whole words only, and never reads
+  <code>wiki/sessions/archive/</code>. To check whether a note is there but held back, run the
+  CLI with <code>--min-terms 1</code> (no floor) and <code>--include-excluded</code> (the archive too).</li>
 <li>Every recall line starts with the vault's name: <code>- [vault:&lt;name&gt;] &lt;note path&gt;: &lt;text&gt;</code>. Any snippet
   the CLI returns without a vault name is dropped.</li>
 </ul>

@@ -1,6 +1,6 @@
 ---
 description: Write the handoff note for the next session
-argument-hint: [--clear]
+argument-hint: [--clear | --wrap-up]
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
@@ -32,6 +32,16 @@ note — a session this deep into its context remembers worse than the diff does
 
 Be explicit about uncertainty. Anything you are not sure survived compaction goes
 under **Verify first** rather than being asserted as done.
+
+With `--wrap-up` (the one wrap-up procedure: context-watch's armed warning and
+`/crew:autopilot` both run it), commit only if the step's `Test:` passes, then:
+1. Run `git status --porcelain --untracked-files=no` first.
+2. Clean: take `branch:` and `head:` from `git rev-parse` now, after the commit,
+   and write `resume:` per step 5 (`/crew:autopilot <ticket>` when autopilot drives).
+3. Dirty: write `resume: none`, and list the modified files under **Verify first**
+   with why the step could not be finished. Do not commit them.
+4. Keep the note under 40 lines, then end the turn. Do not tell the user to
+   `/clear`: auto-clear does it when its four conditions hold, or says why not.
 
 With `--clear`: after writing, remind me to run `/clear` (or `/compact` to keep
 the summary). Say plainly that you cannot do it yourself — a hook runs as a child
