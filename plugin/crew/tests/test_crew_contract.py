@@ -273,6 +273,42 @@ def test_build_against_is_idempotent(capsys, tmp_path, wt, hub, calls):
     assert _binding_path(wt).read_bytes() == binding
 
 
+def test_overlapping_builds_for_one_ticket_keep_both_bindings(capsys, monkeypatch, tmp_path, wt, hub):
+    """Review round 1: each build read the bindings before its push and wrote
+    that earlier list after it, so the later writer dropped the other's."""
+    _approved(wt)
+    _put(capsys, wt, _body(tmp_path))
+    _put(capsys, wt, _body(tmp_path, b"events\n", "e.txt"), name="events")
+    real = crew_coord.run_git
+    state = {"interleaved": False}
+
+    def interleave(root, args, **kwargs):
+        if args and args[0] == "push" and not state["interleaved"]:
+            state["interleaved"] = True
+            assert crew_contract.main(["build-against", "--root", str(wt), "--remote", "coord", "--channel",
+                                       CHANNEL, "--name", "events", "--version", "1", "--ticket", "T-1"]) == 0
+        return real(root, args, **kwargs)
+    monkeypatch.setattr(crew_coord, "run_git", interleave)
+
+    code, out = _build(capsys, wt)
+
+    assert state["interleaved"] and code == 0, out
+    bound = json.loads(_binding_path(wt).read_text(encoding="utf-8"))["bindings"]
+    assert sorted(b["name"] for b in bound) == ["api", "events"]
+
+
+def test_build_against_output_labels_the_peer_hash(capsys, tmp_path, wt):
+    _approved(wt)
+    _put(capsys, wt, _body(tmp_path))
+
+    first = _build(capsys, wt)[1]
+    again = _build(capsys, wt)[1]
+
+    for out in (first, again):
+        assert _sha(BODY)[:19] in out
+        assert all(line.endswith("[peer-written]") for line in out.splitlines() if _sha(BODY)[:19] in line)
+
+
 def test_build_against_rewrites_a_lost_binding(capsys, tmp_path, wt, hub):
     """The channel took the build, the local write did not: a re-run writes
     the binding without a second entry."""

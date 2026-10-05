@@ -66,6 +66,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import crew_config_files  # noqa: E402  pylint: disable=wrong-import-position
 import crew_coord  # noqa: E402  pylint: disable=wrong-import-position
 import crew_ticket  # noqa: E402  pylint: disable=wrong-import-position
 
@@ -313,29 +314,46 @@ def cmd_build_against(chan, top, name, version, ticket, repo):
                 f"refused: built_by names {repo}:{ticket} for {name} v{version} with another hash than the "
                 f"record's {record['hash'][:HASH_SHOWN]}; nothing was written")
         if mine:
-            return "noop", f"{repo}:{ticket} already built against contract {name} v{version}"
+            return "noop", crew_coord.peer(f"{repo}:{ticket} already built against contract {name} v{version} "
+                                           f"({record['hash'][:HASH_SHOWN]})")
         record["status"] = FROZEN
         record["built_by"].append({"repo": repo, "ticket": ticket, "hash": record["hash"],
                                    "at": crew_coord.stamp()})
         files[record_path(name, version)] = _dumps(record)
         crew_coord.log_line(files, "contract-build-against", f"{CONTRACTS}{name}/v{version}", _session(),
                             f"repo {repo}, ticket {ticket}, {record['hash']}")
-        return "ok", (f"{repo}:{ticket} built against contract {name} v{version} "
-                      f"({record['hash'][:HASH_SHOWN]}); it is frozen")
+        return "ok", crew_coord.peer(f"{repo}:{ticket} built against contract {name} v{version} "
+                                     f"({record['hash'][:HASH_SHOWN]}); it is frozen")
 
     result = chan.write(change, f"crew-contract: build-against {name} v{version}")
     if result.status not in ("ok", "noop"):
         return _exit(result)
-    if not held:
-        try:
-            write_bindings(local, bindings + [{"channel": chan.channel, "name": name, "version": version,
-                                               "hash": built["hash"]}])
-        except OSError as exc:
-            print(result.message)
-            print(f"unknown - the channel records the build, but {local} could not be written "
-                  f"({type(exc).__name__}); run build-against again")
-            return EXIT_UNKNOWN
-    return _exit(result)
+    print(result.message)
+    problem = _bind(local, {"channel": chan.channel, "name": name, "version": version, "hash": built["hash"]})
+    if problem:
+        print(f"unknown - the channel records the build, but {problem}; fix it and run build-against again")
+        return EXIT_UNKNOWN
+    return EXIT_OK
+
+
+def _bind(path, binding):
+    """Add `binding` to the ticket's bindings file, re-read under its lock, so
+    two builds for one ticket never drop each other's entry. None, or why it
+    was not written."""
+    key = (binding["channel"], binding["name"], binding["version"])
+    try:
+        with crew_config_files.Lock(path):
+            bindings, why = read_bindings(path)
+            if bindings is None:
+                return why
+            same = [b for b in bindings if (b["channel"], b["name"], b["version"]) == key]
+            if any(b["hash"] != binding["hash"] for b in same):
+                return f"{path} already binds {binding['name']} v{binding['version']} to another hash"
+            if not same:
+                write_bindings(path, bindings + [binding])
+    except (OSError, crew_config_files.Busy) as exc:
+        return f"{path} could not be written ({type(exc).__name__})"
+    return None
 
 
 def _status_lines(files, only):
