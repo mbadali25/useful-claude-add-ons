@@ -51,7 +51,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 06:28 UTC
+Last updated: 2026-10-05 06:37 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -110,6 +110,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 06:40: #478 (T-0081) re-check 46e5ee76: 0 BLOCK / 0 FIX -> batch 9. Minted C-0016: 34 sabotage.py entries non-red on main abddc302 (same on #478), so gate-runner's sabotage step is red on main here; harness, lands alone. Next free C-0017.
 - 12:25: #506 C-0008 re-check 0 BLOCK 0 FIX (never-delete rule held vs symlinks/hidden/race). Builder: merge main (CHANGELOG/README) + leak fix + sqlmap quoting, keep 0.5.7 last; then merge. Batch 8 told gizmoduck 0.5.8. Minted C-0015 (remaining bootstrap NITs).
 - 12:10: #506 C-0008 fixes pushed 82551ac8 (templates never deleted, nuclei sha256, real sha256 test via executing sudo stub, net timeouts, 0.5.7, NITs, hexdump/bsdextrautils for testssl). Green. Re-check started.
 - 12:00: MERGED #501 C-0001 -> d38e2d73 (per-component CI skip; 4 review rounds; 27 sabotages red). This notes push is the first docs-only PR run under it: verify its checks skip.

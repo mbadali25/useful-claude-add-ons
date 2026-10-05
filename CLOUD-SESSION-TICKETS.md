@@ -72,8 +72,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 | C-0014 | From #501 final re-check (NITs, ci-select): (1) count extension modules (.so/.pyd/importlib.machinery.EXTENSION_SUFFIXES) in the module-name uniqueness scan; (2) deny combined-run top-level names that shadow sys.stdlib_module_names or installed top-level packages; (3) a test inserting a new checkout dir only inside a function is invisible to the collect-only dump (document or detect). | none yet | after #501 |
 
 | C-0015 | From #506 re-check (NITs, gizmoduck bootstrap): (1) ps1 Install-NucleiTemplatesClone deletes a symlink/junction inside the target instead of refusing like sh; under PS 5.1 Get-ChildItem -Recurse follows junctions (empty dirs outside $Dir could be removed); (2) nikto `--version` exits 0 on "Unknown option" so skip-if-present proves nothing; (3) GIZMODUCK_BIN_DIR/OPT_DIR/APT_LISTS_DIR honoured in real runs: gate behind a test flag or document; (4) doctor should check `hexdump` next to testssl (testssl --version passes without it); (5) dependency-check/ZAP downloads unverified (no checksum asset; GPG/.asc or release-body hashes). | none yet | batch 9 |
+| C-0016 | gate-runner's sabotage step is red on main on this host: the full `scripts/_test/sabotage.py` has 34 non-red entries (PowerShell, verify-gate, cloud-guard, migration), identical on main abddc302 and on #478's head (re-run by the #478 reviewer, 2026-10-05). Find which need pwsh/tools absent here vs real stale mutations; sabotage.py is HARNESS, so the fix lands alone. | none yet | after batch 9 (harness, lands alone) |
 
-Next free untracked ID: **C-0016** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+Next free untracked ID: **C-0017** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
@@ -129,6 +130,7 @@ Next free untracked ID: **C-0016** (owner rule 2026-10-05: cloud-session tickets
 | T-0098, T-0109, T-0101 | #418 (H1 bundle) | ea9dcc10 | ready to land (harness, lands alone) | #461 (T-0109) and #422 (T-0101) close at landing. Owner note: also tightens plain `--accept`/`--reject` (refuse multi-line / lookalike `auto:` names). T-0109 Q3 (name only, no owner auth) confirmed not to loosen the gate. |
 | T-0045 | #407 | 6cada04c | ready to land | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
+| T-0081 | #478 | 46e5ee76 | review-clean 0 BLOCK / 0 FIX (re-check 2026-10-05) -> batch 9 | 89/89 tracker+README mutations red. NITs to carry: Windows wording "inode 0" vs file id; duplicate `_components()`; codemap cites the merge sha; nested parentheses. |
 
 ## Review-clean on older bases (catch-up merge + version at their turn)
 
@@ -232,7 +234,7 @@ Held for your go: L-0674 (#404).
 | T-0067 | #443 | not started (spec only) | autopilot runs mechanical steps itself: reviewPolicy fix-and-rereview for single-ticket ru |
 | T-0071 | #464 | not started (spec only) | T-0021 accepted-findings follow-up: repo-id case folding merges repos (PRIORITY), file://  |
 | T-0080 | #475 | bundled into H2a #399 | sabotage harness bounds memory: two cloud_guard entries read without bound and OOM-killed  |
-| T-0081 | #478 | not started (spec only) | crew_tracker vault walk checks every component's identity, not just the vault's, on Window |
+| T-0081 | #478 | built, review-clean -> batch 9 | crew_tracker vault walk checks every component's identity, not just the vault's, on Window |
 | T-0083 | #421 | review-clean at 41b1d576 (round 5: 0 BLOCK, 0 FIX, 1 NIT); obsidian-vault 0.5.0; batch 3. Untested on a real vault and on Windows | vault recall relevance: prefer this repo's project and concept/decision notes, skip archiv |
 | T-0093 | #477 | not started (spec only) | CLAUDE.md truncation paragraph: build_gallery.py:206 re-run can raise OverlayInvalid if a  |
 | T-0101 | #422 | bundled into H1 #418 | review prompt's receipts block says 'not yet run (gate follows review)' instead of MISSING |
