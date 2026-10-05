@@ -949,7 +949,8 @@ def test_redirected_send_still_exits_0(tmp_path, telegram, redirector):
         json.dumps({"notify": {"tokenEnv": TOKEN_ENV}}), encoding="utf-8")
 
     run = _cli(root, "send", "--event", "deploy", "--outcome", "pass", "--reason", "prod - pass",
-               env={"HOME": str(home), "CREW_NOTIFY_TELEGRAM_BASE": redirector})
+               env={"HOME": str(home), "USERPROFILE": str(home),
+                    "CREW_NOTIFY_TELEGRAM_BASE": redirector})
 
     assert (run.returncode, len(_Redirector.hits), telegram.requests,
             b"HTTP 302" in run.stderr) == (0, 1, [], True)
@@ -966,7 +967,8 @@ def _cli(root, *args, stdin=b"", env=None):
                                   "garbage-stdin", "bad-args"])
 def test_every_entry_point_exits_0(tmp_path, case):
     root = _repo(tmp_path)
-    env = {"HOME": str(tmp_path / "home"), "CREW_NOTIFY_TELEGRAM_BASE": "http://127.0.0.1:9"}
+    env = {"HOME": str(tmp_path / "home"), "USERPROFILE": str(tmp_path / "home"),
+           "CREW_NOTIFY_TELEGRAM_BASE": "http://127.0.0.1:9"}
     if case == "bad-config":
         (root / ".crew" / "config.json").write_text("{not json", encoding="utf-8")
     if case == "unreadable-state":
