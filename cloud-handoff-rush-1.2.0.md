@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T11:05Z
+Last updated: 2026-10-05T11:22Z
 
 ## >>> RESUME HERE
 
@@ -83,6 +83,7 @@ Untouched: #391 (the other session's notes branch).
 
 ## Log (newest first)
 
+- 2026-10-05T11:22Z Owner asked the other landing session to stay out of #324-#538.
 - 2026-10-05T11:05Z Handoff notes created (this file); brief, review script, schema and note.sh copied to docs/handoff/cloud/rush-1.2.0/.
 - 2026-10-05T11:00Z Owner: research the G7 files with an Opus agent. Research agent launched (public evidence only, scratchpad output); G7 builder told to wait for $S/g7/research/README.md.
 - 2026-10-05T10:50Z Container restart killed all builders. Pushed every rush/* branch's committed state (~290 unpushed commits). Relaunched 12 builders with a RESUME section in the brief; new rule: push after every commit.
