@@ -1371,4 +1371,49 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_correct_acceptance.py::"
          "test_an_abbreviated_flag_is_a_usage_error"),
     ),
+    (
+        # Review of 1b9ce429, FIX2: a receipt the round's verdict cannot carry
+        # is superseded as if it were readable.
+        "--supersede-accepted takes a receipt the verdict cannot carry",
+        REVIEW_LEDGER,
+        '    if receipt.get("kind") not in wanted:\n',
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX2: a receipt naming no bundle is superseded.
+        "--supersede-accepted takes a receipt with no bundle",
+        REVIEW_LEDGER,
+        '    if not isinstance(receipt.get("bundle_sha256"), str) or not receipt["bundle_sha256"]:\n',
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # Review of 1b9ce429, FIX1: --correct-acceptance on a ticket that is
+        # no longer ACCEPTED.
+        "--correct-acceptance ignores the state",
+        REVIEW_LEDGER,
+        "        if current != ACCEPTED:\n",
+        "        if False:\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # FIX1: --correct-acceptance on a receipt for an older round.
+        "--correct-acceptance takes a receipt for an older round",
+        REVIEW_LEDGER,
+        '                or latest.get("verdict") != "FINDINGS" or latest.get("round") != number\n',
+        '                or latest.get("verdict") != "FINDINGS"\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # Review of 1b9ce429, FIX3: --status shows a null history as empty.
+        "--status shows a malformed history as empty",
+        REVIEW_LEDGER,
+        '            "superseded": data.get("superseded", []),\n',
+        '            "superseded": data.get("superseded") or [],\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_status_shows_a_malformed_history_as_it_is"),
+    ),
 )

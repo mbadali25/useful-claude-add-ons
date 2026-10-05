@@ -256,6 +256,14 @@ def _auto_kind(repo):
     _edit(repo, lambda data: data["receipt"].update(kind=rl.AUTO_KIND, accepted_by=rl.AUTO_BY))
 
 
+def _accepted_then_reserved(repo):
+    """A new round reserved after the acceptance: the state is IN_REVIEW and
+    the old receipt is still in the file, but no longer stands."""
+    _accepted(repo)
+    ok, _, message = rl.reserve(str(repo), T, "codex")
+    assert ok, message
+
+
 REFUSALS = {
     "no_ledger": (lambda repo: None, {}),
     "corrupt_ledger": (_corrupt, {}),
@@ -295,6 +303,11 @@ REFUSALS = {
     "reason_nel": (_accepted, {"reason": "one\x85two"}),
     # N1: a lookalike of the reserved prefix (NFKC + casefold, format
     # characters stripped) is the reserved prefix.
+    # Review of 1b9ce429, FIX1: only the acceptance that stands is corrected.
+    "new_round_reserved": (_accepted_then_reserved, {}),
+    "state_reviewed": (_set("state", rl.REVIEWED), {}),
+    "receipt_for_an_older_round": (_set_receipt("round", 0), {}),
+    "receipt_round_bool": (_set_receipt("round", True), {}),
     "by_fullwidth_auto": (_accepted, {"by": "\uff41\uff55\uff54\uff4f: x"}),
     "by_zero_width_auto": (_accepted, {"by": "\u200bauto: x"}),
     "by_bom_auto": (_accepted, {"by": "\ufeffAuTo: x"}),

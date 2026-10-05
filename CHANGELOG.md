@@ -47,6 +47,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   fullwidth or zero-width lookalike is refused. The latest round's number is type-checked (bool,
   float and string refused) as the receipt's is. `review_ledger.py` turns off argparse prefix
   matching (`allow_abbrev=False`): `--super` or `--correct` is a usage error, never a verb.
+- **Port review (H1 lane).** `--correct-acceptance` also refuses a ticket that is not `ACCEPTED`
+  and a receipt that is not for the latest round completed with FINDINGS, so a receipt left behind by
+  a later `--reserve` is never corrected. `--supersede-accepted` also refuses a receipt whose kind the
+  round's verdict cannot carry (clean on FINDINGS, an acceptance on CLEAN) or that names no bundle.
+  `--status` shows a `superseded` or `acceptance_corrections` that is `null` or `0` as it is, never
+  as an empty list. Five more sabotage mutations, each red.
 - **Tests and sabotage.** `test_review_reject_accepted.py` and `test_review_correct_acceptance.py`
   (must-block cases each checked byte-for-byte, must-allow cases, the successor-plan cycle, usage
   errors, concurrent corrections), five cases in `test_review_prompt.py`, and sixteen mutations in

@@ -25,7 +25,9 @@ ticket. With the flag it takes ONLY an ACCEPTED one: the receipt (kind
 `clean`, `owner-accepted` or `auto-accepted`, for the latest completed round)
 is kept whole in the append-only `superseded` list with who and when,
 `rejected` records the kind, and `receipt` is cleared. An `auto:` name, any
-other state and anything the ledger cannot read refuse and change nothing;
+other state and anything the ledger cannot read (a receipt whose kind is not
+the one the round's verdict carries, or that names no bundle) refuse and
+change nothing;
 the bundle is not rebuilt. `--by` is a recorded name, never a check of who is
 calling: `--reserve` already voids an acceptance with no name.
 
@@ -109,7 +111,9 @@ CORRECTING THE ACCEPTER (T-0098). `--correct-acceptance --by <who> --reason
 which a successor plan does not clear. Nothing else moves -- not the state,
 the rounds, the hash, the base or `accepted_at` -- and the bundle is not
 rebuilt, so `--check-receipt` answers the same before and after. It refuses,
-writing nothing: an unreadable ledger, a receipt of any other kind (clean has
+writing nothing: an unreadable ledger, a ticket that is not ACCEPTED, a
+receipt that is not for the latest round completed with FINDINGS (an older
+one is history), a receipt of any other kind (clean has
 no accepter, auto-accepted a fixed one), a current accepter that is not a
 non-empty string, a history that is not a list of objects, a `--by` or
 `--reason` that is empty, multi-line or not UTF-8, an `auto:` name, and the
@@ -888,6 +892,18 @@ def _supersede(data, ticket, by):
             or latest.get("round") != number):
         raise LedgerError(f"{ticket}'s receipt is for round {number}, and the latest round is "
                           "not that round completed: could not tell what would be superseded")
+    # Review of 1b9ce429, FIX2: the receipt's kind must be the one the latest
+    # verdict can carry (clean on CLEAN, an acceptance on FINDINGS), and it
+    # must name the bundle it was given for; anything else is unreadable.
+    wanted = ("clean",) if latest.get("verdict") == "CLEAN" else (
+        ("owner-accepted", AUTO_KIND) if latest.get("verdict") == "FINDINGS" else ())
+    if receipt.get("kind") not in wanted:
+        raise LedgerError(f"{ticket}'s {receipt.get('kind')} receipt does not match round "
+                          f"{number}'s verdict {latest.get('verdict')!r}: could not tell what "
+                          "would be superseded")
+    if not isinstance(receipt.get("bundle_sha256"), str) or not receipt["bundle_sha256"]:
+        raise LedgerError(f"{ticket}'s receipt names no bundle: could not tell what would be "
+                          "superseded")
     history = data.get("superseded", [])
     if not _is_dict_list(history):
         raise LedgerError(f"{ticket}'s `superseded` is not a list of objects: could not tell "
@@ -943,12 +959,27 @@ def correct_acceptance(root, ticket, by, reason):
     def change(data, state):
         if state != "ok":
             raise LedgerError(f"ledger is {state}; there is no acceptance to correct")
+        current = data.get("state")
+        if current != ACCEPTED:
+            raise LedgerError(f"{ticket} is {current or 'EMPTY'}, not {ACCEPTED}: "
+                              "no acceptance stands to correct")
         receipt = data.get("receipt")
         if not isinstance(receipt, dict) or receipt.get("kind") != "owner-accepted":
             kind = receipt.get("kind") if isinstance(receipt, dict) else receipt
             raise LedgerError(f"{ticket}'s receipt is {kind!r}, not owner-accepted: only an "
                               "owner acceptance names an accepter to correct (clean has none, "
                               "auto-accepted has a fixed one)")
+        # Review of 1b9ce429, FIX1: only the latest completed round's receipt
+        # is the acceptance that stands; an older one is history.
+        latest = (data.get("rounds") or [None])[-1]
+        number = receipt.get("round")
+        if (not isinstance(number, int) or isinstance(number, bool)
+                or not isinstance(latest, dict) or latest.get("status") != "completed"
+                or latest.get("verdict") != "FINDINGS" or latest.get("round") != number
+                or isinstance(latest.get("round"), bool)):
+            raise LedgerError(f"{ticket}'s receipt is for round {number!r}, and the latest "
+                              "round is not that round completed with FINDINGS: no acceptance "
+                              "stands to correct")
         was = receipt.get("accepted_by")
         if not isinstance(was, str) or not was.strip():
             raise LedgerError(f"{ticket}'s receipt names no accepter ({was!r}): could not "
@@ -1105,8 +1136,10 @@ def summary(data, state, ticket, path):
             "successors": data.get("successors") or [],
             "receipt": data.get("receipt"),
             "rejected": data.get("rejected"),
-            "superseded": data.get("superseded") or [],
-            "acceptance_corrections": data.get("acceptance_corrections") or []}
+            # Review of 1b9ce429, FIX3: a malformed history is shown as it is,
+            # never as an empty list.
+            "superseded": data.get("superseded", []),
+            "acceptance_corrections": data.get("acceptance_corrections", [])}
 
 
 def status(root, ticket):

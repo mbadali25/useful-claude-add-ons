@@ -269,6 +269,13 @@ def _latest_round(value):
     return change
 
 
+def _owner_kind_on_clean(repo):
+    _review(repo)
+    _review(repo, "CLEAN")
+    _edit(repo, lambda data: data["receipt"].update(kind="owner-accepted",
+                                                     accepted_by="the owner"))
+
+
 REFUSALS = {
     "no_by": (_owner_accepted_round_two, ["--reject", "--supersede-accepted"]),
     "by_spaces": (_owner_accepted_round_two, ["--reject", "--supersede-accepted", "--by", "  "]),
@@ -293,6 +300,12 @@ REFUSALS = {
     "receipt_for_an_older_round": (_with(_receipt_for_round_one), None),
     "latest_round_reserved": (_with(_latest_reserved), None),
     "latest_round_not_dict": (_with(_latest_not_dict), None),
+    # Review of 1b9ce429, FIX2: a receipt the round's verdict cannot carry,
+    # or one naming no bundle, is unreadable.
+    "clean_receipt_on_findings": (_receipt("kind", "clean"), None),
+    "owner_receipt_on_clean": (_owner_kind_on_clean, None),
+    "receipt_bundle_missing": (_with(lambda data: data["receipt"].pop("bundle_sha256")), None),
+    "receipt_bundle_empty": (_receipt("bundle_sha256", ""), None),
     "superseded_dict": (_with(lambda data: data.__setitem__("superseded", {})), None),
     "superseded_string": (_with(lambda data: data.__setitem__("superseded", "x")), None),
     "round_one_receipt_round_bool": (
@@ -389,3 +402,14 @@ def test_every_reject_sabotage_anchor_is_present_exactly_once():
     assert len(anchors) >= 9
     for anchor in anchors:
         assert source.count(anchor) == 1, anchor
+
+
+@pytest.mark.parametrize("key", ["superseded", "acceptance_corrections"])
+@pytest.mark.parametrize("value", [None, 0])
+def test_status_shows_a_malformed_history_as_it_is(repo, key, value):
+    """Review of 1b9ce429, FIX3: a history that is null or 0 is not an empty
+    list; --status shows the value the file holds."""
+    _owner_accepted_round_two(repo)
+    _edit(repo, lambda data: data.__setitem__(key, value))
+
+    assert json.loads(_cli(repo, "--status").stdout)[key] == value
