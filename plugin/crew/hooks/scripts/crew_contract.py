@@ -242,7 +242,8 @@ def read_bindings(path):
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         return None, f"{path} is not readable JSON ({type(exc).__name__})"
     schema = data.get("schema") if isinstance(data, dict) else None
-    if isinstance(schema, bool) or schema != SCHEMA or not isinstance(data.get("bindings"), list):
+    if not isinstance(schema, int) or isinstance(schema, bool) or schema != SCHEMA \
+            or not isinstance(data.get("bindings"), list):  # 1.0 and true are not the schema 1
         return None, f"{path} is not {{\"schema\": {SCHEMA}, \"bindings\": [...]}}"
     if not all(_valid_binding(binding) for binding in data["bindings"]):
         return None, f"{path} has a binding without a valid channel, name, version or sha256 hash"

@@ -590,12 +590,13 @@ def test_status_still_prints_the_versions_beside_a_stray_file(capsys, tmp_path, 
 
 @pytest.mark.parametrize("text", [
     json.dumps({"schema": True, "bindings": []}),
+    json.dumps({"schema": 1.0, "bindings": []}),
     json.dumps({"schema": 1, "bindings": [{"channel": "", "name": "api", "version": 1, "hash": _sha(BODY)}]}),
     json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "", "version": 1, "hash": _sha(BODY)}]}),
     json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": -1, "hash": _sha(BODY)}]}),
     json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": True, "hash": _sha(BODY)}]}),
     json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": 1, "hash": "bad"}]})],
-    ids=["schema-true", "empty-channel", "empty-name", "negative-version", "bool-version", "bad-hash"])
+    ids=["schema-true", "schema-float", "empty-channel", "empty-name", "negative-version", "bool-version", "bad-hash"])
 def test_a_malformed_binding_file_reads_as_unknown(tmp_path, text):
     """Review round 4: the binding reader checked types only."""
     path = tmp_path / "contracts.json"
