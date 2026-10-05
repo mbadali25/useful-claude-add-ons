@@ -2229,7 +2229,12 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
 
 - `crew_context.py` -> `obsidian-vault`'s CLI, via `crew_recall.py` (module
   docstring only, **not read**: "crew does not search vaults itself...
-  calls that plugin's read-only contract and nothing else").
+  calls that plugin's read-only contract and nothing else"). Since L-0675 the
+  call carries `--project=<names>` from `crew_recall.projects` (the repo's
+  `memory.recall.projects`, else the main checkout's folder from
+  `--git-common-dir`), and an exit 2 is retried once without it inside the same
+  `CLI_TIMEOUT_SECONDS` deadline (DERIVED,
+  `plugin/crew/hooks/scripts/crew_recall.py`, `recall`).
 - `crew_memory.py` -> `~/.claude/obsidian/config.json` (via `crew_recall.obsidian_config_path`)
   and the crew config's `memory.vaultPath`; read-only (T-0084, section above).
 - `crew_autoclear_setup.py` -> `~/.claude/crew/config.json` (the

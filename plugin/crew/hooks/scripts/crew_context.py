@@ -601,9 +601,9 @@ def _log_sources(kept):
     return out
 
 
-def recall_items(query, cfg, budget):
+def recall_items(query, cfg, budget, root=None):
     crew_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    result = crew_recall.recall(query, cfg, crew_root=crew_root, budget=budget)
+    result = crew_recall.recall(query, cfg, crew_root=crew_root, budget=budget, root=root)
     items = []
     for snip in result["snippets"]:
         items.append({"id": f"vault:{snip['vault']}:{snip['note']}", "text": crew_recall.label(snip),
@@ -1187,7 +1187,7 @@ def _run_locked(root, payload, cfg, session, harness, typing=None):
     recall = None
     if query and budget > 0:
         used = sum(len(i["text"]) + 1 for i in fresh)
-        recall, vault = recall_items(query, cfg, budget - used - 240)
+        recall, vault = recall_items(query, cfg, budget - used - 240, root)
         vault, vhits = _dedup(state, context, vault)
         hits += vhits
         lines_used = sum(i["text"].count("\n") + 1 for i in fresh)
@@ -1221,7 +1221,8 @@ def _run_locked(root, payload, cfg, session, harness, typing=None):
         if recall is not None:
             record["recall"] = {"status": recall["status"], "reason": recall["reason"],
                                 "snippets": len(recall["snippets"]), "dropped": recall["dropped"],
-                                "vaults": recall["vaults"]}
+                                "vaults": recall["vaults"], "project": recall["project"],
+                                "projectUsed": recall["projectUsed"]}
         append_log(root, record)
     return text
 
@@ -1310,7 +1311,7 @@ def slice_for_subagent(root, query, paths):
                 chosen.append(sub)
     items = codemap_items(root, chosen, head)
     used = sum(len(i["text"]) + 1 for i in items)
-    recall, vault = recall_items(query, cfg, SUBAGENT_CHARS - used - 240)
+    recall, vault = recall_items(query, cfg, SUBAGENT_CHARS - used - 240, root)
     block = recall_block(vault, SUBAGENT_CHARS - used)
     if block:
         items.append(block)
@@ -1320,7 +1321,8 @@ def slice_for_subagent(root, query, paths):
                       "sources": _log_sources(kept),
                       "recall": {"status": recall["status"], "reason": recall["reason"],
                                  "snippets": len(recall["snippets"]), "dropped": recall["dropped"],
-                                 "vaults": recall["vaults"]}})
+                                 "vaults": recall["vaults"], "project": recall["project"],
+                                 "projectUsed": recall["projectUsed"]}})
     return text
 
 

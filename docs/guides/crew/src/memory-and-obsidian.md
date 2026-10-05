@@ -104,6 +104,7 @@ $VO drain --apply --batches 4     # up to 4 passes of 5, stops early if one ackn
 | After a plugin update | Re-run `$VO schedule --os <yours>` and reinstall the unit it prints. The unit names the plugin's versioned folder, which the update replaces. |
 | When a vault moves or you add one | `$VO adopt` to review roles. |
 | When recall seems blind | `$VO recall --query "<words you expect>"` and check which vaults it names. |
+| When another project's notes outrank this repo's | crew sends the main checkout's folder name as `--project`; if your notes' `project:` values differ, list them in the repo's `memory.recall.projects`. |
 | When the bridge misbehaves | `/obsidian-vault:doctor`, then `/obsidian-vault:repair`. The bridge is optional; capture, recall, import and gardening all work on the files without it. |
 | When the code changed a lot | `/crew:onboard --refresh <subsystem>` for the repository's own code map. That map lives in the repository, not the vault. |
 

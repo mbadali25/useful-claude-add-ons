@@ -302,7 +302,7 @@ def default_config():
         # and then do nothing. `inject` is on by default since 1.0.0; see
         # crew_context.inject_enabled.
         "memory": {"mode": "repo", "vaultPath": None, "inject": True,
-                   "recall": {"vaults": [], "maxChars": 800}},
+                   "recall": {"vaults": [], "maxChars": 800, "projects": []}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         # T-0006. In both layers, but only the MACHINE layer can arm it:

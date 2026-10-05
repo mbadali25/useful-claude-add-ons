@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.7: vault recall ranks this repo's notes first
+
+- **Summary.** crew now tells obsidian-vault which project a session is in, so recalled notes about
+  this repository come before other projects' notes; an older obsidian-vault still works as before.
+- **crew `crew_recall.py` (L-0675).** Each recall sends `--project=<names>`: the repo's new
+  repo-only key `memory.recall.projects`, or the main checkout's folder name (a linked worktree
+  reports the main checkout). A name with a comma or a control character is dropped. A CLI that
+  exits 2 on the option is asked once more without it, inside the same 4-second budget; no other
+  failure is retried. The context log's `recall` record gains `project` and `projectUsed`.
+
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 
 - **Summary.** Chat notifications now go through when the bot token was saved with a trailing space

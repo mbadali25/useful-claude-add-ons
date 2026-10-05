@@ -182,6 +182,10 @@ $VO drain --apply --batches 4     # up to 4 passes of 5, stops early if one ackn
 <td><code>$VO recall --query "&lt;words you expect&gt;"</code> and check which vaults it names.</td>
 </tr>
 <tr>
+<td>When another project's notes outrank this repo's</td>
+<td>crew sends the main checkout's folder name as <code>--project</code>; if your notes' <code>project:</code> values differ, list them in the repo's <code>memory.recall.projects</code>.</td>
+</tr>
+<tr>
 <td>When the bridge misbehaves</td>
 <td><code>/obsidian-vault:doctor</code>, then <code>/obsidian-vault:repair</code>. The bridge is optional; capture, recall, import and gardening all work on the files without it.</td>
 </tr>
@@ -652,8 +656,17 @@ paste in a slice:</p>
 <li>A repo can set its own order in its crew config: <code>memory.recall.vaults</code> (an ordered list of names)
   and <code>memory.recall.maxChars</code> (default 800). Snippets come back in that vault order first, then in
   the order the search ranked them.</li>
+<li>Each recall names the repo's project, so that notes of this project rank first inside each vault:
+  <code>memory.recall.projects</code> (a list of names, repo-only) when set, otherwise the main checkout's
+  directory name (a linked worktree reports the main checkout's name). crew sends it as
+  <code>--project=&lt;a,b&gt;</code> and ranks nothing itself. An obsidian-vault CLI too old to know <code>--project</code>
+  exits 2; crew then asks once more without it, inside the same 4-second budget, and the log's
+  <code>recall</code> record says so: <code>project</code> is the list sent, <code>projectUsed</code> is <code>true</code> when the answer came
+  from the call with the project, <code>false</code> when it came from the retry without it, and <code>null</code> when
+  no project was sent or no call answered. Set <code>memory.recall.projects</code> when the vault's <code>project:</code>
+  values do not match the checkout's folder name.</li>
 <li>crew calls obsidian-vault's read-only CLI:
-  <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json</code>. If the plugin is missing, or
+  <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json [--project=a,b]</code>. If the plugin is missing, or
   the CLI fails, times out or prints something other than JSON, the session goes on without recall
   and the log records a miss with the reason.</li>
 <li>An empty recall can be the CLI working as meant: it skips stop words, needs more than one

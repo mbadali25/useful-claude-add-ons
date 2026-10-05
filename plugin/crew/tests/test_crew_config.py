@@ -403,7 +403,11 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # top of those 141, both layers, measured by running this test on
     # T-0051-build after merging main abddc302.
     assert {"notify.realertHours", "notify.questionTypes"} <= declared
-    assert len(declared) == 143
+    # 144 with L-0675's repo-only `memory.recall.projects` on top of those
+    # 143, measured by running this test on rush/g3b-bridge (release/1.2.0
+    # e84a8bfe).
+    assert "memory.recall.projects" in declared
+    assert len(declared) == 144
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
@@ -850,7 +854,8 @@ def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
     assert resolved["memory"] == {"mode": "vault",
                                   "vaultPath": "/home/me/vault",
                                   "inject": True,
-                                  "recall": {"vaults": [], "maxChars": 800}}
+                                  "recall": {"vaults": [], "maxChars": 800,
+                                             "projects": []}}
 
 
 @pytest.mark.parametrize("dotted", ["memory.inject", "memory.recall.vaults",

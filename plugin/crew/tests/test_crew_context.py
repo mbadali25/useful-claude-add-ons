@@ -198,16 +198,21 @@ def test_a_repo_list_cannot_resurrect_an_ignored_vault(stub):
     assert order == ["recall-v"]
 
 
-@pytest.mark.parametrize("mode, reason", [("exit", "cli-exit-2"), ("badjson", "cli-bad-json")])
-def test_a_broken_cli_is_a_logged_miss_not_a_failure(tmp_path, stub, monkeypatch, mode, reason):
+@pytest.mark.parametrize("mode, reason, used", [("exit", "cli-exit-2", None),
+                                                ("badjson", "cli-bad-json", True)])
+def test_a_broken_cli_is_a_logged_miss_not_a_failure(tmp_path, stub, monkeypatch, mode, reason, used):
     root = make_repo(tmp_path)
     monkeypatch.setenv("STUB_MODE", mode)
 
     text = _run(payload("UserPromptSubmit", root, prompt="anything at all about alpha", prompt_id="p1"))
 
     assert "ALPHA-LANDMINE" in text
+    # L-0675: the repo's directory name is sent as the project; a CLI that
+    # exits 2 both with and without it is the same miss as before, and one
+    # that answered the `--project` call with bad JSON did use the project.
     assert log_records(root)[-1]["recall"] == {"status": "miss", "reason": reason, "snippets": 0,
-                                               "dropped": 0, "vaults": ["primary-v", "recall-v"]}
+                                               "dropped": 0, "vaults": ["primary-v", "recall-v"],
+                                               "project": ["repo"], "projectUsed": used}
 
 
 def test_a_missing_cli_degrades_silently_and_logs_the_miss(tmp_path, monkeypatch):
