@@ -18,8 +18,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `## [` heading: `<subject> <version>`, the title without its ticket reference, and
   the entry's `**Summary.**` bullet, else the first sentence of its first bullet (cut
   to 240 characters), else nothing. Any `###` heading counts, kind word or not; a
-  batch entry (`####` parts, no bullets of its own) lists its parts' titles. `--check` exits 1 when the block differs from that
-  render. The three root-README sections "What's new in the plugins", "... in the
+  batch entry (`####` parts) shows its `**Summary.**` bullet, else its parts' titles.
+  `--check` exits 1 when the block differs from that render. The three root-README sections "What's new in the plugins", "... in the
   skills" and "... in the MCP servers" are gone; README.md went from 916 to 426 lines.
 - **UPDATE.md stays.** `plugin/UPDATE.md`, `skills/UPDATE.md` and
   `mcp-servers/UPDATE.md` still feed the "What's new" block of their own directory's

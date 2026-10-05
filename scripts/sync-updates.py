@@ -73,8 +73,11 @@ SENTENCE_LIMIT = 240
 KIND = r"(?:(?:Added|Changed|Fixed|Removed|Deprecated|Security)\b\s*(?:[\u2014\u2013-]\s*)?)?"
 ENTRY_HEADING = re.compile(r"^### " + KIND + r"(.*)$")
 PART_HEADING = re.compile(r"^#### " + KIND + r"(.*)$")
-# "crew 1.0.345 — batch 5: T-0052, T-0057": the subject is what precedes the dash.
-BATCH_SUBJECT = re.compile(r"^(.*?)\s+[\u2014\u2013]\s+")
+# "crew 1.0.345 — batch 5: T-0052, T-0057" (any dash, or none): the subject is
+# what precedes the dash or the colon, without a trailing "batch <n>".
+BATCH_SUBJECT = re.compile(r"^(.*?)(?:\s+[\u2014\u2013-]\s+|:\s|$)")
+BATCH_WORD = re.compile(r"\bbatch\b", re.IGNORECASE)
+BATCH_NUMBER = re.compile(r"\s+batch\s+\d+\s*$", re.IGNORECASE)
 # A trailing "(T-0037, PR A)" or "(L-1518)": a ticket reference means nothing to
 # a reader deciding whether to update.
 TICKET_SUFFIX = re.compile(r"\s*\([^()]*\b[A-Z]+-\d+\b[^()]*\)\s*$")
@@ -203,9 +206,14 @@ def changelog_entries(
             continue
         if line.startswith("#"):
             current = None
+            if line.startswith("#####"):
+                # Deeper than a part: belongs to the part above, ends nothing.
+                continue
             part = PART_HEADING.match(line) if in_release else None
             if part and parts is not None:
-                parts.append(part.group(1).strip())
+                title = part.group(1).strip() or line[5:].strip()
+                if title:
+                    parts.append(title)
                 continue
             match = ENTRY_HEADING.match(line) if in_release else None
             parts = None
@@ -255,12 +263,20 @@ def shorten(text: str, limit: int = SENTENCE_LIMIT) -> str:
     return (text[:cut] if cut > 0 else text[:limit]).rstrip(" ,;:") + " ..."
 
 
-def summary(bullets: list[str]) -> str:
-    """One plain sentence for a reader: a ``**Summary.**`` bullet, else the first bullet's."""
+def summary_bullet(bullets: list[str]) -> str:
+    """The text of a ``**Summary.**`` bullet, or "" when there is none."""
     for bullet in bullets:
         label = BULLET_LABEL.match(bullet)
         if label and label.group(1).strip().rstrip(".").lower() == "summary":
             return bullet[label.end() :].strip()
+    return ""
+
+
+def summary(bullets: list[str]) -> str:
+    """One plain sentence for a reader: a ``**Summary.**`` bullet, else the first bullet's."""
+    own = summary_bullet(bullets)
+    if own:
+        return own
     if not bullets:
         return ""
     first = BULLET_LABEL.sub("", bullets[0], count=1).strip()
@@ -276,14 +292,19 @@ def part_title(heading: str) -> str:
 def entry_line(heading: str, bullets: list[str], parts: list[str] | None = None) -> str:
     """``- **<subject> <version>**: <Title>. <sentence>`` -- one line per entry.
 
-    A batch entry (``####`` parts, no bullets of its own) lists its parts'
-    titles instead: ``- **crew 1.0.345**: <part>; <part>.``
+    A batch entry (``####`` parts, and either no bullets of its own or
+    "batch" in its heading) shows its ``**Summary.**`` bullet if it has one,
+    else its parts' titles: ``- **crew 1.0.345**: <part>; <part>.``
     """
-    batch = BATCH_SUBJECT.match(heading)
-    if parts and not bullets and batch:
-        subject = batch.group(1).replace("`", "").strip()
-        listed = shorten("; ".join(part_title(part) for part in parts))
-        return f"- **{subject}**: {listed[:1].upper() + listed[1:]}."
+    if parts and (not bullets or BATCH_WORD.search(heading)):
+        subject = BATCH_SUBJECT.match(heading).group(1)
+        subject = BATCH_NUMBER.sub("", subject).replace("`", "").strip()
+        own = summary_bullet(bullets)
+        listed = own or shorten("; ".join(part_title(part) for part in parts))
+        listed = listed[:1].upper() + listed[1:]
+        if not listed.endswith((".", "!", "?")):
+            listed += "."
+        return f"- **{subject}**: {listed}" if subject else f"- {listed}"
     subject, _, title = TICKET_SUFFIX.sub("", heading).partition(": ")
     if not title:
         subject, title = "", subject
@@ -299,7 +320,7 @@ def render_whats_new(changelog: str) -> str:
     """The root README's "What's new" block body, from the newest changelog entries."""
     entries = changelog_entries(changelog)
     if not entries:
-        fail(f"{CHANGELOG} has no '### Added/Changed/Fixed ...' entry under a '## [' heading")
+        fail(f"{CHANGELOG} has no '###' entry under a '## [' heading")
     lines = [entry_line(heading, bullets, parts) for heading, bullets, parts in entries]
     return "\n".join(lines) + f"\n\nFull history: [{CHANGELOG}]({CHANGELOG})."
 

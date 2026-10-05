@@ -208,7 +208,7 @@ def case_no_entries_is_structural(tmp):
     build(tmp, "# Changelog\n\n## [Unreleased]\n\nNothing yet.\n")
     result = run(tmp, "--check")
     assert result.returncode == 2, (result.returncode, result.stderr)
-    assert "no '### Added/Changed/Fixed" in result.stderr, result.stderr
+    assert "has no '###' entry" in result.stderr, result.stderr
 
 
 def case_missing_markers_is_structural(tmp):
@@ -258,6 +258,43 @@ def case_heading_without_kind_word_is_not_skipped(tmp):
                           LINE_A, FULL], block(tmp)
 
 
+def batch_log(heading: str, *lines: str) -> str:
+    return changelog("\n".join((heading, "", *lines, "")), ENTRY_A)
+
+
+def case_batch_heading_with_hyphen_or_no_dash(tmp):
+    for heading in ("### crew 1.0.346 - batch 6: T-1, T-2", "### crew 1.0.346 batch 6: T-1, T-2"):
+        build(tmp, batch_log(heading, "#### Added \u2014 `crew`: thing one (T-1)", "", "- x"))
+        assert run(tmp).returncode == 0
+        assert block(tmp)[0] == "- **crew 1.0.346**: Thing one.", (heading, block(tmp))
+        shutil.rmtree(tmp)
+        os.makedirs(tmp)
+
+
+def case_batch_with_summary_bullet(tmp):
+    build(tmp, batch_log("### crew 1.0.346 \u2014 batch 6: T-1, T-2", "- **Summary.** Two fixes.", "",
+                         "#### Fixed \u2014 `crew`: one (T-1)", "", "- x"))
+    assert run(tmp).returncode == 0
+    assert block(tmp)[0] == "- **crew 1.0.346**: Two fixes.", block(tmp)
+
+
+def case_long_part_list_ends_in_one_ellipsis(tmp):
+    parts = [f"#### Added \u2014 `crew`: a fairly long part title number {n} for the list (T-{n})"
+             for n in range(8)]
+    build(tmp, batch_log("### crew 1.0.346 \u2014 batch 6: T-0", *parts))
+    assert run(tmp).returncode == 0
+    line = block(tmp)[0]
+    assert line.endswith(" ...") and not line.endswith("...."), line
+
+
+def case_empty_and_deep_part_headings(tmp):
+    build(tmp, batch_log("### crew 1.0.346 \u2014 batch 6: T-1, T-2", "#### Added", "",
+                         "#### Fixed \u2014 `crew`: two (T-2)", "", "##### deep", "",
+                         "#### Added \u2014 `crew`: after deep (T-1)"))
+    assert run(tmp).returncode == 0
+    assert block(tmp)[0] == "- **crew 1.0.346**: Added; two; after deep.", block(tmp)
+
+
 CASES = [
     ("must-allow: a fresh render passes --check", case_fresh_render_passes),
     ("must-block: a block left on older entries fails --check and is not written",
@@ -273,6 +310,12 @@ CASES = [
     ("must-allow: a batch entry lists its #### parts", case_batch_entry_lists_its_parts),
     ("must-block: a ### heading without a kind word is still an entry, not skipped",
      case_heading_without_kind_word_is_not_skipped),
+    ("edge: a batch heading with a hyphen or no dash still lists its parts",
+     case_batch_heading_with_hyphen_or_no_dash),
+    ("edge: a batch entry's own Summary bullet wins over its part list", case_batch_with_summary_bullet),
+    ("edge: a cut part list ends in one ellipsis, not four dots", case_long_part_list_ends_in_one_ellipsis),
+    ("edge: an empty #### keeps its kind word and a ##### drops no later part",
+     case_empty_and_deep_part_headings),
     ("structural: a changelog with no entry exits 2", case_no_entries_is_structural),
     ("structural: a root README without the markers exits 2", case_missing_markers_is_structural),
     ("the root README carries no UPDATE.md mirror", case_root_readme_no_longer_mirrors_update_md),
