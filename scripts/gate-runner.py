@@ -155,6 +155,7 @@ TABLE = (
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
+    _py_suite("ci-select", "scripts/_test/ci-select.py"),
     _py_suite("instruction-budgets-suite", "scripts/_test/instruction-budgets.py",
               "instruction-budgets.yml"),
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
@@ -190,8 +191,9 @@ TABLE = (
     Step("pytest-combined", "heavy",
          (PY, "-m", "pytest", *COMBINED_DIRS, "-n", "4", "-m", "not wallclock", *NO_CACHE),
          group="A", timeout=1800, pytest=True,
-         ci=(("pytest-crew.yml", "pytest " + " ".join(COMBINED_DIRS)
-              + ' -n auto -m "not wallclock" -v'),)),
+         # CI runs the subset scripts/ci-select.py picks (C-0001); its suite
+         # checks that the whole of that list is COMBINED_DIRS.
+         ci=(("pytest-crew.yml", 'pytest $PYTEST_COMBINED -n auto -m "not wallclock" -v'),)),
     # crew-shell-matrix's ubuntu leg: the full bash/pwsh hook matrix, which
     # plugin/crew/tests/conftest.py deselects from every run not naming `slow`.
     # 201.8s under heavy-run, 1690 passed / 22 skipped (2026-10-01).
@@ -262,7 +264,11 @@ EXCLUDED_CI = (
      "the Windows fan-in (L-0577): reads CI job results and artifacts, which a lane does not "
      "have; its suite scripts/_test/windows-shards.py is the windows-shards step"),
     ("mcp-servers.yml", "npm ci", INSTALL + "; the npm test step SKIPs without node_modules"),
-)
+) + tuple(
+    (wf, "python3 scripts/ci-select.py *",
+     "C-0001: which suites a PR selects, from its diff; checks nothing. A lane runs every "
+     "suite; its suite scripts/_test/ci-select.py is the ci-select step")
+    for wf in ("pytest-crew.yml", "pylint.yml", "shell-suites.yml", "mcp-servers.yml"))
 
 
 class Refusal(Exception):

@@ -50,13 +50,24 @@ jobs:
       run: echo "::notice::PR CI runs Python 3.12 only. This ${{ matrix.python-version }} leg was SKIPPED, not passed; it runs on push to main, workflow_dispatch and the nightly schedule."
     - uses: actions/checkout@v4
       if: env.RUN_LEG == 'true'
+      with:
+        # The PR merge commit and its first parent: what ci-select diffs.
+        fetch-depth: 2
     - name: Set up Python ${{ matrix.python-version }}
       if: env.RUN_LEG == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install pytest
+    - name: Select the suites this PR changes (C-0001)
+      id: select
       if: env.RUN_LEG == 'true'
+      # scripts/ci-select.py is the one rule pylint.yml, shell-suites.yml and
+      # mcp-servers.yml read too. Non-PR events select everything; so does any
+      # diff it cannot compute. A skipped suite is a ::notice::, not a pass. If
+      # the script itself fails this step is red, never a silent skip.
+      run: python3 scripts/ci-select.py --event "${{ github.event_name }}" --output "$GITHUB_OUTPUT"
+    - name: Install pytest
+      if: env.RUN_LEG == 'true' && (steps.select.outputs.pytest_combined != '' || steps.select.outputs.cisco_meraki != 'false' || steps.select.outputs.wazuh_onprem != 'false')
       run: |
         python -m pip install --upgrade pip
         # python-docx is NOT optional either, for the same reason pyyaml is
@@ -85,7 +96,13 @@ jobs:
         # the same way the yaml one below does, taking the whole job with it.
         pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests
     - name: Run crew + gizmoduck plugin tests and the collision-free skill suites
-      if: env.RUN_LEG == 'true'
+      # The selected subset of the combined run, in its usual order: each
+      # component's test directory when that component changed, or single crew
+      # test files that read a changed path elsewhere (ci-select's READERS).
+      # Empty when nothing in the combined run is selected.
+      if: env.RUN_LEG == 'true' && steps.select.outputs.pytest_combined != ''
+      env:
+        PYTEST_COMBINED: ${{ steps.select.outputs.pytest_combined }}
       # Scoped to named directories on purpose, and NOT because of
       # skills/cisco-meraki/tests/test_live_smoke.py -- which is what this
       # comment used to claim. That file is decorated
@@ -120,12 +137,15 @@ jobs:
       # elapsed time against a real hook timeout, and beside busy workers one
       # read 10.25s against its 10s bound on 2 of 6 jobs. They run in the
       # step below, serially, so the bound stays the real one.
-      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ -n auto -m "not wallclock" -v
+      run: |
+        # Unquoted on purpose: the output is a space-separated path list.
+        # shellcheck disable=SC2086
+        pytest $PYTEST_COMBINED -n auto -m "not wallclock" -v
     - name: Run crew's wall-clock-bounded tests serially
-      if: env.RUN_LEG == 'true'
+      if: env.RUN_LEG == 'true' && steps.select.outputs.crew != 'false'
       run: pytest plugin/crew/tests/ -m wallclock -v
     - name: Run the cisco-meraki skill tests
-      if: env.RUN_LEG == 'true'
+      if: env.RUN_LEG == 'true' && steps.select.outputs.cisco_meraki != 'false'
       # A SEPARATE pytest process, and it has to be. plugin/crew/tests/ and
       # skills/cisco-meraki/tests/ each contain a file named `context.py`
       # whose import side effect is what puts that skill's scripts/ on
@@ -145,7 +165,7 @@ jobs:
       # work around a runner detail.
       run: pytest skills/cisco-meraki/tests/ -v
     - name: Run the wazuh-onprem skill tests
-      if: env.RUN_LEG == 'true'
+      if: env.RUN_LEG == 'true' && steps.select.outputs.wazuh_onprem != 'false'
       # skills/wazuh-onprem/scripts/_test/test_manager_config_remote_paths.py
       # puts scripts/ on sys.path itself (no separate context.py file, so it
       # does not hit the context.py collision the step above works around)
@@ -195,17 +215,26 @@ jobs:
         os: [ubuntu-latest]
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
+    - name: Select the suites this PR changes (C-0001)
+      id: select
+      # Same rule as the `test` job: the job always reports its required
+      # check; the slow set runs only when crew's whole suite is selected.
+      run: python3 scripts/ci-select.py --event "${{ github.event_name }}" --output "$GITHUB_OUTPUT"
     - name: Install pytest
+      if: steps.select.outputs.crew != 'false'
       # pyyaml: three crew test modules import it at module top, so without
       # it collection fails and takes the whole run down with it.
       run: |
         python -m pip install --upgrade pip
         pip install "pytest~=8.0" pytest-xdist pyyaml
     - name: Run crew's slow set (the full per-shell hook matrix)
+      if: steps.select.outputs.crew != 'false'
       run: python -m pytest plugin/crew/tests -m slow -n auto -v
 
   # ---- crew on Windows: three parallel sets, one required fan-in -----------

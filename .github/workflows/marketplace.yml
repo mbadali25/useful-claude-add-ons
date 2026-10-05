@@ -84,6 +84,12 @@ jobs:
       # green (L-0577).
       - name: Windows shard fan-in suite
         run: python3 scripts/_test/windows-shards.py
+      # scripts/ci-select.py decides which heavy suites a PR runs in
+      # pytest-crew.yml, pylint.yml, shell-suites.yml and mcp-servers.yml
+      # (C-0001). A wrong answer there is a suite skipped on a PR that needed
+      # it, so this always runs, whatever the PR changes.
+      - name: CI suite selector suite
+        run: python3 scripts/_test/ci-select.py
       # The UPDATE.md mirrors are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check
       # mode is a check nobody runs, which is worse than no check: the blocks
