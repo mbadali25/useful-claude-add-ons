@@ -206,9 +206,15 @@ def dependency_state(top, dep):
 
 def _needs_replan(top, ticket, problems):
     try:
-        state = review_ledger.status(top, ticket)["state"]
+        status = review_ledger.status(top, ticket)
     except (review_ledger.LedgerError, OSError, ValueError) as exc:
         problems.append(f"needs-replan: {CANNOT_TELL}, the review ledger could not be read ({exc})")
+        return None
+    state = status["state"]
+    if state == "EMPTY" and status.get("rounds_used"):
+        # No state, yet a round was spent: a malformed ledger, never "no replan".
+        problems.append(f"needs-replan: {CANNOT_TELL}, the review ledger has no state but "
+                        "records review rounds")
         return None
     if state == review_ledger.NEEDS_REPLAN:
         return True

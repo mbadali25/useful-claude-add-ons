@@ -164,6 +164,16 @@ def test_unrecognised_ledger_state_is_not_read_as_no_replan(tmp_path):
     assert any("UNRECOGNIZED" in p for p in got["problems"])
 
 
+def test_stateless_ledger_with_rounds_is_not_read_as_no_replan(tmp_path):
+    """Round 6: `state: null` with a spent round summarises as EMPTY."""
+    root = _repo(tmp_path)
+    _spec(root, T)
+    _ledger(root, T, json.dumps({"state": None, "rounds": [{"round": 1, "reserved": True}]}))
+    got = _view(root)
+    assert got["needs_replan"] is None
+    assert any("no state but records review rounds" in p for p in got["problems"])
+
+
 @pytest.mark.parametrize("line,word", [("- Cancelled: T-0002", "cancelled"),
                                        ("1. superseded: T-0002", "superseded"),
                                        ("* SUPERSEDED : T-0002 by T-0003", "superseded")])
