@@ -199,6 +199,45 @@ def test_a_row_and_a_prose_line_that_disagree_are_unknown(tmp_path, row, word):
     assert (state, "cannot tell" in reason) == ("unknown", True)
 
 
+@pytest.mark.parametrize("first, second", [("open", "done"), ("done", "open"),
+                                           ("cancelled", "done"), ("hold", "superseded")])
+def test_two_rows_that_disagree_are_unknown(tmp_path, first, second):
+    """Group review round 3: one ticket's two INDEX rows with different
+    status cells cannot tell, for a dependency and for the gate."""
+    rows = f"| T-0002 | {first} | low | r | t |\n| T-0002 | {second} | low | r | t |\n"
+    root = _repo(tmp_path, rows)
+    state, reason = crew_ticket_state.dependency_state(str(root), "T-0002")
+    assert (state, "cannot tell" in reason) == ("unknown", True)
+    _spec(root, "T-0002")
+    assert _view(root, "T-0002")["gate"] == "unknown"
+
+
+def test_two_rows_that_agree_are_read(tmp_path):
+    root = _repo(tmp_path, "| T-0002 | done | low | r | t |\n| t-0002 | Done | low | r | t |\n")
+    assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "closed"
+
+
+@pytest.mark.parametrize("line, word", [("- [x] Cancelled: T-0002", "cancelled"),
+                                        ("* [X] superseded: T-0002", "superseded"),
+                                        ("~~Superseded: T-0002~~", "superseded"),
+                                        ("- [x] ~~Cancelled: T-0002~~", "cancelled")])
+def test_a_checked_or_struck_closing_word_keeps_its_word(tmp_path, line, word):
+    """Group review round 3: `_DONE_RE` matches only the `[x]`/`~~` prefix,
+    so the closing word after it must still be read."""
+    root = _repo(tmp_path, f"# Work\n\n{line}\n")
+    assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == word
+
+
+def test_two_checked_lines_with_different_words_are_unknown(tmp_path):
+    root = _repo(tmp_path, "# Work\n\n- [x] Cancelled: T-0002\n- [x] Superseded: T-0002\n")
+    assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "unknown"
+
+
+def test_a_checked_done_line_closes(tmp_path):
+    root = _repo(tmp_path, "# Work\n\n- [x] Done: T-0002\n")
+    assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "closed"
+
+
 def test_two_prose_lines_that_disagree_are_unknown(tmp_path):
     root = _repo(tmp_path, "# Work\n\n- Done: T-0002\n- Cancelled: T-0002\n")
     assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "unknown"

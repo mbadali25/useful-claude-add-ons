@@ -27,7 +27,8 @@ from the ticket's INDEX status cell first, then its spec header.
 An unknown never collapses into the safe value: a dependency whose state
 cannot be read is `unknown` (and blocks), `blocked` is None when the
 `depends-on:` line cannot be read (no spec, or an unreadable one), `gate` is
-`unknown` when INDEX.md cannot be read, and `needs_replan` is None, with a
+`unknown` when INDEX.md cannot be read or two of its rows for the ticket
+disagree, and `needs_replan` is None, with a
 `problems` entry, when the ledger cannot be read -- never False.
 
 `done` counts as closed (approved 2026-09-26), like `merged`. Order for one
@@ -102,15 +103,17 @@ def _rel_index():
 def _index_cell(top, ticket):
     """`(found, cell, why)` for `ticket`'s INDEX.md table row: `found` False
     when no row names it as its id cell; `cell` the lower-cased status cell
-    ('' when the row has none); `why` set when INDEX.md cannot be read. The id
-    matching is `crew_ticket._index_closed`'s, so the two read one row."""
+    ('' when the row has none); `why` set when INDEX.md cannot be read, or when
+    two rows name it with different status cells (cannot tell which holds;
+    `crew_ticket._index_closed` would read a later done row as closed). The id
+    matching is `crew_ticket._index_closed`'s."""
     path = os.path.join(top, ".work", "INDEX.md")
     text = crew_common.read_text(path)
     if text is None:
         if os.path.lexists(path):
             return False, None, f"could not read {_rel_index()}"
         return False, None, None
-    key = ticket.casefold()
+    key, seen = ticket.casefold(), []
     for line in text.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if line.count("|") < 2 and not (line.count("|") == 1 and crew_ticket._cell_id(cells[0])):  # pylint: disable=protected-access
@@ -119,26 +122,37 @@ def _index_cell(top, ticket):
                if crew_ticket._cell_id(c)]  # pylint: disable=protected-access
         if ids and ids[0][1] == key:
             at = ids[0][0] + 1
-            return True, (cells[at].lower() if at < len(cells) else ""), None
-    return False, None, None
+            cell = cells[at].lower() if at < len(cells) else ""
+            if cell not in seen:
+                seen.append(cell)
+    if len(seen) > 1:
+        return True, None, (f"{_rel_index()} has rows for {ticket} that disagree: "
+                            + ", ".join(f"`{c}`" for c in seen))
+    return (True, seen[0], None) if seen else (False, None, None)
+
+
+# A closing word after a `[x]` or `~~` marker: `crew_state._DONE_RE` matches
+# only the marker there, so `- [x] Cancelled: T-1` must still read `cancelled`.
+_CLOSING_PROSE_RE = re.compile(
+    r"^\s*(?:[-*+]|\d+[.)])?\s*(?:(?:\[x\]|~~)\s*)*(cancelled|superseded)\s*:", re.IGNORECASE)
 
 
 def _prose_marks(top, ticket):
     """The set of marks the prose INDEX.md lines closing `ticket` by
     `crew_state._DONE_RE` give it -- the lines `crew_ticket._index_closed`
     reads as closed: the closing word (`cancelled`/`superseded`) a line names,
-    else `done`. Empty when no prose line closes it. A dependency closed by a
-    closing word never closed as done, so it must not read `closed`."""
+    after any `[x]`/`~~` marker, else `done`. Empty when no prose line closes
+    it. A dependency closed by a closing word never closed as done, so it must
+    not read `closed`."""
     text = crew_common.read_text(os.path.join(top, ".work", "INDEX.md")) or ""
     key, marks = ticket.casefold(), set()
     for line in text.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if line.count("|") >= 2 or (line.count("|") == 1 and crew_ticket._cell_id(cells[0])):  # pylint: disable=protected-access
             continue
-        marker = crew_state._DONE_RE.search(line)  # pylint: disable=protected-access
-        if marker and crew_ticket._prose_names(line, key):  # pylint: disable=protected-access
-            said = marker.group(0).lower()
-            marks.add(next((w for w in CLOSING_STATUSES if w in said), "done"))
+        if crew_state._DONE_RE.search(line) and crew_ticket._prose_names(line, key):  # pylint: disable=protected-access
+            closing = _CLOSING_PROSE_RE.match(line)
+            marks.add(closing.group(1).lower() if closing else "done")
     return marks
 
 
