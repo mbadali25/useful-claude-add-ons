@@ -23,6 +23,7 @@ import crew_train
 import review_delta
 import review_ledger as rl
 import review_patch
+import tool_fixtures
 from review_fixtures import git, init_repo
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
@@ -614,9 +615,19 @@ def test_diagram_repo_change_or_two_headers_is_stale(world, files):
                                  "plugin/crew/hooks/hooks.json", ".Crew/codemap/a.md",
                                  "changelog.md", "plugin/crew/budgets.md"])
 def test_non_allowlisted_or_look_alike_path_is_stale(world, rel):
+    """The gate names a path as git records it. On a case-folding checkout
+    (Windows, core.ignorecase; CI on #540) `.Crew/codemap/a.md` lands in the
+    existing `.crew/` and `changelog.md` overwrites `CHANGELOG.md`: git records
+    the existing spelling, so the look-alike cannot exist there to be judged,
+    and that is what is asserted instead."""
     _review(world)
     _commit(world.lane, {rel: "anchor: proj@ccccccc\n"}, "look-alike")
 
+    recorded = git(world.lane, "ls-files").splitlines()
+    folded = git(world.lane, "config", "--bool", "core.ignorecase", check=False) == "true"
+    if folded and rel not in recorded:
+        assert rel.casefold() in [path.casefold() for path in recorded], recorded
+        return
     _stale(world, rel)
 
 
@@ -832,23 +843,26 @@ def test_criss_cross_merge_bases_are_stale(world):
     _stale(world)
 
 
-def test_git_failing_inside_the_gate_reads_could_not_tell(world, tmp_path):
+def test_git_failing_inside_the_gate_reads_could_not_tell(world, tmp_path, monkeypatch):
+    """The failing git is the one `shutil.which` resolves (review_delta never
+    runs a bare `git`): a shim outside PATH, `git.cmd` on Windows, where an
+    extensionless script on PATH is never what a native lookup finds (CI on
+    #540: the real git.exe answered and the receipt was kept)."""
     _review(world)
     _main(world, {"lib.py": "def lib():\n    return 2\n"})
     _catch_up(world)
-    fake = tmp_path / "fakebin"
-    fake.mkdir()
     real = shutil.which("git")
-    (fake / "git").write_text(
-        f"#!/bin/sh\ncase \"$*\" in *merge-base*--all*) exit 128;; esac\nexec {real} \"$@\"\n",
-        encoding="utf-8")
-    (fake / "git").chmod(0o755)
-    env = dict(os.environ, PATH=f"{fake}{os.pathsep}{os.environ['PATH']}")
-    done = subprocess.run([sys.executable, _LEDGER, "--root", str(world.lane), "--ticket",
-                           TICKET, "--check-receipt"], capture_output=True, text=True,
-                          stdin=subprocess.DEVNULL, check=False, env=env)
+    sh = f"#!/bin/sh\ncase \"$*\" in *merge-base*--all*) exit 128;; esac\nexec '{real}' \"$@\"\n"
+    cmd = ("@echo off\r\n"
+           "echo %* | findstr /C:\"merge-base\" >nul || goto run\r\n"
+           "echo %* | findstr /C:\"--all\" >nul || goto run\r\n"
+           "echo fatal: broken 1>&2\r\nexit /b 128\r\n"
+           f":run\r\n\"{real}\" %*\r\nexit /b %ERRORLEVEL%\r\n")
+    tool_fixtures.which_only(monkeypatch, tmp_path / "fakebin", "git", sh, cmd)
 
-    assert done.returncode == 1 and "could not tell" in done.stdout, done.stdout + done.stderr
+    ok, message = rl.check_receipt(str(world.lane), TICKET)
+
+    assert (ok, "could not tell" in message) == (False, True), message
 
 
 def test_needs_replan_and_later_rounds_are_refused_before_the_gate(world):
