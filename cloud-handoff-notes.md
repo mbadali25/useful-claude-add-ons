@@ -50,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 06:01 UTC
+Last updated: 2026-10-05 06:03 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:25: Windows sweep r1: hypothesis WRONG (no exit-2304); #344 green (0684aa55 require_tool reviewed by coordinator: ToolNotFound is OSError -> could-not-tell) -> batch 8 ready; #395 green, #362 red only on since=1.0.378 (batch version commit resets) -> re-reviews started (notify design clash; crew_inflight refactor).
 - 11:15: #506 C-0008 review 0 BLOCK 5 FIX: templates clone fallback rm -rf's a populated user templates dir on failed update (data loss); nuclei download unverified though checksums exist; trivy sha256 untested (no-op sudo stub); no network time limits; version 0.5.8 -> 0.5.7. Sent to builder.
 - 11:05: MERGED #507 C-0009 -> c89d488e (one setup script: pwsh w/ sha256, mermaid, mcp deps, gizmoduck optional, apt sandbox, pytest/ruff pins). Env setting: 'bash scripts/cloud-env-setup.sh'.
 - 10:55: #501 C-0001 fixes pushed fa387f47 (module/package-name uniqueness via real collect-only sys.path dump; namespace pkgs may repeat; select.outputs outside if: refused), main merged, CI green 28/28. 27 sabotages red. Final re-check started.
