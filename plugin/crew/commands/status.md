@@ -29,6 +29,7 @@ summary above or below it, and do not pad it with advice.
 | `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
 | `tickets` / `open` / `owner` | `.work/tickets/`, `.work/INDEX.md`; `owner` lists `needs-owner` rows, and `cancelled` / `superseded` rows are on no line | - |
 | `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, and refunded tool-failure rounds (`review_ledger.summary`) | a ledger that will not parse |
+| `in-flight` | T-0049's markers under `<git-common-dir>/crew/inflight/` (`crew_inflight.survey`): ticket, state, runner, since, and for stale or unknown the owner's `clear` command; at most 5, then `+N more`; `none` when there are none | the directory unreadable, or `crew_inflight` not importable |
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
 | `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `agents` | `verify_agents.py`: agents a `.crew/verify.json` rule names that are not installed here (`MISSING <name> (verify.json rule: <paths>)`, at most three names); managed-policy and `--agents` agents are not checked | a plugin registry, settings scope or verify.json that will not parse |

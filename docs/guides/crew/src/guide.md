@@ -1,6 +1,6 @@
-# crew 1.0 - the full guide
+# crew 1.1 - the full guide
 
-This guide explains the whole of crew 1.0 in one place: what it is, how a
+This guide explains the whole of crew 1.1 in one place: what it is, how a
 ticket moves from an idea to a merged change, what the guards can and cannot
 see, and what to do when something goes wrong. The five task guides go deeper
 on each part, and each section below links to the one that does. Every
@@ -20,7 +20,7 @@ interactive session implements it, an independent reviewer reads the finished
 change, and deterministic gates block on failure instead of giving an
 opinion.
 
-crew 1.0 ships four agents. Each one exists because it buys something a
+crew 1.1 ships four agents. Each one exists because it buys something a
 prompt cannot: an isolated context window, a restricted tool set, or
 independent eyes.
 

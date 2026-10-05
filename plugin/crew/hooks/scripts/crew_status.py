@@ -8,6 +8,7 @@ Every section is a fact read from disk or git, or it says it could not tell.
 The `agents` line runs `verify_agents.check`: the agents `.crew/verify.json`
 names that are not installed on this machine, or `unknown` when a registry or
 settings file will not parse.
+`in-flight` lines (T-0049) are `crew_inflight.survey`'s, which only reads.
 
 `--memory` adds the context hook's own numbers by running `crew_context.py
 --stats --root <root>` from this directory when that script exists, and says
@@ -28,6 +29,7 @@ sys.dont_write_bytecode = True
 
 # pylint: disable=wrong-import-position
 import argparse  # noqa: E402
+import importlib  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402
 import subprocess  # noqa: E402
@@ -43,6 +45,7 @@ import verify_record  # noqa: E402
 from crew_common import read_text  # noqa: E402
 
 MAX_LINES = 40
+INFLIGHT_SHOWN = 5
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONTEXT_SCRIPT = os.path.join(HERE, "crew_context.py")
 _GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
@@ -168,6 +171,31 @@ def _review_lines(root):
     return lines
 
 
+def _inflight_lines(root):
+    """T-0049: one line per in-flight marker (at most INFLIGHT_SHOWN, then
+    `+N more`), with the owner's clear command for stale and unknown. An import
+    error or an unreadable directory is `unknown`, never `none`."""
+    try:
+        found = importlib.import_module("crew_inflight").survey(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return [" ".join(f"in-flight: unknown - crew_inflight could not tell: {exc!r}".split())]
+    if found["state"] != "ok":
+        return [f"in-flight: unknown - {found['why']}"]
+    entries = found["entries"]
+    if not entries:
+        return ["in-flight: none"]
+    lines = []
+    for entry in entries[:INFLIGHT_SHOWN]:
+        line = (f"in-flight: {entry['ticket']} {entry['state']} runner={entry['runner'] or '?'} "
+                f"since={entry['since'] or '?'}")
+        if entry["clear"]:
+            line += f" clear: {entry['clear']}"
+        lines.append(line)
+    if len(entries) > INFLIGHT_SHOWN:
+        lines.append(f"in-flight: +{len(entries) - INFLIGHT_SHOWN} more")
+    return lines
+
+
 def _verify_line(root):
     state, rules = verify_record.read_record(root)
     if state == "absent":
@@ -276,6 +304,7 @@ def collect(root, memory=False):
     lines += config_lines
     lines += _ticket_lines(root)
     lines += _review_lines(root)
+    lines += _inflight_lines(root)
     lines.append(_verify_line(root))
     # T-0040: native Windows only. Read from config and the machine-local
     # probe cache; runs no wsl.exe, no pwsh and no git.
