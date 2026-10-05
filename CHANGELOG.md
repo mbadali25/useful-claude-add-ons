@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — repository: the repo's own pwsh launches run on a private startup-profile cache (T-0506)
+
+- **Summary.** Every pwsh this repository's gate scripts start now gets its own throwaway
+  PowerShell startup-profile cache, so two runs at once can no longer corrupt the shared one and
+  make every later pwsh die.
+- **`scripts/pwsh-isolated.sh`** (POSIX sh). Resolves pwsh (`$PWSH`, then `pwsh`, `pwsh.exe` and the
+  four Windows paths the `.ps1` rule used to try; none is `TOOL MISSING`, exit 77), assigns
+  `XDG_CACHE_HOME` inside a fresh `mktemp -d` directory (none creatable: `TOOL BROKEN`, exit 1, pwsh
+  not started), runs pwsh with stdin from /dev/null, forwards TERM/INT/HUP to it so a `timeout`
+  still ends it, removes the directory on every exit path and exits with pwsh's own status. A
+  status of 128 or more adds one `TOOL BROKEN: pwsh` line: the tool died on a private, empty cache,
+  so no `.ps1` failed and the shared profile is ruled out. No retry. On Windows the variable is set
+  and changes nothing; not verified under Git Bash.
+- **Launch sites.** `.crew/verify.json`'s `.ps1` rule, `_verify/smoke.sh` (three launches),
+  `_verify/run-all.sh` (two) and gate-runner's `check-powershell` step all go through it.
+- **Tests.** `scripts/_test/pwsh-isolated.sh` (a stub pwsh under mktemp, one real-pwsh case that
+  says SKIPPED without pwsh; a static case that no gate site launches pwsh directly), run by a new
+  `marketplace.yml` step and gate-runner table step, and `case_no_step_launches_pwsh_directly` in
+  `scripts/_test/gate-runner.py`.
+
 ### Changed — gizmoduck 0.5.13: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
 
 - **Summary.** `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`,

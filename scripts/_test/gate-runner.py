@@ -1719,6 +1719,22 @@ def case_timeout_kills_group_outliving_leader(tmp: str) -> None:
     expect(gone, f"child {child} outlived its leader and survived the group SIGKILL")
 
 
+def case_no_step_launches_pwsh_directly(tmp: str) -> None:
+    """T-0506: every pwsh a step starts goes through scripts/pwsh-isolated.sh,
+    which gives it a private startup-profile cache."""
+    del tmp
+    runner = load_runner()
+    direct = [s.name for s in runner.TABLE if s.argv and os.path.basename(s.argv[0]) in
+              ("pwsh", "pwsh.exe")]
+    expect(not direct, f"steps start pwsh directly: {direct}")
+    step = next(s for s in runner.TABLE if s.name == "check-powershell")
+    expect(tuple(step.argv) == ("bash", "scripts/pwsh-isolated.sh", "-NoProfile", "-File",
+                                "scripts/check-powershell.ps1"), f"check-powershell argv {step.argv}")
+    expect({"bash", "pwsh"} <= set(step.needs), f"check-powershell needs {step.needs}")
+    expect(tuple(step.ci) == (("marketplace.yml", "./scripts/check-powershell.ps1"),),
+           f"check-powershell ci {step.ci}")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -1770,6 +1786,7 @@ CASES = [
     case_heavy_part_needs_step_metadata,
     case_no_group_signal_after_leader_reaped,
     case_timeout_kills_group_outliving_leader,
+    case_no_step_launches_pwsh_directly,
 ]
 
 

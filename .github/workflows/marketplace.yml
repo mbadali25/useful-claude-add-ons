@@ -136,6 +136,11 @@ jobs:
       # a new .sh as 100644 and `./script` would be a permission denied on the runner.
       - name: PowerShell exemption scoping suite
         run: bash scripts/_test/check-powershell.sh
+      # The launcher every repo gate starts pwsh through (T-0506): a private,
+      # throwaway startup-profile cache per run. The suite uses a stub pwsh under
+      # mktemp, plus one case with the runner's real pwsh.
+      - name: pwsh private-cache launcher suite
+        run: bash scripts/_test/pwsh-isolated.sh
       # Reports SKIPPED here and does its checking on a Windows machine: it is the one
       # suite that RUNS install-prerequisites.ps1, which evaluates Test-Admin at top
       # level and so cannot start on this runner. Listed anyway - a Windows-only check
