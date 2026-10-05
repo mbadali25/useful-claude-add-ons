@@ -62,7 +62,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**132 keys**: 74 settable in the machine-global file, 58 repo-only.
+**138 keys**: 76 settable in the machine-global file, 62 repo-only.
 
 Columns:
 
@@ -153,11 +153,11 @@ Columns:
 | `obsidian.vaultPath` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Vault holding the board; falls back to `memory.vaultPath` and must hold `.obsidian/`. |
 | `obsidian.boardDir` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Board folder inside the vault (relative, no `..`). |
 | `obsidian.board` | repo | `"Board.md"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects file name) | 0.11.0 or earlier | Board file name. |
-| `obsidian.columns.backlog` | repo | `"Backlog"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for backlog tickets. |
+| `obsidian.columns.backlog` | repo | `"Backlog"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for backlog tickets (`direction`, `ready`, `needs-owner`). |
 | `obsidian.columns.ready` | repo | `"Ready"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for ready tickets. |
 | `obsidian.columns.inProgress` | repo | `"In Progress"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for tickets in progress. |
 | `obsidian.columns.review` | repo | `"Review"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for tickets in review. |
-| `obsidian.columns.done` | repo | `"Done"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for done tickets. |
+| `obsidian.columns.done` | repo | `"Done"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for closed tickets (`done`, `cancelled`, `superseded`; each checked). |
 
 ### `memory`
 
@@ -188,6 +188,7 @@ Columns:
 | `context.autoClear.unsafeFocus` | repo | `false` | not validated - read by `plugin/crew/hooks/scripts/auto-clear.sh` (expects boolean) | 0.19.11 | Consent to `wtype` typing into whatever has focus. No longer read: `auto-clear.sh` refuses `wtype` whatever this says. |
 | `context.autoClear.onlyRepos` | machine-only | `null` | list of absolute repo paths, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | Narrowing only, machine file only: null narrows nothing, a list arms only those repos, `[]` or a non-list arms nothing. |
 | `context.autoClear.onlySessions` | machine-only | `null` | list of session ids, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | As `onlyRepos`, for session ids; with both set, both must match. |
+| `context.autoClear.wrapUp` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.334 | Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly `true`), only where `enabled` is armed; a repo `false` vetoes it. |
 | `context.autoWrapUp` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects boolean) | 0.19.10 | Ask for a wrap-up when the budget runs low. |
 | `context.autoResume` | repo | `true` | not validated - read by `plugin/crew/commands/migrate.md` (expects boolean) | 0.19.10 | Retired: read by nothing since 1.0.0; kept so `/crew:migrate` carries it. |
 | `context.staleHandoff.maxAgeHours` | repo | `72` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.16.33 | A handoff older than this is archived. |
@@ -333,6 +334,12 @@ Columns:
 | `change.jiraIssueType` | both | `"Change"` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string) | 0.19.31 | Jira issue type for a change request. |
 | `change.category` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Change category. |
 
+### `git`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `git.forbiddenTrailers` | both | `[]` | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `plugin/crew/hooks/scripts/crew_trailers.py`) | 1.0.328 | Commit trailer tokens the owner forbids, reported by `/crew:done`. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (CONFIG.md section 22). |
+
 ### `scope`
 
 | Setting | Layer | Default | Values | Since | Summary |
@@ -349,6 +356,10 @@ Columns:
 | `autopilot.deploy` | repo | `"none"` | `none` \| `nonprod` \| `all` | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
 | `autopilot.approval` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
 | `autopilot.questions` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
+| `autopilot.maxAutoReplans` | repo | `0` | non-negative integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.339 | Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning. |
+| `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
+| `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
+| `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 
 ### `tickets`
 
@@ -388,12 +399,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 | `autopilot.maxTicketsPerRun` | new key | repo | 3 |  | Tickets one goal run may work before it stops. |
 | `autopilot.maxTokensPerSession` | new key | repo | 2000000 |  | Token cap for one goal session. |
 | `autopilot.mode` | changes values | repo | off | `off` \| `plan` \| `backlog` | Adds `backlog`: work a goal's tickets one at a time. |
-
-### T-0017
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `context.autoClear.wrapUp` | new key | machine-arms | null |  | Machine opt-in for the automatic wrap-up; only exactly `true` arms it. |
 
 ### T-0029
 

@@ -55,7 +55,18 @@ set to `self` (or `risk`, for a `risk: low` spec), `/crew:autopilot` runs
 `crew_autopilot.py approve`. It writes what every approval route writes: `approval.json` (marked
 `approved_via: "autopilot"`), `scope-tickets.json` on a ticket's first approval, and, for a
 distinct successor plan under a spent review budget, the review ledger moved
-NEEDS_REPLAN -> IN_REVIEW. Both default off, so out of the box nothing self-approves. The
+NEEDS_REPLAN -> IN_REVIEW. Both default off, so out of the box nothing self-approves. Inside an
+`autopilot.sleep.schedule` window, `autopilot.sleep.approval` stands in for `autopilot.approval`
+(T-0053), and a receipt written asleep stops standing when the window ends if the day value would
+not have approved it: in the morning that ticket waits for `/crew:approve <id>`.
+`/crew:autopilot sleep` starts sleep mode now, until the window's end (12 hours with no window),
+and `/crew:autopilot wake` ends it now (L-0652); they write only
+`<git-common-dir>/crew/autopilot-sleep.json`. Until L-1504 a manual sleep only
+tightens: outside the window it applies a night value only where it is stricter than the day
+value. `sleep` needs `scope.allowCliApproval: true` and an override stricter than its day value, or the
+window open. Autopilot's one other ledger writer is `crew_autopilot.py auto-reject` (T-0074), only with
+`autopilot.maxAutoReplans` set: it moves the ledger REVIEWED -> NEEDS_REPLAN after a final round
+with a BLOCK. The
 approval is a step you take, not a lock.
 
 `crew_ticket.py status --ticket T-0042` prints one of three states:
@@ -100,8 +111,9 @@ the paths in six lines or fewer. It never blocks the continuation it caused.
 A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a
 regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the graph after a code
-change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path, or
-a file whose git mode changed never passes. A map claim edited without a re-anchor is listed with
+change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path,
+a file whose git mode changed, or one removed from the index but left on disk (`git rm --cached`:
+the commit deletes it) never passes. A map claim edited without a re-anchor is listed with
 `[anchor did not move]`, and belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
 cannot be read, a short anchor is ambiguous (two commits share it), the artifact dirs
 cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a
@@ -129,7 +141,9 @@ until you approve again.
 ## After two review rounds: a successor plan
 
 If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
-not count), it moves to `NEEDS_REPLAN`.
+not count), it moves to `NEEDS_REPLAN`. With `autopilot.maxAutoReplans` at 1 or more, autopilot
+does this itself for a final round with a BLOCK (`auto-reject`), then writes and approves the
+successor plan under `autopilot.approval`; the cap counts every successor plan on the ledger.
 Write a different plan and approve it. `approve` reports `review may continue`, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.

@@ -4,8 +4,11 @@
 %% Part of process-crew-brief.mmd (the overview, which keeps the re-anchoring history).
 %% handoff-read.sh:34 exits unless source is clear|compact|resume|fork;
 %%   :41 exits silently when memory.inject is on (the 1.0 default) - crew-context
-%%   delivers the handoff instead; :42 claim; :44 needs .crew/config.json.
-%% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
+%%   delivers the handoff instead; :42 claim; :48-50 needs the resolved config.json.
+%% Re-drawn for L-0680 on 2026-10-04: hr3 is the RESOLVED config.json (crew_repo_config_dir,
+%%   T-0096): a linked worktree with none of its own reads the main checkout's; own files win
+%%   whole; unknown reads only the own .crew/. A relative handoffPath still names a lane file.
+%% Dashed '?' edges: handoff-read reads only config.json (:50), never crew.json,
 %% so a 1.0-only repo with inject:false gets no handoff from either hook -
 %% traced in the sh flavour only; the ps1 body was not read past :241.
 flowchart TB
@@ -15,9 +18,9 @@ flowchart TB
         hr1 -- no --> hrx([exit 0])
         hr1 -- yes --> hr2{"memory.inject on?<br/>:41 (1.0 default: on)"}
         hr2 -- yes --> hrx
-        hr2 -- no --> hr3{".crew/config.json?<br/>:44"}
+        hr2 -- no --> hr3{"resolved config.json?<br/>(own, else main checkout's)<br/>:48-50"}
         hr3 -- no --> hrx
-        hr3 -- yes --> hr4[stale check / print note<br/>:63-89]
+        hr3 -- yes --> hr4[stale check / print note<br/>:69-95]
     end
 
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx

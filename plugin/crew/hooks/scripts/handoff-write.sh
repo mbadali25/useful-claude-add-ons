@@ -9,7 +9,19 @@ cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # .crew/crew.json alone is enough for the T-0006 PreCompact record below
 # (/crew:migrate may retire .crew/config.json); the transcript copy and the
 # skeleton handoff further down still need .crew/config.json, as before.
-[ -f .crew/config.json ] || [ -f .crew/crew.json ] || exit 0
+# L-0680: the repo config is the resolved one (_common.sh's crew_repo_config_dir,
+# T-0096): a linked worktree with none of its own reads the main checkout's; own
+# files win whole; `unknown` reads only the own .crew/. The transcripts, the
+# record and the handoff skeleton are still written here, in this checkout.
+crew_repo_config_dir .
+CREW_CFG="$CREW_CFG_DIR/config.json"
+# Own or unknown, the resolved directory IS this checkout's .crew/, so that
+# branch keeps the literal gate (tests/sabotage_resume.py anchors on its text).
+if [ "$CREW_CFG_SOURCE" = main ]; then
+  [ -f "$CREW_CFG" ] || [ -f "$CREW_CFG_DIR/crew.json" ] || exit 0
+else
+  [ -f .crew/config.json ] || [ -f .crew/crew.json ] || exit 0
+fi
 
 # No hook_once claim here on purpose: PreCompact can fire more than once per
 # session, and both writes below are idempotent (the transcript copy is
@@ -58,7 +70,7 @@ fi
 if [ -n "${CLAIM_PY:-}" ]; then
   printf '%s' "$INPUT" | "$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/crew_resume.py" precompact --root . >/dev/null 2>&1
 fi
-if [ ! -f .crew/config.json ]; then
+if [ ! -f "$CREW_CFG" ]; then
   # A crew.json-only repo: the record above is all this hook does there.
   [ -z "$CLAIM_TOKEN" ] || "$CLAIM_PY" "$CLAIM_SCRIPT" --sent "$CLAIM_TOKEN" >/dev/null 2>&1
   exit 0
@@ -78,13 +90,16 @@ if [ -f "$TRANSCRIPT" ]; then
   [ -f "$DEST" ] || FAILED=1
   KEEP=5
   if PY=$(crew_py); then
-    K=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("keepTranscripts",5))' 2>/dev/null)
+    # An integer only, as documented (CONFIG.md); a digit string, a bool or a
+    # negative is ignored and 5 are kept; past Int32.MaxValue it is clamped there
+    # -- the same as handoff-write.ps1.
+    K=$("$PY" -c 'import json,sys;k=json.load(open(sys.argv[1])).get("context",{}).get("keepTranscripts",5);print(min(k,2147483647) if type(k) is int and k>=0 else 5)' "$CREW_CFG" 2>/dev/null)
     case "$K" in ''|*[!0-9]*) ;; *) KEEP="$K" ;; esac
   fi
   ls -1t .crew/transcripts/*.jsonl 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f
 fi
 
-PY=$(crew_py) && HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
+PY=$(crew_py) && HANDOFF=$(crew_handoff_path "$PY" "$CREW_CFG")
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 
 # If no handoff exists, write a factual skeleton from the repo, not from memory.

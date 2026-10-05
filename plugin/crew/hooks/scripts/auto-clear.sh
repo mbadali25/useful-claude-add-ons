@@ -30,10 +30,25 @@
 #     never clears.
 #   - the handoff was written after that request, is not a stub, and is not
 #     PreCompact's automatic skeleton.
-#   - the target is uniquely identified: a tmux pane whose pid is an ancestor
-#     of this hook, or exactly one X11 window owned by an ancestor (a
-#     windowTitle is a fallback that refuses on zero or several matches).
-#     wtype cannot identify anything and is refused.
+#   - with context.autoClear.wrapUp armed (T-0017), the wrap-up's results
+#     are on disk: the handoff's head: is HEAD, its branch: is the checkout,
+#     no tracked file is modified, and its resume: line parses (or is
+#     `resume: none`). This refusal is also printed as a systemMessage.
+#   - this session is bound to its OWN process (T-0016): the nearest ancestor
+#     named by a Claude Code session record (${CLAUDE_CONFIG_DIR:-~/.claude}/
+#     sessions/<pid>.json) with this session's id and that process's start
+#     time. A headless session (an sdk* entrypoint such as `claude -p`, or no
+#     controlling terminal) types nothing: it gets one notice naming its
+#     handoff and saying the process that started it must restart it. A
+#     session that cannot be identified, or whose entrypoint nobody measured,
+#     types nothing either; `auto` falls back to plain notify.
+#   - the target is uniquely identified FROM THAT PROCESS: a tmux pane whose
+#     pid is the session's process or an ancestor of it, or exactly one X11
+#     window owned by an ancestor and hosting no other terminal (a
+#     windowTitle is a fallback that refuses on zero or several matches, and
+#     whenever another session is live). The walk refuses when it passes
+#     through another Claude Code session. wtype cannot identify anything and
+#     is refused.
 #
 # Every refusal is written to .crew/.autoclear.log, because a Stop hook's
 # stderr is invisible on exit 0.
@@ -44,6 +59,10 @@
 #   bash auto-clear.sh --session ID --dry-run  # print the plan, send nothing
 #   bash auto-clear.sh --force                 # skip the handoff conditions (testing)
 #   bash auto-clear.sh --resume --session ID --source clear|compact [--dry-run]
+#
+# --force skips the handoff conditions AND the T-0017 wrap-up check. It is for
+# testing by hand only: hooks.json and context-watch never pass it, and no
+# repo or machine config key can turn it on.
 #
 # Called from context-watch.sh with this session's id and root. `--resume`
 # (T-0013) is called from the context hook on SessionStart: see the resume
@@ -235,6 +254,13 @@ SENT_MARKER=".crew/.autoclear-sent-${KEY}"
 [ "$STATUS" = "off" ] && exit 0
 if [ "$STATUS" != "send" ]; then
   note "refusing - $REASON"
+  # T-0017: a wrap-up refusal is also SHOWN, on stdout, which context-watch
+  # forwards: an armed session that is not cleared says why.
+  case "$REASON" in
+    "wrap-up: "*)
+      "$PY" -c 'import json,sys; print(json.dumps({"systemMessage": "crew wrap-up: not clearing - " + sys.argv[1]}))' \
+        "${REASON#wrap-up: }" 2>/dev/null ;;
+  esac
   exit 0
 fi
 
@@ -250,6 +276,12 @@ if [ "$DRY_RUN" -eq 1 ]; then
   # delay applies here".
   DELAY_LINE="delay: ${DELAY}s"
   [ "$RESOLVED" = "notify" ] && DELAY_LINE="delay: n/a (notify sends no keystroke)"
+  if [ "$RESOLVED" = "notify-headless" ]; then
+    # T-0016: the notice travels in the plan's reason field.
+    printf 'autoclear: would send\n  method: notify-headless\n  command: %s\n  delay: n/a (nothing is typed)\n  message: %s\n' \
+      "$COMMAND" "$REASON"
+    exit 0
+  fi
   # PARITY: `notify` identifies no window, so LABEL is empty -- printing an
   # empty `target: ` line there said nothing a reader could use, and
   # auto-clear.ps1's own notify dry-run never prints one at all. Matched here
@@ -289,6 +321,14 @@ fi
 # race to wait out with a delay. Printed and logged synchronously, from THIS
 # process, never a detached child. Never claims the handoff was cleared or
 # compacted: only that it is safe to run the configured command yourself.
+# T-0016: a headless session (no terminal of its own) gets its notice once,
+# claimed like notify. Logged in full as well: a `claude -p` parent may never
+# show the systemMessage, so the log is the durable copy.
+if [ "$RESOLVED" = "notify-headless" ]; then
+  "$PY" -c 'import json,sys; print(json.dumps({"systemMessage": sys.argv[1]}))' "$REASON" 2>/dev/null
+  note "sent - method notify-headless: $REASON"
+  exit 0
+fi
 if [ "$RESOLVED" = "notify" ]; then
   MSG="crew: handoff written and verified for this session - it is safe to run ${COMMAND} now (auto-clear will not type it for you)."
   "$PY" -c 'import json,sys; print(json.dumps({"systemMessage": sys.argv[1]}))' "$MSG" 2>/dev/null
@@ -301,7 +341,14 @@ fi
 # something the suite legitimately exercises, and an early exit made 20 cases
 # assert the inhibit message instead of the refusal they were written for.
 # Only the keystroke is suppressed. See the .ps1 twin.
-if [ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ]; then
+#
+# CREW_AUTOCLEAR_INHIBIT=spawn goes one step further and still builds and
+# spawns the detached sender, which stops after its sleep, before any
+# keystroke (the guard it carries below). The suite needs that for the
+# spawn itself (fd 3, the sleep argument, the process-group reap), and the
+# process/window stubs are honoured only while the inhibit is set, so this
+# keeps "a stub never steers a keystroke" true for those cases too.
+if [ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ] && [ "${CREW_AUTOCLEAR_INHIBIT}" != "spawn" ]; then
   note "would have sent, but CREW_AUTOCLEAR_INHIBIT is set"
   exit 0
 fi
@@ -310,6 +357,7 @@ send_script=$(mktemp) || { note "refusing - could not create the sender script";
 {
   echo '#!/usr/bin/env bash'
   echo "sleep $DELAY"
+  printf '[ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ] && { rm -f -- %q; exit 0; }\n' "$send_script"
   case "$RESOLVED" in
     tmux)
       # -l sends the string literally, so a command containing ; or " is safe.

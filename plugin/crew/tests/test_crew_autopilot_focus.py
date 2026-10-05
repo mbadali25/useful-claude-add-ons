@@ -2,12 +2,16 @@
 
     python3 -m pytest plugin/crew/tests/test_crew_autopilot_focus.py -q
 
-Focus is this worktree's active-ticket pointer
-(`crew_ticket.activate` / `deactivate` / `resolve_active`): `focus <id>` sets
-it (and `activate` records `.crew/.scope-base`, whose line focus shows), `focus off` clears it, `focus` shows it. While it is set, the router
-refuses another ticket, `assign` and `goal`; once the plan is approved, `next`
-runs the completion audit read-only and stops as `drift` on any changed path
-outside Touch. Every repository is built under tmp_path; nothing touches the
+Focus is explicit (owner decision, 2026-10-05): it is on only once `focus
+<id>` writes this worktree's entry in `<git-common-dir>/crew/autopilot-focus.json`
+(re-pointing the active ticket through `crew_ticket.activate` when it names
+another, which records `.crew/.scope-base`, whose line focus shows); `focus
+off` drops the entry and leaves the pointer; `focus` shows it. An active-ticket
+pointer alone is never a focus. While focus is set, the router refuses another
+ticket, `assign` and `goal`; `sleep` and `wake` always run; a marker that
+cannot be read is could-not-tell and refuses as if focused. Once the plan is
+approved, `next` runs the completion audit read-only and stops as `drift` on
+any changed path outside Touch. Every repository is built under tmp_path; nothing touches the
 real one or ~/.claude.
 """
 import ast
@@ -19,6 +23,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
+import crew_route
 import crew_ticket
 from review_fixtures import git
 from scope_fixtures import approve_as_user, make_repo
@@ -60,6 +65,18 @@ def _pointer(root):
         return json.load(handle)
 
 
+def _marker(root):
+    path = crew_autopilot.focus_path(str(root))
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _corrupt_marker(root, text="{not json"):
+    _write(crew_autopilot.focus_path(str(root)), text)
+
+
 def _crew_state(root):
     return {p: v for p, v in _snapshot(root).items()
             if os.sep + "crew" + os.sep in p and ".work" not in p}
@@ -80,7 +97,7 @@ def _cli(root, capsys, *rest):
     return code, capsys.readouterr().out
 
 
-# --- step 1: focus over the active-ticket pointer ------------------------------
+# --- step 1: focus is its own marker, never the active-ticket pointer -----------
 
 def test_focus_set_writes_this_worktree_only(tmp_path):
     root = _two(tmp_path)
@@ -91,10 +108,10 @@ def test_focus_set_writes_this_worktree_only(tmp_path):
     ok, line = crew_autopilot.focus_set(str(root), T)
 
     top = crew_ticket.toplevel(str(root))
-    assert (ok, line.startswith(f"focus={T}"), _pointer(root),
+    assert (ok, line.startswith(f"focus={T}"), _pointer(root), _marker(root),
             crew_autopilot.focus_state(str(root))["focus"],
             crew_autopilot.focus_state(str(other))["focus"]) == (
-        True, True, {top: T}, T, None)
+        True, True, {top: T}, {top: T}, T, None)
 
 
 def test_focus_refuses_folderless_ticket(tmp_path):
@@ -136,11 +153,12 @@ def test_focus_off_clears_this_worktree_only(tmp_path):
 
     ok, line = crew_autopilot.focus_off(str(root))
 
+    tops = crew_ticket.toplevel(str(root)), crew_ticket.toplevel(str(other))
     assert (ok, line, crew_autopilot.focus_state(str(root))["focus"],
             crew_autopilot.focus_state(str(other))["focus"],
-            _pointer(root)) == (
+            _marker(root), _pointer(root)) == (
         True, f"focus=none (released {T})", None, OTHER,
-        {crew_ticket.toplevel(str(other)): OTHER})
+        {tops[1]: OTHER}, {tops[0]: T, tops[1]: OTHER})
 
 
 def test_focus_off_with_nothing_set_says_so(tmp_path):
@@ -149,15 +167,26 @@ def test_focus_off_with_nothing_set_says_so(tmp_path):
     assert crew_autopilot.focus_off(str(root)) == (True, "focus=none (nothing was set)")
 
 
-def test_focus_off_of_an_unparseable_pointer_is_not_read_as_released(tmp_path):
+def test_focus_off_of_an_unparseable_marker_is_not_read_as_released(tmp_path):
     root = _focused(tmp_path)
-    path = os.path.join(crew_ticket.state_dir(str(root)), "active-ticket")
-    _write(path, "{not json")
+    _corrupt_marker(root)
 
     ok, line = crew_autopilot.focus_off(str(root))
 
-    assert (ok, line.startswith("focus=broken"), "could not clear" in line) == (
+    assert (ok, line.startswith("focus=unknown"), "could not clear" in line) == (
         False, True, True)
+
+
+def test_focus_off_removes_the_marker_and_keeps_the_pointer(tmp_path):
+    root = _two(tmp_path)
+    crew_ticket.activate(str(root), T)
+    before = _crew_state(root)
+    crew_autopilot.focus_set(str(root), T)
+
+    ok, _line = crew_autopilot.focus_off(str(root))
+
+    assert (ok, _crew_state(root) == before, os.path.exists(crew_autopilot.focus_path(
+        str(root))), _pointer(root)) == (True, True, False, {crew_ticket.toplevel(str(root)): T})
 
 
 def test_focus_show_index_fallback_is_not_focus(tmp_path):
@@ -178,14 +207,37 @@ def test_focus_show_set(tmp_path):
     assert crew_autopilot.focus_show(str(root)) == (True, f"focus={T}")
 
 
-def test_focus_show_broken(tmp_path):
+def test_focus_show_pointer_alone_is_not_focus(tmp_path):
+    root = _two(tmp_path)
+    crew_ticket.activate(str(root), T)
+
+    got = crew_autopilot.focus_state(str(root))
+
+    assert (got["pointer"], got["focus"], got["unknown"], _marker(root),
+            crew_autopilot.focus_show(str(root))) == (T, None, "", None, (True, "focus=none"))
+
+
+@pytest.mark.parametrize("text", ["{not json", "[]", json.dumps({"x": 1}).replace("x", "{top}")])
+def test_focus_show_unknown_marker(tmp_path, text):
+    root = _two(tmp_path)
+    top = crew_ticket.toplevel(str(root))
+    _corrupt_marker(root, text.replace("{top}", top.replace("\\", "\\\\")))
+
+    ok, line = crew_autopilot.focus_show(str(root))
+    got = crew_autopilot.focus_state(str(root))
+
+    assert (ok, line.startswith("focus=unknown "), got["focus"], bool(got["unknown"])) == (
+        True, True, None, True)
+
+
+def test_focus_show_broken_pointer_is_not_focus(tmp_path):
     root = _two(tmp_path)
     _break(root)
 
-    ok, line = crew_autopilot.focus_show(str(root))
+    got = crew_autopilot.focus_state(str(root))
 
-    assert (ok, line.startswith("focus=broken "), OTHER in line,
-            crew_autopilot.focus_state(str(root))["broken"]) == (True, True, True, True)
+    assert (got["broken"], got["focus"], crew_autopilot.focus_show(str(root))) == (
+        True, None, (True, "focus=none"))
 
 
 def test_focus_refuses_to_set_over_a_broken_pointer(tmp_path):
@@ -195,8 +247,43 @@ def test_focus_refuses_to_set_over_a_broken_pointer(tmp_path):
 
     ok, line = crew_autopilot.focus_set(str(root), T)
 
-    assert (ok, "broken" in line, RELEASE in line, _crew_state(root) == before) == (
-        False, True, True, True)
+    assert (ok, "broken" in line, _crew_state(root) == before, _marker(root)) == (
+        False, True, True, None)
+
+
+def test_focus_refuses_to_set_over_an_unknown_marker(tmp_path):
+    root = _two(tmp_path)
+    _corrupt_marker(root)
+    before = _crew_state(root)
+
+    ok, line = crew_autopilot.focus_set(str(root), T)
+
+    assert (ok, "could not be told" in line, _crew_state(root) == before) == (False, True, True)
+
+
+def test_focus_set_over_a_pointer_on_the_same_ticket_writes_only_the_marker(tmp_path):
+    root = _two(tmp_path)
+    crew_ticket.activate(str(root), T)
+    before = _crew_state(root)
+    base = (root / ".crew" / ".scope-base").read_bytes()
+
+    ok, line = crew_autopilot.focus_set(str(root), T)
+
+    after = _crew_state(root)
+    assert (ok, sorted(set(after) - set(before)), {p: after[p] for p in before} == before,
+            (root / ".crew" / ".scope-base").read_bytes() == base, "->" in line) == (
+        True, [crew_autopilot.focus_path(str(root))], True, True, False)
+
+
+def test_focus_set_re_points_a_pointer_on_another_ticket_and_says_so(tmp_path):
+    root = _two(tmp_path)
+    crew_ticket.activate(str(root), OTHER)
+
+    ok, line = crew_autopilot.focus_set(str(root), T)
+
+    top = crew_ticket.toplevel(str(root))
+    assert (ok, f"active ticket: {OTHER} -> {T}" in line, _pointer(root), _marker(root)) == (
+        True, True, {top: T}, {top: T})
 
 
 @pytest.mark.parametrize("rest", [[], ["--ticket", T], ["--ticket", OTHER], ["--off"],
@@ -382,21 +469,41 @@ def test_guard_allows_status_and_focus_off(tmp_path, text, want):
     assert (got["sub"], got["stop"]) == want
 
 
-@pytest.mark.parametrize("text", ["", "run", f"run {T}", T, "assign", "goal", "--goal",
-                                  "focus", f"focus {T}"])
-def test_guard_broken_pointer_refuses(tmp_path, text):
+@pytest.mark.parametrize("sub,ticket", [("run", ""), ("run", T), ("assign", ""), ("goal", ""),
+                                        ("focus", "")])
+def test_guard_broken_pointer_without_focus_is_no_focus(tmp_path, sub, ticket):
+    """A broken pointer is not a focus: the guard says nothing, and `next`'s
+    own ticket-mismatch stop is what refuses to drive."""
     root = _two(tmp_path)
     _break(root)
 
+    assert crew_autopilot.focus_guard(str(root), sub, ticket) is None
+
+
+@pytest.mark.parametrize("text", ["", "run", f"run {T}", T, "assign", "goal", "--goal"])
+def test_guard_focus_with_a_pointer_elsewhere_refuses(tmp_path, text):
+    """Focused on T-1, then the human re-points the active ticket at T-2:
+    nothing may run on either until focus T-1 re-points it or focus off."""
+    root = _focused(tmp_path)
+    crew_ticket.activate(str(root), OTHER)
+
     got = crew_autopilot.route_args(str(root), text)
 
-    assert (got["stop"], "broken" in got["reason"], RELEASE in got["reason"]) == (
-        True, True, True)
+    assert (got["stop"], f"focus is on {T}" in got["reason"], f"names {OTHER}" in got["reason"],
+            RELEASE in got["reason"]) == (True, True, True, True)
+
+
+@pytest.mark.parametrize("text", ["status", "focus off", "focus", f"focus {T}", "sleep", "wake"])
+def test_guard_focus_with_a_pointer_elsewhere_allows_release_and_re_point(tmp_path, text):
+    root = _focused(tmp_path)
+    crew_ticket.activate(str(root), OTHER)
+
+    assert crew_autopilot.route_args(str(root), text)["stop"] is False
 
 
 @pytest.mark.parametrize("text", ["status", "focus off"])
 def test_guard_broken_pointer_allows_status_and_focus_off(tmp_path, text):
-    root = _two(tmp_path)
+    root = _focused(tmp_path)
     _break(root)
 
     assert crew_autopilot.route_args(str(root), text)["stop"] is False
@@ -456,6 +563,161 @@ def test_route_cli_prints_off_only_for_focus(tmp_path, capsys):
 def test_focus_is_available_and_no_longer_arriving():
     assert ("focus" in crew_autopilot.AVAILABLE, "focus" in crew_autopilot.ARRIVES) == (
         True, False)
+
+
+# --- explicit focus (owner decision, 2026-10-05) -------------------------------
+# A pointer alone is not focus, so plain text that main's router (T-0057,
+# L-0662) sends to assign, goal, wave or split still goes there.
+
+_LATER = ("wave", "split")
+_PLAIN = [("take care of the login audit", "/crew:autopilot assign the login audit"),
+          ("work toward zero flaky tests", "/crew:autopilot goal zero flaky tests"),
+          ("run T-1 and T-2 in parallel", "/crew:autopilot wave T-1 T-2"),
+          ("split it", "/crew:autopilot split T-1"),
+          ("T-1 is too big", "/crew:autopilot split T-1")]
+
+
+def _live(monkeypatch):
+    """Every subcommand available, wave and split known: as each lands."""
+    subs = tuple(crew_autopilot.SUBCOMMANDS) + _LATER
+    monkeypatch.setattr(crew_autopilot, "SUBCOMMANDS", subs)
+    monkeypatch.setattr(crew_autopilot, "AVAILABLE", frozenset(subs))
+
+
+def _pointed(tmp_path):
+    """T-1 and T-2, the active-ticket pointer on T-1, and no focus."""
+    root = _two(tmp_path)
+    crew_ticket.activate(str(root), T)
+    return root
+
+
+@pytest.mark.parametrize("prompt,command", _PLAIN)
+def test_plain_text_routes_with_a_pointer_and_no_focus(tmp_path, monkeypatch, prompt, command):
+    root = _pointed(tmp_path)
+    _live(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (crew_autopilot.focus_state(str(root))["pointer"], got["outcome"],
+            got["command"], got["unavailable"]) == (T, "route", command, False)
+
+
+@pytest.mark.parametrize("sub", ["assign", "goal", "wave", "split", "deploy"])
+def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
+    """Today's AVAILABLE: assign and goal stop as arriving, an unknown name as
+    unknown -- never as focus."""
+    root = _pointed(tmp_path)
+
+    got = crew_autopilot.route(str(root), sub)
+
+    assert (crew_autopilot.focus_guard(str(root), sub), "focus is on" in got["reason"],
+            "arrives with" in got["reason"] or got["reason"] == crew_autopilot.UNKNOWN_SUB) == (
+        None, False, True)
+
+
+@pytest.mark.parametrize("prompt,command", _PLAIN)
+def test_plain_text_under_focus_asks_with_the_focus_refusal(tmp_path, monkeypatch, prompt,
+                                                           command):
+    root = _focused(tmp_path)
+    _live(monkeypatch)
+
+    got = crew_route.decide(str(root), prompt)
+
+    assert (got["outcome"], got["command"], f"focus is on {T}" in got["reason"],
+            command.split(" ", 2)[1] in got["reason"], RELEASE in got["reason"]) == (
+        "ask", None, True, True, True)
+
+
+def test_plain_text_focus_on_routes_now_that_focus_is_available(tmp_path):
+    root = _pointed(tmp_path)
+
+    got = crew_route.decide(str(root), "focus on T-2")
+
+    assert (got["outcome"], got["command"], got["ticket"]) == (
+        "route", "/crew:autopilot focus T-2", OTHER)
+
+
+@pytest.mark.parametrize("text", [f"run {OTHER}", OTHER, "assign", "goal", f"focus {OTHER}"])
+def test_focus_then_off_restores_the_unfocused_answer(tmp_path, text):
+    root = _pointed(tmp_path)
+    unfocused = crew_autopilot.route_args(str(root), text)
+    crew_autopilot.focus_set(str(root), T)
+    focused = crew_autopilot.route_args(str(root), text)
+    crew_autopilot.focus_off(str(root))
+
+    assert (focused["stop"], f"focus is on {T}" in focused["reason"],
+            crew_autopilot.route_args(str(root), text)) == (True, True, unfocused)
+
+
+@pytest.mark.parametrize("state", ["none", "pointer", "focused", "unknown"])
+@pytest.mark.parametrize("text", ["sleep", "wake"])
+def test_sleep_and_wake_always_route(tmp_path, state, text):
+    root = _two(tmp_path)
+    if state == "pointer":
+        crew_ticket.activate(str(root), T)
+    elif state == "focused":
+        crew_autopilot.focus_set(str(root), T)
+    elif state == "unknown":
+        _corrupt_marker(root)
+
+    got = crew_autopilot.route_args(str(root), text)
+
+    assert (got["sub"], got["stop"], crew_autopilot.focus_guard(str(root), text)) == (
+        text, False, None)
+
+
+@pytest.mark.parametrize("text", ["", "run", f"run {T}", T, f"run {OTHER}", "assign", "goal",
+                                  "--goal", "focus", f"focus {T}"])
+def test_unknown_marker_refuses_start_and_switch(tmp_path, text):
+    """Could-not-tell is its own value: the marker cannot be read, so whether
+    focus is on cannot be told, and nothing may start or switch work."""
+    root = _pointed(tmp_path)
+    _corrupt_marker(root)
+
+    got = crew_autopilot.route_args(str(root), text)
+
+    assert (got["stop"], "could not be told" in got["reason"], RELEASE in got["reason"]) == (
+        True, True, True)
+
+
+@pytest.mark.parametrize("text", ["status", "focus off", "sleep", "wake"])
+def test_unknown_marker_allows_status_release_sleep_and_wake(tmp_path, text):
+    root = _pointed(tmp_path)
+    _corrupt_marker(root)
+
+    assert crew_autopilot.route_args(str(root), text)["stop"] is False
+
+
+def test_unknown_marker_entry_that_is_not_an_id_refuses(tmp_path):
+    root = _pointed(tmp_path)
+    _write(crew_autopilot.focus_path(str(root)),
+           json.dumps({crew_ticket.toplevel(str(root)): "../etc"}))
+
+    got = crew_autopilot.focus_guard(str(root), "run", OTHER)
+
+    assert "could not be told" in (got or "")
+
+
+def test_unknown_marker_stops_next_as_drift(tmp_path):
+    root = _approved(tmp_path)
+    _corrupt_marker(root)
+
+    got = crew_autopilot.next_phase(str(root), T)
+
+    assert (got["phase"], got["stop"], "could not be told" in got["reason"]) == (
+        "drift", True, True)
+
+
+def test_unknown_marker_in_another_worktree_does_not_unlock_this_one(tmp_path):
+    """The marker is one file for every worktree: unreadable, it is unknown
+    for all of them, never an absent entry."""
+    root = _focused(tmp_path)
+    other = tmp_path / "wt2"
+    git(root, "worktree", "add", "-q", str(other), "-b", "second")
+    _corrupt_marker(other)
+
+    assert (crew_autopilot.focus_state(str(root))["focus"],
+            bool(crew_autopilot.focus_state(str(root))["unknown"])) == (None, True)
 
 
 # --- step 3: the drift stop, and where findings go -------------------------------
@@ -650,10 +912,12 @@ def test_command_routes_focus_to_its_section_and_the_cli():
     text = " ".join(_command().split())
 
     assert ("`sub=focus`: section 6 only" in text,
+            "Focus is on only once `focus <ticket>` sets it, never from the active ticket "
+            "alone" in text,
             "crew_autopilot.py focus --root ." in text,
             "`focus --findings --ticket <ticket>`" in text,
             "never fix an out-of-scope finding in the diff" in text.lower(),
-            "`drift`" in text) == (True, True, True, True, True)
+            "`drift`" in text) == (True, True, True, True, True, True)
 
 
 def _calls_to(tree, attr):
@@ -668,16 +932,16 @@ def _calls_to(tree, attr):
     return found
 
 
-def test_deactivate_has_one_call_site():
+def test_focus_never_deactivates_and_activates_only_from_focus_set():
+    """Explicit focus: `focus off` drops the marker, never the pointer, so the
+    module calls `crew_ticket.deactivate` nowhere; `activate` only from
+    `focus_set`, the re-point."""
     with open(_SCRIPT, encoding="utf-8") as handle:
         source = handle.read()
     tree = ast.parse(source)
-    module_level = [n for n in tree.body[1:]
-                    if not isinstance(n, (ast.FunctionDef, ast.ClassDef))
-                    and "deactivate" in ast.dump(n)]
 
-    assert (_calls_to(tree, "deactivate"), module_level,
-            source.count("deactivate(")) == (["focus_off"], [], 1)
+    assert (_calls_to(tree, "deactivate"), source.count("deactivate("),
+            _calls_to(tree, "activate")) == ([], 0, ["focus_set"])
 
 
 def test_focus_off_is_reached_only_from_the_off_flag():

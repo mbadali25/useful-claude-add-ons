@@ -13,6 +13,9 @@
                                      (at most 12 lines; --json is one line)
     python3 crew_autopilot.py approve --root . --ticket <id>
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
+    python3 crew_autopilot.py sleep --root . [--by <text>]
+    python3 crew_autopilot.py wake --root .
+    python3 crew_autopilot.py auto-reject --root . --ticket <id>
     python3 crew_autopilot.py focus --root . [--ticket <id> | --off |
                                     --findings --ticket <id>]
 
@@ -20,41 +23,50 @@ T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only except
-`approve`, and only when `approval_policy` allows under the configured policy;
-it never accepts a review. That is the single exception (T-0010, below):
+`approve` and `auto-reject`, each only when its policy allows under the
+configured setting; it never accepts a review. Those are the two policy
+exceptions (T-0010 and T-0074, below), and L-0652's `sleep` and `wake` the
+only other writers: each writes or removes only
+`<git-common-dir>/crew/autopilot-sleep.json`, the manual sleep state
+(`crew_sleep`'s docstring; `sleep` only where `scope.allowCliApproval` is
+exactly true).
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
 T-0072's `deploy-allowed` write no file. `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
 all under `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
 ramp's list, on a ticket's first approval; and, when the review ledger is
 NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
-NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation). `auto-reject` writes only
+the review ledger, through `review_ledger.reject`: REVIEWED -> NEEDS_REPLAN, with
+`rejected.by` the constant AUTO_REJECT_BY. Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
 keeps its own bytecode setting. T-0020's `focus` is a script subcommand that
 writes too, and approves nothing: `focus --ticket` writes this worktree's entry
-in `<git-common-dir>/crew/active-ticket` and the ticket's start in
-`.crew/.scope-base` (`crew_ticket.activate`, which calls `scope_base.record`);
-`focus --off` drops only the entry (`crew_ticket.deactivate`) (below).
+in `<git-common-dir>/crew/autopilot-focus.json` and, when the active-ticket
+pointer names another ticket or none, re-points it (`crew_ticket.activate`,
+which records `.crew/.scope-base`); `focus --off` drops only the marker entry
+(below).
 
 ## focus -- a scope lock on one ticket (T-0020)
 
-Focus is this worktree's active-ticket pointer: no state file of its own, no
-new hook; setting it also records `.crew/.scope-base`, whose line `focus` shows
-(a could-not-tell or fallback included). `focus_state` reads the pointer;
-only `resolve_active`'s source `active-ticket` is a focus, never the
-`.work/INDEX.md` fallback. `focus_set`
-activates a ticket that has a `.work/tickets/<id>/` folder, refusing a broken
-pointer or one already naming a different ticket; `focus_off` is the module's
-one `crew_ticket.deactivate` call, reached only from the `--off` the owner's
-own `focus off` routes to. While focused, `focus_guard` refuses `run` of any
-other ticket (named, or from the handoff in `resume`), `assign` and `goal`; a
-broken pointer refuses everything but `status` and `focus off`. Once the
-focused ticket's plan is approved, every `next` runs the completion audit's own
-`audit(root, ticket)` (read-only): a changed path outside Touch, or an audit
-that could not run, stops as `drift`. `findings_target` names where an
-out-of-scope finding goes: `TODO.md` when the approved Touch covers it, else
-`.work/tickets/<id>/out-of-scope.md`. Every `focus` output ends with
-FOCUS_REMINDER: Claude Code's built-in `/focus` only toggles the display.
+Focus is explicit (owner decision, 2026-10-05): it is on only once `focus
+<id>` writes this worktree's entry in the focus marker (`focus_path`), and
+`focus off` is the only thing that drops it. The active-ticket pointer alone is
+never a focus, so with no marker entry `route` answers exactly as without
+T-0020. No new hook. `focus_state` reads the marker; one that does not parse,
+cannot be read, or holds a non-id entry is `unknown` -- could-not-tell, its
+own value, never "no focus" -- and `focus_guard` then refuses everything but
+`status`, `sleep`, `wake` and `focus off`, and `next` stops as `drift`. While
+focused, `focus_guard` refuses `run` of any other ticket (named, or from the
+handoff in `resume`), `assign`, `goal` and any other subcommand, and all but
+`focus <id>` while the pointer disagrees with the focus; `sleep` and `wake`
+always run (L-0652). Once the focused ticket's plan is approved, every `next`
+runs the completion audit's own `audit(root, ticket)` (read-only): a changed
+path outside Touch, or an audit that could not run, stops as `drift`.
+`findings_target` names where an out-of-scope finding goes: `TODO.md` when the
+approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`. Every
+`focus` output ends with FOCUS_REMINDER: Claude Code's built-in `/focus` only
+toggles the display.
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -87,9 +99,10 @@ force says `take`. Exit 0 valid, 1 not.
 
   no direction.md                        brainstorm          stop
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
-  INDEX status done/merged/closed/...    closed              stop
+  INDEX status `needs-owner` (T-0037)    needs-owner         stop (names open questions)
+  INDEX status done/cancelled/superseded closed              stop (and merged/closed/...)
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
-  spec header `status: done`             closed              stop
+  spec header done/cancelled/superseded  closed              stop (quotes split-into:)
   `## Open questions` with an item       open-questions      stop
   no spec.md                             spec                /crew:spec <id>
   spec fails crew_ticket.validate        spec                stop
@@ -97,16 +110,24 @@ force says `take`. Exit 0 valid, 1 not.
   plan fails crew_ticket.validate        plan                stop
   approval not accepted                  approve             stop, unless the policy allows
   review ledger UNKNOWN                  review              stop
-  review ledger NEEDS_REPLAN             replan              stop
+  review ledger NEEDS_REPLAN             replan              stop, unless auto-rejected
   no review round under this plan        implement           /crew:implement <id>
   latest round still reserved            review              stop
-  latest round FINDINGS, not accepted    accept-review       stop
+  latest round FINDINGS, not accepted    accept-review       stop, unless auto-replan
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off):
+an out-of-rounds FINDINGS round with a BLOCK that `auto_replan_policy` allows
+is `auto-replan`, whose command is `auto-reject`; refused only by the cap it
+is the `auto-replan-cap` stop and names every successor plan. A NEEDS_REPLAN
+that autopilot's own reject of the current plan's latest round wrote, whose
+round still passes the policy's round checks and is still allowed, is `replan`
+without a stop. `status` reads neither route (`policy=False`).
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -166,11 +187,14 @@ verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
 not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
 import argparse
+import datetime
 import importlib
 import json
 import os
 import re
+import stat
 import sys
+import threading
 
 if __name__ == "__main__":
     # Before the sibling imports: the direct CLI writes no bytecode either.
@@ -178,6 +202,7 @@ if __name__ == "__main__":
 
 import crew_common
 import crew_config
+import crew_sleep
 import crew_state
 import crew_ticket
 import review_ledger
@@ -206,7 +231,17 @@ REFRESH_UNAVAILABLE = "refresh-artifacts unavailable (T-0008 not landed)"
 # `direction`").
 DIRECTION_APPROVED = ("ready", "open", "spec", "planned", "approved", "in-progress",
                       "implement", "review")
-INDEX_DONE = ("done", "closed", "merged", "shipped", "complete", "completed")
+# `cancelled` and `superseded` are T-0037's closed words (crew_tracker.CLOSED_STATUSES).
+INDEX_DONE = ("done", "closed", "merged", "shipped", "complete", "completed", "cancelled", "superseded")
+# spec.md header words that close a ticket. `merged` is not one: a header
+# `merged` keeps its old meaning here (T-0037 left it as it was).
+HEADER_CLOSED = ("done", "cancelled", "superseded")
+# T-0037's open status that waits on the owner (crew_tracker.OWNER_STATUSES):
+# INDEX and tracker only, never a spec header word.
+NEEDS_OWNER = "needs-owner"
+# The line under a closed spec's header naming what replaced it (T-0037,
+# T-0052): `split-into: T-2, T-3` or `superseded-by: T-9`.
+_SUCCESSOR = re.compile(r"^(?:split-into|superseded-by)\s*:\s*\S.*$", re.IGNORECASE)
 
 # Stops `next` enforces in code, beyond the ones the phase table names.
 FIXED_STOPS = (
@@ -221,10 +256,12 @@ FIXED_STOPS = (
                           "approved"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
-    ("drift", "focused and approved: a changed path is outside the ticket's Touch "
+    ("drift", "explicitly focused and approved: a changed path is outside the ticket's Touch "
               "(completion_audit.audit), or the audit could not run"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
+    ("auto-replan-cap", "autopilot.maxAutoReplans successor plans are already on the "
+                        "ticket's review ledger: the owner decides, with the history"),
 )
 # Enforced by the command's procedure, not by `next` (which sees them only as
 # `no-progress` when the same command comes round again).
@@ -240,8 +277,10 @@ HUMAN_STOPS = (
                        "autopilot.approval allows `crew_autopilot.py approve` "
                        "(needs scope.allowCliApproval: true)")),
     ("review-acceptance", ("accepting review FINDINGS with any BLOCK, or any round "
-                           "review_ledger.py --auto-accept refuses, is the owner's, at "
-                           "every setting")),
+                           "review_ledger.py --auto-accept refuses, is the owner's; a BLOCK "
+                           "is never accepted by autopilot, and with "
+                           "autopilot.maxAutoReplans an out-of-rounds BLOCK round is "
+                           "rejected and replanned instead (T-0074)")),
     ("open-questions", "an open question in direction.md, spec.md or plan.md is answered "
                        "by a person, unless autopilot.questions takes the researched "
                        "recommendation"),
@@ -250,7 +289,10 @@ HUMAN_STOPS = (
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
-AVAILABLE = frozenset({"status", "run", "focus"})
+SUBCOMMANDS += ("sleep", "wake")  # L-0652: manual sleep mode
+AVAILABLE = frozenset({"status", "run", "focus", "sleep", "wake"})
+# L-0652: the subcommands that take no ticket, not even a second word.
+NO_TICKET = frozenset({"sleep", "wake"})
 ARRIVES = {"assign": "T-0019", "goal": "T-0012"}
 GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
@@ -307,6 +349,16 @@ def open_index_tickets(top):
                 and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             seen.append(ticket)
     return seen
+
+
+def _successor(folder):
+    """` (split-into: ...)` from spec.md's lines above its first `##`, or ''."""
+    for line in (read_text(os.path.join(folder, "spec.md")) or "").splitlines()[1:]:
+        if line.startswith("##"):
+            break
+        if _SUCCESSOR.match(line.strip()):
+            return f" ({line.strip()})"
+    return ""
 
 
 def _header_status(spec_text):
@@ -458,9 +510,15 @@ def _phase(root, ticket, policy=True):
                       f"direction is approved: .work/INDEX.md has no table row for {ticket} "
                       "(Jira and ServiceDesk Plus modes write none). The human adds "
                       f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
+    if status == NEEDS_OWNER:
+        questions = _open_questions(folder)
+        return answer("needs-owner", True, f".work/INDEX.md marks {ticket} `{NEEDS_OWNER}`: it waits "
+                      "on an owner decision - " + ("; ".join(f"{name}: {item}" for name, item in questions[:4])
+                                                    if questions else "no open question recorded - the "
+                                                    "owner says what is needed"))
     if status in INDEX_DONE:
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
-                      "re-driven, whatever spec.md's header says")
+                      "re-driven, whatever spec.md's header says" + _successor(folder))
     if status not in DIRECTION_APPROVED:
         return answer("direction-approval", True, f"cannot tell whether {ticket}'s "
                       f"direction is approved: its .work/INDEX.md status is `{status}`, not one "
@@ -468,10 +526,11 @@ def _phase(root, ticket, policy=True):
                       "direction.md is agreed")
     contract = crew_ticket.read_contract(top, ticket)
     evidence.append(_rel(top, os.path.join(folder, "spec.md")))
-    if contract["spec.md"] is not None and _header_status(
-            crew_ticket._text(contract["spec.md"])) == "done":  # pylint: disable=protected-access
-        return answer("closed", True, "spec.md header is `status: done`: nothing left "
-                      "in this ticket (ship is T-0011)")
+    header = None if contract["spec.md"] is None else _header_status(
+        crew_ticket._text(contract["spec.md"]))  # pylint: disable=protected-access
+    if header in HEADER_CLOSED:
+        return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
+                      "in this ticket (ship is T-0011)" + _successor(folder))
     questions = _open_questions(folder)
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
@@ -505,7 +564,8 @@ def _phase(root, ticket, policy=True):
         hint = (_approval_hint(top, ticket) if policy
                 else POLICY_FREE_APPROVE.format(ticket=ticket))
         return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
-    return _review_phase(top, ticket, evidence, answer)
+    found = _review_phase(top, ticket, evidence, answer)
+    return _auto_replan_route(top, ticket, found, answer) if policy else found
 
 
 def _current_rounds(ledger):
@@ -514,6 +574,207 @@ def _current_rounds(ledger):
     successors = ledger.get("successors") or []
     after = successors[-1].get("after_round", 0) if successors else 0
     return rounds[after:] if isinstance(after, int) else rounds
+
+
+# T-0074: the one name `auto-reject` writes as `rejected.by`. No flag sets it.
+AUTO_REJECT_BY = "autopilot (policy: autopilot.maxAutoReplans)"
+# Review round 1 N1: the highest cap a setting can ask for; more reads as this.
+MAX_AUTO_REPLANS = 5
+AUTO_REJECT = ("python3 -B ${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew_autopilot.py "
+               "auto-reject --root . --ticket {ticket}")
+
+
+def _count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def auto_replan_policy(root, ticket):
+    """`{"allow", "reason", "used", "cap", "round", "blocks", "fixes", "capped",
+    "successors"}` -- whether autopilot may reject `ticket`'s final review round
+    itself and replan (T-0074). Pure read. Allows only when autopilot is armed,
+    `autopilot.maxAutoReplans` is 1 or more, `approval_policy` would approve the
+    successor plan, the ledger is REVIEWED, its latest round under this plan is
+    a completed FINDINGS round whose counts and finding lines agree on at least
+    one BLOCK, no round is left, the reviewer is another family than the author
+    (`review_ledger`'s own rule), and fewer than the cap successor plans -- by
+    whoever approved them -- are on the ledger. Anything that raises, or any
+    value of the wrong type, refuses with "could not tell"."""
+    result = {"allow": False, "reason": "", "used": None, "cap": 0, "round": None,
+              "blocks": [], "fixes": [], "capped": False, "successors": []}
+    try:
+        return dict(result, **_auto_replan_decision(root, ticket))
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return dict(result, reason=(f"could not tell whether autopilot may reject the review "
+                                    f"({type(exc).__name__}: {exc})"))
+
+
+def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-statements
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    conf = settings(top)
+    cap = conf.get("maxAutoReplans")
+    if not conf["armed"]:
+        return {"reason": "autopilot.mode is not plan, so autopilot rejects nothing"}
+    if not _count(cap):
+        return {"reason": f"autopilot.maxAutoReplans is {cap!r}: could not tell"}
+    if cap < 1:
+        return {"reason": "autopilot.maxAutoReplans is 0 (off): a BLOCK round stops for "
+                          "the owner"}
+    approval = approval_policy(top, ticket)
+    if approval.get("allow") is not True:
+        return {"cap": cap, "reason": (
+            f"the successor plan could not be self-approved ({approval.get('reason')}), so "
+            "a reject would only take the owner's accept option away")}
+    path = review_ledger.ledger_path(top, ticket)
+    data, state = review_ledger.load(path)
+    if state != "ok":
+        return {"cap": cap, "reason": f"the review ledger is {state}: could not tell"}
+    if data.get("state") != review_ledger.REVIEWED:
+        return {"cap": cap, "reason": (f"the review ledger is {data.get('state') or 'EMPTY'}, "
+                                       f"not {review_ledger.REVIEWED}")}
+    found = _block_round(data, state, ticket, path)
+    if "reason" in found:
+        return dict(found, cap=cap)
+    number, blocks, fixes = found["round"], found["blocks"], found["fixes"]
+    successors = data.get("successors") or []
+    used = len(successors)
+    if used >= cap:
+        return {"cap": cap, "round": number, "used": used, "capped": True,
+                "successors": successors, "reason": (
+                    f"autopilot.maxAutoReplans ({cap}) reached: {used} successor plan(s) "
+                    "on the ledger")}
+    return {"allow": True, "cap": cap, "round": number, "used": used, "blocks": blocks,
+            "fixes": fixes, "successors": successors, "reason": (
+                f"round {number} is FINDINGS with {len(blocks)} BLOCK and no round "
+                f"left; autopilot.maxAutoReplans is {cap} ({used} used) and "
+                f"{approval.get('reason')}")}
+
+
+def _block_round(data, state, ticket, path):  # pylint: disable=too-many-return-statements
+    """Conditions 5-8 of `auto_replan_policy` on a loaded ledger: the latest
+    round under the current plan is a completed FINDINGS round whose counts
+    and single-line finding lines agree on at least one BLOCK, no round is
+    left, and the reviewer is another family (`review_ledger`'s own rule).
+    `{"round", "blocks", "fixes"}`, or a dict with the `reason` it fails. The
+    non-stop `replan` asks it again of the round it rejected (review round 1
+    F1: the reject name alone is a string anyone can type)."""
+    rounds = _current_rounds(data)
+    row = rounds[-1] if rounds else None
+    if not isinstance(row, dict) or row.get("status") != "completed":
+        return {"reason": "no completed review round under the current plan"}
+    number = row.get("round")
+    if row.get("verdict") != "FINDINGS":
+        return {"round": number, "reason": (
+            f"round {number} is {row.get('verdict')!r}, not FINDINGS")}
+    counts, findings = row.get("counts"), row.get("findings")
+    if not isinstance(counts, dict) or not all(_count(counts.get(s))
+                                               for s in ("BLOCK", "FIX", "NIT")):
+        return {"round": number, "reason": (
+            f"round {number}'s counts are {counts!r}, not three non-negative integers: "
+            "could not tell")}
+    if counts["BLOCK"] < 1:
+        return {"round": number, "reason": (
+            f"round {number} has no BLOCK; the 0-BLOCK case is review_ledger.py "
+            "--auto-accept's")}
+    if not isinstance(findings, list) or not all(
+            isinstance(f, str) and "\n" not in f and "\r" not in f for f in findings):
+        return {"round": number, "reason": (
+            f"round {number} carries no single-line finding lines: could not tell")}
+    blocks = [f for f in findings if f.strip().startswith("BLOCK|")]
+    fixes = [f for f in findings if f.strip().startswith("FIX|")]
+    if len(blocks) != counts["BLOCK"]:
+        return {"round": number, "reason": (
+            f"round {number} lists {len(blocks)} BLOCK line(s) for a BLOCK count of "
+            f"{counts['BLOCK']}: could not tell")}
+    left = review_ledger.summary(data, state, ticket, path).get("rounds_left")
+    if not _count(left):
+        return {"round": number, "reason": (
+            f"rounds left is {left!r}: could not tell")}
+    if left:
+        return {"round": number, "reason": (
+            f"{left} review round(s) left: fix, then /crew:review")}
+    family = review_ledger._family_problem(row)  # pylint: disable=protected-access
+    if family:
+        return {"round": number, "reason": family}
+    return {"round": number, "blocks": blocks, "fixes": fixes}
+
+
+def _successor_rows(successors):
+    return "; ".join(f"{str(s.get('plan_sha256'))[:12]} after round {s.get('after_round')} "
+                     f"approved by {s.get('approved_by')}" for s in successors)
+
+
+def _auto_replan_route(top, ticket, found, answer):
+    """`next`'s T-0074 routes, on top of `_review_phase`'s answer: an
+    out-of-rounds BLOCK round the policy allows is `auto-replan`; one refused
+    only by the cap stops naming the cap and every successor; a NEEDS_REPLAN
+    from autopilot's own reject of the latest round, still allowed, names
+    `/crew:plan` without stopping. Anything else is `found`, byte for byte."""
+    if found["phase"] == "accept-review":
+        got = auto_replan_policy(top, ticket)
+        if got["allow"] is True:
+            return answer("auto-replan", False, f"{got['reason']}: autopilot rejects it "
+                          f"itself (replan {got['used'] + 1} of {got['cap']})",
+                          AUTO_REJECT.format(ticket=ticket))
+        if got["capped"]:
+            return dict(found, phase="auto-replan-cap", reason=(
+                f"{got['reason']} ({_successor_rows(got['successors'])}) - the owner "
+                f"decides. {found['reason']}"))
+    if found["phase"] == "replan" and found["stop"]:
+        why = _auto_rejected(top, ticket)
+        if why:
+            return dict(found, stop=False, reason=why)
+    return found
+
+
+def _auto_rejected(top, ticket):
+    """The non-stop `replan` reason, or "" for today's stop: the ledger's
+    `rejected.by` is AUTO_REJECT_BY for its latest round, that round is the
+    current plan's (after the last successor's `after_round`) and still passes
+    conditions 5-8 (`_block_round`), and autopilot is still armed, under the
+    cap, and allowed to approve the successor plan. The name alone proves
+    nothing: `review_ledger.py --reject --by` can type it (review round 1)."""
+    try:
+        path = review_ledger.ledger_path(top, ticket)
+        data, state = review_ledger.load(path)
+        rejected = data.get("rejected") if state == "ok" else None
+        rounds = data.get("rounds") or []
+        latest = rounds[-1].get("round") if rounds and isinstance(rounds[-1], dict) else None
+        current = _current_rounds(data) if state == "ok" else []
+        conf = settings(top)
+        cap, used = conf.get("maxAutoReplans"), len(data.get("successors") or [])
+        if not (isinstance(rejected, dict) and rejected.get("by") == AUTO_REJECT_BY
+                and _count(latest) and rejected.get("round") == latest
+                and type(rejected.get("round")) is int  # pylint: disable=unidiomatic-typecheck
+                and current and current[-1].get("round") == latest
+                and "reason" not in _block_round(data, state, ticket, path)
+                and conf["armed"] and _count(cap) and used < cap
+                and approval_policy(top, ticket).get("allow") is True):
+            return ""
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return ""
+    return (f"{ticket} is NEEDS_REPLAN after autopilot's own reject of round {latest} "
+            f"(replan {used + 1} of {cap}): /crew:plan writes a successor plan whose steps "
+            f"quote every BLOCK and FIX line of round {latest}; the approve phase then "
+            "decides under autopilot.approval")
+
+
+def auto_reject(root, ticket):
+    """(exit code, text). This module's second writing path (T-0074): when
+    `auto_replan_policy` allows, `review_ledger.reject` under AUTO_REJECT_BY,
+    which moves the ledger REVIEWED -> NEEDS_REPLAN and writes nothing else.
+    Exit 2 `refused: <why>` writes nothing, a LedgerError included."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    got = auto_replan_policy(top, ticket)
+    if got["allow"] is not True:
+        return 2, f"refused: {got['reason']}"
+    try:
+        review_ledger.reject(top, ticket, AUTO_REJECT_BY)
+    except review_ledger.LedgerError as exc:
+        return 2, f"refused: {exc}"
+    return 0, "\n".join([f"auto-rejected {ticket}: round {got['round']}, {len(got['blocks'])} "
+                         f"BLOCK / {len(got['fixes'])} FIX, replan {got['used'] + 1} of "
+                         f"{got['cap']}"] + got["blocks"] + got["fixes"])
 
 
 def _review_phase(top, ticket, evidence, answer):
@@ -648,7 +909,12 @@ def _drift(root, ticket, result):
     if result["stop"] and result["phase"] not in POLICY_PHASES:
         return None
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    if focus_state(top)["focus"] != ticket:
+    state = focus_state(top)
+    if state["unknown"]:
+        return dict(result, phase="drift", stop=True, command="", reason=(
+            f"drift: whether {ticket} is focused could not be told ({state['unknown']}), "
+            "so whether its tree must stay inside Touch cannot be told"))
+    if state["focus"] != ticket:
         return None
     try:
         if crew_ticket.accepted(top, ticket)["status"] != "approved":
@@ -825,12 +1091,14 @@ def _unreadable_autopilot(top):
 
 def settings(root):
     """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
-    "questions", "warnings"}`. Read through `crew_config.resolve_config` --
+    "questions", "maxAutoReplans", "warnings"}`. Read through `crew_config.resolve_config` --
     `.crew/config.json` over the defaults, the file
     `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
     exactly the string `plan`; `maxPhases` must be a positive int, else 12;
     `deploy` is exactly one of DEPLOY_VALUES, else `none`; `approval` and
-    `questions` must be one of POLICIES, else `human`.
+    `questions` must be one of POLICIES, else `human`; `maxAutoReplans` (T-0074)
+    must be a non-negative int, else 0 (off), and reads at most
+    MAX_AUTO_REPLANS.
 
     A `.crew/config.json` that is present but unreadable, or an `autopilot`
     value that is not an object, is could-not-tell: both policies read
@@ -845,7 +1113,11 @@ def settings(root):
         return {"mode": "off", "armed": False,
                 "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
                 "saw": None, "deploy": "none", "deploySaw": None,
-                "approval": UNKNOWN, "questions": UNKNOWN,
+                "approval": UNKNOWN, "questions": UNKNOWN, "maxAutoReplans": 0,
+                "day": {"approval": UNKNOWN, "questions": UNKNOWN},
+                "sleep": {"state": crew_sleep.UNKNOWN, "schedule": None,
+                          "overrides": {key: None for key in crew_sleep.OVERRIDES},
+                          "applied": []},
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
                               "approves or takes an answer) and autopilot reads as off")]}
@@ -869,6 +1141,15 @@ def _settings_at(top):
         warnings.append(f"autopilot.maxPhases is {limit!r}, not a positive integer; "
                         f"using {default}")
         limit = default
+    replans = block.get("maxAutoReplans", 0)
+    if isinstance(replans, bool) or not isinstance(replans, int) or replans < 0:
+        warnings.append(f"autopilot.maxAutoReplans is {replans!r}, not a non-negative "
+                        "integer; using 0 (off: a BLOCK round stops for the owner)")
+        replans = 0
+    if replans > MAX_AUTO_REPLANS:
+        warnings.append(f"autopilot.maxAutoReplans is {replans}, above the limit of "
+                        f"{MAX_AUTO_REPLANS}; using {MAX_AUTO_REPLANS}")
+        replans = MAX_AUTO_REPLANS
     deploy_saw = block.get("deploy", "none")
     deploy = deploy_saw if _exact(deploy_saw, DEPLOY_VALUES) else "none"
     if deploy != deploy_saw:
@@ -883,14 +1164,240 @@ def _settings_at(top):
             and "autopilot" not in crew_state.load_config(top):
         warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
                         "for this key; move it to .crew/config.json")
-    policies = {}
+    day = {}
     for key in ("approval", "questions"):
-        policies[key], warning = _policy_setting(block, key)
+        day[key], warning = _policy_setting(block, key)
         warnings += [warning] if warning else []
+    sleep = _sleep_at(top, block)
+    warnings += sleep.pop("warnings")
+    policies, sleep["applied"] = _overlay(day, sleep)
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
             "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
-            "warnings": warnings}
+            "maxAutoReplans": replans,
+            "day": day, "sleep": sleep, "warnings": warnings}
+
+
+# Strictest first: under a sleep state that cannot be told, a valid night
+# override applies only when it comes earlier here than the day value.
+STRICTNESS = ("human", "risk", "self")
+
+
+def _overlay(day, sleep):
+    """`(policies, applied)`: asleep, every non-null override replaces the
+    day value; unknown, one replaces it only when stricter (human > risk >
+    self), so could-not-tell never loosens a policy and never drops a
+    tightening the owner set; off or awake, the day values. `tightenOnly`
+    (L-0652: a manual sleep outside the window, or a manual wake inside it)
+    is stricter-only whatever the state."""
+    policies, applied = dict(day), []
+    for key, value in sleep["overrides"].items():
+        if value is None:
+            continue
+        stricter = STRICTNESS.index(value) < STRICTNESS.index(policies[key])
+        if sleep.get("tightenOnly") or sleep["state"] == crew_sleep.UNKNOWN:
+            take = stricter
+        else:
+            take = sleep["state"] == crew_sleep.ASLEEP
+        if take:
+            policies[key] = value
+            applied.append(key)
+    return policies, applied
+
+
+def _sleep_block(top, block):
+    """`autopilot.sleep` as the reader sees it. The resolved block cannot say
+    whether the file held a non-object there (`merge_defaults` drops it for
+    the default), so the raw repo file is asked first."""
+    raw = crew_state.load_config(top).get("autopilot")
+    saw = raw.get("sleep") if isinstance(raw, dict) else None
+    sleep = saw if saw is not None and not isinstance(saw, dict) else block.get("sleep")
+    return {} if sleep is None else sleep
+
+
+def _sleep_at(top, block):
+    """T-0053: `crew_sleep.resolve` of `autopilot.sleep`, read from the clock
+    on every call and never cached. A raising read, clock or resolve is
+    could-not-tell: state unknown, with the overrides still read where the
+    block can be, so `_overlay` keeps a stricter one; and a warning."""
+    sleep, found = None, {key: crew_sleep.STRICTEST for key in crew_sleep.OVERRIDES}
+    try:
+        sleep = _sleep_block(top, block)
+        return crew_sleep.resolve(sleep, crew_sleep.now(), POLICIES, _manual_found(top),
+                                  crew_ticket.cli_approval_allowed(top))
+    except Exception as exc:  # pylint: disable=broad-except
+        try:
+            found = crew_sleep.read_overrides(sleep, POLICIES)[0]
+        except Exception:  # pylint: disable=broad-except
+            pass
+        return {"state": crew_sleep.UNKNOWN, "schedule": None, "overrides": found,
+                "warnings": [f"autopilot.sleep could not be resolved ({type(exc).__name__}: "
+                             f"{_safe_text(exc, str)[:120]}); per key the stricter of the day "
+                             "value and the night value applies"]}
+
+
+def _hhmm(iso):
+    """`HH:MM`, in local time, of an ISO time `crew_sleep` produced (a
+    UTC-aware one is shown in the machine's time zone)."""
+    found = datetime.datetime.fromisoformat(iso)
+    return (found.astimezone() if found.tzinfo else found).strftime("%H:%M")
+
+
+def _sleep_span(sleep):
+    """What an asleep note names: the window, or a manual sleep's end."""
+    if sleep.get("source") == "manual":
+        return f"by hand until {_hhmm(sleep['until'])}"
+    return sleep["schedule"]
+
+
+def _manual_path(top):
+    """`<git-common-dir>/crew/autopilot-sleep.json` (L-0652): shared by every
+    worktree of the repository, never read from a worktree or `.work/`."""
+    state = crew_ticket.state_dir(top)
+    if state is None:
+        raise crew_ticket.TicketError("not a git repository, so there is no "
+                                      "<git-common-dir>/crew/ for the sleep state")
+    return os.path.join(state, crew_sleep.MANUAL_FILE)
+
+
+def _manual_found(top):
+    """`crew_sleep.read_manual`'s `found`: `("absent", None)`, `("ok", data)`
+    or `("unreadable", why)`. A directory with no `.git` entry at all has no
+    `<git-common-dir>` where `sleep` could have written, so it is absent; a
+    checkout whose state directory git cannot name raises, which `_sleep_at`
+    takes as could-not-tell."""
+    if not os.path.lexists(os.path.join(top, ".git")) and crew_ticket.state_dir(top) is None:
+        return "absent", None
+    path = _manual_path(top)
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return "absent", None
+    except OSError as exc:
+        return "unreadable", f"{type(exc).__name__} on lstat"
+    if not stat.S_ISREG(mode):
+        return "unreadable", "it is not a regular file"
+    text = _read_regular(path)
+    if text is None:
+        return "unreadable", "it is not a regular file, or could not be read"
+    try:
+        return "ok", json.loads(text)
+    except ValueError:
+        return "unreadable", "not JSON"
+
+
+MANUAL_MAX_BYTES = 65536
+
+
+def _read_regular(path):
+    """The text of `path` when it is still a regular file once opened (review
+    N3): opened without following a final symlink and without blocking on a
+    FIFO, re-checked with `fstat`, read up to MANUAL_MAX_BYTES. None
+    otherwise."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        handle = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(handle).st_mode):
+            return None
+        data = os.read(handle, MANUAL_MAX_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(handle)
+    if len(data) > MANUAL_MAX_BYTES:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def sleep_now(root, by="cli"):
+    """(exit code, text) for `crew_autopilot.py sleep` (L-0652): write an
+    `asleep` record until the end of the current or next window, or for
+    MANUAL_SLEEP_HOURS with no schedule. Exit 2, writing nothing, unless
+    `scope.allowCliApproval` is exactly true, autopilot is armed, the config
+    can be told and at least one `autopilot.sleep` override is set: the
+    manual state grants only what the night values already configure."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    cause = _unreadable_autopilot(top)
+    if cause:
+        return 2, f"refused: {cause}, so sleep mode cannot be told"
+    if not crew_ticket.cli_approval_allowed(top):
+        return 2, (f"refused: {ALLOW_CLI} is not exactly true in .crew/config.json, so only "
+                   "the schedule puts autopilot to sleep")
+    conf = _settings_at(top)
+    if not conf["armed"]:
+        return 2, "refused: autopilot.mode is not plan, so there is nothing to put to sleep"
+    block = _sleep_block(top, crew_config.resolve_config(top).get("autopilot") or {})
+    when = crew_sleep.now()
+    found = crew_sleep.resolve(block, when, POLICIES)
+    if found["state"] == crew_sleep.UNKNOWN:
+        return 2, (f"refused: autopilot.sleep.schedule or the block cannot be read "
+                   f"({'; '.join(found['warnings'])[:200]})")
+    tightens = [key for key in crew_sleep.OVERRIDES if _stricter(
+        found["overrides"].get(key), conf["day"].get(key))]
+    if found["state"] != crew_sleep.ASLEEP and not tightens:
+        return 2, ("refused: no autopilot.sleep override is stricter than its day value, and "
+                   "until L-1504 a manual sleep only tightens, so it would change nothing")
+    if found["schedule"]:
+        until = crew_sleep.next_edge(crew_sleep.parse_schedule(found["schedule"])[1], when)
+    else:
+        until = when + datetime.timedelta(hours=crew_sleep.MANUAL_SLEEP_HOURS)
+    record = {"state": crew_sleep.ASLEEP, "by": by,
+              "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
+              "until": crew_sleep.to_utc(until).replace(microsecond=0).isoformat()}
+    check = crew_sleep.read_manual(("ok", record), when)
+    if check["kind"] != "valid":
+        # Review round 2 FIX-2: never report a sleep the reader would distrust.
+        return 2, _one_line(f"refused: the record sleep would write is not trusted by its own "
+                            f"reader ({check['warning'][:200]}); nothing written")
+    crew_ticket._write_json(_manual_path(top), record)  # pylint: disable=protected-access
+    what = ("the scheduled night" if found["state"] == crew_sleep.ASLEEP
+            else f"tightens {','.join(tightens)}")
+    return 0, (f"asleep until {_hhmm(record['until'])} (set by {_cli_value(by)[:60]}; {what}); "
+               f"{AUTOPILOT} wake undoes it")
+
+
+def _stricter(night, day):
+    """Whether the night override `night` is stricter than the day value."""
+    return night in STRICTNESS and day in STRICTNESS and (
+        STRICTNESS.index(night) < STRICTNESS.index(day))
+
+
+def wake_now(root):
+    """(exit code, text) for `crew_autopilot.py wake` (L-0652). Never refuses
+    for policy. Inside the scheduled window it writes an `awake` record until
+    the window's end; otherwise it removes any record, since the schedule
+    already says awake. Nothing to undo: `already awake`, nothing written."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    path, when = _manual_path(top), crew_sleep.now()
+    state, schedule, why = crew_sleep.UNKNOWN, None, _unreadable_autopilot(top)
+    if not why:
+        block = _sleep_block(top, crew_config.resolve_config(top).get("autopilot") or {})
+        found = crew_sleep.resolve(block, when, POLICIES)
+        state, schedule = found["state"], found["schedule"]
+        why = "; ".join(found["warnings"])
+    if state == crew_sleep.ASLEEP:
+        until = crew_sleep.next_edge(crew_sleep.parse_schedule(schedule)[1], when)
+        record = {"state": crew_sleep.AWAKE, "by": "cli",
+                  "at": crew_sleep.to_utc(when).replace(microsecond=0).isoformat(),
+                  "until": crew_sleep.to_utc(until).replace(microsecond=0).isoformat()}
+        crew_ticket._write_json(path, record)  # pylint: disable=protected-access
+        return 0, f"awake; the schedule resumes at {_hhmm(record['until'])}"
+    if not os.path.lexists(path):
+        return 0, "already awake"
+    os.unlink(path)
+    if state == crew_sleep.UNKNOWN:
+        # Review N2: never "resumes at <now>" for a schedule that cannot be told.
+        return 0, _one_line(f"awake; whether the schedule is asleep cannot be told "
+                            f"({_safe_text(why or 'unreadable', str)[:160]})")
+    if state == crew_sleep.OFF:
+        return 0, "awake; no schedule is set"
+    return 0, f"awake; the schedule resumes at {when.strftime('%H:%M')}"
 
 
 def _exact(value, allowed):
@@ -1087,10 +1594,29 @@ def _ticket_risk(top, ticket):
 
 
 def _decision(top, ticket, key):
-    """(policy, risk, warnings), or raises when the settings cannot be read."""
+    """(policy, risk, warnings), or raises when the settings cannot be read.
+    `risk` carries `sleep` (T-0053): `""`, or, only when a sleep override set
+    `key`, ` (asleep <schedule>; day value <day>)` or the could-not-tell
+    form, which `_noted` puts after the reason."""
     conf = settings(top)
-    return conf[key], _ticket_risk(top, ticket), [
+    sleep, day = conf.get("sleep") or {}, (conf.get("day") or {}).get(key)
+    note = ""
+    if key in sleep.get("applied", ()) and sleep.get("state") == crew_sleep.ASLEEP:
+        note = f" (asleep {_sleep_span(sleep)}; day value {day})"
+    elif key in sleep.get("applied", ()) and sleep.get("tightenOnly"):
+        note = f" (awake by hand; the stricter autopilot.sleep.{key} over day value {day})"
+    elif key in sleep.get("applied", ()):
+        note = (f" (sleep could not be told; the stricter autopilot.sleep.{key} over "
+                f"day value {day})")
+    return conf[key], dict(_ticket_risk(top, ticket), sleep=note), [
         w for w in conf["warnings"] if f"autopilot.{key} " in w]
+
+
+def _noted(result):
+    """`result` with its `sleep` note (T-0053) after its reason; a result
+    that never read the settings carries an empty note."""
+    note = result.get("sleep", "")
+    return dict(result, reason=result["reason"] + note, sleep=note)
 
 
 def _risk_words(risk):
@@ -1106,7 +1632,30 @@ def approval_policy(root, ticket):
     ledger is no refusal: approving a distinct successor plan is the only way
     out of it, and `crew_ticket.approve` hands that plan to
     `review_ledger.continue_with_successor_plan`, which refuses one approved
-    before. An unreadable ledger refuses, like anything that cannot be told."""
+    before. An unreadable ledger refuses, like anything that cannot be told.
+    While asleep (T-0053) the policy is the night value, and `reason` and
+    `sleep` say so."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    pinned = _pinned().get((top, ticket))
+    if pinned is not None:
+        return dict(pinned)
+    return _noted(_approval_policy(top, ticket))
+
+
+# `approve`'s one decision, replayed to `crew_ticket.approve`'s re-check while
+# that call runs (T-0053 review round 1): the receipt's `by=`, the printed line
+# and the check that lets the write happen are the same read of the clock, so
+# a window edge between two reads cannot make them disagree. Process-local,
+# set and cleared inside `approve` only.
+_PINNED = threading.local()
+
+
+def _pinned():
+    """This thread's pinned decisions, `{(top, ticket): decision}`."""
+    return getattr(_PINNED, "decisions", {})
+
+
+def _approval_policy(root, ticket):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     try:
         policy, risk, warnings = _decision(top, ticket, "approval")
@@ -1117,7 +1666,7 @@ def approval_policy(root, ticket):
                 "warnings": [], "reason": (f"could not tell whether autopilot may approve "
                                            f"({type(exc).__name__}: {exc})")}
     result = {"allow": False, "policy": policy, "risk": risk["risk"],
-              "known": risk["known"], "warnings": warnings}
+              "known": risk["known"], "warnings": warnings, "sleep": risk["sleep"]}
     if policy == UNKNOWN:
         why = (f"could not tell autopilot.approval ({'; '.join(warnings) or 'unreadable'}); "
                "the human approves")
@@ -1143,7 +1692,13 @@ def question_policy(root, ticket):
     """`{"action": take|stop, "policy", "risk", "known", "reason", "warnings"}`
     for an open question whose researched options are in questions.md. `human`
     stops, `self` takes the recommendation, `risk` takes it only on a known
-    `risk: low`. No `allowCliApproval` rule; anything unreadable stops."""
+    `risk: low`. No `allowCliApproval` rule; anything unreadable stops.
+    While asleep (T-0053) the policy is the night value, and `reason` and
+    `sleep` say so."""
+    return _noted(_question_policy(root, ticket))
+
+
+def _question_policy(root, ticket):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     try:
         policy, risk, warnings = _decision(top, ticket, "questions")
@@ -1152,7 +1707,7 @@ def question_policy(root, ticket):
                 "warnings": [], "reason": (f"could not tell the questions policy "
                                            f"({type(exc).__name__}: {exc})")}
     result = {"action": STOP, "policy": policy, "risk": risk["risk"],
-              "known": risk["known"], "warnings": warnings}
+              "known": risk["known"], "warnings": warnings, "sleep": risk["sleep"]}
     if policy == UNKNOWN:
         return dict(result, reason=(f"could not tell autopilot.questions "
                                     f"({'; '.join(warnings) or 'unreadable'}): a person answers"))
@@ -1209,10 +1764,14 @@ def approve(root, ticket):
     got = approval_policy(top, ticket)
     if not got["allow"]:
         return 2, f"refused: {got['reason']}; {human}"
-    _receipt, successor = crew_ticket.approve(
-        top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
+    _PINNED.decisions = {(top, ticket): got}
+    try:
+        _receipt, successor = crew_ticket.approve(
+            top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
+    finally:
+        _PINNED.decisions = {}
     text = (f"self-approved {ticket} under approval={got['policy']}, "
-            f"risk={got['risk'] if got['known'] else 'unknown (high)'}")
+            f"risk={got['risk'] if got['known'] else 'unknown (high)'}{got.get('sleep', '')}")
     if successor is not None and not successor[0]:
         return 3, f"{text}\nreview is still NEEDS_REPLAN -- {successor[1]}"
     return 0, text
@@ -1370,7 +1929,7 @@ def route(root, first, ticket=""):
     Anything else stops: `crew_ticket` accepts `stauts` as an id, so a typo
     is refused here rather than driven as a ticket. Then T-0020's
     `focus_guard`, before the AVAILABLE check, so `assign` and `goal` are
-    refused under focus whether or not they have landed. `ticket` is the word
+    refused under an explicit focus whether or not they have landed. `ticket` is the word
     after the subcommand when `route_args` knows it (FOCUS_OFF for `focus
     off`); a bare id is its own ticket."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
@@ -1418,6 +1977,8 @@ def route_args(root, text):
         got["off"] = off
     if got["stop"]:
         return got
+    if words[:1] and words[0] in NO_TICKET and rest:
+        return dict(got, stop=True, reason=f"{AUTOPILOT} {words[0]} takes no other word")
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
         return dict(route(top, GOAL_FLAG), ticket="")
     if off:
@@ -1449,38 +2010,86 @@ def _also(text):
     return f" {text}" if text else ""
 
 
+FOCUS_FILE = "autopilot-focus.json"
+
+
+def focus_path(root):
+    """`<git-common-dir>/crew/autopilot-focus.json`, the explicit focus marker,
+    or None outside git. A JSON object keyed by worktree top-level, as the
+    active-ticket pointer is, so a focus is this worktree's only."""
+    state = crew_ticket.state_dir(root)
+    return os.path.join(state, FOCUS_FILE) if state else None
+
+
+def _focus_marker(top):
+    """(path, mapping, unknown). `unknown` is "" or why the marker could not be
+    read: a file that does not parse (or cannot be read), one that is not an
+    object, or this worktree's entry not a ticket id. An unknown is never read
+    as "no focus"."""
+    path = focus_path(top)
+    if not path:
+        return None, {}, ""
+    data, state = crew_ticket._read_json(path)  # pylint: disable=protected-access
+    if state == "corrupt" or (state == "ok" and not isinstance(data, dict)):
+        return path, None, f"the focus marker {path} does not parse"
+    mapping = data if state == "ok" else {}
+    entry = mapping.get(top)
+    if entry is not None:
+        try:
+            crew_ticket.check_ticket(entry)
+        except Exception:  # pylint: disable=broad-except
+            return path, None, f"the focus marker {path} names {entry!r}, not a ticket id"
+    return path, mapping, ""
+
+
 def focus_state(root):
-    """`{"focus", "broken", "why", "scope_mode"}` for this worktree. `focus` is
-    the active-ticket pointer's ticket, and only that: `resolve_active`'s
-    `.work/INDEX.md` fallback is never a focus. A broken pointer has no focus
-    and says why. `scope_mode` is `crew_ticket.configured_mode`'s value."""
+    """`{"focus", "unknown", "pointer", "broken", "why", "scope_mode"}` for this
+    worktree. `focus` is the explicit focus marker's ticket, set only by
+    `focus <id>` (owner decision, 2026-10-05): the active-ticket pointer alone
+    is never a focus. `unknown` is "" or why the marker could not be read --
+    could-not-tell, its own value, with `focus` None beside it. `pointer` is
+    the active-ticket pointer's ticket (never the `.work/INDEX.md` fallback);
+    `broken`/`why` are its state. `scope_mode` is
+    `crew_ticket.configured_mode`'s value."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     active, where, broken = crew_ticket.resolve_active(top)
     mode, _why = crew_ticket.configured_mode(top)
-    return {"focus": active if where == "active-ticket" and not broken else None,
+    _path, mapping, unknown = _focus_marker(top)
+    return {"focus": None if unknown else mapping.get(top), "unknown": unknown,
+            "pointer": active if where == "active-ticket" and not broken else None,
             "broken": bool(broken), "why": where if broken else "", "scope_mode": mode}
 
 
 def focus_guard(root, sub, ticket=""):
     """None when `sub` (with `ticket`, "" for none, FOCUS_OFF for `focus off`)
     may run under this worktree's focus, else the refusal, naming the focused
-    ticket and `/crew:autopilot focus off`. `status` and `focus off` always
-    run. A broken pointer refuses everything else. Focused on T-A: `run` with
-    no ticket or T-A, and `focus` alone or `focus T-A`, run; anything else --
-    another ticket, `assign`, `goal`, a subcommand this does not know -- is
-    refused."""
-    if sub == "status" or (sub == "focus" and ticket == FOCUS_OFF):
+    ticket and `/crew:autopilot focus off`. `status`, `focus off` and the
+    NO_TICKET subcommands (L-0652's `sleep` and `wake`, which neither start nor
+    switch work) always run. No marker entry: no focus, everything runs. A
+    marker that could not be read refuses everything else -- whether focus is
+    on cannot be told, so nothing may start or switch work. Focused on T-A: a
+    pointer naming anything but T-A refuses all but `focus T-A` (which
+    re-points it); else `run` with no ticket or T-A, and `focus` alone or
+    `focus T-A`, run; anything else -- another ticket, `assign`, `goal`, a
+    subcommand this does not know -- is refused."""
+    if sub == "status" or sub in NO_TICKET or (sub == "focus" and ticket == FOCUS_OFF):
         return None
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     state = focus_state(top)
-    if state["broken"]:
-        return (f"the active-ticket pointer is broken ({state['why']}): only status and "
-                f"{FOCUS_RELEASE} run until it is fixed (crew_ticket.py activate --ticket "
-                "<id>, typed by the human)")
+    if state["unknown"]:
+        return (f"whether focus is on could not be told ({state['unknown']}): only status, "
+                f"sleep, wake and {FOCUS_RELEASE} run until the human repairs or removes it")
     focus = state["focus"]
     if focus is None:
         return None
-    if sub in ("run", "focus") and ticket in ("", focus):
+    if sub == "focus" and ticket in ("", focus):
+        return None
+    if state["pointer"] != focus:
+        names = (f"is broken ({state['why']})" if state["broken"]
+                 else f"names {state['pointer'] or 'no ticket'}")
+        return (f"focus is on {focus}, but this worktree's active-ticket pointer {names}: "
+                f"type {AUTOPILOT} focus {focus} to re-point it, or {FOCUS_RELEASE}")
+    if sub == "run" and ticket in ("", focus):
         return None
     what = (f"{AUTOPILOT} {sub} {ticket}" if ticket else f"{AUTOPILOT} {sub}").strip()
     return (f"focus is on {focus}: {what} would start or switch to other work, which focus "
@@ -1494,56 +2103,84 @@ def _scope_line(mode):
             "against the active ticket's Touch")
 
 
+def _write_marker(path, mapping):
+    """Write `mapping`, or remove the file when it is empty, so a released
+    focus leaves the common dir as it was."""
+    if mapping:
+        crew_ticket._write_json(path, mapping)  # pylint: disable=protected-access
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
 def focus_set(root, ticket):
-    """(ok, line). Points this worktree at `ticket` through
-    `crew_ticket.activate`, which checks the id's shape only, so the folder is
-    checked here: a pointer at a folderless ticket is a broken pointer. Refuses,
-    writing nothing, a broken pointer and a focus on another ticket; the same
-    ticket again writes nothing. On success `line` also carries activate's
+    """(ok, line). Writes this worktree's entry in the focus marker, then, only
+    when the active-ticket pointer names another ticket or none, points it at
+    `ticket` through `crew_ticket.activate` -- marker first, so a failed
+    activate leaves a focus the guard refuses on (pointer mismatch), never a
+    switch without one. `activate` checks the id's shape only, so the folder
+    is checked here. Refuses, writing nothing, an unreadable marker, a broken
+    pointer and a focus on another ticket; the same ticket again, already
+    pointed at, writes nothing. On a re-point `line` also carries activate's
     scope-base line, an unknown or a fallback included, never dropped."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root)
     if not top:
         return False, f"refused: {root} is not a git repository"
     state = focus_state(top)
+    path, mapping, unknown = _focus_marker(top)
+    if unknown or not path:
+        why = unknown or "there is no git common dir to keep it in"
+        return False, (f"refused: whether focus is on could not be told ({why}); the human "
+                       "repairs or removes it")
     if state["broken"]:
         return False, (f"refused: the active-ticket pointer is broken ({state['why']}); "
-                       f"type {FOCUS_RELEASE}, or the human repairs it")
+                       "the human repairs it (crew_ticket.py activate --ticket <id>)")
     if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
         return False, (f"refused: {ticket} has no .work/tickets/{ticket}/ folder, and a "
                        "focus on it would be a broken pointer")
-    if state["focus"] == ticket:
-        return True, f"focus={ticket} (already; nothing written)"
-    if state["focus"]:
+    if state["focus"] not in (None, ticket):
         return False, (f"refused: focus is on {state['focus']}; type {FOCUS_RELEASE} "
                        "first")
+    if state["focus"] == ticket and state["pointer"] == ticket:
+        return True, f"focus={ticket} (already; nothing written)"
+    if state["focus"] != ticket:
+        _write_marker(path, dict(mapping, **{top: ticket}))
+    line = f"focus={ticket} (this worktree only: {top})"
+    if state["pointer"] == ticket:
+        return True, line
     # activate also records `.crew/.scope-base` (T-0061); its line -- a
     # could-not-tell or a fallback included -- is the caller's to see.
     message = crew_ticket.activate(top, ticket)[2]
-    return True, f"focus={ticket} (this worktree only: {top})\n{message}".rstrip("\n")
+    was = state["pointer"] or "no ticket"
+    return True, f"{line}\nactive ticket: {was} -> {ticket}\n{message}".rstrip("\n")
 
 
 def focus_off(root):
-    """(ok, line). The module's one `crew_ticket.deactivate` call: it drops
-    this worktree's entry and no other. A pointer that is still broken after
-    it (a file that does not parse) is said, never read as released."""
+    """(ok, line). Drops this worktree's focus marker entry and no other, and
+    leaves the active-ticket pointer as it is: the pointer was never the
+    focus. A marker that could not be read is said, never read as released."""
     top = crew_ticket.toplevel(root)
     if not top:
         return False, f"refused: {root} is not a git repository"
-    was = focus_state(top)["focus"]
-    crew_ticket.deactivate(top)
+    path, mapping, unknown = _focus_marker(top)
+    if unknown:
+        return False, (f"focus=unknown {unknown} - focus off could not clear it; the "
+                       "human repairs or removes the file")
+    was = mapping.get(top)
+    if was is not None:
+        _write_marker(path, {key: value for key, value in mapping.items() if key != top})
     after = focus_state(top)
-    if after["broken"]:
-        return False, (f"focus=broken {after['why']} - focus off could not clear it; the "
-                       "human repairs the file")
+    if after["unknown"] or after["focus"] is not None:
+        return False, (f"focus={after['focus'] or 'unknown'} {after['unknown']} - focus off "
+                       "could not clear it; the human repairs the file").rstrip()
     return True, f"focus=none (released {was})" if was else "focus=none (nothing was set)"
 
 
 def focus_show(root):
-    """(True, line): `focus=<id>`, `focus=none` or `focus=broken <why>`."""
+    """(True, line): `focus=<id>`, `focus=none` or `focus=unknown <why>`."""
     state = focus_state(root)
-    if state["broken"]:
-        return True, f"focus=broken {state['why']}"
+    if state["unknown"]:
+        return True, f"focus=unknown {state['unknown']}"
     return True, f"focus={state['focus'] or 'none'}"
 
 
@@ -1587,7 +2224,7 @@ def focus_text(root, ticket="", off=False, findings=False):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done")}
+    "done", "auto-replan", "auto-replan-cap", NEEDS_OWNER)}
 WAITING["closed"] = "nobody"
 WAITING["drift"] = "owner"
 STATUS_MAX_LINES = 12
@@ -1682,7 +2319,7 @@ def _drive(ticket):
 
 def _closed(top, ticket):
     """Whether either fact `next` closes a ticket on says so: INDEX.md's status
-    or spec.md's `status: done` header. Read directly, because `_phase` checks
+    or spec.md's closed header (HEADER_CLOSED). Read directly, because `_phase` checks
     direction.md first and a closed ticket without one reads `brainstorm`."""
     if _index_status(top, ticket) in INDEX_DONE:
         return True
@@ -1693,7 +2330,7 @@ def _closed(top, ticket):
                                                      "spec.md")):
         return None
     return spec is not None and _header_status(
-        crew_ticket._text(spec)) == "done"  # pylint: disable=protected-access
+        crew_ticket._text(spec)) in HEADER_CLOSED  # pylint: disable=protected-access
 
 
 def _review(top, ticket):
@@ -1840,12 +2477,26 @@ def _line(**fields):
     return " ".join(f"{k}={v}" for k, v in fields.items())
 
 
+def _sleep_line(sleep):
+    """`settings`' third line (T-0053): the window's state and overrides."""
+    line = _line(sleep=sleep["state"], schedule=sleep["schedule"] or "none",
+                 **{key: sleep["overrides"][key] or "-" for key in crew_sleep.OVERRIDES})
+    line += " " + _line(source=sleep.get("source", "schedule"))
+    if sleep.get("until"):
+        line += " " + _line(until=_hhmm(sleep["until"]))
+    if sleep["state"] == crew_sleep.UNKNOWN or sleep.get("tightenOnly"):
+        # Which night values the stricter rule applied (`--json`'s `applied`).
+        line += " " + _line(applied=",".join(sleep.get("applied") or []) or "-")
+    return line
+
+
 def _policy_main(args):
     """`approve` and `questions-check`: exit 0 only on a yes. A crash is a
     refusal (exit 1), never an approval or a valid file."""
     try:
-        if args.action == "approve":
-            code, text = approve(args.root, args.ticket)
+        if args.action in ("approve", "auto-reject"):
+            code, text = (approve if args.action == "approve" else auto_reject)(
+                args.root, args.ticket)
             result = {"code": code, "text": text}
         else:
             result = questions_check(args.root, args.ticket)
@@ -1854,6 +2505,17 @@ def _policy_main(args):
         code, text = 1, _one_line(f"refused: {_failure(exc)}")
         result = {"code": code, "text": text}
     sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    return code
+
+
+def _manual_main(args):
+    """`sleep` and `wake` (L-0652): one line; a crash is a refusal (exit 1)."""
+    try:
+        code, text = sleep_now(args.root, args.by) if args.action == "sleep" \
+            else wake_now(args.root)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        code, text = 1, _one_line(f"refused: {_failure(exc)}")
+    sys.stdout.write(text + "\n")
     return code
 
 
@@ -1907,12 +2569,15 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
     for name in ("next", "resume", "settings", "stops", "route", "status", "approve",
-                 "questions-check"):
+                 "questions-check", "auto-reject"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
-    for name in ("next", "approve", "questions-check"):
+    for name in ("sleep", "wake"):
+        sub.add_parser(name).add_argument("--root", default=".")
+    sub.choices["sleep"].add_argument("--by", default="cli")
+    for name in ("next", "approve", "questions-check", "auto-reject"):
         sub.choices[name].add_argument("--ticket", required=True)
     focus = sub.add_parser("focus")
     focus.add_argument("--root", default=".")
@@ -1944,11 +2609,13 @@ def main(argv):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    # Read-only but for approve's receipt: git must not even refresh the index's
+    # Read-only but for approve's receipt and sleep/wake's state: git must not refresh the index's
     # stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
-    if args.action in ("approve", "questions-check"):
+    if args.action in ("approve", "questions-check", "auto-reject"):
         return _policy_main(args)
+    if args.action in ("sleep", "wake"):
+        return _manual_main(args)
     if args.action == "focus":
         if (args.off and args.ticket) or (args.findings and not args.ticket):
             sys.stdout.write("refused: focus takes --ticket <id>, --off, or --findings "
@@ -1981,8 +2648,10 @@ def main(argv):
     elif args.action == "settings":
         result = settings(args.root)
         text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"],
-                                deploy=result["deploy"])]
+                                deploy=result["deploy"],
+                                maxAutoReplans=result["maxAutoReplans"])]
                          + [_line(approval=result["approval"], questions=result["questions"])]
+                         + [_sleep_line(result["sleep"])]
                          + [f"warning: {w}" for w in result["warnings"]])
     elif args.action == "deploy-allowed":
         text, json_text, report = _cli_deploy(args)

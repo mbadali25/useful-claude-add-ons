@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@5479ac05
-verified: 2026-10-01
+anchor: useful-claude-add-ons@92fda580
+verified: 2026-10-04
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -79,10 +79,20 @@ violation visible at all. (JUDGEMENT.)
 - `plugin/obsidian-vault/hooks/scripts/vault_import.py:330` - `add_parsers`, registers `import` (new
   module this pass; module docstring at `:1-20`). (DERIVED, not read beyond the docstring - see
   Unverified.)
-- `plugin/obsidian-vault/hooks/scripts/vault_recall.py:222` - `add_parsers`, registers `recall` - "the
-  contract crew's context hook calls" per its own module docstring (`:1`), read-only, no network, no
-  bridge, no writes, no cache (new module this pass). (DERIVED, not read beyond the docstring - see
-  Unverified.)
+- `plugin/obsidian-vault/hooks/scripts/vault_recall.py:462` - `add_parsers`, registers `recall` - "the
+  contract crew's context hook calls" per its own module docstring (`:1-60`), read-only, no network,
+  no bridge, no writes, no cache. Read in full at T-0083 (2026-10-04): relevance is `terms_of` `:109`
+  (stop words `:84`, three-character minimum, a joined word kept as one term), `matcher` `:146` (a
+  plain term against any word or part; a joined term whole or as a contiguous in-order run of the
+  part sequence `words_of` `:203` builds), `variants` `:122` (y/ies; es only after `ES_ENDINGS`
+  `:100`; a plain s, also from an es word; no form under `MIN_STEM` `:101`; `S_EXCEPTIONS` `:102`;
+  never a stop word), used by `score_note` `:217`; the floor `need_for` `:169` applied at `:355`,
+  `ARCHIVE_PREFIX` `:90` matched in any letter case by `is_excluded` `:258` and pruned in
+  `iter_notes` `:264`, symlinked notes resolved by `link_target` `:307` (into the archive, a
+  SKIP_DIRS or dot folder, or out of the vault: skipped), `kind_of` `:287`, `project_of` `:295`, and
+  the in-vault sort `:362` (project, kind, score, path) inside `search_vault` `:324`; `recall`
+  `:378` still appends vault by vault, so vault priority wins. The
+  vault's `.obsidian/app.json` is not read (review round 1, FIX6). (DERIVED.)
 - `plugin/obsidian-vault/hooks/scripts/vault_garden.py:1095` - `add_parsers`, registers `queue`,
   `ack`, `garden-run`, `drain`, `reconcile`, `schedule` (new module this pass, 1137 lines - the
   largest of the four; module docstring at `:1-20` states per-host queue files, a legacy-file
@@ -413,12 +423,14 @@ violation visible at all. (JUDGEMENT.)
   now drops `ignore`-role vaults from `--all` (`plugin/obsidian-vault/hooks/scripts/vault_ops.py:406-409`,
   new this pass). `vault_recall.py` is, per its own docstring, "the contract crew's context hook
   calls" - a pure read (no network, no bridge, no writes, no cache) that scores hits by
-  title/heading/body and orders results by vault priority then score, budgeted by `--max-chars`
-  (`plugin/obsidian-vault/hooks/scripts/vault_recall.py:1-20`). `vault_import.py` copies notes from
+  title/heading/body and orders results by vault priority, then (since T-0083) project, note kind
+  and score, after skipping excluded folders and notes under the relevance floor, budgeted by
+  `--max-chars` (`plugin/obsidian-vault/hooks/scripts/vault_recall.py:1-60`). `vault_import.py` copies notes from
   another vault or a plain Markdown folder into the primary, dry-run by default, never overwriting,
   stamping `imported_from`/`imported_at` frontmatter so a re-run is a no-op
-  (`plugin/obsidian-vault/hooks/scripts/vault_import.py:1-20`). None of these four modules' internals
-  were read past the module docstring and `add_parsers` signature - see Unverified. (DERIVED.)
+  (`plugin/obsidian-vault/hooks/scripts/vault_import.py:1-20`). Of these four modules only
+  `vault_recall.py` has been read in full (T-0083, its `add_parsers` bullet above); the other three
+  were not read past the module docstring and `add_parsers` signature - see Unverified. (DERIVED.)
 - **`bridge-status.sh`/`.ps1` and `vault-capture.sh`/`.ps1` now carry their own proven-interpreter
   resolvers, closing the gap the previous version of this note flagged as open risk.** Each is an
   independently-copied near-twin of `vault-guard.sh`'s `_vault_guard_resolve_python` (bash) or
@@ -501,9 +513,10 @@ violation visible at all. (JUDGEMENT.)
   but no function body beyond that was read - treat any claim about its per-state wording as
   unverified.
 - **New this pass, module docstring and signature only:** `vault_setup.py` (454 lines),
-  `vault_import.py` (341 lines), `vault_recall.py` (231 lines), `vault_garden.py` (1137 lines - the
-  largest of the four). None of the four was read past its opening docstring and `add_parsers`
-  definition. Every claim this note makes about them (the role contract, the import
+  `vault_import.py` (341 lines), `vault_recall.py` (231 lines then; 480 and read in full at T-0083), `vault_garden.py` (1137 lines - the
+  largest of the four). At that pass none of the four was read past its opening docstring and
+  `add_parsers` definition; since T-0083 `vault_recall.py` is the exception (read in full, and its
+  relevance cases run standalone through `test_memory_ops.py`). Every claim this note makes about them (the role contract, the import
   never-overwrites rule, recall's read-only scope, the gardener's bounds) is taken from those
   docstrings, not from tracing the implementation, and none was executed - `test_memory_ops.py`
   (1368 lines, new this pass) is the regression suite for all four, run only as one folded case
@@ -1323,3 +1336,15 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `5479ac05` on 2026-10-03 (T-0048 merges origin/main `4f6ef540` (L-0601 #327, crew 1.0.162) at `5479ac05`; crew 1.0.183 kept).** Main's maps were taken and T-0048's body edits re-applied at merged-tree lines: `scripts/check-marketplace.py` `main()` `:1679-1715` with seventeen checks (`check_config_reference` at `:1701`, defined `:1375`), the plugins derivation `:1705-1706`, `plugin/crew/CONFIG.md:2478-2485` (main's `:2451-2458`, moved by the generated key tables of sections 10 and 11), `scripts/_test/self-claims.py:1228`. Citations inside earlier re-anchor notes are history and were not moved. Re-anchor only; no claim was re-derived and no suite was executed for this note.
+
+**Re-anchored to `51b2222b` on 2026-10-03 (T-0066, crew 1.0.185: `git.forbiddenTrailers` and the `/crew:done` trailer report; `51b2222b` merges origin/main `4f6ef540`, crew 1.0.162, into `T-0066-build`).** Main's maps were taken at the merge and T-0066's edits re-applied on them. T-0066 changes, among the paths these maps cite: `.crew/verify.json` (one rule appended, `:539-546`), `plugin/crew/CONFIG.md` (section 10/11 headings, one section 10 row, new section 22), `plugin/crew/commands/done.md` (a report section after check 4, `:68-79`), `plugin/crew/commands/implement.md` (step 2 `:46-52`; still 120 lines), `plugin/crew/hooks/scripts/crew_config.py` (the `git` block, +6 after main's `:380` and +4 after its `:595`), `plugin/crew/skills/crew-setup/SKILL.md`, the two templates, `plugin/crew/tests/test_crew_config.py`, the new `crew_trailers.py` and its suite, and release bookkeeping (`CHANGELOG.md`, `TODO.md` +11 at `:241`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, both version files). Body `path:N` citations into those files were re-mapped by a difflib line diff from main `4f6ef540` to the merged tree; a bare `:N` was re-mapped only where T-0066's earlier pass (`f7fd2e78`) had read the sentence and applied it. History notes were not re-mapped. No other claim was re-derived and no suite was executed for this note.
+
+**Re-anchored to `5c2f0d6e` on 2026-10-04 (T-0083, the recall relevance slice; `T-0083-build` after merging origin/main `86d96fa1`).** Per-path check: of this note's cited paths only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed. `vault_recall.py` was read in full and its bullet rewritten with fresh `path:line` cites (`add_parsers` moved `:222` -> `:348`); the roles-pass sentence now names the new ordering. `test_memory_ops.py` gained `_t_recall_relevance` (`:395`) and grew 1372 -> 1507 lines; the "1368 lines, new this pass" figure in Unverified is that pass's and is left as written. `run-tests.sh` ran: 71 passed, 0 failed, 0 skipped.
+
+**Re-anchored `5c2f0d6e` -> `17ea9d1e` on 2026-10-04 (T-0083 review round 1).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. The `vault_recall.py` bullet was re-derived (userIgnoreFilters no longer read; case-insensitive folders; symlink resolution; whole-word terms) with fresh cites; `_t_recall_relevance` is still at `:398`.
+
+**Re-anchored `17ea9d1e` -> `bd422497` on 2026-10-04 (T-0083 review round 2).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. The `vault_recall.py` bullet was re-derived (joined-word parts, plurals, links into skipped folders, whole-word snippet) with fresh cites; `_t_recall_relevance` is still at `:398`.
+
+**Re-anchored `bd422497` -> `53bee6e5` on 2026-10-04 (T-0083 review round 3).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. The `vault_recall.py` bullet was re-derived (joined query word as one contiguous term, the s/es plural rule, stop-word guard) with fresh cites; the roles-pass docstring cite moved `:1-38` -> `:1-58`, and its "none of these four ... read past the docstring" sentence now excepts `vault_recall.py`, which this note's own bullet says was read in full. `_t_recall_relevance` is still at `:398`.
+
+**Re-anchored `53bee6e5` -> `92fda580` on 2026-10-04 (T-0083 review round 4).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. Every `vault_recall.py` cite was re-checked against the file at `92fda580` and moved (docstring `:1-58` -> `:1-60`; the plural rule now y/ies, es after `ES_ENDINGS`, plain s with `MIN_STEM` 3 and `S_EXCEPTIONS`); `_t_recall_relevance` is still at `:398`.

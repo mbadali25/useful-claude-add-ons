@@ -854,7 +854,7 @@ def test_settings_line_names_deploy(tmp_path, monkeypatch, capsys):
     code = crew_autopilot.main(["settings", "--root", root])
 
     assert (code, capsys.readouterr().out.splitlines()[0]) == (
-        0, "mode=plan maxPhases=12 deploy=all")
+        0, "mode=plan maxPhases=12 deploy=all maxAutoReplans=0")
 
 
 def test_cli_prints_verdict_line(tmp_path, monkeypatch, capsys):

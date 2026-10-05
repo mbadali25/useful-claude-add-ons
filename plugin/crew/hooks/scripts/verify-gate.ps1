@@ -1824,6 +1824,9 @@ $anySkipped = $false
 # How many, not only whether: -Ci names the count when it fails the run on
 # them (a skip is not a pass in CI). Nothing else reads it.
 $skipCount = 0
+# T-0082: rules that could not be judged (killed, never started, no
+# completion record). Each also sets $failed; this only feeds the summary.
+$unknownCount = 0
 # One entry per command actually run this turn - the twin of CMD_LOG in
 # verify-gate.sh, fed to verify_record.py sync after the loop.
 $cmdLog = [System.Collections.ArrayList]@()
@@ -1939,9 +1942,16 @@ foreach ($ident in $cmds) {
 
   $ruleStart = Get-Date
   if (-not $bashExe) { $bashExe = Resolve-CrewBash }
-  # A native command leaves $LASTEXITCODE at its previous value when it fails
-  # to start, so a stale 0 would read as a pass. Reset it first.
-  $global:LASTEXITCODE = 0
+  # T-0082: nothing about this rule is known yet, and "not known" is $null,
+  # never 0. `$rc` used to carry the PREVIOUS rule's value into a rule whose
+  # bash could not be started (the call throws, the assignment is skipped),
+  # and `$global:LASTEXITCODE = 0` preset the same answer: an unknown that
+  # started as the safe-looking value. `$rc` is the wrapper's status,
+  # `$ruleRec` the completion record, `$ruleWhy` a could-not-tell reason.
+  $rc = $null
+  $ruleRec = $null
+  $ruleWhy = $null
+  $global:LASTEXITCODE = $null
   Push-Location $root
   try {
     # Captured through a REGULAR FILE, not `$out = & ... 2>&1` (kept as the
@@ -2009,14 +2019,48 @@ foreach ($ident in $cmds) {
     # carrying it to this flavour.
     $ruleOutFile = $null
     try { $ruleOutFile = [System.IO.Path]::GetTempFileName() } catch { $ruleOutFile = $null }
+    # The `.crew/` fallbacks are ABSOLUTE, from $root (T-0082 review F3):
+    # `[System.IO.File]::Open` below resolves a relative path against the
+    # process directory, not PowerShell's location, so a gate started from a
+    # subdirectory never found a relative fallback file.
+    $crewDir = Join-Path $root ".crew"
     if (-not $ruleOutFile) {
       try {
-        if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
-        $candidate = Join-Path ".crew" (".verify-rule-out." + [System.IO.Path]::GetRandomFileName())
+        if (-not (Test-Path -LiteralPath $crewDir)) { New-Item -ItemType Directory -Path $crewDir -Force -ErrorAction Stop | Out-Null }
+        $candidate = Join-Path $crewDir (".verify-rule-out." + [System.IO.Path]::GetRandomFileName())
         New-Item -ItemType File -Path $candidate -ErrorAction Stop | Out-Null
         $ruleOutFile = $candidate
       } catch { $ruleOutFile = $null }
     }
+    # T-0082: the COMPLETION RECORD - twin of RULE_DONE_FILE in
+    # verify-gate.sh, where the full rationale lives. A fresh private
+    # directory per rule run (review F4), the record at `<dir>/rc`: never a
+    # delete-then-recreate name in a shared temp dir. New-Item refuses a name
+    # that already exists, so the directory is ours; off Windows it is then
+    # narrowed to 0700. Removed whole after the rule. Unlike the .sh twin,
+    # a gate that is itself killed mid-rule has no trap to remove it, so the
+    # orphaned wrapper can still write `<dir>/rc` (and the output file) after
+    # the gate is gone: litter, never a pass - each run uses a fresh random
+    # directory and nothing reads an old one.
+    $ruleDoneDir = $null
+    foreach ($doneBase in @([System.IO.Path]::GetTempPath(), $crewDir)) {
+      try {
+        if (-not (Test-Path -LiteralPath $doneBase -PathType Container)) { continue }
+        $candidate = Join-Path $doneBase (".verify-rule-done." + [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType Directory -Path $candidate -ErrorAction Stop | Out-Null
+        # The real-OS test, not the $env:OS seam (the suite fakes OS=Windows_NT
+        # on Linux), in the form 5.1 survives: no $IsWindows there means Windows.
+        $doneDirRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+        if (-not $doneDirRealWindows) {
+          [System.IO.File]::SetUnixFileMode($candidate, [System.IO.UnixFileMode]'UserRead, UserWrite, UserExecute')
+        }
+        $ruleDoneDir = $candidate
+        break
+      } catch {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) { Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue }
+      }
+    }
+    $ruleDoneFile = if ($ruleDoneDir) { Join-Path $ruleDoneDir "rc" } else { $null }
     if (-not $bashExe) {
       # Resolve-CrewBash found no natively-launchable candidate for THIS
       # rule (re-checked above, per-rule, in case PATH changed mid-run) -
@@ -2025,9 +2069,11 @@ foreach ($ident in $cmds) {
       # rc-ne-0 / "VERIFY FAILED" branch below as any other rule failure, so
       # this reason is what prints, not a hang with no output at all.
       if ($ruleOutFile) { Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue }
+      if ($ruleDoneDir) { Remove-Item -LiteralPath $ruleDoneDir -Recurse -Force -ErrorAction SilentlyContinue }
       $out = @("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim and hang")
+      $ruleWhy = $out[0]
       $rc = 1
-    } elseif ($ruleOutFile) {
+    } elseif ($ruleOutFile -and $ruleDoneFile) {
       # No positional args passed to $bashExe here on purpose: `eval`
       # inherits the CURRENT positional parameters, and a wrapper script
       # invoked with args would make $1/$2/... visible inside the evaled
@@ -2036,8 +2082,10 @@ foreach ($ident in $cmds) {
       # restored/cleared immediately after.
       $prevRuleCmd = $env:CREW_VERIFY_RULE_CMD
       $prevRuleOut = $env:CREW_VERIFY_RULE_OUT
+      $prevRuleDone = $env:CREW_VERIFY_RULE_DONE
       $env:CREW_VERIFY_RULE_CMD = $c
       $env:CREW_VERIFY_RULE_OUT = ($ruleOutFile -replace '\\', '/')
+      $env:CREW_VERIFY_RULE_DONE = ($ruleDoneFile -replace '\\', '/')
       # Being SCOPED to this rule (restored/cleared after, above) only
       # protects the NEXT rule - it does nothing about THIS one: bash
       # inherits its whole environment at spawn, so CREW_VERIFY_RULE_CMD
@@ -2051,11 +2099,43 @@ foreach ($ident in $cmds) {
       # has for free there (a plain shell variable, never exported), so
       # this is parity with that twin, not a new leak this flavour alone
       # has to carry.
-      $wrapperScript = 'c="$CREW_VERIFY_RULE_CMD"; o="$CREW_VERIFY_RULE_OUT"; unset CREW_VERIFY_RULE_CMD CREW_VERIFY_RULE_OUT; eval "$c" > "$o" 2>&1 </dev/null'
-      $null | & $bashExe -c $wrapperScript
-      $rc = $LASTEXITCODE
+      #
+      # T-0082: the rule runs in its own subshell `( eval "$c" )`, so a rule's
+      # `exit N` ends only that, and the wrapper then writes the rule's status
+      # to the completion record - the same shape as verify-gate.sh. The
+      # record path is a plain shell variable, RULE_DONE_FILE, as there.
+      # A bash that cannot be started throws here; the catch leaves `$rc`
+      # $null ("could not be started") where the throw used to skip the
+      # assignment with the previous rule's value still in it, and the
+      # cleanup below still runs.
+      $wrapperScript = 'c="$CREW_VERIFY_RULE_CMD"; o="$CREW_VERIFY_RULE_OUT"; RULE_DONE_FILE="$CREW_VERIFY_RULE_DONE"; unset CREW_VERIFY_RULE_CMD CREW_VERIFY_RULE_OUT CREW_VERIFY_RULE_DONE; ( eval "$c" ) > "$o" 2>&1 </dev/null; printf ''%s\n'' "$?" > "$RULE_DONE_FILE"'
+      try {
+        $null | & $bashExe -c $wrapperScript
+        $rc = $LASTEXITCODE
+      } catch {
+        # `$rc` stays $null from the reset at the top of this rule.
+        [Console]::Error.WriteLine("verify-gate: the rule's shell could not be started: $($_.Exception.Message)")
+      }
       if ($null -eq $prevRuleCmd) { Remove-Item Env:\CREW_VERIFY_RULE_CMD -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_CMD = $prevRuleCmd }
       if ($null -eq $prevRuleOut) { Remove-Item Env:\CREW_VERIFY_RULE_OUT -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_OUT = $prevRuleOut }
+      if ($null -eq $prevRuleDone) { Remove-Item Env:\CREW_VERIFY_RULE_DONE -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_DONE = $prevRuleDone }
+      # Bounded read (8 bytes): the rule can see this path and could point
+      # it at something endless. Exactly 1-3 ASCII digits and a newline, at
+      # most 255, or there is no record.
+      try {
+        $recFs = [System.IO.File]::Open($ruleDoneFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+          $recBuf = [byte[]]::new(8)
+          $recLen = $recFs.Read($recBuf, 0, 8)
+          $recText = [System.Text.Encoding]::ASCII.GetString($recBuf, 0, $recLen)
+          if ($recText -cmatch '\A(0|[1-9][0-9]{0,2})\n\z' -and [int]$recText.Trim() -le 255) { $ruleRec = [int]$recText.Trim() }
+        } finally {
+          $recFs.Dispose()
+        }
+      } catch {
+        $ruleRec = $null
+      }
+      Remove-Item -LiteralPath $ruleDoneDir -Recurse -Force -ErrorAction SilentlyContinue
       # 1 MiB; twin of RULE_OUT_CAP in verify-gate.sh. The env override is
       # test-only (proving the cap is enforced without writing gigabytes to
       # prove it) - no operator-facing doc names it, and it must never be
@@ -2149,18 +2229,46 @@ foreach ($ident in $cmds) {
       # check that ran. This goes through the same rc-ne-0 branch below
       # as every other rule failure, so "VERIFY FAILED: $c" and this
       # message both print.
-      $out = @("verify-gate: cannot create an output-capture file (temp dir and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever")
+      if ($ruleOutFile) { Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue }
+      if ($ruleDoneDir) { Remove-Item -LiteralPath $ruleDoneDir -Recurse -Force -ErrorAction SilentlyContinue }
+      $out = @("verify-gate: cannot create an output-capture file or a completion-record file (temp dir and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever")
+      $ruleWhy = $out[0]
       $rc = 1
     }
   } finally {
     Pop-Location
+  }
+  # The decision table, in this order, the same in verify-gate.sh.
+  if ($null -eq $ruleWhy) {
+    if ($null -eq $rc) {
+      $ruleWhy = "the rule's shell could not be started"
+    } elseif ($rc -ne 0) {
+      $ruleWhy = "the rule's runner ended with status $rc before it recorded a result"
+    } elseif ($null -eq $ruleRec) {
+      $ruleWhy = "no completion record"
+    } elseif ($ruleRec -gt 192) {
+      $ruleWhy = "exit status ${ruleRec}, above 128 and not a signal number - the rule's own status"
+    } elseif ($ruleRec -gt 128) {
+      $ruleWhy = "exit status ${ruleRec}: ended by signal $($ruleRec - 128), or the rule's own status"
+    } else {
+      $rc = $ruleRec
+    }
   }
   # Exit 77 is SKIP -- the _verify/smoke.sh and GNU automake convention for
   # "skipped, environment absent". Not a pass, not a fail: it must not fail
   # the turn, and it must not be recorded as verified either (see
   # verify_record.py, which is what actually persists "skipped").
   $cmdStatus = "pass"
-  if ($rc -eq 77) {
+  if ($ruleWhy) {
+    # Could not tell (T-0082): `VERIFY FAILED` first, then the reason.
+    [Console]::Error.WriteLine("VERIFY FAILED: $c")
+    [Console]::Error.WriteLine("verify-gate: COULD NOT TELL (${ruleWhy}): $c")
+    [Console]::Error.WriteLine("bash: $bashExe")
+    $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
+    $failed = $true
+    $unknownCount++
+    $cmdStatus = "unknown"
+  } elseif ($rc -eq 77) {
     [Console]::Error.WriteLine("verify-gate: SKIP (rc 77, environment absent): $c")
     $cmdStatus = "skip77"
     $anySkipped = $true
@@ -2188,6 +2296,9 @@ foreach ($ident in $cmds) {
   Write-CrewLockDeadline -LockPath $lock -Token $lockToken -Ttl $lockTtl -MaxCost $maxCost
 }
 [Console]::Error.WriteLine("verify-gate: ${totalElapsed}s total across $($cmds.Count) rule command(s)")
+if ($unknownCount -gt 0) {
+  [Console]::Error.WriteLine("verify-gate: $unknownCount rule command(s) COULD NOT BE JUDGED - counted as FAILED")
+}
 if ($coveredN -gt 0) {
   [Console]::Error.WriteLine("verify-gate: $coveredN of them COVERED by a declared superset rule that passed this run - not re-run")
 }
