@@ -37,6 +37,14 @@ Last updated: 2026-10-05T13:36Z
 - **New tickets** minted by this rush start at **C-0020**, recorded in `pending-tickets.md`.
 - **Commits** end with `Claude-Session:` only (no Co-Authored-By) - owner confirmed 2026-10-05.
 - **Add groups as needed** for late tickets (owner 2026-10-05).
+- **Owner 2026-10-05 (recommendations accepted):**
+  1. H1/H3: whichever is ready first lands first; the second merges main and gets a merge-only review.
+  2. At most ~8 agents at once (4 cores, Codex capacity); start new builders only as others finish.
+  3. Release groups land as soon as each is ready (only G0 before G3c, G2 before G6 are fixed).
+  4. Per-ticket review cap 6 rounds; the coordinator reviews the round-6 fix itself.
+  5. Close each source PR when its content reaches main, with a link to the group PR.
+  6. G6's sleep tickets (#431, #435, #444) drop to after 1.2.0 if G2 lands after every other release group.
+  7. Keep `gpt-6-sol`; switch reviews to `gpt-6.1-sol` only if capacity errors persist.
 - The other landing session (ended at crew 1.1.0, #512) stays out of #324-#538 (owner asked it, 2026-10-05).
 
 ## State

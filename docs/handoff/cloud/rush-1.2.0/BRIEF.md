@@ -111,3 +111,9 @@ coordinator right after the restart.
 4. NEW RULE: `git push` after EVERY commit (not after each ticket).
 5. Continue the ticket list in order. Tickets with a CLEAN final review and green targeted suites
    are done; don't redo them.
+
+## Review-round cap (owner, 2026-10-05)
+
+Per ticket: at most 6 Codex rounds. If round 6 is still BLOCK/FIX, fix what it found, push, stop the
+loop, and report the round-6 findings verbatim plus your fix commit; the coordinator reviews that
+fix itself.
