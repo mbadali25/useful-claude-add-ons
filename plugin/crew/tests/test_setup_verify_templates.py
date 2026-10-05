@@ -16,6 +16,7 @@ no rule.
 import json
 import os
 import shutil
+import signal
 import subprocess
 import time
 
@@ -294,3 +295,23 @@ def test_smoke_tail_survives_the_verify_gate_filter(tmp_path):
     proc = _run(["_verify/smoke.sh"], repo, env)
     relayed = [ln for ln in proc.stdout.splitlines() if ln.startswith(("FAIL", "SMOKE:"))]
     assert any("the cause" in ln for ln in relayed), relayed
+
+
+@pytest.mark.parametrize("runner", ["run-all", "smoke"])
+def test_an_interrupted_runner_leaves_no_capture_file(tmp_path, runner):
+    repo, env = _repo(tmp_path)
+    marker = tmp_path / "started"
+    body = f'touch "{marker.as_posix()}"\necho partial output\nsleep 2\nexit 0\n'
+    _add_case(repo, "slow", body)
+    if runner == "smoke":
+        _smoke_with(repo, 'check "slow" bash _verify/cases/slow.sh')
+    proc = subprocess.Popen([_BASH, f"_verify/{runner}.sh"], cwd=str(repo), env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(100):
+        if marker.exists():
+            break
+        time.sleep(0.05)
+    proc.send_signal(signal.SIGTERM)
+    proc.wait(timeout=20)
+    assert proc.returncode != 0
+    assert not os.listdir(env["TMPDIR"]), os.listdir(env["TMPDIR"])

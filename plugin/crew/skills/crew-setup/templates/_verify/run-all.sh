@@ -34,11 +34,18 @@ fi
 # holding the pipe cannot hold the runner open. Each tail line starts
 # `FAIL <name> |`: crew's verify gate relays only lines starting `FAIL` or
 # `SMOKE:` from a failed smoke run, so an indented line would never reach it.
+# The capture file of the check in progress is removed on every exit, a
+# signal included (INT, TERM and HUP end the run through the EXIT trap).
+CUR_OUT=""
+cleanup() { [ -z "$CUR_OUT" ] || rm -f "$CUR_OUT"; }
+trap cleanup EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 PASS=0; FAIL=0; SKIP=0
 run() { local n="$1" out rc f; shift
   f="$(mktemp)" || { echo "FAIL $n: cannot create a temp file"; FAIL=$((FAIL+1)); return; }
+  CUR_OUT="$f"
   "$@" >"$f" 2>&1; rc=$?
-  out="$(tail -n 5 "$f")"; rm -f "$f"
+  out="$(tail -n 5 "$f")"; rm -f "$f"; CUR_OUT=""
   if [ "$rc" -eq 0 ]; then echo "PASS $n"; PASS=$((PASS+1))
   elif [ "$rc" -eq 77 ]; then echo "SKIP $n (exit 77: tool or environment absent)"; SKIP=$((SKIP+1))
   else echo "FAIL $n: $*"; [ -z "$out" ] || printf '%s\n' "$out" | while IFS= read -r l; do printf 'FAIL %s | %s\n' "$n" "$l"; done
