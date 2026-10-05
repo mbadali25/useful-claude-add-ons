@@ -65,6 +65,12 @@ EXAMPLES = {
               ("going to sleep", None, None), ("I'm going to sleep.", None, None),
               ("Good night.", None, None)],
     "wake": [("I'm back", None, None), ("Morning!", None, None), ("good morning", None, None)],
+    "help": [("help", None, None), ("what now", None, None), ("what's next", None, None),
+             ("What is next.", None, None), ("where are we", None, None),
+             ("please help", None, None), ("what\u2019s next", None, None)],
+    "help-topic": [("how do i write the spec", None, "write the spec"),
+                   ("How do I use autopilot", None, "autopilot"),
+                   ("how do i review T-4", None, "review T-4")],
 }
 
 AMBIGUOUS_PROMPTS = ["do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it",
@@ -172,6 +178,41 @@ def test_approve_phrasings_route_nowhere(prompt):
 @pytest.mark.parametrize("prompt", [None, 12, b"continue", ["continue"], ""])
 def test_a_non_string_or_empty_prompt_is_not_a_route(prompt):
     assert crew_route.match(prompt) is None
+
+
+# --- T-0025: the help rows -----------------------------------------------------
+
+def test_help_rows_match():
+    """`help` routes bare to /crew:help; `how do i <x>` passes <x> on as the
+    topic, so `/crew:help` answers it through this same table."""
+    plain, topic = crew_route.match("what now"), crew_route.match("how do i use the gate")
+
+    assert (plain["command"], crew_route.command_for(plain, None),
+            topic["command"], crew_route.command_for(topic, None)) == \
+        ("/crew:help", "/crew:help", "/crew:help", "/crew:help the gate")
+
+
+@pytest.mark.parametrize("prompt", ["next", "done", "Next.", "Done!", "next?", "help?",
+                                    "what's next?", "can you help me with the login page"])
+def test_next_and_done_alone_still_route_nowhere(prompt):
+    assert crew_route.match(prompt) is None
+
+
+@pytest.mark.parametrize("prompt", ["how do i approve", "how do i approve T-1",
+                                    "how do i use approve", "How do I get it approved"])
+def test_how_do_i_approve_routes_nowhere(prompt):
+    """Routing never names approval, not even as a help topic: `/crew:help`
+    itself still explains `/crew:approve` when the user types that."""
+    assert crew_route.match(prompt) is None
+
+
+def test_help_decides_without_a_ticket(tmp_path):
+    root = _repo(tmp_path)
+
+    got = crew_route.decide(str(root), "how do i write the spec")
+
+    assert (got["outcome"], got["command"], got["ticket"]) == \
+        ("route", "/crew:help write the spec", None)
 
 
 def test_no_route_ever_names_approve():

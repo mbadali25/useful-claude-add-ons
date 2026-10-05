@@ -64,6 +64,33 @@ be wrong can be closed on evidence.
   sabotaged by hand and went red - and a `reference` kind in `artifact_verdicts`, without which a
   refreshed `integrations.md` needs Touch once L-0540 wires the verdicts into the audit.
 
+- **crew command surface - owner decision (T-0025, advisory; not started, ask first).**
+  `plugin/crew/commands/` holds 37 files. `/crew:help commands` groups them
+  (`plugin/crew/hooks/scripts/crew_help.py::GROUPS`) but nothing is hidden, merged, renamed or
+  removed: CLAUDE.md "Stop and ask" covers deleting or renaming a registered entry. Proposed:
+  (1) **core, shown first everywhere** - brainstorm, spec, plan, approve, implement, review, done,
+  fix, autopilot, status, help; (2) **reached through `/crew:help` or `/crew:autopilot`, off the
+  README's primary table** - docs, diagram, onboard, reference, verify, runbook, handoff, init,
+  config, config-setup, model, migrate, upgrade, debug, survey; (3) **merge candidates** -
+  jira-sync + sdp-sync + obsidian-sync -> one `/crew:sync` dispatching on the tracker mode, and
+  migrate + upgrade -> one `/crew:migrate` that runs the pre-0.20 upgrade first when needed;
+  (4) **keep, specialist** - change, emergency, gate, promote, split, webtest; (5) **remove at the
+  next major** - the 10-line removal stubs `plugin/crew/commands/ticket.md` and `work.md`.
+  Unverified: whether Claude Code has a frontmatter field that hides a plugin command from the
+  `/` menu. `config-setup` (added after T-0025's spec was written) is placed in group 2 as setup.
+- **T-0025 harness-only follow-up (review/gate harness, lands alone).** Three parts of T-0025's
+  spec touch `HARNESS` paths (`scripts/check-tooling-pr.py`), so they were left out of #359:
+  (a) `plugin/crew/hooks/scripts/scope_guard.py` - for approval status `none`, deny with "no
+  approved plan for <id>: the user types `/crew:approve <id>`" (or "run `/crew:plan <id>`" when
+  `.work/tickets/<id>/plan.md` is missing) instead of "To widen scope", which stays for an
+  out-of-Touch path only; keep the `if approval["status"] != "approved":` anchor; tests
+  `test_no_approval_deny_names_approve` / `test_no_plan_deny_names_plan` (module and both
+  flavours) in `plugin/crew/tests/test_scope_guard.py`; (b) `plugin/crew/commands/review.md`'s
+  no-ticket stop names `/crew:review <ticket-id>` and `/crew:help`
+  (`test_review_no_ticket_stop_names_a_command`); (c) `plugin/crew/tests/sabotage_help.py`
+  registered in `plugin/crew/tests/sabotage.py` with HELP_MUTATIONS: a 9th `where` line, picking
+  the first of several open tickets, a local `re.compile` table in `crew_help.py`, implement.md
+  back to `/crew:plan $1 --approve`, and the scope-guard `none` text back to "To widen scope".
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and

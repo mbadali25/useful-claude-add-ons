@@ -14,13 +14,13 @@ carries the per-step TDD discipline and the ledger this file only summarises.
 ## 0. Refuse without an approved plan
 
 ```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py status --ticket $1
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py validate --ticket $1
 ```
 
-**This command refuses to edit anything unless that call reports the plan
-approved.** No approval, a stale one (the plan changed since) or no plan: stop,
-say which, and point at `/crew:plan $1` or `/crew:plan $1 --approve`. The
-receipt, not your read of the plan, is what the completion audit checks later.
+**This command refuses to edit anything unless `status` reports the plan
+approved** (`validate` checks the contract, not approval). `none` or `stale`: stop, say which, name one fix -
+no plan.md or `INVALID:` lines: run `/crew:plan $1`; else the user types `/crew:approve $1`.
 
 ## 1. Record where this ticket starts
 

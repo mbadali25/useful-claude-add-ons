@@ -51,7 +51,7 @@ Counted by walking the directories at this anchor:
 | | Count | How counted |
 |---|---|---|
 | Agents | 4 | `.md` files in `plugin/crew/agents/` — `explorer.md`, `researcher.md`, `reviewer.md`, `security.md` |
-| Commands | 36 | `.md` files in `plugin/crew/commands/` (36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
+| Commands | 37 | `.md` files in `plugin/crew/commands/` (37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
 | Skills | 31 | subdirectories of `plugin/crew/skills/` (includes 8 `stack-*` skills; `crew-standards` since T-0085, `crew-qa-standards` since #267) |
 
 `.claude-plugin/marketplace.json:223` states the identical three numbers (4
@@ -1163,13 +1163,36 @@ Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_
 registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json` rule 29
 (`:355-362`; rule 28 at `:310-316` after T-0094 merged `8ab733d7`, `:307-313` before, until L-0516 inserted rule 10), which also maps `commands/autopilot.md` since review round 2.
 
+## Contextual help: /crew:help (T-0025, crew 1.1.6)
+
+DERIVED at `b32e9fc9` (T-0025-build), ported onto release/1.2.0 unchanged in `crew_help.py`. `plugin/crew/hooks/scripts/crew_help.py` (385 lines) is read-only and
+exits 0. `where` (`:199`) prints at most `MAX_LINES` (`:43`, 8) lines from
+`crew_autopilot.status` alone - no INDEX, receipt or ledger parsing of its own: `where:`,
+`waiting on:` (T-0018's `_waiting`), one `next:` from `_next_line` (`:156`; a stop is "you
+type <command>", the rest from `STOP_NEXT` `:89`), and 2-3 `also:` lines from `RELATED`
+(`:52`, keyed by `crew_autopilot.WAITING`'s phases, which a test holds it to). No single
+ticket goes through `_no_ticket` (`:174`), which lists `crew_autopilot.open_index_tickets`
+and never picks one. `about` (`:337`): a command file name gives `describe` (`:252`,
+frontmatter `description`/`argument-hint` plus `HELP` `:101`), `commands` gives
+`groups_text` (`:267`, the advisory `GROUPS` `:126`), a ticket id gives `where` for it, and
+a question goes through `crew_route.match` (`_from_route` `:316`) and then a command-name
+word lookup (`_by_word` `:306`); `crew_help.py` imports no pattern module (asserted by
+`test_help_has_no_phrase_table_of_its_own`). `plugin/crew/commands/help.md` runs it and
+prints the output verbatim. `plugin/crew/commands/implement.md` step 0 now runs
+`crew_ticket.py status` and names `/crew:plan $1` or "the user types `/crew:approve $1`".
+Tests: `plugin/crew/tests/test_crew_help.py`; `.crew/verify.json`'s last rule (`:780`). The
+scope-guard deny text, `review.md`'s no-ticket stop and `sabotage_help.py` are review-harness
+paths and wait for a harness-only PR (TODO.md).
+
+
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 
 DERIVED at `eba11657`, re-read after review round 1; every `crew_route.py` line below re-read
 at `bb89215d` (L-0662, on T-0057 and T-0069), +1 from line 70 on after the batch-5 merge (one docstring line). `plugin/crew/hooks/scripts/crew_route.py`
 (627 lines) decides whether a short plain-text prompt names a lifecycle command. The table
 is `PHRASES` (`:141`): brainstorm, spec, plan, implement, review, done,
-continue, status, then T-0057's five and L-0662's four autopilot rows - no approve row. `match`
+continue, status, then T-0057's five and L-0662's four autopilot rows, then T-0025's `help`
+and `help-topic` (`how do i [use] <x>`, never matching approval) - no approve row. `match`
 (`:247`) matches the WHOLE prompt after `normalise` (`:224`) refuses a line break - `\n`, `\r`,
 or any other boundary `str.splitlines` knows (`_OTHER_LINE_BREAKS` `:184`, T-0069) - more than
 `MAX_PROMPT_CHARS` (`:109`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:177`) phrases

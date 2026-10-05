@@ -776,7 +776,18 @@
       "coveredBy": "crew-suite",
       "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_tmp_hygiene.py -q"],
       "reach": "local",
-      "why": "T-0065 item 7. Each test gives a hook or run-tests.sh a fresh TMPDIR and asserts it is EMPTY afterwards: the auto-clear sender sent or SIGKILLed in its sleep, and the whole shell suite (about 55s of the 80s, measured 2026-10-04 under load from other builders). Over a Stop's budget alone, hence coveredBy. reach: local - stub tmux, throwaway repos." }
+      "why": "T-0065 item 7. Each test gives a hook or run-tests.sh a fresh TMPDIR and asserts it is EMPTY afterwards: the auto-clear sender sent or SIGKILLed in its sleep, and the whole shell suite (about 55s of the 80s, measured 2026-10-04 under load from other builders). Over a Stop's budget alone, hence coveredBy. reach: local - stub tmux, throwaway repos." },
+    { "paths": ["plugin/crew/hooks/scripts/crew_help.py",
+                "plugin/crew/commands/help.md",
+                "plugin/crew/tests/test_crew_help.py",
+                "plugin/crew/hooks/scripts/crew_route.py",
+                "plugin/crew/tests/test_crew_route.py",
+                "plugin/crew/tests/test_lifecycle_commands.py"],
+      "coveredBy": "crew-suite",
+      "run": ["python3 -m pytest plugin/crew/tests/test_crew_help.py plugin/crew/tests/test_crew_route.py plugin/crew/tests/test_lifecycle_commands.py -q"],
+      "seconds": 10,
+      "reach": "local",
+      "why": "9.5s wall (311 passed) measured 2026-10-03 on a 4-CPU Linux container, load average 8.7-8.9 from other lanes' runs, serial. T-0025's /crew:help: crew_help.py where prints at most 8 lines from crew_autopilot.status (one case per phase in crew_autopilot.WAITING, stop and go, with and without a command, plus no ticket, several open tickets listed and never picked, a broken pointer, and a raising reader), about resolves every command file and routes questions only through crew_route.match (a spy asserts it, and an AST check finds no pattern module or compile call in crew_help.py), and both write nothing (snapshot and mtime). test_crew_route.py carries the help rows and holds bare next/done and every approve phrasing to no route; test_lifecycle_commands.py holds help.md to the 120-line budget and implement.md's refusal to name /crew:approve $1 or /crew:plan $1, never --approve. reach: local - every case builds a throwaway repo under tmp_path." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

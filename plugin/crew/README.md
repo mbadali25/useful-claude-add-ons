@@ -282,7 +282,7 @@ Then inside Claude Code:
 /plugin install crew@my-marketplace
 ```
 
-Verify with `/help` — you should see `/crew:brainstorm`, `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`, `/crew:status`, `/crew:migrate`, and `/crew:onboard`.
+Verify with `/help` — you should see `/crew:brainstorm`, `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`, `/crew:status`, `/crew:help`, `/crew:migrate`, and `/crew:onboard`.
 
 Plugin components other than skills are cached at load time. After editing agents, hooks, or `.mcp.json`, run `/reload-plugins` or restart.
 
@@ -968,6 +968,20 @@ One vocabulary, owned by `crew_tracker.py` (`STATUS_ORDER`, `OWNER_STATUSES`, `C
 - **Per tracker.** `files` and `obsidian`: `crew_split.py apply --root . --ticket <id> --via command` writes `spec.pre-split.md` byte-identical to `spec.md`, mints each child `ready` through `crew_ticket.mint` with a direction quoting its criteria and exclusions and pointing back to the parent, records each id under a trailing `## Minted` in `split.md` as it returns, and only after every mint returned sets the parent's spec header to `status: superseded` with a `split-into: <ids>` line and moves its INDEX row (and Obsidian card) to `superseded`. A failed mint names the minted and unminted children, leaves the parent's status unchanged and drops the check record, so a re-run needs a fresh `check` and yes; it then skips a child only when an apply record (`split-apply.json`) exists, the ticket carries apply's provenance (`origin: split of <parent>`, `split-child: <n>` in its direction) and an INDEX row, and its direction is exactly what the CURRENT proposal's child would get; it adopts a child minted whose id never reached `split.md` on the same terms. A minted child the edited proposal no longer matches stops the apply, naming it, with nothing minted and the parent untouched; restore that child's text, or cancel the stale ticket (`crew_tracker.py move --ticket <child> --to cancelled`) and re-run `check` — a `cancelled` or `superseded` child is never reused, and a fresh one is minted in its place. A `## Minted` section apply did not write (not last, holding anything but `- Child N: <id>` lines, or with no apply record) is refused, and the proposal hash covers every byte but a valid trailing block. A spec or proposal that is not UTF-8 is refused before the first mint. `jira`: `/crew:split`'s MCP steps as before (sub-task or linked issue, one parent comment, the cache files, the parent untransitioned), now with `check` before the confirmation and `confirm` before the first create. `sdp`: stops — SDP is a service desk, not where this work gets decomposed. `apply` takes only `--via command` until T-0058.
 - **The confirmation gate.** `/crew:split` stays model-invocable, so asking a session to split a ticket works, and the guard is on the confirmation itself. `check`, on a pass, records the proposal's sha256 and the session's current human-turn id (the `turn.id` the context hook writes on UserPromptSubmit, found through `CLAUDE_CODE_SESSION_ID`) at `<git-common-dir>/crew/tickets/<id>/split-check.json`. `confirm` (and `apply` through it) passes only when the proposal is unchanged and a different turn id is readable for the same session, set by a prompt (the hook's `lastPrompt`) that is readable, is not a harness envelope (a `<task-notification>`, wake, webhook — anything opening with `<`) and is not the prompt `check` ran under (a loop re-sending it, or the owner typing the same words twice; the first 500 characters are compared). No session id, no or an unreadable turn record (the context hook off, or `memory.inject: false`), an empty turn id or prompt, or a check that saw none is a refusal. A successful apply spends the check record. Accepted limits (owner decision 2026-10-04): **the gate is not owner-proof against the session itself — a session can schedule its own plain-text "yes" (`send_later`, a routine) and pass it**, because a scheduled prompt delivered as plain text reads as typed. `CLAUDE_CODE_SESSION_ID` is an environment variable any process can set, and a human prompt that is not a yes also passes the code gate. The gate stops a session answering its own question in the same turn or from a harness envelope, not one that sets out to forge the answer; the prose confirmation is what reads it. The follow-up routes split approval through the `/crew:approve` harness path (`TODO.md`).
 
+### Contextual help: /crew:help
+
+`/crew:help` (T-0025) answers "what now?" from the files on disk, in at most 8 lines, and never runs what it names:
+
+```
+where: T-0042 (from active-ticket) - phase approve
+waiting on: owner - types /crew:approve T-0042
+next: you type /crew:approve T-0042 - T-0042 has no approved plan. ...
+also: /crew:autopilot status T-0042 - this ticket's standing
+also: /crew:plan T-0042 - change the plan before approving it
+```
+
+State comes only from autopilot's reader (`crew_autopilot.status`, which composes `resume_target` and `next_phase`), so `/crew:help`, `/crew:autopilot status` and `continue` never disagree about the phase. A stop's `next:` is what **you** type; approval is always "you type `/crew:approve <id>`". Several open tickets and no pointer are listed, never picked: `/crew:help <id>` shows one. `/crew:help <command>` prints the command's purpose, when to use it, its arguments and what comes next; `/crew:help <question>` (`how do i write the spec`) resolves through the plain-text routing table below - the same `crew_route.PHRASES`, no second table - and an unknown word lists the core commands. `/crew:help commands` lists every command by group: **core** (brainstorm, spec, plan, approve, implement, review, done, fix, autopilot, status, help), then the ones reached through help or autopilot, the merge candidates, the specialists and the two removal stubs. The grouping is advisory; nothing is hidden or renamed (TODO.md, "crew command surface - owner decision"). The script is `hooks/scripts/crew_help.py where|about`; it writes nothing and exits 0.
+
 ### Plain-text lifecycle: short prompts that name a command
 
 With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-text prompt can stand in for a lifecycle command. crew's UserPromptSubmit context hook matches the **whole** prompt against a small table (`hooks/scripts/crew_route.py`, `PHRASES`) and, on a match, puts one `crew route:` line first in that turn's context: the `/crew:<command> <ticket>` whose procedure Claude should run through the Skill tool. The hook runs nothing and blocks nothing, and the command's own checks still decide.
@@ -992,6 +1006,8 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 | `I'm heading to bed`, `heading to bed`, `going to sleep`, `I'm going to sleep` | `/crew:autopilot sleep`; the line also asks Claude to say what changed and how to undo it |
 | `I'm back` | `/crew:autopilot wake` |
 | `good night`, `morning`, `good morning` (bare greetings) | never routes (owner decision, 2026-10-04): asks "did you mean `/crew:autopilot sleep`?" (or `wake`) |
+| `help`, `what now`, `what's next`, `where are we` | `/crew:help` (T-0025) |
+| `how do i <x>`, `how do i use <x>` | `/crew:help <x>` - never for approval |
 
 **Autopilot rows** (since 1.0.345, T-0057). Whether each `/crew:autopilot` subcommand runs yet is read from `crew_autopilot.route` when the prompt arrives, so a row goes live the day its command lands with no edit here. Until then (today `assign`, `goal` and `run --goal`; `focus` since T-0020) the matched prompt gets a line that runs nothing: it says the command is not available yet and tells Claude to answer your prompt as written, so "handle the merge conflict" is still an ordinary instruction. A router that cannot be read asks; a subcommand the router does not know produces no line. Work starting with `it`, `this`, `everything` and the like (`handle it for me`), work naming the stem `approv` (spaced-out letters included), and a Unicode line break produce no line. Otherwise assign, goal and focus prompts may hold only ASCII letters, digits, space and `.,:;_#()-`; any other character (a quote, a lookalike letter, an accent, an invisible character, a fullwidth or lookalike `/` or `?`, or `/ ? " $ \ | & < > *`) asks you to retype instead, so the routed command is exactly what you typed (a leading `let's` is fine). A word starting with `-` (`handle --goal x`) asks, since it reads as a flag; a hyphen inside a word (`sign-off`) routes. A trailing `not`, `no`, `nope`, `wait`, `cancel`, `cancel that`, `never mind` or `forget it` asks. The two status questions are the only rows that accept a trailing `?`.
 
@@ -3046,20 +3062,23 @@ CONFIG.md §17 has the table and the reasoning.
 
 | Command | Purpose |
 |---|---|
-| `/crew:ticket` | Removed in 1.0 — a stub that says to use `/crew:brainstorm` then `/crew:spec` |
-| `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
+| `/crew:help [command\|question\|commands\|<id>]` | **Start here.** With nothing: where you are (ticket, phase, what it waits on), the one command to type next and why, and 2-3 related ones, in at most 8 lines. With a command or a question (`how do i write the spec`): what it is for, when, its arguments and what comes next. `commands`: every command by group, core first. Read-only, and it never runs what it names - see "Contextual help: /crew:help" |
 | `/crew:brainstorm <what needs doing>` | crew 1.0 lifecycle: brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:spec <id>` | Fill the ticket contract — Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
+| `/crew:plan <id> [--approve]` | Turn an approved spec into a step-by-step plan and ask you to `/crew:approve` it; the independent design opinion is now its optional step 3 |
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt; several ids or a range go pending until your `/crew:approve --confirm` — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
+| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run\|focus] [<id>\|off]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `assign`, `goal` arrive with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302), T-0012 — see "Autopilot" |
-| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
+| `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, the agents `.crew/verify.json` names that are not installed here (`verify_agents.py`), codemap, handoff; `--memory` adds the context hook's stats |
+| **More** (see `/crew:help commands`) | |
+| `/crew:ticket` | Removed in 1.0 — a stub that says to use `/crew:brainstorm` then `/crew:spec` |
+| `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--integrations\|--audit]` | Enumerate the API, features and outbound calls into `docs/reference/`, anchored to `file:line`; integrations are linted (secrets refused) before they are written |
 | `/crew:init` | Guided phased setup, resumable |
-| `/crew:plan <id> [--approve]` | Turn an approved spec into a step-by-step plan and ask you to `/crew:approve` it; the independent design opinion is now its optional step 3 |
 | `/crew:runbook <name\|--audit\|--verify>` | Write, verify, or audit operational runbooks |
 | `/crew:docs [--audit]` | Update the documents this change should touch |
 | `/crew:handoff` | Write the handoff note before clearing |
@@ -3074,14 +3093,13 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11. Each run puts its report on top of `.crew/codemap/UPGRADE.md` and keeps the earlier runs below a marker line, so `--force` erases no history |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
-| `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, the agents `.crew/verify.json` names that are not installed here (`verify_agents.py`), codemap, handoff; `--memory` adds the context hook's stats |
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-36 commands.<!-- claim: plugin-commands:crew -->
+37 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 

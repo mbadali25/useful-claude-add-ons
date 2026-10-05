@@ -14,7 +14,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Version** | 1.1.0<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 37 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -122,7 +122,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 35, all explicit
+### Commands — 37, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -140,6 +140,7 @@ to CI or to branch protection.
 | `/crew:fix <one sentence - what is wrong and where>` | The light path - every lifecycle phase present, each compressed to one step |
 | `/crew:gate <disable \| enable \| status> <github \| bitbucket>` | Take a repository's merge gate down and put it back, from the export |
 | `/crew:handoff [--clear]` | Write the handoff note for the next session |
+| `/crew:help [command \| question \| commands \| ticket id]` | What to do next, and what any crew command is for - with no argument, where you are, the one command to type next and 2-3 related ones in at most 8 lines; read-only, it never runs what it names |
 | `/crew:implement <ticket id>` | Implement an approved plan for a ticket, then tests, docs and review |
 | `/crew:init [--status \| --phase N]` | Guided phased setup for this repo — resumable, one phase at a time |
 | `/crew:jira-sync <ISSUE-KEY> [--push]` | Sync a ticket between Jira (via MCP) and the local cache |
