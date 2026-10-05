@@ -9,6 +9,18 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: promote-gate holds a `github` entry's sha input to the reviewed HEAD (L-0648)
+
+- **Summary.** When a command matches an environment with `github` entries, both promote gates take
+  the entry whose canonical prefix is the longest part of the command; if it sets `shaInput`, the
+  command must give `-f|--raw-field|-F|--field <shaInput>=<sha>` exactly once, as 40 lowercase hex,
+  equal to the full HEAD of the tree the gate judges. Missing, repeated, short, uppercase, a branch
+  name, a substitution such as `$(git rev-parse HEAD)`, or another commit blocks and says which.
+- **Malformed map.** A `github` that is not an object or a non-empty list of objects makes the map
+  unreadable (blocks every command). One helper, `_promote_github.py`, decides the rule for both
+  flavours, reading the command's inputs with T-0009's reader. An environment with no `github` key,
+  or an entry without `shaInput`, decides as before.
+
 ### Added — `crew` 1.1.4: promote-gate.ps1 gates a workflow dispatch of a declared deploy too (L-0664)
 
 - **Summary.** On the PowerShell tool, a command no declared `deploy` contains is now read as a

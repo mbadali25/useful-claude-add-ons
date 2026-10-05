@@ -87,3 +87,146 @@ def test_a_real_all_pass_row_satisfies_requires(flavour, tmp_path):
     code, err = run_gate(flavour, repo, "deploy-qa")
     assert code == 0, err
     assert json.dumps(repo.in_flight()).startswith('"qa ')
+
+
+# --- L-0648: the sha input of a declared github dispatch is the reviewed HEAD --
+#
+# Both real gates, on the effective-tree fixture (a main checkout and a linked
+# worktree one commit ahead). The .ps1 cases are `slow` and skip without
+# PowerShell 7; promote-gate.ps1 runs the same `_promote_github.py` as the
+# .sh, told the command is PowerShell.
+
+import test_promote_gate_effective_tree as tree  # noqa: E402  pylint: disable=wrong-import-position
+
+
+def _prefix(target):
+    return f"gh workflow run deploy.yml --ref main -f target={target}"
+
+
+def _gh_env(target, sha_input=True, **extra):
+    entry = {"workflow": "deploy.yml", "ref": "main", "inputs": {"target": target}}
+    if sha_input:
+        entry["shaInput"] = "sha"
+    return dict({"deploy": [_prefix(target)], "github": entry,
+                 "rollback": "none", "rollbackReason": "fixture"}, **extra)
+
+
+_GH_MAP = {"environments": {
+    "development": _gh_env("dev"),
+    "qa": _gh_env("qa", requires=["development"]),
+    "nosha": _gh_env("nosha", sha_input=False),
+    "legacy": {"deploy": "deploy-legacy", "rollback": "none", "rollbackReason": "fixture"},
+}}
+
+
+@pytest.fixture(name="ghrepo")
+def _ghrepo(tmp_path):
+    repo = tree.Repo(tmp_path)
+    (repo.main / ".crew" / "verify.json").write_text(json.dumps(_GH_MAP, indent=2) + "\n",
+                                                     encoding="utf-8")
+    _git(repo.main, "add", "-A")
+    _git(repo.main, "commit", "-q", "-m", "github map")
+    repo.main_sha = _git(repo.main, "rev-parse", "--short", "HEAD")
+    repo.main_full = _git(repo.main, "rev-parse", "HEAD")
+    return repo
+
+
+def _sha_cases(repo):
+    full = repo.main_full
+    dev = _prefix("dev")
+    return {
+        "sha-input-missing": (dev, "carries no `-f sha=<sha>`"),
+        "sha-input-twice": (f"{dev} -f sha={full} -f sha={full}", "2 times"),
+        "sha-input-not-head": (f"{dev} -f sha={repo.wt_full}", "but the tree the deploy runs"),
+        "sha-input-short": (f"{dev} -f sha={full[:7]}", "not 40 lowercase hex"),
+        "sha-input-uppercase": (f"{dev} -f sha={full.upper()}", "not 40 lowercase hex"),
+        "sha-input-non-literal": (f"{dev} -f sha=$(git rev-parse HEAD)", "not a plain literal"),
+        "sha-input-branch-name": (f"{dev} -f sha=main", "not 40 lowercase hex"),
+    }
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+@pytest.mark.parametrize("name", [
+    "sha-input-missing", "sha-input-twice", "sha-input-not-head", "sha-input-short",
+    "sha-input-uppercase", "sha-input-non-literal", "sha-input-branch-name"])
+def test_the_sha_input_must_be_the_reviewed_head(flavour, name, ghrepo):
+    """must-block: exit 2, the message names which part of the rule failed,
+    and no in-flight marker."""
+    command, why = _sha_cases(ghrepo)[name]
+    code, err = tree.run_gate(flavour, ghrepo, command)
+    assert code == 2, err
+    assert "PROMOTION BLOCKED (development" in err, err
+    assert why in err, err
+    assert ghrepo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_near_miss_names_a_declared_workflow_but_no_environment(flavour, ghrepo):
+    """must-block: `gh workflow run <declared workflow>` with inputs matching
+    no declared prefix (T-0062's reader, either flavour)."""
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("nope") + f" -f sha={ghrepo.main_full}")
+    assert code == 2, err
+    assert "fits no declared environment" in err, err
+    assert ghrepo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+@pytest.mark.parametrize("github", ['"x"', "3", '[{"workflow": "deploy.yml"}, "s"]', "[]"],
+                         ids=["string", "number", "list-holding-a-string", "empty-list"])
+def test_a_malformed_github_value_refuses_the_map(flavour, github, ghrepo):
+    """must-block (exit-4 path): a `github` that is not an object or a list
+    of objects makes the map unreadable, for every command."""
+    doc = json.loads(json.dumps(_GH_MAP))
+    doc["environments"]["nosha"]["github"] = json.loads(github)
+    (ghrepo.main / ".crew" / "verify.json").write_text(json.dumps(doc, indent=2) + "\n",
+                                                       encoding="utf-8")
+    _git(ghrepo.main, "add", "-A")
+    _git(ghrepo.main, "commit", "-q", "-m", "malformed github")
+    full = _git(ghrepo.main, "rev-parse", "HEAD")
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("dev") + f" -f sha={full}")
+    assert code == 2, err
+    assert "github" in err and "This is NOT a pass" in err, err
+    assert ghrepo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_github_requires_unmet(flavour, ghrepo):
+    """must-block: the qa dispatch with the right sha still needs a
+    development all-pass row."""
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("qa") + f" -f sha={ghrepo.main_full}")
+    assert code == 2, err
+    assert "'development' has no all-pass row" in err, err
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_canonical_dispatch(flavour, ghrepo):
+    """must-allow: the dispatch `prepare` prints, sha = HEAD."""
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("dev") + f" -f sha={ghrepo.main_full}")
+    assert code == 0, err
+    assert ghrepo.in_flight() == f"development {ghrepo.main_sha}"
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_canonical_dispatch_from_worktree(flavour, ghrepo):
+    """must-allow: a clean linked worktree at the sha while the project dir
+    is dirty; the sha input is the worktree's HEAD."""
+    ghrepo.dirty_main()
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("dev") + f" -f sha={ghrepo.wt_full}",
+                              cwd=ghrepo.wt)
+    assert code == 0, err
+    assert ghrepo.in_flight() == f"development {ghrepo.wt_sha}"
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+@pytest.mark.parametrize("command,marker", [
+    ("gh workflow run ci.yml", None),
+    ("deploy-legacy", "legacy"),
+    (_prefix("nosha"), "nosha"),
+])
+def test_the_rule_applies_only_to_a_github_entry_with_a_sha_input(flavour, command, marker,
+                                                                 ghrepo):
+    """must-allow: an unrelated workflow is untouched, a legacy deploy and an
+    entry without `shaInput` decide exactly as before."""
+    code, err = tree.run_gate(flavour, ghrepo, command)
+    assert code == 0, err
+    assert ghrepo.in_flight() == (f"{marker} {ghrepo.main_sha}" if marker else None)

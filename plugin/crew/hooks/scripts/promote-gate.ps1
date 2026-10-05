@@ -456,6 +456,18 @@ foreach ($p in $vm.environments.PSObject.Properties) {
   if ($p.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json is not an object."
   }
+  # L-0648: the gate reads a `github` entry's sha rule, so a `github` that is
+  # not an object or a non-empty list of objects is malformed (as in the .sh).
+  $ghProp = $p.Value.PSObject.Properties['github']
+  if ($ghProp -and $null -ne $ghProp.Value) {
+    $ghVal = $ghProp.Value
+    $ghOk = ($ghVal -is [System.Management.Automation.PSCustomObject]) -or
+            ($ghVal -is [array] -and $ghVal.Count -gt 0 -and
+             @($ghVal | Where-Object { $_ -isnot [System.Management.Automation.PSCustomObject] }).Count -eq 0)
+    if (-not $ghOk) {
+      Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``github`` that is not an object or a non-empty list of objects."
+    }
+  }
   $rhProp = $p.Value.PSObject.Properties['requireHuman']
   if ($rhProp -and ($rhProp.Value -is [array] -or $rhProp.Value -is [System.Management.Automation.PSCustomObject])) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``requireHuman`` that is a list or an object, not true or false."
@@ -857,6 +869,47 @@ if ($runTop -ne $tree -and (Get-CommonDir $runTop) -ne $projectCommon) {
 $sha = (git -C $tree rev-parse --short HEAD 2>$null)
 $full = (git -C $tree rev-parse HEAD 2>$null)
 if (-not $sha) { Stop-Promotion "'$tree' has no commit at HEAD - cannot establish what is being deployed." }
+
+# L-0648, the twin of promote-gate.sh's: a matched environment's `github`
+# entry with a `shaInput` must get that input exactly once, as 40 lowercase
+# hex, equal to the full HEAD of the tree judged here. The same helper decides
+# it, told the command is PowerShell. With no python and a matched `github`
+# entry the rule cannot be checked, which blocks; a failing helper blocks.
+$ghMatched = @($envNames | Where-Object {
+  $vm -and $vm.environments -and $vm.environments.PSObject.Properties[$_] -and
+  $null -ne $vm.environments.PSObject.Properties[$_].Value.PSObject.Properties['github'] })
+if ($ghMatched.Count -gt 0) {
+  $ghPy = Resolve-CrewPython
+  if (-not $ghPy) {
+    Stop-Promotion "python could not be found, so the github entry's sha rule cannot be checked. This is not a pass. Install python 3, or put it on PATH."
+  }
+  $prevConsoleEncoding = [Console]::OutputEncoding
+  $prevOutputEncodingVar = $OutputEncoding
+  $prevPythonIoEncoding = $env:PYTHONIOENCODING
+  $ghRule = $null
+  $ghExit = $null
+  try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $env:PYTHONIOENCODING = 'utf-8'
+    $global:LASTEXITCODE = $null
+    $ghRule = @($cmd | & $ghPy (Join-Path $scriptDir '_promote_github.py') --shell powershell --full "$full" --envs $envName -)
+    $ghExit = $LASTEXITCODE
+  } catch {
+    $ghExit = $null
+  } finally {
+    [Console]::OutputEncoding = $prevConsoleEncoding
+    $OutputEncoding = $prevOutputEncodingVar
+    $env:PYTHONIOENCODING = $prevPythonIoEncoding
+  }
+  if ($ghExit -ne 0) {
+    Stop-Promotion "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
+  }
+  foreach ($line in $ghRule) {
+    $parts = "$line".Replace("`r", "").Split("`t", 2)
+    if ($parts.Count -ge 2 -and $parts[0] -ceq 'block') { Stop-Promotion $parts[1] }
+  }
+}
 
 # Clean: the tree deployed and the tree the deploy runs in. A status that
 # FAILS is could-not-tell; untracked files are listed whatever config says;

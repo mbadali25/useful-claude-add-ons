@@ -243,6 +243,14 @@ def matching(envs, strict):
             unreadable(f"environment `{name}` in .crew/verify.json has a "
                        "`requireHuman` that is a list or an object, not true or "
                        "false", 4)
+        # L-0648: the gate reads a `github` entry's sha rule, so a `github`
+        # that is not an object or a non-empty list of objects is malformed.
+        github = get_ci(cfg, "github", None)
+        if strict and github is not None and not isinstance(github, dict) and not (
+                isinstance(github, list) and github
+                and all(isinstance(e, dict) for e in github)):
+            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "
+                       "that is not an object or a non-empty list of objects", 4)
         declared = deploy_of(cfg)
         if isinstance(declared, str):
             # ONE command, not a list of them: iterating a bare string walked
@@ -500,6 +508,21 @@ fi
 SHA=$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null)
 FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
 [ -z "$SHA" ] && block "'$TREE' has no commit at HEAD - cannot establish what is being deployed."
+
+# L-0648: a matched environment's `github` entry with a `shaInput` - the
+# command must give that input exactly once, as 40 lowercase hex, equal to
+# the full HEAD of the tree judged here. `_promote_github.py` decides it for
+# both flavours (promote-gate.ps1 runs it too); a helper that fails blocks.
+GH_RULE=$(printf '%s' "$CMD" | PYTHONIOENCODING=utf-8 \
+  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py" --shell bash --full "$FULL" \
+  --envs "$ENVNAME" -) \
+  || block "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
+GH_RULE=$(crew_strip_cr "$GH_RULE")
+while IFS=$'\t' read -r kind tok; do
+  [ "$kind" = block ] && block "$tok"
+done <<GHRULE
+$GH_RULE
+GHRULE
 
 # 4. clean tree - the tree being deployed and the tree the deploy runs in,
 # not the session's checkout. A status that FAILS is could-not-tell, never

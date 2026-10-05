@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.4**: Promote-gate holds a `github` entry's sha input to the reviewed HEAD. When a command matches an environment with `github` entries, both promote gates take the entry whose canonical prefix is the longest part of the command; if it sets `shaInput`, the command must give `-f|--raw-field|-F|--field <shaInput>=<sha>` exactly once, as 40 lowercase hex, equal to the full HEAD of the tree the gate judges. Missing, repeated, short, uppercase, a branch name, a substitution such as `$(git rev-parse HEAD)`, or another commit blocks and says which.
 - **crew 1.1.4**: Promote-gate.ps1 gates a workflow dispatch of a declared deploy too. On the PowerShell tool, a command no declared `deploy` contains is now read as a workflow dispatch by the same helper and reader as the Bash flavour (`_promote_dispatch.py --shell powershell`), so `gh workflow run <wf>` with reordered inputs and its `gh api .../dispatches` twin are gated as the environment they deploy, and a dispatch crew cannot read blocks. Before, the PowerShell flavour was containment-only.
-- **crew 1.1.4**: `crew_ghdeploy.py record` and the `/crew:promote` github sequence. `record` writes one dispatch's outcome into `.work/PROMOTIONS.md`: a detail line with no pipe character, and on anything but pass the previous all-pass sha, the last 40 lines of the failed-step log (colour codes removed, every pipe shown as a slash, lines clipped to 300) and a `not-run` row. Nothing it writes can be read as a pass row: a forged all-pass row in a log is recorded and `requires` is still unmet, checked against the real promote gates. The file is rebuilt whole through a temp file and `os.replace`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

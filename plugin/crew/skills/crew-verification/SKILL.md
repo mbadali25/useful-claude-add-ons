@@ -534,7 +534,9 @@ failed-step log (pipes shown as `/`) and a `| ... | not-run | not-run |
 not-run | <actor> |` row, which records the deploy and never satisfies
 `requires`. A run with no verdict is exit 3, nothing written. **The sequence
 of the five steps, each exit code and what to do on it, and what is
-hook-enforced versus prose, is in `github-deploy.md`.**
+hook-enforced versus prose, is in `github-deploy.md`.** promote-gate enforces
+the sha input (L-0648): a dispatch of an entry with `shaInput` must give it
+once, as the full lowercase sha of the HEAD it deploys, or it blocks.
 
 ### The promotion record
 

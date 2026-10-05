@@ -17,6 +17,10 @@ import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GH = os.path.join(CREW, "hooks", "scripts", "crew_ghdeploy.py")
+GHRULE = os.path.join(CREW, "hooks", "scripts", "_promote_github.py")
+SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
+PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
+_G = "tests/test_promote_gate_github.py::"
 _T = "tests/test_crew_ghdeploy.py::"
 _P = _T + "test_entry_problem[{}]"
 _C = _T + "test_check_applies_the_gates_union_rule[{}]"
@@ -599,4 +603,50 @@ GHDEPLOY_MUTATIONS = (
      "        if has_run:\n            add += [",
      "        if True:\n            add += [",
      _T + "test_record_could_not_tell"),
+    # --- promote-gate's sha-input rule (L-0648): each branch, each flavour --
+    ("promote-gate: a dispatch without the sha input passes", GHRULE,
+     '        return f"the dispatch carries no {flag}, so the sha it deploys is the branch tip, unchecked"\n',
+     "        return None\n",
+     _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-missing-sh]"),
+    ("promote-gate: the sha input given twice passes", GHRULE,
+     "    if len(values) > 1:\n",
+     "    if False:\n",
+     _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-twice-sh]"),
+    ("promote-gate: a short or uppercase sha input passes", GHRULE,
+     "    if value is None or not _HEX40.fullmatch(value):\n",
+     "    if value is None:\n",
+     _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-short-sh]"),
+    ("promote-gate: a sha input that is not HEAD passes", GHRULE,
+     "    if value != full:\n",
+     "    if False:\n",
+     _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-not-head-sh]"),
+    ("promote-gate: a non-literal sha input passes", GHRULE,
+     '    if kind == "unsure":\n        return (f"the sha input',
+     '    if kind == "unsure":\n        return None\n        return (f"the sha input',
+     _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-non-literal-sh]"),
+    ("promote-gate.sh no longer runs the sha rule", SH,
+     '  [ "$kind" = block ] && block "$tok"\ndone <<GHRULE\n',
+     '  [ "$kind" = block ] && true "$tok"\ndone <<GHRULE\n',
+     _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-short-sh]"),
+    ("promote-gate.ps1 no longer runs the sha rule", PS1,
+     "    if ($parts.Count -ge 2 -and $parts[0] -ceq 'block') { Stop-Promotion $parts[1] }\n",
+     "    if ($parts.Count -ge 2 -and $parts[0] -ceq 'block') { continue }\n",
+     _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-short-ps1]"),
+    ("promote-gate.sh reads a malformed github as no github", SH,
+     '            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "\n',
+     '            pass\n        if False:\n            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "\n',
+     _G + 'test_a_malformed_github_value_refuses_the_map[string-sh]'),
+    ("promote-gate.ps1 reads a malformed github as no github", PS1,
+     "    if (-not $ghOk) {\n",
+     "    if ($false) {\n",
+     _G + 'test_a_malformed_github_value_refuses_the_map[string-ps1]'),
+    # --- L-0648 must-allow non-vacuity ---------------------------------------
+    ("promote-gate: the sha rule compares against the project dir's HEAD", SH,
+     '--shell bash --full "$FULL" \\\n',
+     '--shell bash --full "$(git rev-parse HEAD)" \\\n',
+     _G + "test_canonical_dispatch_from_worktree[sh]"),
+    ("promote-gate: the sha rule applies to an entry with no shaInput", GHRULE,
+     '    if not isinstance(name, str) or not name:\n        return None\n',
+     '    if not isinstance(name, str) or not name:\n        name = "sha"\n',
+     _G + "test_the_rule_applies_only_to_a_github_entry_with_a_sha_input"),
 )

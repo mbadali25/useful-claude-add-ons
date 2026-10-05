@@ -52,7 +52,11 @@ masking and is bounded to 40 short lines.
 - **Hook-enforced:** the dispatch in step 2 is a Bash call, so the cloud guard
   (T-0009, while armed: the workflow's environment class) and
   promote-gate (T-0062: the declared deploy's `requires`, `rollback`,
-  `requireHuman`, the clean tree at the sha) judge it like any deploy. A
+  `requireHuman`, the clean tree at the sha) judge it like any deploy, and
+  promote-gate holds the sha rule (L-0648): with `shaInput` set, the dispatch
+  must give `-f <shaInput>=<sha>` exactly once, 40 lowercase hex, equal to the
+  full HEAD of the tree it runs from - a substitution, a short or uppercase
+  sha, a branch name, or another commit blocks. A
   `not-run` row never satisfies `requires`, and nothing `record` writes can be
   read as a pass row.
 - **Helper-enforced, not a hook:** `prepare`'s refusals, `identify`'s
