@@ -685,6 +685,25 @@ def test_relaunch_with_an_unreadable_ledger_stops_and_reserves_nothing(tmp_path)
     assert (got.returncode, "launch T-1" in got.stdout, "unreadable" in got.stderr) == (1, False, True)
 
 
+def test_relaunch_never_restarts_a_started_lane_whose_file_is_missing(tmp_path):
+    # Codex review round 6 (rush g0): a started lane's missing file was rewritten as pending.
+    root = _started(tmp_path)
+    os.remove(crew_wave.lane_path(str(root), "s", "T-1"))
+
+    out = _cli("start", "--root", root, "--set", "s").stdout
+
+    assert ("T-1 unknown" in out, any(l.startswith("launch T-1") for l in out.splitlines()),
+            os.path.exists(crew_wave.lane_path(str(root), "s", "T-1"))) == (True, False, False)
+
+
+def test_collect_keeps_a_started_lane_dropped_from_the_set_file(tmp_path):
+    # Codex review round 6 (rush g0): rewriting the set hid a launched lane from the batch.
+    root = _started(tmp_path)
+    crew_wave.write_set(str(root), "s", ["T-1"])
+
+    assert "T-2" in {row["ticket"] for row in _collect(root)["lanes"]}
+
+
 def test_relaunch_skips_terminal_lanes(tmp_path):
     root = _started(tmp_path)
     crew_wave.lane_done(str(root), "s", "T-1", "clean", "done checks passed")
@@ -776,8 +795,8 @@ def test_lane_prompt_review_stops_at_the_verdict_and_reruns_review_after_a_fix(t
     # accept, ask) were not excluded, and fix-and-rereview never sent the lane back to step 5.
     text = _prompt(_started(tmp_path, autopilot={"reviewPolicy": "fix-and-rereview"}))
 
-    assert ("up to its recorded verdict only" in text, "then step 5 for the next round" in text) == (
-        True, True)
+    assert ("up to its recorded verdict only" in text, "then step 5 for the next round" in text,
+            "INCOMPLETE: step 8 with --state findings" in text) == (True, True, True)
 
 
 def test_lane_prompt_unknown_version_stops_a_crew_change_as_a_question(tmp_path):
@@ -1116,6 +1135,17 @@ def test_cleanup_never_removes_a_terminal_lane_with_no_commit(tmp_path):
     got = _cleaned(root)["T-1"]
 
     assert (got["removed"], "no commit past its base" in got["reason"]) == (False, True)
+
+
+def test_cleanup_never_removes_a_worktree_the_lane_did_not_record(tmp_path):
+    # Codex review round 6 (rush g0): any clean worktree holding the branch was removed.
+    root, wt = _landed(tmp_path)
+    _set_lane(root, "T-1", worktree=str(tmp_path / "somewhere-else"))
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "not the lane's worktree" in got["reason"], os.path.exists(wt)) == (
+        False, True, True)
 
 
 def test_cleanup_keeps_a_lane_with_an_unmerged_commit(tmp_path):

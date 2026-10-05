@@ -597,6 +597,11 @@ def start(root, slug):
                          "the owner removes that worktree after checking it is clean, or "
                          "resumes the lane there by hand")
             continue
+        if state == "missing" and ticket in lanes:
+            # Started before, file gone: its outcome cannot be told, so never restart it.
+            lines.append(f"{ticket} unknown: start.json lists it but its lane file is missing; "
+                         "not relaunched")
+            continue
         if state == "missing":
             lane = {"set": slug, "ticket": ticket, "state": "pending", "base": base,
                     "version": versions.get(ticket, UNKNOWN), "worktree": None,
@@ -731,7 +736,7 @@ POLICY_TEXT = {
                          "FINDINGS, read rounds_left from `{ledger} --status --root . --ticket "
                          "{ticket}`: above 0, fix every BLOCK and FIX inside the ticket's Touch, "
                          "commit, rerun step 4, then step 5 for the next round; at 0, step 8 "
-                         "with --state findings."),
+                         "with --state findings. INCOMPLETE: step 8 with --state findings."),
 }
 
 
@@ -883,6 +888,8 @@ def collect(root, slug):
     started = record["lanes"] if ok else None
     marks = (record.get("receipts") or {}) if ok else {}
     ids = [row["id"] for row in data["tickets"]]
+    # A lane that was started stays in the report even if the set file was rewritten without it.
+    ids += [t for t in (started or []) if isinstance(t, str) and t not in ids]
     lanes = [_lane_row(top, slug, ticket, started, marks) for ticket in ids]
     questions, problems = [], []
     for lane in lanes:
@@ -981,6 +988,11 @@ def _clean_lane(top, lane, ref, trees):
     if code == 0 and head == lane.get("base"):
         return False, f"not landed: {branch} has no commit past its base"
     worktree = next((p for p, name in trees.items() if name == branch), None)
+    recorded = lane.get("worktree")
+    if worktree and not (recorded and os.path.normcase(os.path.realpath(worktree))
+                         == os.path.normcase(os.path.realpath(recorded))):
+        return False, (f"not the lane's worktree: {branch} is checked out in {worktree}, the lane "
+                       f"recorded {recorded or 'none'}")
     if code != 0:
         return False, ("not merged: no lane branch" if worktree is None
                        else f"could not tell: {branch} is not a branch here")
