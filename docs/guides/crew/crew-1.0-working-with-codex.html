@@ -181,7 +181,11 @@ the linters <code>.crew/verify.json</code> lists under <code>preReview</code> (L
 and at the bundle, and a finding the bundle adds refuses the round (exit 5, nothing spent) before
 Codex is launched. <code>--allow-unverified</code> does not override a new finding. A linter that could not run,
 or could not parse a changed file, reads <code>COULD NOT CHECK</code>, never a pass. It refuses too, unless
-<code>--allow-unverified</code> is given, and <code>review.json</code> records that override as <code>prereview.overridden</code>.</p>
+<code>--allow-unverified</code> is given, and <code>review.json</code> records that override as <code>prereview.overridden</code>.
+When the verify gate has not passed the tree, the prompt's test receipts keep their <code>MISSING</code> and
+<code>Gate answer for HEAD</code> lines and add one line saying such a round runs only under
+<code>--allow-unverified</code>, recorded as <code>gate.overridden</code> in <code>review.json</code>, that <code>/crew:done</code> still needs
+a clean gate, and that the missing pass alone is that recorded override, not a defect (T-0101).</p>
 <h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
 <p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
 Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,

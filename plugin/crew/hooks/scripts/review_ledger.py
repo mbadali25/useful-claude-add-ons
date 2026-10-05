@@ -17,9 +17,17 @@ crashes, hangs or is killed leaves that round `reserved` forever, and it
 counts. A third reservation is refused and the state becomes `NEEDS_REPLAN`;
 that refusal is written once, and every reservation attempt after it is
 refused without writing anything.
-That refusal, and an explicit `--reject --by <who>`, are the only ways into
-NEEDS_REPLAN: a completed round 2 -- FINDINGS or INCOMPLETE -- leaves the
-ticket REVIEWED, so the owner can still accept round 2's FINDINGS.
+That refusal, an explicit `--reject --by <who>`, and (T-0109) `--reject --by
+<who> --supersede-accepted` are the only ways into NEEDS_REPLAN: a completed
+round 2 -- FINDINGS or INCOMPLETE -- leaves the ticket REVIEWED, so the owner
+can still accept round 2's FINDINGS. Plain `--reject` refuses an ACCEPTED
+ticket. With the flag it takes ONLY an ACCEPTED one: the receipt (kind
+`clean`, `owner-accepted` or `auto-accepted`, for the latest completed round)
+is kept whole in the append-only `superseded` list with who and when,
+`rejected` records the kind, and `receipt` is cleared. An `auto:` name, any
+other state and anything the ledger cannot read refuse and change nothing;
+the bundle is not rebuilt. `--by` is a recorded name, never a check of who is
+calling: `--reserve` already voids an acceptance with no name.
 
 REFUNDS (T-0087). A round the TOOL lost -- recorded INCOMPLETE with
 `failure_class: "tool"` (`review_verdict.failure_class`: the answer never
@@ -95,6 +103,22 @@ not UTF-8, or a receipt whose kind is none of clean, owner-accepted and
 auto-accepted, is could-not-tell, never "not applicable". A CLEAN round
 stands only under a receipt of kind `clean`.
 The ledger never files the follow-up; `/crew:review` step 3 does.
+CORRECTING THE ACCEPTER (T-0098). `--correct-acceptance --by <who> --reason
+<text>` rewrites an `owner-accepted` receipt's `accepted_by` and appends
+`{round, was, now, reason, at}` to the top-level `acceptance_corrections`,
+which a successor plan does not clear. Nothing else moves -- not the state,
+the rounds, the hash, the base or `accepted_at` -- and the bundle is not
+rebuilt, so `--check-receipt` answers the same before and after. It refuses,
+writing nothing: an unreadable ledger, a receipt of any other kind (clean has
+no accepter, auto-accepted a fixed one), a current accepter that is not a
+non-empty string, a history that is not a list of objects, a `--by` or
+`--reason` that is empty, multi-line or not UTF-8, an `auto:` name, and the
+name already recorded. Rows are only appended; a wrong correction is fixed by
+another. A receipt kept in `superseded` is history and is not corrected.
+Every `--by` (and `--reason`) is checked before the lock: one line (every
+Unicode line break refused) that can be written as UTF-8. The `auto:` test
+folds lookalikes first (NFKC, casefold, format characters stripped). Flags
+are never abbreviated (`allow_abbrev=False`).
 
 Either way the receipt carries the bundle sha256 the reviewer read, and
 `--check-receipt` rebuilds the bundle from the receipt's base and exits
@@ -126,6 +150,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 
 import crew_common
 import merged_main
@@ -141,6 +166,9 @@ REFUND_LIMIT = 2
 AUTO_KIND = "auto-accepted"
 AUTO_BY = "auto: 0 BLOCK, owner policy 2026-09-30"
 AUTO_PREFIX = "auto:"
+# T-0109: the receipt kinds `--reject --supersede-accepted` can supersede. An
+# unknown kind is could-not-tell and refuses.
+SUPERSEDABLE = ("clean", "owner-accepted", AUTO_KIND)
 # `webtest_open` when the healer-skip check did not apply to the round. None
 # means it applied and could not be read: could not tell, never 0.
 WEBTEST_NA = "not-applicable"
@@ -420,12 +448,41 @@ def record(root, ticket, number, review):
     return _mutate(root, ticket, change)
 
 
+# Every character `str.splitlines` breaks on: a name or reason carrying one
+# opens a line of its own in --status and in a prompt that quotes it.
+_LINE_BREAKS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+
+
+def _one_line_arg(value, flag, verb="--correct-acceptance"):
+    """`value` stripped, when it is one non-empty line that can be written as
+    UTF-8; else a refusal naming `flag`. Checked before the lock: a lone
+    surrogate would be written and then crash the success line, after the
+    ledger had already changed."""
+    if not isinstance(value, str) or not value.strip():
+        raise LedgerError(f"{verb} needs {flag} <text>")
+    if any(ch in _LINE_BREAKS for ch in value):
+        raise LedgerError(f"{flag} must be one line (it carries a line break)")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise LedgerError(f"{flag} cannot be written as UTF-8 ({exc.reason})") from exc
+    return value.strip()
+
+
+def _is_auto_name(name):
+    """Whether `name` claims the reserved `auto:` prefix, lookalikes included:
+    NFKC (fullwidth letters), casefold, and format characters (zero-width
+    joiners, a BOM) stripped before the test."""
+    folded = unicodedata.normalize("NFKC", name).casefold()
+    folded = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+    return folded.strip().startswith(AUTO_PREFIX)
+
+
 def accept(root, ticket, by):
     """The owner accepts the latest round's FINDINGS. Refuses anything else,
     and refuses when the tree no longer matches the bundle that round read."""
-    if not isinstance(by, str) or not by.strip():
-        raise LedgerError("--accept needs --by <who is accepting>")
-    if by.strip().lower().startswith(AUTO_PREFIX):
+    by = _one_line_arg(by, "--by", "--accept")
+    if _is_auto_name(by):
         raise LedgerError(f"--by {by.strip()!r}: the {AUTO_PREFIX!r} prefix is reserved for "
                           "--auto-accept, which checks the round itself")
 
@@ -801,23 +858,113 @@ def check_follow_up(root, ticket):
     return True, f"follow-up {follow_up} quotes all {len(lines)} line(s) ({path})"
 
 
-def reject(root, ticket, by):
+def _is_dict_list(value):
+    return isinstance(value, list) and all(isinstance(v, dict) for v in value)
+
+
+def _supersede(data, ticket, by):
+    """T-0109: the checks and the write of `--reject --supersede-accepted`.
+    Every case the ledger cannot read is a refusal, never an implicit reopen."""
+    if data.get("state") == NEEDS_REPLAN:
+        raise LedgerError(f"{ticket} is {NEEDS_REPLAN}; --reject does not change that state")
+    if data.get("state") != ACCEPTED:
+        raise LedgerError(f"{ticket} is {data.get('state') or 'EMPTY'}: nothing accepted to "
+                          "supersede (--supersede-accepted never falls back to a plain "
+                          "--reject)")
+    receipt = data.get("receipt")
+    if not isinstance(receipt, dict) or receipt.get("kind") not in SUPERSEDABLE:
+        raise LedgerError(f"{ticket}'s receipt is not one of {', '.join(SUPERSEDABLE)}: "
+                          "could not tell what would be superseded")
+    number = receipt.get("round")
+    if not isinstance(number, int) or isinstance(number, bool):
+        raise LedgerError(f"{ticket}'s receipt round {number!r} is not a round number: "
+                          "could not tell what would be superseded")
+    latest = (data.get("rounds") or [None])[-1]
+    latest_round = latest.get("round") if isinstance(latest, dict) else None
+    if not isinstance(latest_round, int) or isinstance(latest_round, bool):
+        raise LedgerError(f"{ticket}'s latest round number {latest_round!r} is not a round "
+                          "number: could not tell what would be superseded")
+    if (not isinstance(latest, dict) or latest.get("status") != "completed"
+            or latest.get("round") != number):
+        raise LedgerError(f"{ticket}'s receipt is for round {number}, and the latest round is "
+                          "not that round completed: could not tell what would be superseded")
+    history = data.get("superseded", [])
+    if not _is_dict_list(history):
+        raise LedgerError(f"{ticket}'s `superseded` is not a list of objects: could not tell "
+                          "the history, so it is not extended")
+    at = _now()
+    data["superseded"] = history + [{"receipt": receipt, "by": by, "at": at}]
+    data["rejected"] = {"by": by, "at": at, "round": number, "superseded": receipt["kind"]}
+    data["receipt"] = None
+    data["state"] = NEEDS_REPLAN
+    return data, dict(data["rejected"], receipt=receipt)
+
+
+def reject(root, ticket, by, supersede_accepted=False):
     """The owner sends the ticket to NEEDS_REPLAN without spending a third
     reservation. Refuses on a ticket already ACCEPTED or NEEDS_REPLAN, and
-    changes nothing when it refuses."""
-    if not isinstance(by, str) or not by.strip():
-        raise LedgerError("--reject needs --by <who is rejecting>")
+    changes nothing when it refuses. With `supersede_accepted` (T-0109) it
+    takes ONLY an ACCEPTED ticket, keeps the receipt in `superseded` and
+    clears it; `--by` is a recorded name, never a check of who is calling."""
+    by = _one_line_arg(by, "--by", "--reject")
+    if supersede_accepted and _is_auto_name(by):
+        raise LedgerError(f"--by {by.strip()!r}: an {AUTO_PREFIX!r} name never supersedes "
+                          "an accepted receipt")
 
     def change(data, state):
         if state != "ok":
             raise LedgerError(f"ledger is {state}; there is no review to reject")
+        if supersede_accepted:
+            return _supersede(data, ticket, by.strip())
         if data.get("state") in (NEEDS_REPLAN, ACCEPTED):
             raise LedgerError(f"{ticket} is {data.get('state')}; --reject does not change "
-                              "that state")
+                              "that state" + (" (an accepted receipt is superseded only with "
+                                              "--reject --by <who> --supersede-accepted)"
+                                              if data.get("state") == ACCEPTED else ""))
         data["rejected"] = {"by": by.strip(), "at": _now(),
                             "round": (data.get("rounds") or [{}])[-1].get("round")}
         data["state"] = NEEDS_REPLAN
         return data, data["rejected"]
+
+    return _mutate(root, ticket, change)
+
+
+def correct_acceptance(root, ticket, by, reason):
+    """T-0098: rewrite an `owner-accepted` receipt's `accepted_by` and append
+    one row to the top-level `acceptance_corrections`. Nothing else moves:
+    not the state, the rounds, the hash, the base or `accepted_at`, and the
+    bundle is not rebuilt. Returns the appended row."""
+    new = _one_line_arg(by, "--by")
+    why = _one_line_arg(reason, "--reason")
+    if _is_auto_name(new):
+        raise LedgerError(f"--by {new!r}: the {AUTO_PREFIX!r} prefix is reserved for "
+                          "--auto-accept")
+
+    def change(data, state):
+        if state != "ok":
+            raise LedgerError(f"ledger is {state}; there is no acceptance to correct")
+        receipt = data.get("receipt")
+        if not isinstance(receipt, dict) or receipt.get("kind") != "owner-accepted":
+            kind = receipt.get("kind") if isinstance(receipt, dict) else receipt
+            raise LedgerError(f"{ticket}'s receipt is {kind!r}, not owner-accepted: only an "
+                              "owner acceptance names an accepter to correct (clean has none, "
+                              "auto-accepted has a fixed one)")
+        was = receipt.get("accepted_by")
+        if not isinstance(was, str) or not was.strip():
+            raise LedgerError(f"{ticket}'s receipt names no accepter ({was!r}): could not "
+                              "tell what is being corrected")
+        history = data.get("acceptance_corrections", [])
+        if not _is_dict_list(history):
+            raise LedgerError(f"{ticket}'s `acceptance_corrections` is not a list of "
+                              "objects: could not tell the history, so it is not extended")
+        if new == was:
+            raise LedgerError(f"round {receipt.get('round')} already names {was!r}; nothing "
+                              "to correct")
+        row = {"round": receipt.get("round"), "was": was, "now": new, "reason": why,
+               "at": _now()}
+        data["acceptance_corrections"] = history + [row]
+        receipt["accepted_by"] = new
+        return data, dict(row, count=len(data["acceptance_corrections"]))
 
     return _mutate(root, ticket, change)
 
@@ -956,7 +1103,10 @@ def summary(data, state, ticket, path):
             "refund_limit": REFUND_LIMIT,
             "rounds_left": max(0, BUDGET - _charged(data)), "rounds": rounds,
             "successors": data.get("successors") or [],
-            "receipt": data.get("receipt")}
+            "receipt": data.get("receipt"),
+            "rejected": data.get("rejected"),
+            "superseded": data.get("superseded") or [],
+            "acceptance_corrections": data.get("acceptance_corrections") or []}
 
 
 def status(root, ticket):
@@ -978,7 +1128,9 @@ def utf8_stdio():
 
 def main(argv):
     utf8_stdio()
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # No prefix matching: a shortened flag (`--super`, `--correct`) is a usage
+    # error, never a verb.
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], allow_abbrev=False)
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
     action = parser.add_mutually_exclusive_group(required=True)
@@ -996,13 +1148,27 @@ def main(argv):
     action.add_argument("--check-follow-up", action="store_true",
                         help="an auto-accepted receipt's follow-up quotes every line")
     action.add_argument("--successor-plan", metavar="PLAN_SHA256")
+    action.add_argument("--correct-acceptance", action="store_true",
+                        help="rewrite an owner-accepted receipt's accepted_by and record the "
+                             "old name (needs --by and --reason)")
     parser.add_argument("--provider", default="claude")
     parser.add_argument("--model")
-    parser.add_argument("--by", help="who accepts or rejects, with --accept / --reject")
+    parser.add_argument("--by", help="who accepts or rejects, with --accept / --reject; the "
+                                     "right accepter, with --correct-acceptance")
     parser.add_argument("--follow-up", help="with --auto-accept: the follow-up ticket id")
+    parser.add_argument("--reason", help="with --correct-acceptance: why, one line")
+    parser.add_argument("--supersede-accepted", action="store_true",
+                        help="with --reject: take an ACCEPTED ticket, keeping its receipt "
+                             "under superseded")
     args = parser.parse_args(argv)
     if args.auto_accept and args.by is not None:
         parser.error("--auto-accept takes no --by: its accepted_by is fixed")
+    if args.reason is not None and not args.correct_acceptance:
+        parser.error("--reason is used only with --correct-acceptance")
+    if args.correct_acceptance and args.follow_up is not None:
+        parser.error("--correct-acceptance takes no --follow-up")
+    if args.supersede_accepted and not args.reject:
+        parser.error("--supersede-accepted is used only with --reject")
     root = os.path.abspath(args.root)
 
     try:
@@ -1021,9 +1187,18 @@ def main(argv):
                   f"{receipt['accepted_by']} at {receipt['accepted_at']}")
             return 0
         if args.reject:
-            rejected = reject(root, args.ticket, args.by)
+            rejected = reject(root, args.ticket, args.by, args.supersede_accepted)
+            old = rejected.get("receipt")
+            gone = (f"; superseded the round {old.get('round')} {old.get('kind')} receipt "
+                    f"(bundle {str(old.get('bundle_sha256'))[:12]})" if old else "")
             print(f"review-ledger: {args.ticket} is {NEEDS_REPLAN}, rejected by "
-                  f"{rejected['by']} at {rejected['at']}")
+                  f"{rejected['by']} at {rejected['at']}{gone}")
+            return 0
+        if args.correct_acceptance:
+            row = correct_acceptance(root, args.ticket, args.by, args.reason)
+            print(f"review-ledger: round {row['round']} accepted_by corrected from "
+                  f"{row['was']} to {row['now']} at {row['at']} ({row['count']} "
+                  "correction(s) recorded)")
             return 0
         if args.check_receipt:
             ok, message = check_receipt(root, args.ticket)

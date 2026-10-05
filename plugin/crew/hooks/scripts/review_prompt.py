@@ -16,7 +16,10 @@ script writes the part of it that is about the ticket rather than the diff:
     UNKNOWN, the CI receipt for HEAD -- the upgrade `review_run.py` reserves
     on -- and every rule the local record (`.crew/.verify-gate.record.json`)
     still lists as NOT VERIFIED (marked superseded when the receipt covers
-    HEAD).
+    HEAD). When the gate does not accept the tree, one fixed line
+    (`OVERRIDE_LINE`, T-0101) says that such a round exists only under
+    `--allow-unverified`, recorded as `gate.overridden`, so a reviewer can
+    tell a recorded override from a gap nobody noticed.
 
   - the development standards checklist (T-0085): the effective standards
     set's ids, rules and self-check questions from `crew_standards.
@@ -207,6 +210,16 @@ def _head(root):
 
 REASON_MAX = 400
 
+# T-0101: printed only in the branch where the gate does not accept the tree
+# (local UNVERIFIED or UNKNOWN, no CI receipt VERIFIED), after the unchanged
+# MISSING / NOT-been-through-the-gate and `Gate answer for HEAD` lines. A rule
+# about the tool, so it stays true whatever the operator passes later.
+OVERRIDE_LINE = ("Order: review_run.py reserves no round on a tree in this state unless the "
+                 "operator passes --allow-unverified, and review.json then records "
+                 "gate.overridden. /crew:done still needs a clean gate. The missing pass is "
+                 "that recorded override: do not report it as a defect on its own. Report "
+                 "anything in the diff a gate run would catch.")
+
 
 def _reason(text):
     """A gate reason as ONE line: control characters escaped (a git or gh
@@ -278,6 +291,7 @@ def _receipts_block(root, manifest):
                 # answer off entirely (review r3).
                 out.append(f"Gate answer for HEAD: {local}: {_reason(local_why)}; "
                            f"CI receipt {r_state}: {_reason(r_reason)}")
+                out.append(OVERRIDE_LINE)
     state, rules = verify_record.read_record(root)
     shown = verify_record.RECORD_PATH.replace("\\", "/")
     if state == "absent":

@@ -9,6 +9,50 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — `crew` 1.1.8: review ledger supersede and accepter correction, and the override line in the review prompt (H1 harness bundle: T-0098, T-0109, T-0101)
+
+- **Summary.** An owner can now send an accepted review back to replanning with one recorded command,
+  correct who accepted a round without voiding it, and the review prompt tells the reviewer when a
+  round ran under a recorded gate override instead of leaving a bare MISSING to be read as a defect.
+- **`review_ledger.py --reject --by <who> --supersede-accepted` (T-0109).** An owner who finds an
+  accepted head unshippable moves the ticket to `NEEDS_REPLAN` with one recorded command instead
+  of a refused third `--reserve` or a hand edit. The old receipt (kind `clean`, `owner-accepted`
+  or `auto-accepted`, for the latest completed round) is kept whole in an append-only `superseded`
+  list with who and when, `rejected` records its kind, and `receipt` is cleared. Plain `--reject`
+  still refuses an `ACCEPTED` ticket and now names the flag. The flag never falls back to a plain
+  rejection: any other state, an `auto:` name, and every receipt, round or history it cannot read
+  refuse and leave the ledger byte-identical. The bundle is not rebuilt.
+- **`review_ledger.py --correct-acceptance --by <who> --reason <text>` (T-0098).** Rewrites an
+  `owner-accepted` receipt's `accepted_by` and appends `{round, was, now, reason, at}` to a
+  top-level `acceptance_corrections` list that a successor plan does not clear. Nothing else
+  changes, so `--check-receipt` answers the same before and after. Refuses a `clean` or
+  `auto-accepted` receipt, an `auto:` name, the name already recorded, an empty, multi-line or
+  non-UTF-8 `--by` or `--reason`, and a history that is not a list of objects.
+- `--status` gains `rejected`, `superseded` and `acceptance_corrections`; no existing key changes.
+  `--by` stays a recorded name, not a check of who is calling: the ledger cannot authenticate a
+  caller, and `--reserve` already voids an acceptance with no name, so neither verb widens who can
+  void a receipt, and neither can mint one.
+- **The review prompt names a recorded gate override (T-0101).** When the verify gate does not
+  accept the reviewed tree, the receipts block keeps its `MISSING` / `NOT been through the gate`
+  and `Gate answer for HEAD` lines and adds one fixed line: such a round is reserved only under
+  `--allow-unverified`, `review.json` records it as `gate.overridden`, `/crew:done` still needs a
+  clean gate, and the missing pass alone is not a defect in the diff. Never printed when the gate
+  accepts the tree. The original wording `not yet run (gate follows review)` is dropped: since
+  gate first the gate runs before review, so it would be false.
+- **Review of 24cb235c.** `--by` on `--reject` (with or without the flag) and on `--accept`, and
+  `--by` / `--reason` on `--correct-acceptance`, are checked before the lock: one non-empty line
+  (every Unicode line break refused, not only `\n` and `\r`) that can be written as UTF-8, so a
+  lone surrogate is refused instead of being written and then crashing the success line. The
+  reserved `auto:` prefix is tested after NFKC, casefold and stripping format characters, so a
+  fullwidth or zero-width lookalike is refused. The latest round's number is type-checked (bool,
+  float and string refused) as the receipt's is. `review_ledger.py` turns off argparse prefix
+  matching (`allow_abbrev=False`): `--super` or `--correct` is a usage error, never a verb.
+- **Tests and sabotage.** `test_review_reject_accepted.py` and `test_review_correct_acceptance.py`
+  (must-block cases each checked byte-for-byte, must-allow cases, the successor-plan cycle, usage
+  errors, concurrent corrections), five cases in `test_review_prompt.py`, and sixteen mutations in
+  `sabotage_review.py`, each red on its named test through `sabotage.py`'s runner. Harness only
+  (T-0087): no feature path rides along.
+
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 
 - **Summary.** Chat notifications now go through when the bot token was saved with a trailing space

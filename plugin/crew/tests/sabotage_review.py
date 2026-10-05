@@ -773,7 +773,7 @@ REVIEW_FIX_MUTATIONS = (
         # The owner path forges the auto receipt's string.
         "--accept stops reserving the auto: prefix",
         REVIEW_LEDGER,
-        "    if by.strip().lower().startswith(AUTO_PREFIX):\n",
+        "    if _is_auto_name(by):\n",
         "    if False:\n",
         "tests/test_review_auto_accept.py::test_owner_accept_refuses_the_auto_prefix",
     ),
@@ -1152,5 +1152,223 @@ REVIEW_FIX_MUTATIONS = (
         "                or kept.get(\"round\") != number or isinstance(kept.get(\"round\"), bool):\n",
         "                or isinstance(kept.get(\"round\"), bool):\n",
         "tests/test_review_metrics.py::test_a_reservation_record_for_another_round_is_not_used",
+    ),
+    # --- H1 harness bundle (T-0098, T-0109, T-0101) -------------------------
+    # T-0098: --correct-acceptance. Each red on its named test through this
+    # runner's own main(), with MUTATIONS filtered to the entry.
+    (
+        # (a) An auto-accepted receipt's fixed accepter is "corrected", so
+        # receipt_stands stops standing it.
+        "a correction takes an auto-accepted receipt",
+        REVIEW_LEDGER,
+        '        if not isinstance(receipt, dict) or receipt.get("kind") != "owner-accepted":\n',
+        '        if not isinstance(receipt, dict) or receipt.get("kind") not in '
+        '("owner-accepted", AUTO_KIND):\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # (b) A correction writes an `auto:` name without auto_accept's guard.
+        "a correction takes an auto: name",
+        REVIEW_LEDGER,
+        "    if _is_auto_name(new):\n",
+        "    if False:\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # (c) The history row overwrites the list instead of appending.
+        "a correction overwrites the correction history",
+        REVIEW_LEDGER,
+        '        data["acceptance_corrections"] = history + [row]\n',
+        '        data["acceptance_corrections"] = [row]\n',
+        ("tests/test_review_correct_acceptance.py::"
+         "test_second_correction_appends_and_keeps_the_first_row"),
+    ),
+    (
+        # (d) The correction refreshes accepted_at as well as the name.
+        "a correction refreshes accepted_at",
+        REVIEW_LEDGER,
+        '        receipt["accepted_by"] = new\n',
+        '        receipt["accepted_by"] = new\n        receipt["accepted_at"] = _now()\n',
+        ("tests/test_review_correct_acceptance.py::"
+         "test_correction_changes_only_the_name_and_the_history"),
+    ),
+    (
+        # (e) A malformed history is extended instead of refused.
+        "a correction extends a malformed correction history",
+        REVIEW_LEDGER,
+        "        if not _is_dict_list(history):\n"
+        "            raise LedgerError(f\"{ticket}'s `acceptance_corrections` is not a list of \"\n",
+        "        if False:\n"
+        "            raise LedgerError(f\"{ticket}'s `acceptance_corrections` is not a list of \"\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # (f) --reason may carry a line break into the ledger and the status.
+        "a correction reason may carry a line break",
+        REVIEW_LEDGER,
+        '    why = _one_line_arg(reason, "--reason")\n',
+        '    why = (reason.strip() if isinstance(reason, str) and reason.strip()\n'
+        '           else _one_line_arg(reason, "--reason"))\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    # T-0109: --reject --by <who> --supersede-accepted.
+    (
+        # (a) Plain --reject voids an accepted receipt.
+        "plain --reject supersedes an ACCEPTED ticket without the flag",
+        REVIEW_LEDGER,
+        "        if supersede_accepted:\n",
+        "        if supersede_accepted or data.get(\"state\") == ACCEPTED:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (b) An unattended `auto:` name supersedes an acceptance.
+        "--supersede-accepted takes an auto: name",
+        REVIEW_LEDGER,
+        "    if supersede_accepted and _is_auto_name(by):\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (c) The flag acts on a REVIEWED ticket, recording a supersession
+        # that never happened.
+        "--supersede-accepted takes a REVIEWED ticket",
+        REVIEW_LEDGER,
+        "    if data.get(\"state\") != ACCEPTED:\n",
+        "    if data.get(\"state\") not in (ACCEPTED, REVIEWED):\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (d) A receipt of a kind nobody knows is superseded as if read.
+        "--supersede-accepted takes any receipt kind",
+        REVIEW_LEDGER,
+        "    if not isinstance(receipt, dict) or receipt.get(\"kind\") not in SUPERSEDABLE:\n",
+        "    if not isinstance(receipt, dict):\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (e) A receipt for an older round than the latest is superseded.
+        "--supersede-accepted drops the latest-round check",
+        REVIEW_LEDGER,
+        "    if (not isinstance(latest, dict) or latest.get(\"status\") != \"completed\"\n"
+        "            or latest.get(\"round\") != number):\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (f) The replaced receipt is lost instead of kept.
+        "--supersede-accepted does not keep the old receipt",
+        REVIEW_LEDGER,
+        "    data[\"superseded\"] = history + [{\"receipt\": receipt, \"by\": by, \"at\": at}]\n",
+        "    data[\"superseded\"] = history\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_moves_an_owner_accepted_ticket_to_needs_replan"),
+    ),
+    (
+        # (g) A second supersession overwrites the first row.
+        "--supersede-accepted replaces the superseded history",
+        REVIEW_LEDGER,
+        "    data[\"superseded\"] = history + [{\"receipt\": receipt, \"by\": by, \"at\": at}]\n",
+        "    data[\"superseded\"] = [{\"receipt\": receipt, \"by\": by, \"at\": at}]\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_survives_a_successor_and_appends"),
+    ),
+    (
+        # (h) The receipt stays in place under NEEDS_REPLAN.
+        "--supersede-accepted leaves the receipt in place",
+        REVIEW_LEDGER,
+        "    data[\"rejected\"] = {\"by\": by, \"at\": at, \"round\": number, "
+        "\"superseded\": receipt[\"kind\"]}\n    data[\"receipt\"] = None\n",
+        "    data[\"rejected\"] = {\"by\": by, \"at\": at, \"round\": number, "
+        "\"superseded\": receipt[\"kind\"]}\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_moves_an_owner_accepted_ticket_to_needs_replan"),
+    ),
+    # T-0101: the override line in the receipts block.
+    (
+        # (a) The line is no longer printed on a tree the gate does not accept.
+        "the receipts block drops the recorded-override line",
+        REVIEW_PROMPT,
+        "                out.append(OVERRIDE_LINE)\n",
+        "",
+        "tests/test_review_prompt.py::test_an_unverified_tree_names_the_recorded_override",
+    ),
+    (
+        # (b) The line is printed on every tree, accepted ones included.
+        "the receipts block prints the override line on an accepted gate",
+        REVIEW_PROMPT,
+        '    out = ["== Test receipts (verify gate) =="]\n',
+        '    out = ["== Test receipts (verify gate) ==", OVERRIDE_LINE]\n',
+        "tests/test_review_prompt.py::test_an_accepted_gate_never_carries_the_override_line",
+    ),
+    # Review of 24cb235c (#418): FIX1, FIX2, N1, N2, N3.
+    (
+        # FIX2: a receipt round of `true` passes as round 1 (True == 1).
+        "--supersede-accepted takes a bool receipt round",
+        REVIEW_LEDGER,
+        "    if not isinstance(number, int) or isinstance(number, bool):\n",
+        "    if not isinstance(number, int):\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX2: a latest row round of 1.0 or true passes as round 1.
+        "--supersede-accepted drops the latest round's type check",
+        REVIEW_LEDGER,
+        "    if not isinstance(latest_round, int) or isinstance(latest_round, bool):\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX1: --supersede-accepted's --by skips the one-line / UTF-8 check,
+        # so a lone surrogate is written and the success line then crashes.
+        "--reject writes a --by it cannot print",
+        REVIEW_LEDGER,
+        '    by = _one_line_arg(by, "--by", "--reject")\n',
+        '    if not isinstance(by, str) or not by.strip():\n'
+        '        raise LedgerError("--reject needs --by <who is rejecting>")\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX1: plain --accept writes a --by it cannot print or that spans lines.
+        "--accept writes a --by it cannot print",
+        REVIEW_LEDGER,
+        '    by = _one_line_arg(by, "--by", "--accept")\n',
+        '    if not isinstance(by, str) or not by.strip():\n'
+        '        raise LedgerError("--accept needs --by <who is accepting>")\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_plain_reject_and_accept_refuse_a_name_they_cannot_write"),
+    ),
+    (
+        # N1: a fullwidth or zero-width lookalike passes the reserved prefix.
+        "the auto: prefix test stops folding lookalikes",
+        REVIEW_LEDGER,
+        '    folded = unicodedata.normalize("NFKC", name).casefold()\n',
+        "    folded = name.lower()\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # N2: only \n and \r count as line breaks again.
+        "a one-line argument may carry a Unicode line break",
+        REVIEW_LEDGER,
+        "    if any(ch in _LINE_BREAKS for ch in value):\n",
+        '    if "\\n" in value or "\\r" in value:\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # N3: argparse prefix matching lets `--super` reach the flag.
+        "review_ledger.py accepts abbreviated flags",
+        REVIEW_LEDGER,
+        "    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], "
+        "allow_abbrev=False)\n",
+        "    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])\n",
+        ("tests/test_review_correct_acceptance.py::"
+         "test_an_abbreviated_flag_is_a_usage_error"),
     ),
 )
