@@ -1272,6 +1272,8 @@ _IDENTIFY_BLOCKS = {
                              "created-unparseable"),
     "run-list-fails": (False, [(1, "")], "run-list-fails"),
     "run-list-not-runs": (False, [_ok({"runs": []})], "run-list-unreadable"),
+    "run-without-url": (False, [_ok(_OLD + [dict(_new_run(13), url=None)])],
+                        "run-url-unreadable"),
 }
 
 
@@ -1568,3 +1570,22 @@ def test_watch_slice_seconds_range(tmp_path, monkeypatch):
     code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)],
                              "--slice-seconds", "30")
     assert code == 0 and gh.timeouts == [30]
+
+
+@_scenario
+def test_identify_an_answer_after_identify_seconds_is_not_used(tmp_path, monkeypatch):
+    """A `run list` that answers after the deadline is not a run, and the
+    call itself is bounded by the time left."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    clock = {"now": _T0 + 3}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    timeouts = []
+
+    def slow(_args, _root, timeout=None):
+        timeouts.append(timeout)
+        clock["now"] += 130
+        return _ok(_OLD + [_new_run(13)])
+    code, lines = _run(monkeypatch, slow, "identify", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=none-in-timeout"
+    assert timeouts == [120] and "runId" not in _state(root)

@@ -27,7 +27,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   Its id and URL go into the state file.
 - **Never a guess.** Two candidates, none within `identifySeconds`, an unparseable `createdAt`, or a
   state file that is missing, unreadable or older than 600 seconds is could-not-tell (exit 3) and
-  writes no run id. Its only `gh` call is `run list`.
+  writes no run id, as is a `run list` answer that arrives after `identifySeconds` (each call is
+  bounded by the time left) or a run with no URL. Its only `gh` call is `run list`.
 
 ### Added — `crew` 1.1.4: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch (L-0644)
 

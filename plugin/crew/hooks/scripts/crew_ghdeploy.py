@@ -624,9 +624,9 @@ def _sleep(seconds):
     time.sleep(seconds)
 
 
-def _gh_json(args, root):
+def _gh_json(args, root, **kw):
     """`gh <args>`'s stdout as JSON, or None when it failed or is not JSON."""
-    code, out = _run_gh(args, root)
+    code, out = _run_gh(args, root, **kw)
     if code != 0:
         return None
     try:
@@ -862,18 +862,23 @@ def identify(root, env, index):
     for poll in range(polls):
         runs = _gh_json(["run", "list", "-w", state["workflow"], "-b", branch(state["ref"]),
                          "-e", "workflow_dispatch", "-u", state["actor"],
-                         "-L", str(SNAPSHOT_LIMIT), "--json", RUN_FIELDS], root)
+                         "-L", str(SNAPSHOT_LIMIT), "--json", RUN_FIELDS], root,
+                        timeout=max(1, int(deadline - _clock())))
+        answered += runs is not None
+        if _clock() > deadline:
+            break  # an answer that came after identifySeconds is not used
         if runs is not None:
-            answered += 1
             candidates, near = pick_run(runs, state)
             if len(candidates) > 1:
                 raise CouldNotTell("two-candidates", f"{len(candidates)} new runs match; "
                                                      "crew never picks one")
             if candidates:
                 run = candidates[0]
+                if not isinstance(run.get("url"), str) or not run["url"]:
+                    raise CouldNotTell("run-url-unreadable", "the one new run has no URL")
                 state.update(runId=run["databaseId"], runUrl=run.get("url"))
                 write_state(path, state)
-                return [f"run: {run['databaseId']} {run.get('url') or ''}".rstrip(),
+                return [f"run: {run['databaseId']} {run['url']}",
                         f"result=ok run={run['databaseId']}"]
         if poll + 1 == polls or _clock() >= deadline:
             break
