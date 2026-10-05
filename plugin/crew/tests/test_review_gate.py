@@ -154,21 +154,92 @@ def test_any_change_after_the_pass_is_unverified(tmp_path, edit):
     assert _state(root) == review_gate.UNVERIFIED
 
 
-@needs_bash
-def test_a_lane_follows_its_own_gate_not_the_main_checkouts_stand_down(tmp_path):
-    # verify-gate.sh reads the worktree's own .crew/config.json (T-0088 left the
-    # shell readers unrouted; T-0096 routes them). Routing gate_state alone would
-    # call this lane's live, red gate "stood down" and review a red tree. When
-    # T-0096 lands, this test goes red: flip it and route both together.
+_PS1 = os.path.join(_SCRIPTS, "verify-gate.ps1")
+_PWSH = crew_fixtures.resolve_pwsh()
+_GATE_FLAVOURS = [
+    pytest.param("sh", marks=needs_bash),
+    pytest.param("ps1", marks=pytest.mark.skipif(
+        _PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")),
+]
+
+
+def _gate_flavour(root, flavour, ci=False):
+    cmd = ([_BASH, _SH] + (["--ci"] if ci else []) if flavour == "sh" else
+           [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1] + (["-Ci"] if ci else []))
+    return crew_fixtures.run_gate(
+        cmd, input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT"),
+        capture_output=True, text=True, check=False,
+        timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+
+def _red_lane(tmp_path, own_config=None):
+    """A main checkout with `"verifyGate": false` and a linked worktree whose
+    own verify map has one red rule; its own config is `own_config` or none."""
     main = _repo(tmp_path, config='{"verifyGate": false}')
     lane = tmp_path / "lane"
     git(main, "worktree", "add", "-q", "-b", "lane", str(lane))
     (lane / ".crew").mkdir()
     (lane / ".crew" / "verify.json").write_text(json.dumps(_map(run="exit 1")),
                                                 encoding="utf-8")
+    if own_config is not None:
+        (lane / ".crew" / "config.json").write_text(own_config, encoding="utf-8")
     (lane / "feature.txt").write_text("feature v1\n", encoding="utf-8")
-    assert _gate(lane).returncode == 2
+    return lane
+
+
+@pytest.mark.parametrize("flavour", _GATE_FLAVOURS)
+def test_a_lane_inherits_the_main_checkouts_stand_down(tmp_path, flavour):
+    """L-0681 (flipped from T-0088's pin): the gate and gate_state read the
+    same resolved file, so a lane with no config of its own is stood down by
+    the main checkout's `"verifyGate": false` in both, and --ci still fails."""
+    lane = _red_lane(tmp_path)
+    assert _gate_flavour(lane, flavour).returncode == 0
+    assert _state(lane) == review_gate.NO_GATE
+    assert _gate_flavour(lane, flavour, ci=True).returncode == 2
+
+
+@pytest.mark.parametrize("flavour", _GATE_FLAVOURS)
+def test_a_lane_with_its_own_config_keeps_its_gate(tmp_path, flavour):
+    """Must-block: an own config wins whole, so the main checkout's stand-down
+    is not read and the red rule blocks."""
+    lane = _red_lane(tmp_path, own_config="{}")
+    assert _gate_flavour(lane, flavour).returncode == 2
     assert _state(lane) == review_gate.UNVERIFIED
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the failing-git shim is a POSIX sh script")
+@pytest.mark.parametrize("flavour", _GATE_FLAVOURS)
+def test_gate_is_not_stood_down_when_git_cannot_tell(tmp_path, flavour):
+    """Must-block: when git cannot name the main checkout (a `git` that fails
+    `rev-parse --git-common-dir`), the source is `unknown`, which inherits
+    nothing, so the main checkout's stand-down is not read and the red rule
+    blocks; gate_state is not stood down by a config either."""
+    lane = _red_lane(tmp_path)
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    real = subprocess.run(["sh", "-c", "command -v git"], capture_output=True, text=True,
+                          check=True).stdout.strip()
+    (shim / "git").write_text(
+        "#!/bin/sh\ncase \"$*\" in *--git-common-dir*) exit 128 ;; esac\n"
+        f'exec "{real}" "$@"\n', encoding="utf-8")
+    os.chmod(shim / "git", 0o755)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(lane), OS="Windows_NT",
+               PATH=str(shim) + os.pathsep + os.environ.get("PATH", ""))
+    cmd = ([_BASH, _SH] if flavour == "sh" else
+           [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1])
+    proc = crew_fixtures.run_gate(cmd, input="{}", cwd=str(lane), env=env,
+                                  capture_output=True, text=True, check=False,
+                                  timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    assert proc.returncode == 2, proc.stderr
+
+
+def test_gate_state_is_not_stood_down_when_git_cannot_tell(tmp_path, monkeypatch):
+    lane = _red_lane(tmp_path)
+    monkeypatch.setattr(review_gate.crew_common, "_main_checkout",
+                        lambda _root: (None, "git could not tell (fixture)"))
+    state, reason = review_gate.gate_state(str(lane))
+    assert not (state == review_gate.NO_GATE and "verifyGate" in reason), reason
 
 
 @needs_bash

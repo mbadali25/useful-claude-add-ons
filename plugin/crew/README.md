@@ -1089,7 +1089,14 @@ a default nobody edited, delete it (and `.crew/crew.json`) to inherit.
 **Behaviour change:** every Python guard in a lane worktree now reads the owner's
 settings where it read the built-in defaults before - `guards.forcePush: allow`
 instead of `block`, `scope.mode`, `scope.allowCliApproval`, `roleWrites` and
-`cloudGuard` the same way. Ratcheted guard keys still take the narrower of repo
+`cloudGuard` the same way. Since L-0681 the verify gate does too: a lane with no
+config of its own whose main checkout says `"verifyGate": false` gets no Stop
+gate, and `/crew:review` reads NO_GATE there (`verify-gate --ci` still exits 2);
+a lane that must be gated writes its own config. And with no usable python the
+scope and completion wrappers prove `scope.mode` off only when the resolved
+file is absent and git could tell: a lane whose main checkout has a config, or
+whose git cannot name the main checkout, blocks writes and the Stop until
+python works. Ratcheted guard keys still take the narrower of repo
 and machine-global. A lane that wants its own guards writes its own
 `.crew/config.json`, and that file then wins whole.
 
@@ -1114,11 +1121,14 @@ it (absolute, `..`, a symlink out) or names a directory is the lane's
 Windows PowerShell 5.1 cannot resolve one as `realpath` does, so any symlink or
 junction on the way counts as leaving, even one that points back inside. What they write (transcripts, markers, the
 handoff note) stays in the lane, and `context-watch` still needs a `.crew/`
-directory there before it measures. **Not yet covered** (they read only the
-worktree's own file): the verify gate, the scope and completion wrappers, and
-`review_gate.py`. Until those land, **the PowerShell
-verify gate reads the lane's own `emergency.standDown`** while the bash verify
-gate (through `_common.sh`) and `crew_incident.py` read the inherited one.
+directory there before it measures. The review/gate harness reads it too (crew
+1.1.8, L-0681): the verify gate in both flavours (`verifyGate`,
+`verify.stopBudgetSeconds` and, in `verify-gate.ps1`, `emergency.standDown`),
+`review_gate.py` (in step with the gate: both read one file), the gate's
+fingerprint (the first gate run in each inheriting lane after the upgrade
+re-runs its commands once) and the scope and completion wrappers' no-python
+proof. No shell, PowerShell or Python reader of the repo config is outside a
+resolver now. `.crew/verify.json` is never inherited.
 
 ### `/crew:config` — see where a value comes from, and set the global file
 

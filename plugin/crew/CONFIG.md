@@ -168,11 +168,11 @@ shared by every worktree) and whose
 inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
 names a directory, is `.work/HANDOFF.md` there, as in `crew_state.handoff_path`; the
 `.ps1` hooks count any symlink or junction on the way as leaving, since 5.1 cannot
-resolve one). Still
-own-file only: the verify gate, the scope and completion wrappers, and
-`review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
-lane's own `emergency.standDown` while the bash verify gate and
-`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
+resolve one). The
+verify gate (both flavours), `review_gate.py`, the gate's fingerprint and the
+scope and completion wrappers' no-python proof read the resolved file too
+(L-0681); in those wrappers `unknown` is never proof that `scope.mode` is off.
+`.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 

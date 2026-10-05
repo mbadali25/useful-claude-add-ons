@@ -161,7 +161,13 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || {
   [ "$CI_MODE" -eq 1 ] && { echo "verify-gate --ci: cannot cd into ${CLAUDE_PROJECT_DIR:-.} - nothing was checked" >&2; exit 2; }
   exit 0
 }
-if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null; then
+# The resolved repo config (T-0096's crew_repo_config_dir, L-0681): a linked
+# worktree with no config of its own reads the main checkout's, the file
+# review_gate.py reads too. When git cannot tell, it is this checkout's own.
+crew_repo_config_dir .
+CREW_REPO_CONFIG="$CREW_CFG_DIR/config.json"
+export CREW_REPO_CONFIG
+if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' "$CREW_REPO_CONFIG" 2>/dev/null; then
   if [ "$CI_MODE" -eq 1 ]; then
     echo "verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, so nothing was checked. Turn it on or remove the CI job." >&2
     exit 2
@@ -1001,11 +1007,11 @@ if len(sys.argv) > 2 and sys.argv[2] in ("--all", "--ci"):
     budget = None
 else:
     try:
-        _cc = json.load(open(".crew/config.json"))
+        _cc = json.load(open(os.environ["CREW_REPO_CONFIG"]))
         _v = (_cc.get("verify") or {}).get("stopBudgetSeconds")
         if isinstance(_v, (int, float)) and not isinstance(_v, bool) and _v >= 0:
             budget = _v
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, KeyError):
         pass
 
 # A command is ONE LINE, and a command that is not is REJECTED rather than

@@ -233,6 +233,29 @@ review bundle and staled the accepted receipt with no round left.
   `commands/implement.md` step 6, which are prompts outside the harness; `verify.knownFailures`
   (TSS F496) and `.gitignore` writes from `/crew:init` / `/crew:migrate` stay out, as the spec says.
 
+### Changed — `crew` 1.1.8: the verify gate, the review gate and the scope wrappers inherit the main checkout's config in a lane (L-0681)
+
+- **Summary.** In a linked worktree with no crew config of its own, the verify gate, the review
+  gate and the scope and completion wrappers now read the main checkout's `.crew/config.json`, as
+  every other crew reader already did, so a lane is gated and guarded by the owner's settings.
+- **The verify gate, both flavours.** `verifyGate`, `verify.stopBudgetSeconds` and, in
+  `verify-gate.ps1`, `emergency.standDown` come from the resolved file (T-0096's
+  `crew_repo_config_dir` / `Get-CrewRepoConfigDir`, copied into `verify-gate.ps1`).
+  `review_gate.py` moves in the same commit, so the gate and `/crew:review` never disagree about a
+  stand-down; `verify_fingerprint.py` hashes the resolved file (the first gate run in each
+  inheriting lane re-runs its commands once).
+- **Behaviour change.** An inherited `"verifyGate": false` stands a lane's Stop gate down and
+  `/crew:review` reads NO_GATE there; `verify-gate --ci` still exits 2. A lane that must be gated
+  writes its own config.
+- **The wrappers without python.** `scope-guard` and `completion-audit` (both flavours) prove
+  `scope.mode` off only when the resolved file is absent and git could tell: a lane whose main
+  checkout has a config, or whose git cannot name the main checkout, now blocks writes and the
+  Stop (it was let through unjudged). PowerShell 7 still allows a strictly-off inherited config.
+- **Tests and sabotage.** The pinned lane test in `test_review_gate.py` is flipped; lane cases for
+  the gate, the budget, the fingerprint, the ps1 incident and the four wrappers, and
+  `test_no_hook_script_names_the_own_config_path`, are in `test_worktree_config_shell.py`;
+  `sabotage_limit_worktree.py` holds the mutations for the whole T-0096 family.
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file

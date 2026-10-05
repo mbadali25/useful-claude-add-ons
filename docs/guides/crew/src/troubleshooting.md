@@ -273,9 +273,10 @@ contract itself. This section is what goes wrong with the approval and the audit
   `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
   the cloud guard's fallback `unknown` counts as armed. So do the session hooks (`notify`, the
   handoff scripts, `context-watch`; crew 1.0.343, L-0680): a lane notifies with the main
-  checkout's settings, and a relative handoff path still names a file in the lane. The verify
-  gate, the scope and completion wrappers and `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
-  `emergency.standDown` while the bash gate reads the inherited one.
+  checkout's settings, and a relative handoff path still names a file in the lane. Since
+  L-0681 the verify gate (both flavours), `review_gate.py` and the scope and completion
+  wrappers inherit as well: an inherited `"verifyGate": false` stands a lane's Stop gate down,
+  and with no python a lane whose main checkout has a config blocks writes and the Stop.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash
