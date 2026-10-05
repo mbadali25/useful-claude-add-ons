@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T17:10Z
+Last updated: 2026-10-05T17:12Z
 
 ## >>> RESUME HERE
 
@@ -94,6 +94,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T17:12Z G2 slices: coordinator review of 46409268 found 2 more fail-open paths (unshipped predecessor hides unreadable chain; recorded merge_sha overrides live PR state). 8 paths over 5 rounds -> switched to exhaustive oracle enumeration test + single total function. If it can't be made fail-closed, T-0059 deferral goes to owner.
 - 2026-10-05T17:10Z G7 built (9 tickets CLEAN; head 6020263c, placeholder 1.1.11). L-0534 ships enforced PWSH-16; six language slices candidates only; stack-php and stack-node skills added (crew skill count 33). Budget fix on L-0519 found on resume. C-0041..C-0044. Release landing queue: G3 (running) -> G3b -> G5 -> G7 -> G1b/G2/G0 when their fixes clear.
 - 2026-10-05T17:00Z MERGED #541 (G1) into release/1.2.0 at 3dbc033b, crew 1.1.2 (30/30 CI green; the two timing flakes passed on re-run). Lander landing G3 as crew 1.1.5.
 - 2026-10-05T16:57Z H3 group review r6 CLEAN, CI green on 86de0d81. Set crew 1.1.3 (415c2644, version only; gates pass); version-only Codex check running; then merge #540 to main. H1 reassigned to 1.1.4 (must merge main after H3). Open H3 follow-up: crew-providers SKILL.md / kimi_probe docstring still say /crew:review cannot launch Kimi (feature half, T-0028 (c)).
