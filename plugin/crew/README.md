@@ -2673,11 +2673,11 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   `.work/autopilot/<slug>/lanes/<id>.json` in the main checkout whose
   `worktree` is this worktree. A marker that cannot be read (a directory
   whose existence cannot be looked up, a lanes directory or lane file that is
-  unreadable or corrupt, a `running` lane with no readable `worktree`)
-  refuses as `unknown`, exit 3, never as "not a lane"; a `pending` lane,
-  whose `lane-init` has not run, names no worktree yet. The main checkout, and a linked worktree no
-  lane file names, ring as usual: being a linked worktree alone proves
-  nothing. `receive` and `pending` are not restricted. The wave's lane prompt
+  unreadable or corrupt, a `worktree` that is not an absolute path, or none
+  on a `running` lane) refuses as `unknown`, exit 3, never as "not a lane";
+  a `pending` lane, whose `lane-init` has not run, names no worktree yet.
+  The main checkout, and a linked worktree no lane file names, ring as
+  usual: being a linked worktree alone proves nothing. `receive` and `pending` are not restricted. The wave's lane prompt
   tells a lane to return a question for another session in its report, for
   the main session to file and ring, and `validate-prompts.py` fails any
   crew agent granted `SendMessage` or `ListAgents` and a lane prompt naming

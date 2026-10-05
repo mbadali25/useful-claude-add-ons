@@ -91,8 +91,11 @@ def test_ring_where_a_lane_file_is_unreadable_is_unknown_not_not_a_lane(tmp_path
 
 
 @pytest.mark.parametrize("lane", [{"state": "running"}, {"state": "running", "worktree": ""},
-                                  {"state": "running", "worktree": 7}, {"state": "clean", "worktree": ["x"]}],
-                         ids=["running-no-worktree", "running-empty", "running-number", "clean-list"])
+                                  {"state": "running", "worktree": 7}, {"state": "clean", "worktree": ["x"]},
+                                  {"state": "running", "worktree": "relative-lane"},
+                                  {"state": "findings", "worktree": "../x"}],
+                         ids=["running-no-worktree", "running-empty", "running-number", "clean-list",
+                              "running-relative", "ended-relative"])
 def test_a_lane_file_without_a_readable_worktree_is_unknown(tmp_path, capsys, lane):
     root, _, _ = _hub(tmp_path)
     plain = _isolated(root, name="maybe-a-lane")

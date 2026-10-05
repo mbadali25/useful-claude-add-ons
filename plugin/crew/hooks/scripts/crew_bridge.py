@@ -206,7 +206,9 @@ def lane_state(top):
             named = lane.get("worktree")
             if named is None and lane["state"] != "running":
                 continue  # pending (lane-init not run yet), or ended before it ran
-            if not isinstance(named, str) or not named:
+            # lane-init writes the lane worktree's real, absolute path; anything
+            # else cannot say which worktree it names.
+            if not isinstance(named, str) or not os.path.isabs(named):
                 return "unknown", (f"lane file {crew_coord.safe(slug, 64)}/{crew_coord.safe(name, 80)} is "
                                    f"{lane['state']} with no readable worktree: whether it names this "
                                    "worktree cannot be told")
