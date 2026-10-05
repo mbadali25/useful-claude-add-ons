@@ -154,7 +154,8 @@ def parse_record(name, version, blob):
     if record.get("status") not in STATUSES:
         return None, f"status {crew_coord.safe(record.get('status'), 40)!r} is not {DRAFT} or {FROZEN}"
     number = record.get("version")
-    if record.get("name") != name or type(number) is not int or number != version:  # not 1.0, not True
+    if (record.get("name") != name or not isinstance(number, int) or isinstance(number, bool)
+            or number != version):  # 1.0 and true are not the version 1
         return None, "it names a different contract or version than its file name"
     if not isinstance(record.get("hash"), str) or not _HASH_RE.fullmatch(record["hash"]):
         return None, "its hash is not sha256:<64 hex digits>"
