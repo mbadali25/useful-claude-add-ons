@@ -24,9 +24,11 @@ is a crash, which the gate blocks on as "this is not a pass".
 
 THE RULE.
 - A declared deploy is a dispatch when the reader reads one in it. Each
-  `$(...)` or backtick substitution in a DECLARED string becomes the one word
-  `SUBSTITUTED`, and an input whose declared value is that word is not
-  compared (`-f ref=$(git rev-parse HEAD)`). The command judged gets no such
+  `$(...)` or backtick substitution in a DECLARED string becomes one
+  placeholder word that string does not otherwise hold (`SUBSTITUTED`, or
+  `SUBSTITUTED1`, ...), and an input whose declared value is that word is
+  not compared (`-f ref=$(git rev-parse HEAD)`); a literal `SUBSTITUTED`
+  written in the map is compared like any value. The command judged gets no such
   treatment: a substitution there is could-not-tell.
 - Workflow names compare after dropping a leading `.github/workflows/`, and
   only names ending `.yml`/`.yaml`; a numeric id or a display name cannot be
@@ -70,10 +72,21 @@ def get_ci(obj, name, default):
     return obj[keys[0]] if keys else default
 
 
-def substitute(text):
+def placeholder(text):
+    """The placeholder word for `text`: PLACEHOLDER, numbered past any
+    spelling `text` already holds, so a literal value is never mistaken
+    for a substitution."""
+    word, count = PLACEHOLDER, 0
+    while word in text:
+        count += 1
+        word = f"{PLACEHOLDER}{count}"
+    return word
+
+
+def substitute(text, word=PLACEHOLDER):
     """`text` with each `$(...)` and backtick substitution outside single
-    quotes replaced by PLACEHOLDER. An unbalanced one is left as written, so
-    the reader refuses the declared string (could not tell)."""
+    quotes replaced by `word`. An unbalanced one is left as written, so the
+    reader refuses the declared string (could not tell)."""
     out, i, quoted = [], 0, False
     while i < len(text):
         char = text[i]
@@ -85,13 +98,13 @@ def substitute(text):
                 depth += {"(": 1, ")": -1}.get(text[j], 0)
                 j += 1
             if depth == 0:
-                out.append(PLACEHOLDER)
+                out.append(word)
                 i = j
                 continue
         elif not quoted and char == "`":
             end = text.find("`", i + 1)
             if end != -1:
-                out.append(PLACEHOLDER)
+                out.append(word)
                 i = end + 1
                 continue
         out.append(char)
@@ -138,11 +151,12 @@ def declared(envs):
         for command in deploys:
             if not isinstance(command, str) or not command.strip():
                 continue
+            word = placeholder(command)
             kind, why, scopes = crew_dispatch.dispatch_read(
-                substitute(command), "bash")
+                substitute(command, word), "bash")
             if kind == "unsure":
                 unsure.append((env, command, why))
-            found += [(env, scope) for scope in scopes]
+            found += [(env, dict(scope, placeholder=word)) for scope in scopes]
     return found, unsure
 
 
@@ -152,7 +166,7 @@ def fits(scope_inputs, decl):
     for name, value, why in decl.get("inputs", []):
         if value is None or name == "*":
             raise Block(f"a declared deploy's input cannot be read: {why}")
-        if value == PLACEHOLDER:
+        if value == decl["placeholder"]:
             continue
         if scope_inputs.get(name) != value:
             return False

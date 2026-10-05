@@ -143,3 +143,29 @@ def test_the_helper_never_names_the_endpoint_itself():
         with open(os.path.join(here, name), encoding="utf-8") as fh:
             text = fh.read()
         assert "_DISPATCH_RE" not in text and "/dispatches" not in text, name
+
+
+def test_a_literal_placeholder_word_is_compared_like_any_value(project):
+    """T-0062 review r1: a declared value written as the placeholder word,
+    with no substitution behind it, must not match every value."""
+    project({"dev": {"deploy": "gh workflow run deploy.yml -f environment=SUBSTITUTED"}})
+    with pytest.raises(helper.Block, match="fits no declared environment"):
+        helper.decide("gh workflow run deploy.yml -f environment=production")
+    assert helper.decide("gh workflow run deploy.yml -f environment=SUBSTITUTED") \
+        == ["env\tdev"]
+
+
+def test_a_substitution_beside_a_literal_placeholder_word_is_still_skipped(project):
+    project({"dev": {"deploy": "gh workflow run deploy.yml -f environment=SUBSTITUTED "
+                               "-f ref=$(git rev-parse HEAD)"}})
+    assert helper.decide("gh workflow run deploy.yml -f environment=SUBSTITUTED "
+                         "-f ref=abc") == ["env\tdev"]
+    with pytest.raises(helper.Block, match="fits no declared environment"):
+        helper.decide("gh workflow run deploy.yml -f environment=production -f ref=abc")
+
+
+@pytest.mark.parametrize("text,word", [
+    ("x", "SUBSTITUTED"), ("a=SUBSTITUTED", "SUBSTITUTED1"),
+    ("SUBSTITUTED SUBSTITUTED1", "SUBSTITUTED2")])
+def test_placeholder_is_a_word_the_text_does_not_hold(text, word):
+    assert helper.placeholder(text) == word
