@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew**: .NET candidate standards and defaults, no gated .NET set yet. `stack-dotnet` now lists two candidate .NET standards with their sources, plus the test-framework and `Result` defaults. None is enforced, because no rule this build could write has three reviewed change sets that count.
-- **crew**: SQL candidate standards, no gated SQL set yet. `stack-sql` now lists three candidate SQL standards with their sources. None is enforced, because no SQL rule yet has three reviewed change sets that count.
+- **crew**: SQL candidate standards, no gated SQL set yet. `stack-sql` now lists three candidate SQL standards with their sources. None is enforced: this build showed no SQL rule with three reviewed change sets that count, and the owner-private evidence, which may hold more, was not consulted.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

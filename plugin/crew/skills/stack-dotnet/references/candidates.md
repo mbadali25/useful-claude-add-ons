@@ -59,8 +59,10 @@ decision.
 
 Get `HttpClient` from `IHttpClientFactory` (named or typed clients), or reuse one
 long-lived instance whose `SocketsHttpHandler` sets `PooledConnectionLifetime`. Never
-write `new HttpClient()` in a method that runs per request or per call. This extends the
-`HttpClient` pitfall in `SKILL.md`.
+write `new HttpClient()` in a method that runs per request or per call. One exception: a
+client that needs cookies avoids the factory, because pooled handlers share their
+`CookieContainer`. It uses its own long-lived client and handler, one per cookie scope.
+This extends the `HttpClient` pitfall in `SKILL.md`.
 
 Public change sets (message text only). Each message records a review finding that
 replaced a per-call `new HttpClient()` with `IHttpClientFactory`:
@@ -76,7 +78,9 @@ replaced a per-call `new HttpClient()` with `IHttpClientFactory`:
 
 Source: https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient-guidelines:
 "If you don't use the factory and instead create a new client instance for each request
-yourself, you can exhaust available ports."
+yourself, you can exhaust available ports." "If your app requires cookies, it's recommended
+to avoid using IHttpClientFactory." "Unanticipated CookieContainer sharing might leak
+cookies between unrelated parts of the application."
 
 Public verdict: admitted on public stand-ins (7). That does not count under the owner's
 decision.
@@ -91,7 +95,6 @@ written here. DOTNET-08, -13 and -15 are the rules the spec expected to ship.
 
 ## Conventions (no id, no self-check row)
 
-No review finding earned these, so they are conventions, not standards: `var`,
-file-scoped namespaces, primary constructors, records for data, no `#region`, and
-`IReadOnlyList<T>` for returned collections. Follow the repository where it already
-differs.
+No review finding earned these, so they are conventions, not standards. Always use `var`
+(the owner's rule). Prefer file-scoped namespaces, primary constructors, records for
+data, no `#region`, and `IReadOnlyList<T>` for returned collections.

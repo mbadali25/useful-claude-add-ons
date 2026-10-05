@@ -118,9 +118,11 @@ behave differently for two kinds of object:
 - A stored procedure captures the `QUOTED_IDENTIFIER` and `ANSI_NULLS` values in effect
   when it is created. Its script therefore sets both explicitly before `CREATE`/`ALTER`.
   The caller's session does not change them later.
-- An index on a computed column, or an indexed view, needs `QUOTED_IDENTIFIER ON` when
-  it is created or changed. It also needs it in every later session that writes to the
-  table, so a writer's connection options are part of the change too.
+- An index on a computed column, or an indexed view, needs the same seven session options
+  on the connection that creates it and on every later connection that writes to the
+  indexed values: `ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`,
+  `CONCAT_NULL_YIELDS_NULL` and `QUOTED_IDENTIFIER` ON, and `NUMERIC_ROUNDABORT` OFF. A
+  writer's connection options are therefore part of the change too.
 
 Source: https://learn.microsoft.com/en-us/sql/t-sql/statements/set-quoted-identifier-transact-sql?view=sql-server-ver17:
 "When you create a stored procedure, the SET QUOTED_IDENTIFIER and SET ANSI_NULLS settings
@@ -128,7 +130,10 @@ are captured and used for subsequent invocations of that stored procedure." "You
 SET QUOTED_IDENTIFIER to ON when you create or change indexes on computed columns or
 indexed views." "If you set SET QUOTED_IDENTIFIER to OFF, CREATE, UPDATE, INSERT, and
 DELETE statements fail on tables with indexes on computed columns, or tables with indexed
-views."
+views." https://learn.microsoft.com/en-us/sql/relational-databases/indexes/indexes-on-computed-columns?view=sql-server-ver17:
+"The connection on which the index is created, and all connections trying INSERT, UPDATE,
+or DELETE statements that will change values in the index, must have six SET options set
+to ON and one option set to OFF."
 
 ## Not assessed
 
