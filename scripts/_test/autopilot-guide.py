@@ -74,11 +74,13 @@ def html_text(raw: str) -> str:
     return flat(html.unescape(re.sub(r"<[^>]+>", " ", raw)))
 
 
-def coming_table(source: str) -> str:
+def coming_rows(source: str) -> list[str]:
+    """The data rows of the source's "What is coming" table."""
     match = re.search(r"^## What is coming\s*$(.*?)(?=^## |\Z)", source, re.M | re.S)
     if not match:
-        return ""
-    return "\n".join(line for line in match.group(1).splitlines() if line.startswith("|"))
+        return []
+    rows = [line for line in match.group(1).splitlines() if line.startswith("|")]
+    return rows[2:]  # past the header and its |---| line
 
 
 def check(root: str) -> list[str]:
@@ -99,14 +101,21 @@ def check(root: str) -> list[str]:
             elif phrase not in built:
                 problems.append(f"example {num} ({example}): {phrase!r} missing from {BUILT} "
                                 "(stale build? rebuild with build.py --guide autopilot)")
-    table = coming_table(texts["source"])
-    if not table:
+    rows = coming_rows(texts["source"])
+    if not rows:
         problems.append(f"{SOURCE}: no '## What is coming' table")
     for num, example, tickets, phrase in COMING:
-        for ticket in tickets + (phrase,):
-            if ticket not in table:
-                problems.append(f"coming example {num} ({example}): {ticket!r} not in the "
-                                "'What is coming' table")
+        # One row must carry every ticket id AND the phrase: the same ids in
+        # other rows do not stand in for a removed row.
+        # The row's Ticket cell names every id and its Phrase cell is exactly the
+        # backticked phrase (`goal` must not be satisfied by "the full goal walkthrough").
+        def holds(row, tickets=tickets, phrase=phrase):
+            cells = [c.strip() for c in row.strip().strip("|").split("|")]
+            return (len(cells) >= 3 and all(t in cells[1] for t in tickets)
+                    and cells[2] == f"`{phrase}`")
+        if not any(holds(row) for row in rows):
+            problems.append(f"coming example {num} ({example}): no 'What is coming' row with "
+                            f"{', '.join(tickets)} and `{phrase}`")
     return problems
 
 
@@ -156,6 +165,12 @@ def must_fail_coming_id_only_elsewhere(root):
     return "coming example 10"
 
 
+def must_fail_coming_row_removed(root):
+    # Its ids and phrase all still appear in other rows.
+    _edit(root, SOURCE, "| A goal across several tickets | T-0012, L-0541 | `goal` |\n", "")
+    return "coming example 5d"
+
+
 def must_fail_source_missing(root):
     os.remove(os.path.join(root, SOURCE))
     return SOURCE
@@ -182,6 +197,7 @@ def must_pass_phrase_in_a_fence(root):
 CASES = (
     (must_fail_landed_phrase_removed, True), (must_fail_stale_build, True),
     (must_fail_coming_id_removed, True), (must_fail_coming_id_only_elsewhere, True),
+    (must_fail_coming_row_removed, True),
     (must_fail_source_missing, True), (must_fail_html_missing, True),
     (must_pass_committed, False), (must_pass_phrase_split_across_a_wrap, False),
     (must_pass_phrase_in_a_fence, False),

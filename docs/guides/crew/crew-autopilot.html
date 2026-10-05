@@ -298,14 +298,18 @@ Without the setting:</p>
 <h2 id="what-it-stops-for">What It Stops For</h2>
 <p><strong>Always a person.</strong> <code>brainstorm</code> (no approved direction) and <code>review-acceptance</code>: review findings
 with any BLOCK, or a round the ledger's guarded accept refuses. A BLOCK is never accepted by
-autopilot, at any setting.</p>
+autopilot, at any setting. The one way past a BLOCK without you is a new plan, and it is off by
+default: see "Review" below.</p>
 <p><strong>Enforced by <code>next</code> from disk, every turn.</strong> <code>needs-replan</code>, <code>needs-replan-or-revert</code>,
 <code>unknown-ledger</code>, <code>failed-validate</code>, <code>direction-unknown</code>, <code>index-disagreement</code>,
 <code>unsettled-artifact</code>, <code>ticket-mismatch</code>, <code>max-phases</code>, <code>no-progress</code>, <code>auto-replan-cap</code> and
-<code>drift</code>. <code>crew_autopilot.py stops --root .</code> lists them from the code.</p>
+<code>drift</code>, plus, when it runs with <code>--runner</code>, <code>in-flight</code> (another runner holds the ticket here, or
+its marker is stale or unreadable) and <code>handover-elsewhere</code> (a live holder drives it from another
+worktree). <code>crew_autopilot.py stops --root .</code> lists them from the code.</p>
 <p><strong>Never without an explicit yes.</strong> Offboarding a role (<code>offboard-role</code>), deleting a code map or
 diagram (<code>delete-map</code>), rewriting the repository's crew metrics file (<code>rewrite-metrics</code>), and any
-force-push, branch delete, history rewrite or removal of a tracked file (<code>git-destruction</code>).</p>
+force-push, branch delete, history rewrite or removal of a tracked file (<code>git-destruction</code>), and
+clearing another runner's in-flight marker (<code>clear-inflight</code>).</p>
 <p><strong>Deploys.</strong> <code>autopilot.deploy</code> is <code>none</code> (default), <code>nonprod</code> or <code>all</code>. Production needs <code>all</code>
 <strong>and</strong> <code>environments.prodUnattended: true</code> in both config layers, with the cloud guard in <code>block</code>.
 <code>crew_autopilot.py deploy-allowed</code> answers for one environment:</p>
@@ -318,9 +322,15 @@ is not <code>none</code>.</p>
 machine-global config), a ping is sent when Claude Code stops and waits on you, led by a subject
 such as <code>Question</code> and naming the ticket and what it waits on; there is no ping per phase.</p>
 <p><strong>Review.</strong> A review phase ends at its verdict: autopilot reports the BLOCK and FIX lines verbatim
-and goes back to <code>next</code>. Fixing, accepting and replying on the PR are yours. One exception: after
-the ledger says <code>review: auto-accept: eligible</code> on a final round with no BLOCK, autopilot runs
-<code>review_ledger.py --auto-accept</code>, the guarded accept that refuses anything it cannot read cleanly.</p>
+and goes back to <code>next</code>. Fixing, accepting and replying on the PR are yours, with two exceptions.
+After the ledger says <code>review: auto-accept: eligible</code> on a final round with no BLOCK, autopilot runs
+<code>review_ledger.py --auto-accept</code>, the guarded accept that refuses anything it cannot read cleanly.
+And with <code>autopilot.maxAutoReplans</code> at 1 or more (default 0, off), a final round with a BLOCK that
+has no review round left can be rejected by autopilot itself (<code>crew_autopilot.py auto-reject</code>,
+which prints an <code>auto-rejected</code> line and every BLOCK and FIX line): <code>/crew:plan</code> then writes a
+successor plan that quotes each of them, and the approve phase decides it under
+<code>autopilot.approval</code>. The BLOCK is never accepted; once <code>maxAutoReplans</code> successor plans are on the
+ledger, autopilot stops at <code>auto-replan-cap</code>.</p>
 <p><strong>Ship.</strong> After <code>/crew:done</code>, <code>crew_autopilot.py ship</code> pushes the branch (never force), opens the PR,
 and under <code>autopilot.ship: merge</code> (the default; <code>pr</code> stops at the open PR) merges it with a merge
 commit only when every required check passes and the review receipt still stands. A <code>high</code>-risk

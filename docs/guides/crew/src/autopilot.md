@@ -203,16 +203,20 @@ refused: scope.allowCliApproval is not exactly true in .crew/config.json, so onl
 
 **Always a person.** `brainstorm` (no approved direction) and `review-acceptance`: review findings
 with any BLOCK, or a round the ledger's guarded accept refuses. A BLOCK is never accepted by
-autopilot, at any setting.
+autopilot, at any setting. The one way past a BLOCK without you is a new plan, and it is off by
+default: see "Review" below.
 
 **Enforced by `next` from disk, every turn.** `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `index-disagreement`,
 `unsettled-artifact`, `ticket-mismatch`, `max-phases`, `no-progress`, `auto-replan-cap` and
-`drift`. `crew_autopilot.py stops --root .` lists them from the code.
+`drift`, plus, when it runs with `--runner`, `in-flight` (another runner holds the ticket here, or
+its marker is stale or unreadable) and `handover-elsewhere` (a live holder drives it from another
+worktree). `crew_autopilot.py stops --root .` lists them from the code.
 
 **Never without an explicit yes.** Offboarding a role (`offboard-role`), deleting a code map or
 diagram (`delete-map`), rewriting the repository's crew metrics file (`rewrite-metrics`), and any
-force-push, branch delete, history rewrite or removal of a tracked file (`git-destruction`).
+force-push, branch delete, history rewrite or removal of a tracked file (`git-destruction`), and
+clearing another runner's in-flight marker (`clear-inflight`).
 
 **Deploys.** `autopilot.deploy` is `none` (default), `nonprod` or `all`. Production needs `all`
 **and** `environments.prodUnattended: true` in both config layers, with the cloud guard in `block`.
@@ -231,9 +235,15 @@ machine-global config), a ping is sent when Claude Code stops and waits on you, 
 such as `Question` and naming the ticket and what it waits on; there is no ping per phase.
 
 **Review.** A review phase ends at its verdict: autopilot reports the BLOCK and FIX lines verbatim
-and goes back to `next`. Fixing, accepting and replying on the PR are yours. One exception: after
-the ledger says `review: auto-accept: eligible` on a final round with no BLOCK, autopilot runs
+and goes back to `next`. Fixing, accepting and replying on the PR are yours, with two exceptions.
+After the ledger says `review: auto-accept: eligible` on a final round with no BLOCK, autopilot runs
 `review_ledger.py --auto-accept`, the guarded accept that refuses anything it cannot read cleanly.
+And with `autopilot.maxAutoReplans` at 1 or more (default 0, off), a final round with a BLOCK that
+has no review round left can be rejected by autopilot itself (`crew_autopilot.py auto-reject`,
+which prints an `auto-rejected` line and every BLOCK and FIX line): `/crew:plan` then writes a
+successor plan that quotes each of them, and the approve phase decides it under
+`autopilot.approval`. The BLOCK is never accepted; once `maxAutoReplans` successor plans are on the
+ledger, autopilot stops at `auto-replan-cap`.
 
 **Ship.** After `/crew:done`, `crew_autopilot.py ship` pushes the branch (never force), opens the PR,
 and under `autopilot.ship: merge` (the default; `pr` stops at the open PR) merges it with a merge
