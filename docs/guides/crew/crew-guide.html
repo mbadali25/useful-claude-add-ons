@@ -167,7 +167,7 @@ and a <code>null</code> it writes never shadows a value you set in your machine-
 file. The template leaves out the five personal <code>autopilot.*</code> settings, so your
 machine-wide defaults for them apply. For a new config it sets <code>scope.mode</code> to <code>auto</code>: the scope guard reports
 for the first ten approved tickets, then blocks.</p>
-<p>Init also keeps <code>.gitignore</code> right for the languages it finds (T-0039):
+<p>Init also keeps <code>.gitignore</code> right for the languages it finds:
 <code>crew_gitignore.py apply</code> adds the missing patterns, without asking, inside
 one <code># crew:gitignore:managed</code> block at the top of <code>.gitignore</code>, and never
 edits your own lines or untracks a file. A committed secret-shaped file is

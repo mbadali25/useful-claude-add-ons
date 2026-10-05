@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself. A `.crew/config.json` with no `schema` key, or an integer 1-6, is brought to the current schema by `crew_upgrade.upgrade_config` (the code `/crew:upgrade` ran) and migrated to `.crew/crew.json` in the same run.
 - **crew**: A graph build never reads a secrets-denylisted file. graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore` does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked `config/env.php` listed only in `.gitignore` reached ...
-- **crew**: `.gitignore` kept right for the languages in the repo. A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`, `summary`) detects the languages and build tools from the files git lists (python, node, dotnet, terraform, rust, maven, gradle, composer, go), recommends patterns from ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
