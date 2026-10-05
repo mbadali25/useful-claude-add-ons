@@ -722,3 +722,36 @@ def test_slice_pr_recorded_when_the_result_names_none(tmp_path, monkeypatch):
     crew_autopilot.ship(str(root), T)
 
     assert remote.created and [e["slice"] for e in _read_state(root)["shipped"]] == [1]
+
+
+def test_merged_slice_into_an_unrelated_slice_branch_is_not_shipped(tmp_path, monkeypatch):
+    """T-0059 port review r5 BLOCK: slice 3 (`Base: main`) merged into slice
+    1's branch did not reach its base."""
+    shipped = [_shipped(1, BRANCH, merge_sha="c" * 40), _shipped(2, f"{BRANCH}-s2",
+                                                                  merge_sha="c" * 40)]
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, current=3, shipped=shipped,
+                              branch=f"{BRANCH}-s3")
+    head = git(root, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
+        pr_view=_view(dict(_pr("MERGED", number=13, head=head), baseRefName=BRANCH)),
+        repo_view=MAIN))
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], f"merged into {BRANCH}" in got["reason"]) == (
+        "ship", True, True), got
+
+
+def test_a_predecessor_merged_elsewhere_is_not_merged(tmp_path, monkeypatch):
+    """T-0059 port review r5 BLOCK: slice 1's PR merged into another branch
+    does not count as merged for slice 2's order check."""
+    root = _ticket(tmp_path, header="status: in-progress   risk: low")
+    _state(root, current=2, done=[1], shipped=[_shipped(1, BRANCH)])
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
+        pr_view=_view(dict(_pr("MERGED", number=11), baseRefName="develop")),
+        repo_view=MAIN))
+    ctx = crew_autopilot_slices.context(str(root), T)
+
+    merged, why = crew_autopilot_slices.merged_slices(str(root), ctx, 2)
+
+    assert (merged, "merged into develop" in why) == (None, True), why
