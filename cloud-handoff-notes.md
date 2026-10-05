@@ -6,7 +6,7 @@ Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at th
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
 ### State
-- **main = 2828acef (#497 L-1512 merged 01:45), crew 1.0.346; before it 7ba4c184 (#499); before it efcf4666, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
+- **main = 8479a837 (#496 merged 02:25), crew 1.0.347; before it 2828acef (#497); before it 7ba4c184 (#499); before it efcf4666, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
 - Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
 
 ### Owner rules in force (all sessions)
@@ -19,11 +19,10 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - Notes after every action; present decisions with a recommendation and tables (owner has ADHD: concise).
 
 ### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
-main = 2828acef (#497 L-1512 merged), crew 1.0.346.
+main = 8479a837 (#496 L-1508 PR B merged), crew 1.0.347.
 | Item | Where | State | Next |
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
-| #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; review 0 BLOCK / 2 FIX (version, sync-updates after main merge) + Summary-bullet NIT | builder pushing at 1.0.347 (main merged); lands ALONE when CI green |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
 | Batch 6 | `batch-6-build` (builder) | #500 T-0045 -> #348 T-0041 -> #338 L-0582 -> #361 T-0050 -> #357 T-0020 (survey 02:15: all review-clean, heads unmoved, Windows-green, no harness) | merge-resolution review, CI 6+3, merge |
 | Batch 7 (next) | - | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
@@ -48,7 +47,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:52 UTC
+Last updated: 2026-10-05 01:53 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +106,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 02:25: MERGED #496 L-1508 PR B -> 8479a837 (crew 1.0.347), CI 29/29; ALONGSIDE README.md change sabotage-verified by coordinator (19/20 without, 20/20 with). Batch 6 builder told: version 1.0.348.
 - 01:52: L-1508 PR B #496 green at f5f3789a (crew 1.0.347, README in ALONGSIDE, main 2828acef merged); ready to land
 - 02:15: batch 6 survey done; builder started on batch-6-build: #500, #348, #338, #361, #357. 7 review-clean PRs red on Windows (old runs), #365/#345 blocked by deps, #340/#418 harness-alone. Recorded in RESUME table.
 - 02:10: #500 rebuild review 0 BLOCK 0 FIX (new files byte-identical to #407, edits identical, main text preserved). NIT: ghdeploy_mutations.py:255 mutation only covered by a pwsh-only case (sabotage reports vacuous without pwsh) -> carry to L-0650. Batch 6 candidate survey started.

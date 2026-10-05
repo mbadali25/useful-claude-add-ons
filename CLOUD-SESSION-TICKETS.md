@@ -83,6 +83,7 @@ Next free untracked ID: **C-0004** (owner rule 2026-10-05: cloud-session tickets
 | T-0052, T-0057, L-0662 (batch 5) | #498 (lands #364, #416, #420) | efcf4666 | 1.0.345 |
 | L-1518 | #499 | 7ba4c184 | (repo tooling, no bump) |
 | L-1512 | #497 | 2828acef | 1.0.346 |
+| L-1508 (PR B, harness) | #496 | 8479a837 | 1.0.347 (also: root README.md added to check-tooling-pr ALONGSIDE) |
 
 ## Closed without merging (your instruction)
 
