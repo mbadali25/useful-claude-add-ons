@@ -234,6 +234,12 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
 </tbody>
 </table>
 <ul>
+<li><strong>Blocker pings (<code>notify.events</code> has <code>blocker</code>).</strong> <code>Stop gate refused</code> means the verify gate or the
+  completion audit refused the same ticket at Stop twice in a row (<code>crew_notify.py stop</code> records it;
+  the gates call it once their harness-only change lands). <code>Lane stalled</code> means <code>/crew:autopilot</code>
+  found another runner's in-flight marker <code>stale</code> (a dead pid, or no heartbeat inside T-0049's
+  30-minute TTL) and names the owner's <code>crew_inflight.py clear</code>; <code>Lane state unknown</code> means it could
+  not tell. <code>Approval waiting</code> is autopilot stopped at <code>approve</code>.</li>
 <li><strong>Silence one hook without touching the rest:</strong> set its own key. <code>guards.roleWrites: off</code>,
   <code>guards.cloudGuard: off</code> and <code>scope.mode: off</code> are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
@@ -278,7 +284,9 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round,
   only once, never once <code>NEEDS_REPLAN</code>; a name starting <code>auto:</code> is refused), or write a new plan and get it approved — <code>crew_ticket.py
   approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased.</p>
+  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  budget whose last round carries a BLOCK sends the <code>Review out of rounds</code> ping when
+  <code>/crew:autopilot</code> stops on it.</p>
 <ul>
 <li>
 <p><strong>Symptom: a round came back <code>INCOMPLETE</code>.</strong>

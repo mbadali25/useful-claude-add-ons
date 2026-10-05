@@ -220,6 +220,24 @@ filter, the subject line, the dedupe and episode records under
 `plugin/crew/hooks/scripts/notify.sh` and `plugin/crew/hooks/scripts/notify.ps1`
 name no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
 
+**Blocker pings (T-0060).** DERIVED at `22fbbe9f`. `blocker` is in `EVENTS`
+(`plugin/crew/hooks/scripts/crew_notify.py:86`), with one subject per `KINDS` entry (`:90`) in
+`SUBJECTS` (`:105`), `Blocked` for no kind; `_filter` (`:709`) refuses a send under the pre-1.0
+names `phase`/`review`/`done` as a retired caller. `run_stop` (`:879`) is the one decision for
+`/crew:autopilot`'s stops (`plugin/crew/commands/autopilot.md:108` calls it at every stop): `approve`
+sends kind `approval`; `in-flight` goes to `_lane` (`:847`), which lazy-imports `crew_inflight` and
+reads `holds(root, ticket, runner="autopilot")` - `stale` is kind `lane` with the marker's `clear`
+command, `unknown` or any raise is kind `lane-unknown` with a fixed category from `_category` (`:838`), never `holds()`'s `why`, `live`/`mine`/`free`/`elsewhere` send
+nothing; `ROUNDS_PHASES` (`:800`) go to `rounds_check` (`:803`), read-only on
+`review_ledger.status`: budget spent and the latest completed round under the current plan with a
+BLOCK. `stop_outcome` (`:916`) keeps `<git-common-dir>/crew/notify/stops.json` keyed
+`gate|session|ticket`, a refusal identity from `_stop_identity` (`:906`: `prompt_id`, else the
+sha256 of `event_claim.normalise`), and sends kind `gate` on the second distinct refusal. The dedupe key gains unshown episode material: `_plan_digest` (`:868`) for approval, the round number for rounds, the streak's first refusal for the gate. JUDGEMENT:
+the review ledger's own call to `rounds_check` and the two Stop gates' calls to `stop` are
+harness-only follow-ups (`review_*.py`, `verify-gate.*` and `completion_audit.py` are in
+`scripts/check-tooling-pr.py`'s `HARNESS`), so until they land the gate reason never fires and the
+rounds reason fires only through autopilot.
+
 **Context-watch's forced-continuation marker is now session-scoped, not
 repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:59-60` defines
 `MARKER=".crew/.handoff-requested-${SESSION_KEY}"` and

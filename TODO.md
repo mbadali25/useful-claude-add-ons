@@ -4,6 +4,24 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0060 harness-only follow-ups (crew blocker pings, T-0087 rule).** Each is a path in
+  `scripts/check-tooling-pr.py`'s `HARNESS`, so it lands alone:
+  (a) `plugin/crew/hooks/scripts/verify-gate.sh` / `verify-gate.ps1`: pipe the Stop payload to
+  `crew_notify.py stop --root . --gate verify --refused` (`timeout 12`, errors swallowed) just
+  before the verification-failed `exit 2`, and `--passed` before the final `exit 0`; the gate's exit
+  status unchanged, with a test that a failing notify still exits 2.
+  (b) `plugin/crew/hooks/scripts/completion_audit.py` `stop_hook`: `crew_notify.stop_outcome(root,
+  "audit", refused, raw)` before its block-mode `return 2` and on the ok return, in `try/except`.
+  (c) `plugin/crew/hooks/scripts/review_ledger.py` `record`: after `_mutate` returns, a lazy
+  `crew_notify.rounds_check(root, ticket)` in `try/except`, so a manual `/crew:review` that spends
+  the last round with a BLOCK pings (today only an autopilot stop does).
+  (d) `plugin/crew/commands/review.md`: drop the `notify.sh review` line (a retired caller since
+  T-0060; `test_review_md_legacy_ping_stays_retired` then goes).
+  (e) `plugin/crew/tests/sabotage_notify.py`: the T-0060 rows, one per guard in
+  `plugin/crew/tests/test_crew_notify_blocker.py` (run by hand in PR #363, each red).
+  (f) `docs/diagrams/process-crew-lifecycle.mmd`: the Stop hooks node gains the `stop` call once (a)
+  and (b) land.
+
 - **T-0022 follow-ups (autopilot docs phase and tracker step).** (1) Harness-only PR (T-0087's
   rule: `plugin/crew/tests/sabotage*.py` is `HARNESS` in `scripts/check-tooling-pr.py`, so it
   cannot ride with the feature): add `plugin/crew/tests/sabotage_docs.py` with `DOCS_MUTATIONS`

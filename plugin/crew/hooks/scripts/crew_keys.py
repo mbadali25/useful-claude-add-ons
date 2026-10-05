@@ -310,7 +310,7 @@ KEY_META = {
                           "`chat_id`, and the skill's example value counts as unset.",
                           FIRST, _S + "crew_notify.py", "string or null"),
     "notify.events": _row("Events that notify: `deploy`, `question`, and `blocker` "
-                          "(reserved, sends nothing yet). The pre-1.0 names `gate`, "
+                          "(T-0060's four blocker reasons). The pre-1.0 names `gate`, "
                           "`waiting`, `phase`, `review` and `done` are mapped with a "
                           "notice. A list is one leaf.", "type", since=FIRST,
                           source=_S + "crew_notify.py",

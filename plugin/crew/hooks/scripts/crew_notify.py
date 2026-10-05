@@ -4,7 +4,7 @@
 Outbound only. Nothing here reads from a chat, nothing carries a reply back into
 a session, and approvals stay a typed `/crew:approve`.
 
-Two events send (T-0051):
+Three events send (T-0051, T-0060):
 
 * `deploy` -- every `/crew:promote` result. A pass goes silent
   (`disable_notification`), a failure goes loud, and a result that says
@@ -13,10 +13,18 @@ Two events send (T-0051):
   `Notification` hook, filtered on the payload's `notification_type`. An
   `idle_prompt` never pings.
 
-`blocker` is RESERVED: accepted in `notify.events` and sending nothing until
-T-0060 gives it a sender. The pre-1.0 names map: `gate` -> `deploy`,
-`waiting` -> `question`, `phase`/`review`/`done` -> `blocker`, each with a
-notice, never a silent drop.
+* `blocker` (T-0060) -- work stopped and only the owner can move it. Loud,
+  and one subject per kind: `Approval waiting` and `Lane stalled` / `Lane
+  state unknown` from `run-stop` at `/crew:autopilot`'s report, `Review out
+  of rounds` from `run-stop` (and `rounds_check`, for the review ledger), and
+  `Stop gate refused` from `stop` (`stop_outcome`, for the Stop gates). A
+  blocker with no kind, or one this module does not know, is `Blocked`.
+
+The pre-1.0 names map in `notify.events`: `gate` -> `deploy`, `waiting` ->
+`question`, `phase`/`review`/`done` -> `blocker`, each with a notice, never a
+silent drop. A SEND under `phase`/`review`/`done` is a retired caller (the
+per-phase and per-round pings T-0051 retired) and sends nothing, with a notice;
+`gate` and `waiting` sends still map.
 
 Every message is one line, led by a subject from `SUBJECTS`:
 
@@ -53,6 +61,8 @@ Every entry point exits 0. A reason goes to stderr when nothing was sent.
     crew_notify.py send --root . --event deploy --outcome fail --reason "<env> <sha> - FAILED at gate 3"
     crew_notify.py hook --root . < payload.json
     crew_notify.py config --root .
+    crew_notify.py run-stop --root . --ticket <id> --phase <phase> --reason "<text>"
+    crew_notify.py stop --root . --gate verify|audit --refused|--passed < payload.json
 """
 import argparse
 import datetime
@@ -74,9 +84,12 @@ import crew_config  # noqa: E402  pylint: disable=wrong-import-position
 import crew_state  # noqa: E402  pylint: disable=wrong-import-position
 import crew_ticket  # noqa: E402  pylint: disable=wrong-import-position
 
-EVENTS = ("deploy", "question")
-# T-0060 moves `blocker` into EVENTS when it gives it a sender.
-RESERVED = ("blocker",)
+EVENTS = ("blocker", "deploy", "question")
+# Accepted in notify.events, sending nothing: empty since T-0060 gave `blocker` a sender.
+RESERVED = ()
+# The blocker kinds (T-0060), each with its subject in SUBJECTS.
+KINDS = ("approval", "rounds", "lane", "lane-unknown", "gate")
+GATES = ("verify", "audit")
 LEGACY = {"phase": "blocker", "review": "blocker", "done": "blocker",
           "gate": "deploy", "waiting": "question"}
 QUESTION_TYPES = ("permission_prompt", "worker_permission_prompt", "elicitation_dialog",
@@ -89,8 +102,14 @@ QUIET_TYPES = ("idle_prompt", "auth_success", "agent_completed", "elicitation_co
                "elicitation_response", "quota_auto_resume_fired", "quota_auto_resume_stale",
                "quota_auto_resume_disabled", "push_notification", "computer_use_enter",
                "computer_use_exit")
-# One table, plain ASCII, keyed by event and kind. T-0060 adds the blocker kinds.
+# One table, plain ASCII, keyed by event and kind.
 SUBJECTS = {
+    ("blocker", "approval"): "Approval waiting",
+    ("blocker", "rounds"): "Review out of rounds",
+    ("blocker", "lane"): "Lane stalled",
+    ("blocker", "lane-unknown"): "Lane state unknown",
+    ("blocker", "gate"): "Stop gate refused",
+    ("blocker", None): "Blocked",
     ("question", "ask"): "Question",
     ("question", "permission"): "Needs permission",
     ("deploy", "pass"): "Promotion passed",
@@ -618,7 +637,7 @@ def _outcome(outcome, reason):
     return "fail" if failed else "pass"
 
 
-def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
+def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=None):
     """Everything after the filters: credentials, line, episode, dedupe, transport."""
     provider = cfg.get("provider")
     # Every credential is stripped: a token set with a trailing space or newline
@@ -665,7 +684,7 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
     subject = SUBJECTS[(event, kind)]
     line = redact(format_line(subject, place["repo"], place["place"], ticket, phase,
                               redact(reason), unblock))
-    loud = event == "question" or kind in ("fail", "unknown")
+    loud = event in ("question", "blocker") or kind in ("fail", "unknown")
 
     state = state_dir(root)
     now = time.time()
@@ -676,7 +695,10 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
         if isinstance(seen, dict) and seen.get("key") == episode[1]:
             _say("same waiting episode as the last ping (no reply since); nothing sent")
             return "episode"
-    material = "|".join([event, ticket or "", reason] + (list(episode) if episode else []))
+    # `dedupe` is episode material that is never shown (a plan hash, a round
+    # number): a NEW blocker episode with the same words is not the old one.
+    material = "|".join([event, ticket or "", reason] + (list(episode) if episode else [])
+                        + ([str(dedupe)] if dedupe else []))
     fingerprint = hashlib.sha256(material.encode("utf-8")).hexdigest()
     window = float(cfg.get("realertHours", REALERT_HOURS)) * 3600
 
@@ -721,11 +743,15 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
 
 def _filter(cfg, event):
     """`(event, result_or_None)`: the mapped event, or the word to return."""
+    if event in LEGACY and LEGACY[event] == "blocker":
+        _say(f"legacy '{event}' is a retired caller (its per-phase or per-round ping was "
+             "retired in T-0051; blocker sends with a --kind); nothing sent")
+        return LEGACY[event], "filtered"
     if event in LEGACY:
         _say(f"legacy '{event}' read as '{LEGACY[event]}'")
         event = LEGACY[event]
     if event in RESERVED:
-        _say(f"'{event}' is reserved until T-0060 gives it a sender; nothing sent")
+        _say(f"'{event}' is reserved; nothing sent")
         return event, "filtered"
     if event not in EVENTS:
         _say(f"unknown event {event!r}; nothing sent")
@@ -741,7 +767,7 @@ def _filter(cfg, event):
 
 
 def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None,
-         episode=None, cfg=None):
+         episode=None, cfg=None, dedupe=None):
     """Send one message. Returns `sent`, `deduped`, `episode`, `off`, `filtered`,
     `missing-credentials` or `failed:<why>`; never raises."""
     try:
@@ -755,9 +781,11 @@ def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None
         reason = str(reason or "")
         if event == "deploy":
             kind = _outcome(outcome, reason)
+        elif event == "blocker":
+            kind = kind if kind in KINDS else None
         elif kind not in ("ask", "permission"):
             kind = "ask"
-        return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode)
+        return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe)
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"failed ({exc.__class__.__name__})")
         return "failed:error"
@@ -799,6 +827,181 @@ def hook(root, payload_bytes):
         return "failed:error"
 
 
+# --- the blocker reasons (T-0060) ---------------------------------------------------------------
+
+# The autopilot stops whose ping is decided here. Every other phase is filtered:
+# `done`, `max-phases`, no-progress, `handover-elsewhere` and a live holder are
+# not blockers.
+ROUNDS_PHASES = ("accept-review", "replan")
+
+
+def rounds_check(root, ticket):
+    """`blocker` kind `rounds` when the review ledger's current plan has spent
+    the last of its budget and its latest completed round carries a BLOCK;
+    otherwise `filtered`. Read-only on the ledger; never raises. The review
+    ledger calls this after `record` once its harness-only wiring lands, and
+    `run_stop` calls it at autopilot's accept-review and replan stops."""
+    try:
+        import review_ledger  # pylint: disable=import-outside-toplevel
+        ledger = review_ledger.status(root, ticket)
+        spent, budget = ledger.get("rounds_spent"), ledger.get("budget")
+        successors = ledger.get("successors") or []
+        after = successors[-1].get("after_round", 0) if successors else 0
+        rounds = (ledger.get("rounds") or [])[after if isinstance(after, int) else 0:]
+        done = [r for r in rounds if isinstance(r, dict) and r.get("status") == "completed"]
+        counts = done[-1].get("counts") if done else None
+        number = done[-1].get("round") if done else None
+        block = counts.get("BLOCK") if isinstance(counts, dict) else None
+    except Exception as exc:  # pylint: disable=broad-except
+        _say(f"review ledger unreadable ({exc.__class__.__name__}); no rounds ping")
+        return "filtered"
+    if not (isinstance(spent, int) and isinstance(budget, int) and spent >= budget):
+        return "filtered"
+    if isinstance(block, bool) or not isinstance(block, int) or block < 1:
+        return "filtered"
+    return send(root, "blocker", f"out of review rounds, {block} BLOCK open", ticket=ticket,
+                unblock=f"/crew:plan {ticket}", kind="rounds", dedupe=f"round:{number}")
+
+
+# What a `holds()` "unknown" may say in the chat: a fixed category, never its
+# `why`, which carries absolute paths and exception text (the home directory, the
+# user name). The detail is local: `/crew:status` prints it.
+_UNKNOWN_CATEGORIES = (("heartbeat in the future", "heartbeat in the future"),
+                       ("lock ", "lock held"), ("marker", "marker unreadable"))
+
+
+def _category(why):
+    """The fixed category for an unknown holder's `why`."""
+    text = _one_line(why)
+    for needle, category in _UNKNOWN_CATEGORIES:
+        if text.startswith(needle):
+            return category
+    return "could not read state"
+
+
+def _lane(root, ticket):
+    """The in-flight stop: read T-0049's `holds()` and ping a stale or unknown
+    holder. Writes nothing under the inflight directory."""
+    try:
+        import crew_inflight  # pylint: disable=import-outside-toplevel
+        answer = crew_inflight.holds(root, ticket, runner="autopilot")
+        state = answer.get("state") if isinstance(answer, dict) else None
+    except Exception as exc:  # pylint: disable=broad-except
+        _say(f"crew_inflight failed ({exc.__class__.__name__}); lane state unknown")
+        answer, state = {}, "unknown"
+    if state in ("live", "mine", "free", "elsewhere"):
+        return "filtered"
+    if state == "stale":
+        return send(root, "blocker", f"lane stalled: {answer.get('runner') or 'a runner'} since "
+                    f"{answer.get('since') or '?'}", ticket=ticket,
+                    unblock=answer.get("clear") or "/crew:status", kind="lane")
+    category = _category(answer.get("why") or "")
+    return send(root, "blocker", f"lane state unknown: {category} (detail: /crew:status)",
+                ticket=ticket, unblock="/crew:status", kind="lane-unknown")
+
+
+def _plan_digest(root, ticket):
+    """The approval episode: the sha256 of the ticket's `plan.md`, so a successor
+    plan (or an edit that staled the receipt) waiting again is a new ping."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        with open(os.path.join(top, ".work", "tickets", ticket, "plan.md"), "rb") as handle:
+            return "plan:" + hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return "plan:none"
+
+
+def run_stop(root, ticket, phase, reason):
+    """Decide whether `/crew:autopilot`'s stop pings. `approve` (a stale receipt
+    included) is `Approval waiting`; `in-flight` reads the holder; an
+    `accept-review` or `replan` stop with the budget spent and a BLOCK open is
+    `Review out of rounds`. Every other phase is `filtered`. Never raises."""
+    try:
+        try:
+            crew_ticket.check_ticket(ticket)
+        except Exception:  # pylint: disable=broad-except
+            _say(f"run-stop: {ticket!r} is not a ticket id; nothing sent")
+            return "failed:usage"
+        # Logged locally, never sent: the message is this module's own words.
+        _say(f"run-stop {ticket} {phase or '-'}: {_one_line(reason)[:MAX_REASON]}")
+        if phase == "approve":
+            return send(root, "blocker", "plan waiting on approval", ticket=ticket,
+                        unblock=f"/crew:approve {ticket}", kind="approval",
+                        dedupe=_plan_digest(root, ticket))
+        if phase == "in-flight":
+            return _lane(root, ticket)
+        if phase in ROUNDS_PHASES:
+            return rounds_check(root, ticket)
+        return "filtered"
+    except Exception as exc:  # pylint: disable=broad-except
+        _say(f"run-stop failed ({exc.__class__.__name__})")
+        return "failed:error"
+
+
+def _stop_identity(payload, raw):
+    """`prompt_id` when the payload has one, else the digest of the bytes both
+    Windows flavours agree on (event_claim.normalise)."""
+    prompt = payload.get("prompt_id") if isinstance(payload, dict) else None
+    if isinstance(prompt, str) and prompt:
+        return "prompt:" + prompt
+    import event_claim  # pylint: disable=import-outside-toplevel
+    return "sha256:" + hashlib.sha256(event_claim.normalise(raw or b"")).hexdigest()
+
+
+def stop_outcome(root, gate, refused, payload_bytes):
+    """Record one Stop gate verdict. A pass clears the (gate, session, ticket)
+    key; a refusal adds its identity, a twin (the same identity: both Windows
+    flavours) changes nothing, and the second distinct refusal in a row sends
+    `blocker` kind `gate`. Returns `cleared`, `counted`, `twin`, `busy`, or a
+    send's word; never raises."""
+    try:
+        if gate not in GATES:
+            _say(f"unknown gate {gate!r}; nothing recorded")
+            return "failed:usage"
+        raw = payload_bytes or b""
+        try:
+            import event_claim  # pylint: disable=import-outside-toplevel
+            payload = json.loads(event_claim.normalise(raw).decode("utf-8", "replace"))
+        except ValueError:
+            payload = None
+        payload = payload if isinstance(payload, dict) else {}
+        try:
+            ticket = crew_ticket.resolve_active(root)[0]
+        except Exception:  # pylint: disable=broad-except
+            ticket = None
+        session = payload.get("session_id") if isinstance(payload.get("session_id"), str) else ""
+        key = f"{gate}|{session or 'nosession'}|{ticket or 'no-ticket'}"
+        ident = _stop_identity(payload, raw)
+        path = os.path.join(state_dir(root), "stops.json")
+        with _Lock(os.path.join(state_dir(root), "stops.lock")) as lock:
+            if not lock.held:
+                _say("stops lock busy; this verdict is not counted")
+                return "busy"
+            now = time.time()
+            stops = {name: entry for name, entry in _read_json(path).items()
+                     if isinstance(entry, dict) and isinstance(entry.get("at"), (int, float))
+                     and isinstance(entry.get("ids"), list) and now - entry["at"] < PRUNE_SECONDS}
+            if not refused:
+                stops.pop(key, None)
+                _write_json(path, stops)
+                return "cleared"
+            seen = stops[key]["ids"] if key in stops else []
+            if ident in seen:
+                return "twin"
+            seen = (seen + [ident])[-10:]
+            stops[key] = {"ids": seen, "at": now}
+            _write_json(path, stops)
+        if len(seen) < 2:
+            return "counted"
+        # The streak's first refusal names the episode: after a pass, a new
+        # streak of two pings again inside realertHours.
+        return send(root, "blocker", f"{gate} gate refused twice", ticket=ticket,
+                    unblock="/crew:status", kind="gate", dedupe=seen[0])
+    except Exception as exc:  # pylint: disable=broad-except
+        _say(f"stop failed ({exc.__class__.__name__})")
+        return "failed:error"
+
+
 def mask(value):
     """A chat id for display: its last 2 characters (4 when it is longer than 8);
     one of 2 characters or fewer is masked whole."""
@@ -832,8 +1035,20 @@ def main(argv=None):
     one.add_argument("--ticket")
     one.add_argument("--unblock")
     one.add_argument("--outcome", choices=("pass", "fail"))
+    one.add_argument("--kind")
     sub.add_parser("hook").add_argument("--root", default=".")
     sub.add_parser("config").add_argument("--root", default=".")
+    run = sub.add_parser("run-stop")
+    run.add_argument("--root", default=".")
+    run.add_argument("--ticket", required=True)
+    run.add_argument("--phase", required=True)
+    run.add_argument("--reason", default="")
+    gate = sub.add_parser("stop")
+    gate.add_argument("--root", default=".")
+    gate.add_argument("--gate", required=True, choices=GATES)
+    verdict = gate.add_mutually_exclusive_group(required=True)
+    verdict.add_argument("--refused", action="store_true")
+    verdict.add_argument("--passed", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit:
@@ -842,7 +1057,11 @@ def main(argv=None):
     try:
         if args.cmd == "send":
             word = send(args.root, args.event, args.reason, ticket=args.ticket,
-                        unblock=args.unblock, outcome=args.outcome)
+                        unblock=args.unblock, outcome=args.outcome, kind=args.kind)
+        elif args.cmd == "run-stop":
+            word = run_stop(args.root, args.ticket, args.phase, args.reason)
+        elif args.cmd == "stop":
+            word = stop_outcome(args.root, args.gate, args.refused, sys.stdin.buffer.read())
         elif args.cmd == "hook":
             word = hook(args.root, sys.stdin.buffer.read())
         elif args.cmd == "config":
