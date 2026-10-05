@@ -264,6 +264,8 @@ def test_probe_error_is_unmeasured(monkeypatch, repo):
     assert crew_inflight.probe(dict(me, pid=12345), me) == "unmeasured"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="_posix_process probes with os.kill(pid, 0), which on Windows "
+                    "is CTRL_C_EVENT to the pid's console group - it interrupted the CI shard")
 def test_unresolvable_ps_is_unmeasured_never_gone(monkeypatch, repo):
     """L-1508 per-site: on POSIX without /proc, a `ps` that does not resolve
     raises ToolNotFound inside _posix_process; a live, same-host holder must
