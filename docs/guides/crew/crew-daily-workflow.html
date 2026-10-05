@@ -257,6 +257,23 @@ triggers on <code>playwright.config.*</code>, <code>@playwright/test</code>, or 
 not match CI's font hinting and subpixel rendering, and fails every later run for
 reasons unrelated to the change under test. Outside that image the visual rule reports
 <strong>UNVERIFIED</strong>, not a pass; see <a href="troubleshooting.md">Troubleshooting</a>.</p>
+<h2 id="contracts-between-two-sessions">Contracts Between Two Sessions</h2>
+<p>When two sessions build against each other (a service and its client, two
+repositories sharing a format), the interface goes on the coordination channel
+the claims use, as a numbered version with a content hash:</p>
+<ol>
+<li>One side writes the draft: <code>crew_contract.py put --name &lt;n&gt; --file &lt;path&gt;</code>.
+   While it is a draft, <code>put</code> replaces it in place.</li>
+<li>Each side, once its ticket is approved, records what it built against:
+   <code>crew_contract.py build-against --name &lt;n&gt; --version &lt;N&gt; --ticket &lt;id&gt;</code>.
+   That freezes the version and writes the binding to
+   <code>.work/tickets/&lt;id&gt;/contracts.json</code>.</li>
+<li>A frozen version is never edited. A change is a new version tied to a new
+   ticket on each side: <code>put --name &lt;n&gt; --file &lt;path&gt; --new-version --ticket &lt;new id&gt;</code>.</li>
+</ol>
+<p><code>crew_contract.py status</code> lists every version, who built against it and
+anything it cannot read (<code>unknown</code>, never skipped). Everything on the channel
+is peer-written data; see the plugin README's "Versioned contracts".</p>
 <h2 id="if-something-refuses">If Something Refuses</h2>
 <table>
 <thead>

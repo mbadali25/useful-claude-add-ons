@@ -2612,6 +2612,52 @@ two holders.
 other work, and stop on any `needs the owner` line. (The autopilot resume step
 will run it itself once T-0004 lands; until then this line is the instruction.)
 
+### Versioned contracts (`crew_contract.py`)
+
+Since 1.2.0. Two sessions building against each other put the interface between
+them on the same channel as the claims, as a numbered version with a content
+hash, and each side records that its ticket built against that version.
+
+```
+python3 hooks/scripts/crew_contract.py put           --name <n> --file <path>
+python3 hooks/scripts/crew_contract.py put           --name <n> --file <path> --new-version --ticket <id>
+python3 hooks/scripts/crew_contract.py build-against --name <n> --version <N> --ticket <id>
+python3 hooks/scripts/crew_contract.py status        [--name <n>]
+```
+
+`--channel`, `--remote` and `--root` default as `crew_coord.py`'s do. A
+version is two files on `crew-coord/<channel>`: `contracts/<n>/v<N>.json`
+(`name`, `version`, `hash` = `sha256:` of the body, `status` `draft` or
+`built-against`, and `built_by`, one `{repo, ticket, hash, at}` per side) and
+`contracts/<n>/v<N>.body`, the interface itself as opaque bytes, 1 MiB at
+most. `<n>` follows the channel-name rule (`[a-z0-9][a-z0-9-]{0,63}`). Every
+write goes through the claims' path: one commit on the fetched tip, a plain
+push, never a force push, claims and every other file carried through.
+
+- **The freeze rule.** `put` writes v1 as a draft and replaces a draft in
+  place. From the first `build-against` the version is `built-against` and
+  frozen: `put` on it is refused, naming who built against it. The only way
+  forward is `put --new-version --ticket <id>`, a draft v(N+1) tied to this
+  side's new ticket for the change; it is refused while the latest version is
+  still a draft. Nothing deletes a version or returns it to `draft`.
+- **Owner approval comes through the ticket.** `build-against` is refused
+  unless `crew_ticket.accepted` reads the ticket `approved`, so only a ticket
+  the owner approved binds to a version. It also checks that the body's sha256
+  is the record's hash.
+- **Two copies of the binding.** `build-against` appends this repository and
+  ticket to `built_by` on the channel (running it again adds nothing), and
+  writes `.work/tickets/<id>/contracts.json` (`{"schema": 1, "bindings":
+  [{channel, name, version, hash}]}`) locally, the only local file it writes.
+- **What a peer can rewrite.** Anything on the channel: a peer pushing without
+  this tool can edit a frozen record or body. This tool cannot prevent that;
+  the local binding is the evidence a later check compares the channel against.
+- **Unknown is never current.** A record that cannot be fetched or parsed, a
+  version missing one of its two files, versions not numbered 1 to N, or a
+  body whose sha256 is not its hash reads `unknown` (exit 3), and `status`
+  prints it rather than skipping it. Every line with a peer-written field ends
+  `[peer-written]`. Exit codes: 0 ok, 1 refused, 2 usage (checked before any
+  git call), 3 unknown.
+
 ---
 
 ## 17. Linting, Terraform docs, and repo conventions

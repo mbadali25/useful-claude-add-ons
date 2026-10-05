@@ -2278,6 +2278,26 @@ not moved because the rest of this map was not re-checked against main's later c
   audit. Known limit: a committed test-fixture key is still `needs-owner`. The sabotage mutations are
   hand-run (listed in the verify rule's `why`); registering them is a harness PR (TODO.md).
 
+## Versioned contracts on the coordination channel (T-0031)
+
+Derived on `rush/g3c-contracts` (T-0031, over T-0030's `crew_coord.py` as ported by rush g0), not at
+this map's `anchor:`; re-find each name by content.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_contract.py` has three commands, `put`, `build-against`
+  and `status` (`main`, `_parser`). Every write is a `change(files)` handed to
+  `crew_coord.Channel.write`, so the fetch, the commit on the fetched tip, the plain push and the
+  retry are crew_coord's; the module adds no git plumbing. The channel and remote are resolved by
+  its own `setup`, a copy of `crew_coord._setup` over public names only (`crew_coord.py` is not
+  edited).
+- DERIVED: a version is `contracts/<name>/v<N>.json` plus `.body` (`record_path`, `body_path`);
+  `versions` reads a malformed tree as `Unknown`, `parse_record` a corrupt record as `(None, why)`.
+  `cmd_put` refuses a `built-against` latest and allows `--new-version` only over one;
+  `cmd_build_against` needs `crew_ticket.accepted` to read `approved`, and writes the binding
+  `.work/tickets/<id>/contracts.json` (`read_bindings`, `write_bindings`) after the push.
+- JUDGEMENT: the local binding, not the channel, is the evidence: a peer can rewrite the channel.
+  L-0634 compares the two (`read_bindings` is its reader). Tests: `plugin/crew/tests/test_crew_contract.py`,
+  under the last rule of `.crew/verify.json`. Sabotage is L-0635, a harness PR.
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:1034` — `TRIGGERS`, a 15-entry

@@ -9,6 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.20 — T-0031: versioned contracts between sessions, frozen once built against
+
+- **Summary.** Two sessions building against each other can now put the interface between them on
+  the shared coordination channel as a numbered, hashed version that nobody can edit once a side
+  has built against it.
+- **Added.** `plugin/crew/hooks/scripts/crew_contract.py`: `put` writes `contracts/<name>/v<N>.json`
+  and `.body` on `crew-coord/<channel>` (v1 as a draft; a draft is replaced in place);
+  `put --new-version --ticket <id>` supersedes a frozen version with a draft v(N+1);
+  `build-against --name <n> --version <N> --ticket <id>` needs the ticket approved
+  (`crew_ticket.accepted`), checks the body's sha256 against the record, sets `built-against`,
+  appends this repository and ticket to `built_by` once, and writes the local binding
+  `.work/tickets/<id>/contracts.json`; `status` lists every version, labelled `[peer-written]`, and
+  reads anything it cannot parse as `unknown` (exit 3). Writes go through T-0030's `Channel`: a
+  plain push on the fetched tip, never a force push, claims carried through. The README's
+  "Versioned contracts" section and the daily-workflow guide describe it.
+- **Not in this entry.** The sabotage mutations for this module are L-0635, a harness PR (T-0087).
+  The wave's refusal of a binding whose hash moved is L-0634.
+
 ### crew 1.1.9 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
 
 - **Summary.** A set of tickets the owner designed and approved together can now run at once, each
