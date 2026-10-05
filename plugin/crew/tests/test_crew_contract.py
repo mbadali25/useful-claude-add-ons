@@ -556,6 +556,36 @@ def test_status_reads_a_malformed_contract_tree_as_unknown(capsys, wt, files):
     assert "unknown" in out
 
 
+def test_status_still_prints_the_versions_beside_a_stray_file(capsys, tmp_path, wt):
+    """Review round 4: one stray file hid every valid version of its contract."""
+    _put(capsys, wt, _body(tmp_path))
+    _raw_write(wt, {"contracts/api/notes.txt": b"x"})
+
+    code, out = _run(capsys, wt, "status")
+
+    assert code == crew_contract.EXIT_UNKNOWN
+    assert any(line.startswith("api unknown (contracts/api/notes.txt") for line in out.splitlines())
+    assert any(line.startswith("api v1 draft") for line in out.splitlines())
+
+
+@pytest.mark.parametrize("text", [
+    json.dumps({"schema": True, "bindings": []}),
+    json.dumps({"schema": 1, "bindings": [{"channel": "", "name": "api", "version": 1, "hash": _sha(BODY)}]}),
+    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "", "version": 1, "hash": _sha(BODY)}]}),
+    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": -1, "hash": _sha(BODY)}]}),
+    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": True, "hash": _sha(BODY)}]}),
+    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": 1, "hash": "bad"}]})],
+    ids=["schema-true", "empty-channel", "empty-name", "negative-version", "bool-version", "bad-hash"])
+def test_a_malformed_binding_file_reads_as_unknown(tmp_path, text):
+    """Review round 4: the binding reader checked types only."""
+    path = tmp_path / "contracts.json"
+    path.write_text(text, encoding="utf-8")
+
+    bindings, why = crew_contract.read_bindings(str(path))
+
+    assert bindings is None and why
+
+
 def test_status_sanitises_peer_written_fields(capsys, tmp_path, wt, hub):
     _frozen(capsys, tmp_path, wt)
     record = _record(hub)

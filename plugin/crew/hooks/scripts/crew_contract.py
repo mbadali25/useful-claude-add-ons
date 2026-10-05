@@ -114,28 +114,37 @@ def _dumps(data):
     return (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
-def versions(files, name):
-    """{N: (record_blob, body_blob)} for every version of `name` on the
-    channel. Unknown when a path under `contracts/<name>/` is not
-    `v<N>.json` or `v<N>.body`, a version lacks one of its two files, or the
-    versions are not numbered 1 to N."""
+def scan(files, name):
+    """({N: (record_blob, body_blob)}, problems): every version of `name`
+    with both of its files, and why anything else under `contracts/<name>/`
+    cannot be told -- a path that is not `v<N>.json` or `v<N>.body`, a
+    version missing one of its two files, versions not numbered 1 to N."""
     prefix = f"{CONTRACTS}{name}/"
-    found = {}
-    for path, blob in files.items():
+    found, problems = {}, []
+    for path, blob in sorted(files.items()):
         if not path.startswith(prefix):
             continue
         match = _FILE_RE.fullmatch(path[len(prefix):])
         if not match:
-            raise Unknown(f"{crew_coord.safe(path)} is not a contract version file (v<N>.json or v<N>.body)")
+            problems.append(f"{crew_coord.safe(path)} is not a contract version file (v<N>.json or v<N>.body)")
+            continue
         found.setdefault(int(match.group(1)), {})[match.group(2)] = blob
     for number, pair in sorted(found.items()):
         for kind, path in (("json", record_path(name, number)), ("body", body_path(name, number))):
             if kind not in pair:
-                raise Unknown(f"{name} v{number} has no {path}")
+                problems.append(f"{name} v{number} has no {path}")
     if found and sorted(found) != list(range(1, max(found) + 1)):
-        raise Unknown(f"{name}'s versions are not numbered 1 to {max(found)} "
-                      f"(found {', '.join(f'v{n}' for n in sorted(found))})")
-    return {number: (pair["json"], pair["body"]) for number, pair in found.items()}
+        problems.append(f"{name}'s versions are not numbered 1 to {max(found)} "
+                        f"(found {', '.join(f'v{n}' for n in sorted(found))})")
+    return {n: (pair["json"], pair["body"]) for n, pair in found.items() if len(pair) == 2}, problems
+
+
+def versions(files, name):
+    """scan's versions; Unknown on its first problem."""
+    found, problems = scan(files, name)
+    if problems:
+        raise Unknown(problems[0])
+    return found
 
 
 def _valid_entry(entry):
@@ -208,9 +217,14 @@ def binding_path(top, ticket):
 
 
 def _valid_binding(binding):
-    return (isinstance(binding, dict)
-            and all(isinstance(binding.get(key), str) for key in ("channel", "name", "hash"))
-            and isinstance(binding.get("version"), int) and not isinstance(binding["version"], bool))
+    """A channel and name by the name rule, a version >= 1 (an int, not a
+    bool), and a sha256 hash."""
+    if not isinstance(binding, dict):
+        return False
+    version = binding.get("version")
+    return (all(isinstance(binding.get(key), str) and NAME_RE.fullmatch(binding[key]) for key in ("channel", "name"))
+            and isinstance(version, int) and not isinstance(version, bool) and version >= 1
+            and isinstance(binding.get("hash"), str) and bool(_HASH_RE.fullmatch(binding["hash"])))
 
 
 def read_bindings(path):
@@ -224,10 +238,11 @@ def read_bindings(path):
             data = json.loads(handle.read().decode("utf-8"))
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         return None, f"{path} is not readable JSON ({type(exc).__name__})"
-    if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("bindings"), list):
+    schema = data.get("schema") if isinstance(data, dict) else None
+    if isinstance(schema, bool) or schema != SCHEMA or not isinstance(data.get("bindings"), list):
         return None, f"{path} is not {{\"schema\": {SCHEMA}, \"bindings\": [...]}}"
     if not all(_valid_binding(binding) for binding in data["bindings"]):
-        return None, f"{path} has a binding without a channel, name, version or hash"
+        return None, f"{path} has a binding without a valid channel, name, version or sha256 hash"
     return data["bindings"], None
 
 
@@ -389,12 +404,10 @@ def _status_lines(files, only):
                                          "named by the name rule)"))
             code = EXIT_UNKNOWN
             continue
-        try:
-            found = versions(files, name)
-        except Unknown as exc:
-            lines.append(crew_coord.peer(f"{name} unknown ({exc})"))
+        found, problems = scan(files, name)
+        for problem in problems:
+            lines.append(crew_coord.peer(f"{name} unknown ({problem})"))
             code = EXIT_UNKNOWN
-            continue
         for number in sorted(found):
             record, why = parse_record(name, number, found[number][0])
             if record is not None and body_hash(found[number][1]) != record["hash"]:
