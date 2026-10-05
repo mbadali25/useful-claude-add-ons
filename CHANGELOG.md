@@ -9,6 +9,34 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — gizmoduck 0.5.11: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
+
+- **Summary.** `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`,
+  `--user` installs every tool that needs no package manager into the tool home without root,
+  `--dry-run` shows the plan and changes nothing, and a failed tool now makes it exit 1.
+- **Behaviour change: a partial install exits 1.** The script used to end on a `cat` and exit 0
+  whatever failed. Now: 0 nothing failed, 1 a tool or the template download failed, 2 a usage or
+  precondition error. Skipped-only is 0 with a last line `GIZMODUCK_BOOTSTRAP_SKIPPED: <names>`.
+- **Privilege, decided once.** `id -u` 0: no `sudo` prefix. Otherwise `sudo`, with `-n` when stdin
+  is not a terminal so a password prompt cannot hang a pipeline. Not root and no `sudo`: exit 2,
+  pointing at `--user`. apt runs with `DEBIAN_FRONTEND=noninteractive` (through `env`, so sudo's
+  environment reset cannot drop it).
+- **`--user`.** No elevation anywhere. Nuclei, trivy, testssl.sh, sqlmap, dependency-check, ZAP and
+  (with `perl` present) nikto go into the gizmoduck tool home (L-0684's rule, held together with
+  `scanners/base.py` by a test); downloads stage in `<tool home>/.download`. nmap, wkhtmltopdf and
+  perl are reported present or SKIPPED, never installed; ZAP and dependency-check without a
+  Java 17+ runtime FAIL naming `openjdk-17-jre`. `curl`, `unzip`, `git` and `python3` are checked
+  first (exit 2 naming the missing ones).
+- **`GITHUB_TOKEN`.** Release lookups send it when set, as a header file descriptor, so it is on no
+  command line and never printed.
+- **Docs.** The plugin README's new "CI and containers" section: root in a container, `--user`,
+  the packages to add to an image, the cache paths, secrets from the pipeline's store, the exit
+  statuses and `--dry-run`, and that gizmoduck never drives Docker.
+- **Tests.** `plugin/gizmoduck/scripts/_test/test_bootstrap.py`: every case runs `--dry-run`, `--help`, a refusal or
+  the sourced summary against fakes on a temp PATH; nothing is installed and no network is
+  reached. `test_bootstrap_version.py`'s apt assertions follow the `env DEBIAN_FRONTEND` prefix,
+  and its `sudo` stub treats `env ... apt-get` as apt (it must never run a real apt-get).
+
 ### Changed — gizmoduck 0.5.10: one tool lookup order, and an override you set now wins (L-0684)
 
 - **Summary.** Every scanner is found the same way — your override variable, then a tool home,
@@ -195,7 +223,6 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this change.** GPG or checksum verification for dependency-check and ZAP (C-0015.5).
 - **Tests.** `plugin/gizmoduck/scripts/_test/test_bootstrap_version.py` and `test_doctor.py`: each
   guard has must-block and must-allow cases, each sabotaged to confirm it goes red.
-||||||| 23fb9d91
 
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 

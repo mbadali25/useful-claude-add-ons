@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **gizmoduck 0.5.11**: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on. `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`, `--user` installs every tool that needs no package manager into the tool home without root, `--dry-run` shows the plan and changes nothing, and a failed tool now makes it exit 1.
 - **gizmoduck 0.5.10**: One tool lookup order, and an override you set now wins. Every scanner is found the same way — your override variable, then a tool home, then PATH, then the Windows install folder — and an override that points at nothing now disables that tool instead of quietly using another copy.
-- **windows-ssm 1.0.1**: Linux tools on Windows, and what SSM will carry. A new skill for running Linux-style tools on Windows and driving nodes through AWS Systems Manager, with a checker that fails when a Run Command result is or may be cut.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

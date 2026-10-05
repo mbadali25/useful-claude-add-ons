@@ -33,7 +33,8 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
    `nuclei_intrusive: true`); `--rate-limit N` (manifest `nuclei_rate_limit`)
    replaces the 50.
    This writes JSONL and reports how many findings it captured. If `nuclei` isn't
-   installed it will say so — run `bootstrap.sh` (Linux/WSL) or `bootstrap.ps1`
+   installed it will say so — run `bootstrap.sh` (Linux/WSL: as root or via sudo,
+   or `bootstrap.sh --user` without root, into the tool home) or `bootstrap.ps1`
    (Windows) first.
 
 2. **Summarize**, then lead with the counts:

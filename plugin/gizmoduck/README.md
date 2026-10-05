@@ -21,8 +21,11 @@ step, no API restrictions. **Only scan assets you own or have written permission
 | `/gizmoduck:doctor` | Check the toolchain (nuclei, templates, python, PDF) |
 
 ## Install Nuclei (once)
-**WSL / Linux:** `./bootstrap.sh`
+**WSL / Linux:** `./bootstrap.sh` (root, or `sudo`), or `./bootstrap.sh --user` with no root at all
 **Windows (PowerShell):** `powershell -ExecutionPolicy Bypass -File .\bootstrap.ps1`
+
+`./bootstrap.sh --dry-run` (with or without `--user`) prints where each tool would go and changes
+nothing. CI pipelines and containers: see "CI and containers" below.
 
 Both fetch the latest prebuilt binary and community templates. PDF reports need
 `wkhtmltopdf` (installed by bootstrap.sh; `winget install wkhtmltopdf` on Windows).
@@ -36,6 +39,56 @@ otherwise ignored with a notice.
 
 If your antivirus/EDR quarantines or deletes nikto, sqlmap, ZAP, or a Nuclei
 template mid-install, see [`docs/antivirus-exclusions.md`](docs/antivirus-exclusions.md) - that's expected, not a broken install.
+
+## CI and containers
+
+gizmoduck runs **inside** a container or a CI job; it never drives Docker itself (no image, no
+`docker run`, and ZAP runs from its unzipped Automation Framework, not the `zaproxy` image).
+
+- **As root in a container** (the usual image build step), `./bootstrap.sh` runs every step
+  without `sudo`. Not root and no `sudo` on PATH: it exits 2 and points at `--user`. Through `sudo`
+  without a terminal it uses `sudo -n`, so a password prompt fails instead of hanging the job.
+  apt runs with `DEBIAN_FRONTEND=noninteractive`.
+- **`--user`** installs, with no elevation anywhere, every tool that needs no package manager
+  into the tool home (`GIZMODUCK_HOME`, else `$XDG_DATA_HOME/gizmoduck`, else
+  `~/.local/share/gizmoduck`; see "Where gizmoduck looks for tools"): Nuclei, trivy, testssl.sh,
+  sqlmap, dependency-check, ZAP and (when `perl` is present) nikto, with checkov and semgrep through
+  `pip3 install --user`. It needs `curl`, `unzip`, `git` and `python3` first and exits 2 naming
+  any that are missing. Tools only a package manager provides are reported as present or
+  **skipped**, never installed. Add these to the image when you want them:
+
+  | Package (Debian/Ubuntu) | For |
+  |---|---|
+  | `nmap` | nmap |
+  | `openjdk-17-jre` | ZAP and dependency-check (Java 17+; without it both **fail** under `--user`) |
+  | `perl`, `libxml-writer-perl` | nikto |
+  | `wkhtmltopdf` | PDF reports (HTML reports work without it) |
+  | `bsdextrautils` | `hexdump`, which testssl.sh needs to run |
+
+- **Exit status**, so a pipeline can gate on it: `0` nothing failed; `1` a tool or the Nuclei
+  template download failed (it used to exit 0 after a partial install); `2` a usage or
+  precondition error. When tools were skipped and none failed it exits 0 and its **last line**
+  is `GIZMODUCK_BOOTSTRAP_SKIPPED: <names>`, the same shape as `GIZMODUCK_ROUTINE_INCOMPLETE`.
+- **`--dry-run`** prints the tool home, the privilege it would use and one `plan:` line per
+  tool, then exits 0: no network call, no file written, no directory created.
+- **Cache between runs**: the tool home and Nuclei's template directory (`~/nuclei-templates`,
+  or what `~/.config/nuclei/.templates-config.json` names). A re-run skips every tool that is
+  already installed and passes its probe.
+- **Secrets** come from the pipeline's secret store as environment variables, never from a
+  manifest or a committed file: `GITHUB_TOKEN` (optional; release lookups use it for a higher
+  API rate limit, and it is passed to curl as a header file, never printed or put on a command
+  line) and `NVD_API_KEY` (optional; dependency-check's first NVD sync).
+- **Scans** then run headless through `routine` (exit 4 and a
+  `GIZMODUCK_ROUTINE_INCOMPLETE:` last line when a tool could not run). Nuclei's safe defaults
+  apply there as everywhere.
+
+```bash
+# image build, as root
+./bootstrap.sh
+# job without root, with the tool home cached between runs
+GIZMODUCK_HOME="$CI_CACHE_DIR/gizmoduck" ./bootstrap.sh --user
+GIZMODUCK_HOME="$CI_CACHE_DIR/gizmoduck" python3 scripts/gizmoduck.py routine targets.yaml --out out/
+```
 
 ## Where gizmoduck looks for tools
 

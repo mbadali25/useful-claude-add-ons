@@ -71,7 +71,7 @@ fi
 """
 
 _SUDO_BODY = """
-if [[ "$1" == apt-get ]]; then
+if [[ "$1" == apt-get || ( "$1" == env && " $* " == *" apt-get "* ) ]]; then
   [[ " $* " == *" install "* && -n "${STUB_APT_FAIL_INSTALL:-}" ]] && exit 100
   exit 0
 fi
@@ -473,7 +473,8 @@ def test_ps1_both_fail_throws_naming_the_tool(stubs):
 
 # --- apt-get options (a /tmp at 755 breaks apt's `_apt` sandbox user) -------
 
-_APT_OPTS = "apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600"
+_APT_OPTS = ("env DEBIAN_FRONTEND=noninteractive apt-get -o APT::Sandbox::User=root "
+             "-o DPkg::Lock::Timeout=600")
 
 
 def test_apt_installs_run_the_sandbox_as_root_with_a_lock_timeout_then_clean(stubs):
@@ -500,7 +501,7 @@ def test_every_apt_get_call_goes_through_the_helper():
     calls = [ln for ln in _BOOTSTRAP.read_text().splitlines()
              if "apt-get " in ln and not ln.lstrip().startswith("#")
              and "command -v apt-get" not in ln and "echo" not in ln]
-    assert calls == [f"  sudo {_APT_OPTS} \"$@\""], calls
+    assert calls == [f"  as_root {_APT_OPTS} \"$@\""], calls
 
 
 
@@ -727,7 +728,7 @@ def test_zap_without_its_jar_is_reinstalled_and_with_it_is_skipped(stubs):
 def test_empty_apt_lists_are_refreshed_before_an_install(stubs):
     (stubs["apt_lists"] / "x_Packages").unlink()
     _, log = _run(stubs, "install_nmap", extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
-    lines = [ln for ln in log.splitlines() if ln.startswith("sudo apt-get")]
+    lines = [ln for ln in log.splitlines() if ln.startswith(f"sudo {_APT_OPTS.split(' -o')[0]}")]
     assert lines[0] == f"sudo {_APT_OPTS} update -y", lines
     assert lines[1] == f"sudo {_APT_OPTS} install -y nmap", lines
 
