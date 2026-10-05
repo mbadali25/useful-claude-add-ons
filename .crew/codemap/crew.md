@@ -1876,6 +1876,11 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
   manifest)`, the recurring-findings classes keyed to the manifest's changed files (every class
   under `UNKNOWN:` when the file lists are unusable), then the web tests.
+  The two blocks are one source per kind of rule (L-0519): the standards are the source for
+  code-level rules, and the recurring-findings classes are a probe index derived from them;
+  each class's `seen:` line names the standard ids it echoes, held to a shipped set or the
+  overlay by `test_every_class_names_a_standard_that_exists`
+  (`plugin/crew/tests/test_recurring_findings.py`), and the standard wins on a conflict.
 - **Loop and metric.** `proposals` (`:724`) exclusive-creates
   `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped, and
   refuses an out.txt the parser calls INCOMPLETE, writing nothing; `metric_summary` (`:795`)

@@ -10,6 +10,12 @@ written instead. Each one is earned by real BLOCK/FIX findings from crew's own
 reviews, cites them, and carries a self-check with the answer that passes. The
 script is `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py`.
 
+Which skill owns which rule (L-0519): code-level rules and the self-check are
+crew-standards; harness, review-process, gate and environment rules are
+crew-qa-standards. crew-qa-standards' `recurring-findings.md` (RF) is a
+probe index derived from crew-standards: each class names the standard ids it
+echoes, and on a conflict the standard wins and the probe is corrected.
+
 ## The sets, and which apply
 
 - **Generic** - `references/generic.md`, set `GEN`, applies to every change.

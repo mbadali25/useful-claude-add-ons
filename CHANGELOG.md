@@ -9,6 +9,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew: one source per kind of rule for crew-standards and crew-qa-standards (L-0519)
+
+- **Summary.** crew's two standards skills now say which owns which rule: code-level rules live in
+  `crew-standards`, the repository's machinery in `crew-qa-standards`, and the recurring-findings
+  probes are derived from the standards, with a test that every standard they name exists.
+- **What changed.** `recurring-findings.md`'s introduction declares RF-01..07 a probe index derived
+  from `crew-standards` (the standard wins on a conflict), and RF-07's `seen:` line now names GEN-09
+  and this repository's REPO-03 instead of only `CLAUDE.md`. The new
+  `test_every_class_names_a_standard_that_exists` (`plugin/crew/tests/test_recurring_findings.py`)
+  reads every shipped set and the overlay through `crew_standards.parse_set` and fails when a class
+  names no standard or one that does not exist. Both SKILL.md files state the split in the same
+  words; H8, R10 and R12 each name the code-level standard they restate (GEN-01, GEN-04, GEN-12).
+  `plugin/PLUGINS.md` gains its missing `crew-qa-standards` row. No probe was reworded: each of the
+  21 was read against the Self-check of the standards it cites and agrees. The review prompt keeps
+  both checklist blocks; no harness path changed.
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file
