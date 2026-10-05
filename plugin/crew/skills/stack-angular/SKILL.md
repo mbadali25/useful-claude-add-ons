@@ -34,8 +34,8 @@ version-gated. Write in the idiom the repo already uses unless the ticket is the
   state quietly forks.
 - **Template-driven and reactive forms behave differently on validation timing** - a control
   added to a `FormGroup` after init needs `updateValueAndValidity` to be believed.
-- **`bypassSecurityTrust*` and `[innerHTML]` are XSS sinks** - sanitisation is the default
-  these turn off (candidate NG-P1 in `references/candidates.md`).
+- **`bypassSecurityTrust*` is an XSS sink** - it turns off the sanitisation an `[innerHTML]`
+  binding otherwise applies (candidate NG-P1 in `references/candidates.md`).
 - **A failed read is not empty data.** A view whose write controls depend on a read shows
   "could not verify" when it fails and gates every write on that state (candidate NG-07).
 - **A guard returning an observable that never emits hangs navigation** - the router takes the

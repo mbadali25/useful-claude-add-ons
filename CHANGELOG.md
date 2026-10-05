@@ -65,14 +65,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ### Added — crew: Angular 2+ candidate standards, no gated set yet (L-0538)
 
-- **Summary.** `stack-angular` now lists three candidate Angular 2+ standards with their
-  sources. The one that matters most is NG-07: a failed read shows "could not verify" and
+- **Summary.** `stack-angular` now lists three candidate Angular 2+ standards with the
+  evidence each has. The one that matters most is NG-07: a failed read shows "could not verify" and
   blocks the writes it feeds. Nothing is enforced yet.
 - **What changed.** New `plugin/crew/skills/stack-angular/references/candidates.md` covers
   NG-07 (its rule, Applies when and Self-check, taken from the spec's publishable text), NG-P1
   (no `bypassSecurityTrust*` on content a user, contact or model can author) and NG-P2
-  (interceptors send credentials only to allow-listed origins). Each gives its change sets, its
-  verdict and angular.dev Source sentences, re-matched against the raw pages.
+  (interceptors send credentials only to allow-listed origins). Each gives its change sets and
+  its standing. NG-07 and NG-P1 also carry angular.dev Source sentences, re-matched against the
+  raw pages. NG-P2 has no Source yet.
   `stack-angular/SKILL.md` gains a `## Standards` section and two pitfall pointers, and its
   description says AngularJS gets no standards. The AngularJS section is unchanged. No
   `references/angular.md`, test, loader or gate change.

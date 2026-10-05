@@ -59,8 +59,10 @@ decision.
 Counted toward the bar: unknown (whether it is one of the owner's research rules
 could not be determined). 7 public change sets, which do not count, plus 1 weak one.
 
-Get `HttpClient` from `IHttpClientFactory` (named or typed clients), or reuse one
-long-lived instance whose `SocketsHttpHandler` sets `PooledConnectionLifetime`. Never
+Get `HttpClient` from `IHttpClientFactory` (named or typed clients). On .NET Core and
+.NET 5+, one long-lived instance whose `SocketsHttpHandler` sets `PooledConnectionLifetime`
+is the alternative. `SocketsHttpHandler` does not exist on .NET Framework 4.8, which uses the
+factory. Never
 write `new HttpClient()` in a method that runs per request or per call. One exception: a
 client that needs cookies avoids the factory, because pooled handlers share their
 `CookieContainer`. It uses its own long-lived client and handler, one per cookie scope.
@@ -82,7 +84,8 @@ Source: https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/ht
 "If you don't use the factory and instead create a new client instance for each request
 yourself, you can exhaust available ports." "If your app requires cookies, it's recommended
 to avoid using IHttpClientFactory." "Unanticipated CookieContainer sharing might leak
-cookies between unrelated parts of the application."
+cookies between unrelated parts of the application." "In .NET Framework, use
+IHttpClientFactory to manage your HttpClient instances."
 
 Public verdict: admitted on public stand-ins (7). That does not count under the owner's
 decision.

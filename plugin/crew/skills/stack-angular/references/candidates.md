@@ -108,6 +108,8 @@ on an explicit allow-list. A request to any other host goes out without it.
 Public change set: `sdcore-97ba679e` (sdcorejs/sdcorejs-angular@97ba679e). A full-scan
 review found that a Keycloak interceptor sent the bearer token to any host.
 
+No Source sentence was checked for this rule. Public verdict: candidate (1).
+
 ## Research rules not built here
 
 ANGULAR-01 to -06 and -08 to -18 (NG-01..NG-18 except NG-07) are the owner's research
