@@ -1104,10 +1104,12 @@ def _parse_deps(values):
     deps = {}
     for value in values or []:
         ticket, sep, rest = value.partition("=")
-        if not sep:
+        parts = [d.strip() for d in rest.split(",")]
+        # `T-1=` or `T-1=,` is a typo, never "no dependencies": only `none` says that
+        # (group review r5, rush g0).
+        if not sep or (rest.strip() != "none" and not all(parts)):
             raise WaveError(f"--deps {value!r} is not <id>=<id>,<id> or <id>=none")
-        deps[_plain_id(ticket.strip())] = (
-            [] if rest.strip() == "none" else [d.strip() for d in rest.split(",") if d.strip()])
+        deps[_plain_id(ticket.strip())] = [] if rest.strip() == "none" else parts
     return deps
 
 

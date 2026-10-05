@@ -257,6 +257,17 @@ def test_set_cli_writes_the_set(tmp_path):
         0, [{"id": "T-1", "deps": []}, {"id": "T-2", "deps": ["T-1"]}])
 
 
+@pytest.mark.parametrize("deps", ["T-1=", "T-1=,", "T-1= ", "T-1=T-2,", "T-1=,T-2", "T-1=T-2,,T-3", "T-1"],
+                         ids=["empty", "comma", "space", "trailing", "leading", "double", "no-equals"])
+def test_set_cli_refuses_a_dependency_list_that_is_not_none_or_ids(tmp_path, deps):
+    # Group review r5 (rush g0): `T-1=` parsed as no dependencies and skipped the unknown refusal.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "--deps", deps)
+
+    assert (done.returncode != 0, crew_wave.read_set(str(root), "s")) == (True, (None, "missing"))
+
+
 # --- step 3: plan ------------------------------------------------------------------
 
 def _set(root, slug, tickets, deps=None):
