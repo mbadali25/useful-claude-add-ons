@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:06 UTC
+Last updated: 2026-10-05 00:10 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 00:10: #497 re-check at 71947ce1: 1 FIX (leftover child holding stdout makes $() wait until hook timeout - fail-open; reproduced 40s vs main 0.014s), 1 NIT. Sent back: capture candidate stdout via temp file, fail closed if mktemp fails.
 - 00:06: #497 L-1512 round-1 fixes at 71947ce1, CI green: positive 'done' handshake on fd 3 (bash 3.2 safe), zero kill on clean exit; spy logs all kills. Focused re-check sent to a84a512 (focus: fd 3 inheritance, leftover child holding stdout -> hook timeout fail-open).
 - 00:05: L-1512 #497 review round 1 fixed at 71947ce1 - probe clean exit is a written 'done' line (bash 3.2 safe), zero kill calls on clean path, merged main 189c3b80, crew 1.0.412 last; CI all green
 - 23:51: #407 T-0045 focused re-check CLEAN at 62ca0756 (0/0/1 NIT): 3 FIX-1 shapes refused, fuzz 220x622 0 violations (65 gate disagreements all took the stricter), 18.9k date strings 0 missed, 83 mutations RED. In batch 5. Minted L-1517 (ps1 in-flight marker writes non-ASCII env names as '?').
