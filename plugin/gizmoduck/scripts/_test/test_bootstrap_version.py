@@ -84,7 +84,7 @@ def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
     env.update(extra_env or {})
     proc = subprocess.run(
         [_BASH, "-c", f'source "$0"; {script}', str(_BOOTSTRAP)],
-        capture_output=True, text=True, env=env, timeout=30)
+        capture_output=True, text=True, env=env, timeout=30, check=False)
     return proc, stubs["log"].read_text()
 
 
@@ -165,7 +165,7 @@ def test_git_fallback_version_reaches_the_download_url(stubs):
     # sudo is a no-op stub, so the download command is logged, never run; all
     # that matters is which tag the asset URL was built from.
     script = 'try_install "nuclei" install_nuclei'
-    proc, log = _run(stubs, script, git="ok", tags=["v3.11.1", "v3.12.0-rc1", "v3.9.0"],
+    _, log = _run(stubs, script, git="ok", tags=["v3.11.1", "v3.12.0-rc1", "v3.9.0"],
                      extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
     assert "releases/download/v3.11.1/nuclei_3.11.1_linux_" in log, log
 
@@ -294,7 +294,7 @@ def _run_ps(stubs, curl="fail", git="fail", tags=()):
         "STUB_GIT_MODE": git,
     }
     proc = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(driver)],
-                          capture_output=True, text=True, env=env, timeout=120)
+                          capture_output=True, text=True, env=env, timeout=120, check=False)
     return proc, stubs["log"].read_text()
 
 
@@ -316,7 +316,7 @@ def test_ps1_api_fails_then_highest_stable_git_tag(stubs):
 
 @ps_only
 def test_ps1_both_fail_throws_naming_the_tool(stubs):
-    proc, log = _run_ps(stubs)
+    proc, _ = _run_ps(stubs)
     assert "ERR=Widget Scanner: could not determine the latest version" in proc.stdout, \
         proc.stdout + proc.stderr
     assert "TAG=" not in proc.stdout
