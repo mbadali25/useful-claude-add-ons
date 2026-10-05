@@ -1107,6 +1107,54 @@ def test_run_kimi_a_probe_survivor_that_will_not_die_spends_no_round(repo, tmp_p
     assert "do not walk to the next provider" in err
 
 
+def _kimi_main_timing_out(repo, tmp_path, monkeypatch, capsys, timeout_call):
+    """review_run.main for kimi where launch call `timeout_call` (1 = the
+    probe, 2 = the review) times out and stop_survivors cannot stop what it
+    left; every other call is real."""
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    real, calls = review_run.launch, []
+
+    def launch(*args, **kwargs):
+        calls.append(1)
+        done = real(*args, **kwargs)
+        return ("", "", None, True) if len(calls) == timeout_call else done
+
+    monkeypatch.setattr(review_run, "launch", launch)
+    monkeypatch.setattr(review_run, "stop_survivors", lambda _started: (
+        (False, review_run.KIMI_SURVIVOR_UNKNOWN) if len(calls) == timeout_call
+        else (False, None)))
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    review_path = work / "review.json"
+    return code, capsys.readouterr().err, json.loads(review_path.read_text(encoding="utf-8")) \
+        if review_path.exists() else None
+
+
+def test_run_kimi_a_timed_out_probe_with_an_unstoppable_survivor_stops(repo, tmp_path,
+                                                                      monkeypatch, capsys):
+    """Must-block (group review r3 of #540): a timed-out probe is checked for
+    survivors too; one that cannot be stopped exits 8, never 2."""
+    code, err, review = _kimi_main_timing_out(repo, tmp_path, monkeypatch, capsys, 1)
+
+    assert (code, review, rl.status(str(repo), "T1")["rounds"]) == (
+        review_run.EXIT_PROBE_CHANGED, None, []), err
+    assert "do not walk to the next provider" in err
+
+
+def test_run_kimi_a_timed_out_review_is_checked_for_survivors(repo, tmp_path, monkeypatch,
+                                                              capsys):
+    """Must-block (group review r3): a timed-out review round still asks
+    stop_survivors; one it cannot stop is a reason on the INCOMPLETE round."""
+    code, err, review = _kimi_main_timing_out(repo, tmp_path, monkeypatch, capsys, 2)
+
+    assert (code, review["verdict"]) == (3, "INCOMPLETE"), err
+    assert review_run.KIMI_SURVIVOR_UNKNOWN in review["reasons"]
+
+
 # --- review round 4 (T-0028) ---------------------------------------------------------
 # One must-block and one must-allow case per FIX; sabotage_kimi.py turns each
 # must-block case red.
@@ -1601,3 +1649,28 @@ def test_launch_with_a_job_ends_it_for_a_caller_watching_survivors(tmp_path, mon
 
     assert (review_run.stop_survivors(started), jobs[0].calls, jobs[1].calls) == (
         (True, None), ["adopt", "terminate", "close"], ["adopt", "close"])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_launch_that_times_out_with_a_job_still_ends_it(tmp_path, monkeypatch):
+    """Group review r3: the timeout path records the ended job as well, so
+    a timed-out Kimi call is never "nothing left running" by default."""
+    class _Job(_SurvivorJob):
+        def adopt(self, _proc):
+            self.calls.append("adopt")
+
+        def close(self):
+            self.calls.append("close")
+
+    job = _Job(1)
+    monkeypatch.setattr(review_run.review_checks, "_WINDOWS", True)
+    monkeypatch.setattr(review_run.review_checks, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(review_run, "_launch_flags", lambda j: {"start_new_session": True})
+    started = []
+
+    timed_out = review_run.launch([sys.executable, "-c", "import time; time.sleep(30)"],
+                                  str(tmp_path), 1, started=started)[3]
+
+    ended = [entry for entry in started if isinstance(entry, tuple)]
+    assert (timed_out, ended, job.calls[-1]) == (
+        True, [(review_run._JOB_ENDED, False, None)], "close")  # pylint: disable=protected-access

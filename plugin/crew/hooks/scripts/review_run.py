@@ -926,6 +926,8 @@ def _launch(job, cmd, root, timeout, env=None, started=None):  # pylint: disable
             escaped = True
             stdout = _decode_partial(exc.output)
             stderr = _decode_partial(exc.stderr)
+        if job is not None and started is not None:
+            started.append(_end_job(job))  # a caller watching survivors (Kimi)
         if escaped:
             stderr = (stderr or "") + (
                 "\nreview-run: a descendant process may have escaped the "
@@ -1256,7 +1258,7 @@ def _probe_runner(cmd, env, timeout, cwd, unstopped=None):  # pylint: disable=to
     review (exit 8), since that process may still write after any check."""
     started = []
     stdout, stderr, code, timed_out = launch(cmd, cwd, timeout, env=env, started=started)
-    if not timed_out and stop_survivors(started)[1]:
+    if stop_survivors(started)[1]:  # after a timeout too (group review r3)
         if unstopped is not None:
             unstopped.append(cmd[0])
         return "", KIMI_SURVIVOR_UNKNOWN, None, False
@@ -1315,7 +1317,9 @@ def _run_kimi(args, number, prompt, before):
     started = []
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout,
                                              env=kimi_probe.kimi_env(), started=started)
-    killed, survivor_unknown = stop_survivors(started) if not timed_out else (False, None)
+    # A timeout too (group review r3 of #540): `launch` may leave a descendant
+    # running once its leader is gone, so survivors are stopped either way.
+    killed, survivor_unknown = stop_survivors(started)
     if survivor_unknown:
         extra.append(survivor_unknown)
     elif killed:
