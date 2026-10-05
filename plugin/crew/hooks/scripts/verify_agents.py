@@ -72,11 +72,16 @@ def _read(path):
         return None, f"{path}: {exc.__class__.__name__}"
 
 
+ABSENT = object()
+
+
 def _load_json(path):
-    """(value, None), (None, None) when absent, or (None, reason) when it will not parse."""
+    """(value, None); (ABSENT, None) when the file is absent -- never None,
+    which is what a file holding JSON `null` parses to; or (None, reason)
+    when it cannot be read or will not parse."""
     text, problem = _read(path)
     if text is None:
-        return None, problem
+        return (None, problem) if problem else (ABSENT, None)
     try:
         return json.loads(text), None
     except json.JSONDecodeError as exc:
@@ -90,7 +95,7 @@ def named(root):
     if problem:
         return {}, problem
     out = {}
-    if data is None:
+    if data is ABSENT:
         return out, None
     # A map that parses but is not shaped as one cannot say which agents it
     # names: that is unknown, never "no agents named".
@@ -182,6 +187,10 @@ def _read_scopes(root):
     out = []
     for path in _scopes(root):
         data, problem = _load_json(path)
+        if data is ABSENT:
+            data = None
+        elif problem is None and not isinstance(data, dict):
+            data, problem = None, f"{path} is not a JSON object"
         out.append((path, data, problem))
     return out
 
@@ -212,7 +221,7 @@ def installed(root):
         everywhere.append(f"plugin registry {problem}")
         return names, maybe, everywhere
     plugins = registry.get("plugins") if isinstance(registry, dict) else None
-    if registry is not None and not isinstance(plugins, dict):
+    if registry is not ABSENT and not isinstance(plugins, dict):
         everywhere.append(f"plugin registry {registry_path} has no `plugins` object")
         return names, maybe, everywhere
     scopes = _read_scopes(root)

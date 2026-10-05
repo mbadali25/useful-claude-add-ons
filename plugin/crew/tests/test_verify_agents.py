@@ -140,7 +140,8 @@ def test_unknowns_never_read_as_installed(tmp_path, home, capsys, source):
                                   '{"rules": [{"agents": ["php-developer", 7]}]}',
                                   '{"rules": ["php-developer"]}',
                                   '{"rules": [{"agents": ["php-developer"], "paths": 7}]}',
-                                  '{"rules": [{"agents": ["php-developer"], "paths": "src"}]}'])
+                                  '{"rules": [{"agents": ["php-developer"], "paths": "src"}]}',
+                                  'null'])
 def test_a_verify_map_whose_shape_cannot_be_read_is_unknown(tmp_path, home, capsys, data):
     _home(home)
     root = _repo(tmp_path, ["php-developer"])
@@ -173,6 +174,18 @@ def test_an_install_record_without_a_path_is_unknown_not_missing(tmp_path, home,
     code, out = _main(_repo(tmp_path, ["voltagent:security-auditor"]), capsys)
 
     assert (code, "no installPath" in out) == (2, True), out
+
+
+@pytest.mark.parametrize("where", ["registry", "user-settings"])
+def test_a_json_null_source_is_unknown_not_absent(tmp_path, home, capsys, where):
+    _home(home, plugins={"voltagent@mkt": ["security-auditor"]}, enabled={"voltagent@mkt": True})
+    target = (home / "plugins" / "installed_plugins.json" if where == "registry"
+              else home / "settings.json")
+    _write(target, "null")
+
+    code, out = _main(_repo(tmp_path, ["voltagent:security-auditor"]), capsys)
+
+    assert (code, "MISSING" in out) == (2, False), out
 
 
 def test_crew_roles_resolve_even_when_registry_unreadable(tmp_path, home, capsys):
