@@ -633,7 +633,7 @@ def graph_out(root):
     for name in crew_common.CONFIG_NAMES:
         path = os.path.join(crew_dir, name)
         try:  # class b: through read_regular
-            text = review_checks.read_regular(path, crew_dir).decode("utf-8")
+            text = review_checks.read_regular(path, crew_dir).decode("utf-8-sig")  # as read_text
         except FileNotFoundError:
             continue
         except (OSError, UnicodeDecodeError):

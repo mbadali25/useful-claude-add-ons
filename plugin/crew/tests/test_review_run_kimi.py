@@ -1457,6 +1457,16 @@ def test_graph_out_with_a_config_that_exists_but_cannot_be_read_is_none(repo, mo
     assert review_run.graph_out(str(repo)) is None
 
 
+def test_graph_out_reads_a_bom_prefixed_config(repo):
+    """Must-allow (L-0527 review r2): a config saved with a BOM (Windows
+    Notepad's default) is valid, as crew_common.read_text reads it."""
+    _graph_config(repo, "graphify-out")
+    path = repo / ".crew" / "config.json"
+    path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
+
+    assert review_run.graph_out(str(repo)) == "graphify-out"
+
+
 def test_graph_out_with_no_config_file_is_the_default(repo):
     """Must-allow: absence is not uncertainty -- no config means the default."""
     assert review_run.graph_out(str(repo)) == "graphify-out"

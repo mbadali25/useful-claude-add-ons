@@ -777,6 +777,11 @@ KIMI_MUTATIONS = (
      "tests/test_provider_table.py::"
      "test_a_provider_review_run_cannot_launch_is_not_eligible"),
     # --- L-0527 review (the port onto main) ---
+    ("review_run: graph_out decodes config.json without the BOM again (L-0527 review r2)",
+     RUN,
+     '.decode("utf-8-sig")  # as read_text',
+     '.decode("utf-8")',
+     _R + "test_graph_out_reads_a_bom_prefixed_config"),
     ("review_run: kimi with no round left refuses a standing CLEAN receipt again",
      RUN,
      "                if review_ledger.check_receipt(args.root, args.ticket)[0] \\\n",
