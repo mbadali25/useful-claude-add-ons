@@ -30,9 +30,9 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 5 | G3b bridge / recall / config / graph | `rush/g3b-bridge` | #434, #437, #442, #425, #414, #447, #455 | 1.1.7 | building |
 | 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.4 | building |
 | 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
-| 8 | G6 autopilot builds + sleep | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435 | next free | after G2 lands |
+| 8 | G6 autopilot builds, sleep, goals | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435, then L-0541 (no PR yet), #459, #463, #469 | next free | after G2 lands (T-0012) |
 | 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
-| 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
+| 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
 | - | Last | | #479 (T-0507 code-map refresh) | | regenerated at the end |
 
 Groups 1-8 target `release/1.2.0`; 9 and 10 target `main`, each alone.
@@ -45,7 +45,7 @@ sets 1.2.0. The drift check dates a version from its first commit, so every re-m
 
 | PRs | Blocked by | Note |
 |---|---|---|
-| #459 T-0056, #463 L-0658, #469 L-0659, #472 L-0660 | L-0541 (never started; needs T-0012, which G2 ports) | owner: confirm L-0541 is ready to build |
+| L-0541 | its direction/spec is only in the owner's local ticket folder | owner 2026-10-05: ready to build. Owner's local session: publish `docs/tickets/L-0541/` to branch `L-0541-build` (as the other handoffs). If it is not there when G6 reaches it, the builder drafts a spec from T-0012's split and T-0056's dependency rows, has Codex review the spec, then builds |
 | #391 | n/a | the landing session's notes branch; not touched by this rush |
 
 ### New tickets (C-0020 onward)
