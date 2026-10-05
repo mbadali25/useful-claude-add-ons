@@ -1096,7 +1096,8 @@ a lane that must be gated writes its own config. And with no usable python the
 scope and completion wrappers prove `scope.mode` off only when the resolved
 file is absent and git could tell: a lane whose main checkout has a config, or
 whose git cannot name the main checkout, blocks writes and the Stop until
-python works. Ratcheted guard keys still take the narrower of repo
+python works - except that the PowerShell wrappers (PowerShell 7) still allow
+a resolved config that strictly parses as `scope.mode: off`. Ratcheted guard keys still take the narrower of repo
 and machine-global. A lane that wants its own guards writes its own
 `.crew/config.json`, and that file then wins whole.
 

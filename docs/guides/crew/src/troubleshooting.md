@@ -276,7 +276,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   checkout's settings, and a relative handoff path still names a file in the lane. Since
   L-0681 the verify gate (both flavours), `review_gate.py` and the scope and completion
   wrappers inherit as well: an inherited `"verifyGate": false` stands a lane's Stop gate down,
-  and with no python a lane whose main checkout has a config blocks writes and the Stop.
+  and with no python a lane whose main checkout has a config blocks writes and the Stop (the
+  PowerShell 7 wrappers still allow one that strictly says `scope.mode: off`).
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash
