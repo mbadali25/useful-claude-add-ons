@@ -59,10 +59,10 @@ decision.
 Counted toward the bar: unknown (whether it is one of the owner's research rules
 could not be determined). 7 public change sets, which do not count, plus 1 weak one.
 
-Get `HttpClient` from `IHttpClientFactory` (named or typed clients). On .NET Core and
-.NET 5+, one long-lived instance whose `SocketsHttpHandler` sets `PooledConnectionLifetime`
-is the alternative. `SocketsHttpHandler` does not exist on .NET Framework 4.8, which uses the
-factory. Never
+Get `HttpClient` from `IHttpClientFactory` (named or typed clients). On .NET Core 2.1 and
+later (including .NET 5+), one long-lived instance whose `SocketsHttpHandler` sets
+`PooledConnectionLifetime` is the alternative. `SocketsHttpHandler` arrived in .NET Core 2.1,
+so earlier .NET Core targets and .NET Framework 4.8 use the factory. Never
 write `new HttpClient()` in a method that runs per request or per call. One exception: a
 client that needs cookies avoids the factory, because pooled handlers share their
 `CookieContainer`. It uses its own long-lived client and handler, one per cookie scope.
