@@ -30,7 +30,9 @@ Two references and one helper. Read only the reference the task needs.
 ## Check SSM output before using it
 
 Run Command cuts stdout at 24,000 characters and stderr at 8,000 and still reports
-`Success`. Check every result you will parse or act on:
+`Success`. Check every result you will parse or act on. Paths below are relative to this
+skill's own directory (the one holding this SKILL.md); from anywhere else, give the helper's
+full path:
 
 Bash (Linux, macOS, WSL; in Git Bash use the Python that
 `references/windows-tools.md` shows how to pick, since `python3` may be missing):
