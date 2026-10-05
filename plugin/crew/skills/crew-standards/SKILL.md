@@ -43,7 +43,11 @@ that cannot be read, is not UTF-8 or is malformed is **could-not-tell**, never
 "absent": the stamp and the review gate refuse until it is fixed.
 
 `crew_standards.py sets --root . --ticket <id>` prints the effective set for
-the ticket's change: its ids, the overlay state and the set's digest.
+the ticket's change: its ids, the overlay state and the set's digest. At plan
+time, before a scope base exists, `sets ... --touch` reads the spec's Touch
+list instead: GEN, the overlay, and every stack set whose `applies-to`
+overlaps a Touch entry (it over-lists, never under-lists). A spec or Touch
+list it cannot read lists every set under `UNKNOWN:` and exits 1.
 
 ## At /crew:plan
 
@@ -105,9 +109,12 @@ last fix.
 - **Proposals.** After a round, `crew_standards.py proposals --root .
   --ticket <id> --scratch <dir> --round <N>` writes
   `.work/tickets/<id>/standards-proposals-r<N>.md`: every BLOCK/FIX line
-  verbatim, each with Covered by, Self-check said and Proposal to fill. The
-  An `out.txt` the verdict parser calls INCOMPLETE (empty, a line it cannot
-  read, neither CLEAN nor a finding) is refused and nothing is written. The
+  verbatim, each with Covered by, Self-check said and Proposal to fill. It
+  first reads the review ledger: a round it does not record as CLEAN or
+  FINDINGS (INCOMPLETE, still reserved, no row, or a ledger it cannot read)
+  is refused and nothing is written. Then an `out.txt` the verdict parser
+  calls INCOMPLETE (empty, a line it cannot read, neither CLEAN nor a
+  finding) is refused the same way. The
   owner approves or rejects each proposal. An approved one is written into
   `.crew/standards.md` by hand, or filed as a crew ticket for the plugin set.
   Nothing is added to any standards file automatically.

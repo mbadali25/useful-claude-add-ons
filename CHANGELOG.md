@@ -9,6 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew: standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch` (L-0518)
+
+- **Summary.** A review round crew scored INCOMPLETE no longer gets a standards-proposals file, a
+  SHA-256 git repository can stamp its self-check and pass the review gate, and the plan's
+  standards can be listed before any scope base exists.
+- **What changed.** `crew_standards.py proposals --round N` first reads the review ledger
+  (`review_ledger.status`) and proceeds only when round N is recorded completed as CLEAN or
+  FINDINGS; INCOMPLETE, a reserved row, no row, two rows or an unreadable ledger refuse with
+  nothing written, and the `out.txt` parse stays as a second check. The stamp's `base=` parses as
+  exactly 40 or exactly 64 hex. `sets --touch` lists GEN, the overlay and every stack set whose
+  `applies-to` overlaps a spec Touch entry (the matcher `/crew:implement` step 2 uses), needing no
+  scope base; an unreadable spec or Touch list prints `UNKNOWN:`, lists every set and exits 1.
+  `(fallback)` appears once on a line. The crew-plan self-review names `sets --touch`; the
+  crew-standards skill loses its "The An" fragment; six code-map history cells close their
+  parenthesis; T-0085's entry names the crew-standards rule instead of "Rule 31". The harness half
+  (the review gate's lock-held skip decision, its uncaught incident errors, `commands/review.md`'s
+  wording and the sabotage entries) lands separately.
+
 ### Changed — crew: one source per kind of rule for crew-standards and crew-qa-standards (L-0519)
 
 - **Summary.** crew's two standards skills now say which owns which rule: code-level rules live in
@@ -4168,8 +4186,8 @@ A tooling change: this release carries no feature work.
   rows and unreadable `std:` tokens on neither side, counted, instead of in the baseline.
   `review_run.py` answers a spent review budget (exit 4) before the self-check gate. GEN-02 and GEN-07
   each cite a third change set in their Earned by, and a test holds every GEN standard to citing three.
-  The stamp's docstring names its remaining write window instead of claiming GEN-03. Rule 31 of
-  `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
+  The stamp's docstring names its remaining write window instead of claiming GEN-03. The
+  crew-standards rule of `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
 - Bumped `1.0.69 -> 1.0.75` on the land branch (REPO-03 as amended: no bump on the build branch):
   1.0.70 at the merge of main's 1.0.69, 1.0.71 because a landing-branch commit then re-took one
   `sabotage_standards.py` anchor under `plugin/crew/`, and 1.0.72 for rewrapping `commands/review.md`

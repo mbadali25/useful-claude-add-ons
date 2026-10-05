@@ -598,12 +598,34 @@ _OUT = ("READ|part-001-of-001.patch\n"
         "NIT|d.py:4|style|none\n")
 
 
+def _ledger(root, verdicts, ticket="T-1"):
+    """A git repository at `root` whose review ledger records each round of
+    `verdicts` ({round: verdict}); a verdict of None leaves that round
+    reserved with no result (L-0518 F1: proposals reads the round's recorded
+    verdict). Returns the ledger's path."""
+    import review_ledger  # pylint: disable=import-outside-toplevel
+    if not (root / ".git").exists():
+        init_repo(root)
+    rounds = []
+    for number, verdict in sorted(verdicts.items()):
+        row = {"round": number, "status": "reserved", "provider": "codex", "model": None}
+        if verdict is not None:
+            row.update(status="completed", verdict=verdict, refunded=False)
+        rounds.append(row)
+    path = review_ledger.ledger_path(str(root), ticket)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"ticket": ticket, "budget": 2, "state": "REVIEWED", "rounds": rounds,
+                   "refused": [], "receipt": None}, fh)
+    return path
+
+
 def test_proposals_lists_every_finding_verbatim(tmp_path):
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     (scratch / "out.txt").write_text(_OUT, encoding="utf-8")
     root = tmp_path / "root"
-    root.mkdir()
+    _ledger(root, {1: "FINDINGS", 2: "FINDINGS"})
 
     first = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch", str(scratch),
                  "--round", "2")
@@ -628,6 +650,7 @@ def test_proposals_never_writes_a_set_file(tmp_path):
     _write_overlay_dir = root / ".crew"
     _write_overlay_dir.mkdir(parents=True)
     (_write_overlay_dir / "standards.md").write_text(OVERLAY, encoding="utf-8")
+    _ledger(root, {1: "FINDINGS"})
 
     def snapshot():
         found = {}
@@ -911,6 +934,8 @@ def test_stamp_scope_fallback_when_the_record_is_unusable(tmp_path, refs, shape)
     gate, _ = cs.review_gate(str(repo), "T-1", str(manifest_path), refs_dir=str(refs))
     marked = [any("(fallback)" in line and reason in line for line in out)
               for out in (init_lines, lines)]
+    doubled = [line for line in init_lines + lines if line.count("(fallback)") > 1]
+    assert doubled == [], doubled
     assert (source, init_code, code, (seal or {}).get("base") == base, marked, gate) == (
         "merge-base", 0, 0, True, [True, True], []), (init_lines, lines, gate)
 
@@ -1188,7 +1213,7 @@ def test_proposals_refuses_an_incomplete_output_and_writes_nothing(tmp_path, sha
     scratch.mkdir()
     (scratch / "out.txt").write_text(_INCOMPLETE_OUTPUTS[shape], encoding="utf-8")
     root = tmp_path / "root"
-    root.mkdir()
+    _ledger(root, {1: "FINDINGS"})
     args = ("proposals", "--root", str(root), "--ticket", "T-1", "--scratch", str(scratch),
             "--round", "1")
 
@@ -1210,7 +1235,7 @@ def test_proposals_writes_the_findings_of_a_recovered_round(tmp_path):
         "READ|part-001-of-001.patch\n```\nBLOCK|a.py:1|first breaks|run it\n```\n",
         encoding="utf-8")
     root = tmp_path / "root"
-    root.mkdir()
+    _ledger(root, {1: "FINDINGS"})
 
     result = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch",
                   str(scratch), "--round", "1")
@@ -1228,7 +1253,7 @@ def test_proposals_writes_a_round_with_no_block_or_fix(tmp_path, out):
     scratch.mkdir()
     (scratch / "out.txt").write_text(out, encoding="utf-8")
     root = tmp_path / "root"
-    root.mkdir()
+    _ledger(root, {1: "CLEAN" if "CLEAN" in out else "FINDINGS"})
 
     result = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch",
                   str(scratch), "--round", "1")
@@ -1237,6 +1262,183 @@ def test_proposals_writes_a_round_with_no_block_or_fix(tmp_path, out):
         encoding="utf-8")
     assert (result.returncode, "No BLOCK or FIX finding in this round." in text) == (
         0, True), result.stderr
+
+
+# ---- L-0518: proposals trusts the round's recorded verdict (F1) ---------------------
+
+def _proposals(root, scratch, round_no):
+    return _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch", str(scratch),
+                "--round", str(round_no))
+
+
+def _proposals_file(root, round_no):
+    return root / ".work" / "tickets" / "T-1" / f"standards-proposals-r{round_no}.md"
+
+
+def test_proposals_refuses_a_round_the_ledger_records_incomplete(tmp_path):
+    """Round 4's reproduction: an out.txt that parses as FINDINGS on its own
+    (parts 2 and 3 never acknowledged) from a round `finish` scored
+    INCOMPLETE. The ledger's verdict wins; nothing is written, so the
+    exclusive create stays free, and a later FINDINGS round is proposed."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "out.txt").write_text("READ|part-001-of-003.patch\nBLOCK|a.py:1|x|y\n",
+                                     encoding="utf-8")
+    root = tmp_path / "root"
+    _ledger(root, {1: "INCOMPLETE"})
+
+    first = _proposals(root, scratch, 1)
+    written = _proposals_file(root, 1).exists()
+    _ledger(root, {1: "INCOMPLETE", 2: "FINDINGS"})
+    second = _proposals(root, scratch, 2)
+
+    assert (first.returncode, "round 1" in first.stderr, "INCOMPLETE" in first.stderr,
+            "nothing written" in first.stderr, written, second.returncode,
+            _proposals_file(root, 2).exists()) == (1, True, True, True, False, 0, True), (
+        first.stderr, second.stderr)
+
+
+_NO_ROW_SHAPES = ("no-ledger", "unreadable-ledger", "no-row", "reserved-row", "row-not-an-object",
+                  "two-rows", "not-a-repository")
+
+
+@pytest.mark.parametrize("shape", _NO_ROW_SHAPES)
+def test_proposals_refuses_without_a_ledger_row(tmp_path, shape):
+    """Every way the round's verdict cannot be read is could-not-tell: refused,
+    nothing written (GEN-01), never "the out.txt alone decides"."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "out.txt").write_text(_OUT, encoding="utf-8")
+    root = tmp_path / "root"
+    if shape == "no-ledger":
+        init_repo(root)
+    elif shape == "unreadable-ledger":
+        with open(_ledger(root, {1: "FINDINGS"}), "w", encoding="utf-8") as fh:
+            fh.write("{")
+    elif shape == "no-row":
+        _ledger(root, {2: "FINDINGS"})
+    elif shape == "reserved-row":
+        _ledger(root, {1: None})
+    elif shape in ("row-not-an-object", "two-rows"):
+        path = _ledger(root, {1: "FINDINGS"})
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        data["rounds"].append("round 1" if shape == "row-not-an-object" else dict(data["rounds"][0]))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+    else:
+        root.mkdir()
+
+    result = _proposals(root, scratch, 1)
+
+    assert (result.returncode, "nothing written" in result.stderr, "Traceback" in result.stderr,
+            _proposals_file(root, 1).exists()) == (1, True, False, False), result.stderr
+
+
+# ---- L-0518: a SHA-256 repository's stamp (F3) ---------------------------------------
+
+def _sha256_repo(tmp_path):
+    repo = tmp_path / "repo"
+    made = subprocess.run(["git", "init", "-q", "--object-format=sha256", "-b", "main", str(repo)],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+    if made.returncode != 0:
+        version = subprocess.run(["git", "--version"], capture_output=True, text=True,
+                                 stdin=subprocess.DEVNULL, check=False).stdout.strip()
+        pytest.skip(f"git cannot create a SHA-256 repository here ({version}): "
+                    f"{made.stderr.strip()}")
+    git(repo, "config", "user.email", "t@example.com")
+    git(repo, "config", "user.name", "t")
+    git(repo, "config", "core.autocrlf", "false")
+    _commit(repo, "seed.txt", "seed\n")
+    return repo
+
+
+def test_stamp_and_gate_in_a_sha256_repository(tmp_path, refs):
+    import review_patch  # pylint: disable=import-outside-toplevel
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = _sha256_repo(tmp_path)
+    assert scope_base.record(str(repo), "T-1")[1] == "recorded"
+    _commit(repo, "change.txt", "c\n")
+    _approve_fixture(repo)
+
+    init_code, _ = cs.init(str(repo), "T-1", refs_dir=str(refs))
+    _answer_all(repo)
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+    _, seal, problems = cs.read_selfcheck(str(repo), "T-1")
+    base = scope_base.resolve(str(repo), "T-1")[0]
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(review_patch.compute(str(repo), base)[0]),
+                             encoding="utf-8")
+    gate, _ = cs.review_gate(str(repo), "T-1", str(manifest_path), refs_dir=str(refs))
+
+    assert (init_code, code, problems, len((seal or {}).get("base", "")), gate) == (
+        0, 0, [], 64, []), (lines, problems, gate)
+
+
+@pytest.mark.parametrize("length, parses", [(39, False), (40, True), (41, False), (63, False),
+                                            (64, True), (65, False)])
+def test_stamp_base_of_another_length_refuses(tmp_path, refs, length, parses):
+    repo, _ = _stamped(tmp_path, refs)
+    path = repo / ".work" / "tickets" / "T-1" / "selfcheck.md"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(re.sub(r"base=[0-9a-f]+ -->", f"base={'a' * length} -->", text),
+                    encoding="utf-8")
+
+    _, seal, problems = cs.read_selfcheck(str(repo), "T-1")
+
+    assert ((seal or {}).get("base"), any("does not parse" in p for p in problems)) == (
+        ("a" * length if parses else None), not parses), problems
+
+
+# ---- L-0518: plan-time `sets --touch` (F4) -------------------------------------------
+
+def _touch_spec(root, touch_lines, ticket="T-1"):
+    folder = root / ".work" / "tickets" / ticket
+    folder.mkdir(parents=True, exist_ok=True)
+    body = "# T\n\n## Intent\nx\n\n"
+    if touch_lines is not None:
+        body += "## Touch\n" + "".join(f"- `{line}`\n" for line in touch_lines)
+    (folder / "spec.md").write_text(body, encoding="utf-8")
+
+
+@pytest.mark.parametrize("touch, stacks", [(["plugin/x/*.php"], ["PHP-01"]),
+                                           (["docs/*.md"], []),
+                                           (["docs/*.md", "src/a.php"], ["PHP-01"])])
+def test_sets_touch_needs_no_scope_base(tmp_path, refs, touch, stacks):
+    repo = init_repo(tmp_path / "repo")
+    _approve_fixture(repo)
+    _touch_spec(repo, touch)
+
+    code, lines = cs._sets(str(repo), "T-1", refs_dir=str(refs), touch=True)  # pylint: disable=protected-access
+
+    listed = [line.split(" ", 1)[0] for line in lines[1:]]
+    assert (code, listed, "scope base" in "\n".join(lines)) == (
+        0, ["GEN-01", "GEN-02"] + stacks, False), lines
+
+
+@pytest.mark.parametrize("shape", ["no-touch-section", "no-spec"])
+def test_sets_touch_unknown_lists_every_set(tmp_path, refs, shape):
+    repo = init_repo(tmp_path / "repo")
+    if shape == "no-touch-section":
+        _touch_spec(repo, None)
+
+    code, lines = cs._sets(str(repo), "T-1", refs_dir=str(refs), touch=True)  # pylint: disable=protected-access
+
+    listed = [line.split(" ", 1)[0] for line in lines if re.match(r"^[A-Z]+-\d\d ", line)]
+    assert (code, any(line.startswith("UNKNOWN:") for line in lines), listed) == (
+        1, True, ["GEN-01", "GEN-02", "PHP-01"]), lines
+
+
+def test_sets_touch_cli_runs_without_a_scope_base(tmp_path):
+    repo = init_repo(tmp_path / "repo")
+    _touch_spec(repo, ["plugin/x/*.py"])
+
+    touch = _cli("sets", "--root", str(repo), "--ticket", "T-1", "--touch")
+    plain = _cli("sets", "--root", str(repo), "--ticket", "T-1")
+
+    assert (touch.returncode, "PYTHON-01" in touch.stdout, plain.returncode,
+            "no scope base recorded for T-1" in plain.stderr) == (0, True, 1, True), (
+        touch.stdout, touch.stderr, plain.stderr)
 
 
 @pytest.mark.parametrize("token, key", [("std:none", "std_none"),

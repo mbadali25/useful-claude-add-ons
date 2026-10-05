@@ -1843,7 +1843,8 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `--record`, which would rewrite it with this ticket's entry alone (`_scope_entry` tells it
   from an absent record through `_read_bytes`). It takes `review_patch.compute`'s
   `bundle_sha256` over it, refuses if the file's bytes changed meanwhile, and writes
-  `_STAMP_RE`'s line (`:86`) under the header through a temp file and `os.replace`
+  `_STAMP_RE`'s line (`:87`, `base=` exactly 40 or 64 hex since L-0518, so a SHA-256
+  repository stamps) under the header through a temp file and `os.replace`
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` first calls main's `preflight`
@@ -1881,13 +1882,20 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   each class's `seen:` line names the standard ids it echoes, held to a shipped set or the
   overlay by `test_every_class_names_a_standard_that_exists`
   (`plugin/crew/tests/test_recurring_findings.py`), and the standard wins on a conflict.
-- **Loop and metric.** `proposals` (`:724`) exclusive-creates
-  `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped, and
-  refuses an out.txt the parser calls INCOMPLETE, writing nothing; `metric_summary` (`:795`)
+- **Loop and metric.** `proposals` (`:764`) exclusive-creates
+  `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped. Since
+  L-0518 it first requires the review ledger's row for the round (`_recorded_verdict`
+  `:733`, read through `review_ledger.status`) to be completed CLEAN or FINDINGS,
+  and refuses any other verdict, no row, two rows or an unreadable ledger; it then refuses an
+  out.txt the parser calls INCOMPLETE; either refusal writes nothing.
+  `sets --touch` (`_touch_sets` `:921`) lists the effective set from the spec's Touch
+  list with no scope base, through `effective_set`'s `applies` predicate and
+  `recurring_findings.matches(..., touch=True)`, and lists every set under `UNKNOWN:` (exit 1)
+  when the spec or its Touch list cannot be read; `metric_summary` (`:842`)
   groups round-1 rows from `crew_migrate.metrics_rows` by ticket and sides each row with
-  `_std_side` (`:778`, on `_STD_TOKEN_RE` `:89`): no token is before, `std:<8 hex>` after,
+  `_std_side` (`:825`, on `_STD_TOKEN_RE` `:90`): no token is before, `std:<8 hex>` after,
   and `std:none` or any other `std:` value is counted on neither side, as are unknown
-  rounds; `metric --record` (`:832`) appends a line with no `|`.
+  rounds; `metric --record` (`:879`) appends a line with no `|`.
 - **Tests.** `plugin/crew/tests/test_crew_standards.py`, `test_review_run_standards.py`,
   `test_review_prompt.py`, `test_lifecycle_commands.py`; fifty-one mutations in
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:61`; 44 at origin/main

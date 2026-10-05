@@ -148,8 +148,10 @@ BLOCK stops for you unless you set <code>autopilot.maxAutoReplans</code> (defaul
 then autopilot rejects it itself, writes a successor plan that quotes every BLOCK
 and FIX line, approves it under <code>autopilot.approval</code> and reviews again, at most
 that many successor plans per ticket. Each round's findings go into a
-<code>standards-proposals-r&lt;N&gt;.md</code> file, one row per finding; you approve or reject
-each proposed standard, and nothing is added to a standards file on its own.</p>
+<code>standards-proposals-r&lt;N&gt;.md</code> file, one row per finding, once the review ledger
+records that round as CLEAN or FINDINGS (an INCOMPLETE round gets none); you
+approve or reject each proposed standard, and nothing is added to a standards
+file on its own.</p>
 <p>With parallel lanes in one clone, arm its <strong>merge train</strong> once (<code>crew_train.py arm</code>, L-0520).
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
 Before the review round, <code>crew_train.py acquire --ticket T-0091</code> takes the train: a ticket whose
