@@ -81,6 +81,17 @@ RELATED = {
              ("/crew:handoff", "stopping before closing")),
     "closed": (("/crew:status", "the other open tickets"),
                ("/crew:help commands", "every command, by group")),
+    # Phases autopilot gained after T-0025 (crew_autopilot.WAITING).
+    "auto-replan": (("/crew:autopilot status {t}", "the review ledger and this ticket's standing"),
+                    ("/crew:plan {t}", "the successor plan autopilot drafts")),
+    "auto-replan-cap": (("/crew:autopilot status {t}", "the successor plans already on the ledger"),
+                        ("/crew:plan {t}", "write the next plan yourself")),
+    "needs-owner": (("/crew:autopilot status {t}", "why the owner is needed"),
+                    ("/crew:handoff", "stopping until the owner decides")),
+    "drift": (("/crew:autopilot status {t}", "which changed path is outside Touch"),
+              ("/crew:status", "the full picture of this repo")),
+    "ship": (("/crew:autopilot status {t}", "the PR and receipt state"),
+             ("/crew:status", "the full picture of this repo")),
 }
 NO_TICKET_RELATED = (("/crew:status", "the full picture of this repo"),
                      ("/crew:help commands", "every command, by group"))
@@ -95,6 +106,8 @@ STOP_NEXT = {
     "refresh": "/crew:status - the refresh cannot run by itself",
     "stale-after-review": "/crew:autopilot status {t} - an artifact went stale after "
                           "the accepted review; a human decides",
+    "drift": "you decide: widen the spec's Touch and re-approve, or revert the path outside it",
+    "auto-replan-cap": "you decide the next plan: /crew:plan {t}, then you type /crew:approve {t}",
 }
 
 # One line each for the core commands: (when, next).
