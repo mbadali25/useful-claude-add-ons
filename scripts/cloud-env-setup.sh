@@ -48,6 +48,12 @@ PWSH_DIR='/opt/microsoft/powershell/7'
 # instead of loosening /tmp. The lock timeout waits out an apt run already going.
 APT=(apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600)
 
+# Session start waits on this script, so no download may hang it: curl gives up
+# after 10 minutes, git when a transfer stalls under 1 KB/s for 30 seconds.
+CURL=(curl -fsSL --connect-timeout 20 --max-time 600)
+export GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30
+export DEBIAN_FRONTEND=noninteractive
+
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PATH="$HOME/.local/bin:$PATH"
 LOG_DIR=$(mktemp -d)
@@ -59,15 +65,15 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 # latest_tag <owner/repo>: newest stable vX.Y.Z tag, through git (the API is 403).
 latest_tag() {
-  git ls-remote --tags --refs "https://github.com/$1.git" |
+  timeout 120 git ls-remote --tags --refs "https://github.com/$1.git" |
     sed 's#.*refs/tags/##' | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
 }
 
 # step <name> <function>: run it with its output captured; on failure print that
-# output and carry on.
+# output and carry on. No stdin: nothing here may stop to ask a question.
 step() {
   local name=$1 out="$LOG_DIR/$1.log"; shift
-  if "$@" >"$out" 2>&1; then
+  if "$@" </dev/null >"$out" 2>&1; then
     grep '^\[cloud-env-setup\]' "$out" || true
   else
     local rc=$?
@@ -102,13 +108,26 @@ codex_cli() {
 # ---- Python: libraries the suites import --------------------------------------
 # .crew/verify.json runs `python3 -m pytest`, which needs pytest importable by the
 # system python3, not just a pytest CLI on PATH. Same set as verify-gate.yml.
+# A pytest other than 8.x counts as missing, so the install re-pins it.
+#
+# The base image also ships pytest 9 as a uv tool in ~/.local/bin: isolated (no
+# xdist) and ahead of this pytest on PATH, so `pytest -n auto` breaks. Drop it,
+# then check what PATH actually resolves; a wrong pytest fails this CORE step.
 py_libs() {
-  local libs=("$PYTEST_SPEC" pytest-xdist pyyaml python-docx numpy pillow requests markdown)
-  if python3 -c 'import pytest, xdist, yaml, docx, numpy, PIL, requests, markdown' 2>/dev/null; then
+  local libs=("$PYTEST_SPEC" pytest-xdist pyyaml python-docx numpy pillow requests markdown) pv
+  if python3 -c 'import pytest, xdist, yaml, docx, numpy, PIL, requests, markdown
+assert pytest.__version__.startswith("8.")' 2>/dev/null; then
     log "python3: suite libraries already importable"
   else
-    uv pip install --system --break-system-packages "${libs[@]}" && log "python3: installed ${libs[*]}"
+    uv pip install --system --break-system-packages "${libs[@]}" && log "python3: installed ${libs[*]}" || return
   fi
+  if uv tool list 2>/dev/null | grep -q '^pytest v'; then
+    uv tool uninstall pytest && log "pytest: removed the image's uv-tool pytest (shadowed $PYTEST_SPEC)" || return
+  fi
+  hash -r
+  pv=$(pytest --version 2>&1)
+  case $pv in "pytest 8."*) ;; *) echo "pytest on PATH is not 8.x: $(command -v pytest): $pv" >&2; return 1;; esac
+  log "python3: PATH resolves $pv"
 }
 
 # ---- Python: CLIs as isolated uv tools ----------------------------------------
@@ -123,21 +142,15 @@ uv_tool() {  # uv_tool <spec>
   fi
 }
 
-# The base image ships pytest 9 as a uv tool in ~/.local/bin: isolated (no xdist)
-# and ahead of py-libs' pytest~=8 on PATH, so `pytest -n auto` breaks. Drop it,
-# then check what PATH actually resolves. A wrong ruff or pytest fails this CORE
+# Check what PATH actually resolves: another ruff earlier on PATH fails this CORE
 # step loudly rather than letting a local run disagree with CI.
 ruff_tool() {
   uv_tool "$RUFF_SPEC" || return
-  if uv tool list 2>/dev/null | grep -q '^pytest v'; then
-    uv tool uninstall pytest && log "pytest: removed the image's uv-tool pytest (shadowed $PYTEST_SPEC)"
-  fi
   hash -r
-  local rv pv
-  rv=$(ruff --version 2>&1); pv=$(pytest --version 2>&1)
+  local rv
+  rv=$(ruff --version 2>&1)
   case $rv in "ruff 0.16."*) ;; *) echo "ruff on PATH is not 0.16.x: $(command -v ruff): $rv" >&2; return 1;; esac
-  case $pv in "pytest 8."*) ;; *) echo "pytest on PATH is not 8.x: $(command -v pytest): $pv" >&2; return 1;; esac
-  log "ruff: $rv and $pv are what PATH resolves"
+  log "ruff: PATH resolves $rv"
 }
 
 # actionlint-py has no wheel: building it downloads the binary from github.com
@@ -159,9 +172,9 @@ actionlint_tool() {
 # allowance, and the .deb cache is dead weight once installed.
 apt_install() {
   "${APT[@]}" update -qq &&
-  DEBIAN_FRONTEND=noninteractive "${APT[@]}" install -y -qq "$@" &&
+  "${APT[@]}" install -y -qq "$@" &&
   log "apt: installed $*" || return
-  apt-get clean
+  apt-get clean || true
 }
 
 # bubblewrap (bwrap) is Codex's sandbox. Without it on PATH, every codex run warns
@@ -182,31 +195,57 @@ apt_tools() {
 
 # ---- PowerShell 7 ------------------------------------------------------------
 # crew's .ps1 hooks, install-prerequisites.ps1 and the suites' pwsh cases need it.
-# The tarball from the newest stable tag's release, unpacked where Microsoft's
-# package puts it. If github.com's release download is refused (the setup phase's
-# network can differ from the session's), fall back to Microsoft's apt repo.
+# The tarball from the newest stable tag's release, checked against that
+# release's hashes.sha256 and unpacked where Microsoft's package puts it. If the
+# download is refused (the setup phase's network can differ from the session's),
+# the hash is missing or wrong, or the unpacked pwsh cannot start (no libicu, say),
+# fall back to Microsoft's apt repo. Installed means pwsh reports a version.
 # shellcheck disable=SC2016  # PowerShell's $, not bash's
-pwsh_version() { pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null; }
+pwsh_version() { "${1:-pwsh}" -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null; }
+
+# pwsh_tarball <tag> <ver> <arch>
+pwsh_tarball() {
+  local file="powershell-$2-linux-$3.tar.gz" base="https://github.com/PowerShell/PowerShell/releases/download/$1"
+  local tgz="$LOG_DIR/powershell.tar.gz" want got rc
+  "${CURL[@]}" -o "$tgz" "$base/$file" || return
+  # hashes.sha256 is UTF-16LE with a BOM and CRLF line ends; lines read "<hash> *<file>".
+  want=$("${CURL[@]}" "$base/hashes.sha256" | iconv -f UTF-16 -t UTF-8 | tr -d '\r' |
+    awk -v f="$file" '{n=$2; sub(/^\*/, "", n)} n == f {print tolower($1)}')
+  got=$(sha256sum "$tgz" | cut -d' ' -f1)
+  if [ -z "$want" ] || [ "$want" != "$got" ]; then
+    if [ -z "$want" ]; then echo "pwsh: no sha256 for $file in hashes.sha256" >&2
+    else echo "pwsh: sha256 of $file is $got, hashes.sha256 says $want" >&2; fi
+    rm -f "$tgz"; return 1
+  fi
+  mkdir -p "$PWSH_DIR" && tar -xzf "$tgz" -C "$PWSH_DIR" && chmod +x "$PWSH_DIR/pwsh"; rc=$?
+  rm -f "$tgz"
+  [ "$rc" -eq 0 ] || return "$rc"
+  [ -n "$(pwsh_version "$PWSH_DIR/pwsh")" ] || { echo "pwsh: the unpacked $PWSH_DIR/pwsh does not start" >&2; return 1; }
+  ln -sf "$PWSH_DIR/pwsh" /usr/local/bin/pwsh
+}
+
 pwsh_tool() {
-  if have pwsh; then log "pwsh: already installed ($(pwsh_version))"; return; fi
-  local tag ver arch tgz="$LOG_DIR/pwsh.tar.gz"
+  local v tag ver arch vid deb="$LOG_DIR/packages-microsoft-prod.deb"
+  v=$(pwsh_version)
+  if [ -n "$v" ]; then log "pwsh: already installed ($v)"; return; fi
   case $(uname -m) in x86_64|amd64) arch=x64;; aarch64|arm64) arch=arm64;; *) echo "unsupported arch $(uname -m)" >&2; return 1;; esac
   tag=$(latest_tag PowerShell/PowerShell); ver=${tag#v}
-  if [ -n "$ver" ] &&
-     curl -fsSL -o "$tgz" "https://github.com/PowerShell/PowerShell/releases/download/${tag}/powershell-${ver}-linux-${arch}.tar.gz" &&
-     mkdir -p "$PWSH_DIR" && tar -xzf "$tgz" -C "$PWSH_DIR" && chmod +x "$PWSH_DIR/pwsh" &&
-     ln -sf "$PWSH_DIR/pwsh" /usr/local/bin/pwsh; then
-    rm -f "$tgz"
-    log "pwsh: installed $(pwsh_version) from the $tag release tarball"
+  if [ -n "$ver" ] && pwsh_tarball "$tag" "$ver" "$arch"; then
+    hash -r
+    log "pwsh: installed $(pwsh_version) from the $tag release tarball (sha256 checked)"
     return
   fi
-  rm -f "$tgz"
   log "pwsh: release tarball for '${tag:-no tag resolved}' failed, trying Microsoft's apt repo"
+  # A subshell, so a missing VERSION_ID cannot trip `set -u` in this script.
   # shellcheck disable=SC1091
-  . /etc/os-release
-  local deb="$LOG_DIR/packages-microsoft-prod.deb"
-  curl -fsSL "https://packages.microsoft.com/config/ubuntu/${VERSION_ID}/packages-microsoft-prod.deb" -o "$deb" &&
-  dpkg -i "$deb" && apt_install powershell
+  vid=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-}")
+  [ -n "$vid" ] || { echo "pwsh: no VERSION_ID in /etc/os-release, cannot pick Microsoft's repo" >&2; return 1; }
+  "${CURL[@]}" "https://packages.microsoft.com/config/ubuntu/${vid}/packages-microsoft-prod.deb" -o "$deb" &&
+  dpkg -i "$deb" && apt_install powershell || return
+  hash -r
+  v=$(pwsh_version)
+  [ -n "$v" ] || { echo "pwsh: installed from apt but does not start" >&2; return 1; }
+  log "pwsh: installed $v from Microsoft's apt repo"
 }
 
 # ---- Node tools --------------------------------------------------------------
@@ -223,8 +262,11 @@ mermaid_cli() {
   fi
 }
 
+# npm ci writes node_modules/.package-lock.json; a package-lock.json newer than
+# that (a pull moved the deps) means node_modules is stale and npm ci reruns.
 mcp_deps() {
-  if [ -d "$REPO/mcp-servers/node_modules" ]; then
+  local d="$REPO/mcp-servers"
+  if [ -f "$d/node_modules/.package-lock.json" ] && ! [ "$d/package-lock.json" -nt "$d/node_modules/.package-lock.json" ]; then
     log "mcp-servers: node_modules already installed"
   else
     (cd "$REPO/mcp-servers" && npm ci --no-audit --no-fund) && log "mcp-servers: npm ci done"
@@ -233,9 +275,14 @@ mcp_deps() {
 
 # ---- gizmoduck scanners ------------------------------------------------------
 # bootstrap.sh reinstalls every scanner on each run, so skip it when all of them
-# are already on PATH. Until the C-0008 fix (PR #506) lands, it looks up the
+# are already on PATH. Before the C-0008 fix (PR #506), bootstrap.sh looks up the
 # Nuclei, dependency-check and ZAP versions through api.github.com, which answers
-# 403 here, so those three fail on a fresh container and the rest install.
+# 403 here. A failed Nuclei install then fails the template update, which exits 1
+# and stops bootstrap before nmap, nikto, testssl.sh, trivy and the rest: on a
+# fresh container this step installs almost nothing and is reported FAILED (it
+# is optional, so setup still exits 0). After #506 (a git-tag fallback for the
+# version, skip-if-present, a templates-on-disk check) Nuclei installs here and
+# bootstrap runs to the end.
 GIZMODUCK_TOOLS=(nuclei nmap nikto testssl.sh trivy checkov semgrep dependency-check sqlmap zap.sh)
 gizmoduck_scanners() {
   local t missing=()
@@ -243,7 +290,17 @@ gizmoduck_scanners() {
   if [ "${#missing[@]}" -eq 0 ]; then
     log "gizmoduck: scanners already installed (${GIZMODUCK_TOOLS[*]})"
   else
-    bash "$REPO/plugin/gizmoduck/bootstrap.sh" && log "gizmoduck: bootstrap.sh installed ${missing[*]}"
+    local rc still=()
+    bash "$REPO/plugin/gizmoduck/bootstrap.sh"; rc=$?
+    hash -r
+    for t in "${missing[@]}"; do have "$t" || still+=("$t"); done
+    if [ "${#still[@]}" -eq 0 ] && [ "$rc" -eq 0 ]; then
+      log "gizmoduck: bootstrap.sh installed ${missing[*]}"
+      return
+    fi
+    log "gizmoduck: bootstrap.sh exited $rc; still missing: ${still[*]:-none}"
+    [ "$rc" -ne 0 ] || rc=1
+    return "$rc"
   fi
 }
 
