@@ -48,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 02:20 UTC
+Last updated: 2026-10-05 02:22 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 03:00: batch 6 merge review: 1 BLOCK (test_tool_resolution.py:66 pins crew_platform.py:144; T-0050 moved the gate to :145, so 4 tests fail: a semantic conflict only the full suite shows), 1 FIX (PLUGINS.md:38 lost T-0050 platform-sync text). REPO_ONLY_AUTOPILOT verified by running settings(). Sent to the builder with 3 NITs. LESSON: a batch must run the FULL crew suite, not the mapped subset.
 - 02:50: C-0001 built: draft #501 c2a133b7, CI green. Fail-open review started; subscribed. Minted C-0004 (Windows decide skips on scripts/** though crew reads scripts/).
 - 02:40: batch 6 builder stopped on T-0020: its focus_guard (pointer=focus) refuses assign/goal/wave/split that main's router sends (55 route tests red). Owner: explicit focus only; ship batch 6 with 4. Builder finishing batch 6 at 1.0.348; merge-resolution review started; T-0020 rework builder started.
 - 02:25: MERGED #496 L-1508 PR B -> 8479a837 (crew 1.0.347), CI 29/29; ALONGSIDE README.md change sabotage-verified by coordinator (19/20 without, 20/20 with). Batch 6 builder told: version 1.0.348.
