@@ -31,6 +31,7 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 5 | G3b bridge / recall / config / graph | `rush/g3b-bridge` | #434, #437, #442, #425, #414, #447, #455 | 1.1.7 | building |
 | 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.4 | building |
 | 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
+| 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | waiting on PRs |
 | 8 | G6 autopilot builds, sleep, goals | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435, then L-0541 (no PR yet), #459, #463, #469 | next free | after G2 lands (T-0012) |
 | 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
 | 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
@@ -54,7 +55,15 @@ Placed by what each ticket says it touches; re-placed when its PR shows the real
 | L-0514 | INCOMPLETE review rounds retry automatically after a tool-failure refund | H1 | review loop |
 | T-0033 | version-only re-bump does not stale a review receipt | H1 | review receipt hash |
 | L-0525 | sabotage suite: 13 vacuous entries, 1 unproven, cloud-guard r1 OOM | H2 | sabotage suite |
-| L-0519 | reconcile crew-standards with crew-qa-standards | G1b | skills/docs; moves to H1 if it touches HARNESS |
+| L-0519 | reconcile crew-standards with crew-qa-standards | G7 | lands first in G7: the language sets below build on one reconciled source |
+| L-0532 | SQL standards set (MySQL/MariaDB, MSSQL, PostgreSQL), T-0086 slice | G7 | `crew-standards/references/` + index |
+| L-0533 | PHP standards set, T-0086 slice | G7 | same files |
+| L-0534 | PowerShell standards set, T-0086 slice | G7 | same files |
+| L-0535 | .NET standards set, T-0086 slice | G7 | same files |
+| L-0536 | Terraform standards set, T-0086 slice | G7 | same files |
+| L-0537 | Node.js standards set, T-0086 slice | G7 | same files |
+| L-0538 | Angular 2+ standards set (AngularJS 1.x out of scope, owner 2026-09-28), T-0086 slice | G7 | same files |
+| L-0530 | crew_tracker maps merged/approved/new/land-blocked to lanes | G1 | `crew_tracker.py`, with #464 T-0071 |
 | L-0517 | heavy-run logs each lane's slot wait | G5 | gate-runner / heavy-run tooling |
 | L-0511 | version bump and artifact refresh happen once at land | G5 | release bookkeeping; H1 if it touches HARNESS |
 | L-0515 | dependency-aware lane scheduling (folded into L-0520) | G6 | autopilot lanes; L-0520 is on main |
