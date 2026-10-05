@@ -616,6 +616,28 @@ def test_no_retry_when_a_source_file_changed(repo, tmp_path, monkeypatch, capsys
         3, 1, 1, True), out
 
 
+def test_a_retry_whose_preflight_read_a_spent_budget_never_reserves_gated(
+        repo, tmp_path, monkeypatch, capsys):
+    """H1 group review r4 (must-block): the retry's preflight reads the
+    budget as spent, so it skips the merge train; the ledger, read again
+    under the reservation's lock, is not spent. The retry must reserve on
+    preflight's decision (ungated), so the lock refuses it (GATE_CHANGED) and
+    no second round starts without the train."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    spent = []
+    real = review_run._budget_spent  # pylint: disable=protected-access
+    monkeypatch.setattr(review_run, "_budget_spent", lambda args: bool(spent) or real(args))
+
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean",
+                               lambda _: spent.append(True))
+
+    captured = capsys.readouterr()
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the ledger refused the retry's reservation"
+            in captured.out, rl.GATE_CHANGED in captured.err) == (3, 2, 1, True, True), (
+        captured.out + captured.err)
+
+
 def test_a_refused_retry_keeps_review_json_canonical(repo, tmp_path, monkeypatch, capsys):
     """L-0514 review: the failed round's review.json is moved aside only once
     the retry holds a round; a refused reservation leaves it in place."""

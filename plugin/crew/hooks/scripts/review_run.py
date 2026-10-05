@@ -1848,8 +1848,12 @@ def run(args):
             _out(f"review: retry: not retried - {why}")
             _out(RETRY_OPTIONS)
             return status
-        ok, retry_number, message = review_ledger.reserve(args.root, args.ticket,
-                                                          args.provider, args.model)
+        # On the retry preflight's own budget decision, as the first
+        # reservation (H1 group review r4): a train that read skipped is never
+        # followed by a gated reservation.
+        ok, retry_number, message = review_ledger.reserve(
+            args.root, args.ticket, args.provider, args.model,
+            gated=not getattr(args, "budget_spent", False))
         _err(f"review-run: {message}\n")
         if not ok:
             _out("review: retry: not retried - the ledger refused the retry's reservation")

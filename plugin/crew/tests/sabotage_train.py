@@ -119,6 +119,11 @@ TRAIN_MUTATIONS = (
      "    gated = not (_budget_spent(args) if spent is None else spent)\n",
      "    gated = not _budget_spent(args)\n",
      _R + "test_a_train_skipped_for_a_spent_budget_never_reserves_gated"),
+    ("R11 a retry reserves gated after its preflight skipped the train", RUN,
+     "            gated=not getattr(args, \"budget_spent\", False))\n",
+     "            gated=True)\n",
+     "tests/test_review_refund.py::"
+     "test_a_retry_whose_preflight_read_a_spent_budget_never_reserves_gated"),
     ("R9 a FIFO train state is opened and blocks", RUN,
      "        if odd:\n            _err(f\"review-run: train: could not tell ({odd}); "
      "no round reserved\\n\")\n",
