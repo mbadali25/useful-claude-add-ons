@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 05:25: owner asked for batch 8: no eligible members yet (all others red/harness/blocked). Started Windows sweep round 1 now (3 at a time): #344, #362, #395 (merge main, classify old failures, re-run Windows). Round 2 later: #341, #342, #346, #363, #366.
 - 05:20: owner: start the next spec-draft wave in parallel while #501/batch 7 wait. Planner picking 4-5 unbuilt, deps-on-main tickets that avoid batch 7's files.
 - 05:10: owner: crew 1.1.0 (C-0006) closes this rush; next rush = remaining new draft PRs (spec-draft waves).
 - 05:00: #357 857188a6 CI done: all Windows green, only red = expected bump. Fully ready for batch 7; unsubscribed (batch PR is the gate now).
