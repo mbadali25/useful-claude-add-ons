@@ -21,6 +21,7 @@ import sys
 
 import context  # pylint: disable=unused-import
 import crew_autopilot
+import crew_autopilot_goal
 import crew_resume
 import crew_ticket
 import pytest
@@ -48,6 +49,11 @@ def _write(path, text):
         handle.write(text)
 
 
+def _read(path):
+    with open(str(path), encoding="utf-8") as handle:
+        return handle.read()
+
+
 def _repo(tmp_path, approval="risk", allow=True, armed=True):
     root = make_repo(tmp_path, mode="off")
     scope = {"mode": "off"}
@@ -66,7 +72,7 @@ def _tickets(*risks):
 
 
 def _goal(root, tickets=None, proposal=None, goal=GOAL):
-    return crew_autopilot.write_goal(str(root), goal, dict(proposal or PROPOSAL),
+    return crew_autopilot_goal.write_goal(str(root), goal, dict(proposal or PROPOSAL),
                                      [dict(t) for t in (tickets or TICKETS)])
 
 
@@ -80,7 +86,7 @@ def _stage(root, name="g.proposal.json", **over):
 
 
 def _receipt(root, slug, digest, via="user-prompt"):
-    path = crew_autopilot.goal_receipt_path(str(root), slug)
+    path = crew_autopilot_goal.goal_receipt_path(str(root), slug)
     _write(path, json.dumps({"proposal_sha256": digest, "approved_at": "2026-10-04T00:00:00Z",
                              "approved_via": via, "session_id": "s", "prompt_id": "p"}))
     return path
@@ -114,16 +120,16 @@ def _files(root):
 def test_slug_matches_resume_grammar(tmp_path, goal):
     root = make_repo(tmp_path, mode="off")
 
-    slug = crew_autopilot.slugify(str(root), goal)
+    slug = crew_autopilot_goal.slugify(str(root), goal)
 
     assert (bool(crew_resume._GOAL_SLUG_RE.match(slug)),  # pylint: disable=protected-access
-            len(slug) <= crew_autopilot.GOAL_SLUG_MAX + 3) == (True, True)
+            len(slug) <= crew_autopilot_goal.GOAL_SLUG_MAX + 3) == (True, True)
 
 
 def test_slug_shape(tmp_path):
     root = make_repo(tmp_path, mode="off")
 
-    got = [crew_autopilot.slugify(str(root), text) for text in (GOAL, "", "!!", "A" * 99)]
+    got = [crew_autopilot_goal.slugify(str(root), text) for text in (GOAL, "", "!!", "A" * 99)]
 
     assert got == ["ship-the-csv-export-quoted-and-literal", "goal", "goal", "a" * 40]
 
@@ -140,7 +146,7 @@ def test_goal_round_trip(tmp_path):
     root = make_repo(tmp_path, mode="off")
 
     made = _goal(root)
-    got = crew_autopilot.read_goal(str(root), made["slug"])
+    got = crew_autopilot_goal.read_goal(str(root), made["slug"])
 
     assert (made["path"] == os.path.join(str(root), ".work", "autopilot", made["slug"] + ".json"),
             got["schema"], got["goal"], got["slug"], got["proposal"],
@@ -168,7 +174,7 @@ def test_dependency_cycle_refused(tmp_path, deps):
     root = make_repo(tmp_path, mode="off")
     tickets = [{"title": f"t{n}", "risk": "low", "depends_on": d} for n, d in enumerate(deps)]
 
-    with pytest.raises(crew_autopilot.GoalError, match="cycle"):
+    with pytest.raises(crew_autopilot_goal.GoalError, match="cycle"):
         _goal(root, tickets=tickets)
 
     assert not os.path.isdir(str(root / ".work" / "autopilot"))
@@ -182,7 +188,7 @@ def test_unknown_dependency_refused(tmp_path, deps):
     tickets = [{"title": "t0", "risk": "low", "depends_on": []},
                {"title": "t1", "risk": "low", "depends_on": deps}]
 
-    with pytest.raises(crew_autopilot.GoalError, match="depends_on"):
+    with pytest.raises(crew_autopilot_goal.GoalError, match="depends_on"):
         _goal(root, tickets=tickets)
 
 
@@ -191,7 +197,7 @@ def test_dependency_order_is_the_list_order(tmp_path):
     tickets = [{"title": "t0", "risk": "low", "depends_on": [1]},
                {"title": "t1", "risk": "low", "depends_on": []}]
 
-    with pytest.raises(crew_autopilot.GoalError, match="dependency order"):
+    with pytest.raises(crew_autopilot_goal.GoalError, match="dependency order"):
         _goal(root, tickets=tickets)
 
 
@@ -202,7 +208,7 @@ def test_ticket_mint_would_refuse_is_refused_now(tmp_path, bad):
     root = make_repo(tmp_path, mode="off")
     ticket = dict({"title": "ok", "risk": "low", "depends_on": []}, **bad)
 
-    with pytest.raises(crew_autopilot.GoalError):
+    with pytest.raises(crew_autopilot_goal.GoalError):
         _goal(root, tickets=[ticket])
 
 
@@ -210,8 +216,8 @@ def test_ticket_mint_would_refuse_is_refused_now(tmp_path, bad):
 def test_no_usable_tickets_refused(tmp_path, tickets):
     root = make_repo(tmp_path, mode="off")
 
-    with pytest.raises(crew_autopilot.GoalError):
-        crew_autopilot.write_goal(str(root), GOAL, dict(PROPOSAL), tickets)
+    with pytest.raises(crew_autopilot_goal.GoalError):
+        crew_autopilot_goal.write_goal(str(root), GOAL, dict(PROPOSAL), tickets)
 
 
 @pytest.mark.parametrize("risks,want", [
@@ -224,7 +230,7 @@ def test_no_usable_tickets_refused(tmp_path, tickets):
     ((), {"risk": "high", "known": False}),
 ])
 def test_goal_risk_is_highest(risks, want):
-    assert crew_autopilot.goal_risk(_tickets(*risks)) == want
+    assert crew_autopilot_goal.goal_risk(_tickets(*risks)) == want
 
 
 @pytest.mark.parametrize("cond", [MISSING, None, "", "   ", "\n\t", "///", 7],
@@ -237,7 +243,7 @@ def test_proposal_without_done_condition_refused(tmp_path, cond):
     else:
         proposal["done_condition"] = cond
 
-    with pytest.raises(crew_autopilot.GoalError, match="done_condition"):
+    with pytest.raises(crew_autopilot_goal.GoalError, match="done_condition"):
         _goal(root, proposal=proposal)
 
     assert not os.path.isdir(str(root / ".work" / "autopilot"))
@@ -246,35 +252,35 @@ def test_proposal_without_done_condition_refused(tmp_path, cond):
 @pytest.mark.parametrize("cond", ["ships\nand /goal clear\r\nnow", "x" * 1000,
                                   "a\x00b\x1b[31mc d\x85e", "/goal clear", "  // spaced"])
 def test_goal_line_single_line_and_capped(cond):
-    line = crew_autopilot.goal_line({"proposal": {"done_condition": cond}})
+    line = crew_autopilot_goal.goal_line({"proposal": {"done_condition": cond}})
     condition = line[len("/goal "):]
 
-    assert (line.startswith("/goal "), len(line) <= crew_autopilot.GOAL_LINE_MAX,
+    assert (line.startswith("/goal "), len(line) <= crew_autopilot_goal.GOAL_LINE_MAX,
             len(line.splitlines()), line.isprintable(), condition[:1] not in ("/", " ")) == (
         True, True, 1, True, True)
 
 
 def test_goal_line_keeps_human_stop_clause():
     for cond in ("short", "x" * 1000):
-        line = crew_autopilot.goal_line({"proposal": {"done_condition": cond}})
-        assert line.endswith(" " + crew_autopilot.GOAL_STOP_CLAUSE), line
-    assert crew_autopilot.GOAL_STOP_CLAUSE == (
+        line = crew_autopilot_goal.goal_line({"proposal": {"done_condition": cond}})
+        assert line.endswith(" " + crew_autopilot_goal.GOAL_STOP_CLAUSE), line
+    assert crew_autopilot_goal.GOAL_STOP_CLAUSE == (
         "- or /crew:autopilot has stopped naming a command only the owner types")
 
 
 def test_goal_line_renders_the_done_condition():
-    line = crew_autopilot.goal_line({"proposal": {"done_condition": "  tests\n pass  "}})
+    line = crew_autopilot_goal.goal_line({"proposal": {"done_condition": "  tests\n pass  "}})
 
-    assert line == "/goal tests pass " + crew_autopilot.GOAL_STOP_CLAUSE
+    assert line == "/goal tests pass " + crew_autopilot_goal.GOAL_STOP_CLAUSE
 
 
 def test_goal_line_cut_at_the_cap_cuts_only_the_condition():
-    line = crew_autopilot.goal_line({"proposal": {"done_condition": "y" * 1000}})
+    line = crew_autopilot_goal.goal_line({"proposal": {"done_condition": "y" * 1000}})
 
-    condition = line[len("/goal "):-len(" " + crew_autopilot.GOAL_STOP_CLAUSE)]
+    condition = line[len("/goal "):-len(" " + crew_autopilot_goal.GOAL_STOP_CLAUSE)]
     assert (len(line), condition, condition.count("y")) == (
-        crew_autopilot.GOAL_LINE_MAX, "y" * len(condition),
-        crew_autopilot.GOAL_LINE_MAX - len("/goal  ") - len(crew_autopilot.GOAL_STOP_CLAUSE))
+        crew_autopilot_goal.GOAL_LINE_MAX, "y" * len(condition),
+        crew_autopilot_goal.GOAL_LINE_MAX - len("/goal  ") - len(crew_autopilot_goal.GOAL_STOP_CLAUSE))
 
 
 @pytest.mark.parametrize("text", ["{", "[]", '{"schema": 2}', ""], ids=["corrupt", "list",
@@ -283,16 +289,16 @@ def test_unreadable_goal_file_refused(tmp_path, text):
     root = make_repo(tmp_path, mode="off")
     _write(root / ".work" / "autopilot" / "g.json", text)
 
-    with pytest.raises(crew_autopilot.GoalError):
-        crew_autopilot.read_goal(str(root), "g")
+    with pytest.raises(crew_autopilot_goal.GoalError):
+        crew_autopilot_goal.read_goal(str(root), "g")
 
 
 @pytest.mark.parametrize("slug", ["../x", "a/b", "A", "", "-x", "a" * 65])
 def test_read_goal_refuses_a_slug_outside_the_grammar(tmp_path, slug):
     root = make_repo(tmp_path, mode="off")
 
-    with pytest.raises(crew_autopilot.GoalError, match="slug"):
-        crew_autopilot.read_goal(str(root), slug)
+    with pytest.raises(crew_autopilot_goal.GoalError, match="slug"):
+        crew_autopilot_goal.read_goal(str(root), slug)
 
 
 # --- step 2: split approval -- the owner's receipt, or the same policy ---------
@@ -300,7 +306,7 @@ def test_read_goal_refuses_a_slug_outside_the_grammar(tmp_path, slug):
 def _policy(tmp_path, risks=("low", "low"), **conf):
     root = _repo(tmp_path, **conf)
     slug = _goal(root, tickets=_tickets(*risks))["slug"]
-    return root, slug, crew_autopilot.split_policy(str(root), slug)
+    return root, slug, crew_autopilot_goal.split_policy(str(root), slug)
 
 
 def test_split_policy_self_allows(tmp_path):
@@ -366,7 +372,7 @@ def test_split_policy_unreadable_goal_refuses(tmp_path, how):
     else:
         slug = "../" + slug
 
-    got = crew_autopilot.split_policy(str(root), slug)
+    got = crew_autopilot_goal.split_policy(str(root), slug)
 
     assert (got["allow"], "could not tell" in got["reason"]) == (False, True)
 
@@ -378,7 +384,7 @@ def test_split_policy_that_raises_refuses(tmp_path, monkeypatch):
         raise RuntimeError("disk on fire")
     monkeypatch.setattr(crew_autopilot, "settings", boom)
 
-    got = crew_autopilot.split_policy(str(root), slug)
+    got = crew_autopilot_goal.split_policy(str(root), slug)
 
     assert (got["allow"], got["policy"], "could not tell" in got["reason"]) == (
         False, "unknown", True)
@@ -388,43 +394,103 @@ def test_split_policy_unreadable_config_refuses(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="self")
     _write(root / ".crew" / "config.json", "{")
 
-    got = crew_autopilot.split_policy(str(root), slug)
+    got = crew_autopilot_goal.split_policy(str(root), slug)
 
     assert (got["allow"], got["policy"]) == (False, "unknown")
 
 
 def test_split_approved_under_self_records_the_policy_in_the_goal_file(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="self")
-    digest = crew_autopilot.goal_digest(crew_autopilot.read_goal(str(root), slug))
+    digest = crew_autopilot_goal.goal_digest(crew_autopilot_goal.read_goal(str(root), slug))
 
-    got = crew_autopilot.split_approved(str(root), slug)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
 
-    stored = crew_autopilot.read_goal(str(root), slug)["approval"]
+    stored = crew_autopilot_goal.read_goal(str(root), slug)["approval"]
     assert (got["approved"], got["via"], stored["via"], stored["proposal_sha256"]) == (
         True, "autopilot:self", "autopilot:self", digest)
 
 
 def test_recorded_autopilot_split_is_re_asked(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="self")
-    first = crew_autopilot.split_approved(str(root), slug)
+    first = crew_autopilot_goal.split_approved(str(root), slug)
     _write(root / ".crew" / "config.json", json.dumps({
         "scope": {"mode": "off", "allowCliApproval": True},
         "autopilot": {"mode": "plan", "approval": "human"}}))
 
-    again = crew_autopilot.split_approved(str(root), slug)
+    again = crew_autopilot_goal.split_approved(str(root), slug)
 
-    assert (first["approved"], crew_autopilot.read_goal(str(root), slug)["approval"]["via"],
+    assert (first["approved"], crew_autopilot_goal.read_goal(str(root), slug)["approval"]["via"],
             again["approved"], again["owner"]) == (
         True, "autopilot:self", False, f"/crew:approve goal:{slug}")
 
 
 def test_split_approved_by_the_owners_receipt_at_any_setting(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="human", allow=False, armed=False)
-    _receipt(root, slug, crew_autopilot.goal_digest(crew_autopilot.read_goal(str(root), slug)))
+    _receipt(root, slug, crew_autopilot_goal.goal_digest(crew_autopilot_goal.read_goal(str(root), slug)))
 
-    got = crew_autopilot.split_approved(str(root), slug)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
 
     assert (got["approved"], got["via"]) == (True, "user-prompt")
+
+
+def test_the_owners_receipt_reports_the_goals_own_risk(tmp_path):
+    """Port review FIX: the receipt branch read `high` for every goal."""
+    root, slug, _got = _policy(tmp_path, risks=("low", "low"), approval="human")
+    _receipt(root, slug,
+             crew_autopilot_goal.goal_digest(crew_autopilot_goal.read_goal(str(root), slug)))
+
+    got = crew_autopilot_goal.split_approved(str(root), slug)
+
+    assert (got["approved"], got["risk"],
+            crew_autopilot_goal.split_approved_text(slug, got).splitlines()[0]) == (
+        True, "low", f"split-approved {slug} via=user-prompt risk=low")
+
+
+def test_the_policy_judges_the_proposal_it_approves(tmp_path, monkeypatch):
+    """Port review BLOCK: a proposal edited between the read and the policy is
+    neither approved under the policy nor overwritten by the approval note."""
+    root, slug, _got = _policy(tmp_path, risks=("high", "low"), approval="risk")
+    path = crew_autopilot_goal.goal_path(str(root), slug)
+    real = crew_autopilot_goal.read_goal
+    calls = []
+
+    def edits_after_first_read(top, name):
+        got = real(top, name)
+        if not calls:
+            data = json.loads(_read(path))
+            data["tickets"][0]["risk"] = "low"
+            _write(path, json.dumps(data))
+        calls.append(name)
+        return got
+
+    monkeypatch.setattr(crew_autopilot_goal, "read_goal", edits_after_first_read)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
+    stored = real(str(root), slug)
+
+    assert (got["approved"], got["risk"], stored["approval"], stored["tickets"][0]["risk"]) == (
+        False, "high", None, "low")
+
+
+def test_an_edit_before_the_note_is_never_overwritten(tmp_path, monkeypatch):
+    """The policy allowed the proposal it read; the file changed before the
+    note was written: no approval, and the edit stays."""
+    root, slug, _got = _policy(tmp_path, risks=("low", "low"), approval="self")
+    path = crew_autopilot_goal.goal_path(str(root), slug)
+    real = crew_autopilot_goal.split_policy
+
+    def policy_then_edit(top, name, goal=None):
+        got = real(top, name, goal)
+        data = json.loads(_read(path))
+        data["proposal"]["done_condition"] += " and more"
+        _write(path, json.dumps(data))
+        return got
+
+    monkeypatch.setattr(crew_autopilot_goal, "split_policy", policy_then_edit)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
+    stored = crew_autopilot_goal.read_goal(str(root), slug)
+
+    assert (got["approved"], "changed" in got["reason"], stored["approval"],
+            stored["proposal"]["done_condition"].endswith(" and more")) == (False, True, None, True)
 
 
 @pytest.mark.parametrize("edit", ["done_condition", "ticket-title", "ticket-risk",
@@ -432,9 +498,9 @@ def test_split_approved_by_the_owners_receipt_at_any_setting(tmp_path):
 @pytest.mark.parametrize("approval", ["self", "human"])
 def test_split_approval_void_after_proposal_edit(tmp_path, edit, approval):
     root, slug, _got = _policy(tmp_path, risks=("low", "low"), approval=approval)
-    goal = crew_autopilot.read_goal(str(root), slug)
-    _receipt(root, slug, crew_autopilot.goal_digest(goal))
-    crew_autopilot.split_approved(str(root), slug)
+    goal = crew_autopilot_goal.read_goal(str(root), slug)
+    _receipt(root, slug, crew_autopilot_goal.goal_digest(goal))
+    crew_autopilot_goal.split_approved(str(root), slug)
     if edit == "done_condition":
         goal["proposal"]["done_condition"] += " and more"
     elif edit == "findings":
@@ -447,51 +513,51 @@ def test_split_approval_void_after_proposal_edit(tmp_path, edit, approval):
         goal["tickets"][1]["risk"] = "high"
     else:
         goal["tickets"][1]["depends_on"] = []
-    goal = dict(crew_autopilot.read_goal(str(root), slug), goal=goal["goal"],
+    goal = dict(crew_autopilot_goal.read_goal(str(root), slug), goal=goal["goal"],
                 proposal=goal["proposal"], tickets=goal["tickets"])
     _write(root / ".work" / "autopilot" / f"{slug}.json", json.dumps(goal))
     _write(root / ".crew" / "config.json", json.dumps({
         "scope": {"mode": "off", "allowCliApproval": True},
         "autopilot": {"mode": "plan", "approval": "human"}}))
 
-    got = crew_autopilot.split_approved(str(root), slug)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
 
     assert (got["approved"], "does not match" in got["reason"]) == (False, True)
 
 
 def test_minting_fills_ids_without_voiding_the_receipt(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="human")
-    goal = crew_autopilot.read_goal(str(root), slug)
-    _receipt(root, slug, crew_autopilot.goal_digest(goal))
+    goal = crew_autopilot_goal.read_goal(str(root), slug)
+    _receipt(root, slug, crew_autopilot_goal.goal_digest(goal))
     for n, ticket in enumerate(goal["tickets"]):
         ticket["id"] = f"T-{n + 1:04d}"
     _write(root / ".work" / "autopilot" / f"{slug}.json", json.dumps(goal))
 
-    assert crew_autopilot.split_approved(str(root), slug)["approved"] is True
+    assert crew_autopilot_goal.split_approved(str(root), slug)["approved"] is True
 
 
 @pytest.mark.parametrize("receipt", ["autopilot", "corrupt", "list", "other-slug"])
 def test_a_receipt_not_the_owners_grants_nothing(tmp_path, receipt):
     root, slug, _got = _policy(tmp_path, approval="human")
-    digest = crew_autopilot.goal_digest(crew_autopilot.read_goal(str(root), slug))
+    digest = crew_autopilot_goal.goal_digest(crew_autopilot_goal.read_goal(str(root), slug))
     if receipt == "autopilot":
         _receipt(root, slug, digest, via="autopilot")
     elif receipt in ("corrupt", "list"):
-        _write(crew_autopilot.goal_receipt_path(str(root), slug),
+        _write(crew_autopilot_goal.goal_receipt_path(str(root), slug),
                "{" if receipt == "corrupt" else "[]")
     else:
         _receipt(root, "other", digest)
 
-    got = crew_autopilot.split_approved(str(root), slug)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
 
     assert (got["approved"], got["via"]) == (False, "")
 
 
 def test_an_unreadable_receipt_is_named_not_read_as_absent(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="human")
-    _write(crew_autopilot.goal_receipt_path(str(root), slug), "{")
+    _write(crew_autopilot_goal.goal_receipt_path(str(root), slug), "{")
 
-    got = crew_autopilot.split_approved(str(root), slug)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
 
     assert (got["approved"], "could not be read" in got["reason"]) == (False, True)
 
@@ -505,8 +571,8 @@ def _bad_receipt(root, slug, how):
     (`{`), `stale` (another proposal's digest), `symlink-file` (approval.json a
     symlink to a matching receipt) or `symlink-dir` (goals/<slug> a symlink to a
     directory holding one). Returns the words the warning must carry."""
-    path = crew_autopilot.goal_receipt_path(str(root), slug)
-    digest = crew_autopilot.goal_digest(crew_autopilot.read_goal(str(root), slug))
+    path = crew_autopilot_goal.goal_receipt_path(str(root), slug)
+    digest = crew_autopilot_goal.goal_digest(crew_autopilot_goal.read_goal(str(root), slug))
     if how == "unreadable":
         _write(path, "{")
         return UNREADABLE
@@ -529,11 +595,11 @@ def test_a_bad_receipt_is_warned_when_the_policy_approves(tmp_path, approval, ho
     root, slug, _got = _policy(tmp_path, risks=("low", "low"), approval=approval)
     words = _bad_receipt(root, slug, how)
 
-    got = crew_autopilot.split_approved(str(root), slug)
-    text = crew_autopilot.split_approved_text(slug, got)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
+    text = crew_autopilot_goal.split_approved_text(slug, got)
 
     assert (got["approved"], got["via"],
-            crew_autopilot.read_goal(str(root), slug)["approval"]["via"],
+            crew_autopilot_goal.read_goal(str(root), slug)["approval"]["via"],
             any(words in w for w in got["warnings"]),
             any(line.startswith("warning: ") and words in line
                 for line in text.splitlines())) == (
@@ -545,7 +611,7 @@ def test_a_symlinked_receipt_grants_nothing_and_is_named(tmp_path, how):
     root, slug, _got = _policy(tmp_path, approval="human")
     words = _bad_receipt(root, slug, how)
 
-    got = crew_autopilot.split_approved(str(root), slug)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
 
     assert (got["approved"], got["via"], words in got["reason"]) == (False, "", True)
 
@@ -553,7 +619,7 @@ def test_a_symlinked_receipt_grants_nothing_and_is_named(tmp_path, how):
 def test_split_refusal_names_the_owner_line_for_this_goal_only(tmp_path):
     root, slug, _got = _policy(tmp_path, approval="human")
 
-    got = crew_autopilot.split_approved(str(root), slug)
+    got = crew_autopilot_goal.split_approved(str(root), slug)
 
     assert (got["approved"], got["owner"]) == (False, f"/crew:approve goal:{slug}")
 
@@ -624,9 +690,9 @@ def test_propose_cli_prints_the_line_and_says_printed(tmp_path):
     slug = re.search(r"slug=(\S+)", lines[0]).group(1)
     assert (out.returncode, "goal_status=printed" in lines[0],
             [line for line in lines if line.startswith("goal_line: ")] == [
-                "goal_line: " + crew_autopilot.goal_line(
-                    crew_autopilot.read_goal(str(root), slug))],
-            crew_autopilot.GOAL_UNSEEN in lines, out.stderr) == (0, True, True, True, "")
+                "goal_line: " + crew_autopilot_goal.goal_line(
+                    crew_autopilot_goal.read_goal(str(root), slug))],
+            crew_autopilot_goal.GOAL_UNSEEN in lines, out.stderr) == (0, True, True, True, "")
 
 
 def test_goal_status_is_printed_never_set(tmp_path, monkeypatch, capsys):
@@ -651,20 +717,20 @@ def test_goal_status_is_printed_never_set(tmp_path, monkeypatch, capsys):
 
 def test_typer_offer_absent_without_t0013_entry(tmp_path, monkeypatch):
     root = _repo(tmp_path)
-    monkeypatch.setattr(crew_autopilot, "_resume_armed", lambda _top: (True, ""))
-    monkeypatch.setattr(crew_autopilot, "_typing_sender", lambda _top: (True, ""))
+    monkeypatch.setattr(crew_autopilot_goal, "_resume_armed", lambda _top: (True, ""))
+    monkeypatch.setattr(crew_autopilot_goal, "_typing_sender", lambda _top: (True, ""))
 
-    got = crew_autopilot.typer_offer(str(root))
+    got = crew_autopilot_goal.typer_offer(str(root))
 
-    assert (got["offer"], got["missing"]) == (False, [crew_autopilot.TYPER_ABSENT])
+    assert (got["offer"], got["missing"]) == (False, [crew_autopilot_goal.TYPER_ABSENT])
 
 
 def test_typer_offer_absent_when_not_armed(tmp_path, monkeypatch):
     root = _repo(tmp_path)
-    monkeypatch.setattr(crew_autopilot, "_typing_sender", lambda _top: (True, ""))
-    monkeypatch.setattr(crew_autopilot, "_goal_typer", lambda: lambda _line: None)
+    monkeypatch.setattr(crew_autopilot_goal, "_typing_sender", lambda _top: (True, ""))
+    monkeypatch.setattr(crew_autopilot_goal, "_goal_typer", lambda: lambda _line: None)
 
-    got = crew_autopilot.typer_offer(str(root))
+    got = crew_autopilot_goal.typer_offer(str(root))
 
     assert (got["offer"], len(got["missing"]), "resume.auto" in got["missing"][0]) == (
         False, 1, True)
@@ -672,23 +738,23 @@ def test_typer_offer_absent_when_not_armed(tmp_path, monkeypatch):
 
 def test_typer_offer_absent_without_a_sender(tmp_path, monkeypatch):
     root = _repo(tmp_path)
-    monkeypatch.setattr(crew_autopilot, "_resume_armed", lambda _top: (True, ""))
-    monkeypatch.setattr(crew_autopilot, "_typing_sender",
+    monkeypatch.setattr(crew_autopilot_goal, "_resume_armed", lambda _top: (True, ""))
+    monkeypatch.setattr(crew_autopilot_goal, "_typing_sender",
                         lambda _top: (False, "no usable method"))
-    monkeypatch.setattr(crew_autopilot, "_goal_typer", lambda: lambda _line: None)
+    monkeypatch.setattr(crew_autopilot_goal, "_goal_typer", lambda: lambda _line: None)
 
-    got = crew_autopilot.typer_offer(str(root))
+    got = crew_autopilot_goal.typer_offer(str(root))
 
     assert (got["offer"], got["missing"]) == (False, ["no typing sender: no usable method"])
 
 
 def test_typer_offer_only_with_all_three(tmp_path, monkeypatch):
     root = _repo(tmp_path)
-    monkeypatch.setattr(crew_autopilot, "_resume_armed", lambda _top: (True, ""))
-    monkeypatch.setattr(crew_autopilot, "_typing_sender", lambda _top: (True, ""))
-    monkeypatch.setattr(crew_autopilot, "_goal_typer", lambda: lambda _line: None)
+    monkeypatch.setattr(crew_autopilot_goal, "_resume_armed", lambda _top: (True, ""))
+    monkeypatch.setattr(crew_autopilot_goal, "_typing_sender", lambda _top: (True, ""))
+    monkeypatch.setattr(crew_autopilot_goal, "_goal_typer", lambda: lambda _line: None)
 
-    got = crew_autopilot.typer_offer(str(root))
+    got = crew_autopilot_goal.typer_offer(str(root))
 
     assert (got["offer"], got["missing"]) == (True, [])
 
@@ -698,9 +764,9 @@ def test_typer_probe_that_raises_is_named_not_offered(tmp_path, monkeypatch):
 
     def boom(_top):
         raise RuntimeError("disk on fire")
-    monkeypatch.setattr(crew_autopilot, "_resume_armed", boom)
+    monkeypatch.setattr(crew_autopilot_goal, "_resume_armed", boom)
 
-    got = crew_autopilot.typer_offer(str(root))
+    got = crew_autopilot_goal.typer_offer(str(root))
 
     assert (got["offer"], any("could not tell" in m for m in got["missing"])) == (False, True)
 
@@ -712,7 +778,7 @@ def test_typer_reason_printed_once(tmp_path, capsys):
     _main(root, "goal-propose", "--proposal-file", ".work/autopilot/g.proposal.json")
 
     out = capsys.readouterr().out
-    assert (out.count("typer: "), out.count(crew_autopilot.TYPER_ABSENT)) == (1, 1)
+    assert (out.count("typer: "), out.count(crew_autopilot_goal.TYPER_ABSENT)) == (1, 1)
 
 
 @pytest.mark.parametrize("where", ["outside", "symlink-out", "fifo", "missing"])
@@ -781,7 +847,7 @@ def test_propose_crash_is_a_refusal_not_silence(tmp_path, monkeypatch, capsys):
 
     def boom(*_a, **_k):
         raise RuntimeError("disk on fire")
-    monkeypatch.setattr(crew_autopilot, "goal_propose", boom)
+    monkeypatch.setattr(crew_autopilot_goal, "goal_propose", boom)
 
     code = _main(root, "goal-propose", "--proposal-file", ".work/autopilot/g.proposal.json")
 

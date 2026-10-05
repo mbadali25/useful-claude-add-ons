@@ -88,6 +88,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 - **Summary.** `/crew:autopilot goal "<goal>"` researches a goal once, writes a goal file with its proposed tickets, prints the `/goal` line for you to paste, and asks for the split approval under `autopilot.approval`; it mints nothing yet.
 - **Ported to release/1.2.0 (feature rush, PR #354).** Merged onto current code: `goal` joins `AVAILABLE` beside T-0020's `focus` and L-0652's `sleep`/`wake`; the command's goal section is section 7; `approval: null` reads the default `risk` for the split as it does for the plan approval since T-0050.
+- **Port review round 1.** The goal code moved to its own module,
+  `crew_autopilot_goal.py` (pylint's 3400-line cap on `crew_autopilot.py`; the
+  ship rule's prose moved from `crew_autopilot.py`'s docstring to
+  `crew_ship.py`'s for the same reason). `split_approved` judges and notes the
+  one proposal it read: the policy no longer re-reads the goal file, and the
+  note is written only while the file still holds that proposal, so an edit
+  in between is neither approved nor overwritten. The owner's receipt reports
+  the goal's own risk (it read `high` for every goal).
 - **What changed.** `/crew:autopilot goal "<goal>"` routes through T-0018's
   router (`goal` joins `AVAILABLE`) as `route --root . --first goal`, so the
   goal's text never reaches a shell line; `route --args` on `goal ...` stops
