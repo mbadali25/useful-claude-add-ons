@@ -329,42 +329,43 @@ def read_log(blob):
     return entries, ""
 
 
-def lost_ring(chan, tip, log):
+def lost_ring(chan, tip):
     """Why the log cannot be trusted to show what followed a ring, or None.
     The log is append-only, but a later commit can still rewrite it -- drop a
     ring, edit it, move an older line after it, or change who wrote a line
-    after it. So from the oldest ring commit (`RANG_SUBJECT`) to `tip`, along
-    the first-parent chain, each commit's log must start with its parent's
-    log byte for byte, and the log at `tip` must be the one read. A history
-    or a blob that cannot be read is a reason too."""
-    listed = crew_coord.run_git(chan.root, ["log", "--first-parent", "--format=%H %s", tip])
+    after it. So no commit from the oldest ring commit (`RANG_SUBJECT`) to
+    `tip` may delete a line of it (`git log --numstat`: an append deletes
+    nothing), and the history may hold no merge, which crew never writes and
+    which could carry a ring on a side parent. Only line counts are read, so
+    the cost stays small as the log grows. A history git cannot list is a
+    reason too."""
+    listed = crew_coord.run_git(chan.root, ["log", "--topo-order", "--format=%H%x09%P%x09%s", tip])
     if listed.code != 0:
         return "the channel's history could not be listed"
-    rows = [row.partition(" ") for row in listed.out.decode("utf-8", "replace").splitlines()]
-    rings = [index for index, (_, _, subject) in enumerate(rows) if subject.startswith(RANG_SUBJECT)]
+    rows = [row.split("\t", 2) for row in listed.out.decode("utf-8", "replace").splitlines()]
+    if any(len(row) != 3 for row in rows):
+        return "the channel's history could not be read"
+    merges = [sha for sha, parents, _ in rows if len(parents.split()) > 1]
+    if merges:
+        return (f"the channel's history holds a merge commit ({merges[0][:12]}), which crew never writes, "
+                f"so {crew_coord.LOG}'s history cannot be checked")
+    rings = [(sha, parents) for sha, parents, subject in rows if subject.startswith(RANG_SUBJECT)]
     if not rings:
         return None
-    chain = [sha for sha, _, _ in reversed(rows[:rings[-1] + 1])]  # oldest ring commit .. tip
-    request = "".join(f"{sha}:{crew_coord.LOG}\n" for sha in chain).encode("utf-8")
-    batch = crew_coord.run_git(chan.root, ["cat-file", "--batch"], input_bytes=request)
-    if batch.code != 0:
-        return "the channel's log history could not be read"
-    data, at, previous = batch.out, 0, None
-    for sha in chain:
-        newline = data.find(b"\n", at)
-        header = data[at:newline].split() if newline >= 0 else []
-        if len(header) != 3 or header[1] != b"blob" or not header[2].isdigit():
-            return f"{crew_coord.LOG} at {sha[:12]} could not be read"
-        size = int(header[2])
-        blob = data[newline + 1:newline + 1 + size]
-        at = newline + 1 + size + 1
-        if len(blob) != size:
-            return f"{crew_coord.LOG} at {sha[:12]} could not be read"
-        if previous is not None and not blob.startswith(previous):
-            return f"commit {sha[:12]} rewrote {crew_coord.LOG} instead of appending to it"
-        previous = blob
-    if previous != log:
-        return f"the {crew_coord.LOG} read is not the one at {tip[:12]}"
+    oldest, parent = rings[-1]
+    span = [f"{parent.strip()}..{tip}"] if parent.strip() else [tip]
+    stats = crew_coord.run_git(chan.root, ["log", "--numstat", "--no-renames", "--format=@%H", *span,
+                                           "--", crew_coord.LOG])
+    if stats.code != 0:
+        return f"the history of {crew_coord.LOG} since {oldest[:12]} could not be read"
+    sha = ""
+    for line in stats.out.decode("utf-8", "replace").splitlines():
+        if line.startswith("@"):
+            sha = line[1:]
+        elif line.strip():
+            parts = line.split("\t")
+            if len(parts) != 3 or parts[1] != "0":
+                return f"commit {sha[:12]} rewrote {crew_coord.LOG} instead of appending to it"
     return None
 
 
@@ -407,7 +408,7 @@ def cmd_pending(chan, top):
     if entries is None:
         print(f"unknown - {why} on {chan.ref}; pending doorbells cannot be told")
         return crew_coord.EXIT_UNKNOWN
-    why = lost_ring(chan, tip, files[crew_coord.LOG])
+    why = lost_ring(chan, tip)
     if why:
         print(f"unknown - {why} on {chan.ref}; pending doorbells cannot be told")
         return crew_coord.EXIT_UNKNOWN

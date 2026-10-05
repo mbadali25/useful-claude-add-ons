@@ -1165,10 +1165,10 @@ registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json
 
 **Cross-session messages (T-0032).** DERIVED on `rush/g3d-bridge` (release/1.2.0 plus the T-0030
 port), 2026-10-05. `plugin/crew/hooks/scripts/crew_bridge.py` is the doorbell: `DOORBELL_RE`
-(`:110`) is the closed grammar, `compose` (`:117`) builds the line `ring` prints (`cmd_ring`, `:428`),
+(`:110`) is the closed grammar, `compose` (`:117`) builds the line `ring` prints (`cmd_ring`, `:429`),
 `parse` (`:131`) full-matches stdin (4096 bytes, strict UTF-8, one trailing newline stripped) and
-`cmd_receive` (`:465`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
-`_confirm` (`:446`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`), each
+`cmd_receive` (`:466`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
+`_confirm` (`:447`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`), each
 result ending in `next_step` (`:225`), the remote shell-quoted whole. Apart from L-0636's
 `ring --to` it writes nothing, and it builds only on `crew_coord`'s public names (`Channel`,
 `safe`, `peer`, `run_git`, the exit codes); `CHANNEL_RE` (`:103`) restates `crew_coord._CHANNEL_RE`,
@@ -1179,12 +1179,12 @@ always re-reads the record, so a lying hint costs a fetch, not an action.
 **Unanswered doorbells (L-0636).** DERIVED on `rush/g3d-bridge`, 2026-10-05. `crew_bridge.py
 ring --to <label>` (`cmd_ring_to`, `:256`) appends one `rang` line (`rang_line`, `:250`) through
 `crew_coord.Channel.write`, on `RecordChannel` (`:238`), which remembers the tip of its last fetch
-because `write` hands `change` only the files. `pending` (`cmd_pending`, `:389`) reads `unknown` for
+because `write` hands `change` only the files. `pending` (`cmd_pending`, `:390`) reads `unknown` for
 a failed fetch, an absent channel or a missing log, and parses the whole log (`read_log`, `:296`: a
 line that is not a whole `log_line` entry, or a `rang` line without its fields, is `unknown`), then
 keeps each ring of this session id, or this machine and worktree, that no later line by a holder
-other than the ringer and this session follows (`pending_rings`, `:371`), once `lost_ring`
-(`:332`) has found every log from the oldest ring commit to the tip an append to its parent's. `crew_coord.cmd_status`
+other than the ringer and this session follows (`pending_rings`, `:372`), once `lost_ring`
+(`:332`) has found no merge in the history and no deleted log line (`--numstat`) from the oldest ring commit to the tip. `crew_coord.cmd_status`
 reads only `claims/`, so the new event cannot disturb it. JUDGEMENT: matching on machine and
 worktree as well as the session id is what lets the resume step after `/clear` still see a ring.
 

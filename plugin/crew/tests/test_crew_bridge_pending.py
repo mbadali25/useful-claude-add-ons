@@ -315,6 +315,53 @@ def test_a_later_line_rewritten_to_another_holder_is_unknown_not_an_answer(world
     assert code == 3 and lines[0].startswith("unknown") and "rewrote" in lines[0]
 
 
+def test_a_merge_that_carries_the_ring_on_a_side_parent_is_unknown(world, capsys):
+    bare, work, seed, _ = world
+    before = channel_tip(bare)
+    assert ring_to(work, capsys)[0] == 0
+    rung = channel_tip(bare)
+    git(seed, "fetch", "-q", "origin", REF)
+    tree = git(seed, "rev-parse", f"{before}^{{tree}}")
+    merge = git(seed, "commit-tree", tree, "-p", before, "-p", rung, "-m", "merge")
+    git(seed, "push", "-q", "origin", f"{merge}:{REF}")  # a fast-forward from the ring commit
+    code, lines = pending(work, capsys)
+    assert code == 3 and lines[0].startswith("unknown") and "merge" in lines[0]
+
+
+def test_a_growing_channel_reads_line_counts_not_every_log(world, capsys, monkeypatch):
+    bare, work, seed, _ = world
+    assert ring_to(work, capsys)[0] == 0
+    git(seed, "fetch", "-q", "origin", REF)
+    parent = channel_tip(bare)
+    log = git(seed, "show", f"{parent}:log.jsonl") + "\n"
+    stream = []
+    for number in range(150):
+        log += json.dumps({"at": crew_coord.stamp(), "event": "heartbeat", "ticket": "k", "holder": "me",
+                           "detail": "x" * 200}, sort_keys=True) + "\n"
+        data = log.encode("utf-8")
+        stream.append(f"commit refs/heads/grow\nmark :{number + 1}\ncommitter t <t@example.com> 0 +0000\n"
+                      f"data 4\nbeat\n" + (f"from {parent}\n" if number == 0 else f"from :{number}\n")
+                      + f"M 100644 inline log.jsonl\ndata {len(data)}\n")
+        stream.append(data.decode("utf-8") + "\n")
+    subprocess.run(["git", "-C", str(seed), "fast-import", "--quiet"], input="".join(stream).encode("utf-8"),
+                   check=True, capture_output=True)
+    git(seed, "push", "-q", "origin", f"refs/heads/grow:{REF}")
+    read = []
+    real = crew_coord.run_git
+
+    def spy(root, args, input_bytes=None, env=None):
+        done = real(root, args, input_bytes=input_bytes, env=env)
+        if args[0] in ("log", "cat-file"):
+            read.append(len(done.out))
+        return done
+
+    monkeypatch.setattr(crew_coord, "run_git", spy)
+    code, lines = pending(work, capsys)
+    assert code == 3 and lines[0].startswith("could not tell")
+    total_history = sum(len(log) * k // 150 for k in range(1, 151))  # what reading every log would cost
+    assert sum(read) < 100_000 < total_history
+
+
 def test_a_resumed_session_in_this_worktree_still_sees_its_ring(world, capsys, monkeypatch):
     _, work, _, _ = world
     assert ring_to(work, capsys)[0] == 0
