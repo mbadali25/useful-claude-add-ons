@@ -491,6 +491,26 @@ def test_build_against_refuses_a_binding_with_another_hash(capsys, tmp_path, wt,
     assert json.loads(_binding_path(wt).read_text(encoding="utf-8")) == stale
 
 
+def test_a_frozen_version_rewritten_under_its_builder_is_corrupt(capsys, tmp_path, wt, wt_b, hub):
+    """Review round 5: a peer replaced a frozen body and the record's hash but
+    left the builder's hash, and status and build-against read it as valid."""
+    _frozen(capsys, tmp_path, wt)
+    record = _record(hub)
+    record["hash"] = _sha(b"rewritten\n")
+    _raw_write(wt, {"contracts/api/v1.json": json.dumps(record).encode(),
+                    "contracts/api/v1.body": b"rewritten\n"})
+    _approved(wt_b, "T-7")
+    before = git(hub, "rev-parse", REF)
+
+    status_code, status = _run(capsys, wt, "status")
+    code, out = _build(capsys, wt_b, ticket="T-7")
+
+    assert status_code == crew_contract.EXIT_UNKNOWN and "another hash" in status
+    assert code == crew_contract.EXIT_UNKNOWN and "corrupt" in out
+    assert git(hub, "rev-parse", REF) == before
+    assert not _binding_path(wt_b, "T-7").exists()
+
+
 def test_two_sides_build_against_one_version(capsys, tmp_path, wt, wt_b, hub):
     _frozen(capsys, tmp_path, wt)
     first = _record(hub)["built_by"][0]

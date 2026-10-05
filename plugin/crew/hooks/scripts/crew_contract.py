@@ -173,6 +173,9 @@ def parse_record(name, version, blob):
         return None, "built_by is not a list of {repo, ticket, hash, at}"
     if (record["status"] == FROZEN) != bool(built):
         return None, f"status {record['status']} disagrees with {len(built)} built_by entries"
+    if any(entry["hash"] != record["hash"] for entry in built):
+        # A frozen body and hash rewritten under an earlier builder: never a valid record.
+        return None, "a built_by entry was built against another hash than the record's"
     return record, None
 
 
@@ -343,12 +346,7 @@ def cmd_build_against(chan, top, name, version, ticket, repo):
                 f"refused: {local} records {ticket} as built against {name} v{version} with another hash than "
                 f"the channel's {record['hash'][:HASH_SHOWN]}; the contract changed since. Nothing was written")
         built["hash"] = record["hash"]
-        mine = [e for e in record["built_by"] if (e["repo"], e["ticket"]) == (repo, ticket)]
-        if any(e["hash"] != record["hash"] for e in mine):
-            return "refused", crew_coord.peer(
-                f"refused: built_by names {repo}:{ticket} for {name} v{version} with another hash than the "
-                f"record's {record['hash'][:HASH_SHOWN]}; nothing was written")
-        if mine:
+        if any((e["repo"], e["ticket"]) == (repo, ticket) for e in record["built_by"]):
             return "noop", crew_coord.peer(f"{repo}:{ticket} already built against contract {name} v{version} "
                                            f"({record['hash'][:HASH_SHOWN]})")
         record["status"] = FROZEN
