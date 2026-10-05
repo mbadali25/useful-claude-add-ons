@@ -4,7 +4,7 @@ paths:
   - "skills/infra-work-ticketing/**"
   - "plugin/gizmoduck/**"
 ---
-<!-- crew:generated source=.crew/codemap/skills-itsm.md sha256=fb55cc6a3d50d1cf -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/skills-itsm.md sha256=4a41c75e6687b3e8 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # skills-itsm
 Code map anchor `5be137d8`; if it is behind HEAD, re-check with `git diff --name-only 5be137d8..HEAD -- <cited paths>`.
 Covers: infra-work-ticketing + notify. Records that SKILL.md:209-211 still instructs an unconfirmed ticket creation by default against a live service desk; a scanner-batch carve-out at :213-231 narrows that, and the missing-fact list moved to :233.; T-0107 re-anchored it f2bb919b -> 0da787d3 -> 53ba2fd7 -> 40292eca -> 91b793fa -> 7773abb2 (routine CLI, its review fixes; this row restored after the merge of main 04dde5a2); L-0599 re-anchored it to 5be137d8 (a pylint pragma, no line moved)

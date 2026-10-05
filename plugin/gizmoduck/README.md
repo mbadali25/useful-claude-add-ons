@@ -102,7 +102,8 @@ targets:
   - name: portal                  # unique; keys the output directory and every finding
     kind: web                     # web | host | iac | deps | code
     url: https://portal.example.com
-    options: {zap_active: false, nmap_vuln: false, sqlmap: false}
+    options: {zap_active: false, nmap_vuln: false, sqlmap: false,
+              nuclei_intrusive: false, nuclei_rate_limit: 50}
   - name: infra
     kind: iac
     path: ./terraform             # web -> url, host -> host, iac/deps/code -> path
@@ -118,8 +119,13 @@ portable: letters, digits, `.`, `_` and `-` only, starting with a letter or digi
 ending with `.`, at most 64 characters, not a Windows device name (`CON`, `nul.txt`, `COM1`
 ...), not the name of a file routine writes there (`report.md`, `scan-meta.json` and the
 rest, in any case), and not the same as another target's name but for case. The options that
-switch active scanning on (`zap_active`, `nmap_vuln`, `sqlmap`) must be YAML `true` or
-`false`: a quoted `"false"` is refused, because it would read as true. The manifest is read
+switch active scanning on (`zap_active`, `nmap_vuln`, `nuclei_intrusive`, `sqlmap`) must be
+YAML `true` or `false`: a quoted `"false"` is refused, because it would read as true.
+`nuclei_rate_limit` must be an integer of 1 or more. Nuclei's `extra` option may not carry a
+tag, rate or attack flag (`-etags`, `-itags`, `-rl`, `-rlm`, `-it`, `-dast`, `-fuzz` and their
+long forms; the full list is `NUCLEI_*_FLAGS` in `gizmoduck.py`): the manifest is refused
+with exit 2, because the recorded mode would otherwise lie - use `nuclei_intrusive` and
+`nuclei_rate_limit`. The manifest is read
 once; what was checked is what runs. `routine` needs PyYAML; without it the command exits 2
 and names it.
 
@@ -132,7 +138,9 @@ python3 scripts/gizmoduck.py routine targets.yaml --scan-root . --date 2026-09-2
 ```
 
 Either directory holds `findings.jsonl`, `run-manifest.json` (per target and tool: `ran`,
-`ran(<mode>)`, `skipped-missing`, `skipped-active` or `error:<why>`), `report.md`,
+`ran(<mode>)` - nmap `ran(safe)`/`ran(safe+vuln)`, ZAP `ran(baseline)`/`ran(baseline+active)`,
+Nuclei `ran(safe)`/`ran(safe+intrusive)` - `skipped-missing`, `skipped-active` or
+`error:<why>`), `report.md`,
 `report.html`, `report.pdf` when wkhtmltopdf or WeasyPrint is installed, `scan-meta.json`,
 and one subdirectory per target holding each tool's native output. `--date` only shapes the
 `--scan-root` path and defaults to today's UTC date; `--scan-root` and `--out` together is a
@@ -194,8 +202,18 @@ The routine's own test suite never runs a real scanner: every tool is a fake inj
 `run_routine`'s registry, or provably absent in a sanitised environment.
 
 ## Manual CLI (Linux: `python3`, Windows: `python`)
+
+**Nuclei is safe by default** (since T-0108): every scan, from `scan` or `routine`, adds
+`-etags dos,intrusive,fuzz` and `-rl 50` (at most 50 requests per second; Nuclei's own default
+is 150). `scan --intrusive` drops the tag exclusion - pass it only after the target's owner has
+authorised intrusive testing - and `scan --rate-limit N` replaces the 50. A rate flag typed in
+`scan --extra` stands in place of the default; together with `--rate-limit` it is a usage error.
+`scan --extra` is otherwise a raw passthrough. In a manifest the same two switches are
+`nuclei_intrusive` and `nuclei_rate_limit`.
+
 ```bash
 python3 scripts/gizmoduck.py scan targets.txt --severity critical,high,medium --out findings.jsonl
+python3 scripts/gizmoduck.py scan https://site --intrusive --rate-limit 20   # owner-authorised only
 python3 scripts/gizmoduck.py diff baseline.jsonl findings.jsonl --min-severity high
 python3 scripts/gizmoduck.py report findings.jsonl --format pdf --out report.pdf
 python3 scripts/gizmoduck.py routine targets.yaml --scan-root .

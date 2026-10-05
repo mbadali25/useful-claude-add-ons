@@ -1,10 +1,11 @@
 """Nuclei adapter - a refactor of the existing cmd_scan()/load() into the
 adapter shape, not a new parser (plan, Task 5).
 
-run() builds the same core argv cmd_scan() already builds (gizmoduck.py:63) -
-it does not call cmd_scan() itself, because cmd_scan owns the single-scanner
+run() builds its argv with gizmoduck.nuclei_argv(), the builder cmd_scan()
+uses too (T-0108: safe -etags/-rl defaults live there once) - it does not
+call cmd_scan() itself, because cmd_scan owns the single-scanner
 CLI's own stdout-filtering and file-write/exit-code policy, which this
-adapter must not duplicate or let drift from. It borrows only the argv shape,
+adapter must not duplicate or let drift from. It shares only the argv builder,
 then applies base.run_tool's own timeout handling, mirroring cmd_scan's
 "never write a findings file for a failed scan" rule on top.
 
@@ -60,7 +61,7 @@ from . import base
 NAME = "nuclei"
 KINDS = ["web", "host"]
 ACTIVE = False
-ACTIVE_OPTS = []
+ACTIVE_OPTS = ["nuclei_intrusive"]  # drops the safe -etags; recorded ran(safe+intrusive)
 DEFAULT_ENABLED = True
 
 DEFAULT_TIMEOUT = 1800  # seconds; base.run_tool is the real guard (spec 13.13)
@@ -99,7 +100,9 @@ def run(target, outdir, opts=None):
 
     `opts` recognizes `severity` (comma list, same as cmd_scan's --severity),
     `extra` (a string of additional raw nuclei flags, same as cmd_scan's
-    --extra), and `timeout` (seconds; falls back to DEFAULT_TIMEOUT).
+    --extra, minus the safety flags gizmoduck.nuclei_argv's strict mode
+    refuses), `nuclei_intrusive` and `nuclei_rate_limit` (scan's --intrusive
+    and --rate-limit), and `timeout` (seconds; falls back to DEFAULT_TIMEOUT).
     """
     gz = _gizmoduck()
     opts = opts or {}
@@ -115,17 +118,19 @@ def run(target, outdir, opts=None):
                    "or bootstrap.ps1 (Windows) first.",
             timed_out=False)
 
+    # strict: a tag, rate or attack flag in `extra` would make the recorded
+    # ran(safe) mode lie, so it is refused here before anything runs (the
+    # manifest parse refuses it too; a hand-built Manifest skips that check).
+    try:
+        cmd = gz.nuclei_argv(exe, target, opts.get("severity") or "", opts.get("extra") or "",
+                             intrusive=bool(opts.get("nuclei_intrusive")),
+                             rate_limit=opts.get("nuclei_rate_limit"), strict=True)
+    except ValueError as exc:
+        return None, base.ToolResult(returncode=-1, stdout="", stderr=str(exc),
+                                     timed_out=False)
+
     os.makedirs(outdir, exist_ok=True)
     raw_path = os.path.join(outdir, "nuclei.jsonl")
-
-    cmd = [exe, "-jsonl", "-silent", "-nc"]
-    cmd += ["-l", target] if os.path.isfile(target) else ["-u", target]
-    severity = opts.get("severity")
-    if severity:
-        cmd += ["-severity", severity]
-    extra = opts.get("extra")
-    if extra:
-        cmd += extra.split()
 
     result = base.run_tool(cmd, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
 

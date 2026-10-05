@@ -272,12 +272,14 @@ def resolve_adapters(target, registry=None):
 # Orchestration (Task 15)
 # ---------------------------------------------------------------------------
 
-# Mode vocabulary for the two adapters that are active only in one of their
-# two modes (plan Global Constraints). A bare "ran" for either would imply
-# coverage a safe/baseline-only scan never attempted.
+# Mode vocabulary for the adapters that are active only in one of their
+# two modes (plan Global Constraints). A bare "ran" for any would imply
+# coverage a safe/baseline-only scan never attempted. Nuclei's safe mode
+# excludes dos/intrusive/fuzz templates (T-0108).
 _MODE_LABELS = {
     "nmap": {"base": "safe", "nmap_vuln": "vuln"},
     "zap": {"base": "baseline", "zap_active": "active"},
+    "nuclei": {"base": "safe", "nuclei_intrusive": "intrusive"},
 }
 
 

@@ -26,6 +26,5 @@ Pick them up in the order below: tickets closest to landing first, then the rest
 | 10 | [T-0506](T-0506.md) - concurrent pwsh runs corrupt the shared ~/.cache/powershell startup profile; every later p | direction | Direction (seed, not approved) | none | none - not started |
 | 11 | [T-0105](T-0105.md) - crew_migrate maps a 0.20 autopilot key to 1.0's top-level autopilot instead of unmapped.au | direction | Direction (seed, not approved) | none | none - not started |
 | 12 | [T-0106](T-0106.md) - crew_autoclear_setup apply-migrate --scan-root finds every repo with autoClear.enabled for | direction | Direction (seed, not approved) | none | none - not started |
-| 13 | [T-0108](T-0108.md) - gizmoduck headless and CI: bootstrap without apt/sudo guidance, tool-home lookup order, sa | direction | Direction (seed, not approved) | none | none - not started |
 
 Version: bump crew one past whatever version main holds when this ticket lands (main moves; T-0501 #272 and T-0504 #271 both claim 1.0.70, which main now already holds).

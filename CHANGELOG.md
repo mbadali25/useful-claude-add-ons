@@ -9,6 +9,31 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — `gizmoduck`: Nuclei scans are safe by default (T-0108)
+
+- **Summary.** A Nuclei scan now skips dos, intrusive and fuzz templates and sends at most 50
+  requests per second unless you opt out by name, so a default scan can find less and take longer
+  than before.
+- **Behaviour change.** `gizmoduck.py scan` and the routine's Nuclei adapter now build one command
+  line, `gizmoduck.nuclei_argv`, which adds `-etags dos,intrusive,fuzz` and `-rl 50` (Nuclei's own
+  default is 150). A `diff` against an older baseline shows nothing new for that reason alone, but
+  a report's counts can drop.
+- **Opting out.** `scan --intrusive` drops the tag exclusion (only after the target's owner has
+  authorised intrusive testing); `scan --rate-limit N` (an integer of 1 or more) replaces the 50. A
+  rate flag in `scan --extra` stands in place of the default; with `--rate-limit` too it is exit 2.
+  In a routine manifest: `options.nuclei_intrusive` (a real boolean, now a gate option) and
+  `options.nuclei_rate_limit`. The Nuclei cell records `ran(safe)` or `ran(safe+intrusive)`
+  instead of a bare `ran`; coverage still counts both as `ran`.
+- **Refused in a manifest.** Nuclei's `extra` option may not carry a tag, rate or attack flag:
+  the spec's eight (`-etags`, `-exclude-tags`, `-itags`, `-include-tags`, `-rl`, `-rate-limit`,
+  `-rlm`, `-rate-limit-minute`) plus nine more found in `nuclei -h` on v3.11.1 (`-it`,
+  `-include-templates`, `-dast`, `-fuzz`, `-dts`, `-dast-server`, `-per-host-rate-limit`,
+  `-rld`, `-rate-limit-duration`). The manifest is refused at parse time with exit 2; a
+  hand-built `Manifest` meets the same refusal in the adapter, recorded `error:returncode=-1`.
+- **Verified against Nuclei v3.11.1** with the template lister (no traffic): `-tags dos` lists
+  11 templates, `-etags dos,intrusive,fuzz -tags dos` lists 0, and `-itags dos` brings 7 back,
+  which is why `-itags` is refused in a manifest.
+
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that

@@ -173,8 +173,48 @@ def test_run_reuses_cmd_scans_argv_shape(monkeypatch, tmp_path):
     assert "-jsonl" in argv and "-silent" in argv and "-nc" in argv
     assert "-u" in argv and "https://example.com" in argv
     assert "-severity" in argv and "critical,high" in argv
+    # T-0108: the safe defaults come from the shared builder.
+    assert argv[argv.index("-etags") + 1] == "dos,intrusive,fuzz"
+    assert argv[argv.index("-rl") + 1] == "50"
     assert result.returncode == 0
     assert raw_path.endswith("nuclei.jsonl")
+
+
+def test_run_honours_nuclei_intrusive_and_rate_limit_options(monkeypatch, tmp_path):
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["argv"] = argv
+        from scanners.base import ToolResult
+        return ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+    nuclei.run("https://example.com", str(tmp_path),
+               {"nuclei_intrusive": True, "nuclei_rate_limit": 8})
+
+    assert "-etags" not in captured["argv"]
+    assert captured["argv"][captured["argv"].index("-rl") + 1] == "8"
+    assert nuclei.ACTIVE_OPTS == ["nuclei_intrusive"]
+
+
+@pytest.mark.parametrize("extra", ["-itags dos", "-rl 500", "--exclude-tags=", "-dast"])
+def test_adapter_refuses_safety_flags_in_extra_without_running_nuclei(monkeypatch, tmp_path,
+                                                                      extra):
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+    calls = []
+    monkeypatch.setattr(nuclei.base, "run_tool", lambda *a, **kw: calls.append(a))
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path / "out"),
+                                  {"extra": extra})
+
+    assert calls == []
+    assert raw_path is None
+    assert result.returncode == -1
+    assert "nuclei_intrusive" in result.stderr
+    assert not (tmp_path / "out").exists()
 
 
 def test_run_uses_l_flag_for_a_targets_file(monkeypatch, tmp_path):

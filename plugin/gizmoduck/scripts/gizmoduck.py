@@ -8,6 +8,9 @@ Only scan assets you own or have explicit written permission to test.
 
 Usage:
   gizmoduck.py scan    <target|targets.txt> [--severity critical,high,medium] [--out findings.jsonl] [--extra "..."]
+                       [--intrusive] [--rate-limit N]
+                       # safe by default: -etags dos,intrusive,fuzz and -rl 50. --intrusive
+                       # drops the exclusion; --rate-limit N replaces the 50.
   gizmoduck.py routine <manifest.yaml> [--out DIR | --scan-root MODULE_DIR [--date YYYY-MM-DD]]
                        [--replace] [--confirm-active] [--title "..."] [--min-severity medium]
                        # every scanner the manifest resolves (checkov, trivy, dependency-check,
@@ -148,16 +151,76 @@ def find_nuclei():
     return cand if os.path.exists(cand) else None
 
 
-def cmd_scan(target, out, severity, extra):
-    exe = find_nuclei()
-    if not exe:
-        sys.exit("nuclei not found on PATH. Run bootstrap.sh (Linux/WSL) or bootstrap.ps1 (Windows) first.")
+# Safe Nuclei defaults (T-0108): templates tagged with these are excluded and
+# the request rate is capped unless the caller opts out by name (`scan
+# --intrusive` / `--rate-limit N`, manifest `nuclei_intrusive` /
+# `nuclei_rate_limit`). Nuclei v3.11.1's template lister confirms exclusion
+# beats `-tags` and that `-itags` undoes it, hence the strict list below.
+NUCLEI_SAFE_EXCLUDE_TAGS = ("dos", "intrusive", "fuzz")
+NUCLEI_DEFAULT_RATE_LIMIT = 50
+# Go's flag parser takes -x and --x, `-x v` and `-x=v`; names compare bare.
+NUCLEI_RATE_FLAGS = frozenset({"rl", "rate-limit", "rlm", "rate-limit-minute"})
+NUCLEI_TAG_FLAGS = frozenset({"etags", "exclude-tags", "itags", "include-tags"})
+# From `nuclei -h` (v3.11.1): switches that re-include excluded templates,
+# turn on fuzzing, or loosen the rate cap. Refused in a routine manifest's
+# `extra` with the eight above, because there the recorded mode would lie.
+NUCLEI_ATTACK_FLAGS = frozenset({"it", "include-templates", "dast", "fuzz", "dts",
+                                 "dast-server", "per-host-rate-limit", "rld",
+                                 "rate-limit-duration"})
+
+
+def _nuclei_flag_names(tokens):
+    """The bare flag names in `tokens`: `--rl=10` -> `rl`; values are skipped."""
+    return {t.lstrip("-").split("=", 1)[0] for t in tokens if t.startswith("-")}
+
+
+def nuclei_argv(exe, target, severity, extra, *, intrusive=False, rate_limit=None,
+                strict=False):
+    """The one Nuclei command line `cmd_scan` and the routine adapter run.
+
+    Order: `-jsonl -silent -nc`, the target, `-severity`, `-etags` with the
+    safe exclusions unless `intrusive`, the rate flag, then `extra` unchanged.
+    An explicit `rate_limit` wins; else a rate flag in `extra` stands; else
+    `-rl 50`. ValueError for `rate_limit` plus a rate flag in `extra`, and,
+    with `strict` (the routine), for any tag, rate or attack flag in `extra`."""
+    tokens = extra.split() if extra else []
+    names = _nuclei_flag_names(tokens)
+    if strict:
+        bad = sorted(names & (NUCLEI_RATE_FLAGS | NUCLEI_TAG_FLAGS | NUCLEI_ATTACK_FLAGS))
+        if bad:
+            raise ValueError(f"nuclei 'extra' may not carry {', '.join('-' + b for b in bad)}: "
+                             f"the recorded scan mode would not say so. Use the options "
+                             f"nuclei_intrusive (true/false) and nuclei_rate_limit (an "
+                             f"integer of 1 or more) instead")
+    extra_rate = names & NUCLEI_RATE_FLAGS
+    if rate_limit is not None and extra_rate:
+        raise ValueError(f"a rate limit is given twice: --rate-limit {rate_limit} and "
+                         f"{', '.join('-' + r for r in sorted(extra_rate))} in --extra; "
+                         f"pass one")
     cmd = [exe, "-jsonl", "-silent", "-nc"]
     cmd += ["-l", target] if os.path.isfile(target) else ["-u", target]
     if severity:
         cmd += ["-severity", severity]
-    if extra:
-        cmd += extra.split()
+    if not intrusive:
+        cmd += ["-etags", ",".join(NUCLEI_SAFE_EXCLUDE_TAGS)]
+    if rate_limit is not None:
+        cmd += ["-rl", str(rate_limit)]
+    elif not extra_rate:
+        cmd += ["-rl", str(NUCLEI_DEFAULT_RATE_LIMIT)]
+    return cmd + tokens
+
+
+def cmd_scan(target, out, severity, extra, *, intrusive=False, rate_limit=None):
+    try:
+        cmd = nuclei_argv("nuclei", target, severity, extra, intrusive=intrusive,
+                          rate_limit=rate_limit)
+    except ValueError as exc:
+        print(f"scan: {exc}", file=sys.stderr)
+        sys.exit(2)
+    exe = find_nuclei()
+    if not exe:
+        sys.exit("nuclei not found on PATH. Run bootstrap.sh (Linux/WSL) or bootstrap.ps1 (Windows) first.")
+    cmd[0] = exe
     print(f"# running: {' '.join(cmd)}", file=sys.stderr)
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
@@ -964,7 +1027,9 @@ def _check_manifest_shape(data, gate_keys):
     `name` that is missing, not a plain directory name, a Windows device
     name, a routine file's name, or the same as another name but for case,
     a `kind`, location, `tools` or `options` of the wrong type, and an
-    active-scan gate option (`gate_keys`) that is not a boolean. Without this
+    active-scan gate option (`gate_keys`) that is not a boolean, and Nuclei's
+    `nuclei_rate_limit` / `extra` options in a shape the adapter refuses
+    (T-0108). Without this
     those reach load_manifest or run_routine as AttributeError / TypeError -
     exit 1 and a traceback, for a bad name an output directory already
     created, and for a quoted "false" an active scan."""
@@ -1019,6 +1084,23 @@ def _check_manifest_shape(data, gate_keys):
             if not isinstance(options[key], bool):
                 raise ValueError(f"targets[{i}] option {key!r} must be true or false, not "
                                  f"{options[key]!r}; it switches active scanning on")
+        _check_nuclei_options(i, options or {})
+
+
+def _check_nuclei_options(i, options):
+    """T-0108: `nuclei_rate_limit` is an integer of 1 or more (bool is an int
+    in Python, so it is refused by name), and `extra` may not carry a flag the
+    adapter's strict builder refuses - said here, before anything runs."""
+    rate = options.get("nuclei_rate_limit")
+    if rate is not None and (isinstance(rate, bool) or not isinstance(rate, int) or rate < 1):
+        raise ValueError(f"targets[{i}] option 'nuclei_rate_limit' must be an integer of 1 "
+                         f"or more, not {rate!r}")
+    extra = options.get("extra")
+    if isinstance(extra, str):
+        try:
+            nuclei_argv("nuclei", "x", "", extra, strict=True)
+        except ValueError as exc:
+            raise ValueError(f"targets[{i}] option {exc}") from None
 
 
 def _earlier_run_dirs(outdir, meta_path):
@@ -1415,6 +1497,17 @@ def cmd_update():
     safe_print("done.")
 
 
+def _positive_int(text):
+    """argparse type for --rate-limit: an integer of 1 or more, else exit 2."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"must be an integer of 1 or more, not {text!r}") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be an integer of 1 or more, not {text!r}")
+    return value
+
+
 def main():
     # allow_abbrev=False: argparse's default abbreviation matching would let
     # `--y`/`--ye` satisfy `--yes` below, since no other flag starts with `y` -
@@ -1437,6 +1530,12 @@ def main():
     p.add_argument("--min-severity", default=None, choices=list(SEV_NUM))
     p.add_argument("--severity", default="", help="nuclei -severity filter for scan (e.g. critical,high)")
     p.add_argument("--extra", default="", help="extra args passed through to nuclei")
+    p.add_argument("--intrusive", action="store_true",
+                   help="scan only: drop the default -etags dos,intrusive,fuzz - pass it only "
+                        "after the target's owner has authorised intrusive testing")
+    p.add_argument("--rate-limit", type=_positive_int, default=None, metavar="N",
+                   help=f"scan only: nuclei requests per second (default "
+                        f"{NUCLEI_DEFAULT_RATE_LIMIT})")
     p.add_argument("--title", default="Nuclei Vulnerability Report")
     p.add_argument("--format", default="md", choices=["md", "html", "pdf"])
     p.add_argument("--out", default=None)
@@ -1501,6 +1600,9 @@ def main():
                         ("--replace", a.replace), ("--confirm-active", a.confirm_active)):
         if value and a.command != "routine":
             p.error(f"{flag} only applies to the 'routine' command, not '{a.command}'")
+    for flag, value in (("--intrusive", a.intrusive), ("--rate-limit", a.rate_limit)):
+        if value and a.command != "scan":
+            p.error(f"{flag} only applies to the 'scan' command, not '{a.command}'")
     if a.run_manifest and a.command != "report":
         p.error(f"--run-manifest only applies to the 'report' command, not '{a.command}'")
     routine_date = None
@@ -1535,7 +1637,8 @@ def main():
         cmd_update()
         return
     if a.command == "scan":
-        cmd_scan(a.target, a.out or "findings.jsonl", a.severity, a.extra)
+        cmd_scan(a.target, a.out or "findings.jsonl", a.severity, a.extra,
+                 intrusive=a.intrusive, rate_limit=a.rate_limit)
         return
     if a.command == "diff":
         title = a.title if a.title != "Nuclei Vulnerability Report" else "Scan Diff"
