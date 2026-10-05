@@ -186,6 +186,22 @@ def test_a_four_backtick_example_holding_a_three_backtick_line_stays_an_example(
     assert any("no `### ` entry" in p for p in problems), problems
 
 
+def test_a_fence_inside_a_blockquote_is_an_example_too(tmp_path):
+    entry = ("### POST https://ssapi.shipstation.com/orders/createorder\n"
+             "> ```\n> `src/client.py:12`\n> ```\n\nAuth: none\n")
+
+    problems = _problems(tmp_path, _doc(entry))
+
+    assert any("no `path:line` anchor" in p for p in problems), problems
+
+
+def test_undocumented_counts_entries_not_phrases(tmp_path):
+    entry = ENTRY.replace("Auth: basic, key from env `SHIPSTATION_API_KEY`",
+                          "Auth: undocumented - needs a human\nNotes: undocumented - needs a human")
+
+    assert _lint(tmp_path, _doc(entry))["undocumented"] == 1
+
+
 def test_an_entry_outside_any_system_heading_is_refused(tmp_path):
     problems = _problems(tmp_path, _doc(system=""))
 

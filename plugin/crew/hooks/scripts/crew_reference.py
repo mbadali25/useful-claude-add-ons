@@ -60,8 +60,9 @@ UNDOCUMENTED = "undocumented - needs a human"
 # An `Auth:` line that names something: `Auth:` alone says nothing.
 _AUTH_RE = re.compile(r"Auth:[ \t]*\S")
 KINDS = ("integrations",)
-# An opening or closing code fence: three or more backticks or tildes.
-_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# An opening or closing code fence: three or more backticks or tildes, also
+# inside a blockquote (`> ```), which is a fence all the same.
+_FENCE_RE = re.compile(r"^(?: {0,3}> ?)* {0,3}(`{3,}|~{3,})")
 
 # (name, pattern). Order is the report order when one line holds several.
 SECRET_PATTERNS = (
@@ -139,7 +140,7 @@ def _fence_states(lines):
             continue
         if fence is not None:
             if (run and run.group(1)[0] == fence[0] and len(run.group(1)) >= len(fence)
-                    and not line.strip()[len(run.group(1)):].strip()):
+                    and not line[run.end():].strip()):
                 fence = None
             out.append((line, True))
             continue
@@ -273,7 +274,11 @@ def lint(root, path, kind):
                         "judge it")
     problems += _entries(lines, shown)
     problems += _anchors(root, lines, shown, secret_lines)
-    return {"problems": problems, "undocumented": text.count(UNDOCUMENTED)}
+    # Entries marked undocumented, not occurrences of the phrase: one entry
+    # saying it twice, or a fenced example, is not two.
+    undocumented = sum(1 for _n, body, _s in _sections(lines)
+                       if any(UNDOCUMENTED in line for line in body))
+    return {"problems": problems, "undocumented": undocumented}
 
 
 def main(argv):
