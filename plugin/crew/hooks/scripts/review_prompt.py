@@ -18,7 +18,8 @@ script writes the part of it that is about the ticket rather than the diff:
     still lists as NOT VERIFIED (marked superseded when the receipt covers
     HEAD). When the gate does not accept the tree, one fixed line
     (`OVERRIDE_LINE`, T-0101) says that such a round exists only under
-    `--allow-unverified`, recorded as `gate.overridden`, so a reviewer can
+    `--allow-unverified`, recorded as `gate.overridden` when the gate still
+    does not accept the tree as the round is recorded, so a reviewer can
     tell a recorded override from a gap nobody noticed.
 
   - the development standards checklist (T-0085): the effective standards
@@ -214,11 +215,15 @@ REASON_MAX = 400
 # (local UNVERIFIED or UNKNOWN, no CI receipt VERIFIED), after the unchanged
 # MISSING / NOT-been-through-the-gate and `Gate answer for HEAD` lines. A rule
 # about the tool, so it stays true whatever the operator passes later.
+# Review of 4357247c, FIX2: the prompt is built before the round and
+# review_run.gate_record reads the gate again when it writes review.json, so a
+# gate that passes meanwhile records no override: the line says "when".
 OVERRIDE_LINE = ("Order: review_run.py reserves no round on a tree in this state unless the "
-                 "operator passes --allow-unverified, and review.json then records "
-                 "gate.overridden. /crew:done still needs a clean gate. The missing pass is "
-                 "that recorded override: do not report it as a defect on its own. Report "
-                 "anything in the diff a gate run would catch.")
+                 "operator passes --allow-unverified; review.json records gate.overridden "
+                 "when the gate still does not accept the tree as the round is recorded. "
+                 "/crew:done still needs a clean gate. The missing pass is that override: "
+                 "do not report it as a defect on its own. Report anything in the diff a "
+                 "gate run would catch.")
 
 
 def _reason(text):

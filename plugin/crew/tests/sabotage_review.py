@@ -1392,6 +1392,17 @@ REVIEW_FIX_MUTATIONS = (
          "test_supersede_is_refused_and_changes_nothing"),
     ),
     (
+        # Review of 4357247c, FIX1: a receipt bound to another bundle or base
+        # is superseded as if it were the round's.
+        "--supersede-accepted takes a receipt bound to another bundle",
+        REVIEW_LEDGER,
+        '    if (receipt["bundle_sha256"] != latest.get("bundle_sha256") or not isinstance(base, str)\n'
+        '            or not base or base != latest.get("base")):\n',
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
         # Review of 1b9ce429, FIX1: --correct-acceptance on a ticket that is
         # no longer ACCEPTED.
         "--correct-acceptance ignores the state",

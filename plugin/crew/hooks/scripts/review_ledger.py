@@ -905,6 +905,13 @@ def _supersede(data, ticket, by):
             receipt["bundle_sha256"]):
         raise LedgerError(f"{ticket}'s receipt names no bundle sha256: could not tell what "
                           "would be superseded")
+    # Review of 4357247c, FIX1: the receipt must be bound to the latest round's
+    # own bundle and base, or it is not the round's receipt.
+    base = receipt.get("base")
+    if (receipt["bundle_sha256"] != latest.get("bundle_sha256") or not isinstance(base, str)
+            or not base or base != latest.get("base")):
+        raise LedgerError(f"{ticket}'s receipt is not bound to round {number}'s bundle and "
+                          "base: could not tell what would be superseded")
     history = data.get("superseded", [])
     if not _is_dict_list(history):
         raise LedgerError(f"{ticket}'s `superseded` is not a list of objects: could not tell "

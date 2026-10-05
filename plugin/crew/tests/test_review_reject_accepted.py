@@ -312,6 +312,12 @@ REFUSALS = {
     "receipt_bundle_not_hex": (_receipt("bundle_sha256", "x" * 64), None),
     # Round 4: `$` matches before a final newline; fullmatch does not.
     "receipt_bundle_trailing_newline": (_receipt("bundle_sha256", "a" * 64 + "\n"), None),
+    # Review of 4357247c, FIX1: a receipt not bound to the round's bundle and
+    # base is not the round's receipt.
+    "receipt_bundle_other": (_receipt("bundle_sha256", "a" * 64), None),
+    "receipt_base_missing": (_with(lambda data: data["receipt"].pop("base")), None),
+    "receipt_base_empty": (_receipt("base", ""), None),
+    "receipt_base_other": (_receipt("base", "0" * 40), None),
     "superseded_dict": (_with(lambda data: data.__setitem__("superseded", {})), None),
     "superseded_string": (_with(lambda data: data.__setitem__("superseded", "x")), None),
     "round_one_receipt_round_bool": (
