@@ -267,7 +267,7 @@ def test_clean_and_findings_rounds_carry_no_failure_class(repo, tmp_path, mode):
     assert (review["failure_class"], review["refunded"]) == (None, False)
 
 
-def _finish_claude(repo, tmp_path, body, before=None):
+def _finish_claude(repo, tmp_path, body, before=None, exit_code="0"):
     """Reserve a claude round and record `body` (after a READ line per part)
     through the subagent path, as /crew:review step 2c does."""
     (repo / "change.txt").write_text("change\n", encoding="utf-8")
@@ -284,7 +284,7 @@ def _finish_claude(repo, tmp_path, body, before=None):
     subprocess.run(common + ["--reserve-only"], capture_output=True,
                    stdin=subprocess.DEVNULL, check=True, timeout=120)
     result = subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
-                                      "--exit-code", "0", "--work-dir", str(work)],
+                                      "--exit-code", exit_code, "--work-dir", str(work)],
                             capture_output=True, text=True, stdin=subprocess.DEVNULL,
                             check=False, timeout=120)
     return result, json.loads((work / "review.json").read_text(encoding="utf-8"))
@@ -401,7 +401,8 @@ def _not_retried(repo, tmp_path, result, rounds, why):
     """Nothing reserved after the last round; one not-retried line naming
     `why`, then the options line; exit 3."""
     lines = _retry_lines(result)
-    assert (result.returncode, len(_rows(repo)), len(lines),
+    refusals = [ln for ln in lines if ln.startswith("review: retry: not retried - ")]
+    assert (result.returncode, len(_rows(repo)), len(refusals),
             lines and lines[-1].startswith("review: retry: not retried - ")
             and why in lines[-1],
             "review: options: " in result.stdout) == (3, rounds, 1, True, True), (
@@ -495,9 +496,9 @@ def test_failed_round_files_are_kept(repo, tmp_path):
 
 
 def test_claude_fallback_never_retries_in_process(repo, tmp_path):
-    """Step 2c records a round in two calls; an empty answer is a refunded
-    tool round, and the second call still ends there."""
-    result, review = _finish_claude(repo, tmp_path, "")
+    """Step 2c records a round in two calls; a subagent that failed (non-zero
+    exit) is a refunded tool round, and the second call still ends there."""
+    result, review = _finish_claude(repo, tmp_path, "", exit_code="1")
 
     assert (result.returncode, review["failure_class"], review["refunded"], len(_rows(repo)),
             _retry_lines(result)) == (3, "tool", True, 1, []), result.stdout + result.stderr
