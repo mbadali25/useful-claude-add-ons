@@ -39,8 +39,12 @@ def _row(top, env, sha):
     promote-gate reads it (L-0665). Raises ValueError when the file exists
     and cannot be read: whether a row exists cannot be told."""
     path = os.path.join(top, PROMOTIONS)
-    if not os.path.lexists(path):
-        return None  # absent; a dangling symlink is present and unreadable
+    try:
+        os.lstat(path)  # a dangling symlink is present, and unreadable below
+    except FileNotFoundError:
+        return None  # absent
+    except OSError as exc:  # the probe failed: whether it exists cannot be told
+        raise ValueError(f"promotions-unreadable: {path} cannot be probed: {exc}") from exc
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             text = fh.read()

@@ -749,7 +749,13 @@ GHDEPLOY_MUTATIONS = (
      "        return None\n",
      _A + "test_an_unreadable_promotions_file_is_deploy_target[directory]"),
     ("autopilot deploy: a dangling PROMOTIONS.md symlink reads as no row", APD,
-     "    if not os.path.lexists(path):\n        return None  # absent",
-     "    if not os.path.exists(path):\n        return None  # absent",
+     "        os.lstat(path)  # a dangling symlink is present, and unreadable below\n",
+     "        os.stat(path)  # a dangling symlink is present, and unreadable below\n",
      _A + "test_an_unreadable_promotions_file_is_deploy_target[dangling-symlink]"),
+    ("autopilot deploy: a failed probe of PROMOTIONS.md reads as no row", APD,
+     "    except OSError as exc:  # the probe failed: whether it exists cannot be told\n"
+     "        raise ValueError(",
+     "    except OSError as exc:  # the probe failed: whether it exists cannot be told\n"
+     "        return None\n        raise ValueError(",
+     _A + "test_a_failed_probe_of_promotions_is_deploy_target"),
 )

@@ -326,3 +326,21 @@ def test_an_unreadable_promotions_file_is_deploy_target(tmp_path, monkeypatch, f
     got = _after(root)
     assert (got["phase"], got["stop"]) == ("deploy-target", True)
     assert "promotions-unreadable" in got["reason"]
+
+
+
+def test_a_failed_probe_of_promotions_is_deploy_target(tmp_path, monkeypatch):
+    """L-0649 r3: an lstat that fails for any reason but "not found" (an
+    unreadable parent) cannot tell whether a row exists."""
+    import os  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, monkeypatch)
+    real = os.lstat
+
+    def denied(path, *a, **k):
+        if str(path).endswith("PROMOTIONS.md"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *a, **k)
+    monkeypatch.setattr(crew_autopilot_deploy.os, "lstat", denied)
+    got = _after(root)
+    assert (got["phase"], got["stop"]) == ("deploy-target", True)
+    assert "promotions-unreadable" in got["reason"]
