@@ -16,10 +16,22 @@ FAILED=()
 
 # Install locations. The defaults are the real ones; the test suite points
 # them at a throwaway directory so it can run the real download / verify /
-# unpack steps without touching the machine.
-BIN_DIR="${GIZMODUCK_BIN_DIR:-/usr/local/bin}"
-OPT_DIR="${GIZMODUCK_OPT_DIR:-/opt}"
-APT_LISTS_DIR="${GIZMODUCK_APT_LISTS_DIR:-/var/lib/apt/lists}"
+# unpack steps without touching the machine. These are a TEST seam, not a
+# supported setting: everything under them is written with `sudo rm -rf` /
+# `sudo mv`, so a GIZMODUCK_*_DIR inherited from a profile or a CI job must
+# not redirect a real run. They are honoured only with
+# GIZMODUCK_BOOTSTRAP_TEST=1, and otherwise ignored with a notice (C-0015).
+BIN_DIR=/usr/local/bin
+OPT_DIR=/opt
+APT_LISTS_DIR=/var/lib/apt/lists
+if [[ "${GIZMODUCK_BOOTSTRAP_TEST:-}" == 1 ]]; then
+  BIN_DIR="${GIZMODUCK_BIN_DIR:-$BIN_DIR}"
+  OPT_DIR="${GIZMODUCK_OPT_DIR:-$OPT_DIR}"
+  APT_LISTS_DIR="${GIZMODUCK_APT_LISTS_DIR:-$APT_LISTS_DIR}"
+elif [[ -n "${GIZMODUCK_BIN_DIR:-}${GIZMODUCK_OPT_DIR:-}${GIZMODUCK_APT_LISTS_DIR:-}" ]]; then
+  echo "!! GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR / GIZMODUCK_APT_LISTS_DIR are test-only and" >&2
+  echo "!!   ignored here (they need GIZMODUCK_BOOTSTRAP_TEST=1); installing to the defaults." >&2
+fi
 
 # Time limits, so a stalled network fails one step instead of hanging the
 # whole bootstrap (and a cloud session's setup phase with it). API calls are

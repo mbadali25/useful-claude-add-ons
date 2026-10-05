@@ -12,7 +12,8 @@ touches the network or the machine. Every stub logs its argv, which is how
 the tests prove a fallback was (or was not) taken.
 
 `sudo` really runs what it is given (except apt-get, which it only logs), and
-GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR point the install at tmp_path, so the
+GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR (honoured only with
+GIZMODUCK_BOOTSTRAP_TEST=1, which _run sets) point the install at tmp_path, so the
 real download -> verify -> unpack -> install steps run against fixtures. The
 `curl` stub serves `-o` downloads from a per-test assets directory.
 """
@@ -74,6 +75,15 @@ if [[ "$1" == apt-get ]]; then
   [[ " $* " == *" install "* && -n "${STUB_APT_FAIL_INSTALL:-}" ]] && exit 100
   exit 0
 fi
+# Safety net: this stub really runs what it is given, so a bootstrap.sh that
+# stopped honouring the test directories would install into the machine's
+# own. Refuse any real install location instead.
+for a in "$@"; do
+  case "$a" in
+    /usr/local/bin*|/opt|/opt/*|/var/lib/apt*)
+      echo "sudo-stub: refusing real path $a" >&2; exit 97 ;;
+  esac
+done
 exec "$@"
 """
 
@@ -119,6 +129,9 @@ def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
         "GIZMODUCK_BIN_DIR": str(stubs["inst_bin"]),
         "GIZMODUCK_OPT_DIR": str(stubs["inst_opt"]),
         "GIZMODUCK_APT_LISTS_DIR": str(stubs["apt_lists"]),
+        # C-0015.3: the three directory overrides above are honoured only
+        # with this flag, so an inherited one cannot redirect a real run.
+        "GIZMODUCK_BOOTSTRAP_TEST": "1",
     }
     env.update(extra_env or {})
     proc = subprocess.run(
@@ -857,3 +870,49 @@ def test_ps1_template_clone_never_recurses_through_a_link():
         code = [ln.split("#", 1)[0] for ln in src.splitlines()]
         bad = [ln for ln in code if "-Recurse" in ln and ("Get-ChildItem" in ln or "gci" in ln)]
         assert not bad, f"{name} walks the user's directory with Get-ChildItem -Recurse: {bad}"
+
+
+# --- C-0015.3: the directory overrides are test-only -------------------------
+#
+# bootstrap.sh runs `sudo rm -rf` / `sudo mv` under these directories, so an
+# override inherited from a shell profile or a CI job must not move a real
+# run. They are honoured only with GIZMODUCK_BOOTSTRAP_TEST=1.
+
+_SHOW_DIRS = 'echo "BIN=$BIN_DIR"; echo "OPT=$OPT_DIR"; echo "APT=$APT_LISTS_DIR"'
+
+
+@pytest.mark.parametrize("flag", ["", "0", "yes"])
+def test_dir_overrides_are_ignored_without_the_test_flag(stubs, flag):
+    # Must-block.
+    proc, log = _run(stubs, _SHOW_DIRS, extra_env={"GIZMODUCK_BOOTSTRAP_TEST": flag})
+    assert "BIN=/usr/local/bin\n" in proc.stdout, proc.stdout + proc.stderr
+    assert "OPT=/opt\n" in proc.stdout
+    assert "APT=/var/lib/apt/lists\n" in proc.stdout
+    assert "GIZMODUCK_BIN_DIR" in proc.stderr and "ignored" in proc.stderr, proc.stderr
+    assert log == ""
+
+
+def test_dir_overrides_are_honoured_with_the_test_flag(stubs):
+    # Must-allow (and every install test above relies on it).
+    proc, _ = _run(stubs, _SHOW_DIRS)
+    assert f"BIN={stubs['inst_bin']}\n" in proc.stdout, proc.stdout + proc.stderr
+    assert f"OPT={stubs['inst_opt']}\n" in proc.stdout
+    assert f"APT={stubs['apt_lists']}\n" in proc.stdout
+    assert "ignored" not in proc.stderr
+
+
+def test_no_override_and_no_flag_is_silent(stubs):
+    env = {"GIZMODUCK_BOOTSTRAP_TEST": "", "GIZMODUCK_BIN_DIR": "",
+           "GIZMODUCK_OPT_DIR": "", "GIZMODUCK_APT_LISTS_DIR": ""}
+    proc, _ = _run(stubs, _SHOW_DIRS, extra_env=env)
+    assert "BIN=/usr/local/bin\n" in proc.stdout
+    assert proc.stderr == "", proc.stderr
+
+
+def test_the_sudo_stub_refuses_real_install_paths(stubs):
+    # The net under every install test: with the overrides ignored, nothing
+    # may reach /usr/local/bin or /opt.
+    proc, log = _run(stubs, "sudo mkdir -p /opt/gizmoduck-should-not-exist; echo rc=$?")
+    assert "rc=97" in proc.stdout, proc.stdout + proc.stderr
+    assert not os.path.exists("/opt/gizmoduck-should-not-exist")
+    assert "refusing real path /opt/gizmoduck-should-not-exist" in proc.stderr
