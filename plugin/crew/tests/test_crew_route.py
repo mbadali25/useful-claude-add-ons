@@ -728,7 +728,7 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
     # L-0652 adds `sleep` and `wake`; `approve` and `questions-check` stay
     # script subcommands only.
     assert (crew_autopilot.SUBCOMMANDS, got) == (
-        ("status", "run", "assign", "goal", "focus", "sleep", "wake", "split", "wave"), [True, True])
+        ("status", "run", "assign", "goal", "focus", "sleep", "wake", "wave", "split"), [True, True])
 
 
 # --- T-0057: plain-text routing for the autopilot commands the router knows -----
