@@ -366,7 +366,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.
 - **"the python probe timed out" (the PowerShell scope guard, completion audit, approval hook and
-  verify gate, crew 1.1.3, L-0690).** The probe gives each candidate 3 s and the whole walk 8 s; when
+  verify gate, crew 1.1.8, L-0690).** The probe gives each candidate 3 s and the whole walk 8 s; when
   it runs out of time, or kills a candidate at its bound, it says "the python probe timed out" (could
   not tell) instead of "no usable python", with the same exit code. Whenever the probe finds nothing,
   `python probe:` lines follow on stderr: a summary (`found`, `not-found`, `rejected` or
