@@ -59,7 +59,7 @@ OVERRIDE_VAR = "GIZMODUCK_ZAP_HOME"
 
 def _zap_binary():
     """Step 3: a zap.bat / zap.sh wrapper via base.which (tool home bin, PATH)."""
-    return base.which("zap.bat") or base.which("zap.sh")
+    return base.which_any("zap.bat", "zap.sh")
 
 
 def _wrapper_names():

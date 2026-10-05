@@ -144,10 +144,9 @@ def _categories_for(findings):
 def find_nuclei():
     # scanners.base.which: the tool home's bin first, then PATH (L-0684).
     from scanners import base as scanner_base  # pylint: disable=import-outside-toplevel
-    for name in ("nuclei", "nuclei.exe"):
-        p = scanner_base.which(name)
-        if p:
-            return p
+    p = scanner_base.which_any("nuclei", "nuclei.exe")
+    if p:
+        return p
     # common go install location
     cand = os.path.expanduser("~/go/bin/nuclei")
     return cand if os.path.exists(cand) else None

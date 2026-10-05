@@ -112,7 +112,7 @@ def _resolve_command():
         command = _with_bash(base.existing_file(home / "testssl.sh" / "testssl.sh"))
         if command:
             return command
-    binary = base.which("testssl.sh") or base.which("testssl")
+    binary = base.which_any("testssl.sh", "testssl")
     if binary:
         return [binary]
     return _with_bash(_find_testssl_script())

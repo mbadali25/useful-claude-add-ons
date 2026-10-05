@@ -156,6 +156,16 @@ def test_testssl_hexdump_already_on_path_needs_no_prepend(path_dir):
     assert testssl._hexdump_dir() is None
 
 
+def test_tool_home_beats_path_across_a_tools_names(home, path_dir):
+    _exe(path_dir / "zap.bat")
+    _exe(path_dir / "zap.sh")
+    mine = _exe(home / "bin" / "zap.sh")
+    assert zap._zap_binary() == str(mine)
+    _exe(path_dir / "testssl.sh")
+    mine = _exe(home / "bin" / "testssl")
+    assert testssl._resolve_command() == [str(mine)]
+
+
 def test_override_states_unset_ok_broken(monkeypatch, tmp_path):
     monkeypatch.delenv("GIZMODUCK_X", raising=False)
     assert base.override("GIZMODUCK_X", base.existing_file).state == base.UNSET

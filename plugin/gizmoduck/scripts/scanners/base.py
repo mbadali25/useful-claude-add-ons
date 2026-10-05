@@ -92,15 +92,34 @@ def _names(binary):
     return [binary] + [binary + ext for ext in _pathext()]
 
 
-def which(binary):
-    """<tool home>/bin/<binary> when it is an executable file, else PATH."""
+def _in_tool_home(binary):
     home = tool_home()
     if home is not None:
         for name in _names(binary):
             candidate = home / "bin" / name
             if is_executable(candidate):
                 return str(candidate)
-    return shutil.which(binary)
+    return None
+
+
+def which(binary):
+    """<tool home>/bin/<binary> when it is an executable file, else PATH."""
+    return _in_tool_home(binary) or shutil.which(binary)
+
+
+def which_any(*binaries):
+    """The first of several names for one tool (zap.bat / zap.sh), with the
+    tool home searched for EVERY name before PATH is searched for any, so a
+    PATH copy under one name never beats the tool home's copy under another."""
+    for binary in binaries:
+        found = _in_tool_home(binary)
+        if found:
+            return found
+    for binary in binaries:
+        found = which(binary)
+        if found:
+            return found
+    return None
 
 
 UNSET, OK, BROKEN = "unset", "ok", "broken"
