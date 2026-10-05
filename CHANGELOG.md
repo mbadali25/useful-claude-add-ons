@@ -48,6 +48,190 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   merge-commit diffs, a rename out of a component, the combined-session rules, and the workflows'
   gates (each whole `if:` expression's shape, and `!cancelled()` on every job that needs the
   select job). Twenty-two sabotages of the selector or a workflow each turned it red.
+### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
+
+- **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that
+  say what they did not verify, review metrics read from the main checkout in a worktree, and personal
+  autopilot defaults you can set once for every repo, with a backup before each config write.
+
+#### Added — `crew`: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
+
+- **Summary.** `crew_ghdeploy.py check` validates a `github` deploy entry in
+  `.crew/verify.json` and prints the `gh workflow run` dispatch for HEAD, with
+  the environments the promote gates would apply to it.
+- **What changed.** A `.crew/verify.json` environment may carry a `github`
+  entry (one object or a list): `workflow` (a `.yml`/`.yaml` filename),
+  `ref` (a branch name, checked as a name only: `git check-ref-format
+  --branch` rules, no leading `-` or `@`, not `HEAD`, no `refs/` path but
+  `refs/heads/`; a bare tag name is NOT detected), fixed `inputs`, and optional `shaInput`,
+  `correlationInput`, `deployJob`, `watchMinutes` (1-360) and
+  `identifySeconds` (10-900). The new
+  `plugin/crew/hooks/scripts/crew_ghdeploy.py check --root . --env <name>`
+  validates it against a closed key set and the value grammar
+  `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
+  requires `deploy` to list exactly the entries' canonical prefixes so
+  promote-gate's existing match fires on the real dispatch, and applies
+  both gates' one rule as L-1503 left it, taking the stricter gate where
+  they differ: a map EITHER gate refuses (exact or case twin keys under
+  Python's or .NET's fold, an empty key at any depth, a comma or
+  control-character environment name, a null, non-string or date-time
+  `deploy`, a list or object `requireHuman`, JSON nested past a fixed 200
+  levels, below every interpreter's recursion limit) is
+  refused as `gate-refuses-map`, and each dispatch is printed with
+  `gated-as: '<names>'`, every environment whose `deploy` matches it
+  literally, ignoring case under either gate's fold, either way round,
+  after CR stripping - the union whose requirements apply. A
+  multi-environment match is not refused.
+  It prints the one
+  literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
+  (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
+  HEAD unreadable - never "no github entry"). It writes nothing and runs no
+  `gh`.
+- **Not yet.** Nothing dispatches, identifies, watches or records a run
+  (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
+  does not deploy (L-0649).
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 297 cases. An
+  agreement table (L-1503's 26 maps from test_promote_gate_literal_match.py
+  plus 9: 35 maps, 95 commands) feeds every command to the real
+  `promote-gate.sh`, the real `promote-gate.ps1` and `simulate_gate`, and 31
+  github maps compare `check`'s decision with both real gates on the dispatch
+  it printed; 10 more maps where the two real gates differ prove the
+  either-refuses / union rule, with the .NET-only fold table (27 pairs) and
+  the ConvertFrom-Json date-time port pinned; the `.ps1` halves but one
+  smoke map each are `slow`. A
+  `[!-[]` deploy (a range pwsh's `-like` threw on) is literal text and
+  accepted (#407 round-4 FIX). Messages naming a non-ASCII key survive a
+  cp1252 stdout. The 86
+  mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
+  named case red; they are unwired until L-0650 (tooling only).
+
+#### Added — `crew`: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
+
+- **The rule.** `explorer`, `researcher`, `security` and `crew-best-practices` carry "Verify
+  before you state": a claim about code, config, history or state is verified this session (a
+  `path:line`, a command and what it printed, or a ref) or labelled `not verified` / `inferred`;
+  "could not tell" is an answer; a prior decision is looked up in `CHANGELOG.md`, `docs/adr/` or a
+  ticket's `direction.md` before a change to it is proposed; quoted output moves by copying bytes.
+  `crew-best-practices`' description now also triggers before stating an unverified fact. The rule
+  is crew's own and is not written into repos crew sets up.
+- **Reports.** explorer, researcher and security end with a **Not verified** section (researcher's
+  **Unverified** is renamed); `/crew:done` gains step 5, a report whose **Not verified:** names
+  rules that exited 77, suites that did not run on this OS and `drift-detection.sh`;
+  `/crew:debug`'s report gains a **Not verified** bullet.
+- **Recorded decisions.** `crew-plan`'s self-review gains item 6, and `crew-brainstorm`'s
+  approaches step looks a decision up before an option that changes it.
+- **Enforced.** `validate-prompts.py` gains `check_verification_rule()`: every `agents/*.md` (by
+  default, so a new agent is checked) and `crew-best-practices` must carry the rule, and the
+  three free-form agents plus `done.md` and `debug.md` must carry **Not verified**. `reviewer`
+  is exempt by name until the harness half lands. New suite `test_verify_before_stating.py`
+  (18 tests, tmp_path copies of the prompt tree) and `.crew/verify.json`'s last rule.
+- **Harness follow-ups** (review harness, owner rule T-0087, landing separately): the verdict
+  parser splitting on ASCII line breaks only, so a U+2028 in a finding is content rather than a
+  break (`review_verdict.py` `parse` and `codex_final_message`); `output_sha256` /
+  `output_source` in `review.json` (`review_run.py`); the rule, the "claims without evidence"
+  FIX category and `not reproduced:` in `reviewer.md`; the same category and the copy-the-bytes
+  Claude fallback in `review.md`'s heredoc; their `validate-prompts.py` checks and
+  `sabotage_review.py` entries; the troubleshooting and working-with-codex guide rows.
+
+#### Fixed — `crew`: review metrics are read from the main checkout's `.crew/` in a linked worktree (L-0582)
+
+- **What changed.** One resolver, `crew_common.metrics_crew_dir(root)` ->
+  `(crew_dir, problem)`, names the `.crew/` that holds review metrics: the
+  main checkout's from a linked worktree, `root`'s own otherwise (a plain
+  directory, a submodule, the main checkout). A linked worktree whose common
+  dir is not named `.git` (a main made with `git init --separate-git-dir`, or
+  a worktree of a bare repository) is could-not-tell, since git names no
+  main checkout there; the repo config's resolution (T-0088) is unchanged.
+  `crew_state.read_metrics`
+  (`/crew:status` health, `/crew:split`'s `health.rate`), `crew_standards.py
+  metric` (read and `--record` append) and `/crew:status`'s `metrics` line
+  all go through it. When git cannot name the main checkout, nothing falls
+  back to the worktree's own copy: `read_metrics` returns the verdict
+  `could not tell: <why>` with no rate (never `no data`, and neither health
+  trigger fires), `metric` exits 1 before any read or write, and the status
+  line says `metrics  could not tell (<why>)`. A lane's own stranded
+  `.crew/metrics.jsonl` or `.crew/metrics.md` is named on the same status
+  line as `not counted`; it is not read, merged or moved.
+- **Why.** `review_run.py` has written rows to the main checkout's file
+  since L-0578, but every reader still joined `.crew/metrics.md` to the root
+  it was given, so from a lane it read its own (usually absent) copy as
+  "no data", and `metric --record` created that copy.
+- **Tests.** `plugin/crew/tests/test_metrics_location.py` (25 cases): real
+  `git worktree add` fixtures whose lane holds a decoy file with different
+  counts; must-find from the lane and from the main checkout; could-not-tell
+  from a `.git` file naming a missing gitdir, from git not answering, and
+  from `--separate-git-dir` and bare-repository worktrees (every caller); the
+  stranded note for both file names; and an AST lint that fails on any
+  `os.path.join(..., ".crew", "metrics.md" | "metrics.jsonl")` outside
+  `crew_common.py` beyond three allowed sites (`crew_migrate.py` 2,
+  `crew_metrics.py` 1, `review_metrics.py` 1). 18 of the first 20 are red
+  against main (the two green are the main-checkout must-allow controls), and
+  the four layout cases were red against the first cut of this fix. Six
+  mutations were applied by hand and each turned its named tests red.
+- **Not changed.** `crew_metrics.py`'s `metrics.jsonl` writer (run by
+  `/crew:done`) still writes `root`'s copy, so a lane's jsonl rows are now
+  named as not counted rather than counted; `review_metrics.metrics_path`
+  (the writer, which still resolves `--separate-git-dir` and bare-repository
+  worktrees to the lane's own file) and the sabotage entries are harness
+  paths, left for a separate tooling PR (TODO.md, L-0582 follow-ups).
+  Docs: guides none - no guide describes where `metrics.md` is read from.
+
+#### Added — `crew`: global defaults for the personal autopilot keys, a backup before every config write, and a rebuild from the owner's profile (T-0050)
+
+- **Behaviour change: a global value can hold a repo value down.** `autopilot.mode`, `maxPhases`,
+  `deploy`, `approval` and `questions` are personal (`crew_guards.PERSONAL_KEYS`): settable in
+  `~/.claude/crew/config.json` as the owner's default for every repo, combined per key by
+  `effective_personal` -- the stricter of the layers that set a key wins (`off` < `plan`,
+  `human` < `risk` < `self`, `none` < `nonprod` < `all`, the smaller `maxPhases`), and a silent
+  layer (absent or `null`) imposes nothing. `resolve_config` applies it, so `crew_autopilot.settings`
+  reads it with no change. A repo `self` under a global `human` reads `human`.
+- **Behaviour change: new repos no longer spell the personal keys.** `template_config()` and
+  `global_template_config()` are what the committed templates, crew-setup's inline copy and
+  `heal_config` write. Existing repos keep their explicit values (every repo `/crew:init` set up
+  before this says `"mode": "off"`): `crew_config.py --explain --all` names each `shadow:` and
+  `--unset <key> --repo --apply` removes it on the owner's yes; nothing removes one automatically.
+- **Behaviour change: `/crew:config` writes `.crew/config.json` by more routes, all `--apply`
+  only:** `--set`/`--unset --repo`, `--rebuild --repo`, `--restore <stamp> --repo` and the menu's
+  Save.
+- `crew_backup.py`: every crew writer of either config file (`write_global_config`,
+  `write_repo_config`, rebuild, restore, the menu's restore, `heal_config`, `apply_changes`, the
+  autoclear setup's repo writes, `crew_upgrade`) saves the pre-write bytes, corrupt ones included,
+  under `~/.claude/crew/backups/` (0600 files, 0700 for the directories it creates, each copy
+  read back and compared, newest 20 kept) and refuses the write when the backup fails (exit 4).
+  `--backups` lists them; `--restore <stamp>` backs up the current file, then writes the stamped
+  bytes, and refuses (exit 2) a stamp that is not valid JSON unless `--force-invalid`.
+- The profile: `~/.claude/crew/profile.json`, plus `<memory.vaultPath>/crew/profile.json` when a
+  vault is set, holds each layer's non-template values (repos keyed by normalised `origin`).
+  Refreshed by `--set`/`--unset --apply` and Save, captured by `--save-profile`; never by heal,
+  platform-sync, upgrade, the autoclear setup, a rebuild or a restore. `--rebuild --repo|--global`
+  writes the template plus the profile, a dry run until `--apply`; an unreadable profile copy
+  with no readable other is exit 3 (could not tell), none at all needs `--no-profile`.
+- `--explain --all` prints every key with its layer, marks `repo-only`, `held down by <layer>`,
+  and the `shadow:` and `profile drift:` findings. CONFIG.md §2 re-measured (81 global of 138,
+  57 repo-only, on the batch 6 tree), new §20a and §20b; README, `commands/config.md` and `global-config.md` updated.
+- The generated settings reference: `crew_keys.layer_of` names the personal keys
+  `both, stricter wins` (from `crew_guards.PERSONAL_KEYS`), so CONFIG.md §10/§11 and
+  `docs/guides/crew/src/configuration-reference.md` move them to the machine-settable table; the
+  reference's hand-written part and the crew guide describe personal defaults, backups and the
+  rebuild as shipped. `crew_keys.COMING` keeps T-0050's `scope.allowCliApproval` row (the harness
+  follow-up below).
+- **A corrupt machine file is could-not-tell for the personal keys** (review r1 of the land
+  merge): `read_global_config` collapses it to `{}`, which would have turned a global
+  `approval: human` into the default `risk` with no warning. `crew_autopilot.settings` now reads
+  the machine file raw first (`_unreadable_machine_autopilot`), and unreadable JSON, a
+  non-object file or a non-object `autopilot` block reads every policy as `unknown`, autopilot
+  as off, with a warning naming the file, the same as the repo side. The generated reference
+  lists a personal key's values strictest first and says so.
+- `autopilot.maxAutoReplans` (T-0074) and the `autopilot.sleep` block (T-0053), which reached
+  main after this change was written, stay repo-only (`crew_guards.REPO_ONLY_AUTOPILOT`): the
+  machine file's copy is pruned and new repos' templates still spell them.
+- Tests: `test_crew_config_personal.py` (60), `test_crew_config_rebuild.py` (42),
+  `test_crew_backup.py` (28), must-block and must-allow; 25 hand sabotages, each red.
+- **Harness follow-ups (left out under the T-0087 rule):** `scope.allowCliApproval` as a personal
+  key needs `crew_ticket.cli_approval_allowed` to read the global layer (review harness), with
+  its must-block tests in `test_crew_ticket.py` / `test_scope_guard.py`; and registering the 21
+  sabotages as `sabotage_config_layers.py` in `sabotage.py` (harness paths). Until then a global
+  `approval: self` still needs the repo's own `scope.allowCliApproval: true`.
 
 ### Fixed — `crew` 1.0.347: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
 
@@ -82,6 +266,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the 13 sites put back to a bare `"git"` turned its test red. No sabotage
   anchor quoted a changed argv; the 8 entries anchored within 15 lines of a
   change still match exactly once and go red.
+
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched

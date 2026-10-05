@@ -1180,7 +1180,19 @@ def test_mode_plan_arms(tmp_path):
     assert (got["mode"], got["armed"], got["maxPhases"]) == ("plan", True, 5)
 
 
-@pytest.mark.parametrize("value", ["Plan", "plan ", "PLAN", "on", True, "autonomous", None])
+def test_mode_null_is_silent_and_reads_the_default(tmp_path):
+    """T-0050: `null` is a silent layer for a personal key (the global value,
+    else the default), so a repo `mode: null` is `off` with nothing to warn
+    about -- it is not a typo, it is "not set here"."""
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": None})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["armed"], got["mode"], got["warnings"]) == (False, "off", [])
+
+
+@pytest.mark.parametrize("value", ["Plan", "plan ", "PLAN", "on", True, "autonomous"])
 def test_mode_typo_is_off(tmp_path, value):
     root = make_repo(tmp_path, mode="off")
     _config(root, {"mode": value})
@@ -1366,12 +1378,14 @@ def test_status_sabotage_is_registered_with_sabotage_py():
     assert (len(STATUS_MUTATIONS), missing) == (45, [])
 
 
-def test_autopilot_block_is_repo_only():
+def test_autopilot_block_is_personal_since_t0050():
+    """T-0050 reversed the repo-only rule: the block's keys are personal, kept
+    by `filter_global` and combined per key by `resolve_config`."""
     import crew_config  # pylint: disable=import-outside-toplevel
     kept, ignored = crew_config.filter_global({"autopilot": {"mode": "plan"}})
 
-    assert (kept, bool(ignored), crew_config.is_global_path("autopilot.mode")) == (
-        {}, True, False)
+    assert (kept, ignored, crew_config.is_global_path("autopilot.mode")) == (
+        {"autopilot": {"mode": "plan"}}, [], True)
 
 
 # --- T-0087: a refunded tool-failure round goes back to review -----------------------

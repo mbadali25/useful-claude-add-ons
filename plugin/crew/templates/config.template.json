@@ -217,11 +217,6 @@
     "allowCliApproval": false
   },
   "autopilot": {
-    "mode": "off",
-    "maxPhases": 12,
-    "deploy": "none",
-    "approval": "risk",
-    "questions": "risk",
     "maxAutoReplans": 0,
     "sleep": {
       "schedule": null,

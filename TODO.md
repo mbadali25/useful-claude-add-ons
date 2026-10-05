@@ -88,6 +88,21 @@ be wrong can be closed on evidence.
   list, read the way `autoClear.onlyRepos` is, would let an owner arm it for chosen repos only.
   Excluded from T-0006 by its spec. There is deliberately no `startup` trigger and no flag for
   one (owner decision 2026-09-25), so that is not a follow-up.
+- **L-0582 follow-ups (review metrics resolve the main checkout's `.crew/`).** (a) Harness,
+  for a separate tooling PR (T-0087): `plugin/crew/hooks/scripts/review_metrics.py:89-96`
+  `metrics_path` - the L-0578 WRITER - still calls `crew_common._main_checkout` and joins
+  `.crew/metrics.md` itself. It should return `crew_common.metrics_md_path(root)`, and then
+  `plugin/crew/tests/test_metrics_location.py`'s lint drops its `review_metrics.py` ALLOWED entry.
+  Until then the review-round FIX of L-0582 does not reach it: a linked worktree whose common dir
+  is not named `.git` (main made with `git init --separate-git-dir`, or a worktree of a bare
+  repository) has its rows written to the lane's own `.crew/metrics.md`, where every reader now
+  says `could not tell`. The same tooling PR adds L-0582's six hand-run mutations to
+  `plugin/crew/tests/sabotage_limit_worktree.py`. (b) Spec exclusions, still on `root`:
+  `plugin/crew/hooks/scripts/crew_metrics.py:138-139` `metrics_path`, the `metrics.jsonl` writer
+  `/crew:done` runs, so from a lane its rows land in the lane's copy, which `/crew:status` now names
+  as `not counted`; and `plugin/crew/hooks/scripts/crew_migrate.py:507`, the one-time migration of
+  the checkout it is pointed at (likely correct as is, re-check if a lane can run it). Neither is
+  filed as a ticket yet.
 - **crew: native-Windows process identity for auto-resume `clear` binding** (Toolhelp32 snapshot +
   GetProcessTimes) - T-0042 left `clear` waiting there with "this session's process could not be
   identified" (`plugin/crew/hooks/scripts/crew_resume.py::session_process` returns None when

@@ -22,7 +22,8 @@ What this module does NOT hold:
 - defaults: `crew_config.default_config()` / `default_global_config()` own
   them, and the generator reads them from there;
 - the layer: `layer_of` derives it from `crew_config.is_global_path`, the
-  ratchet tables and `crew_config.REPO_VETO_ONLY`, so it follows the code.
+  ratchet tables, `crew_guards.PERSONAL_KEYS` and `crew_config.REPO_VETO_ONLY`,
+  so it follows the code.
 
 `COMING` holds keys from approved tickets that have not landed, each naming
 its ticket. A test fails when one of them is in the code, so the landing
@@ -509,11 +510,14 @@ COMING = (
     _coming("coord.channel", "T-0030", "new key",
             "Where sessions coordinate.", "set when T-0030 lands",
             "set when T-0030 lands"),
-    _coming("autopilot.mode", "T-0050", "changes layer",
-            "The personal autopilot keys become settable in the global file; the "
-            "stricter layer wins.", "off", "both, stricter wins"),
+    # T-0050 landed the five personal `autopilot` keys (`layer_of` now says
+    # `both, stricter wins` for them, from `crew_guards.PERSONAL_KEYS`). This
+    # row is the part of its spec it left out under the T-0087 harness rule:
+    # the reader, `crew_ticket.cli_approval_allowed`, is review harness.
     _coming("scope.allowCliApproval", "T-0050", "changes layer",
-            "Becomes settable in the global file; the stricter layer wins.", "false",
+            "Becomes settable in the global file, the stricter layer winning, once "
+            "its reader (`crew_ticket.cli_approval_allowed`) reads the global layer "
+            "in a harness-only follow-up to T-0050.", "false",
             "both, stricter wins"),
 )
 
@@ -543,13 +547,16 @@ def layer_of(key):
     """Which layer may set `key`, derived from the code that enforces it:
     `machine-arms` (`crew_config.REPO_VETO_ONLY`: only the machine file arms
     it, a repo may only veto), `machine-only` (read from the machine file
-    alone), `repo`, `both, ratchet`, `both, widening warned` or `both`."""
+    alone), `repo`, `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
+    `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"
     if key in _MACHINE_ONLY:
         return "machine-only"
     if not crew_config.is_global_path(key):
         return "repo"
+    if key in crew_guards.PERSONAL_KEYS:
+        return "both, stricter wins"
     if crew_guards.ratchet_spec(key) is not None:
         return "both, ratchet"
     if key in crew_config._RATCHETED:  # pylint: disable=protected-access

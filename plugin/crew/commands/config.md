@@ -1,6 +1,6 @@
 ---
 description: Show where every crew setting comes from, and set machine or repo config from a menu
-argument-hint: [--show|--models]
+argument-hint: [--show|--models|--rebuild|--restore <stamp>|--backups|--save-profile]
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Skill, AskUserQuestion
 ---
 
@@ -13,9 +13,20 @@ Arguments: $ARGUMENTS
   layer (this machine, this repo, view both, or delete this repo's config),
   an area, a setting, and a value from the list. `/crew:config-setup` is the
   same menu under another name.
-- `--show` — step 1 of `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/global-config.md`
-  only (the resolved table and the findings) and stop. Ask nothing, write
-  nothing.
+- `--show` — `crew_config.py --root <repo> --explain --all`, then
+  `--check-global`, and stop: every key with its value and layer (`default`,
+  `global`, `repo`, `repo+global`; `repo-only` marked, `held down by <layer>`
+  for a personal or ratcheted key), then the `shadow:` and `profile drift:`
+  findings. Ask nothing, write nothing.
+- `--rebuild --repo|--global [--no-profile]` — regenerate a lost or corrupt
+  config from the template plus the owner's saved profile
+  (`~/.claude/crew/profile.json`; the vault copy when `memory.vaultPath` is
+  set, the newer one when they differ). Exit 3 when a profile copy is there
+  and unreadable (could not tell), 2 when none exists without `--no-profile`.
+- `--restore <stamp> --repo|--global` — put a backup back (not valid JSON:
+  refused, exit 2, unless `--force-invalid`); `--backups` lists the stamps.
+- `--save-profile [--repo|--global]` — capture the non-default values of
+  either layer (both when neither is named) into the profile.
 - `--models` — the per-role table only: which provider, model and family back
   each `qa` and `dev` role, which fallbacks are armed, and whether the
   self-review guard is barring anything. Reports, writes nothing.
@@ -32,7 +43,10 @@ changed in 0.16.0 and both are silent if unmentioned:
   each one it finds.
 - **What survives is a default, not a lock.** Every key here is overridable in
   a repo's own `.crew/config.json`, which is why step 1's `source` column
-  exists.
+  exists. The personal `autopilot` keys are the exception: the STRICTER of the
+  two layers wins, and a silent layer imposes nothing. A repo file that spells
+  one at its default holds the global value down; `--show` names it as a
+  `shadow:` and `--unset <path> --repo --apply` removes it on a yes.
 
 On native Windows the walkthrough also probes WSL (`crew_shell.py probe --write`)
 and offers `shellRoute.mode`: `auto`, `wsl`, `powershell` or `gitbash`.
@@ -49,8 +63,13 @@ every lane that had none, so say which it is before trusting the lane's settings
 How it writes, whatever the arguments say:
 
 - **Nothing before the plan is shown and approved.** Every write is a dry run
-  first, and `--apply` follows a yes.
-- **The repo file only through the validated path**, never a hand edit:
+  first, and `--apply` follows a yes. Each one backs the file up first to
+  `~/.claude/crew/backups/` (newest 20 kept); a failed backup writes nothing
+  (exit 4). Name the backup after the write. `--set`/`--unset` and Save also
+  refresh the profile; rebuild and restore never do.
+- **This command writes `.crew/config.json` by four routes, all `--apply`
+  only:** `--set`/`--unset PATH --repo`, `--rebuild --repo`, `--restore
+  <stamp> --repo`, and the menu's Save, never a hand edit:
   `crew_config.py --set PATH=JSON --repo [--apply]`, or the menu's
   `crew_config_menu.py save`. It merges, judges every leaf (a whole-block
   value included) and the whole file it would produce, refuses unknown keys
