@@ -170,7 +170,7 @@ def _run_raw(root, args, env=None, data=None):
         full_env.update(env)
     try:
         done = subprocess.run(
-            ["git", "-C", root] + list(args),
+            [crew_common.require_tool("git"), "-C", root] + list(args),
             capture_output=True, timeout=GIT_TIMEOUT, env=full_env, check=False,
             input=data, stdin=None if data is not None else subprocess.DEVNULL,
         )

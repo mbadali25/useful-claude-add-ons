@@ -15,8 +15,11 @@ import pathlib
 import re
 import subprocess
 import sys
+import threading
+import time
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_common
 import crew_ticket
 import crew_tracker
 import pytest
@@ -348,6 +351,99 @@ def test_mint_unreadable_index_refuses(tmp_path, monkeypatch):
     assert (_tickets(root), calls, "INDEX.md" in str(err.value)) == ([], [], True)
 
 
+# L-1510. Windows refuses to open a file while another process `os.replace`s
+# it (a sharing violation, PermissionError), and `read_text` answers None.
+# `_SHARING` makes every OS behave that way for INDEX.md while `replacing` is
+# set, so the race the Windows runner hit now and then happens every run.
+_SHARING = "The process cannot access the file because it is being used by another process"
+
+
+def _index_shared_while(monkeypatch, root, replacing):
+    index = os.path.normcase(str(root / ".work" / "INDEX.md"))
+    real = open
+
+    def sharing(path, *args, **kwargs):
+        if replacing() and os.path.normcase(os.fspath(path)) == index:
+            raise PermissionError(13, _SHARING, os.fspath(path))
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(crew_common, "open", sharing, raising=False)
+
+
+def test_mint_never_reads_index_while_another_mint_replaces_it(tmp_path, monkeypatch):
+    """Windows CI, runs 37221280492 and 37230021739: a concurrent mint died
+    with `.work/INDEX.md exists but could not be read` -- its id scan opened
+    INDEX while another mint's `create` was replacing it. The other mint holds
+    the INDEX lock across its replace here, and the scan opens INDEX inside
+    that window unless it waits for the lock, which it must."""
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    root = _files_repo(tmp_path, rows="T-0003 | spec | - | r | old\n")
+    replacing, started = threading.Event(), threading.Event()
+    _index_shared_while(monkeypatch, root, replacing.is_set)
+
+    def other_mint():
+        with crew_config_files.Lock(str(root / ".work" / "INDEX.md"), 30):
+            replacing.set()
+            started.set()
+            time.sleep(0.3)
+            crew_tracker.create(str(root), "T-0004", "title other")
+            replacing.clear()
+
+    other = threading.Thread(target=other_mint)
+    other.start()
+    started.wait(10)
+    try:
+        got = crew_ticket.mint(str(root), "new work", direction="go")
+    finally:
+        other.join(30)
+
+    lines = _index(root).decode("utf-8").splitlines()
+    assert (got["ticket"], [line.split(" | ")[0] for line in lines]) == (
+        "T-0005", ["T-0003", "T-0004", "T-0005"]), lines
+
+
+def test_mint_persistently_unreadable_index_still_refuses(tmp_path, monkeypatch):
+    """Must-block beside the race: an INDEX that stays unreadable (the same
+    PermissionError, never lifting) is still `could not tell`, never `no ids
+    taken`. Nothing is claimed and the tracker is never asked."""
+    root = _files_repo(tmp_path, rows="T-0003 | spec | - | r | old\n")
+    before = _index(root)
+    calls = _spy_create(monkeypatch)
+    _index_shared_while(monkeypatch, root, lambda: True)
+
+    with pytest.raises(crew_ticket.TicketError) as err:
+        crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (_tickets(root), calls, _index(root) == before,
+            ".work/INDEX.md exists but could not be read" in str(err.value)) == (
+        [], [], True, True), str(err.value)
+
+
+@pytest.mark.parametrize("failure", ["busy", "oserror"])
+def test_mint_index_lock_failure_during_the_id_scan_claims_nothing(tmp_path, monkeypatch, failure):
+    """The id scan's INDEX lock held past the wait (Busy) or failing to be
+    created (an OSError) is a refusal before anything is claimed, naming why."""
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    root = _files_repo(tmp_path, rows="T-0003 | spec | - | r | old\n")
+    before = _index(root)
+    calls = _spy_create(monkeypatch)
+
+    def enter(self):
+        if failure == "busy":
+            raise crew_config_files.Busy(f"{self.path} is held by pid 4242 (waited 30.0s)")
+        raise PermissionError(13, "Permission denied", self.path)
+
+    monkeypatch.setattr(crew_config_files.Lock, "__enter__", enter)
+
+    with pytest.raises(crew_ticket.TicketError) as err:
+        crew_ticket.mint(str(root), "new work", direction="go")
+
+    named = "held by pid 4242" if failure == "busy" else "Permission denied"
+    assert (_tickets(root), calls, _index(root) == before, named in str(err.value),
+            "which ids are taken cannot be told" in str(err.value)) == (
+        [], [], True, True, True), str(err.value)
+
+
 def _tracker_config(root, which):
     crew = root / ".crew"
     (crew / "config.json").unlink()
@@ -607,12 +703,18 @@ def test_mint_board_failure_on_create_is_not_a_successful_mint(tmp_path, monkeyp
 
 def test_mint_lock_error_releases_the_claimed_folder(tmp_path, monkeypatch):
     """FIX :1245. Creating `INDEX.md.lock` fails with an OSError (not Busy):
-    mint refuses with nothing left behind, no folder and no direction."""
+    mint refuses with nothing left behind, no folder and no direction. Only
+    the claim's lock fails: the id scan takes the same lock first (L-1510),
+    and a failure there claims nothing, which is its own test above."""
     import crew_config_files  # pylint: disable=import-outside-toplevel
     root = _files_repo(tmp_path, rows="T-0003 | spec | - | r | old\n")
     before = _index(root)
+    real, claimed = crew_config_files.Lock.__enter__, []
 
     def enter(self):
+        if not _tickets(root):
+            return real(self)
+        claimed.append(_tickets(root))
         raise PermissionError(13, "Permission denied", self.path)
 
     monkeypatch.setattr(crew_config_files.Lock, "__enter__", enter)
@@ -620,8 +722,9 @@ def test_mint_lock_error_releases_the_claimed_folder(tmp_path, monkeypatch):
     with pytest.raises(crew_ticket.TicketError) as err:
         crew_ticket.mint(str(root), "new work", direction="go")
 
-    assert (_tickets(root), _index(root) == before, _no_temp(root),
-            "Permission denied" in str(err.value)) == ([], True, [], True), str(err.value)
+    assert (claimed, _tickets(root), _index(root) == before, _no_temp(root),
+            "Permission denied" in str(err.value)) == (
+        [["T-0004"]], [], True, [], True), str(err.value)
 
 
 def test_mint_waits_out_a_delete_pending_index_lock(tmp_path, monkeypatch):

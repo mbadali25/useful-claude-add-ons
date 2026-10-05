@@ -186,25 +186,31 @@ def _sendable(flavor, tmp_path):
 
     Native Windows has no tmux, and the pane check cannot confirm one there
     (no parent-pid walk; it fails closed), so the bash flavour takes the
-    xdotool title fallback instead of skipping (T-0076)."""
+    xdotool title fallback instead of skipping (T-0076).
+
+    T-0016: the session is bound to its own Claude Code process
+    (`crew_fixtures.bind_session`), and the pane pid is that process's
+    terminal, `crew_fixtures.TERMINAL_PID`."""
+    bound = crew_fixtures.bind_session(tmp_path / "home", SESSION)
     if flavor == "sh" and os.name == "nt":
         bindir = str(tmp_path / "fakebin")
         _stub(bindir, "xdotool")
-        env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0"}
+        env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0", **bound}
         env.update(_window_stub(tmp_path, [{"id": 4242, "pid": 999999,
                                             "title": "NoSuchWindowForTests"}]))
         return ({"enabled": True, "method": "xdotool",
                  "windowTitle": "NoSuchWindowForTests"}, env)
     if flavor == "sh":
         bindir = str(tmp_path / "fakebin")
-        _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
-              f"@echo off\r\necho {os.getpid()}\r\n")
+        pane = crew_fixtures.TERMINAL_PID
+        _stub(bindir, "tmux", f"#!/bin/sh\necho {pane}\n",
+              f"@echo off\r\necho {pane}\r\n")
         return ({"enabled": True, "method": "tmux"},
                 {"PATH": crew_fixtures.shell_path("sh", [bindir]),
-                 "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"})
+                 "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9", **bound})
     return ({"enabled": True, "windowTitle": "NoSuchWindowForTests"},
-            _window_stub(tmp_path, [{"id": 4242, "pid": 999999,
-                                     "title": "NoSuchWindowForTests"}]))
+            dict(bound, **_window_stub(tmp_path, [{"id": 4242, "pid": 999999,
+                                                   "title": "NoSuchWindowForTests"}])))
 
 
 def test_flavors_are_discoverable():
@@ -508,7 +514,8 @@ def test_a_window_title_containing_spaces_survives_config_parsing(tmp_path):
     root = _repo(tmp_path, auto_clear={
         "enabled": True, "method": "xdotool",
         "windowTitle": "Claude Code - my repo"})
-    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0"}
+    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0",
+           **crew_fixtures.bind_session(tmp_path / "home", SESSION)}
     env.update(_window_stub(tmp_path, [
         {"id": 77, "pid": 999999, "title": "Claude Code - my repo"}]))
     out = _run("sh", root, "--dry-run", env_extra=env).stdout

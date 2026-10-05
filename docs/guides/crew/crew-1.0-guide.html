@@ -164,7 +164,8 @@ have it, that is a release defect, not something a retry fixes.</p>
 <p><code>/crew:init</code> sets a repository up: it writes <code>.crew/config.json</code>, picks a
 tracker, and records the platform. It writes every key of the repo template,
 and a <code>null</code> it writes never shadows a value you set in your machine-global
-file. For a new config it sets <code>scope.mode</code> to <code>auto</code>: the scope guard reports
+file. The template leaves out the five personal <code>autopilot.*</code> settings, so your
+machine-wide defaults for them apply. For a new config it sets <code>scope.mode</code> to <code>auto</code>: the scope guard reports
 for the first ten approved tickets, then blocks.</p>
 <p><code>/crew:migrate</code> moves a crew 0.20 repository to the 1.0 layout, once per
 repository: <code>--preview</code> first, then <code>--apply</code>, which takes a backup that
@@ -304,8 +305,11 @@ reviewer are the backstop.</p>
 <p><code>/crew:autopilot &lt;id&gt;</code> drives one ticket through spec, plan, approval,
 implement, refresh, review and done. Each turn it asks
 <code>crew_autopilot.py next</code> which phase comes next, read from files on disk, so a
-skipped phase is visible. It is off until <code>autopilot.mode</code> is exactly <code>plan</code>
-in the repo's <code>.crew/config.json</code>.</p>
+skipped phase is visible. It is off until <code>autopilot.mode</code> is exactly <code>plan</code>.</p>
+<p>The five <code>autopilot.*</code> settings are personal: set them in the repo's
+<code>.crew/config.json</code>, or once in the machine-global file as your default for
+every repo. Where both files set one, the stricter value wins, so a repo can
+narrow your default and never widen it.</p>
 <p>What always stops for a person, at any setting:</p>
 <ul>
 <li>the brainstorm, which is a dialogue with you;</li>
@@ -314,7 +318,8 @@ in the repo's <code>.crew/config.json</code>.</p>
 </ul>
 <p>Plan approval and open questions stop too, unless <code>autopilot.approval</code> and
 <code>autopilot.questions</code> allow otherwise. Plan approval also needs
-<code>scope.allowCliApproval: true</code>; an open question does not. Autopilot never
+<code>scope.allowCliApproval: true</code> in the repo file, even under a machine-wide
+<code>autopilot.approval: self</code>; an open question does not. Autopilot never
 merges, pushes, opens a pull request or deploys today. Shipping arrives with
 T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
 <code>/crew:autopilot status</code> prints where a ticket stands, read-only.</p>
@@ -434,10 +439,6 @@ guide describes them as present.</p>
 <td>Autopilot goals and backlogs, with per-run caps</td>
 </tr>
 <tr>
-<td>T-0017</td>
-<td>A machine opt-in for the automatic wrap-up</td>
-</tr>
-<tr>
 <td>T-0019</td>
 <td><code>/crew:autopilot assign</code></td>
 </tr>
@@ -466,10 +467,6 @@ guide describes them as present.</p>
 <td>Release bookkeeping admitted without a Touch entry</td>
 </tr>
 <tr>
-<td>T-0050</td>
-<td>Machine-wide personal defaults for the autopilot settings</td>
-</tr>
-<tr>
 <td>T-0054</td>
 <td>A separate autopilot guide with worked examples</td>
 </tr>
@@ -484,7 +481,8 @@ guide describes them as present.</p>
 <h2 id="where-the-settings-are">Where the Settings Are</h2>
 <p>crew reads two files: the machine-global <code>~/.claude/crew/config.json</code> and the
 repo's <code>.crew/config.json</code>. The repo file wins, except where a setting
-ratchets or only the machine file may arm it.</p>
+ratchets, is personal (the stricter of the two wins), or only the machine file
+may arm it.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>
@@ -494,5 +492,13 @@ ratchets or only the machine file may arm it.</p>
 <li><code>plugin/crew/CONFIG.md</code> holds the reasoning behind each setting, and ships
   with the plugin.</li>
 </ul>
+<p>Every write a crew script makes to either file first copies the old file to
+<code>~/.claude/crew/backups/</code> and is refused if that copy fails (a hand edit is
+not backed up);
+<code>crew_config.py --backups</code> lists the copies and <code>--restore &lt;stamp&gt;</code> puts one
+back. crew also keeps your non-default values in <code>~/.claude/crew/profile.json</code>,
+so <code>crew_config.py --rebuild --repo</code> (or <code>--global</code>) regenerates a lost or
+corrupt config from the template plus that profile, as a dry run until
+<code>--apply</code>.</p>
 </body>
 </html>

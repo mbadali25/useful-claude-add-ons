@@ -34,10 +34,11 @@ import argparse
 import filecmp
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+
+import sabotage_bound
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -565,17 +566,18 @@ def run_test(target):
         # --run-slow: a target naming a bash/pwsh case is deselected by
         # default (conftest.py) and would exit 5, not 1, however the
         # mutation behaved.
-        done = subprocess.run(
+        # Bounded per entry like sabotage.py's (T-0080): memory cap, wall clock.
+        code, _ = sabotage_bound.run(
             [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
              "-p", "no:cacheprovider", "--run-slow", f"--junitxml={junit_path}"],
-            cwd=CREW, capture_output=True, text=True, check=False, env=env)
+            CREW, env, *sabotage_bound.limits(os.environ))
         skipped, reason = _junit_outcome(junit_path)
     finally:
         try:
             os.remove(junit_path)
         except OSError:
             pass
-    return done.returncode, skipped, reason
+    return code, skipped, reason
 
 
 def main(argv=None):
@@ -583,6 +585,12 @@ def main(argv=None):
     parser.add_argument("--scratch", default=None)
     args = parser.parse_args(argv)
     scratch = args.scratch or tempfile.mkdtemp(prefix="sabotage-autocycle-")
+    try:
+        limits = sabotage_bound.limits(os.environ)
+    except ValueError as err:
+        print(f"REFUSING TO RUN -- {err}")
+        return 2
+    print(sabotage_bound.describe(*limits))
     os.makedirs(scratch, exist_ok=True)
     ok = True
     for index, (label, target, find, replace, test) in enumerate(AUTOCYCLE_MUTATIONS):

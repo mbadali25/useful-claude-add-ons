@@ -4,8 +4,9 @@ New MCP servers and capability added under `mcp-servers/`, newest first. For
 fixes and internal changes, see [`CHANGELOG.md`](../CHANGELOG.md); this file is
 only what is newly *possible*.
 
-Mirrored into [`mcp-servers/README.md`](README.md) and the root
-[`README.md`](../README.md) by `scripts/sync-updates.py`. Edit here, then run it.
+Mirrored into [`mcp-servers/README.md`](README.md) by `scripts/sync-updates.py`. Edit here,
+then run it. The root [`README.md`](../README.md) shows the newest
+[`CHANGELOG.md`](../CHANGELOG.md) entries instead.
 
 ## Unreleased
 

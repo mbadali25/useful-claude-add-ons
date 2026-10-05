@@ -107,6 +107,8 @@ ALONGSIDE = (
     ".claude/rules/**",
     "plugin/PLUGINS.md",
     "CHANGELOG.md",
+    # L-1518: root README.md's "What's new" block is generated from CHANGELOG.md.
+    "README.md",
     "CLAUDE.md",
     "TODO.md",
     "docs/**",

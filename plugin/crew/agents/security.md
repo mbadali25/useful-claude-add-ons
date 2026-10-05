@@ -140,9 +140,20 @@ So, on any change touching config:
   the secret unexposed. Say that it needs rotating, not just moving, and that
   the baseline may shrink but never grow.
 
+**Verify before you state.** A claim about code, config, history or state is
+either verified in this session (a `path:line` you read, the command you ran and
+what it printed, or the ref you measured at) or labelled `not verified` or
+`inferred`. "Could not tell" is an answer. Never fill the gap with the likely
+value. Before proposing to change something, look up whether it was already
+decided (`CHANGELOG.md`, `docs/adr/`, the ticket's `direction.md`) and cite what
+you found, or say you found nothing. Quoted output, errors and fixtures move by
+copying the bytes, never by re-typing them.
+
 Output:
 **BLOCKING** — exploitable now. file:line, the attack, the fix.
 **SHOULD FIX** — real weakness, needs a precondition.
 **NOTE** — hygiene.
+**Not verified** — what you could not confirm (a precondition, a runtime value, a
+version you did not fetch), named plainly.
 
 Empty sections are expected and fine. Never invent a finding to look useful.

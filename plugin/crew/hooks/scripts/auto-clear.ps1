@@ -30,7 +30,9 @@
 #      and the reading behind it was trustworthy. The zero-byte marker behind
 #      the Windows low-context /clear is exactly the case this refuses.
 #   3. The handoff was written after that request, is not a stub, and is not
-#      PreCompact's automatic skeleton.
+#      PreCompact's automatic skeleton. With context.autoClear.wrapUp armed
+#      (T-0017), the wrap-up's results are on disk too -- decided by
+#      crew_autocycle.py wrapup-check, so this one needs a python.
 #   4. The target window is UNIQUELY identified: the one window owned by the
 #      nearest ancestor of this hook, or -- only when that finds nothing -- the
 #      one window whose title contains windowTitle. Zero or several: refuse.
@@ -53,6 +55,10 @@
 #   pwsh -File auto-clear.ps1 -Session ID -DryRun   # print the plan, send nothing
 #   pwsh -File auto-clear.ps1 -Force                # skip the handoff conditions
 #   pwsh -File auto-clear.ps1 -Resume -Session ID -Source clear -Python PY [-DryRun]
+#
+# -Force skips the handoff conditions AND the T-0017 wrap-up check. It is for
+# testing by hand only: hooks.json and context-watch.ps1 never pass it, and no
+# repo or machine config key can turn it on.
 #
 # `-Resume` (T-0013) is started by the context hook on SessionStart: it types
 # T-0006's rendered resume prompt instead of /clear. Consent is `resume.auto`
@@ -123,6 +129,55 @@ function Stop-CrewAutoClear([string]$Reason) {
   exit 0
 }
 
+function Get-CrewRepoConfigDir([string]$Root) {
+  # @{ Dir; Source }: the `.crew/` the repo config is read from, and own, main
+  # or unknown. Twin of crew_repo_config_dir in _common.sh and of
+  # crew_common.repo_config_dir (T-0088, T-0096): own files win whole, never
+  # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
+  # into each script that needs it (a dot-sourced function is invisible to
+  # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
+  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
+  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
+  # root, likely) in either path compared below reads `unknown`, never `main`.
+  if (-not $Root) { $Root = '.' }
+  $own = Join-Path $Root '.crew'
+  $result = @{ Dir = $own; Source = 'own' }
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $own $n) -Force -ErrorAction SilentlyContinue) { return $result }
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
+  $result.Source = 'unknown'
+  # git prints paths as UTF-8; a native command's output is decoded with
+  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
+  # this one call and put the caller's back.
+  $encoding = [Console]::OutputEncoding
+  try {
+    $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
+  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
+  $real = New-Object System.Collections.Generic.List[string]
+  foreach ($p in $lines) {
+    $full = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $base $p }))
+    for ($at = $full; $at; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if (-not $item -or $item.LinkType) { return $result }
+    }
+    $real.Add($full.TrimEnd('\', '/'))
+  }
+  $result.Source = 'own'
+  $same = if ($env:OS -eq 'Windows_NT') { $real[0] -eq $real[1] } else { $real[0] -ceq $real[1] }
+  if ($same -or (Split-Path -Leaf $real[1]) -cne '.git') { return $result }
+  $main = Join-Path (Split-Path -Parent $real[1]) '.crew'
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $main $n) -Force -ErrorAction SilentlyContinue) {
+      return @{ Dir = $main; Source = 'main' }
+    }
+  }
+  return $result
+}
+
 function Read-CrewJsonFile([string]$Path) {
   try {
     $parsed = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
@@ -143,7 +198,180 @@ function Get-CrewChild($Node, [string]$Name) {
 function Test-CrewTrue($Value) { return ($Value -is [bool]) -and $Value }
 function Test-CrewFalse($Value) { return ($Value -is [bool]) -and -not $Value }
 
-$repoCfg    = Read-CrewJsonFile ".crew/config.json"
+# BYTE-FOR-BYTE the resolver in role-write-guard.ps1, asserted by the tests.
+function Resolve-CrewPython {
+  # Every python3/python/py candidate found anywhere on PATH is executed
+  # once against one fixed -c probe below; cwd is never searched unless it
+  # is itself on PATH. No behaviour change from this comment.
+  # Memoized within this process: verify-gate.ps1 alone calls this up to
+  # seven times in one run, and each call would otherwise re-walk and
+  # re-probe PATH from scratch. Cached only for the life of THIS process --
+  # a fresh hook invocation gets a fresh probe.
+  if ($script:CrewPythonMemoDone) {
+    return $script:CrewPythonMemoResult
+  }
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
+  #
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
+  #
+  # PROOF, not a printed line. The candidate must answer one JSON object
+  # only a Python can build: {"v": [major, minor], "exe": sys.executable,
+  # "impl": sys.implementation.name}. Accepted only when it exits 0, the
+  # JSON parses, impl is cpython or pypy (the two implementations the hooks
+  # are run under; anything else is rejected rather than guessed at), v is
+  # at least [3, 8] (the floor crew's python targets), and exe exists as a
+  # file. A program that ignores -c and prints some existing path -- which
+  # the previous "print(sys.executable)" probe accepted -- fails the parse.
+  #
+  # The probe is bounded: it runs to completion or its WHOLE PROCESS TREE is
+  # killed at 3s, with stdout and stderr read asynchronously so a chatty
+  # candidate cannot fill a pipe and hang. The tree, not the candidate: a
+  # py.exe-style launcher starts a child interpreter that inherits the
+  # redirected handles, and killing only the launcher leaves that child
+  # running. Kill($true) is the tree kill on PowerShell 7 (.NET Core 3+);
+  # Windows PowerShell 5.1 has no such overload, so it falls back to
+  # taskkill /T /F. No `continue` inside try/catch: loop control across that
+  # boundary differs between PowerShell versions, so the verdict is carried
+  # out in $real and acted on after it.
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that.
+  #
+  # REAL Windows only, never the flavour-guard seam: $env:OS -eq 'Windows_NT'
+  # is also true in this suite's own fixtures, which run REAL pwsh on Linux
+  # with that variable set to get past the guard at the top of this file --
+  # their candidates are ordinary extensionless Linux shim scripts, valid
+  # executables here, and gating on the seam would reject every one of them
+  # and break the fixtures that exist to prove this resolver works. $IsWindows
+  # (PowerShell 6+) reports the actual OS regardless of $env:OS; it does not
+  # exist in Windows PowerShell 5.1, which never runs anywhere but Windows, so
+  # its absence is itself a true answer.
+  $crewPythonRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  # Only .exe/.com/.cmd/.bat (PATHEXT's launchable core) can be started
+  # without going through shell association. An extensionless file --
+  # anything else, including no extension at all -- CreateProcess cannot
+  # launch directly, and reaching it here is the same failure mode this
+  # probe's own bounded wait/kill exists to survive from a HUNG candidate,
+  # not from one Windows cannot start in the first place. Skipped before
+  # Process.Start is ever called, not caught after: a WindowsApps alias
+  # already carries `.exe`, so it is untouched by this and still tried like
+  # any other candidate, per the comment above.
+  $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
+  $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($cmd in $candidates) {
+      if (-not $cmd.Source) { continue }
+      if ($crewPythonRealWindows) {
+        $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
+        if ($crewPythonNativeExts -notcontains $crewPythonExt) {
+          Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          continue
+        }
+      }
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
+      if ($crewPythonRemainingMs -le 0) {
+        $script:CrewPythonMemoDone = $true
+        $script:CrewPythonMemoResult = ''
+        return ''
+      }
+      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
+      $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        # Closed at once: the probe never reads stdin, and an OPEN inherited
+        # stdin parks a child forever, which would make a healthy candidate
+        # look dead and get it rejected.
+        $proc.StandardInput.Close()
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit($crewPythonWaitMs)) {
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
+          # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
+          # NON-terminating binding error this try never catches: it reached stderr as a red
+          # error block on every hook, though the candidate was rightly rejected (T-0097).
+          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }
+          $v = @($probe.v)
+          if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
+              ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
+              ([int]$v[0] -gt 3 -or ([int]$v[0] -eq 3 -and [int]$v[1] -ge 8)) -and
+              $probe.exe -is [string]) {
+            $real = $probe.exe
+          }
+        }
+        try { $proc.Dispose() } catch { }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      $script:CrewPythonMemoDone = $true
+      $script:CrewPythonMemoResult = $real
+      return $real
+    }
+  }
+  $script:CrewPythonMemoDone = $true
+  $script:CrewPythonMemoResult = ''
+  return ''
+}
+
+# The resolved repo config (T-0096): a lane with none of its own reads the
+# main checkout's veto, as crew_autocycle.py does for auto-clear.sh.
+$repoCfg    = Read-CrewJsonFile (Join-Path (Get-CrewRepoConfigDir '.').Dir 'config.json')
 # NOT [Environment]::GetFolderPath('UserProfile'): on native Windows that
 # resolves the profile path via the Shell API from the user's token/registry
 # and ignores an overridden $env:USERPROFILE entirely, unlike its Linux/.NET
@@ -451,7 +679,7 @@ if (-not $handoffRel) { $handoffRel = ".work/HANDOFF.md" }
 # explicit JSON `null`, are still the ordinary, silent default path.
 $_crewAutoClearKnownKeys = @('method', 'windowTitle', 'command', 'delaySeconds',
                              'minHandoffLines', 'enabled', 'onlyRepos', 'onlySessions',
-                             'unsafeFocus')
+                             'unsafeFocus', 'wrapUp')  # crew_autocycle's known keys
 foreach ($layer in @(@{Label = 'repo'; Node = $repoAuto}, @{Label = 'machine'; Node = $globalAuto})) {
   if ($null -eq $layer.Node) { continue }
   foreach ($prop in $layer.Node.PSObject.Properties.Name) {
@@ -543,6 +771,28 @@ if ($Resume) {
   }
 }
 
+# T-0017: armed, the clear also waits for the wrap-up's results on disk --
+# after the handoff checks, before the method, the binding and any claim.
+# Decided by crew_autocycle.py wrapup-check (the same check the .sh flavour's
+# plan runs), so this needs a python; none is "could not tell": refuse.
+$wrapUp = (Test-CrewTrue (Get-CrewChild $globalAuto "wrapUp")) -and
+          -not (Test-CrewFalse (Get-CrewChild $repoAuto "wrapUp"))
+if ($wrapUp -and -not $Resume -and -not $Force) {
+  $wrapPy = if ($Python) { $Python } else { Resolve-CrewPython }
+  if (-not $wrapPy) {
+    $wrapWhy = "no usable python, so the wrap-up results could not be checked"
+  } else {
+    $wrapWhy = @(& $wrapPy (Join-Path $PSScriptRoot "crew_autocycle.py") wrapup-check "--root=$((Get-Location).Path)" 2>$null |
+                 ForEach-Object { ([string]$_).TrimEnd("`r") })
+    $wrapWhy = if ($wrapWhy.Count -gt 0 -and $wrapWhy[0]) { $wrapWhy[0] } else { "the wrap-up check gave no answer" }
+  }
+  if ($wrapWhy -ne "ok") {
+    # Shown as well as logged: context-watch.ps1 forwards this stdout.
+    Write-Output (@{ systemMessage = "crew wrap-up: not clearing - $wrapWhy" } | ConvertTo-Json -Compress)
+    Stop-CrewAutoClear "wrap-up: $wrapWhy"
+  }
+}
+
 # --- Resolve a method ------------------------------------------------------
 #
 # OWNER DECISION: `auto` resolves to `notify`, never to `sendkeys` -- typing
@@ -556,6 +806,250 @@ switch ($method) {
   "none"     { Stop-CrewAutoClear "method none" }
   "tmux"     { Stop-CrewAutoClear "method tmux is auto-clear.sh's job; this is the native-Windows flavour. Both are registered, so the bash one will have handled it" }
   default    { Stop-CrewAutoClear "method '$method' is not supported here (auto, notify, sendkeys, none)" }
+}
+
+# --- T-0016: bind this session to its OWN process ---------------------------
+#
+# The same rules as crew_autocycle.session_owner / classify / prove_target,
+# carried natively. The session is the nearest ancestor of this hook named by
+# a Claude Code session record (${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/
+# <pid>.json) whose sessionId is this session's and whose procStart matches
+# wherever a start time can be read. Native Windows has no tty, so
+# "terminal" rests on kind "interactive" plus an entrypoint on the measured
+# allowlist; Windows' entrypoint is unmeasured, so anything else is unknown
+# and never typed into. CREW_AUTOCLEAR_PROC_STUB, when set, is the WHOLE
+# process table (the suite's only way in, like the window stub): a pid it
+# does not name does not exist; `{"gone": true}` is a pid that has exited,
+# null one that cannot be read. Both stubs are read ONLY while
+# CREW_AUTOCLEAR_INHIBIT is set (review round 1): a repo's settings env
+# reaches this hook, and with the inhibit set nothing is ever typed. No
+# environment variable is evidence of which process is this session. With no
+# tty on Windows, a parent session is told apart only by its record and its
+# process name (claude, or a version-named native binary) -- a stated limit.
+$script:crewTerminalEntrypoints = @("cli")
+$script:crewProcStub = $null
+$script:crewProcStubRead = $false
+
+function Get-CrewProcStub {
+  if ($script:crewProcStubRead) { return $script:crewProcStub }
+  $script:crewProcStubRead = $true
+  if (-not $env:CREW_AUTOCLEAR_PROC_STUB -or -not $env:CREW_AUTOCLEAR_INHIBIT) { return $null }
+  # Unreadable: an empty table whose scans fail -- nothing in it is proven.
+  $table = @{}; $fails = $true; $self = [long]0
+  try {
+    $data = Get-Content -LiteralPath $env:CREW_AUTOCLEAR_PROC_STUB -Raw -ErrorAction Stop |
+      ConvertFrom-Json -ErrorAction Stop
+    if ($data -is [System.Management.Automation.PSCustomObject]) {
+      foreach ($prop in $data.PSObject.Properties) {
+        if ($prop.Name -match '^\d+$') { $table[[long]$prop.Name] = $prop.Value }
+      }
+      $fails = Test-CrewTrue (Get-CrewChild $data "scanFails")
+      $first = Get-CrewChild $data "self"
+      if ($first -is [ValueType] -and -not ($first -is [bool])) { $self = [long]$first }
+    }
+  } catch { }
+  $script:crewProcStub = @{ Table = $table; ScanFails = $fails; Self = $self }
+  return $script:crewProcStub
+}
+
+function Get-CrewParentId([int]$Id) {
+  # `.Parent` is PowerShell 6+. Windows PowerShell 5.1 has no such property,
+  # so fall back to WMI through its type accelerator (no cmdlet, so nothing
+  # the Linux static check cannot resolve).
+  try {
+    $parent = (Get-Process -Id $Id -ErrorAction Stop).Parent
+    if ($parent) { return [int]$parent.Id }
+  } catch { }
+  try { return [int]([wmi]"Win32_Process.Handle='$Id'").ParentProcessId } catch { return 0 }
+}
+
+function Get-CrewProcLookup([long]$Id) {
+  # @{ Info = @{ Ppid; Start; Comm } or $null; Gone = $true when the process
+  # provably no longer exists, never merely because it could not be read }.
+  $stub = Get-CrewProcStub
+  if ($null -ne $stub) {
+    if (-not $stub.Table.ContainsKey($Id)) { return @{ Info = $null; Gone = $false } }
+    $entry = $stub.Table[$Id]
+    if ($null -eq $entry) { return @{ Info = $null; Gone = $false } }
+    if (Test-CrewTrue (Get-CrewChild $entry "gone")) { return @{ Info = $null; Gone = $true } }
+    $ppid = Get-CrewChild $entry "ppid"
+    return @{ Gone = $false; Info = @{
+      Ppid = $(if ($ppid -is [ValueType] -and -not ($ppid -is [bool])) { [long]$ppid } else { [long]0 })
+      Start = (Get-CrewChild $entry "start"); Comm = [string](Get-CrewChild $entry "comm") } }
+  }
+  try { $proc = Get-Process -Id $Id -ErrorAction Stop } catch {
+    # Only "no such process" is an exit; access denied or anything else is
+    # an unreadable process, never the top of the chain (review round 1).
+    return @{ Info = $null; Gone = ([string]$_.FullyQualifiedErrorId -like "NoProcessFoundForGivenId*") }
+  }
+  # Get-CrewParentId says 0 when it could not read the parent: unreadable.
+  $parent = [long](Get-CrewParentId ([int]$Id))
+  if ($parent -le 0) { return @{ Info = $null; Gone = $false } }
+  # No start time: none is comparable to a record's procStart here, so a
+  # record is bound by pid and session id only (a stated limit).
+  return @{ Gone = $false; Info = @{ Ppid = $parent; Start = $null; Comm = [string]$proc.ProcessName } }
+}
+
+function Get-CrewProcInfo([long]$Id) {
+  # @{ Ppid; Start; Comm }, or $null when the process cannot be read or is gone.
+  return (Get-CrewProcLookup $Id).Info
+}
+
+function Get-CrewChain([long]$Start) {
+  # @{ Chain; Complete; Why }: $Start and its ancestors, nearest first.
+  $chain = New-Object System.Collections.Generic.List[long]
+  $walk = $Start
+  while ($true) {
+    if ($chain.Contains($walk)) { return @{ Chain = $chain; Complete = $false; Why = "the process chain loops back to pid $walk" } }
+    if ($chain.Count -ge 16) { return @{ Chain = $chain; Complete = $false; Why = "the process chain is deeper than 16 processes" } }
+    $chain.Add($walk)
+    $lookup = Get-CrewProcLookup $walk
+    $info = $lookup.Info
+    if ($null -eq $info) {
+      # On native Windows a process's recorded parent has routinely exited:
+      # that is the top of the chain. A process that exists but cannot be
+      # read, and the walk's own first process, are failures.
+      if ($lookup.Gone -and $chain.Count -gt 1) {
+        $chain.RemoveAt($chain.Count - 1)
+        return @{ Chain = $chain; Complete = $true; Why = "" }
+      }
+      return @{ Chain = $chain; Complete = $false; Why = "the parent of pid $walk could not be read" }
+    }
+    $walk = $info.Ppid
+    if ($walk -le 1) { return @{ Chain = $chain; Complete = $true; Why = "" } }
+  }
+}
+
+function Get-CrewConfigDir {
+  if ($env:CLAUDE_CONFIG_DIR) { return $env:CLAUDE_CONFIG_DIR }
+  return (Join-Path $userHome ".claude")
+}
+
+function Get-CrewSessionOwner {
+  # @{ Pid; Record; Info } or @{ Unknown = reason }.
+  if (-not $Session) { return @{ Unknown = "no session id, so no session record can be matched" } }
+  $sessions = Join-Path (Get-CrewConfigDir) "sessions"
+  $stub = Get-CrewProcStub
+  $start = if ($null -ne $stub -and $stub.Self -gt 0) { $stub.Self } else { [long]$PID }
+  $walk = Get-CrewChain $start
+  foreach ($candidate in $walk.Chain) {
+    $path = Join-Path $sessions "$candidate.json"
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $record = Read-CrewJsonFile $path
+    if ($null -eq $record) { return @{ Unknown = "the session record for pid $candidate is unreadable or not a JSON object" } }
+    # -cne: a session id is case-sensitive.
+    if ([string](Get-CrewChild $record "sessionId") -cne $Session) {
+      return @{ Unknown = "the session record for pid $candidate names another session" }
+    }
+    $info = Get-CrewProcInfo $candidate
+    $started = if ($null -ne $info) { $info.Start } else { $null }
+    if ($null -ne $started -and [string](Get-CrewChild $record "procStart") -cne [string]$started) {
+      return @{ Unknown = ("the session record for pid $candidate has procStart '$(Get-CrewChild $record "procStart")' " +
+                           "but that process started at $started - a reused pid is a different process") }
+    }
+    return @{ Pid = [long]$candidate; Record = $record; Info = $info }
+  }
+  if (-not $walk.Complete) { return @{ Unknown = "no session record names a process above this hook, and $($walk.Why)" } }
+  return @{ Unknown = "no session record under $sessions names a process above this hook" }
+}
+
+function Get-CrewSessionClass($Owner) {
+  # @{ Class = terminal|headless|unknown; Evidence }.
+  if ($Owner.ContainsKey("Unknown")) { return @{ Class = "unknown"; Evidence = $Owner.Unknown } }
+  $kind = Get-CrewChild $Owner.Record "kind"
+  $entry = Get-CrewChild $Owner.Record "entrypoint"
+  if ($entry -is [string] -and $entry.StartsWith("sdk", [StringComparison]::Ordinal)) {
+    return @{ Class = "headless"; Evidence = "entrypoint $entry" }
+  }
+  if ($kind -is [string] -and $kind -cne "interactive") { return @{ Class = "headless"; Evidence = "kind $kind" } }
+  if (-not ($kind -is [string])) {
+    return @{ Class = "unknown"; Evidence = "the session record for pid $($Owner.Pid) has no usable kind ($kind)" }
+  }
+  if (-not ($entry -is [string]) -or -not ($script:crewTerminalEntrypoints -ccontains $entry)) {
+    return @{ Class = "unknown"; Evidence = ("entrypoint '$entry' is not one measured to have a terminal (" +
+                                             ($script:crewTerminalEntrypoints -join ", ") + ")") }
+  }
+  return @{ Class = "terminal"; Evidence = "kind interactive, entrypoint $entry" }
+}
+
+function Get-CrewOtherSessions([long]$OwnerPid) {
+  # Pids of every OTHER live session record, or $null when they cannot be listed.
+  $sessions = Join-Path (Get-CrewConfigDir) "sessions"
+  try { $files = @(Get-ChildItem -LiteralPath $sessions -File -ErrorAction Stop) } catch { return $null }
+  $out = New-Object System.Collections.Generic.List[long]
+  foreach ($file in $files) {
+    if ($file.Name -notmatch '^(\d+)\.json$') { continue }
+    $other = [long]$Matches[1]
+    if ($other -eq $OwnerPid) { continue }
+    $record = Read-CrewJsonFile $file.FullName
+    $info = Get-CrewProcInfo $other
+    if ($null -eq $info) { continue }
+    # A live process whose record cannot be read may be a session, so no
+    # other session can be ruled out (review round 1).
+    if ($null -eq $record) { return $null }
+    if ($null -ne $info.Start -and [string](Get-CrewChild $record "procStart") -cne [string]$info.Start) { continue }
+    $out.Add($other)
+  }
+  return ,$out
+}
+
+function Get-CrewHeadlessNotice([string]$Evidence) {
+  # The same text crew_autocycle.headless_notice builds: the handoff, its
+  # resume: line read as text, and that the starting process must restart.
+  $line = "(none in the handoff)"
+  try {
+    $base = (Get-Location).Path
+    $full = [System.IO.Path]::GetFullPath((Join-Path $base $handoffRel))
+    $text = Get-Content -LiteralPath $full -Raw -ErrorAction Stop
+    foreach ($row in ($text -split "`r?`n")) {
+      if ($row -cmatch '^resume:[ \t]*(.*?)[ \t]*$') {
+        if ($Matches[1]) { $line = $Matches[1] }
+        break
+      }
+    }
+  } catch { }
+  $written = if ($Force) { "Its handoff at $handoffRel was not checked (--force)" } else { "Its handoff is written and verified at $handoffRel" }
+  return ("crew: this session has no terminal of its own ($Evidence), so nothing was cleared or typed. " +
+          "$written; resume: $line. The process that started this session must start a new one to continue.")
+}
+
+# After the handoff checks and the method, before any claim (T-0017's order).
+$crewOwner = Get-CrewSessionOwner
+$crewClass = Get-CrewSessionClass $crewOwner
+if ($crewClass.Class -eq "headless" -and -not $Resume) {
+  # Whatever the method: nothing is typed, one notice is printed, claimed
+  # like notify so it fires once per session, and logged in full -- a
+  # `claude -p` parent may never show the systemMessage.
+  $msg = Get-CrewHeadlessNotice $crewClass.Evidence
+  if ($DryRun) {
+    Write-Output "autoclear: would send"
+    Write-Output "  method: notify-headless"
+    Write-Output "  command: $command"
+    Write-Output "  delay: n/a (nothing is typed)"
+    Write-Output "  message: $msg"
+    exit 0
+  }
+  if (-not $Force) {
+    try {
+      $claim = [System.IO.File]::Open(
+        (Join-Path (Get-Location).Path $sentMarker), [System.IO.FileMode]::CreateNew)
+      $claim.Close()
+    } catch { exit 0 }
+  }
+  Write-Output (@{ systemMessage = $msg } | ConvertTo-Json -Compress)
+  Write-CrewAutoClearNote "sent - method notify-headless: $msg"
+  exit 0
+}
+if ($method -ne "notify" -and $crewClass.Class -ne "terminal") {
+  $why = if ($crewClass.Class -eq "headless") {
+    "this session has no terminal of its own ($($crewClass.Evidence))"
+  } elseif ($crewOwner.ContainsKey("Unknown")) {
+    "could not identify this session's process ($($crewClass.Evidence))"
+  } else {
+    "could not tell whether this session has a terminal of its own ($($crewClass.Evidence))"
+  }
+  if ($Resume) { Stop-CrewAutoClear "auto-resume types only into this session's own terminal: $why" }
+  Stop-CrewAutoClear $why
 }
 
 if ($method -eq "notify" -and $Resume) {
@@ -610,7 +1104,7 @@ if ($method -eq "notify") {
 # replaces the real window system -- the suite's only way in, so no test ever
 # enumerates, let alone types into, a real window.
 function Get-CrewWindows {
-  if ($env:CREW_AUTOCLEAR_WINDOW_STUB) {
+  if ($env:CREW_AUTOCLEAR_WINDOW_STUB -and $env:CREW_AUTOCLEAR_INHIBIT) {
     $stub = Get-Content -LiteralPath $env:CREW_AUTOCLEAR_WINDOW_STUB -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     return @($stub | ForEach-Object { [pscustomobject]@{ Id = [long]$_.id; Pid = [int]$_.pid; Title = [string]$_.title } })
   }
@@ -646,25 +1140,30 @@ namespace CrewAC {
   })
 }
 
-function Get-CrewParentId([int]$Id) {
-  # `.Parent` is PowerShell 6+. Windows PowerShell 5.1 has no such property,
-  # so fall back to WMI through its type accelerator (no cmdlet, so nothing
-  # the Linux static check cannot resolve).
-  try {
-    $parent = (Get-Process -Id $Id -ErrorAction Stop).Parent
-    if ($parent) { return [int]$parent.Id }
-  } catch { }
-  try { return [int]([wmi]"Win32_Process.Handle='$Id'").ParentProcessId } catch { return 0 }
-}
-
-$ancestors = @()
-$walk = $PID
-while ($walk -gt 0 -and $ancestors.Count -lt 16 -and $ancestors -notcontains $walk) {
-  $ancestors += $walk
-  $walk = Get-CrewParentId $walk
-}
-
 try { $windows = @(Get-CrewWindows) } catch { Stop-CrewAutoClear "cannot list windows: $($_.Exception.Message)" }
+
+# T-0016: walked up from this SESSION's own process, not from this hook, and
+# excluding that process itself (claude owns no window). The walk stops at
+# the first process that owns a window; reaching another Claude Code session
+# first -- a child under its parent's window -- refuses, and so does a chain
+# that could not be read to the end with no window found on it.
+$crewOthers = Get-CrewOtherSessions $crewOwner.Pid
+if ($null -eq $crewOthers) { Stop-CrewAutoClear "the session records could not be listed or read, so another session cannot be ruled out" }
+$crewOwnerChain = Get-CrewChain $crewOwner.Pid
+$ancestors = @()
+$crewFoundOwner = $false
+foreach ($crewStep in @($crewOwnerChain.Chain | Select-Object -Skip 1)) {
+  $crewStepInfo = Get-CrewProcInfo $crewStep
+  if ($crewOthers -contains $crewStep -or ($null -ne $crewStepInfo -and
+      ($crewStepInfo.Comm -eq "claude" -or $crewStepInfo.Comm -match '^\d+\.\d+\.\d+$'))) {
+    Stop-CrewAutoClear "the way from this session (pid $($crewOwner.Pid)) up to its window passes through another Claude Code session (pid $crewStep)"
+  }
+  $ancestors += $crewStep
+  if (@($windows | Where-Object { $_.Pid -eq $crewStep }).Count -gt 0) { $crewFoundOwner = $true; break }
+}
+if (-not $crewFoundOwner -and -not $crewOwnerChain.Complete) {
+  Stop-CrewAutoClear "no window belongs to a process above this session (pid $($crewOwner.Pid)), and $($crewOwnerChain.Why)"
+}
 
 $needle = $windowTitle.ToLowerInvariant()
 $target = $null; $how = ""
@@ -685,13 +1184,31 @@ foreach ($ancestor in $ancestors) {
 }
 if ($null -eq $target) {
   if (-not $needle) {
-    Stop-CrewAutoClear "no window belongs to any ancestor of this hook, and no context.autoClear.windowTitle is set to fall back on"
+    Stop-CrewAutoClear "no window belongs to any ancestor of this session's process (pid $($crewOwner.Pid)), and no context.autoClear.windowTitle is set to fall back on"
   }
   $hits = @($windows | Where-Object { $_.Title.ToLowerInvariant().Contains($needle) })
   if ($hits.Count -ne 1) {
     Stop-CrewAutoClear "$($hits.Count) windows have a title containing '$windowTitle' - refusing to guess which one is this session"
   }
+  # T-0016: a title cannot tell two sessions apart, and a window with no
+  # owning process is tied to nothing -- either refuses while another
+  # session is live.
+  if ($crewOthers.Count -gt 0) {
+    $crewSibling = ($crewOthers | Measure-Object -Minimum).Minimum
+    if ($hits[0].Pid -le 1) {
+      Stop-CrewAutoClear "window $($hits[0].Id) has no owning process, and another Claude Code session is live (pid $crewSibling), so nothing ties that window to this session"
+    }
+    Stop-CrewAutoClear "window $($hits[0].Id) was found by its title alone, and another Claude Code session is live (pid $crewSibling) - a title cannot tell two sessions apart"
+  }
   $target = $hits[0]; $how = "title fallback"
+} else {
+  # T-0016: one console host can serve more than one session. A window whose
+  # owner is also above another live session is not provably this one's.
+  foreach ($crewOther in $crewOthers) {
+    if ((Get-CrewChain $crewOther).Chain -contains [long]$target.Pid) {
+      Stop-CrewAutoClear "the window's owner (pid $($target.Pid)) also hosts another Claude Code session (pid $crewOther)"
+    }
+  }
 }
 $label = "$($target.Title) [window $($target.Id), pid $($target.Pid), $how]"
 
@@ -805,6 +1322,10 @@ try {
   $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName
   $ownerKnown = $true
 } catch { }
+# Under the process stub (the suite), the stub names the owner, as it does
+# every other process; a pid the stub does not name keeps the real answer.
+$crewStubOwner = if ($null -ne (Get-CrewProcStub)) { Get-CrewProcInfo $target.Pid } else { $null }
+if ($null -ne $crewStubOwner) { $ownerProcessName = $crewStubOwner.Comm; $ownerKnown = $true }
 
 # Carried to the detached child below so IT can re-run the SAME tab-safety
 # question at send time, after the delay -- this process's own answer, made

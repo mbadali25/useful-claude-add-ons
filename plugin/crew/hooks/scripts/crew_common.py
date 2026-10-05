@@ -13,18 +13,59 @@ own, the main checkout's. Every Python reader of `.crew/config.json` or
 `.crew/crew.json` opens `repo_config_file(root, name)` instead of joining the
 path itself.
 
+`metrics_crew_dir` (L-0582) names the `.crew/` directory the review metrics
+live in: always the main checkout's from a linked worktree, or no directory at
+all when git cannot tell. Every reader and writer of `.crew/metrics.md` goes
+through it.
+
 `crew_state` re-exports the three readers, so `crew_config` and
 `crew_upgrade` keep reaching them as `crew_state.read_text` and friends.
+
+`resolve_tool` / `require_tool` (L-1508) are how every crew script names an
+external tool to `subprocess`: the path `shutil.which` resolves, never a bare
+name. `plugin/crew/tests/test_tool_resolution.py` fails the build on a bare one.
 
 Standard library only, and every read fails soft, for the reason `crew_state`
 does: this runs from a SessionStart hook, where an exception breaks every
 session opened in the repository.
 """
 
+import errno
 import os
+import shutil
 import subprocess
 
 GIT_TIMEOUT = 10
+
+
+# --- L-1508: run a tool the way it was found ---------------------------------------
+
+def resolve_tool(name):
+    """The executable `name` resolves to on PATH, or None when it does not.
+
+    `shutil.which`, because it finds what bash, pwsh and the user's shell
+    find. A bare name handed to subprocess on native Windows reaches
+    CreateProcess, which ignores PATHEXT and tries only `name.exe`: a
+    `name.cmd` earlier on PATH is skipped for a later `.exe`, so crew judged a
+    different tool from the one the user runs -- T-0017's wrap-up veto read a
+    clean tree through the wrong git and failed open. No cache: a lookup
+    costs ~30us against ~1.8ms to spawn git (measured, Linux), and a cache
+    would hide a PATH change inside one process, which the suite makes.
+    """
+    return shutil.which(name)
+
+
+class ToolNotFound(FileNotFoundError):
+    """`require_tool`'s "not on PATH": a FileNotFoundError, so every caller's
+    existing `except OSError` takes the same path a bare name's ENOENT did."""
+
+
+def require_tool(name):
+    """`resolve_tool(name)`, or raise ToolNotFound naming the tool."""
+    path = resolve_tool(name)
+    if path is None:
+        raise ToolNotFound(errno.ENOENT, f"{name} is not on PATH", name)
+    return path
 
 
 def read_text(path):
@@ -56,7 +97,7 @@ def git_out(root, *args):
     """
     try:
         done = subprocess.run(
-            ("git",) + args, cwd=root, capture_output=True,
+            (require_tool("git"),) + args, cwd=root, capture_output=True,
             text=True, encoding="utf-8", errors="replace",
             timeout=GIT_TIMEOUT, check=False,
             stdin=subprocess.DEVNULL,
@@ -148,6 +189,72 @@ def _main_checkout(root):
             or os.path.basename(real_common) != ".git":
         return None, ""
     return os.path.dirname(real_common), ""
+
+
+# --- the review metrics' directory (L-0582) ---------------------------------------------
+
+METRICS_MD = "metrics.md"
+METRICS_NAMES = ("metrics.jsonl", METRICS_MD)
+
+
+def metrics_crew_dir(root):
+    """(crew_dir, problem): the `.crew/` directory that holds review metrics for
+    `root` - the main checkout's for a linked worktree, `root`'s own otherwise.
+
+    `.crew/*` is gitignored, so a lane's own copy is a separate file nothing in
+    the main checkout reads: rows recorded there were stranded (L-0582). Unlike
+    the repo config, there is no own-wins rule: one file, always the main
+    checkout's. `problem` is non-empty only when git could not tell, and
+    `crew_dir` is then None. Callers must say so and must not fall back to the
+    worktree's own `.crew/`.
+    """
+    main_root, problem = _metrics_main(root)
+    if problem:
+        return None, problem
+    return os.path.join(main_root or root, ".crew"), ""
+
+
+def _metrics_main(root):
+    """(main_root, problem) for the metrics file. As `_main_checkout`, except
+    that a linked worktree whose common dir is not named `.git` (a main made
+    with `git init --separate-git-dir`, or a worktree of a bare repository) is
+    could-not-tell, not "own": its main checkout, if any, is not where git
+    says, and `git worktree list` names the common dir there, not the
+    checkout. The repo config keeps `_main_checkout`'s answer (T-0088)."""
+    main_root, problem = _main_checkout(root)
+    if problem or main_root is not None or not os.path.isfile(os.path.join(root, ".git")):
+        return main_root, problem
+    lines = (git_out(root, "rev-parse", "--git-dir", "--git-common-dir") or "").splitlines()
+    if len(lines) != 2:
+        return None, "this looks like a linked worktree, but git could not name its main checkout"
+    real_git, real_common = (os.path.normcase(os.path.realpath(os.path.join(root, p)))
+                             for p in lines)
+    if real_git == real_common:
+        return None, ""
+    return None, (f"a linked worktree whose git common dir ({lines[1]}) is not a checkout's "
+                  "`.git`, so its main checkout cannot be named")
+
+
+def metrics_md_path(root):
+    """(path, problem): `.crew/metrics.md` in `metrics_crew_dir(root)`; path None
+    when git could not tell."""
+    crew_dir, problem = metrics_crew_dir(root)
+    if problem:
+        return None, problem
+    return os.path.join(crew_dir, METRICS_MD), ""
+
+
+def stranded_metrics_copies(root):
+    """The linked worktree's OWN `.crew/metrics.jsonl` and `.crew/metrics.md`
+    that exist, in that order; () for a main checkout, a plain directory, or
+    when git could not tell. Not read and not counted - named, so a stranded
+    copy is visible rather than silently ignored."""
+    main_root, problem = _metrics_main(root)
+    if problem or main_root is None:
+        return ()
+    own = os.path.join(root, ".crew")
+    return tuple(os.path.join(own, name) for name in METRICS_NAMES
+                 if os.path.lexists(os.path.join(own, name)))
 
 
 def shadowed_main_config(root):
