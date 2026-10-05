@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **gizmoduck 0.5.7**: Bootstrap works where the GitHub API is blocked. `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on networks that refuse `api.github.com`, such as a Claude Code cloud session, and skips tools that are already installed when you run it again.
+- **gizmoduck 0.5.8**: Bootstrap works where the GitHub API is blocked. `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on networks that refuse `api.github.com`, such as a Claude Code cloud session, and skips tools that are already installed when you run it again.
 - **repository**: One cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners. `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session: besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists every tool as ok or MISSING at the end.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
