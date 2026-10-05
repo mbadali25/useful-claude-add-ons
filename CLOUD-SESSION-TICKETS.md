@@ -267,6 +267,11 @@ Held for your go: L-0674 (#404).
 - C-0001 (per-component CI skip) is TOP PRIORITY.
 - #499 README: show 2 newest updates + changelog link (shipped).
 
+## Owner decision 2026-10-05 ~08:10 (finish line)
+
+- SHORT PATH: batch 9 = #478, #395, #510 only; then C-0006 + crew 1.1.0 closes the rush. The 5 Windows-sweep PRs (#341, #342, #346, #363, #366) move to the NEXT rush (their sweep was stopped by a container restart; restart it there).
+- Owner approved restoring real nuclei/trivy in the container (done 08:05 from main's bootstrap.sh; nuclei 143MB, trivy 0.75.0).
+
 ## Owner decisions, 2026-10-04 evening (open questions that blocked builds)
 
 | Ticket | Question | Decision |
