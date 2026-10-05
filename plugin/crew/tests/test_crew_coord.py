@@ -2851,3 +2851,22 @@ def test_a_known_pid_with_matching_start_times_is_the_same_holder():
 @pytest.mark.skipif(os.name == "nt", reason="a backslash is a separator on Windows")
 def test_a_backslash_in_a_posix_path_is_part_of_the_name():
     assert crew_coord.owner_name("/srv/git/team\\repo.git") != crew_coord.owner_name("/srv/git/team/repo.git")
+
+
+def test_trailing_whitespace_in_a_local_path_is_part_of_the_key():
+    # Codex review round 5 (rush g0): stripping git's output merged `/srv/Repo ` into `/srv/Repo`.
+    assert crew_coord.owner_name("/srv/Repo ") != crew_coord.owner_name("/srv/Repo")
+
+
+def test_repo_key_keeps_a_trailing_space_in_origins_local_path(tmp_path, monkeypatch):
+    real = crew_coord.run_git
+
+    def fake(root, args, **kwargs):
+        if list(args) == ["config", "--get-all", "remote.origin.url"]:
+            return crew_coord.GitRun(0, b"/srv/Repo \n", "")
+        if list(args) == ["remote", "get-url", "origin"]:
+            return crew_coord.GitRun(0, b"/srv/Repo \n", "")
+        return real(root, args, **kwargs)
+    monkeypatch.setattr(crew_coord, "run_git", fake)
+
+    assert crew_coord.repo_key(str(tmp_path))[0] != crew_coord.owner_name("/srv/Repo")[0]

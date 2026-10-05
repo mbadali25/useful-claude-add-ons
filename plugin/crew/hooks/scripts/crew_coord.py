@@ -806,8 +806,8 @@ def _local_path(url):
     leading '/'. (None, why) for a file:// URL whose authority is not empty
     or `localhost`, or whose path is not percent-encoded UTF-8: which
     directory that names cannot be told here, and a guess would give one
-    repository two keys."""
-    text = (url or "").strip()
+    repository two keys. Whitespace is kept: it is part of a local path."""
+    text = url or ""
     found = _SCHEME_RE.match(text)
     if found and found.group(1).lower() == "file":
         _, authority, path = found.groups()
@@ -1135,7 +1135,9 @@ def repo_key(top):
         if got.code != 0:
             raise UnknownKey(f"cannot derive this repository's key: `git remote get-url origin` failed: "
                              f"{_last_line(got.err)}")
-        name, why = owner_name(_resolved(got.out.decode("utf-8", "replace").strip(), top))
+        # Only git's line end goes: a local path may end in a space, and `/srv/Repo `
+        # is not `/srv/Repo` (codex review, rush g0).
+        name, why = owner_name(_resolved(got.out.decode("utf-8", "replace").rstrip("\r\n"), top))
         if not name:
             raise UnknownKey(f"cannot derive this repository's key: {why}; nothing was read or written")
         return name, None
