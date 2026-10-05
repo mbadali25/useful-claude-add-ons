@@ -150,6 +150,7 @@ force says `take`. Exit 0 valid, 1 not.
   latest round FINDINGS, not accepted    accept-review       stop, unless auto-replan
   no receipt and no round left           review              stop, never a third reserve
   accepted FINDINGS, receipt staled      (the receipt-not-current rows below; T-0043)
+  accepted FINDINGS, receipt unchecked   accept-review       stop (not confirmed stale)
   latest round INCOMPLETE or no verdict  accept-review       stop
   artifacts fresh-uncommitted            commit-refresh      git add, git commit -- <paths>
                                                              (stop when it names no path)
@@ -1353,6 +1354,9 @@ def auto_reject(root, ticket):
                          f"{got['cap']}"] + got["blocks"] + got["fixes"])
 
 
+RECEIPT_STALE = "receipt is stale"  # T-0043: check_receipt's one confirmed-stale answer
+
+
 def _review_phase(top, ticket, evidence, answer):
     ledger = _ledger_status(top, ticket)
     evidence.append(_rel(top, ledger["path"]))
@@ -1404,7 +1408,10 @@ def _review_phase(top, ticket, evidence, answer):
                                "was refunded; ")
         return dict(found, refunded_rerun=found["phase"] == "review")
     if latest.get("verdict") == "FINDINGS":  # T-0043: its receipt stood; an edit staled it
-        return _toward_review(top, ticket, answer, ok, message)
+        if ok or message.startswith(RECEIPT_STALE):
+            return _toward_review(top, ticket, answer, ok, message)
+        return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS and accepted, "
+                      f"but its receipt is not confirmed stale ({message}) - a human looks")
     if latest.get("verdict") != "CLEAN" and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "

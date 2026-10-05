@@ -346,6 +346,30 @@ def test_next_accepted_findings_then_an_edit_goes_through_refresh(tmp_path, monk
     assert "INCOMPLETE" not in got["reason"] and "did not finish reading" not in got["reason"]
 
 
+@pytest.mark.parametrize("message", [
+    "no accepted review receipt for T-1", "receipt could not be checked: git failed"])
+def test_next_accepted_findings_whose_receipt_cannot_be_checked_stops(tmp_path, monkeypatch,
+                                                                       message):
+    """T-0043 review r1: only a receipt check_receipt confirms stale goes back
+    through refresh and review; a missing or uncheckable one is a stop."""
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "FINDINGS")], state="ACCEPTED",
+            receipt=_receipt(1, "owner-accepted"))
+    monkeypatch.setattr(review_ledger, "check_receipt", lambda root, ticket: (False, message))
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"], message in got["reason"]) == (
+        "accept-review", True, "", True)
+
+
+def test_check_receipt_still_says_receipt_is_stale():
+    """The confirmed-stale prefix next routes on is check_receipt's own."""
+    import inspect  # pylint: disable=import-outside-toplevel
+    assert f'"{crew_autopilot.RECEIPT_STALE}: round' in inspect.getsource(review_ledger.check_receipt)
+
+
 LINE = "FIX|src/app.py:1|the loop never stops|run it offline"
 
 

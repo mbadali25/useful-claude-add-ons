@@ -21,8 +21,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   it does so only for a round it reaches itself.
 - **FIX 2.** A FINDINGS round whose receipt stands (owner- or auto-accepted) and was then staled by
   an edit goes through `_toward_review` (refresh, then `/crew:review`), the same as a stale CLEAN
-  receipt, instead of "the reviewer did not finish reading". A round that is INCOMPLETE or has no
-  verdict still stops; the INCOMPLETE line, a sabotage anchor, is byte-identical.
+  receipt, instead of "the reviewer did not finish reading". Only a receipt `check_receipt`
+  confirms stale takes that route: a missing or uncheckable one stops (`accept-review`), and a
+  round that is INCOMPLETE or has no verdict still stops; the INCOMPLETE line, a sabotage anchor, is byte-identical.
 - **Also.** `_settles`' refreshable guard gets a failing control test, and `INSTALLATION.md`'s crew
   command count (36) carries a `plugin-commands:crew` claim marker, so `check_self_claims` checks it.
 - **Not in this entry.** The sabotage mutations for these fixes are harness (T-0087) and land with
