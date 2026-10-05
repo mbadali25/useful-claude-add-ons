@@ -25,7 +25,9 @@ worse than a missing one.
 
 ## The contract every script here honours
 
-1. **Exit 0 means pass. Any other exit means stop.** No "warnings" that exit 0.
+1. **Exit 0 means pass. Exit 77 means skip** - a tool or environment the check
+   needs is absent; the runners print `SKIP` and do not fail. **Any other exit
+   means stop.** No "warnings" that exit 0.
 2. **Takes `--env <name>`**, defaulting to the local/development environment.
    Print the resolved target host or URL on the first line - a suite that passes
    against the wrong environment is the most convincing wrong answer available.

@@ -18,7 +18,7 @@ set -uo pipefail
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --env) shift 2 ;;
+    --env) [ $# -ge 2 ] || { echo "FAIL --env needs a value"; exit 1; }; shift 2 ;;
     *) shift ;;
   esac
 done

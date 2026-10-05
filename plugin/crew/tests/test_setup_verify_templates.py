@@ -265,3 +265,11 @@ def test_a_background_child_does_not_hold_the_runner_open(tmp_path, runner):
     took = time.monotonic() - start
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert took < 4, f"{runner}.sh took {took:.1f}s: it waited for the check's background child"
+
+
+def test_diagram_case_rejects_env_without_a_value(tmp_path):
+    repo, env = _repo(tmp_path)
+    proc = subprocess.run([_BASH, CASE.replace("\\", "/"), "--env"], cwd=str(repo), env=env,
+                          capture_output=True, text=True, timeout=10, check=False)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "--env needs a value" in proc.stdout
