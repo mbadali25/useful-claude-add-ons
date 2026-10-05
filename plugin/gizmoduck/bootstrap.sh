@@ -488,15 +488,17 @@ install_nikto_user() {
     return 0
   fi
   local dir="${OPT_DIR}/nikto"
-  # Like already_installed: a clone that has nikto.pl is kept, with no
-  # network call, unless GIZMODUCK_BOOTSTRAP_FORCE=1.
+  # Like already_installed: a clone that has nikto.pl and runs is kept, with
+  # no network call, unless GIZMODUCK_BOOTSTRAP_FORCE=1. One that fails the
+  # run check is updated in place (a git clone) or re-cloned (anything else),
+  # never deleted first: a missing perl module fails the check too, and
+  # deleting the clone would not fix that.
   if [[ -s "$dir/program/nikto.pl" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
     if probe_nikto_pl "$dir/program/nikto.pl"; then
       echo ">> nikto: already installed (${dir}) - skipping; GIZMODUCK_BOOTSTRAP_FORCE=1 updates it"
       return 0
     fi
-    echo ">> nikto: ${dir} is present but fails its check - reinstalling"
-    rm -rf "$dir"
+    echo ">> nikto: ${dir} is present but fails its check - updating it"
   fi
   if [[ -d "$dir/.git" ]]; then
     git_net 600 -C "$dir" pull --ff-only
@@ -733,7 +735,8 @@ print_plan() {
   fi
   plan_package_tool "wkhtmltopdf" wkhtmltopdf
   plan_line "nuclei" "${BIN_DIR}/nuclei" "$self"
-  plan_line "nuclei templates" "$HOME/nuclei-templates (or nuclei's configured directory)" "$pip"
+  # ${HOME:-~}: --dry-run with an explicit GIZMODUCK_HOME must not need HOME (set -u).
+  plan_line "nuclei templates" "${HOME:-~}/nuclei-templates (or nuclei's configured directory)" "$pip"
   plan_package_tool "nmap" nmap
   if [[ $USER_MODE == 1 ]]; then
     if command -v perl >/dev/null 2>&1; then

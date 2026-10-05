@@ -298,7 +298,7 @@ def test_user_mode_cached_nikto_is_kept_only_when_it_runs(env, tmp_path, works):
         assert proc.stdout.splitlines()[-1] == "rc=0"
         assert "git" not in calls, calls
     else:
-        assert "fails its check - reinstalling" in proc.stdout, proc.stdout + proc.stderr
+        assert "fails its check - updating it" in proc.stdout, proc.stdout + proc.stderr
         assert "git" in calls and "clone" in calls, calls
 
 
@@ -321,3 +321,32 @@ def test_user_mode_fresh_nikto_clone_must_run(env, tmp_path, works):
     else:
         assert proc.stdout.splitlines()[-1] == "rc=1", proc.stdout + proc.stderr
         assert "perl cannot run" in proc.stderr, proc.stderr
+
+
+def test_user_mode_cached_nikto_git_clone_is_updated_not_deleted(env, tmp_path):
+    # A clone that fails the run check (a missing perl module, say) is pulled
+    # in place, never deleted and re-cloned.
+    e, fakes, log = env
+    _fake(fakes, "perl", f'#!{_BASH}\necho "Can\'t locate XML/Writer.pm"\n')
+    opt = tmp_path / "opt"
+    (opt / "nikto" / "program").mkdir(parents=True)
+    (opt / "nikto" / ".git").mkdir()
+    (opt / "nikto" / "local-note").write_text("keep me\n")
+    (opt / "nikto" / "program" / "nikto.pl").write_text("#!/usr/bin/perl\n", newline="\n")
+    script = f'source "$0"; USER_MODE=1; OPT_DIR={opt}; install_nikto_user; echo "rc=$?"'
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    calls = log.read_text()
+    assert "pull" in calls and "clone" not in calls, calls
+    assert (opt / "nikto" / "local-note").is_file(), "the cached clone was deleted"
+    assert proc.stdout.splitlines()[-1] == "rc=1", proc.stdout + proc.stderr
+
+
+def test_user_dry_run_needs_no_home_with_an_explicit_tool_home(env, tmp_path):
+    e, _fakes, log = env
+    del e["HOME"]
+    e["GIZMODUCK_HOME"] = str(tmp_path / "toolhome")
+    proc = _run(e, "--user", "--dry-run")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "unbound variable" not in proc.stderr, proc.stderr
+    assert log.read_text() == ""
