@@ -854,3 +854,18 @@ def test_stacked_slice_merged_into_main_after_its_base_merged_into_main_ships(
     _merged_world(monkeypatch, {BRANCH: ("MERGED", "main"), f"{BRANCH}-s2": ("MERGED", "main")})
 
     assert crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2") == ""
+
+
+def test_a_recorded_merge_sha_into_the_wrong_branch_is_not_merged(tmp_path, monkeypatch):
+    """Fix review r1 BLOCK: a recorded merge_sha is verified like a PR read as
+    MERGED - slice 1 merged into develop never unlocks slice 2."""
+    root = _ticket(tmp_path, header="status: in-progress   risk: low")
+    _state(root, current=2, done=[1], shipped=[_shipped(1, BRANCH, merge_sha="c" * 40)])
+    _merged_world(monkeypatch, {BRANCH: ("MERGED", "develop")})
+    ctx = crew_autopilot_slices.context(str(root), T)
+
+    merged, why = crew_autopilot_slices.merged_slices(str(root), ctx, 2)
+    order = crew_autopilot_slices.order_stop(str(root), ctx, f"{BRANCH}-s2", "merge")
+
+    assert (merged, "merged into develop" in why, "merged into develop" in order) == (
+        None, True, True), (why, order)

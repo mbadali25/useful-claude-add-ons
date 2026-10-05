@@ -156,13 +156,19 @@ def _shipped_entry(ctx, n):
 
 def merged_slices(top, ctx, upto):
     """(set of merged slice numbers below `upto`, {slice: PR state}), or
-    (None, why) when a shipped slice's PR state cannot be read."""
+    (None, why) when a shipped slice's state, merge destination or chain
+    cannot be read, or it merged anywhere its plan does not allow. A recorded
+    `merge_sha` goes through the same verified-base decision
+    (`_verified_merged`) as a PR read as MERGED: never trusted alone."""
     merged, states = set(), {}
     for k in range(1, upto):
         entry = _shipped_entry(ctx, k)
         if entry is None:
             continue
-        if crew_ship._full_sha(entry.get("merge_sha")):  # pylint: disable=protected-access
+        done, why, _allowed = _verified_merged(top, ctx, k, 0)
+        if done is None:
+            return None, why
+        if done:
             merged.add(k)
             states[k] = "MERGED"
             continue
@@ -171,12 +177,6 @@ def merged_slices(top, ctx, upto):
             return None, (f"could not read slice {k}'s PR state ({entry.get('branch')}) - a "
                           "human looks")
         states[k] = pr["state"]
-        if pr["state"] == "MERGED":
-            # Merged counts only into a base the plan names for slice k.
-            wrong = _merged_into_stop(top, ctx, k, entry.get("branch") or "")
-            if wrong:
-                return None, wrong
-            merged.add(k)
     return merged, states
 
 
