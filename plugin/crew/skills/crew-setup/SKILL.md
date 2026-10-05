@@ -499,10 +499,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph_ignore.py --root . --writ
 
 It appends every missing denylist pattern to `.graphifyignore` under one
 marked block and changes nothing else. Report what it printed: the patterns
-it added, or that none were needed. On exit 2, report the reason and do not
-build a graph. Repo-specific secret paths (`config/`, `/init.php`) go in
-`.claude/secrets-denylist`, one gitignore pattern per line. Commit both
-files. The crew-graph skill's **Secrets denylist** section lists every
+it added, or that none were needed. On exit 1 (a path still uncovered, or a
+`!` line kept open) or 2 (the reason), report it and do not build a graph.
+Repo-specific secret paths (`config/`, `/init.php`) go in
+`.claude/secrets-denylist`, one gitignore pattern per line. Commit both files. The crew-graph skill's **Secrets denylist** section lists every
 source.
 
 ## 4. Write the repo CLAUDE.md
