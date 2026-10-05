@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
+### Changed — crew 1.1.2: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
 
 - **What migrate now does for a pre-0.20 config.** A `.crew/config.json` with no `schema` key, or
   an integer 1-6, is brought to the current schema by `crew_upgrade.upgrade_config` (the code
@@ -37,7 +37,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   before it was set aside). `sabotage.py`'s "current migration loses its entry" mutation already
   follows `upgrade-report.md` when it ships (#389).
 
-### Added — crew: a graph build never reads a secrets-denylisted file (T-0064)
+### Added — crew 1.1.2: a graph build never reads a secrets-denylisted file (T-0064)
 
 - graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore`
   does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked
@@ -88,7 +88,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   in `sabotage_refresh.py`, which is a harness path (`scripts/check-tooling-pr.py`), and land in a
   harness-only follow-up. Not run on Windows.
 
-### Added — crew: `.gitignore` kept right for the languages in the repo (T-0039)
+### Added — crew 1.1.2: `.gitignore` kept right for the languages in the repo (T-0039)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`,
   `summary`) detects the languages and build tools from the files git lists (python, node, dotnet,
@@ -127,7 +127,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   state file is `needs-owner`; and `summary` says `current except N conflict(s)` rather than a bare
   `current` while a human `!` line keeps a row out.
 
-### Changed — crew: the shortfall rule says its wording list cannot be complete (L-0604)
+### Changed — crew 1.1.2: the shortfall rule says its wording list cannot be complete (L-0604)
 
 - crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and
   recovery paragraph, and the troubleshooting guide (HTML rebuilt) no longer say any admission that
@@ -140,7 +140,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `commands/review.md`'s Step 2c sentence and `review_verdict.py`'s module docstring say the same
   thing and are review-harness files, so they follow in their own tooling PR.
 
-### Fixed — crew: tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP (T-0071)
+### Fixed — crew 1.1.2: tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP (T-0071)
 
 - **Summary.** On a shared Obsidian board, two repositories whose origins differ only in the case
   of the user or path are now two owners, and one repository reached through `file://`,
