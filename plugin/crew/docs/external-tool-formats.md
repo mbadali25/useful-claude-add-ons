@@ -62,7 +62,7 @@ raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/eve
 `agent_message` item's text. It counts a turn as complete only on
 `turn.completed`. A `turn.failed`, an `error` event or an unparseable line is
 an error, and a stream with no completed turn is also an error. The verdict
-parser (`review_run.py:1106`) turns any of those into INCOMPLETE of class
+parser (`review_run.py:1149`) turns any of those into INCOMPLETE of class
 `tool`, which is refunded. Every event and item type in the committed corpus is
 one of the documented types (`test_golden_codex_events_use_documented_types`).
 On 2026-09-28, the 26 local streams used only `thread.started`, `turn.started`,
