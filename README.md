@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.3**: Derived `blocked` and `needs-replan`. A spec can name the tickets it waits on with a `depends-on:` line, and crew can now tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan.
 - **crew 1.0.351, notify 1.1.2**: Notifications that failed, repeated, or said only "missing". Chat notifications now go through when the bot token was saved with a trailing space or newline, a missing setting is named along with where to set it, a refused send says Telegram's reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
-- **crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21**: Six changes in one update: `/crew:migrate` carries your `autopilot` settings over instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one, the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to ping only for deploy results and questions that stopped Claude, each led by a subject.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

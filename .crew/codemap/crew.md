@@ -1468,6 +1468,18 @@ Obsidian vault). A CLI the commands call, not a hook.
   `cancelled`/`superseded`/`needs-owner` header edit stales an approval.
   `plugin/crew/tests/test_status_vocabulary.py` holds every list to
   `CLOSED_STATUSES`.
+- DERIVED (L-0639; measured on this tree): `blocked` and `needs-replan` are
+  derived, never typed, by the read-only
+  `plugin/crew/hooks/scripts/crew_ticket_state.py`. `dependency_state` reads
+  a dependency's INDEX status cell (`_index_cell`, the id matching of
+  `crew_ticket._index_closed`), returns `cancelled`/`superseded` before any
+  closed-word test, then `crew_ticket._index_closed` (None is `unknown`), then
+  with no row the spec header (`done`/`merged` closed). `view` parses the
+  spec's `depends-on:` line (`parse_depends_on`), reads `NEEDS_REPLAN` from
+  `review_ledger.status` (an unreadable ledger is None plus a problem), takes
+  the gate from `GATING_STATUSES` in the INDEX cell first, then the header,
+  and reports a typed derived word as a problem. JUDGEMENT: nothing acts on
+  `view` yet; L-0550 and L-0551 are its consumers.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
   (`_files_create` `:666`, `_files_move` `:692`, `_files_read` `:720`); a row
   with no status cell is `could not update` / `could not read`; `create` on

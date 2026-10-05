@@ -40,6 +40,14 @@ uses `crew:explorer` to pin down `path:line` evidence, and writes
 `spec.md` with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
 `.work/INDEX.md` gets a row.
 
+If the ticket cannot start before others close, the spec carries an optional
+`depends-on: [T-0088, T-0090]` line under its header. `blocked` is then derived
+from it, never typed: any dependency that is open, `cancelled`, `superseded` or
+cannot be read blocks, and `done` or `merged` unblocks
+(`hooks/scripts/crew_ticket_state.py`). The line is hashed with the spec, so
+changing it needs `/crew:approve` again. `needs-replan` is derived the same way,
+from the review ledger.
+
 **3. Plan.** You type `/crew:plan T-0091`. The session reads `spec.md`, writes
 one step per unit of work in `plan.md` (Files/Test/Risk/Standards each), checks every
 Files: entry against the spec's Touch globs, and enters **plan mode** to show

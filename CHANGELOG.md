@@ -9,6 +9,18 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.3: derived `blocked` and `needs-replan` (L-0639)
+
+- **Summary.** A spec can name the tickets it waits on with a `depends-on:` line, and crew can now
+  tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan.
+- **crew `crew_ticket_state.py`** (new, read-only). `dependency_state` reads each dependency's INDEX
+  cell, then its spec header: `done`/`merged` is closed; open, `cancelled`, `superseded` and anything
+  it cannot read block. `view` adds `needs_replan` from the ledger (None, never False, when the ledger
+  cannot be read), the gating status (`hold`, `landing`, `needs-owner`, `cancelled`, `superseded`;
+  INDEX first, then header) and reports a typed `blocked`/`needs-replan` cell instead of obeying it.
+  Nothing acts on the answer yet.
+- **`/crew:spec`** shows the optional `depends-on: [T-####, ...]` line; it is hashed with the spec.
+
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 
 - **Summary.** Chat notifications now go through when the bot token was saved with a trailing space
