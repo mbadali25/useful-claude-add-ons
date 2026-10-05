@@ -19,7 +19,182 @@ $cmd = $d.tool_input.command
 if ([string]::IsNullOrWhiteSpace($cmd)) { exit 0 }
 
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root -ErrorAction SilentlyContinue
+
+# L-0664: the workflow-dispatch read below runs T-0062's _promote_dispatch.py,
+# so this flavour resolves python with the one probe every crew .ps1 carries
+# (test_ps1_python_probe.py holds the copies byte-identical).
+function Resolve-CrewPython {
+  # Every python3/python/py candidate found anywhere on PATH is executed
+  # once against one fixed -c probe below; cwd is never searched unless it
+  # is itself on PATH. No behaviour change from this comment.
+  # Memoized within this process: verify-gate.ps1 alone calls this up to
+  # seven times in one run, and each call would otherwise re-walk and
+  # re-probe PATH from scratch. Cached only for the life of THIS process --
+  # a fresh hook invocation gets a fresh probe.
+  if ($script:CrewPythonMemoDone) {
+    return $script:CrewPythonMemoResult
+  }
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
+  #
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
+  #
+  # PROOF, not a printed line. The candidate must answer one JSON object
+  # only a Python can build: {"v": [major, minor], "exe": sys.executable,
+  # "impl": sys.implementation.name}. Accepted only when it exits 0, the
+  # JSON parses, impl is cpython or pypy (the two implementations the hooks
+  # are run under; anything else is rejected rather than guessed at), v is
+  # at least [3, 8] (the floor crew's python targets), and exe exists as a
+  # file. A program that ignores -c and prints some existing path -- which
+  # the previous "print(sys.executable)" probe accepted -- fails the parse.
+  #
+  # The probe is bounded: it runs to completion or its WHOLE PROCESS TREE is
+  # killed at 3s, with stdout and stderr read asynchronously so a chatty
+  # candidate cannot fill a pipe and hang. The tree, not the candidate: a
+  # py.exe-style launcher starts a child interpreter that inherits the
+  # redirected handles, and killing only the launcher leaves that child
+  # running. Kill($true) is the tree kill on PowerShell 7 (.NET Core 3+);
+  # Windows PowerShell 5.1 has no such overload, so it falls back to
+  # taskkill /T /F. No `continue` inside try/catch: loop control across that
+  # boundary differs between PowerShell versions, so the verdict is carried
+  # out in $real and acted on after it.
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that.
+  #
+  # REAL Windows only, never the flavour-guard seam: $env:OS -eq 'Windows_NT'
+  # is also true in this suite's own fixtures, which run REAL pwsh on Linux
+  # with that variable set to get past the guard at the top of this file --
+  # their candidates are ordinary extensionless Linux shim scripts, valid
+  # executables here, and gating on the seam would reject every one of them
+  # and break the fixtures that exist to prove this resolver works. $IsWindows
+  # (PowerShell 6+) reports the actual OS regardless of $env:OS; it does not
+  # exist in Windows PowerShell 5.1, which never runs anywhere but Windows, so
+  # its absence is itself a true answer.
+  $crewPythonRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  # Only .exe/.com/.cmd/.bat (PATHEXT's launchable core) can be started
+  # without going through shell association. An extensionless file --
+  # anything else, including no extension at all -- CreateProcess cannot
+  # launch directly, and reaching it here is the same failure mode this
+  # probe's own bounded wait/kill exists to survive from a HUNG candidate,
+  # not from one Windows cannot start in the first place. Skipped before
+  # Process.Start is ever called, not caught after: a WindowsApps alias
+  # already carries `.exe`, so it is untouched by this and still tried like
+  # any other candidate, per the comment above.
+  $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
+  $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($cmd in $candidates) {
+      if (-not $cmd.Source) { continue }
+      if ($crewPythonRealWindows) {
+        $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
+        if ($crewPythonNativeExts -notcontains $crewPythonExt) {
+          Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          continue
+        }
+      }
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
+      if ($crewPythonRemainingMs -le 0) {
+        $script:CrewPythonMemoDone = $true
+        $script:CrewPythonMemoResult = ''
+        return ''
+      }
+      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
+      $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        # Closed at once: the probe never reads stdin, and an OPEN inherited
+        # stdin parks a child forever, which would make a healthy candidate
+        # look dead and get it rejected.
+        $proc.StandardInput.Close()
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit($crewPythonWaitMs)) {
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
+          # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
+          # NON-terminating binding error this try never catches: it reached stderr as a red
+          # error block on every hook, though the candidate was rightly rejected (T-0097).
+          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }
+          $v = @($probe.v)
+          if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
+              ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
+              ([int]$v[0] -gt 3 -or ([int]$v[0] -eq 3 -and [int]$v[1] -ge 8)) -and
+              $probe.exe -is [string]) {
+            $real = $probe.exe
+          }
+        }
+        try { $proc.Dispose() } catch { }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      $script:CrewPythonMemoDone = $true
+      $script:CrewPythonMemoResult = $real
+      return $real
+    }
+  }
+  $script:CrewPythonMemoDone = $true
+  $script:CrewPythonMemoResult = ''
+  return ''
+}
+
 
 # T-0505, the twin of promote-gate.sh's block: "no map" means none in the
 # working copy AND none committed; an uncommitted change to the map (edit,
@@ -221,6 +396,7 @@ function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
 # cannot be read or has no readable environments is could-not-tell: with the
 # working map dirty, "matched nothing" would be a guess.
 $envNames = @()
+$allDeploys = @()
 if ($mapDirty -and $headMap) {
   $blob = (git cat-file blob $headMap 2>$null)
   if ($LASTEXITCODE -ne 0) { Deny-UnreadableMap "the committed .crew/verify.json could not be read (git cat-file exited $LASTEXITCODE)." }
@@ -236,12 +412,14 @@ if ($mapDirty -and $headMap) {
   foreach ($p in $committedEnvs.Value.PSObject.Properties) { Assert-EnvironmentName $p.Name "the committed .crew/verify.json" }
   foreach ($p in $committedEnvs.Value.PSObject.Properties) {
     $declared = @($p.Value.deploy) | Where-Object { $_ -is [string] -and $_ }
+    $allDeploys += $declared
     foreach ($dep in $declared) {
       if (Test-DeployMatch $cmd $dep $p.Name) { $hits += $p.Name; break }
     }
   }
   $envNames = $hits
-  if ($envNames.Count -eq 0 -and -not $mapPresent) { exit 0 }
+  # With no working map, nothing more is read from it: a dispatch is still
+  # read against the committed map below (L-0664), as promote-gate.sh does.
 }
 
 if ($mapPresent) {
@@ -299,6 +477,7 @@ foreach ($p in $vm.environments.PSObject.Properties) {
     if ($declared -isnot [array] -or @($declared | Where-Object { $_ -isnot [string] }).Count -gt 0) {
       Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``deploy`` that is not a command or a list of commands."
     }
+    $allDeploys += @($declared | Where-Object { $_ })
     foreach ($dep in $declared) {
       if ($dep -and (Test-DeployMatch $cmd $dep $p.Name)) { $hits += $p.Name; break }
     }
@@ -307,7 +486,6 @@ foreach ($p in $vm.environments.PSObject.Properties) {
 $envNames = $hits
 }
 }
-if ($envNames.Count -eq 0) { exit 0 }
 # Several matching environments are named together, `staging,prod`, in every
 # message, skip row and the in-flight marker (`,`: verify-gate.sh greps the
 # marker's name as an ERE, where `+` is a quantifier); their requirements are
@@ -423,6 +601,62 @@ function Stop-Promotion([string]$Why) {
   }
   [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName): $Why")
   exit 2
+}
+
+# L-0664, the twin of promote-gate.sh's T-0062 block: containment matched
+# nothing, so read the command as a workflow dispatch with the same helper
+# and the same reader, told the command is PowerShell. `env<TAB>name` gates it
+# as that environment's deploy, `block<TAB>why` blocks (could not tell, or a
+# declared workflow fitting no single environment), nothing passes. A helper
+# that fails is never "nothing". With no python, a command naming gh with
+# `workflow` or `dispatches` blocks when any declared deploy names them too:
+# an unknown does not become "not a deploy".
+if ($envNames.Count -eq 0) {
+  $envName = "workflow dispatch"
+  $py = Resolve-CrewPython
+  if (-not $py) {
+    $looksLike = { param($t) ($t -match '(?i)(^|[^A-Za-z0-9_.-])gh([^A-Za-z0-9_.-]|$)') -and ($t -match '(?i)workflow|dispatches') }
+    if ((& $looksLike $cmd) -and @($allDeploys | Where-Object { & $looksLike $_ }).Count -gt 0) {
+      Stop-Promotion "python could not be found, so the gate cannot read this command as a workflow dispatch, and the map declares a dispatch deploy. This is not a pass. Install python 3, or put it on PATH."
+    }
+    exit 0
+  }
+  $prevConsoleEncoding = [Console]::OutputEncoding
+  $prevOutputEncodingVar = $OutputEncoding
+  $prevPythonIoEncoding = $env:PYTHONIOENCODING
+  $prevHeadMap = $env:CREW_HEAD_MAP
+  $prevMapDirty = $env:CREW_MAP_DIRTY
+  $dispatch = $null
+  $dispatchExit = $null
+  try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $env:PYTHONIOENCODING = 'utf-8'
+    $env:CREW_HEAD_MAP = if ($headMap) { "$headMap" } else { '' }
+    $env:CREW_MAP_DIRTY = if ($mapDirty) { "$mapDirty" } else { '' }
+    $global:LASTEXITCODE = $null
+    $dispatch = @($cmd | & $py (Join-Path $scriptDir '_promote_dispatch.py') --shell powershell -)
+    $dispatchExit = $LASTEXITCODE
+  } catch {
+    $dispatchExit = $null
+  } finally {
+    [Console]::OutputEncoding = $prevConsoleEncoding
+    $OutputEncoding = $prevOutputEncodingVar
+    $env:PYTHONIOENCODING = $prevPythonIoEncoding
+    $env:CREW_HEAD_MAP = $prevHeadMap
+    $env:CREW_MAP_DIRTY = $prevMapDirty
+  }
+  if ($dispatchExit -ne 0) {
+    Stop-Promotion "the command could not be read as a workflow dispatch (_promote_dispatch.py failed). This is not a pass."
+  }
+  foreach ($line in $dispatch) {
+    $parts = "$line".Replace("`r", "").Split("`t", 2)
+    if ($parts.Count -lt 2) { continue }
+    if ($parts[0] -ceq 'block') { Stop-Promotion $parts[1] }
+    if ($parts[0] -ceq 'env') { $envNames += $parts[1] }
+  }
+  if ($envNames.Count -eq 0) { exit 0 }
+  $envName = $envNames -join ','
 }
 
 # WHICH tree (T-0505). Twin of the block in promote-gate.sh, whose header

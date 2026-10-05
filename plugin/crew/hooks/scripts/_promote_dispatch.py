@@ -10,6 +10,8 @@ on the workflow's dispatch endpoint with `-f 'inputs[environment]=x'`, reach
 the same environment.
 
     python3 _promote_dispatch.py "<command>"     (cwd: the project dir)
+    python3 _promote_dispatch.py --shell powershell -   (L-0664: the command
+            on stdin, read as PowerShell; promote-gate.ps1's call)
 
 stdout, one record per line, tab-separated:
 
@@ -224,14 +226,14 @@ def working_envs():
         return get_ci(json.load(fh), "environments", {})
 
 
-def decide(command):
-    """The records to print for `command`."""
+def decide(command, shell="bash"):
+    """The records to print for `command`, read as `shell` would run it."""
     maps = [(label, envs) for label, envs in (
         ("the committed .crew/verify.json", committed_envs()),
         (".crew/verify.json", working_envs())) if isinstance(envs, dict)]
     if not any(any(declared(envs)) for _label, envs in maps):
         return []
-    kind, why, scopes = crew_dispatch.dispatch_read(command, "bash")
+    kind, why, scopes = crew_dispatch.dispatch_read(command, shell)
     if kind == "none" or (kind == "read" and not scopes):
         return []
     if kind == "unsure":
@@ -246,9 +248,15 @@ def decide(command):
 
 
 def main(argv):
-    command = argv[1].replace("\r", "").rstrip("\n") if len(argv) > 1 else ""
+    shell = "bash"
+    if len(argv) > 2 and argv[1] == "--shell" and argv[2] in ("bash", "powershell"):
+        shell, argv = argv[2], argv[:1] + argv[3:]
+    command = argv[1] if len(argv) > 1 else ""
+    if command == "-":
+        command = sys.stdin.read()
+    command = command.replace("\r", "").rstrip("\n")
     try:
-        records = decide(command) if command.strip() else []
+        records = decide(command, shell) if command.strip() else []
     except Block as why:
         text = str(why)
         if "could not tell" not in text:

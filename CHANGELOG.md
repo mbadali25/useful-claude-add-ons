@@ -9,6 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: promote-gate.ps1 gates a workflow dispatch of a declared deploy too (L-0664)
+
+- **Summary.** On the PowerShell tool, a command no declared `deploy` contains is now read as a
+  workflow dispatch by the same helper and reader as the Bash flavour (`_promote_dispatch.py
+  --shell powershell`), so `gh workflow run <wf>` with reordered inputs and its `gh api .../dispatches`
+  twin are gated as the environment they deploy, and a dispatch crew cannot read blocks. Before,
+  the PowerShell flavour was containment-only.
+- **Python.** promote-gate.ps1 now resolves python with the shared `Resolve-CrewPython` probe. With no
+  python, a command naming `gh` with `workflow` or `dispatches` blocks when a declared deploy names
+  them too ("This is not a pass"); any other command behaves as before. promote-gate.sh is unchanged.
+
 ### Added — `crew` 1.1.4: `crew_ghdeploy.py record` and the `/crew:promote` github sequence (L-0647)
 
 - **Summary.** `record` writes one dispatch's outcome into `.work/PROMOTIONS.md`: a detail line with
@@ -77,8 +88,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   read (a variable, a substitution, double quotes, a pipe, `--json`, `--input`, `-F k=@file`, a
   workflow id or display name) is could-not-tell and blocks, as does a declared workflow whose
   inputs fit no environment or several. A repo with no dispatch deploy sees no change.
-- **Not yet:** the PowerShell tool stays containment-only (L-0664). Symbolic refs stay unresolved
-  (T-0505). Five mutations in `promote_tree_mutations.py`, each red on a named case.
+- **Not yet:** symbolic refs stay unresolved (T-0505); the PowerShell tool is L-0664's, below.
+  Five mutations in `promote_tree_mutations.py`, each red on a named case.
 
 ### Added — `crew` 1.1.4: environment-scoped workflow deploys in the cloud guard (T-0009)
 

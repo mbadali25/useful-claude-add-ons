@@ -569,7 +569,11 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
 <li><strong>"no all-pass row for sha X"</strong> where X is the worktree's sha: the upstream environment passed a
   different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
   not carry over.</li>
-<li><strong>"PROMOTION BLOCKED (workflow dispatch): the gate could not tell ..."</strong> (T-0062, Bash tool):
+<li><strong>"PROMOTION BLOCKED (workflow dispatch): python could not be found ..."</strong> (L-0664, PowerShell
+  tool): the map declares a dispatch deploy, the command names <code>gh</code> with <code>workflow</code> or <code>dispatches</code>,
+  and no python resolved to read it. Install Python 3 or put it on PATH; this is not a pass.</li>
+<li><strong>"PROMOTION BLOCKED (workflow dispatch): the gate could not tell ..."</strong> (T-0062 on the Bash tool,
+  L-0664 on the PowerShell tool):
   the command is a <code>gh workflow run</code> or <code>gh api .../dispatches</code> and the map declares a dispatch
   deploy, but crew cannot read the line with certainty (a variable, a substitution, double quotes,
   a pipe, <code>--json</code>, <code>--input</code>, <code>-F k=@file</code>, a workflow id or display name), or a declared workflow

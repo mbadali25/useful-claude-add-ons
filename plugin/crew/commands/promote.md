@@ -309,9 +309,9 @@ Be precise about this, because the difference decides how much the sequence abov
 can be trusted.
 
 **Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command matching a declared `deploy`
-entry - and, on the Bash tool, on a workflow dispatch of a declared deploy workflow in either spelling
+entry - and, on either tool, on a workflow dispatch of a declared deploy workflow in either spelling
 (`gh workflow run` or `gh api .../dispatches`; inputs must fit one environment; a dispatch it cannot read is
-could-not-tell and blocks; PowerShell is containment-only until L-0664) - and refuses it unless, for the sha at
+could-not-tell and blocks) - and refuses it unless, for the sha at
 HEAD **of the tree the deploy runs from**: every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`;
 the `rollback` runbook is verified inside 90 days; `requireHuman` has `.crew/.approved-<env>-<sha>`; that tree is clean. These cannot be skipped by deciding to skip them.
 
