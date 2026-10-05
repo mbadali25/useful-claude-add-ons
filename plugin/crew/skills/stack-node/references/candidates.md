@@ -2,8 +2,10 @@
 
 No gated Node.js standards set ships yet (L-0537). Nothing in this file is loaded by
 `crew_standards.py` or asked in the pre-review self-check. It is guidance, kept with its
-evidence. A rule is promoted, keeping its research id, once three distinct reviewed change
-sets earn it. It goes into `crew-standards/references/node.md` (set `NODE`, `applies-to:
+evidence. A rule is promoted once three distinct reviewed change sets earn it. NODE-08 keeps
+its research id. NODE-P1, -P2 and -P3 are public-pass labels that the loader cannot read
+(`[A-Z]{2,6}-\d{2}`), so on promotion each takes its research id once the owner's file maps
+it, or else the next unused `NODE-NN`. It goes into `crew-standards/references/node.md` (set `NODE`, `applies-to:
 ["**/*.ts", "**/*.mts", "**/*.cts", "**/*.js", "**/*.mjs", "**/*.cjs"]`).
 
 **Why nothing ships.** The bar and the counting rule are `python.md`'s: a change set is a
@@ -50,7 +52,9 @@ sets, which do not count.
 
 Use `execFile`, `spawn` or `execFileSync` with an argv array and `shell: false` (the default)
 for any command that carries a value from outside the code. Do not use `exec`/`execSync`,
-or a template literal with `shell: true`.
+or a template literal with `shell: true`. A Windows `.cmd` or `.bat` target is the exception:
+it cannot be launched without `cmd.exe`, so an argument array alone does not make it safe.
+It needs an explicit plan, with every argument quoted for `cmd.exe` or the input refused.
 
 Public leads: grimmerk/codev@897c2889 (CodeRabbit review, "use execFile instead of exec"; a
 second review fix one day later counts with it), iOfficeAI/AionUi@f192f772 (code review HIGH
