@@ -9,6 +9,29 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew: a vault write matches every directory from the vault down, not just the vault (T-0081)
+
+- **Summary.** A board or note directory inside the Obsidian vault that is swapped for another real
+  directory between crew's checks and its write is now refused instead of written into.
+- **What changed.** `_vault_paths` in `plugin/crew/hooks/scripts/crew_tracker.py` records each real
+  directory between the vault and the board or note (`boardDirIds`, `noteDirIds`: `(st_dev, st_ino)`
+  from `os.lstat`, or None), and both pinned walks match it: the POSIX fd walk after each no-follow
+  open, the Windows handle walk on every held component. A different identity refuses as "a
+  directory on its path changed after the vault checks"; an identity that cannot be told (none
+  recorded, a list that does not line up, or an inode / file id of 0 on either side) refuses as
+  "could not tell".
+- **Behaviour change.** On POSIX, a vault or directory whose file system reports inode 0 now refuses
+  the write ("could not tell"), as Windows already did for a file id of 0.
+- **Tests.** Nine new tests in `plugin/crew/tests/test_crew_tracker.py` (board, middle-directory and
+  note swaps for a byte-identical copy, natively on POSIX and Windows; the handle walk's different
+  component; inode 0 seen by the walk on the vault and a component, and recorded at check time; a
+  missing or short record on both walks; the record itself; a vault-root board still written).
+  Four existing tests now also assert which check refused (link swap, vault replaced, zero file id,
+  and the `[replaced]` case, which turns the new match off so `_pinned_check`'s held comparison is
+  tested alone; the end-to-end swap is kept as `[replaced-full]`). With those, all 87 committed
+  crew_tracker sabotage mutations go red (`sabotage.py`, SABOTAGE SUITE: PASS). Mutations for the
+  new branches follow in L-0672.
+
 ### crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21 — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
 
 - **Summary.** Six changes in one update: `/crew:migrate` carries your `autopilot` settings over
