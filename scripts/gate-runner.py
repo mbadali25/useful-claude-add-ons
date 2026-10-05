@@ -63,7 +63,8 @@ COULD-NOT-TELL. On Linux the checked directory is opened, the opened directory
 is checked again, and the child starts in it through /proc/self/fd, so a later
 swap of the pathname cannot redirect it; elsewhere (no /proc/self/fd) the
 child gets the resolved path and a swap in between is not prevented. A tool
-named in `needs` is run by its absolute path.
+named in `needs` is run by its absolute path; a `module:<name>` need is a
+Python module this interpreter must import, else the step is SKIP (L-0657).
 
 The table is derived from .github/workflows/; `--check-ci` (and
 scripts/_test/gate-runner.py) fails when a workflow `run:` command is in
@@ -170,6 +171,15 @@ TABLE = (
               "instruction-budgets.yml"),
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
          ci=(("marketplace.yml", "python3 scripts/sync-updates.py --check"),)),
+    # L-0657: the committed crew guide HTML and the generated configuration
+    # reference match their sources. build.py needs markdown: SKIP without it,
+    # never PASS. config_reference.py imports only the standard library.
+    Step("crew-guides-fresh", "cheap", (PY, "docs/guides/crew/src/build.py", "--check"),
+         needs=("module:markdown",),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/build.py --check"),)),
+    Step("crew-config-reference-fresh", "cheap",
+         (PY, "docs/guides/crew/src/config_reference.py", "--check"),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/config_reference.py --check"),)),
     _py_suite("sync-updates-suite", "scripts/_test/sync-updates.py"),
     Step("install-prerequisites-syntax", "cheap", ("bash", "-n", "scripts/install-prerequisites.sh"),
          needs=("bash",), ci=(("marketplace.yml", "bash -n scripts/install-prerequisites.sh"),)),
@@ -738,6 +748,11 @@ def preflight(step: Step, ctx: Context, argv: list):
             full = path if os.path.isabs(path) else os.path.join(ctx.root, path)
             if not os.path.exists(full):
                 return SKIP, f"NOT VERIFIED: {path} does not exist"
+            continue
+        if need.startswith("module:"):
+            module = need[len("module:"):]
+            if not ctx.importable(module):
+                return SKIP, f"NOT VERIFIED: python module {module} is not importable"
             continue
         found = _which(need)
         if found is None:

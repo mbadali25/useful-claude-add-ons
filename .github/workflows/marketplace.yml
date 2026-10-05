@@ -99,6 +99,18 @@ jobs:
         run: python3 scripts/_test/crew-docs.py
       - name: Crew docs-touched-or-declared check
         run: python3 scripts/check-crew-docs.py
+      # L-0657: a stale built crew guide or configuration reference fails the
+      # PR. markdown is pinned to the version the committed HTML was built
+      # with (3.11: build.py --check is byte-for-byte fresh with it); a
+      # different version can change the HTML and fail every PR. HTML only -
+      # DOCX and PDF are not byte-reproducible. Kept out of the pylint job on
+      # purpose (.pylintrc). Without markdown build.py --check exits 2, red.
+      - name: Install the crew guide checks' dependency
+        run: python -m pip install 'markdown==3.11'
+      - name: Crew guide HTML is current
+        run: python3 docs/guides/crew/src/build.py --check
+      - name: Crew configuration reference is current
+        run: python3 docs/guides/crew/src/config_reference.py --check
       # scripts/ci-select.py decides which heavy suites a PR runs in
       # pytest-crew.yml, pylint.yml, shell-suites.yml and mcp-servers.yml
       # (C-0001). A wrong answer there is a suite skipped on a PR that needed

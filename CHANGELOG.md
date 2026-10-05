@@ -9,6 +9,19 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — repository: CI fails a stale built crew guide (L-0657)
+
+- **Summary.** A pull request whose committed crew guide HTML, or generated configuration reference,
+  no longer matches its sources now fails CI, so a stale guide cannot merge on green checks.
+- **CI.** `marketplace.yml` installs `markdown==3.11` (the version the committed HTML is
+  byte-for-byte fresh with) and runs `python3 docs/guides/crew/src/build.py --check` and
+  `python3 docs/guides/crew/src/config_reference.py --check` (T-0048's commands) as named steps.
+  HTML only; DOCX and PDF are not byte-reproducible. The pylint job still has no `markdown`.
+- **gate-runner.** Both commands are table steps. A new `module:<name>` need makes `build.py --check`
+  SKIP (NOT VERIFIED) where `markdown` does not import, never PASS; `config_reference.py` needs only
+  the standard library. New case `case_module_need_missing_is_skip`.
+- **CLAUDE.md.** The crew-docs paragraph names the two checks.
+
 ### Added — repository: CI checks that a crew code change updates a crew doc, or says why not (T-0055)
 
 - **Summary.** A pull request that changes crew code now fails CI unless it also changes a narrative

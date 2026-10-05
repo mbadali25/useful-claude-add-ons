@@ -39,6 +39,8 @@ T-0054 land, `.crew/codemap/`, and `docs/diagrams/`. In this repo that overrides
 no doc impact says so in its PR body, with the reason (`Docs: none - <why>`), never silently.
 `scripts/check-crew-docs.py` fails a PR that changes crew code and neither touches a narrative doc
 nor carries the line; the line also works as a commit trailer, the only form a local run can see.
+CI also fails a stale built guide's HTML or configuration reference (`build.py --check`,
+`config_reference.py --check`).
 
 **A number this repo states about itself gets a marker, or it is not checked.** Write
 `<!-- claim: skills-count -->` or `<!-- claim: plugin-version:<name> -->` beside it and

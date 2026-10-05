@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **repository**: CI fails a stale built crew guide. A pull request whose committed crew guide HTML, or generated configuration reference, no longer matches its sources now fails CI, so a stale guide cannot merge on green checks.
 - **repository**: CI checks that a crew code change updates a crew doc, or says why not. A pull request that changes crew code now fails CI unless it also changes a narrative crew document or carries a `Docs: none - <reason>` line, so the rule that crew docs move with crew code holds even when nobody reads the PR.
-- **repository**: The repo's own pwsh launches run on a private startup-profile cache. Every pwsh this repository's gate scripts start now gets its own throwaway PowerShell startup-profile cache, so two runs at once can no longer corrupt the shared one and make every later pwsh die.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
