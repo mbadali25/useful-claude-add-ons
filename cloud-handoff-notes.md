@@ -51,7 +51,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 07:27 UTC
+Last updated: 2026-10-05 07:28 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -110,6 +110,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 07:40: #433/#462 now show merged. Batch 8 builder told to stop. Started member PR builder for C-0015 items 1-4 + C-0017 (branch C-0015-nits, no bump) for batch 9; C-0015.5 (GPG/checksums) left open. Batch 9 plan: #478, #395, C-0015-nits + Windows-green PRs from sweep round 2 (cap 6).
 - 07:35: MERGED #509 (batch 8) at 907a6a1f -> main 23fb9d91, crew 1.0.350 / gizmoduck 0.5.8 / localgpu 0.1.21. Review 0/0: 33 merges re-done, member heads fully present, T-0108 safety intact, full crew 12993 passed, gizmoduck 752. #401/#451/#344/#362 auto-closed merged; #433/#462 heads are in main (GitHub lagging on merged state, re-check). Minted C-0017 (crew_keys since NIT). Next free C-0018.
 - 07:15: #509 (batch 8) CI green at 907a6a1f (29 ok, 1 skipped), contains main 3d4b4b5d, version commit last (crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21). Merge-resolution review spawned (full crew suite + T-0108 safety rules).
 - 07:10: Batch 8 PR is #509 (branch batch-8-build, head 907a6a1f): T-0105, L-0678, L-0673, T-0108, T-0035, T-0051. Builder waiting on CI. Sweep round 2 (#341/#342/#346/#363/#366) agent started.
