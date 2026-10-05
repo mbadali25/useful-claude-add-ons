@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew`: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
+### Fixed - `crew` 1.0.412: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched
   the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343, 0.8s
