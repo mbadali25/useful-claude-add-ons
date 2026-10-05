@@ -177,8 +177,8 @@ reported to you instead (exit 3). <code>/crew:onboard</code> and <code>/crew:onb
 <p><code>/crew:migrate</code> moves a crew 0.20 repository to the 1.0 layout, once per
 repository: <code>--preview</code> first, then <code>--apply</code>, which takes a backup that
 <code>--rollback</code> restores. Every historical metric it cannot recover is written
-<code>UNKNOWN</code>, never <code>0</code>. <code>/crew:upgrade</code> is only for a config older than 0.20
-that <code>/crew:migrate</code> refuses.</p>
+<code>UNKNOWN</code>, never <code>0</code>. A config older than 0.20 (no <code>schema</code>, or 1-6) is
+upgraded by <code>/crew:migrate</code> itself in the same run; <code>/crew:upgrade</code> was removed.</p>
 <p>Deeper: <a href="quickstart.md">Quickstart</a>.</p>
 <h2 id="the-lifecycle">The Lifecycle</h2>
 <p>Source: <code>plugin/crew/hooks/scripts/crew_ticket.py</code> and

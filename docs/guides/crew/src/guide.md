@@ -90,8 +90,8 @@ reported to you instead (exit 3). `/crew:onboard` and `/crew:onboard
 `/crew:migrate` moves a crew 0.20 repository to the 1.0 layout, once per
 repository: `--preview` first, then `--apply`, which takes a backup that
 `--rollback` restores. Every historical metric it cannot recover is written
-`UNKNOWN`, never `0`. `/crew:upgrade` is only for a config older than 0.20
-that `/crew:migrate` refuses.
+`UNKNOWN`, never `0`. A config older than 0.20 (no `schema`, or 1-6) is
+upgraded by `/crew:migrate` itself in the same run; `/crew:upgrade` was removed.
 
 Deeper: [Quickstart](quickstart.md).
 

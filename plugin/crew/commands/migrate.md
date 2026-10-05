@@ -72,15 +72,13 @@ What apply does, in order:
 | `.crew/pm-journal.md`, `pm-standing.md` | copied to `.crew/archive/` | <!-- deliberate -->
 | `.crew/codemap/` and its anchors | untouched |
 
-The full key-by-key table for `crew.json` is the docstring of
-`hooks/scripts/crew_migrate.py`; a test holds the table and the code to each
-other.
+The full key-by-key table for `crew.json` is the docstring of `hooks/scripts/crew_migrate.py`;
+a test holds the table and the code to each other.
 
 Print the `backup:` line apply ends with. That path is the only way to undo it.
 
-Then convert `context.autoClear` — the one helper `/crew:init` and
-`/crew:onboard` also call, so relay its output rather than restating this.
-Run it **once**: a second run cannot see this repo's pre-migration opt-in.
+Then convert `context.autoClear` — the one helper `/crew:init` and `/crew:onboard` also call, so
+relay its output rather than restating this. Run it **once**: a second run cannot see this repo's pre-migration opt-in.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py" --root . apply-migrate
@@ -116,7 +114,7 @@ itself is kept as the record.
 
 ## After
 
-The originals marked `retireable` still exist. Removing them is a separate,
-explicit decision for the owner - never do it as part of this command.
+The originals marked `retireable` still exist. Removing them is a separate, explicit decision
+for the owner - never do it as part of this command.
 
 Run `/crew:status` to confirm the repo now reads as `.crew/crew.json schema 1`.
