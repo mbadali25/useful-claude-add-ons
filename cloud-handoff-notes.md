@@ -6,7 +6,7 @@ Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at th
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
 ### State
-- **main = 7ba4c184 (#499 L-1518 merged 01:15), crew 1.0.345; before it efcf4666, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
+- **main = 2828acef (#497 L-1512 merged 01:45), crew 1.0.346; before it 7ba4c184 (#499); before it efcf4666, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
 - Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
 
 ### Owner rules in force (all sessions)
@@ -19,12 +19,11 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - Notes after every action; present decisions with a recommendation and tables (owner has ADHD: concise).
 
 ### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
-main = 7ba4c184 (#499 L-1518 merged), crew 1.0.345.
+main = 2828acef (#497 L-1512 merged), crew 1.0.346.
 | Item | Where | State | Next |
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
-| #497 L-1512 | `L-1512-build` e8a3fb48 | re-check 0 BLOCK / 1 FIX (version 1.0.412 -> 1.0.346); Windows CI green | builder: merge main, 1.0.346, sync-updates; then land alone |
-| #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; review 0 BLOCK / 2 FIX (version, sync-updates after main merge) + Summary-bullet NIT | builder waits for #497 merge, then one push at 1.0.347; lands ALONE |
+| #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; review 0 BLOCK / 2 FIX (version, sync-updates after main merge) + Summary-bullet NIT | builder pushing at 1.0.347 (main merged); lands ALONE when CI green |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | owner chose FRESH BRANCH from main (batch 5 merged-then-reverted #407's old head); cp1252 + depth fixes done | builder rebuilding, closes #407 -> batch 6 |
 | Batch 6 | not started | T-0045 v2, #353 T-0011 + #366 T-0059, more | batch PR per LANDPREP (sync-updates step) |
 
@@ -45,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:25 UTC
+Last updated: 2026-10-05 01:35 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -104,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:45: MERGED #497 L-1512 -> 2828acef (crew 1.0.346), CI 29/29 incl. all Windows shards. #496 builder released for its one push at 1.0.347; subscribed to #496.
 - 01:35: T-0045 rebuilt from main as draft #500 (f031d5bd); #407 commented 'Superseded by #500' and closed (verified: only these writes, per owner's fresh-branch choice). #497 c1c978dc CI running (12 ok, 0 fail).
 - 01:23: L-1512 #497 re-versioned to crew 1.0.346 at c1c978dc after merging main 7ba4c184 (README synced); CI running
 - 01:30: #496 review 0 BLOCK 2 FIX (version, sync-updates). Builder holds until #497 merges, then 1.0.347 in one push. Minted C-0002 (.cmd git drops ^ peels on Windows, fail-closed) and C-0003 (verify_fingerprint unknown->nothing-changed).
