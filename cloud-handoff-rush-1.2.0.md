@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T16:10Z
+Last updated: 2026-10-05T16:14Z
 
 ## >>> RESUME HERE
 
@@ -93,6 +93,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T16:14Z #541 G1 CI red (Linux 3.12): onboard refresh path lost 'Then run step 6.'; sabotage anchor 'migrate stages with a truncating open' lost in crew_migrate.py (harness can't change in a release lane -> restore anchor in feature code). Sent to G1 lander.
 - 2026-10-05T16:10Z Coordinator reviews of G1b capped fixes: T-0065 CLEAN; T-0036 BLOCK (short Authorization in Markdown table / trailing #); L-0509 BLOCK (double locate_ticket probe) + FIX (closed status described as open). Sent to G1b builder (max 3 rounds).
 - 2026-10-05T16:06Z G1 landed on rush/g1-ports (97f0b43b, crew 1.1.2, group review 7 rounds -> CLEAN); PR #541 opened. G5 built (9 tickets CLEAN; gizmoduck 0.5.19, windows-ssm 1.0.1). G1b built (T-0025, L-0590 CLEAN; T-0036, T-0065, L-0509 capped -> coordinator reviews running). G0: T-0030 final fix CLEAN; T-0029 1 FIX (invalid lane id) + owner decisions (port in repo key; recover on provably dead PID) sent to G0 builder. C-0031..C-0034 minted.
 - 2026-10-05T15:23Z G0 ported (T-0030 7 rounds, T-0029 6 rounds; head 80027aa1). Both capped: coordinator reviews of 2dcbf27c3 (T-0030) and 80027aa1e (T-0029) running. Harness halves at $S/harness-T-0030.patch then harness-T-0029.patch (sabotage_coord 101, sabotage_wave 15, scope_guard never-list) -> H2. Builder ran pkill -f 'codex exec' once: other groups' in-flight reviews may have died. C-0029, C-0030 minted.
