@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**143 keys**: 83 settable in the machine-global file, 60 repo-only.
+**145 keys**: 83 settable in the machine-global file, 62 repo-only.
 
 Columns:
 
@@ -387,6 +387,8 @@ Columns:
 | `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.349 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |
 | `autopilot.knownFailures` | repo | `[]` | list of check names (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Required checks whose `fail` does not block a merge, matched by exact name; anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | repo | `60` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Minutes `ship` waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning. |
+| `autopilot.maxLanes` | repo | `null` | positive integer or null (checked in `plugin/crew/hooks/scripts/crew_wave.py`) | 1.1.9 | Lanes one `/crew:autopilot wave` runs at once; null is the resolved `pm.maxDispatches`, a larger value is capped to it and anything but a positive integer reads as it, each with a warning. |
+| `autopilot.reviewPolicy` | repo | `"stop"` | `stop` \| `clean-only` \| `fix-and-rereview` | 1.1.9 | What a wave lane does with its review verdict: `stop` ends at the first verdict, `clean-only` takes a CLEAN round on to the done checks, `fix-and-rereview` fixes within the ledger's rounds. Anything else reads as `stop`, with a warning; no setting lets a lane accept a review. |
 
 ### `tickets`
 
@@ -418,13 +420,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 | `autopilot.maxTicketsPerRun` | new key | repo | 3 |  | Tickets one goal run may work before it stops. |
 | `autopilot.maxTokensPerSession` | new key | repo | 2000000 |  | Token cap for one goal session. |
 | `autopilot.mode` | changes values | repo | off | `off` \| `plan` \| `backlog` | Adds `backlog`: work a goal's tickets one at a time. |
-
-### T-0029
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `autopilot.maxLanes` | new key | repo | the resolved pm.maxDispatches |  | Parallel lanes one autopilot wave may run; may only lower the limit. |
-| `autopilot.reviewPolicy` | new key | repo | stop | `stop` \| `clean-only` \| `fix-and-rereview` | What a lane does with review findings. |
 
 ### T-0030
 

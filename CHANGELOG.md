@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.9 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
+
+- **Summary.** A set of tickets the owner designed and approved together can now run at once, each
+  in its own isolated worktree, with every lane's questions and results reported in one batch.
+- **Added.** `plugin/crew/hooks/scripts/crew_wave.py`: `set` records an owner-designed set in
+  `.work/autopilot/<slug>.json`; `plan` (read-only) says per ticket `eligible` or why it is refused
+  (no current approval, `direction` or closed, a dependency not closed or unknown, a Touch overlap,
+  more lanes than `autopilot.maxLanes`) and the landing order; `start` writes the lane files and
+  prints one `Agent` launch per lane with `isolation: worktree`, never any other; `lane-init`,
+  `lane-prompt`, `lane-done`, `collect` (a missing lane file reads `unknown`, never `clean`) and
+  `cleanup` (merged, clean worktrees only; never `--force` or `branch -D`). The wave refuses to run
+  unless `scope.mode` is `block` for every lane ticket (`scope-not-enforcing`). `/crew:autopilot`
+  routes `wave`, `wave --set <slug>` and `wave <id>...` to it (section 7). New repo-only keys
+  `autopilot.maxLanes` (default: `pm.maxDispatches`, which it can only lower) and
+  `autopilot.reviewPolicy` (`stop` | `clean-only` | `fix-and-rereview`, default `stop`).
+- **Not in this entry.** The scope guard's subagent never-list (`review_ledger.py --accept|--reject`
+  and every abbreviation, `gh pr merge --admin`), `review_ledger.py`'s `allow_abbrev=False`, their
+  suite and `sabotage_wave.py` are review harness and land separately (T-0087). Until they do, only
+  the lane prompt keeps a lane from accepting a review or admin-merging.
+
 ### crew 1.1.9 — T-0030: cross-session claims on a git-backed channel
 
 - **Summary.** Several crew sessions, on one machine or many, can now claim tickets on a shared

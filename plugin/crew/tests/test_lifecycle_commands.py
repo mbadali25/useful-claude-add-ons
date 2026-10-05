@@ -117,6 +117,19 @@ def test_command_names_exact_cli(name, snippets):
 AUTOPILOT_MAX_LINES = 117
 
 
+# T-0029: `wave` names crew_wave.py's commands and the one launch it allows,
+# inside the same 117 (its section 7 was paid for by rewrapping sections 0 and 6).
+WAVE_CLI = ("crew_wave.py plan --root .", "crew_wave.py start --root .",
+            "crew_wave.py lane-prompt", "crew_wave.py collect --root .", "isolation: worktree",
+            "`scope-not-enforcing`", "`sub=wave`: section 7 only")
+
+
+def test_autopilot_md_names_wave_cli_strings():
+    text = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert [snippet for snippet in WAVE_CLI if snippet not in text] == []
+
+
 def test_autopilot_command_at_most_117_lines():
     lines = _line_count(_read(os.path.join(COMMANDS, "autopilot.md")))
 

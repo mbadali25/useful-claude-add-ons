@@ -614,7 +614,7 @@ def test_plain_text_routes_with_a_pointer_and_no_focus(tmp_path, monkeypatch, pr
             got["command"], got["unavailable"]) == (T, "route", command, False)
 
 
-@pytest.mark.parametrize("sub", ["assign", "goal", "wave", "split", "deploy"])
+@pytest.mark.parametrize("sub", ["assign", "goal", "split", "deploy"])
 def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
     """Today's AVAILABLE: assign and goal stop as arriving, an unknown name as
     unknown -- never as focus."""
@@ -625,6 +625,13 @@ def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
     assert (crew_autopilot.focus_guard(str(root), sub), "focus is on" in got["reason"],
             "arrives with" in got["reason"] or got["reason"] == crew_autopilot.UNKNOWN_SUB) == (
         None, False, True)
+
+
+def test_wave_with_a_pointer_and_no_focus_routes(tmp_path):
+    """T-0029: `wave` is live, so with no focus it routes, never stops as focus."""
+    got = crew_autopilot.route(str(_pointed(tmp_path)), "wave")
+
+    assert (got["sub"], got["stop"], got["reason"]) == ("wave", False, "")
 
 
 @pytest.mark.parametrize("prompt,command", _PLAIN)
