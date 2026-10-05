@@ -116,7 +116,7 @@ codex_cli() {
 py_libs() {
   local libs=("$PYTEST_SPEC" pytest-xdist pyyaml python-docx numpy pillow requests markdown) pv
   if python3 -c 'import pytest, xdist, yaml, docx, numpy, PIL, requests, markdown
-assert pytest.__version__.startswith("8.")' 2>/dev/null; then
+raise SystemExit(not pytest.__version__.startswith("8."))' 2>/dev/null; then
     log "python3: suite libraries already importable"
   else
     uv pip install --system --break-system-packages "${libs[@]}" && log "python3: installed ${libs[*]}" || return
@@ -201,7 +201,12 @@ apt_tools() {
 # the hash is missing or wrong, or the unpacked pwsh cannot start (no libicu, say),
 # fall back to Microsoft's apt repo. Installed means pwsh reports a version.
 # shellcheck disable=SC2016  # PowerShell's $, not bash's
-pwsh_version() { "${1:-pwsh}" -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null; }
+# A pwsh that hangs on start must not hold up session start: 60 seconds, when
+# `timeout` exists.
+pwsh_version() {
+  local t=(); have timeout && t=(timeout 60)
+  "${t[@]}" "${1:-pwsh}" -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null
+}
 
 # pwsh_tarball <tag> <ver> <arch>
 pwsh_tarball() {
@@ -214,6 +219,8 @@ pwsh_tarball() {
   got=$(sha256sum "$tgz" | cut -d' ' -f1)
   if [ -z "$want" ] || [ "$want" != "$got" ]; then
     if [ -z "$want" ]; then echo "pwsh: no sha256 for $file in hashes.sha256" >&2
+    elif [ "$(printf '%s\n' "$want" | wc -l)" -gt 1 ]; then
+      echo "pwsh: hashes.sha256 lists $file more than once (lines conflict or repeat): $(printf '%s' "$want" | tr '\n' ' ')" >&2
     else echo "pwsh: sha256 of $file is $got, hashes.sha256 says $want" >&2; fi
     rm -f "$tgz"; return 1
   fi

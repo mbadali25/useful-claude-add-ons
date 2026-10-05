@@ -28,9 +28,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   failed Nuclei install fails the template update, which exits 1 and stops bootstrap before the
   other scanners. The step is then reported FAILED and setup still exits 0. With #506, Nuclei
   installs here and bootstrap runs to the end.
-- **No hangs.** curl calls carry `--connect-timeout`/`--max-time`, `git ls-remote` a low-speed
-  limit and a `timeout`, and every step runs with stdin from `/dev/null` and
-  `DEBIAN_FRONTEND=noninteractive`.
+- **Time limits.** The script's own curl calls carry `--connect-timeout`/`--max-time`, `git
+  ls-remote` a low-speed limit and a `timeout`, and pwsh's version probe a 60-second `timeout`.
+  npm installs and bootstrap.sh's own curl calls have no time limit. Every step runs with stdin
+  from `/dev/null` and `DEBIAN_FRONTEND=noninteractive`.
 - **apt.** Every apt-get call passes `-o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600`,
   because the image ships `/tmp` as 755 root:root and apt's `_apt` user cannot write its
   key-check files there; `/tmp` itself is left alone. `apt-get clean` follows each install
