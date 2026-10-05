@@ -797,10 +797,24 @@ def test_relaunch_never_restarts_a_started_lane_whose_file_is_missing(tmp_path):
 
 def test_collect_keeps_a_started_lane_dropped_from_the_set_file(tmp_path):
     # Codex review round 6 (rush g0): rewriting the set hid a launched lane from the batch.
+    # Since group review r8 `set` refuses to rewrite a started set; a hand edit still can.
     root = _started(tmp_path)
-    crew_wave.write_set(str(root), "s", ["T-1"])
+    _write(root / ".work" / "autopilot" / "s.json",
+           json.dumps({"schema": 1, "set": "s", "tickets": [{"id": "T-1"}]}))
 
     assert "T-2" in {row["ticket"] for row in _collect(root)["lanes"]}
+
+
+def test_set_refuses_to_rewrite_a_started_set(tmp_path):
+    # Group review r8 (rush g0): a rewritten set started T-3 beside running T-1 with no
+    # Touch or maxLanes check against it, and cleanup lost T-1.
+    root = _started(tmp_path)
+    before = crew_wave.read_set(str(root), "s")
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-3")
+
+    assert (done.returncode, "was started" in done.stderr, crew_wave.read_set(str(root), "s")) == (
+        1, True, before)
 
 
 def test_collect_reports_an_invalid_started_lane_id_and_keeps_the_valid_lanes(tmp_path):

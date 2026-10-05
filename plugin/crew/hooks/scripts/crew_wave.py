@@ -202,7 +202,13 @@ def write_set(root, slug, tickets, deps=None):
         raise WaveError("a set names at least one ticket")
     if len(set(tickets)) != len(tickets):
         raise WaveError("a set names each ticket once")
-    _write_json(set_path(_top(root), slug), {"schema": SCHEMA, "set": slug, "tickets": rows})
+    top = _top(root)
+    if os.path.lexists(start_path(top, slug)):
+        # A started set is fixed: a rewrite would let start plan the new tickets without the
+        # running lanes' Touch and maxLanes, and cleanup miss them (group review r8, rush g0).
+        raise WaveError(f"set {slug} was started (.work/autopilot/{slug}/start.json); "
+                        "name a new set instead; nothing written")
+    _write_json(set_path(top, slug), {"schema": SCHEMA, "set": slug, "tickets": rows})
 
 
 def _plain_id(value):
