@@ -530,3 +530,29 @@ def test_readers_never_exceed_the_cap(tmp_path, reader, scope_unknown, bad):
 
     assert len(lines) <= rf.MAX_LINES
     assert any(line.startswith("UNKNOWN:") for line in lines) is scope_unknown
+
+
+# ---- a ticket archived in Complete/ (L-0509) ---------------------------------------
+
+def test_implementer_block_reads_an_archived_spec(tmp_path):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    data = _data(tmp_path, _section("RF-01", '["**/*.ps1"]') + _section("RF-02", '["**/*.md"]'))
+    _spec(tmp_path, "L-0001", ["- `docs/a.md`"])
+    live = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+    archive_ticket(tmp_path, "L-0001")
+
+    archived = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+
+    assert (archived, live[1]) == (live, True)
+
+
+def test_implementer_block_could_not_tell_lists_every_class(tmp_path):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    data = _data(tmp_path, _section("RF-01", '["**/*.ps1"]') + _section("RF-02", '["**/*.md"]'))
+    _spec(tmp_path, "L-0001", ["- `docs/a.md`"])
+    both_places(tmp_path, "L-0001")
+
+    lines, complete = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+
+    assert (complete, _ids(lines)) == (False, ["RF-01", "RF-02"])
+    assert any("could not tell where L-0001 lives" in line for line in lines)

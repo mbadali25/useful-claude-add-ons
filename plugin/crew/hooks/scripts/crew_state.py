@@ -195,7 +195,7 @@ HEALTHY_LOW = 0.3
 HEALTHY_HIGH = 2.0
 METRICS_WINDOW = 10
 
-_TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
+_TICKET_RE = crew_common.TICKET_ID_SEARCH
 
 # Markers that mean a ticket line is finished. T-0037 added `cancelled` and
 # `superseded` here and to `_TABLE_DONE_WORDS` (crew_tracker.CLOSED_STATUSES).

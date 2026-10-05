@@ -238,6 +238,7 @@ dispatch, passes the class from T-0005's classifier, proceeds only on the exact
 verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
 not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
+# pylint: disable=too-many-lines  # over 3400 once L-0509 met main 3d4b4b5d; the split is owed (TODO.md)
 import argparse
 import datetime
 import hashlib
@@ -362,7 +363,7 @@ GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
 # The INDEX.md id shape, whole-string; [0-9], not \d, which is any Unicode digit.
-_INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
+_INDEX_ID = crew_common.TICKET_ID
 
 # --- ship (T-0011) -------------------------------------------------------------
 # The pure merge rule and the gh/git adapter live in crew_ship.py (batch 7: this
@@ -757,10 +758,43 @@ def _is_open(ticket, line):
     return not crew_state._DONE_RE.search(line)  # pylint: disable=protected-access
 
 
+def _where(top, ticket):
+    """`(folder, where, why)` from `crew_common.locate_ticket` (L-0509): the
+    ticket's folder live or archived in `Complete/`; could-not-tell is its own
+    answer and every caller here stops on it, naming `why`."""
+    return crew_common.locate_ticket(top, ticket)
+
+
+def _found(where):
+    return where in (crew_common.LIVE, crew_common.COMPLETE)
+
+
+def _archived_reason(ticket):
+    return (f"{ticket} is archived in {crew_common.ARCHIVE_DIR}/: never re-driven; to reopen "
+            "it, move its folder (and its Obsidian note) back by hand")
+
+
+def _broken_pointer(top, where):
+    """The stop reason for a broken active-ticket pointer. `resolve_active`
+    (crew_ticket, harness) reads only the live folder, so a pointer to an
+    archived ticket reads as broken there; it is named as archived here."""
+    path = os.path.join(crew_ticket.state_dir(top) or "", "active-ticket")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            held = json.load(handle).get(top)
+    except (OSError, ValueError, AttributeError):
+        held = None
+    if isinstance(held, str) and _where(top, held)[1] == crew_common.COMPLETE:
+        return (f"the active-ticket pointer names {held}, but {_archived_reason(held)}; "
+                "deactivate it (crew_ticket.py deactivate) or point at another ticket")
+    return f"{where}; a broken pointer is not guessed past - fix it with crew_ticket.py activate"
+
+
 def _open_index_rows(top):
-    """[(ticket, from_main)] for every open INDEX.md ticket whose
-    `.work/tickets/<id>/` exists HERE, in order, once each: this checkout's
-    rows, then the main checkout's for tickets with no row here (T-0063)."""
+    """[(ticket, from_main)] for every open INDEX.md ticket whose folder exists
+    HERE (live or `Complete/`), in order, once each: this checkout's rows, then
+    the main checkout's for tickets with no row here (T-0063). A ticket whose
+    folder could not be located is kept, not dropped as folderless (L-0509)."""
     main, _why = _main_checkout(top)
     rows = [(ticket, line, False) for ticket, line in _index_rows(top)]
     here = {ticket for ticket, _line, _main in rows}
@@ -770,14 +804,16 @@ def _open_index_rows(top):
     seen = {}
     for ticket, line, from_main in rows:
         if ticket not in seen and _is_open(ticket, line) \
-                and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+                and _where(top, ticket)[1] != crew_common.ABSENT:
             seen[ticket] = from_main
     return list(seen.items())
 
 
 def open_index_tickets(top):
-    """Every open INDEX.md ticket whose `.work/tickets/<id>/` exists, in order,
-    once each. Unlike `crew_state.read_work`, this does not stop at the first."""
+    """Every open INDEX.md ticket whose folder exists (live or `Complete/`), in
+    order, once each. Unlike `crew_state.read_work`, this does not stop at the
+    first. A ticket whose folder could not be located is kept, not dropped as
+    folderless: the step that takes it stops naming why."""
     return [ticket for ticket, _from_main in _open_index_rows(top)]
 
 
@@ -921,7 +957,7 @@ def _phase(root, ticket, policy=True):
     `policy=False` is `status`'s read: the approve and open-questions reasons
     then name no policy, so status reads the same under every setting."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    folder = crew_ticket.ticket_dir(top, ticket)
+    folder, where, why = _where(top, crew_ticket.check_ticket(ticket))
     evidence = []
 
     source = None
@@ -930,6 +966,13 @@ def _phase(root, ticket, policy=True):
         return {"ticket": ticket, "phase": phase, "stop": stop, "reason": reason,
                 "command": command, "evidence": list(evidence), "index_source": source}
 
+    if where == crew_common.COULD_NOT_TELL:
+        return answer("invalid", True, f"could not tell where {ticket} lives: {why}")
+    if where == crew_common.COMPLETE:
+        # The contract reads below (crew_ticket.read_contract/validate) are the
+        # live folder's; an archived ticket is never re-driven (L-0509).
+        evidence.append(_rel(top, folder))
+        return answer("closed", True, _archived_reason(ticket))
     there, why = _main_folder(top, ticket)
     if there or why:
         return answer("folder-elsewhere", True, _folder_elsewhere(top, ticket, there, why))
@@ -1483,8 +1526,14 @@ def _handoff_ticket(top):
         return None, "", None, (f"the handoff's head: "
                                 f"{head.group(1) if head else '(missing)'} is not this "
                                 f"checkout's {here_head[:12] or '(unknown)'}")
+    _, where, why = _where(top, arg)
+    if where == crew_common.COULD_NOT_TELL:
+        return None, "", None, f"the handoff names {arg}: could not tell where {arg} lives: {why}"
+    # The live test is kept as written (sabotage_autopilot.py anchors it); an
+    # archived folder answers it too.
     if not os.path.isdir(crew_ticket.ticket_dir(top, arg)):
-        return None, "", None, f"the handoff names {arg}, which has no .work/tickets/ folder"
+        if where != crew_common.COMPLETE:
+            return None, "", None, f"the handoff names {arg}, which has no .work/tickets/ folder"
     render = getattr(resume, "render", None)
     return arg, (render(parsed) if callable(render) else f"{command} {arg}"), None, ""
 
@@ -1504,11 +1553,14 @@ def resume_target(root, ticket=None, policy=True):
 
     hint, source, why = "", "argument", ""
     if ticket:
-        crew_ticket.check_ticket(ticket)
-        there, missing_why = _main_folder(top, ticket)
-        if there or missing_why:
-            return stopped(source, _folder_elsewhere(top, ticket, there, missing_why))
-        if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        _, where, why = _where(top, crew_ticket.check_ticket(ticket))
+        if where == crew_common.COULD_NOT_TELL:
+            return stopped(source, f"could not tell where {ticket} lives: {why}")
+        if where != crew_common.COMPLETE:
+            there, missing_why = _main_folder(top, ticket)
+            if there or missing_why:
+                return stopped(source, _folder_elsewhere(top, ticket, there, missing_why))
+        if not _found(where):
             return stopped(source, f"{ticket} has no .work/tickets/ folder")
     else:
         ticket, hint, stop_reason, why = _handoff_ticket(top)
@@ -1519,8 +1571,7 @@ def resume_target(root, ticket=None, policy=True):
         fallthrough.append(why)
         active, where, broken = crew_ticket.resolve_active(top)
         if broken:
-            return stopped("active-ticket", f"{where}; a broken pointer is not guessed "
-                           "past - fix it with crew_ticket.py activate")
+            return stopped("active-ticket", _broken_pointer(top, where))
         if where == "active-ticket":
             ticket, source = active, "active-ticket"
         else:
@@ -1538,8 +1589,7 @@ def resume_target(root, ticket=None, policy=True):
             source = ".work/INDEX.md (main checkout)" if rows[0][1] else ".work/INDEX.md"
     active, where, broken = crew_ticket.resolve_active(top)
     if broken:
-        return stopped("active-ticket", f"{where}; a broken pointer is not guessed past - "
-                       "fix it with crew_ticket.py activate")
+        return stopped("active-ticket", _broken_pointer(top, where))
     if where == "active-ticket" and active != ticket:
         return stopped(source, f"{source} names {ticket}, but this worktree's active ticket "
                        f"is {active}, and the scope guard and completion audit judge edits "
@@ -2426,7 +2476,7 @@ def questions_check(root, ticket):
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     decision = question_policy(top, ticket)
-    path = os.path.join(crew_ticket.ticket_dir(top, ticket), "questions.md")
+    path = os.path.join(crew_common.ticket_folder(top, ticket, crew_ticket.TicketError), "questions.md")
     blocks = _question_blocks(read_text(path))
     problems, taken = [], []
     if not blocks:
@@ -2463,9 +2513,11 @@ def stops():
 
 
 def _existing_ticket(top, token):
-    """Whether `token` is a plain ticket id naming a `.work/tickets/` folder."""
+    """Whether `token` is a plain ticket id naming a ticket folder, live or
+    `Complete/`. Could-not-tell is False here: every caller refuses a token
+    that is not a ticket, and the step that takes an id stops naming why."""
     try:
-        return os.path.isdir(crew_ticket.ticket_dir(top, token))
+        return _found(_where(top, crew_ticket.check_ticket(token))[1])
     except crew_ticket.TicketError:
         return False
 
@@ -2865,7 +2917,7 @@ def findings_target(root, ticket):
     touch = (approval.get("touch") or []) if approval.get("status") == "approved" else []
     if crew_ticket.in_touch(FINDINGS_TODO, touch):
         return {"path": FINDINGS_TODO, "reason": f"{ticket}'s approved Touch covers TODO.md"}
-    return {"path": f".work/tickets/{ticket}/{FINDINGS_FILE}",
+    return {"path": _rel(top, os.path.join(crew_common.tickets_root(top), ticket, FINDINGS_FILE)),
             "reason": f"TODO.md is not in {ticket}'s approved Touch, and {FINDINGS_WHY}"}
 
 
@@ -2997,8 +3049,10 @@ def _closed(top, ticket):
     spec = crew_ticket.read_contract(top, ticket)["spec.md"]
     # read_contract returns None for a spec it could not read as well as for an
     # absent one; only absence says "not closed".
-    if spec is None and os.path.lexists(os.path.join(crew_ticket.ticket_dir(top, ticket),
-                                                     "spec.md")):
+    folder, where, _ = _where(top, ticket)
+    if where == crew_common.COULD_NOT_TELL:
+        return None
+    if spec is None and os.path.lexists(os.path.join(folder, "spec.md")):
         return None
     return spec is not None and _header_status(
         crew_ticket._text(spec)) in HEADER_CLOSED  # pylint: disable=protected-access
@@ -3080,14 +3134,16 @@ def status(root, ticket=None):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     conf = settings(top)
     if ticket:
-        crew_ticket.check_ticket(ticket)
-        if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        _, where, why = _where(top, crew_ticket.check_ticket(ticket))
+        if _found(where):
             pick = {"ticket": ticket, "source": "argument", "reason": "", "fallthrough": [],
                     "disagreement": "", "next": next_phase(top, ticket, policy=False)}
         else:
             pick = {"ticket": None, "source": "argument", "fallthrough": [],
                     "disagreement": "", "next": None,
-                    "reason": f"{ticket} has no .work/tickets/ folder"}
+                    "reason": (f"could not tell where {ticket} lives: {why}"
+                               if where == crew_common.COULD_NOT_TELL
+                               else f"{ticket} has no .work/tickets/ folder")}
         bare = _bare(top)
     else:
         pick = bare = resume_target(top, policy=False)

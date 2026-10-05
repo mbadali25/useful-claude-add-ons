@@ -380,7 +380,22 @@ the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must eac
 session to that contract — see <a href="daily-workflow-scope.md">Daily workflow: scope and approval</a> for the
 contract itself. This section is what goes wrong with the approval and the audit.</p>
 <ul>
-<li><strong>Symptom: a lane worktree does not see my settings</strong> (a CLI approval refused, <code>scope.mode</code>
+<li>
+<p><strong>Symptom: a done ticket "has no .work/tickets/ folder".</strong>
+  <strong>Check:</strong> <code>.work/tickets/Complete/&lt;id&gt;/</code>. <code>crew_tracker.py archive --ticket &lt;id&gt;</code> moves a done
+  or merged ticket's folder there (and, under Obsidian, its note to <code>&lt;boardDir&gt;/Complete/</code>), and
+  <code>/crew:status</code> counts those apart (<code>&lt;m&gt; archived in Complete/</code>).
+  <strong>Fix:</strong> none needed: every crew reader finds it there. To reopen it, move the folder and the
+  note back by hand; <code>move --reopen</code> refuses an archived ticket.</p>
+</li>
+<li>
+<p><strong>Symptom: <code>could not tell where &lt;id&gt; lives</code>.</strong>
+  <strong>Check:</strong> both <code>.work/tickets/&lt;id&gt;/</code> and <code>.work/tickets/Complete/&lt;id&gt;/</code> exist (a half-finished
+  archive, or a copy made by hand), or one of them cannot be read.
+  <strong>Fix:</strong> compare the two, keep the right one, remove the stray copy. Crew never picks one.</p>
+</li>
+<li>
+<p><strong>Symptom: a lane worktree does not see my settings</strong> (a CLI approval refused, <code>scope.mode</code>
   read as <code>off</code>, guards at their defaults). <code>.crew/*</code> is gitignored, so <code>git worktree add</code> makes a
   checkout with no crew config.
   <strong>Check:</strong> <code>/crew:status</code> prints <code>config   inherited from the main checkout (&lt;path&gt;) ...</code> when
@@ -397,7 +412,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   handoff scripts, <code>context-watch</code>; crew 1.0.343, L-0680): a lane notifies with the main
   checkout's settings, and a relative handoff path still names a file in the lane. The verify
   gate, the scope and completion wrappers and <code>review_gate.py</code> do not inherit yet, so <code>verify-gate.ps1</code> still reads the lane's own
-  <code>emergency.standDown</code> while the bash gate reads the inherited one.</li>
+  <code>emergency.standDown</code> while the bash gate reads the inherited one.</p>
+</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
   <strong>Check:</strong> approval status.</li>
 </ul>

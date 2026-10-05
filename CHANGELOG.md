@@ -9,6 +9,51 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — `crew` 1.1.6: Complete archive and ticket ids beyond T- (L-0509)
+
+- **Summary.** Every crew reader now finds a ticket whether it is live or archived in
+  `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
+- **What changed.** One resolver, `crew_common.locate_ticket(top, ticket)`,
+  finds a ticket folder live (`.work/tickets/<ID>/`) or archived
+  (`.work/tickets/Complete/<ID>/`), and answers `could not tell` -- never
+  `absent` -- when a `stat` fails with anything but not-found or when both
+  folders exist. Every reader outside the review/gate harness routes through
+  it: `crew_autopilot` (resume, phase, status, questions), `crew_route`,
+  `crew_resume` (the resume decision and progress fingerprint),
+  `webtest_guard` (exclusions and findings), `crew_standards` (self-check and
+  proposals) and `recurring_findings`; each turns could-not-tell into a
+  stop, an `ask`, a `wait` or an `UNKNOWN` naming why. The id shapes live
+  once in `crew_common` (`TICKET_ID`, `TICKET_ID_SEARCH`, `PLAIN_ID`,
+  ASCII digits, any `LETTERS-` prefix: `T-`, `L-`, `W-`), and `Complete` is
+  reserved, never an id. `crew_status` prints `<n> ticket dir(s), <m>
+  archived in Complete/` (`archived: could not tell` when it cannot list
+  them); `crew_migrate` labels a cache file by the configured tracker rather
+  than the `T-` prefix and never gives an archived ticket a second live
+  folder. `crew_tracker.py`: `read` reports an archived ticket (lane
+  `Complete/`), `move` refuses it (`--reopen` too), `create` treats an
+  archived note or folder as a taken id, a note in both places is could not
+  tell, and the new `archive --ticket <ID>` moves one done/merged ticket's
+  folder, note and Done-lane card (refusing a ticket a worktree has active,
+  an unreadable pointer map, an existing destination and a card outside
+  Done; idempotent per half; never edits INDEX.md). `/crew:brainstorm` and
+  `/crew:fix` take the next number above every INDEX id with this box's
+  prefix; no command hard-codes `T-####`.
+- **Why.** Done tickets are to move into `Complete/` (owner, 2026-09-30), and
+  every reader had to find them there first; `L-`/`W-` ids are the new
+  Linux/Windows prefixes.
+- **Harness follow-up (T-0087: lands alone).** `crew_ticket.ticket_dir` /
+  `check_ticket` / `resolve_active` / `mint`, the scope guard's own-files
+  prefix, `approval_hook`, `review_prompt`, `review_run` and
+  `review_ledger` still read the live folder only, and the sabotage rows
+  for this ticket belong in `sabotage_*.py`. Until it lands a session cannot
+  write into an archived ticket's folder (the guard refuses), and `mint`
+  still mints `T-`.
+- **Unchanged.** No hook, command, skill or config key added (CONFIG.md:
+  none). INDEX readers, approval receipts and review ledgers are untouched.
+- **Ops step.** The one-time archive of the existing done tickets runs after
+  this release, one `archive` per ticket, excluding T-0500..T-0507,
+  T-0104..T-0108, T-0508 and any ticket a live lane references.
+
 ### Added — `crew` 1.1.6: `/crew:help`, contextual help from the files on disk (T-0025)
 
 - **Summary.** `/crew:help` tells you where a ticket stands and the one command to type next, in at

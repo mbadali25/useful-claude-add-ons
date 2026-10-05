@@ -418,6 +418,49 @@ def test_status_inflight_is_read_only_and_fits(tmp_path):
     assert len(lines) <= 40 and len(_inflight(lines)) == 6
 
 
+# --- the Complete/ archive (L-0509) ------------------------------------------------
+
+def _ticket_tree(tmp_path, live=(), archived=(), complete=True):
+    root = tmp_path / "r"
+    tickets = root / ".work" / "tickets"
+    tickets.mkdir(parents=True)
+    for name in live:
+        (tickets / name).mkdir()
+    if complete:
+        (tickets / "Complete").mkdir()
+    for name in archived:
+        (tickets / "Complete" / name).mkdir()
+    return root
+
+
+def test_status_counts_archived_tickets_apart(tmp_path):
+    root = _ticket_tree(tmp_path, live=("T-1", "L-0509"), archived=("T-2", "T-3", "W-0001"))
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  2 ticket dir(s), 3 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_never_counts_complete_as_a_ticket(tmp_path):
+    root = _ticket_tree(tmp_path)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_unlistable_complete_says_could_not_tell(tmp_path, monkeypatch):
+    root = _ticket_tree(tmp_path, live=("T-1",), archived=("T-2",))
+    real = os.listdir
+
+    def listdir(path):
+        if os.path.basename(os.fspath(path)) == "Complete":
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+    monkeypatch.setattr(crew_status.os, "listdir", listdir)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  1 ticket dir(s), archived: could not tell (Permission denied), 0 legacy file(s)")
+
+
 def test_status_tree_runs_the_git_which_resolves(tmp_path, monkeypatch):
     # L-1508: the tree line judges the git PATH resolves the way bash, pwsh
     # and shutil.which do (PATHEXT: git.cmd). The failing git is NOT on PATH:
@@ -452,7 +495,7 @@ def test_status_lists_needs_owner_line(tmp_path):
     rows = "".join(f"T-{n} | needs-owner | low | r | t\n" for n in range(1, 8)) + "T-9 | review | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-9",
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-9",
         "owner    T-1, T-2, T-3, T-4, T-5 (+2) (needs-owner)"]
 
 
@@ -460,7 +503,7 @@ def test_status_hides_closed_words(tmp_path):
     rows = "T-1 | cancelled | low | r | t\n| T-2 | Superseded | low | r | t |\nT-3 | Needs-Owner | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "owner    T-3 (needs-owner)"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "owner    T-3 (needs-owner)"]
 
 
 def test_status_unchanged_without_new_words(tmp_path):
@@ -469,7 +512,7 @@ def test_status_unchanged_without_new_words(tmp_path):
             "T-3 | done | low\nT-4 | review | low\nT-5 | spec | low\n")
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-1, T-2, T-4"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-1, T-2, T-4"]
 
 
 # --- T-0065 item 3: the agents line --------------------------------------------

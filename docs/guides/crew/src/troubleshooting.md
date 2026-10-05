@@ -227,6 +227,18 @@ the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. T
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 
+- **Symptom: a done ticket "has no .work/tickets/ folder".**
+  **Check:** `.work/tickets/Complete/<id>/`. `crew_tracker.py archive --ticket <id>` moves a done
+  or merged ticket's folder there (and, under Obsidian, its note to `<boardDir>/Complete/`), and
+  `/crew:status` counts those apart (`<m> archived in Complete/`).
+  **Fix:** none needed: every crew reader finds it there. To reopen it, move the folder and the
+  note back by hand; `move --reopen` refuses an archived ticket.
+
+- **Symptom: `could not tell where <id> lives`.**
+  **Check:** both `.work/tickets/<id>/` and `.work/tickets/Complete/<id>/` exist (a half-finished
+  archive, or a copy made by hand), or one of them cannot be read.
+  **Fix:** compare the two, keep the right one, remove the stray copy. Crew never picks one.
+
 - **Symptom: a lane worktree does not see my settings** (a CLI approval refused, `scope.mode`
   read as `off`, guards at their defaults). `.crew/*` is gitignored, so `git worktree add` makes a
   checkout with no crew config.

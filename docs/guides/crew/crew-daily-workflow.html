@@ -303,7 +303,9 @@ of those each step changes, and you approve both. Two hooks then hold the sessio
 contract. This section explains what they do, what they print, and how to change scope while you
 work.</p>
 <h3 id="the-contract">The Contract</h3>
-<p>A ticket lives in <code>.work/tickets/&lt;id&gt;/</code>:</p>
+<p>A ticket lives in <code>.work/tickets/&lt;id&gt;/</code> (once done and archived with <code>crew_tracker.py archive</code>, in
+<code>.work/tickets/Complete/&lt;id&gt;/</code>; crew finds it in either place, and a ticket present in both is "could
+not tell", which refuses). An id is <code>LETTERS-digits</code> with any prefix (<code>T-</code>, <code>L-</code>, <code>W-</code>):</p>
 <ul>
 <li><code>spec.md</code> has six sections: <code>## Intent</code>, <code>## Exclusions</code>, <code>## Evidence</code>, <code>## Unknowns</code>,
   <code>## Touch</code> and <code>## Acceptance checks</code>. <code>## Touch</code> lists one repo-relative glob or path per

@@ -365,6 +365,13 @@ def _resolve(top, explicit):  # pylint: disable=too-many-return-statements
     """(ticket, source, reason, candidates). `ticket` None means ask: one
     return per row of the module docstring's table, so each reads alone."""
     if explicit:
+        # Live or archived in Complete/ (L-0509); could-not-tell asks, naming why.
+        # The live test below is kept as written: sabotage_route.py anchors it.
+        _, where, why = crew_common.locate_ticket(top, crew_ticket.check_ticket(explicit))
+        if where == crew_common.COULD_NOT_TELL:
+            return None, "", f"could not tell where {explicit} lives: {why}", []
+        if where == crew_common.COMPLETE:
+            return explicit, "named in the prompt (archived in Complete/)", "", []
         if os.path.isdir(crew_ticket.ticket_dir(top, explicit)):
             return explicit, "named in the prompt", "", []
         return None, "", f"no such ticket: {explicit} has no .work/tickets/ folder", []

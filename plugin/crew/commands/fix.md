@@ -23,7 +23,7 @@ below; a feature does not. Feed its root-cause line into step 2.
 
 ## 1. Direction — one line
 
-Mint the ticket the way `/crew:brainstorm` step 1 does: next free `T-####`, then
+Mint the ticket the way `/crew:brainstorm` step 1 does (next free id, this box's prefix), then
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ticket <id> --title "<title>"`.
 If a line says `id taken`, that id is not yours: pick the next free id, run
 `create` again, and write nothing under the taken one. On any other failure,

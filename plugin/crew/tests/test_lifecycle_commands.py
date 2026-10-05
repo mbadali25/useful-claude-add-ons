@@ -462,3 +462,27 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
+
+
+# --- ticket ids beyond T- (L-0509) --------------------------------------------------
+
+PREFIX_RULE = "with the prefix this box mints (`T-` when it has minted none"
+
+
+def test_no_command_hard_codes_the_t_prefix():
+    found = [name for name in sorted(os.listdir(COMMANDS)) if name.endswith(".md")
+             and re.search(r"T-#{4}|T-N{4}", _read(os.path.join(COMMANDS, name)))]
+
+    assert found == []
+
+
+def test_brainstorm_and_fix_name_the_box_prefix_rule():
+    brainstorm = " ".join(_read(os.path.join(COMMANDS, "brainstorm.md")).split())
+    fix = " ".join(_read(os.path.join(COMMANDS, "fix.md")).split())
+
+    assert (PREFIX_RULE in brainstorm, "above every id in `.work/INDEX.md`" in brainstorm,
+            "`/crew:brainstorm` step 1" in fix and "prefix" in fix) == (True, True, True)
+
+
+def test_status_names_the_archive():
+    assert ".work/tickets/Complete/" in _read(os.path.join(COMMANDS, "status.md"))

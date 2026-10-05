@@ -1262,3 +1262,22 @@ def test_metric_prints_the_rows_on_neither_side(tmp_path):
     text = "\n".join(lines)
     assert (code, "std:none rows 1" in text, "unreadable std: tokens 1" in text) == (
         0, True, True), text
+
+
+# ---- a ticket archived in Complete/ (L-0509) ---------------------------------------
+
+def test_selfcheck_path_follows_an_archived_ticket(root):
+    (root / ".work" / "tickets" / "Complete" / "T-1").mkdir(parents=True)
+
+    assert cs.selfcheck_path(str(root), "T-1") == str(
+        root / ".work" / "tickets" / "Complete" / "T-1" / cs.SELFCHECK_NAME)
+
+
+def test_selfcheck_could_not_tell_where_the_ticket_lives_is_a_problem(root):
+    (root / ".work" / "tickets" / "Complete" / "T-1").mkdir(parents=True)
+    (root / ".work" / "tickets" / "T-1").mkdir(parents=True)
+
+    rows, seal, problems = cs.read_selfcheck(str(root), "T-1")
+
+    assert (rows, seal, len(problems)) == ([], None, 1)
+    assert "could not tell where T-1 lives" in problems[0]

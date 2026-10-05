@@ -1630,6 +1630,42 @@ Obsidian vault). A CLI the commands call, not a hook.
   JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by
   byte comparison only, never by opening Obsidian.
 
+## Where a ticket lives: Complete/ and the id shapes (L-0509)
+
+DERIVED at `0358e042` (L-0509-build; this section is new and the file's
+`anchor:` was not moved by it - the rest of this map is re-checked at land).
+Citations under `plugin/crew/hooks/scripts/`.
+
+- One resolver: `crew_common.locate_ticket` (`crew_common.py:250`) answers
+  `(path, where, why)`, `where` one of live, complete, absent (with the live
+  path, for a writer) and could not tell; `_probe` (`:238`) reads a `stat`
+  that fails with anything but not-found as could not tell, and both folders
+  present is could not tell too. `ticket_folder` (`:276`) raises the caller's
+  own exception class for it. `tickets_root` (`:227`) is the one join of
+  `.work/tickets`. The id shapes are `TICKET_ID_CORE` and friends (`:219`) and
+  `ARCHIVE_DIR` (`:223`), reserved by `reserved_id` (`:232`, case-folded).
+- Routed through it: `crew_autopilot._where` (`crew_autopilot.py:273`, read by
+  `open_index_tickets` `:284`, `_phase`, `resume_target`, `status`),
+  `crew_route._resolve` (`crew_route.py:176`), `crew_resume`
+  (`crew_resume.py:502`, `:705`), `webtest_guard` (`webtest_guard.py:433`,
+  `:465`, `:482`), `recurring_findings` (`recurring_findings.py:377`) and
+  `crew_standards.selfcheck_path` (`crew_standards.py:325`). `crew_status`
+  counts archived folders apart (`crew_status.py:113`); `crew_migrate`
+  labels caches by tracker (`_cache_source`, `crew_migrate.py:353`) and skips
+  an archived target (`:497`).
+- JUDGEMENT: the harness modules (`crew_ticket`, `scope_guard`,
+  `approval_hook`, `review_*`) still read the live folder; a structural test
+  (`plugin/crew/tests/test_crew_ticket.py`, `test_no_module_builds_ticket_paths_itself`)
+  names each in an allowlist with that reason, so the follow-up empties it.
+- The tracker: `_vault_paths` accepts the `Complete/` subfolder only through
+  `ARCHIVE_DIR` (`crew_tracker.py:1062`); `_note_names` (`:1351`) and
+  `_note_where` (`:1357`) put the archived note beside the live one for
+  create, move and read; `remove_card` (`:970`) cuts a card's span from Done
+  only; `archive` (`:1698`) runs `_active_holder` (`:1558`), then every vault
+  check (`_obsidian_archive_checks` `:1655`), then `_files_archive` (`:1585`),
+  `_rename_note` (`:1608`) and the board write (`_obsidian_archive` `:1677`);
+  `move` refuses an archived or could-not-tell folder (`_folder_refusal`
+  `:1731`).
 ## The split rulebook (T-0052)
 
 - DERIVED (T-0052, after review round 3; measured on this tree, anchors not moved):

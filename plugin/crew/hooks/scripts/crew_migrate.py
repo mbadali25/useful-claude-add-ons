@@ -85,6 +85,8 @@ import sys
 import tempfile
 import time
 
+import crew_common
+
 CREW_SCHEMA = 1
 LEGACY_SCHEMA_MAX = 7
 
@@ -138,10 +140,10 @@ AUTOPILOT_FILE_NOTE = ("autopilot - the copy in crew.json is never read; crew re
                        "~/.claude/crew/config.json, where the stricter value wins "
                        "(CONFIG.md section 20a)")
 
-# `LETTERS-digits`, the shape the rest of crew recognises as a ticket id
-# (crew_state._TICKET_RE). Anchored, so it doubles as a path-safety check: an
-# id that passes cannot contain a separator or `..`.
-_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+# `LETTERS-digits`, the shape the rest of crew recognises as a ticket id, any
+# prefix (crew_common.TICKET_ID, L-0509). Anchored, so it doubles as a
+# path-safety check: an id that passes cannot contain a separator or `..`.
+_ID_RE = crew_common.TICKET_ID
 _REVIEW_ROUND_RE = re.compile(r"\br(\d+)\b")
 _METRIC_FIELDS_1_0 = (
     "phases", "activeTime", "tokens", "cost", "findingsConfirmed",
@@ -157,7 +159,7 @@ TMP_SUFFIX = ".crew-migrate.tmp"
 _TARGET_RE = re.compile(
     r"^(?:\.crew/crew\.json|\.crew/metrics\.jsonl"
     r"|\.crew/archive/(?:pm-journal|pm-standing)\.md"
-    r"|\.work/tickets/[A-Z][A-Z0-9]*-\d+/(?:ticket(?:\.[a-z-]+)?\.md|provenance\.json))$")
+    rf"|\.work/tickets/{crew_common.TICKET_ID_CORE}/(?:ticket(?:\.[a-z-]+)?\.md|provenance\.json))$")
 
 _MISSING = object()
 
@@ -357,21 +359,27 @@ def _index_lines(root):
     data = _read_bytes(os.path.join(root, ".work", "INDEX.md"))
     lines = {}
     for line in (data or b"").decode("utf-8", "replace").splitlines():
-        found = re.search(r"([A-Z][A-Z0-9]*-\d+)", line)
+        found = crew_common.TICKET_ID_SEARCH.search(line)
         if found and found.group(1) not in lines:
             lines[found.group(1)] = line.strip()
     return lines
 
 
-def _cache_source(ticket_id, tracker):
+def _cache_source(ticket_id, tracker, index_ids=()):
+    """Which tracker a `.work/cache/<id>.md` came from: by the configured
+    tracker, not by a `T-` prefix (L-0509), so an `L-`/`W-` id this box minted
+    is not labelled jira. Under the files tracker an id INDEX holds (or a `T-`
+    id, as before) is a files cache; any other id there is, as before, jira's."""
     if ticket_id.startswith("SDP-"):
         return "sdp"
-    if re.match(r"^T-\d+$", ticket_id):
-        return "obsidian" if tracker == "obsidian" else "files-cache"
+    if tracker in ("jira", "sdp", "obsidian"):
+        return tracker
+    if ticket_id in index_ids or ticket_id.startswith("T-"):
+        return "files-cache"
     return "jira"
 
 
-def _ticket_candidates(root, tracker):
+def _ticket_candidates(root, tracker, index_ids=()):
     """[(id, source, abs path)] from the files tracker and the tracker caches,
     plus [(rel path, reason)] for every file skipped, so nothing is silent."""
     found, skipped = [], []
@@ -393,7 +401,7 @@ def _ticket_candidates(root, tracker):
             if not _ID_RE.match(ticket_id):
                 skipped.append((_rel(root, path), "name is not a LETTERS-digits ticket id"))
                 continue
-            source = "files" if kind == "files" else _cache_source(ticket_id, tracker)
+            source = "files" if kind == "files" else _cache_source(ticket_id, tracker, index_ids)
             found.append((ticket_id, source, path))
     return found, skipped
 
@@ -429,7 +437,7 @@ def metrics_rows(text):
         date = cell(0)
         ticket = cell(1)
         reviewer = cell(2)
-        found = re.search(r"([A-Z][A-Z0-9]*-\d+)", ticket or "")
+        found = crew_common.TICKET_ID_SEARCH.search(ticket or "")
         rnd = _REVIEW_ROUND_RE.search(reviewer or "")
         row = {
             "date": date if date and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else UNKNOWN,
@@ -493,11 +501,21 @@ def build_plan(root):
 
     index = _index_lines(root)
     by_id = {}
-    candidates, skipped = _ticket_candidates(root, tracker)
+    candidates, skipped = _ticket_candidates(root, tracker, set(index))
     plan["skipped"].extend(skipped)
     for ticket_id, source, path in candidates:
         by_id.setdefault(ticket_id, []).append((source, path))
     for ticket_id, sources in sorted(by_id.items()):
+        # A ticket already archived in Complete/ is not given a second, live
+        # folder; one whose folder cannot be located refuses the apply.
+        _, where, why = crew_common.locate_ticket(root, ticket_id)
+        if where == crew_common.COMPLETE:
+            plan["skipped"].extend((_rel(root, path), f"archived in {crew_common.ARCHIVE_DIR}/; not migrated")
+                                   for _, path in sources)
+            continue
+        if where == crew_common.COULD_NOT_TELL:
+            plan["conflicts"].append(f"could not tell where {ticket_id} lives: {why}")
+            continue
         records = []
         bodies = {}
         for source, path in sources:
