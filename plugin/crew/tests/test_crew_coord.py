@@ -2815,3 +2815,27 @@ def test_a_tilde_origin_is_one_claim_from_every_worktree(capsys, monkeypatch, tm
     assert listed.returncode == 0, listed.stderr
     assert first[0] == 0 and code == crew_coord.EXIT_REFUSED and "sess-1" in out, (first[1], out)
     assert _claims(remote) == [f"claims/{key}__T-1.json"]
+
+
+# --- Codex review round 3 (rush g0) ---------------------------------------------
+
+_HOLDER = {"session": "s", "machine": "m", "worktree": "/w", "pid": 5, "pid_start": None}
+
+
+@pytest.mark.parametrize("a,b", [
+    (dict(_HOLDER, pid=None), dict(_HOLDER, pid=None)),        # two processes, neither pid known
+    (dict(_HOLDER, pid_start=None), dict(_HOLDER, pid_start="7")),  # a reused pid, one start unknown
+    (dict(_HOLDER, pid_start="7"), dict(_HOLDER, pid_start=None)),
+])
+def test_an_unknown_pid_or_start_time_is_not_the_same_holder(a, b):
+    assert crew_coord.same_holder(a, b) is False
+
+
+def test_a_known_pid_with_matching_start_times_is_the_same_holder():
+    assert crew_coord.same_holder(dict(_HOLDER), dict(_HOLDER)) is True
+    assert crew_coord.same_holder(dict(_HOLDER, pid_start="7"), dict(_HOLDER, pid_start="7")) is True
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a backslash is a separator on Windows")
+def test_a_backslash_in_a_posix_path_is_part_of_the_name():
+    assert crew_coord.owner_name("/srv/git/team\\repo.git") != crew_coord.owner_name("/srv/git/team/repo.git")

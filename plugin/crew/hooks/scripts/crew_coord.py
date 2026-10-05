@@ -443,16 +443,21 @@ def current_holder(top):
 def same_holder(a, b):
     """One holder is one session id in one process, on one machine and in one
     worktree: session, machine, worktree and pid all equal, and the pid's start
-    time equal wherever both sides recorded one. The same session id from
+    time equal wherever both sides recorded one (recorded on one side only, or
+    no pid on either, is not the same holder). The same session id from
     another process or worktree -- `claude --resume <id>` while the original
     still runs -- is ANOTHER holder: refused, never silently reclaimed."""
     if not (a and b):
         return False
+    if a.get("pid") is None or b.get("pid") is None:
+        return False  # an unknown pid cannot establish identity: two processes would match
     if (a["session"], a["machine"], a.get("pid")) != (b["session"], b["machine"], b.get("pid")):
         return False
     if os.path.normcase(a["worktree"]) != os.path.normcase(b["worktree"]):
         return False
-    return not (a.get("pid_start") and b.get("pid_start") and a["pid_start"] != b["pid_start"])
+    if bool(a.get("pid_start")) != bool(b.get("pid_start")):
+        return False  # one side's start time unknown: a reused pid cannot be told apart
+    return not (a.get("pid_start") and a["pid_start"] != b["pid_start"])
 
 
 def owner_signal():
@@ -847,8 +852,11 @@ def _local_segments(path):
     """The path segments of a local path, exactly as written: case kept and
     `.git` kept, because on a case-sensitive filesystem `Repo.git` and
     `repo.git` are two directories, and `repo` beside `repo.git` is two
-    repositories anywhere. A drive's ':' is dropped (`C:\\x` gives `C`, `x`)."""
-    return [p for p in re.split(r"[/\\]+", re.sub(r"^([A-Za-z]):(?=[/\\])", r"\1", path)) if p]
+    repositories anywhere. A drive's ':' is dropped (`C:\\x` gives `C`, `x`). A
+    backslash separates only on Windows: on POSIX it is a filename character, and
+    `team\\repo.git` and `team/repo.git` are two repositories."""
+    seps = r"[/\\]+" if os.name == "nt" else r"/+"
+    return [p for p in re.split(seps, re.sub(r"^([A-Za-z]):(?=[/\\])", r"\1", path)) if p]
 
 
 def _utf8(name):
