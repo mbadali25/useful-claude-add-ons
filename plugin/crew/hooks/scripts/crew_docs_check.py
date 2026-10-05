@@ -50,8 +50,8 @@ or a recorded reason, or MISSING. No CHANGELOG.md: `not applicable`.
 - A triggered document is `updated` when it changed, `not needed (<reason>)`
   with a docs.json reason, else MISSING.
 - TODO.md: every docs.json `deferred[]` item must appear in TODO.md's added
-  lines as its own entry (the key as a whole id, with its recorded `why` and
-  `unblock`); nothing deferred is `not needed (nothing deferred)`.
+  lines as its own entry (a bullet or heading that opens with the key as a
+  whole id, with its recorded `why` and `unblock`); nothing deferred is `not needed (nothing deferred)`.
 
 Both glob lists are judgement (spec Unknowns) and `--explain` prints them.
 
@@ -349,13 +349,18 @@ def _words(text):
 
 
 def _todo_entries(added, key):
-    """The added TODO.md entries naming `key` as a whole id (`T-0099`, never
-    inside `T-00990`): each the added line naming it plus the added lines
-    straight after it up to the next bullet or blank line, joined."""
-    named = re.compile(r"(?<![0-9A-Za-z])" + re.escape(key) + r"(?![0-9A-Za-z])")
+    """The added TODO.md entries whose subject is `key` as a whole id
+    (`- T-0099: ...`, never `T-00990`, never `- T-1000: notes for T-0099`):
+    each the added line opening with it plus the added lines straight after
+    it up to the next bullet or blank line, joined."""
+    # The entry's own subject: a bullet or heading whose text STARTS with the
+    # key (bold or backticks allowed), never a key mentioned inside another
+    # entry's text.
+    named = re.compile(r"^\s*(?:[-*+]|#{1,6})\s+[*_`\[]*" + re.escape(key)
+                       + r"(?![0-9A-Za-z])")
     entries = []
     for at, (index, line) in enumerate(added):
-        if not named.search(line):
+        if not named.match(line):
             continue
         body, last = [line], index
         for nxt, more in added[at + 1:]:

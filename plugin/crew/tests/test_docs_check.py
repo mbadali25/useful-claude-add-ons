@@ -307,7 +307,10 @@ def test_deferred_missing_from_todo(tmp_path):
     "# TODO\n- XT-0099: ADRs are not measured; T-0040 lands\n",
     "# TODO\n- T-0099: measure ADRs\n",
     "# TODO\n- T-0099: ADRs are not measured\n- other: T-0040 lands\n",
-], ids=["longer-id", "prefixed-id", "no-why-or-unblock", "unblock-in-another-entry"])
+    "# TODO\n- T-1000: Notes for T-0099: ADRs are not measured; T-0040 lands\n",
+    "# TODO\n## Notes for T-0099: ADRs are not measured; T-0040 lands\n",
+], ids=["longer-id", "prefixed-id", "no-why-or-unblock", "unblock-in-another-entry",
+        "inside-another-entry", "heading-not-opening-with-the-key"])
 def test_deferred_todo_entry_must_be_its_own_with_why_and_unblock(tmp_path, todo):
     """T-0022 port review r2 FIX: the key as a whole id, and its own entry
     carries the recorded why and unblock."""
@@ -481,6 +484,19 @@ def test_readme_base_marketplace_corrupt_is_unknown(tmp_path):
 
     rows = {d["doc"]: d["verdict"] for d in got["documents"]}
     assert (got["status"], rows["README.md"]) == ("unknown", "unknown")
+
+
+@pytest.mark.parametrize("line", [
+    "- **T-0099**: ADRs are not measured; T-0040 lands",
+    "* `T-0099` ADRs are not measured; T-0040 lands",
+    "### T-0099: ADRs are not measured; T-0040 lands"])
+def test_deferred_todo_entry_forms_that_count(tmp_path, line):
+    root = _repo(tmp_path)
+    _write(root, "src/lib.py", "y = 2\n")
+    _docs_json(root, deferred=[_DEFER])
+    _write(root, "TODO.md", f"# TODO\n{line}\n")
+
+    assert _verdict(_check(root), "TODO.md")[0] == "updated"
 
 
 def test_todo_absent_at_base_counts_every_line_added(tmp_path):

@@ -27,7 +27,7 @@ something to write.
 Do steps 1-5 for ticket `$1`, then write `.work/tickets/$1/docs.json` once, computed in full first:
 `{"reasons": {"<document>": "<why not>"}, "deferred": [{"key", "why", "unblock"}]}`. A reason
 per document you decided not to touch (`README.md`, `plugin/<n>/README.md`, `SECURITY.md`); a
-`deferred` item per piece of work left for later, each also added to `TODO.md` as its own entry with its why and
+`deferred` item per piece of work left for later, each also added to `TODO.md` as its own entry (a bullet opening with its key) with its why and
 unblock. Then run the read-only check:
 
 ```bash
