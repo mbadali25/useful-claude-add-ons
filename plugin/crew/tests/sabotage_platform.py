@@ -113,6 +113,15 @@ PLATFORM_MUTATIONS = (
      "lock_extend() {\n  return 0\n}\n",
      "tests/test_verify_gate_lock_window.py::"
      "test_the_deadline_is_republished_during_a_run_not_only_once[sh]"),
+    # Review of ee01a3ca: the entry leaves the registry before its tree is
+    # killed, so a signal in between finds nothing to kill.
+    ("an entry is unregistered before its tree is killed",
+     os.path.join(_HERE, "sabotage_platform.py"),
+     "        try:\n            _kill_tree(proc, job)\n        finally:\n"
+     "            if _CURRENT:\n                _CURRENT.pop()\n",
+     "        if _CURRENT:\n            _CURRENT.pop()\n        _kill_tree(proc, job)\n",
+     "tests/test_sabotage_harness.py::"
+     "test_an_entry_stays_registered_until_its_tree_is_killed"),
     # Review of d0b7fd8e (L-0608 port), FIX: an entry no job object held on
     # Windows gets a verdict although a grandchild may have outlived it.
     ("an entry no job object held still gets a verdict",
@@ -311,9 +320,13 @@ def run_target(target, timeout=None, cwd=CREW, extra=("--run-slow",),
         except subprocess.TimeoutExpired:
             timed_out = True
         # Always: a survivor of this entry would contend with the next one.
-        if _CURRENT:
-            _CURRENT.pop()
-        _kill_tree(proc, job)
+        # Registered until the tree is gone (review of ee01a3ca): a signal in
+        # between still finds it through kill_current.
+        try:
+            _kill_tree(proc, job)
+        finally:
+            if _CURRENT:
+                _CURRENT.pop()
     seconds = time.monotonic() - start
     with open(log, encoding="utf-8", errors="replace") as handle:
         output = handle.read()

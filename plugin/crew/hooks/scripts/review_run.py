@@ -779,9 +779,12 @@ def preflight(args):
 
 
 def _budget_spent(args):
-    """True when the ledger already reads NEEDS_REPLAN or no rounds left."""
+    """True when the ledger already reads NEEDS_REPLAN or no rounds left, or
+    cannot be read at all (review of ee01a3ca: `reserve` refuses an unreadable
+    ledger with exit 4 too, so taking the train first would hold it for a
+    ticket that cannot run a round)."""
     ledger = review_ledger.status(args.root, args.ticket)
-    return (ledger.get("state") == review_ledger.NEEDS_REPLAN
+    return (ledger.get("state") in (review_ledger.NEEDS_REPLAN, review_ledger.UNKNOWN)
             or ledger.get("rounds_left") == 0)
 
 

@@ -322,6 +322,12 @@ REFRESH_MUTATIONS = (
      "        dirs, is_artifact = [], None\n",
      "        dirs, is_artifact = [], lambda _p, _d: True\n",
      _CAI + "test_classify_without_refresh_check_calls_nothing_an_artifact"),
+    # Review of f4f9c691, BLOCK: an unreadable config reads as the defaults.
+    ("classify reads an unreadable config as the default artifact dirs", AUDIT,
+     "        if why is not None:\n"
+     "            raise ValueError(f\"the crew config is unreadable: {why}\")\n",
+     "        cfg = cfg if why is None else {}\n",
+     _CAI + "test_classify_with_an_unreadable_config_calls_nothing_an_artifact"),
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE,
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),

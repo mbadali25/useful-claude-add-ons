@@ -923,7 +923,7 @@ def test_classify_without_refresh_check_calls_nothing_an_artifact(repo, monkeypa
     mapped), and stderr says why."""
     import crew_refresh_check  # pylint: disable=import-outside-toplevel
 
-    def broken(_root):
+    def broken(_root, _cfg=None):
         raise OSError("unreadable")
     monkeypatch.setattr(crew_refresh_check, "refresh_artifact_paths", broken)
 
@@ -932,6 +932,22 @@ def test_classify_without_refresh_check_calls_nothing_an_artifact(repo, monkeypa
 
     assert kinds == ["other", "bookkeeping"]
     assert "could not tell" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("name", ["crew.json", "config.json"])
+def test_classify_with_an_unreadable_config_calls_nothing_an_artifact(repo, capsys, name):
+    """Review of f4f9c691, BLOCK: a crew config that does not parse is
+    could-not-tell, not the default artifact dirs, so a path under
+    docs/diagrams/ is not mapped by it."""
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / name).write_text("{not json", encoding="utf-8")
+
+    kinds = completion_audit.classify_paths(str(repo), ["docs/diagrams/x.mmd",
+                                                        ".crew/.scope-base"])
+
+    assert kinds == ["other", "bookkeeping"]
+    err = capsys.readouterr().err
+    assert "could not tell" in err and "unreadable" in err
 
 
 def test_ticket_is_still_required_without_classify(repo):

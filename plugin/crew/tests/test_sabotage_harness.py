@@ -813,6 +813,24 @@ def test_an_entry_leaves_no_process_behind(tmp_path, monkeypatch, tail,
         assert _gone_within(pid), pid
 
 
+def test_an_entry_stays_registered_until_its_tree_is_killed(tmp_path, monkeypatch):
+    """Review of ee01a3ca: a signal during cleanup must still find the entry
+    (kill_current), so it leaves the registry only after its tree is killed."""
+    seen = []
+    real = sabotage_platform._kill_tree  # pylint: disable=protected-access
+
+    def _spy(proc, job):
+        seen.append(len(sabotage_platform._CURRENT))  # pylint: disable=protected-access
+        real(proc, job)
+
+    monkeypatch.setattr(sabotage_platform, "_kill_tree", _spy)
+    sabotage_platform.run_target(_write_probe(tmp_path, "def test_ok():\n    pass\n"),
+                                 timeout=120, cwd=str(tmp_path), extra=())
+
+    assert seen == [1]
+    assert not sabotage_platform._CURRENT  # pylint: disable=protected-access
+
+
 def test_an_entry_no_job_object_could_hold_is_could_not_tell(tmp_path, monkeypatch):
     """Review of d0b7fd8e (L-0608 port), FIX: on Windows taskkill /T cannot reach
     a grandchild once pytest has exited, so without a job object the entry is

@@ -191,6 +191,20 @@ def test_a_spent_budget_is_refused_without_taking_the_train(lanes, tmp_path):
     assert other.returncode == 0 and "ROUND=1" in other.stdout, other.stderr
 
 
+def test_an_unreadable_ledger_is_refused_without_taking_the_train(lanes, tmp_path):
+    """Review of ee01a3ca: a corrupt ledger reads UNKNOWN, `reserve` refuses it
+    (exit 4), so it must not take the train first and hold it."""
+    assert _train(lanes["repo"], "arm") == 0
+    path = pathlib.Path(review_ledger.ledger_path(str(lanes["T-1"]), "T-1"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    refused = _run(lanes["T-1"], "T-1", tmp_path)
+
+    assert refused.returncode == review_run.EXIT_REFUSED == 4, refused.stderr
+    assert ("T-1", "holding") not in _entries(lanes["repo"])
+
+
 def test_a_needs_replan_ticket_never_calls_acquire(lanes, tmp_path, monkeypatch, capsys):
     assert _train(lanes["repo"], "arm") == 0
     called = []

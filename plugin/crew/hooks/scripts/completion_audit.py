@@ -293,7 +293,13 @@ def classify_paths(root, paths):
     unmapped, never toward mapped."""
     try:
         import crew_refresh_check  # pylint: disable=import-outside-toplevel
-        dirs = crew_refresh_check.refresh_artifact_paths(root)
+        # Review of f4f9c691, BLOCK: a crew config that exists but does not
+        # parse is could-not-tell, never the default artifact dirs (which would
+        # map an unmapped path under docs/diagrams/).
+        cfg, why = crew_refresh_check._read_config(root)  # pylint: disable=protected-access
+        if why is not None:
+            raise ValueError(f"the crew config is unreadable: {why}")
+        dirs = crew_refresh_check.refresh_artifact_paths(root, cfg)
         is_artifact = crew_refresh_check.is_refresh_artifact
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         sys.stderr.write(f"completion audit: could not tell which paths are refresh artifacts "
