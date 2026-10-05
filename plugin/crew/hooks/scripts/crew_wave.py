@@ -751,7 +751,12 @@ def lane_init(root, main, slug, ticket):
         return False, refusal
     lane, _ = read_lane(main_top, slug, ticket)
     branch = branch_for(ticket)
-    code, _ = _git(top, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    code, tip = _git(top, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    if code == 0 and lane.get("branch") != branch and tip != lane["base"]:
+        # Not this lane's (it never set one up) and not at the recorded base: an earlier
+        # wave's branch, whose commits this lane must not start from (group review r10).
+        return False, (f"{branch} already exists at {tip[:12]}, not this lane's and not at its base "
+                       f"{lane['base'][:12]}; the owner deletes or renames it")
     args = ["checkout", "-q", branch] if code == 0 else ["checkout", "-q", "-b", branch, lane["base"]]
     if _git(top, *args)[0] != 0:
         return False, f"git {' '.join(args)} failed in {top}"
@@ -1147,7 +1152,10 @@ def _parse_deps(values):
         # (group review r5, rush g0).
         if not sep or (rest.strip() != "none" and not all(parts)):
             raise WaveError(f"--deps {value!r} is not <id>=<id>,<id> or <id>=none")
-        deps[_plain_id(ticket.strip())] = [] if rest.strip() == "none" else parts
+        key = _plain_id(ticket.strip())
+        if key in deps:  # a later flag must not quietly replace an earlier one (group review r10)
+            raise WaveError(f"--deps names {key} twice; give its dependencies once")
+        deps[key] = [] if rest.strip() == "none" else parts
     return deps
 
 

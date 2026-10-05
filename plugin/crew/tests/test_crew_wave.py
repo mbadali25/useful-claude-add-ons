@@ -257,6 +257,16 @@ def test_set_cli_writes_the_set(tmp_path):
         0, [{"id": "T-1", "deps": []}, {"id": "T-2", "deps": ["T-1"]}])
 
 
+def test_set_cli_refuses_deps_given_twice_for_one_ticket(tmp_path):
+    # Group review r10 (rush g0): `T-1=T-2` then `T-1=none` stored none.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "T-2",
+                "--deps", "T-1=T-2", "--deps", "T-1=none")
+
+    assert (done.returncode != 0, crew_wave.read_set(str(root), "s")) == (True, (None, "missing"))
+
+
 def test_set_cli_refuses_a_ticket_named_twice(tmp_path):
     # Group review r7 (rush g0): a duplicate became a later wave of itself and two clean lines.
     root = _repo(tmp_path)
@@ -715,6 +725,38 @@ def test_start_refuses_a_corrupt_start_record_and_leaves_it(tmp_path):
 def test_lane_init_checks_out_an_existing_branch(tmp_path):
     root = _started(tmp_path)
     git(root, "branch", "T-1-wave")
+    wt = _isolated(root)
+
+    ok, _ = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (ok, git(wt, "branch", "--show-current")) == (True, "T-1-wave")
+
+
+def _old_branch(root):
+    """`T-1-wave` one commit past HEAD, as an earlier wave could leave it."""
+    git(root, "branch", "T-1-wave")
+    git(root, "worktree", "add", "-q", str(root.parent / "old"), "T-1-wave")
+    _write(root.parent / "old" / "old.txt", "old wave\n")
+    git(root.parent / "old", "add", "old.txt")
+    git(root.parent / "old", "commit", "-qm", "old wave")
+    git(root, "worktree", "remove", str(root.parent / "old"))
+
+
+def test_lane_init_refuses_an_earlier_waves_branch(tmp_path):
+    # Group review r10 (rush g0): a new set's lane checked out an old T-1-wave and its commits.
+    root = _started(tmp_path)
+    _old_branch(root)
+    wt = _isolated(root)
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (ok, "already exists" in reason, _lane(root, "T-1")[0]["state"]) == (False, True, "pending")
+
+
+def test_lane_init_resumes_this_lanes_own_branch(tmp_path):
+    root = _started(tmp_path)
+    _old_branch(root)
+    _set_lane(root, "T-1", state="running")
     wt = _isolated(root)
 
     ok, _ = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
