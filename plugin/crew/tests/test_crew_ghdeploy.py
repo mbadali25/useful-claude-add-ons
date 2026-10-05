@@ -1772,19 +1772,33 @@ def test_previous_good_is_the_last_all_pass_row():
     assert crew_ghdeploy.previous_good(_PREV, "qa") is None
 
 
-@_scenario
-def test_watch_a_state_file_without_the_entry_keys_is_unreadable(tmp_path, monkeypatch):
-    """A state file that does not say whether `deployJob` was set is never
-    read as "no deploy job configured"."""
+_BAD_ENTRY_KEYS = {"deployJob absent": ("deployJob", _DROP), "deployJob empty": ("deployJob", ""),
+                   "deployJob a number": ("deployJob", 3), "shaInput absent": ("shaInput", _DROP),
+                   "shaInput true": ("shaInput", True), "shaInput empty": ("shaInput", "")}
+
+
+@pytest.mark.parametrize("label", sorted(_BAD_ENTRY_KEYS))
+def test_watch_a_state_file_without_the_entry_keys_is_unreadable(tmp_path, monkeypatch, label):
+    """A state file that does not say, as prepare writes it, whether
+    `deployJob` or `shaInput` was set is never read as "not configured"."""
     root, clock = _watch_repo(tmp_path, monkeypatch)
     state = _state(root)
-    del state["deployJob"]
+    key, value = _BAD_ENTRY_KEYS[label]
+    if value is _DROP:
+        del state[key]
+    else:
+        state[key] = value
     crew_ghdeploy.write_state(str(root / ".crew" / ".ghdeploy" / "staging-0.json"), state)
     code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")],
                              [_view(root, jobs=[("deploy-prod", "skipped")])])
     assert code == 3, lines
     assert lines[-1] == "result=could-not-tell reason=state-file-unreadable"
     assert gh.calls == [] and "verdict" not in _state(root)
+
+
+for _label in sorted(_BAD_ENTRY_KEYS):
+    _scenario(lambda t, m, _l=_label: test_watch_a_state_file_without_the_entry_keys_is_unreadable(
+        t, m, _l))
 
 
 @_scenario

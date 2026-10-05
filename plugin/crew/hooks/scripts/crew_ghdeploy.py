@@ -984,9 +984,13 @@ def watch(root, env, index, slice_seconds=SLICE_SECONDS):
         raise CouldNotTell("state-file-unreadable", f"{path} holds no deadline")
     # prepare writes both keys, null when unset: a state file without them is
     # not one this watch can judge, never "no deploy job configured".
-    if "deployJob" not in state or "shaInput" not in state:
-        raise CouldNotTell("state-file-unreadable", f"{path} does not say whether a deploy "
-                                                    "job or a sha input was configured")
+    job, sha_input = state.get("deployJob", ""), state.get("shaInput", "")
+    if not ((job is None or (isinstance(job, str) and job and _one_line(job)))
+            and (sha_input is None or (isinstance(sha_input, str)
+                                       and NAME.fullmatch(sha_input)))):
+        raise CouldNotTell("state-file-unreadable", f"{path} does not say, as prepare writes "
+                                                    "it, whether a deploy job or a sha input "
+                                                    "was configured")
     start = _clock()
     end = min(start + slice_seconds, deadline)
     limit = start + slice_seconds + VIEW_BUDGET
