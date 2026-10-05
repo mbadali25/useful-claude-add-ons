@@ -372,6 +372,8 @@ def test_status_unlistable_complete_says_could_not_tell(tmp_path, monkeypatch):
 
     assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
         "tickets  1 ticket dir(s), archived: could not tell (Permission denied), 0 legacy file(s)")
+
+
 def test_status_tree_runs_the_git_which_resolves(tmp_path, monkeypatch):
     # L-1508: the tree line judges the git PATH resolves the way bash, pwsh
     # and shutil.which do (PATHEXT: git.cmd). The failing git is NOT on PATH:
