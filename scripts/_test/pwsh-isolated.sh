@@ -238,7 +238,15 @@ elif [ -z "$direct" ] && [ -z "$rules" ]; then ok no_gate_site_launches_pwsh_dir
 else bad no_gate_site_launches_pwsh_directly "direct: ${direct:-none}; rules: ${rules:-none}"; fi
 
 # real_pwsh_sees_the_private_cache
-real=$(command -v pwsh 2>/dev/null || true)
+# The launcher's own candidates, so a Git Bash with pwsh only at a Windows
+# install path still runs this case (CLAUDE.md: pwsh is not on its PATH).
+real=$(command -v pwsh 2>/dev/null || command -v pwsh.exe 2>/dev/null || true)
+if [ -z "$real" ]; then
+  for c in "/c/Program Files/PowerShell/7/pwsh" "/c/Program Files/PowerShell/7/pwsh.exe" \
+           "/mnt/c/Program Files/PowerShell/7/pwsh.exe" "/mnt/c/Program Files/PowerShell/7/pwsh"; do
+    if [ -x "$c" ]; then real=$c; break; fi
+  done
+fi
 if [ -n "$real" ]; then
   out=$(PWSH="$real" sh "$LAUNCHER" -NoProfile -Command 'Write-Output $env:XDG_CACHE_HOME' 2>&1); rc=$?
   path=$(printf '%s\n' "$out" | tail -1)
