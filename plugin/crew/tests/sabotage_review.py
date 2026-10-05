@@ -1403,6 +1403,25 @@ REVIEW_FIX_MUTATIONS = (
          "test_supersede_is_refused_and_changes_nothing"),
     ),
     (
+        # Review of 55135844, FIX2: a receipt missing what its kind records
+        # is superseded as if it were readable.
+        "--supersede-accepted takes a receipt lacking what its kind records",
+        REVIEW_LEDGER,
+        "    if unreadable:\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # Review of 55135844, FIX1: a correction rewrites a receipt bound to
+        # another bundle or base.
+        "--correct-acceptance takes a receipt bound to another bundle",
+        REVIEW_LEDGER,
+        '        if (receipt.get("bundle_sha256") != latest.get("bundle_sha256")\n',
+        "        if (False\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
         # Review of 1b9ce429, FIX1: --correct-acceptance on a ticket that is
         # no longer ACCEPTED.
         "--correct-acceptance ignores the state",

@@ -912,6 +912,22 @@ def _supersede(data, ticket, by):
             or not base or base != latest.get("base")):
         raise LedgerError(f"{ticket}'s receipt is not bound to round {number}'s bundle and "
                           "base: could not tell what would be superseded")
+    # Review of 55135844, FIX2: a receipt missing what its own kind's writer
+    # records is unreadable: an owner acceptance names its accepter, an auto
+    # acceptance carries the fixed name, the reviewer and the review.json hash.
+    if receipt["kind"] == "owner-accepted":
+        unreadable = not isinstance(receipt.get("accepted_by"), str) or not receipt[
+            "accepted_by"].strip()
+    elif receipt["kind"] == AUTO_KIND:
+        digest = receipt.get("review_json_sha256")
+        unreadable = (receipt.get("accepted_by") != AUTO_BY or not isinstance(digest, str)
+                      or not _SHA256_RE.fullmatch(digest)
+                      or not _receipt_names_the_reviewer(receipt, latest))
+    else:
+        unreadable = False
+    if unreadable:
+        raise LedgerError(f"{ticket}'s {receipt['kind']} receipt lacks what that kind records: "
+                          "could not tell what would be superseded")
     history = data.get("superseded", [])
     if not _is_dict_list(history):
         raise LedgerError(f"{ticket}'s `superseded` is not a list of objects: could not tell "
@@ -988,6 +1004,13 @@ def correct_acceptance(root, ticket, by, reason):
             raise LedgerError(f"{ticket}'s receipt is for round {number!r}, and the latest "
                               "round is not that round completed with FINDINGS: no acceptance "
                               "stands to correct")
+        # Review of 55135844, FIX1: the receipt must be bound to that round's
+        # own bundle and base, or it is not the round's acceptance.
+        if (receipt.get("bundle_sha256") != latest.get("bundle_sha256")
+                or not isinstance(receipt.get("base"), str) or not receipt["base"]
+                or receipt["base"] != latest.get("base")):
+            raise LedgerError(f"{ticket}'s receipt is not bound to round {number}'s bundle "
+                              "and base: no acceptance stands to correct")
         was = receipt.get("accepted_by")
         if not isinstance(was, str) or not was.strip():
             raise LedgerError(f"{ticket}'s receipt names no accepter ({was!r}): could not "

@@ -95,7 +95,17 @@ def _owner_accepted_round_two(repo):
 def _auto_accepted(repo):
     _review(repo)
     rl.accept(str(repo), T, "the owner")
-    _edit(repo, lambda data: data["receipt"].update(kind=rl.AUTO_KIND, accepted_by=rl.AUTO_BY))
+    # What --auto-accept writes beside the kind (review of 55135844, FIX2).
+    _edit(repo, lambda data: data["receipt"].update(
+        kind=rl.AUTO_KIND, accepted_by=rl.AUTO_BY, provider="codex", model_family="gpt",
+        review_json_sha256="b" * 64, ignored_lines=0, findings=[]))
+
+
+def _auto(change):
+    def build(repo):
+        _auto_accepted(repo)
+        _edit(repo, change)
+    return build
 
 
 # --- must-allow ----------------------------------------------------------------
@@ -318,6 +328,18 @@ REFUSALS = {
     "receipt_base_missing": (_with(lambda data: data["receipt"].pop("base")), None),
     "receipt_base_empty": (_receipt("base", ""), None),
     "receipt_base_other": (_receipt("base", "0" * 40), None),
+    # Review of 55135844, FIX2: a receipt missing what its kind records.
+    "owner_receipt_no_accepter": (_receipt("accepted_by", None), None),
+    "owner_receipt_blank_accepter": (_receipt("accepted_by", "  "), None),
+    "auto_receipt_owner_name": (
+        _auto(lambda data: data["receipt"].__setitem__("accepted_by", "the owner")), None),
+    "auto_receipt_no_review_json_hash": (
+        _auto(lambda data: data["receipt"].pop("review_json_sha256")), None),
+    "auto_receipt_review_json_hash_not_hex": (
+        _auto(lambda data: data["receipt"].__setitem__("review_json_sha256", "x" * 64)), None),
+    "auto_receipt_no_provider": (_auto(lambda data: data["receipt"].pop("provider")), None),
+    "auto_receipt_other_family": (
+        _auto(lambda data: data["receipt"].__setitem__("model_family", "claude")), None),
     "superseded_dict": (_with(lambda data: data.__setitem__("superseded", {})), None),
     "superseded_string": (_with(lambda data: data.__setitem__("superseded", "x")), None),
     "round_one_receipt_round_bool": (

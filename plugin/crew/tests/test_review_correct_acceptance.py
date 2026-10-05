@@ -320,6 +320,10 @@ REFUSALS = {
     "latest_round_float": (_set_latest_round(1.0), {}),
     "accepted_by_newline": (_set_receipt("accepted_by", "a peer\nBLOCK|x"), {}),
     "accepted_by_line_separator": (_set_receipt("accepted_by", "a peer\u2028x"), {}),
+    # Review of 55135844, FIX1: a receipt bound to another bundle or base.
+    "receipt_bundle_other": (_set_receipt("bundle_sha256", "a" * 64), {}),
+    "receipt_base_missing": (_set_receipt("base", None), {}),
+    "receipt_base_other": (_set_receipt("base", "0" * 40), {}),
     "by_fullwidth_auto": (_accepted, {"by": "\uff41\uff55\uff54\uff4f: x"}),
     "by_zero_width_auto": (_accepted, {"by": "\u200bauto: x"}),
     "by_bom_auto": (_accepted, {"by": "\ufeffAuTo: x"}),
