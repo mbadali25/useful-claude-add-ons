@@ -100,7 +100,8 @@ def test_the_config_list_wins_over_the_directory_name(tmp_path, stub):
     assert _project_args(_calls(stub)[-1]) == ["--project=crew,Crew Plugin"]
 
 
-@pytest.mark.parametrize("bad", ["a,b", "two\nlines", "bell\x07", "sep x", 7, None, "", "   "])
+@pytest.mark.parametrize("bad", ["a,b", "two\nlines", "acme\n", "\tacme",
+                                 "bell\x07", "sep x", 7, None, "", "   "])
 def test_unusable_project_names_are_dropped(tmp_path, stub, bad):
     root = _git_repo(tmp_path / "acme-app")
 

@@ -192,7 +192,10 @@ def projects(crew_cfg, root):
     name; else nothing."""
     listed = _recall_cfg(crew_cfg).get("projects")
     if isinstance(listed, list) and listed:
-        names = [n.strip() for n in listed if isinstance(n, str)]
+        # Control characters are checked before trimming: `"acme\n"` is
+        # dropped, not sent as `acme`.
+        names = [n.strip() for n in listed
+                 if isinstance(n, str) and not _CONTROL_RE.search(n)]
         return list(dict.fromkeys(n for n in names if _usable_project(n)))
     if not root:
         return []
