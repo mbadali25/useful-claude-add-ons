@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
-- **crew 1.0.352, gizmoduck 0.5.9**: Three changes in one update: a crew vault write refuses a directory on its path that was swapped for another real directory after the checks, one runner drives a crew ticket at a time through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot check: links in the templates dir, a nikto that exits 0 without running, and testssl without `hexdump`.
+- **crew 1.1.1**: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None`. When a ticket's INDEX status is a word crew does not know, the tracker now says so, and for a retired word it names the crew word to write instead; it still never guesses a lane.
+- **check-marketplace.py --pending-bump**: A draft PR reports version drift as pending at land, repository tooling, no plugin version. A build branch no longer has to bump a plugin version to get a green draft PR: version drift there reads `pending at land`, and a ready PR or a push to main still fails on it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
