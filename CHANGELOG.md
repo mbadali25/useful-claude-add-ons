@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — repository: one cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners (C-0009)
+
+- **Summary.** `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session:
+  besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists
+  every tool as ok or MISSING at the end.
+- **What changed.** Optional steps, in the script's existing `step` style: `pwsh` (the newest
+  stable tag found with `git ls-remote --tags`, because api.github.com answers 403 here; that
+  tag's linux tarball unpacked to `/opt/microsoft/powershell/7` and linked as
+  `/usr/local/bin/pwsh`, with Microsoft's apt repo as the fallback), `mermaid` (mermaid-cli
+  12.0.0, as verify-gate.yml pins it, with `PUPPETEER_SKIP_DOWNLOAD=1`), `mcp-deps` (`npm ci` in
+  `mcp-servers/` when `node_modules` is missing) and `gizmoduck` (`plugin/gizmoduck/bootstrap.sh`
+  when any scanner is missing; `SKIP_GIZMODUCK=1` skips it). Nuclei, dependency-check and ZAP
+  still need the C-0008 fix (PR #506) to resolve their versions while api.github.com is blocked.
+- **apt.** Every apt-get call passes `-o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600`,
+  because the image ships `/tmp` as 755 root:root and apt's `_apt` user cannot write its
+  key-check files there; `/tmp` itself is left alone. `apt-get clean` follows each install,
+  since disk is a fixed per-session allowance. pwsh moved out of the apt step into its own.
+- **pytest.** The CORE `ruff` step now removes the image's uv-tool pytest 9 (isolated, no xdist,
+  ahead of `pytest~=8` on PATH) and fails unless PATH resolves ruff 0.16.x and pytest 8.x.
+- Repository tooling outside any plugin, so no version bump.
+
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that
