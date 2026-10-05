@@ -51,6 +51,7 @@ Last updated: 2026-10-05T17:12Z
 
 - `main` = `a555ff37` (crew 1.1.0). `release/1.2.0` = `a555ff37` (fast-forwarded 2026-10-05).
 - Merged into release/1.2.0: #539 G8 (c510b764, crew 1.1.1); #541 G1 (3dbc033b, crew 1.1.2).
+- Merged into main: #540 H3 (97dda0bd, crew 1.1.3). Source PRs closed: #526, #529, #531, #538; #527 closed as superseded.
 - Version counter: 1.1.3 = H3 (#540, landing on main), 1.1.4 = H1 (reserved), 1.1.5 = G3 (landing). Next free after that: **1.1.6**.
 - Open group PRs: #540 H3 -> main (lands after H1). Source PRs are closed when their content reaches main.
 
