@@ -37,6 +37,8 @@ import subprocess
 import sys
 import hashlib
 
+import crew_common
+
 # Every line this module writes to stdout is read by a shell on the other
 # end (bash `read` or a PowerShell pipe), one record per line. On native
 # Windows Python, stdout defaults to TEXT mode and translates every '\n' to
@@ -582,7 +584,8 @@ def tree_snapshot(root, stable=False):
                  ("diff", "--name-only", "-z", "--cached"),
                  ("diff", "--name-only", "-z", "HEAD")):
         try:
-            out = subprocess.run(("git", "-c", "core.quotePath=false") + args, cwd=root,
+            out = subprocess.run((crew_common.require_tool("git"), "-c", "core.quotePath=false") + args,
+                                 cwd=root,
                                  capture_output=True, check=False, timeout=120,
                                  stdin=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError):
@@ -591,7 +594,7 @@ def tree_snapshot(root, stable=False):
             return None
         listing.extend(p for p in out.stdout.decode("utf-8", "surrogateescape").split("\0") if p)
     try:
-        flags = subprocess.run(("git", "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
+        flags = subprocess.run((crew_common.require_tool("git"), "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
                                cwd=root, capture_output=True, check=False, timeout=120,
                                stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
@@ -631,7 +634,8 @@ def _refs_digest(root):
     diffs `origin/main...HEAD` -- so a fetch that moves `origin/main` must
     empty the cache as surely as an edit. None when git cannot list them."""
     try:
-        out = subprocess.run(("git", "for-each-ref", "--format=%(refname) %(objectname)"),
+        out = subprocess.run((crew_common.require_tool("git"), "for-each-ref",
+                              "--format=%(refname) %(objectname)"),
                              cwd=root, capture_output=True, check=False, timeout=120,
                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):

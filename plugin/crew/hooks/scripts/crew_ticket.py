@@ -201,7 +201,7 @@ def check_ticket(ticket):
 
 def _git(root, *args):
     try:
-        done = subprocess.run(["git", "-C", root] + list(args), capture_output=True,
+        done = subprocess.run([crew_common.require_tool("git"), "-C", root] + list(args), capture_output=True,
                               text=True, check=False, timeout=30,
                               stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):

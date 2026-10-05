@@ -42,6 +42,7 @@ import os
 import re
 import subprocess
 
+import crew_common
 import verify_fingerprint
 
 VERIFIED, UNVERIFIED, UNKNOWN, NO_GATE = "VERIFIED", "UNVERIFIED", "UNKNOWN", "NO_GATE"
@@ -59,7 +60,7 @@ class _Unreadable(Exception):
 
 def _git(root, *args):
     try:
-        out = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=root,
+        out = subprocess.run([crew_common.require_tool("git"), "-c", "core.quotePath=false", *args], cwd=root,
                              capture_output=True, text=True, check=False, timeout=60,
                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:

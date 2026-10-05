@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **repository**: PRs run only the heavy CI suites their changes reach. A pull request that changes only plain documentation, or only one plugin or skill, now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite still runs on push to main, on workflow_dispatch and on any schedule.
-- **crew 1.0.346**: Cloud-guard bash tests no longer flake with exit 2304 on Windows. Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343, 0.8s into a run bounded at 120s, empty stderr) and ...
+- **crew 1.0.347**: The review/gate harness runs the git `shutil.which` found. On Windows, crew's review and verify checks now run the same git your shell runs, so a git wrapper earlier on PATH can no longer make a check pass on the wrong answer.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
