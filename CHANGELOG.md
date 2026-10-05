@@ -4,55 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### crew 1.0.345 — batch 5: T-0052, T-0057, L-0662, T-0045
-
-#### Added — `crew`: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
-
-- **What changed.** A `.crew/verify.json` environment may carry a `github`
-  entry (one object or a list): `workflow` (a `.yml`/`.yaml` filename),
-  `ref` (a branch name, checked as a name only: `git check-ref-format
-  --branch` rules, no leading `-` or `@`, not `HEAD`, no `refs/` path but
-  `refs/heads/`; a bare tag name is NOT detected), fixed `inputs`, and optional `shaInput`,
-  `correlationInput`, `deployJob`, `watchMinutes` (1-360) and
-  `identifySeconds` (10-900). The new
-  `plugin/crew/hooks/scripts/crew_ghdeploy.py check --root . --env <name>`
-  validates it against a closed key set and the value grammar
-  `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
-  requires `deploy` to list exactly the entries' canonical prefixes so
-  promote-gate's existing match fires on the real dispatch, and applies
-  both gates' one rule as L-1503 left it, taking the stricter gate where
-  they differ: a map EITHER gate refuses (exact or case twin keys under
-  Python's or .NET's fold, an empty key at any depth, a comma or
-  control-character environment name, a null, non-string or date-time
-  `deploy`, a list or object `requireHuman`, JSON nested too deeply) is
-  refused as `gate-refuses-map`, and each dispatch is printed with
-  `gated-as: '<names>'`, every environment whose `deploy` matches it
-  literally, ignoring case under either gate's fold, either way round,
-  after CR stripping - the union whose requirements apply. A
-  multi-environment match is not refused.
-  It prints the one
-  literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
-  (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
-  HEAD unreadable - never "no github entry"). It writes nothing and runs no
-  `gh`.
-- **Not yet.** Nothing dispatches, identifies, watches or records a run
-  (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
-  does not deploy (L-0649).
-- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 294 cases. An
-  agreement table (L-1503's 26 maps from test_promote_gate_literal_match.py
-  plus 9: 35 maps, 95 commands) feeds every command to the real
-  `promote-gate.sh`, the real `promote-gate.ps1` and `simulate_gate`, and 33
-  github maps compare `check`'s decision with both real gates on the dispatch
-  it printed; 11 more maps where the two real gates differ prove the
-  either-refuses / union rule, with the .NET-only fold table (27 pairs) and
-  the ConvertFrom-Json date-time port pinned; the `.ps1` halves but one
-  smoke map each are `slow`. A
-  `[!-[]` deploy (a range pwsh's `-like` threw on) is literal text and
-  accepted (#407 round-4 FIX). The 83
-  mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
-  named case red; they are unwired until L-0650 (tooling only).
-
-#### Added — `crew`: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
+### Added — `crew`: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
 
 - **What changed.** `crew_route.PHRASES` gains four rows after `focus`:
   `run <id>, <id> and <id> in parallel` -> `/crew:autopilot wave <ID> <ID> ...` (ids upper-cased,
@@ -83,7 +35,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   sleep undo line. The verify rule now runs through `pytest_rule.py`. Local sabotage mutations each went red; they
   are L-0663's to commit (`sabotage*.py` is harness).
 
-#### Added — `crew`: plain-text routing for the autopilot commands the router knows (T-0057)
+### Added — `crew`: plain-text routing for the autopilot commands the router knows (T-0057)
 
 - **What changed.** `crew_route.PHRASES` gains five rows after `status`:
   `autopilot status [<id>]` / `what's autopilot doing?` -> `/crew:autopilot status`;
@@ -123,7 +75,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   Local sabotage mutations of the new branches each went red (the list is L-0661's);
   they are committed separately as L-0661, because `sabotage*.py` is harness.
 
-#### Added — `crew`: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+### Added — `crew`: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
   `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
