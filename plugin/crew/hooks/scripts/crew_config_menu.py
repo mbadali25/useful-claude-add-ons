@@ -886,6 +886,14 @@ def _delete_os_error(exc, stage, path, backup):
         moved, there = os.path.lexists(backup), os.path.lexists(path)
     except Exception:  # pylint: disable=broad-except
         moved = there = None
+    if stage == "moving" and isinstance(exc, FileExistsError) and there is True:
+        # The move refuses an existing destination with the source untouched
+        # (`move_no_clobber`): a file another writer put at the backup name
+        # after `_free_backup` chose it is NOT the original. Never name it so.
+        print(f"refused: {backup} appeared before the move ({why}); it is "
+              f"not this config, nothing moved: {path} left in place",
+              file=sys.stderr)
+        return 2
     if moved is False and there is True and stage == "moving-back":
         print(f"refused: {path} changed since the preview; it is back in place "
               f"({why} after the move back) and nothing was deleted. Re-run "
