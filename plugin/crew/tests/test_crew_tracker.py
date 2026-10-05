@@ -2762,6 +2762,83 @@ def test_archive_never_renames_over_a_destination_that_appears(tmp_path, monkeyp
     assert (_board_dir(vault) / f"{CARD}.md").is_file()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows' rename never replaces a directory")
+def test_archive_never_replaces_an_empty_destination_that_appears(tmp_path, monkeypatch):
+    """Port review of L-0509: POSIX rename replaces an EMPTY directory, so a
+    destination created after the check must still not be renamed over."""
+    root, _vault = _done_obsidian(tmp_path)
+    real = crew_tracker.crew_common.locate_ticket
+    dest = root / ".work" / "tickets" / ARCHIVED / CARD
+
+    def appear(top, ticket):
+        got = real(top, ticket)
+        dest.mkdir(parents=True, exist_ok=True)
+        return got
+    monkeypatch.setattr(crew_tracker.crew_common, "locate_ticket", appear)
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert crew_tracker.exit_code(got) == 1
+    assert (dest.is_dir(), list(dest.iterdir()),
+            (root / ".work" / "tickets" / CARD / "spec.md").is_file()) == (True, [], True)
+
+
+def test_rename_note_never_replaces_a_note_that_appears_after_the_check(tmp_path, monkeypatch):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    paths, _problem = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), crew_tracker.resolve(str(root))["settings"],
+        crew_tracker._note_names({"board": "Board.md"}, CARD))  # pylint: disable=protected-access
+    (_board_dir(vault) / ARCHIVED).mkdir()
+    theirs = _board_dir(vault) / ARCHIVED / f"{CARD}.md"
+    real_exists, real_lexists = crew_tracker._exists_at, os.path.lexists  # pylint: disable=protected-access
+
+    def appear():
+        theirs.write_text("theirs\n", encoding="utf-8")
+
+    def exists_at(name, dir_fd):
+        found = real_exists(name, dir_fd)
+        appear()
+        return found
+
+    def lexists(path):
+        found = real_lexists(path)
+        if str(path) == str(paths["archivedNote"]):
+            appear()
+        return found
+    monkeypatch.setattr(crew_tracker, "_exists_at", exists_at)
+    monkeypatch.setattr(crew_tracker.os.path, "lexists", lexists)
+    live = (_board_dir(vault) / f"{CARD}.md").read_bytes()
+
+    got = crew_tracker._rename_note(paths)  # pylint: disable=protected-access
+
+    assert (got["state"], (_board_dir(vault) / f"{CARD}.md").read_bytes(),
+            theirs.read_text(encoding="utf-8")) == ("could not update", live, "theirs\n")
+
+
+@pytest.mark.parametrize("kind,key", [("jira", "ABC-12"), ("sdp", "SDP-40219")])
+def test_a_synced_tracker_refuses_to_move_or_create_an_archived_ticket(tmp_path, kind, key):
+    root = make_repo(tmp_path)
+    _config_json(root, kind)
+    (root / ".work" / "tickets" / ARCHIVED / key).mkdir(parents=True)
+
+    moved = crew_tracker.move(str(root), key, "in-progress")
+    made = crew_tracker.create(str(root), key, "again")
+
+    assert (crew_tracker.exit_code(moved), "archived in Complete/" in moved["results"][-1]["reason"],
+            crew_tracker.exit_code(made), made["results"][-1]["reason"].startswith("id taken: ")) == (
+        1, True, 1, True)
+
+
+def test_an_archived_read_keeps_an_unknown_note_owner(tmp_path):
+    root, vault = _archived_obsidian(tmp_path)
+    (_board_dir(vault) / ARCHIVED / f"{CARD}.md").write_text("# T-0042\n", encoding="utf-8")
+
+    got = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (got["state"], "could not tell" in (got["reason"] or "")) == ("read", True), got
+
+
 @pytest.mark.parametrize("owner", ["foreign", "unknown"])
 def test_archive_moves_a_note_only_when_ours(tmp_path, owner):
     root, vault = _done_obsidian(tmp_path)

@@ -1615,7 +1615,10 @@ def _obsidian_read(root, settings, ticket):
         owner, detail, _ = _card_owner(paths, here, label)
         if owner == FOREIGN:
             return [files, _result("obsidian", UNREADABLE, _foreign(paths, ticket, detail, here))]
-        return [files, _result("obsidian", READ, f"archived; INDEX status {files.get('status')}",
+        # UNKNOWN keeps its doubt in the result, as the live branch below does.
+        doubt = f"; whose note could not tell: {detail}" if owner == UNKNOWN else ""
+        return [files, _result("obsidian", READ,
+                               f"archived; INDEX status {files.get('status')}{doubt}",
                                lane=f"{crew_common.ARCHIVE_DIR}/", archived=True, disagree=False)]
     owner, detail = None, None
     if not problem:
@@ -1680,12 +1683,58 @@ def _files_archive(root, ticket):
     archive = os.path.join(crew_common.tickets_root(root), crew_common.ARCHIVE_DIR)
     try:
         os.makedirs(archive, exist_ok=True)
-        # os.rename, never shutil.move: a cross-device move would copy, and a
-        # destination that appeared since the check is refused, not merged.
-        os.rename(folder, os.path.join(archive, ticket))
+        # Never shutil.move: a cross-device move would copy. And never a bare
+        # os.rename on POSIX: it replaces an empty directory that appeared
+        # since the check. `_rename_dir_no_replace` claims the name first.
+        _rename_dir_no_replace(folder, os.path.join(archive, ticket))
+    except FileExistsError:
+        return _result(backend, FAILED, f"{done_rel} already exists; nothing moved")
     except OSError as exc:
         return _result(backend, FAILED, f"{live_rel}: {exc.strerror or exc}; nothing moved")
     return _result(backend, UPDATED, f"{live_rel} -> {done_rel}")
+
+
+def _rename_dir_no_replace(src, dst):
+    """Rename directory `src` to `dst`, raising FileExistsError when `dst`
+    exists, with no window in which another process's `dst` is replaced.
+    Windows' rename never replaces. On POSIX the name is claimed with an
+    atomic `mkdir` first and the rename then replaces only that empty
+    directory we made; if anything was put inside it meanwhile the rename
+    fails (ENOTEMPTY) and the claim is released."""
+    if os.name == "nt":
+        os.rename(src, dst)
+        return
+    os.mkdir(dst)
+    try:
+        os.rename(src, dst)
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.rmdir(dst)
+        raise
+
+
+def _rename_file_no_replace(src, dst, src_dir_fd=None, dst_dir_fd=None):
+    """Rename file `src` to `dst`, raising FileExistsError when `dst` exists,
+    atomically: a hard link cannot replace (EEXIST), then the old name goes.
+    Windows' rename never replaces. A filesystem with no hard links falls
+    back to a re-check and rename, the one remaining window."""
+    if os.name == "nt":
+        os.rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+        return
+    try:
+        os.link(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd,
+                follow_symlinks=False)
+    except OSError as exc:
+        no_links = (errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.EMLINK, errno.EXDEV)
+        if isinstance(exc, FileExistsError) or exc.errno not in no_links:
+            raise
+        try:
+            os.stat(dst, dir_fd=dst_dir_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            os.rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+            return
+        raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), dst) from exc
+    os.unlink(src, dir_fd=src_dir_fd)
 
 
 def _rename_note(paths):
@@ -1706,7 +1755,11 @@ def _rename_note(paths):
                     if _exists_at(name, inner):
                         return _result("obsidian-note", FAILED, f"could not tell which note is "
                                        f"{os.path.basename(name)[:-3]}'s: {dest} already exists")
-                    os.rename(name, name, src_dir_fd=fd, dst_dir_fd=inner)
+                    try:
+                        _rename_file_no_replace(name, name, src_dir_fd=fd, dst_dir_fd=inner)
+                    except FileExistsError:
+                        return _result("obsidian-note", FAILED, f"could not tell which note is "
+                                       f"{os.path.basename(name)[:-3]}'s: {dest} already exists")
                 finally:
                     os.close(inner)
             else:
@@ -1718,7 +1771,11 @@ def _rename_note(paths):
                 if os.path.lexists(paths["archivedNote"]):
                     return _result("obsidian-note", FAILED, f"could not tell which note is the "
                                    f"ticket's: {dest} already exists")
-                os.rename(name, paths["archivedNote"])
+                try:
+                    _rename_file_no_replace(name, paths["archivedNote"])
+                except FileExistsError:
+                    return _result("obsidian-note", FAILED, f"could not tell which note is the "
+                                   f"ticket's: {dest} already exists")
             stale = check()
             if stale:
                 return _result("obsidian-note", FAILED, f"{stale}; the note may have moved")
@@ -1843,16 +1900,18 @@ def create(root, ticket, title):
     if stop:
         return _report(info, [stop])
     kind = info["kind"]
-    if kind in _SYNC:
-        return _report(info, [_result(kind, DELEGATED, _CREATE_DELEGATED)])
-    if not title_ok(title):
-        return _report(info, [_result(kind, FAILED, "title must be one line with no '|'")])
+    # Before the Jira/SDP delegation too: an archived id is taken whatever
+    # the tracker (port review of L-0509).
     _, where, why = crew_common.locate_ticket(root, ticket)
     if where == crew_common.COMPLETE:
         return _report(info, [_result(kind, FAILED, f"{TAKEN}: {ticket} is archived in "
                                       f"{crew_common.ARCHIVE_DIR}/")])
     if where == crew_common.COULD_NOT_TELL:
         return _report(info, [_result(kind, FAILED, f"{TAKEN}: could not tell where {ticket} lives: {why}")])
+    if kind in _SYNC:
+        return _report(info, [_result(kind, DELEGATED, _CREATE_DELEGATED)])
+    if not title_ok(title):
+        return _report(info, [_result(kind, FAILED, "title must be one line with no '|'")])
     if kind == "obsidian":
         return _report(info, _obsidian_create(root, info["settings"], ticket, title))
     return _report(info, [_files_create(root, ticket, title)])
@@ -1868,11 +1927,13 @@ def move(root, ticket, status, reopen=False):
     kind = info["kind"]
     if status not in LANE_FOR_STATUS:
         return _report(info, [_result(kind, FAILED, f"status {status} maps to no lane")])
-    if kind in _SYNC:
-        return _report(info, [_push(kind, ticket, status)])
+    # Before the Jira/SDP push too: an archived ticket is closed whatever the
+    # tracker (port review of L-0509).
     refused = _folder_refusal(root, ticket)
     if refused:
         return _report(info, [_result(kind, FAILED, refused)])
+    if kind in _SYNC:
+        return _report(info, [_push(kind, ticket, status)])
     if kind == "obsidian":
         return _report(info, _obsidian_move(root, info["settings"], ticket, status, reopen))
     return _report(info, [_files_move(root, ticket, status, reopen)])
