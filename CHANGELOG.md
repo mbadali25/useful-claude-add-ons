@@ -9,6 +9,36 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.2: autopilot's docs phase and tracker step (T-0022)
+
+- **Summary.** Autopilot now runs a docs phase before the refresh and review, `/crew:done` refuses a ticket whose documents (CHANGELOG, README, SECURITY.md, TODO.md) are still owed, and the tracker follows the ticket's status on disk after every phase.
+- **Ported to release/1.2.0 (feature rush, PR #358).** Re-applied by hand on current code (the old branch was ~1,400 commits behind). To keep `crew_autopilot.py` under pylint's 3400-line cap, the docs phase and tracker step live in `crew_autopilot_docs.py`, L-0652's unchanged manual sleep code moves to `crew_autopilot_sleep.py`, and `crew_autopilot.py` dispatches such actions through one `EXTRA_ACTIONS` table (T-0012's goal pair too). `disk_status` reads `in-progress` only once a path outside `.work/` changed since the recorded scope base, because `crew_ticket.activate` now records the base before implement starts; git that cannot tell stops the step. `crew_docs_check.py` runs git through `crew_common.require_tool` (L-1508). Not ported: the old branch's code-map, rules and diagram re-anchors (release's are kept).
+- `crew_docs_check.py --root . --ticket <id> [--json] [--explain]`, read-only: one line per document --
+  CHANGELOG (per changed marketplace entry), each triggered README, SECURITY.md, TODO.md -- as
+  `updated`, `not needed (<reason>)`, `MISSING` or `not applicable`, plus `adr, runbooks: not
+  measured`; exit 0 only with nothing MISSING or unknown. The CHANGELOG rule is mechanical: an entry
+  whose source changed needs a line added under `## [Unreleased]` naming `` `<name>` `` and its
+  current version, and no recorded reason waives it; release bookkeeping (T-0008's
+  `RELEASE_BOOKKEEPING`, imported) and `.work/` alone owe none. README and SECURITY.md need an edit or
+  a recorded reason once triggered; each deferral must reach TODO.md's added lines. No scope base, a
+  base T-0008 would not trust, an unreadable `docs.json`, or git unable to read a document at the base
+  (never read as absent, so never `updated`) is `unknown`, which refuses. Git is read
+  through plumbing only, so the check never rewrites `.git/index`.
+- `/crew:docs <id>` records its decisions in `.work/tickets/<id>/docs.json` and runs the check;
+  `/crew:implement` step 6 orders tests, docs, the docs check, the refresh, then review; `/crew:done`
+  gains check 5, the same check, which refuses and never edits a document.
+- `crew_autopilot.next` runs a `docs` phase (`/crew:docs <id>`) before the refresh and every review
+  round while a document is `MISSING`, stops after two runs recorded since the latest review round
+  (`docs-missing`), stops at once when the check is `unknown` (`docs-unknown`: a rerun cannot settle it), and stops without writing when one is owed after an accepted
+  receipt (`docs-after-review`). `crew_autopilot.py tracker --root . --ticket <id> [--after CMD]`
+  derives the status from disk and calls T-0021's `crew_tracker.move`: continue on updated or
+  unchanged, the sync command handed back on delegated, a stop with the reason and the
+  `crew_tracker.py move` retry on could not update, and "T-0021 not landed" without the module.
+  `test_tracker_move_after_receipt_keeps_bundle_hash` shows a move leaves `review_patch`'s bundle hash
+  unchanged for the files kind, an Obsidian vault outside the worktree and an ignored one inside it.
+- Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
+  its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
+
 ### Added — crew 1.1.2: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
 
 - **Summary.** Settings this crew does not act on are named instead of silently ignored, at session start, in `/crew:status` and in autopilot's settings, and `/crew:status --approvals` lists only the tickets whose approval actually needs you.

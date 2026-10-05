@@ -4,6 +4,20 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0022 follow-ups (autopilot docs phase and tracker step).** (1) Harness-only PR (T-0087's
+  rule: `plugin/crew/tests/sabotage*.py` is `HARNESS` in `scripts/check-tooling-pr.py`, so it
+  cannot ride with the feature): add `plugin/crew/tests/sabotage_docs.py` with `DOCS_MUTATIONS`
+  (a docs.json reason waives CHANGELOG -> `test_changelog_reason_does_not_waive`; `unknown`
+  read as ok or rerun -> `test_next_docs_unknown_stops_at_once`; docs ordered after review ->
+  `test_next_docs_before_refresh`; tracker `could not update` read as `unchanged` ->
+  `test_tracker_step_could_not_update_stops`, plus the rest run by hand in T-0022's PR body),
+  register it in `plugin/crew/tests/sabotage.py` (the docs code now lives in `crew_autopilot_docs.py`, so its anchors name that file), add
+  `test_every_docs_sabotage_anchor_is_present_exactly_once`, and add `sabotage_docs.py` to the
+  T-0022 rule's paths in `.crew/verify.json`. Unblock: T-0022 merged. (2) ADRs and runbooks are
+  reported `not measured` by `crew_docs_check.py`; measuring them needs a trigger rule (which
+  change owes an ADR) the spec left as `/crew:docs` judgement. Unblock: an owner decision on that
+  rule.
+
 - **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
   chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
   being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run

@@ -527,7 +527,7 @@ def split_approved_text(slug, result):
     return "\n".join(lines)
 
 
-def goal_main(args):
+def main(args):
     """`goal-propose` (exit 0 written, 2 refused) and `goal-approve` (0
     approved, 2 not). A crash is a refusal, exit 1, never silence."""
     try:

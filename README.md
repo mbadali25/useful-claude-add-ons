@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.2**: Autopilot's docs phase and tracker step. Autopilot now runs a docs phase before the refresh and review, `/crew:done` refuses a ticket whose documents (CHANGELOG, README, SECURITY.md, TODO.md) are still owed, and the tracker follows the ticket's status on disk after every phase.
 - **crew 1.1.2**: Inert settings are named, and `/crew:status --approvals` lists only what needs you. Settings this crew does not act on are named instead of silently ignored, at session start, in `/crew:status` and in autopilot's settings, and `/crew:status --approvals` lists only the tickets whose approval actually needs you.
-- **crew 1.1.2**: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval. `/crew:autopilot goal "<goal>"` researches a goal once, writes a goal file with its proposed tickets, prints the `/goal` line for you to paste, and asks for the split approval under `autopilot.approval`; it mints nothing yet.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

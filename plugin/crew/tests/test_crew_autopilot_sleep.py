@@ -20,6 +20,7 @@ import time
 
 import context  # pylint: disable=unused-import
 import crew_autopilot
+import crew_autopilot_sleep
 import crew_sleep
 import crew_ticket
 import pytest
@@ -1206,7 +1207,7 @@ def _opens(monkeypatch, path, before=None):
 def test_an_oversized_state_file_is_unknown(tmp_path, clock):
     clock(DAY)
     root = _honouring(tmp_path)
-    _plant(root, json.dumps(VALID) + " " * crew_autopilot.MANUAL_MAX_BYTES)
+    _plant(root, json.dumps(VALID) + " " * crew_autopilot_sleep.MANUAL_MAX_BYTES)
 
     conf = _sleep_conf(root)
 
@@ -1218,7 +1219,7 @@ def test_an_exactly_full_state_file_is_still_read(tmp_path, clock):
     clock(DAY)
     root = _honouring(tmp_path)
     text = json.dumps(VALID)
-    _plant(root, text + " " * (crew_autopilot.MANUAL_MAX_BYTES - len(text)))
+    _plant(root, text + " " * (crew_autopilot_sleep.MANUAL_MAX_BYTES - len(text)))
 
     assert _sleep_conf(root)["sleep"]["state"] == "asleep"
 

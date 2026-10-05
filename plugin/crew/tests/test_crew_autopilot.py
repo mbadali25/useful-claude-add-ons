@@ -22,6 +22,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
+import crew_autopilot_docs
 import crew_state
 import crew_ticket
 import review_ledger
@@ -36,6 +37,15 @@ HEADER = "status: spec   risk: high"
 
 
 # --- fixtures ----------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _documents_ok(monkeypatch):
+    """T-0022's docs phase reads `crew_docs_check`; these tests are about the
+    other phases, so the documents read ok unless a test says otherwise
+    (test_crew_autopilot_docs.py owns the docs phase)."""
+    monkeypatch.setattr(crew_autopilot_docs, "_docs_state", lambda root, ticket: {
+        "state": crew_autopilot_docs.DOCS_OK, "missing": [], "reason": ""})
+
 
 def _write(path, text):
     os.makedirs(os.path.dirname(str(path)), exist_ok=True)

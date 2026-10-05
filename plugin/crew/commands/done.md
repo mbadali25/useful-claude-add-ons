@@ -1,11 +1,10 @@
 ---
-description: Close a ticket - needs an accepted review receipt, a clean verify gate, a passing completion audit, current artifacts
+description: Close a ticket - needs an accepted review receipt, a clean gate, a passing completion audit, current artifacts and docs
 argument-hint: <ticket id>
 allowed-tools: Read, Write, Edit, Bash
 ---
 
-Close ticket $1. **All four checks below must pass. Any one failing refuses
-done** — there is no partial close.
+Close ticket $1. **All five checks below must pass. Any one failing refuses done** — there is no partial close.
 
 ## Check 1 — the review receipt
 
@@ -13,15 +12,12 @@ done** — there is no partial close.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$1" --check-receipt
 ```
 
-Rebuilds the bundle and fails if anything changed since the receipt was
-written. No receipt, a failing rebuild, or a ticket still `NEEDS_REPLAN`
-(budget spent, no successor plan approved) all refuse — say which, and point
-at `/crew:review $1` or `/crew:plan $1` for a replan.
+Rebuilds the bundle and fails if anything changed since the receipt was written. No receipt, a failing rebuild, or a ticket
+still `NEEDS_REPLAN` (budget spent, no successor plan approved) all refuse — say which, and point at `/crew:review $1` or `/crew:plan $1` for a replan.
 
 ## Check 2 — the verify gate
 
-The Stop hook already refuses to end a turn on a red gate, so this check is
-confirming, not re-deriving:
+The Stop hook already refuses to end a turn on a red gate, so this check is confirming, not re-deriving:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_status.py --root .
@@ -63,7 +59,16 @@ with <command>` (a drifted README diagram embed included), or `stop` with its re
 — a write now stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh, commit, then `/crew:review $1` again,
 then rerun this command. On `fresh-uncommitted` the artifacts are current but the files its `uncommitted:` line lists are not
 committed: commit them in `/crew:implement $1` step 6 (no byte of the review bundle's working state changes, so check 1's receipt
-stays current). Documents read `not measured`, which is `/crew:docs`'s judgement, not a pass or a refusal.
+stays current). Documents read `not measured` here: check 5 judges them.
+
+## Check 5 — the documents this change owes
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket "$1"
+```
+
+Read-only. Any `MISSING` line, or `unknown`, refuses done: quote it. **Do not edit a document here — a write now stales
+check 1's receipt.** Fix it in `/crew:implement $1` step 6 (`/crew:docs $1`), commit, then `/crew:review $1` again, then rerun this command.
 
 ## Report — forbidden trailers (never refuses)
 
@@ -75,7 +80,7 @@ Copy its lines verbatim into the close note and the PR body. `clean`, a `FINDING
 carrying a trailer `git.forbiddenTrailers` lists) or `unknown - <why>`: this report never refuses done and crew
 never rewrites the commits — a rewrite is the owner's decision, and it stales check 1.
 
-## On all four passing
+## On all five passing
 
 1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
    that value keeps the approval, so the checks above stay true. Then move the
@@ -91,7 +96,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 
 3. Delete `.work/HANDOFF.md` if present — a stale handoff reads as current to
    the next session, the same rule `/crew:work`'s old step 14 states. <!-- deliberate -->
-4. Report: each of the four checks and its result, then **Not verified:** every verify rule that exited 77 (a
+4. Report: each of the five checks and its result, then **Not verified:** every verify rule that exited 77 (a
    missing tool, not a pass), any suite that did not run on this OS, `drift-detection.sh` (skipped by
    default), and anything checked only by reading. Write "Nothing" only when that is true.
 
