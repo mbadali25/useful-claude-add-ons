@@ -46,6 +46,8 @@ A feature batch of 5-6 review-clean, Windows-green PRs lands as ONE batch PR:
 5. Open the batch PR: title `Batch <n>: <TICKET>, <TICKET>, ...`, body `Tickets: ...` naming every ticket and `Lands: #a, #b, ...`. Its CI is the gate (all 6+3 Windows shards and the gate job). A merge-resolution review covers any real content conflict.
 6. Merge the batch PR (merge commit). GitHub marks each original PR merged because its head is now in main; if one is not, close it with a comment "landed in batch PR #N".
 Harness PRs still land ALONE, never in a batch PR.
+NEVER merge a PR into a batch branch and then revert it (batch 5 did this with #407: main then records it as merged-and-undone, and the PR can never merge cleanly again; owner chose a fresh branch from main, 2026-10-05). If a PR turns red after joining, REBUILD the batch branch from main without it.
+A PR landing ALONE sets crew = main+1 at land time (not a placeholder like 1.0.412): fix it in the last version-only commit right before merge.
 
 ## Cloud ticket IDs (owner rule 2026-10-05)
 New untracked cloud-session tickets are numbered C-0001, C-0002, ... (next free: see CLOUD-SESSION-TICKETS.md). L-1500 to L-1518 keep their IDs.

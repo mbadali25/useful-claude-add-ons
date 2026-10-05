@@ -6,7 +6,7 @@ Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at th
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
 ### State
-- **main = efcf4666, crew 1.0.345, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
+- **main = 7ba4c184 (#499 L-1518 merged 01:15), crew 1.0.345; before it efcf4666, obsidian-vault 0.5.0** (batch PR #498 merged 2026-10-05 ~00:45: #364 T-0052, #416 T-0057, #420 L-0662, all shown merged). 30 PRs merged in this session (list: `CLOUD-SESSION-TICKETS.md` "Merged this session"). ~116 PRs open.
 - Notes branch: `ccr-b039f2bb-6jks7g` (PR #391, docs-only, merges LAST). Log helper: `docs/handoff/cloud/procedures/note.sh "HH:MM: text"` (set `NOTES_DIR` to a worktree of this branch).
 
 ### Owner rules in force (all sessions)
@@ -18,14 +18,15 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
 - Notes after every action; present decisions with a recommendation and tables (owner has ADHD: concise).
 
-### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 00:50]
+### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
+main = 7ba4c184 (#499 L-1518 merged), crew 1.0.345.
 | Item | Where | State | Next |
 |---|---|---|---|
-| #499 L-1518 README "What's new" | `L-1518-build` 860718db | merged main (batch 5) + coordinator FIX: parser skipped batch `###` headings (README showed 1.0.344). Re-review of 9fac87a2 found 3 FIX, fixed in aed63c4d + 860718db; 20/20 suite, sabotage-tested | re-review of 860718db, CI green, then merge alone (repo tooling, no bump) |
-| #497 L-1512 cloud-guard 2304 | `L-1512-build` e8a3fb48 | pylint C0305 fixed; leftover-child hang fixed via process substitution (temp file broke 2 mktemp-failure suites); CI running. Version says 1.0.412, must be 1.0.346 | focused re-check running; fix version; land alone |
-| #407 T-0045 | `T-0045-build` 8588ab74 | 6 Windows jobs red | builder merging main + root-causing; batch 6 once green |
-| #496 L-1508 PR B (harness) | `L-1508b-build` 4807695e | only verify-gate ran | builder getting full CI; then review; lands ALONE |
-| Batch 6 | not started | candidates: #407, #353 T-0011 + #366 T-0059 (stacked), more review-clean Windows-green PRs | batch PR per LANDPREP, with the sync-updates step |
+| C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
+| #497 L-1512 | `L-1512-build` e8a3fb48 | re-check 0 BLOCK / 1 FIX (version 1.0.412 -> 1.0.346); Windows CI green | builder: merge main, 1.0.346, sync-updates; then land alone |
+| #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; version 1.0.413 must become main+1 | review running; lands ALONE after #497 |
+| T-0045 (was #407) | `T-0045-v2-build` (new) | owner chose FRESH BRANCH from main (batch 5 merged-then-reverted #407's old head); cp1252 + depth fixes done | builder rebuilding, closes #407 -> batch 6 |
+| Batch 6 | not started | T-0045 v2, #353 T-0011 + #366 T-0059, more | batch PR per LANDPREP (sync-updates step) |
 
 ### Ready / next up
 - Review-clean, need Windows pre-flight: #421 (green), #364 (green), #416, #407 (after rework), #365/#366 (stacked on #364/#354), plus the 18 older ones in `CLOUD-SESSION-TICKETS.md`.
@@ -44,7 +45,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:56 UTC
+Last updated: 2026-10-05 01:15 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +104,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:20: MERGED #499 L-1518 -> 7ba4c184. Owner: #407 -> fresh branch from main (T-0045-v2-build). #497 re-check 0/1 (version); builder fixing. #496 CI green, review started. C-0001 agent accidentally pkilled a reviewer's pytest; asked reviewer to confirm its rule 4/7 runs were complete. LANDPREP: never merge-then-revert in a batch; alone PRs = main+1 at land.
 - 00:56: L-1508 PR B #496 (harness-only, lands alone) green at 1a264e2a: 9 harness files run require_tool(git), allowlist emptied of harness, 20 new tests, 13/13 sites sabotage-red; crew 1.0.413 placeholder; ready for review
 - 00:47: #407 47061a7a: fixed 200-level nesting bound (3.11/3.12/3.13 green locally) + cp1252 stdout fix (root cause of 8588ab74 Windows reds); NOT merged with main efcf4666 (main reverted #407 in 5ee34bc0; revert-of-revert was denied, owner decision needed); CI running
 - 00:46: L-1512 #497 round 2 at e8a3fb48 - strict probe reads one line via procsub (no EOF wait), pylint C0305 fixed, merged main efcf4666, crew 1.0.412 last; CI running, Windows not yet started
