@@ -33,7 +33,9 @@ cannot be read is `unknown` (and blocks), `blocked` is None when the
 `done` counts as closed (approved 2026-09-26), like `merged`. Order for one
 dependency: its INDEX status cell; a closing word (`cancelled`,
 `superseded`) is returned as itself before any closed-word test; then
-`crew_ticket._index_closed` (None is `unknown` with its why); with no INDEX
+`crew_ticket._index_closed` (None is `unknown` with its why); a row that a
+prose line contradicts (an open row marked closed, or any row marked
+`cancelled`/`superseded` in prose) is `unknown`; with no INDEX
 row, the dependency's spec header (`done`/`merged` closed, a closing word
 named, anything else or no spec `unknown`).
 
@@ -208,11 +210,11 @@ def dependency_state(top, dep):
     if closed is None:
         return "unknown", f"{CANNOT_TELL} whether {dep} is closed: {why}"
     word = _prose_closing(top, dep) if closed else None
+    if closed and found and (word or cell not in crew_state._TABLE_DONE_WORDS):  # pylint: disable=protected-access
+        return "unknown", (f"{CANNOT_TELL} whether {dep} is closed: its {_rel_index()} row says "
+                           f"`{cell}` and a prose line there marks it {word or 'closed'}")
     if word:
         return word, f"a prose line in {_rel_index()} marks {dep} {word}: it will never close as done"
-    if closed and found and cell not in crew_state._TABLE_DONE_WORDS:  # pylint: disable=protected-access
-        return "unknown", (f"{CANNOT_TELL} whether {dep} is closed: its {_rel_index()} row says "
-                           f"`{cell}` and a prose line there marks it closed")
     if closed:
         return "closed", f"{dep} is {cell or 'closed'} in {_rel_index()}"
     if found:

@@ -186,6 +186,16 @@ def test_prose_closing_line_blocks_and_names_it(tmp_path, line, word):
     assert (got["blocked"], got["dependencies"][0]["state"]) == (True, word)
 
 
+@pytest.mark.parametrize("row", ["open", "done"])
+@pytest.mark.parametrize("word", ["Cancelled", "Superseded"])
+def test_a_row_and_a_closing_word_prose_line_disagree_and_are_unknown(tmp_path, row, word):
+    """Group review: the row/prose disagreement rule covers a cancelled or
+    superseded prose line too, not only `Done:`."""
+    root = _repo(tmp_path, f"| T-0002 | {row} | low | r | t |\n\n- {word}: T-0002\n")
+    state, reason = crew_ticket_state.dependency_state(str(root), "T-0002")
+    assert (state, "cannot tell" in reason) == ("unknown", True)
+
+
 def test_prose_done_line_closes(tmp_path):
     root = _repo(tmp_path, "# Work\n\n- Done: T-0002\n")
     assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "closed"
@@ -455,4 +465,3 @@ def test_superseded_with_a_spec_successor_line_is_not_reported(tmp_path, line):
     root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")
     _spec(root, T, header="status: superseded   risk: low", line2=line)
     assert _next_view(root)["problems"] == []
-
