@@ -9,6 +9,39 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.347: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
+
+- **Summary.** On Windows, crew's review and verify checks now run the same git your shell runs, so a git wrapper earlier on PATH can no longer make a check pass on the wrong answer.
+- **What changed.** The harness files PR A left on its lint's allowlist now run
+  `crew_common.require_tool("git")` instead of a bare `"git"`, so on native
+  Windows they judge the git bash, pwsh and `shutil.which` find (a `git.cmd`
+  ahead of `git.exe` on PATH), not whatever CreateProcess reaches:
+  `completion_audit._git_fields`, `crew_ticket._git`, `merged_main._is_ancestor`,
+  `review_gate._git`, `review_ledger.common_dir`, `review_patch._run_raw`,
+  `review_prompt._head`, `verify_fingerprint` (`_head`, `_index_entries`,
+  `_sub_changed`) and `verify_record` (`tree_snapshot`, `_refs_digest`). Each
+  call sits inside its existing `try`, and `ToolNotFound` is a
+  `FileNotFoundError`, so a git that does not resolve takes the same `except`
+  branch a missing one did: the review gate reads UNKNOWN, the completion audit
+  refuses, merged main and the tree snapshot are could-not-tell, the ledger and
+  the review bundle raise naming git. Harness-only: it lands alone under T-0087.
+- **The allowlist entries are gone.** `plugin/crew/tests/test_tool_resolution.py`
+  no longer excuses any harness file, so a bare-name git put back in one fails
+  the lint.
+- **Root `README.md` rides along with a harness change.** `scripts/check-tooling-pr.py`'s
+  `ALONGSIDE` now lists `README.md` (the root file only, no glob): its "What's new" block is
+  generated from this changelog (L-1518), so every harness PR that adds an entry carries it,
+  and without the entry `sync-updates --check` and the tooling-alone check could not both pass.
+  New `scripts/_test/tooling-pr.py` cases: harness + root README is allowed; harness + README +
+  `skills/x/SKILL.md` and harness + `skills/x/README.md` are still refused. Removing the entry
+  turns the must-allow case red.
+- **Tests.** New `plugin/crew/tests/test_harness_tool_resolution.py`: for each
+  site a failing git reachable only through `shutil.which` (a bare `"git"` runs
+  the healthy one and passes), and the guard refuses or reports could-not-tell
+  on every OS; `tree_snapshot`'s two git sites are broken one at a time. Each of
+  the 13 sites put back to a bare `"git"` turned its test red. No sabotage
+  anchor quoted a changed argv; the 8 entries anchored within 15 lines of a
+  change still match exactly once and go red.
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched

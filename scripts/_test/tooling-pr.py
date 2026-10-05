@@ -203,6 +203,26 @@ def case_worktree_rename(tmp: str) -> str:
     return root
 
 
+def case_harness_root_readme(tmp: str) -> str:
+    """Root README.md's "What's new" is generated from CHANGELOG.md (L-1518),
+    so a harness change that adds a CHANGELOG entry carries it."""
+    root = repo(tmp)
+    commit(root, [HARNESS_FILE, "CHANGELOG.md", "README.md"], "harness with its README line")
+    return root
+
+
+def case_harness_readme_and_feature(tmp: str) -> str:
+    """The README entry admits only itself: a feature file beside it still blocks."""
+    root = repo(tmp)
+    commit(root, [HARNESS_FILE, "README.md", "skills/x/SKILL.md"], "harness, README, feature")
+    return root
+
+
+def case_harness_nested_readme(tmp: str) -> str:
+    """Only the root README is listed: a skill's own README is not docs of the harness."""
+    return _harness_with(tmp, "skills/x/README.md")
+
+
 def case_no_origin(tmp: str) -> str:
     root = repo(tmp, origin=False)
     commit(root, [HARNESS_FILE], "harness")
@@ -236,6 +256,10 @@ CASES = [
     ("must-block worktree-rename", case_worktree_rename, 1, "\n  a/feature.py"),
     ("must-allow harness+declared-seam", case_harness_declared_seam, 0, "OK"),
     ("must-allow harness+review-prompts", case_harness_review_prompts, 0, "OK"),
+    ("must-allow harness+root-readme", case_harness_root_readme, 0, "OK"),
+    ("must-block harness+readme+feature", case_harness_readme_and_feature, 1,
+     "  skills/x/SKILL.md"),
+    ("must-block harness+nested-readme", case_harness_nested_readme, 1, "  skills/x/README.md"),
 ]
 
 
