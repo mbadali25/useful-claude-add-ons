@@ -819,7 +819,7 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 | `crew_ticket.py activate --ticket <id>` | Makes `<id>` this worktree's active ticket (`<git-common-dir>/crew/active-ticket`, keyed by worktree), and records the ticket's scope base at branch cut (an existing record is kept; a "could not tell" is printed and the pointer is still set). Without it, the open ticket in `.work/INDEX.md` is used when its `.work/tickets/<id>/` directory exists. |
 | `scope_guard.py` (PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | Refuses an edit when the active ticket has no current approval from your prompt, or when the target is outside Touch. Refuses a shell command that runs `crew_ticket.py approve`, names the approval hook, or writes under `<git-common-dir>/crew/`. |
 | `completion_audit.py` (Stop) | Diffs the whole tree against the ticket's scope base (`scope_base.py`: the commit the ticket started from, else the merge-base with the base branch — `tickets.baseBranch` in `.crew/config.json`, default `origin/HEAD`'s target; a configured branch that names no commit is "could not tell" and fails the audit, never a fall back to `origin/HEAD`) — committed, staged, unstaged and untracked, both ends of a rename — so shell-made writes are caught too. A refresh artifact is admitted without Touch only when the ticket's change reaches it and the edit is a re-anchor or a regeneration (`crew_refresh_check.artifact_verdicts`, crew 1.0.81; the audit applies it once L-0540 lands, and until then admits the whole artifact dirs under approval, as since 1.0.36). A path byte-identical to the merged integration commit is not counted (T-0100, the rule the review bundle shares, `merged_main.py`); a merged-in path taken out of the index (`git rm --cached`) is identical only when its bytes and the mode `git add` would record match, and that mode carries the execute bit only when `core.fileMode` is not false, as the bundle's `add -A` does; the verdict says `merged main <sha> (<ref>): <n> path(s) identical to it not counted`, or `merged main: could not tell` and counts every path — on a pass as well as a failure. `--check --ticket <id>` is the form `/crew:done` calls. |
-| `crew_refresh_check.py --root . --ticket <id> [--json]` | Read-only (since 1.0.36). Per code map, diagram and code graph that the ticket's changed paths reach: `fresh`, `stale` (with the refresh command — `/crew:onboard --refresh <subsystem>`, `/crew:diagram refresh`, and for the graph `graphify update .` where the repo tracks `GRAPH_REPORT.md` beside `graph.json`, else `graphify . --no-viz --code-only`) or `unknown`; `not applicable` when the repo has no graph file; and `fresh-uncommitted` (crew 1.0.349) when everything is current but a refresh-artifact path is uncommitted. `--json` adds `base_source` (`record`, or the fallback used), `stop` (why no refresh can settle the answer, or null) and `uncommitted` (those paths). Exit 0 only when everything is `fresh` — current and committed. |
+| `crew_refresh_check.py --root . --ticket <id> [--json]` | Read-only (since 1.0.36). Per code map, diagram and code graph that the ticket's changed paths reach: `fresh`, `stale` (with the refresh command — `/crew:onboard --refresh <subsystem>`, `/crew:diagram refresh`, and for the graph `graphify update .` where the repo tracks `GRAPH_REPORT.md` beside `graph.json`, else `graphify . --no-viz --code-only`) or `unknown`; `not applicable` when the repo has no graph file; and `fresh-uncommitted` (crew 1.0.349) when everything is current but a refresh-artifact path is uncommitted. `--json` adds `base_source` (`record`, or the fallback used), `stop` (why no refresh can settle the answer, or null) and `uncommitted` (those paths). Since 1.0.362 it also prints a `diagram-embeds` line per README whose generated diagram section has drifted from its sources (whatever the ticket reached): `stale` with `refresh with python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_diagrams.py embed --root .`, or, for malformed markers, `stale` with `stop - needs judgement`; an unreadable source is `unknown`. Exit 0 only when everything is `fresh` — current and committed. |
 
 **Artifacts stay current (since 1.0.36).** The order is implement, then refresh artifacts, then review, then done. `/crew:implement` step 6 runs `crew_refresh_check.py` after `/crew:docs`, runs the command each `stale` line names, commits, and re-runs until `fresh` — before `/crew:review`, so the reviewer reads the refreshed artifacts and the receipt covers them. `/crew:done`'s check 4 runs the same check and refuses on anything but `fresh`; it never runs a refresh itself, because a write after review stales check 1's receipt. Since crew 1.0.349 (T-0063) there are five values, and `fresh` means current **and committed**: an artifact whose own file — the map, the diagram source or a same-stem render, anything under the graph dir — is modified, staged, or untracked and not ignored reads `fresh-uncommitted`, and so does the whole answer when any path under the refresh-artifact dirs is (an out-of-scope map, a `.claude/rules/` file), listed on an `uncommitted:` line. It refuses like `stale`, the fix is a commit, and that commit leaves a review receipt current, because the review bundle is the working state. Precedence: `unknown`, then `stale`, then `fresh-uncommitted`, then `fresh`; a listing git cannot give is `unknown`. The graph is also `fresh` when it is behind by sha but graphify's own `<graph.out>/manifest.json` records the current MD5 of every committed code path that moved since its `built_at_commit` — graphify leaves `graph.json` untouched when the topology did not change, which used to read `stale` for ever; a missing or unparseable manifest leaves the sha answer, and uncommitted code is never confirmed. Staleness is scoped to the paths the ticket changed (scope base against the working tree plus untracked files) and the paths each artifact cites, so an anchor lag from commits outside those paths does not refuse, and an uncommitted edit in a cited path reads `stale` ("commit, then refresh"). Release bookkeeping — `CHANGELOG.md`, `TODO.md` (where check 3 files every ticket's findings), `plugin/PLUGINS.md`, `.claude-plugin/marketplace.json`, any `.claude-plugin/plugin.json`, `plugin/*/BUDGETS.md` — never stales an artifact on its own: every release moves it without invalidating a word. A code map's citations are backticked paths with an optional `:line` or `:start-end`, dot-directories included; a cited directory, or one named on a diagram's `%% Anchors:` line, reaches every path under it. An anchor that names no commit, a code map citing no path, a diff git could not run, a graph with no `built_at_commit`, graphify missing on this machine, a code-map or diagrams dir that cannot be listed, a map or diagram that cannot be read, a `.crew/crew.json` or `.crew/config.json` that exists and does not parse (never read as the defaults), and a scope base that hides the change (none at all, or a fallback equal to HEAD — on the default branch the merge-base is HEAD and hides every commit) are each `unknown`, which refuses like `stale`. Any other fallback base (the merge-base with the default branch, a `record-fallback` entry) is used only when HEAD is on a branch that is not the default one and no commit behind the base names the ticket in its subject — otherwise the ticket's commits may already sit behind it (work pushed to the default branch, or a branch fast-forwarded into it and given one more commit), and the answer is `unknown`, `fallback base <sha> may hide <ticket>'s commits`. A recorded base gets the same subject check: `scope_base.py --record` in a successor checkout whose earlier commits already reached the default branch records HEAD, and the answer is `unknown`, `recorded base <sha> may hide <ticket>'s commits`. Whenever the base hides or may hide the change, every artifact measured against it reads `unknown` too, its reason the top line's stop, in the text and in `--json`'s `artifacts[]` — a `fresh` measured against the wrong diff is never printed. When a fallback base is used, every artifact line says `[fallback base]`. A ticket whose commits reached the default branch under subjects that do not name it is not caught. Some `unknown`s a refresh settles: an anchor that names no commit (usually a squash-merged branch), a map citing no path, or a graph with no `built_at_commit` print `refresh with <command>` like a `stale` line, and `/crew:implement` runs it. The rest print `stop`, and are reported rather than refreshed around; a scope base or config that cannot be trusted puts the `stop` on the top line, and when nothing was measured the output says `not measured - <why>` rather than claiming no artifact is reached. Documents are reported `not measured` — whether a change should touch one is `/crew:docs`'s judgement — and never `fresh`. The refreshes write paths no Touch names, so an approved ticket may write them — and the audit admits them only in the shape a refresh leaves (see "What the guard judges").
 
@@ -2569,6 +2569,27 @@ vanish on dark mode.
 Where the destination renders fenced ```mermaid blocks natively (GitHub, GitLab,
 most wikis), skip the render entirely and embed the source.
 
+**Embedded where people and agents read (since 1.0.362, T-0035).**
+`python3 hooks/scripts/crew_diagrams.py embed --root .` writes every diagram into
+the README nearest its `%% Anchors:` paths, between `<!-- crew-diagrams:begin -->`
+and `<!-- crew-diagrams:end -->`: a `## Diagrams` heading, then per diagram its
+title, its `%% Purpose:` text, the fenced ```mermaid block (the source without its
+`%%` lines) and a link to the source. GitHub draws it for a person; an agent reads
+the same text. The `.mmd` stays the one source and nothing is hand-copied: text
+outside the markers is never touched, and a second run changes no byte. The
+repo-root README, a `SKILL.md`, a README inside the diagrams dir and one another
+generator owns (a `<!-- generated by` first line, such as `docs/qa/README.md`) are
+never targets, and no README is created. `%% Embed: <path>/README.md` or
+`%% Embed: none` in the source overrides the choice. Where `origin` is on
+bitbucket.org, which renders no mermaid fence, the block becomes the rendered
+`out/<name>.svg` as an image with the source in a `<details>`, with a warning when
+git ignores that SVG. `crew_diagrams.py check` exits 1 on drift (a section that is
+not what `embed` writes now), malformed markers or an unreadable source; a README
+not embedded yet is reported `pending` and passes, so adopting is one `embed` run.
+`/crew:diagram` runs `embed` after each draw and refresh; `crew_refresh_check.py`
+reports drift as a `diagram-embeds` line (below), and `scripts/check-marketplace.py`
+runs the same check in this repository.
+
 ### Visio
 
 `skills/crew-diagrams/scripts/visio.ps1 -Detect` checks for an installed licence.
@@ -3393,3 +3414,602 @@ plugin is the first thing to check.
 3. If the code map is stale, the code wins and the map gets deleted.
 
 Those are written into this README and `crew-memory` deliberately. A setup that only agrees with you is the thing you were trying to avoid by adding a review step in the first place.
+
+<!-- crew-diagrams:begin -->
+<!-- generated by crew_diagrams.py embed from docs/diagrams: edit the .mmd sources there, then run it again; text between these markers is replaced -->
+## Diagrams
+
+### Data flow crew config autoclear
+
+context.autoClear: how its settings are read straight from both raw files (not through resolve_config), and how its writer refuses a malformed machine file before handing off to the shared writer.
+
+```mermaid
+flowchart TB
+
+    subgraph AutoClear["NEW at this anchor: context.autoClear's global-only keys and their writer"]
+        direction TB
+        ACREAD["<b>crew_autocycle.settings(root)</b><br/>reads BOTH raw files directly,<br/>NOT resolve_config"]
+        ACWRITE["<b>crew_autoclear_setup.py</b><br/>write_autoclear_method() /<br/>write_autoclear_enabled()"]
+        ACCHECK{"global file<br/>readable?"}
+        ACRAISE>"<b>GlobalConfigUnreadable</b><br/>refuses to write over<br/>a malformed global file"]
+        ACGO["<b>crew_config.</b><br/><b>write_global_config()</b><br/>the SAME atomic writer"]
+    end
+    ACWRITE --> ACCHECK
+    ACCHECK -->|malformed| ACRAISE
+    ACCHECK -->|ok or absent| ACGO
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-autoclear.mmd`](../../docs/diagrams/data-flow-crew-config-autoclear.mmd)
+
+### Data flow crew config menu
+
+The /crew:config menu (its rows, choices, Save, and repo-file delete and restore) and the one file layer every crew config write goes through: lock, compare-and-swap update, no-clobber move.
+
+```mermaid
+flowchart TB
+
+    subgraph Files["NEW (T-0075): the one file layer - plugin/crew/hooks/scripts/crew_config_files.py"]
+        direction TB
+        FLOCK["<b>Lock</b> :104<br/>&lt;path&gt;.lock holding the PID;<br/>machine_lock() first"]
+        FUPD["<b>update_json()</b> :364<br/>read, compare digest, mutate,<br/>replace - inside the lock"]
+        FMOVE["<b>move_no_clobber()</b> :466<br/>a rename that NEVER<br/>replaces its destination"]
+        FREST["<b>read_restorable()</b> :199<br/>the ONE read delete refuses by<br/>and restore accepts by"]
+        FLOCK --- FUPD
+    end
+    subgraph Menu["NEW (T-0075): the /crew:config menu - plugin/crew/hooks/scripts/crew_config_menu.py"]
+        direction TB
+        MSPEC["<b>menu_spec()</b> :317<br/>rows from the layer's template"]
+        MCHOICE["<b>choices()</b> :215<br/>a value is offered only when<br/>the layer's planner accepts it"]
+        MSAVE["<b>save()</b> :480<br/>plans BOTH layers<br/>before writing either"]
+        MPLAN["<b>plan_delete()</b> :800<br/>holds the file's bytes and digests;<br/>delete_preview()"]
+        MDEL["<b>apply_delete()</b> :852<br/>move_aside() to<br/>.crew/config.json.bak-UTC"]
+        MREST["<b>restore_repo_config()</b> :962<br/>moves any current file aside,<br/>create_bytes()"]
+        MSPEC --> MCHOICE
+        MCHOICE --> MSAVE
+        MPLAN --> MDEL
+    end
+    MDEL --> FMOVE
+    MREST --> FMOVE
+    FREST -.-> MPLAN
+    FREST -.-> MREST
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-menu.mmd`](../../docs/diagrams/data-flow-crew-config-menu.mmd)
+
+### Data flow crew config no python
+
+What two guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout.
+
+```mermaid
+flowchart LR
+
+    subgraph NoPython["role-write-guard.sh's no-python fallback - a NARROWER contract than the old one"]
+        direction TB
+        NP1["<b>_resolve_role_write_python()</b><br/>finds no usable interpreter"]
+        NP2["<b>_role_write_fallback_decision()</b><br/>cannot evaluate<br/>guards.roleWrites at all"]
+        NP3["Unrestricted role: allowed.<br/>Restricted or unreadable role:<br/>ALWAYS BLOCKED (exit 2)"]
+        NP1 --> NP2 --> NP3
+    end
+
+    subgraph CloudNoPython["cloud-guard's fallback - reads the resolved repo file (T-0096)"]
+        direction TB
+        CG1["no usable python,<br/>or cloud_guard.py failed"]
+        CG2["<b>_cloud_guard_armed</b><br/>resolved repo file +<br/>machine file"]
+        CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
+        CG1 --> CG2 --> CG3
+    end
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-no-python.mmd`](../../docs/diagrams/data-flow-crew-config-no-python.mmd)
+
+### Data flow crew config ratchet
+
+The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the thirteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
+
+```mermaid
+flowchart TB
+
+    subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
+        direction TB
+        RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>13 keys"]
+        RC["<b>WRITE side:</b><br/>crew_config._RATCHETED<br/>14 keys: the thirteen + pm.authority"]
+        RSHAPE["Confirmed by import + diff + type():<br/>tuple field order differs, so<br/>not one table as written"]
+        RG --- RC --- RSHAPE
+    end
+    subgraph Corrupt["A corrupt config file is its own state, and it BEATS the ratchet"]
+        direction TB
+        LS["<b>crew_config.layer_state(path)</b><br/>absent / corrupt / ok,<br/>either layer"]
+        FORCE["<b>role_write_guard.py</b><br/>corruption in either layer<br/>forces policy = block"]
+        LS --> FORCE
+    end
+    FORCE -.->|"overrides the resolved value"| Ratchet
+    subgraph Except["Thirteen keys do NOT follow the precedence above (read-side ratchet)"]
+        direction TB
+        E1["<b>13 RATCHETED_KEYS</b><br/>resolve by the LOWER rank,<br/>not by repo-beats-global"]
+        E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :564"]
+        E3["Why: crew reads config<br/>out of CLONED repositories"]
+        E4["Absent = the narrowest tier<br/>for ELEVEN of the thirteen"]
+        E5["<b>guards.roleWrites, guards.cloudGuard</b><br/>the two exceptions to E4:<br/>DEFAULT is not their FLOOR"]
+        E6["install.policy: auto is safe -<br/>no repo string becomes a command<br/>(crew_guards.INSTALLABLE)"]
+        E1 --- E2 --- E3 --- E4 --- E5 --- E6
+    end
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-ratchet.mmd`](../../docs/diagrams/data-flow-crew-config-ratchet.mmd)
+
+### Data flow crew config read
+
+The read side: the three config sources (built-in defaults, the machine file, the repo file), how the machine layer is pruned to its template before merging, and how resolve_config() merges them.
+
+```mermaid
+flowchart TB
+
+    subgraph Sources["Three sources, lowest precedence first"]
+        direction TB
+        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>141 leaves, repo template"]
+        GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
+        RES{"which .crew/?<br/>own, else the main<br/>checkout's (a lane)"}
+        REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
+    end
+
+    subgraph Gate["The global layer is filtered BEFORE it is merged"]
+        direction TB
+        TMPL["<b>default_global_config()</b><br/>crew_config.py:432<br/>81 leaves across 20 blocks"]
+        PRUNE["<b>_prune()</b><br/>keeps only keys present<br/>in the template"]
+        FILT["<b>filter_global()</b><br/>returns (kept, ignored)"]
+    end
+
+    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:820 - the single resolver"]
+        direction TB
+        NULLS["<b>without_null_shadows()</b><br/>drops a repo <i>null</i> only where<br/>the global layer supplies a value"]
+        M1["<b>merge_defaults</b><br/>(default_config(), global)"]
+        M2["merge_defaults(that, repo)<br/>call: crew_config.py:854"]
+        SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:855-858"}
+        OUT(["<b>resolved config</b><br/><i>repo beats global beats default</i>"])
+    end
+
+    DEF --> M1
+    GLB --> FILT
+    TMPL -.->|"the shape to prune to"| PRUNE
+    PRUNE --> FILT
+    FILT -->|kept| M1
+    FILT -.->|"ignored - named, never silent"| IGN>"keys a global file may not set"]
+    RES --> REPO
+    REPO --> NULLS
+    NULLS --> M2
+    M1 --> M2
+    M2 --> SCHEMA
+    SCHEMA -->|"in repo file: use it"| OUT
+    SCHEMA -->|"absent: pop it entirely"| OUT
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-read.mmd`](../../docs/diagrams/data-flow-crew-config-read.mmd)
+
+### Data flow crew config shell route
+
+shellRoute: the two config keys read through resolve_config, beside the machine-local probe cache that is not a config layer, both feeding crew_shell.decide().
+
+```mermaid
+flowchart LR
+
+    subgraph ShellRoute["T-0040: shellRoute is config; the probe's answer is not"]
+        direction TB
+        SR["<b>shellRoute.mode / .distro</b><br/>both layers, read through<br/>resolve_config"]
+        SRC[("<b>~/.claude/crew/shell-route.json</b><br/>the probe cache -<br/>NOT a config layer")]
+        SRD["<b>crew_shell.decide() / status_line()</b><br/>native Windows only"]
+        SR --> SRD
+        SRC --> SRD
+    end
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-shell-route.mmd`](../../docs/diagrams/data-flow-crew-config-shell-route.mmd)
+
+### Data flow crew config split
+
+What may be set in the machine file versus only in the repo file (measured leaf counts), and the one asymmetry between the read rule and the write rule.
+
+```mermaid
+flowchart TB
+
+    subgraph Asym["The asymmetry, stated because 'exactly what' hides it"]
+        direction TB
+        A1["Both rules agree on which PATHS."]
+        A2["The WRITE path additionally<br/>rejects VALUES the READ path<br/>only reports."]
+        A3["resolve_config NEVER raises -<br/>a malformed file must not wedge<br/>every session on the machine."]
+        A1 --- A2 --- A3
+    end
+
+    subgraph Split["What may be set where - measured, not asserted (executed this pass)"]
+        direction TB
+        S1["<b>81 global-settable</b> leaves<br/>across twenty blocks"]
+        S2["<b>60 repo-only</b> leaves<br/>(set difference, executed)"]
+        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>141 / 81 / 60"]
+        S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus<br/>is excluded from the global template"]
+        S1 --- S2 --- S3 --- S4
+    end
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-split.mmd`](../../docs/diagrams/data-flow-crew-config-split.mmd)
+
+### Data flow crew config two files
+
+An open question: crew_config.py reads .crew/config.json while crew_context.py reads .crew/crew.json first, so which file governs depends on which module asks.
+
+```mermaid
+flowchart TB
+
+    subgraph TwoFiles["OPEN AUTHORITY QUESTION - two modules read two different repo files as \"the config\""]
+        direction TB
+        CFGREAD["<b>crew_config.py</b> reads ONLY<br/>.crew/config.json (schema 7)"]
+        CTXREAD["<b>crew_context.load_crew_config()</b><br/>.crew/crew.json FIRST,<br/>then .crew/config.json"]
+        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1)"]
+        OPEN["<b>Net effect:</b> which file governs<br/>depends on which module asked.<br/>OPEN - not resolved here"]
+        TRKREAD["<b>crew_tracker.resolve()</b><br/>reads BOTH files; answers<br/>'could not tell' on disagreement"]
+        MIGRATE -.-> CTXREAD
+        CFGREAD --- OPEN --- CTXREAD
+        TRKREAD -.- OPEN
+    end
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-two-files.mmd`](../../docs/diagrams/data-flow-crew-config-two-files.mmd)
+
+### Data flow crew config write
+
+The two writers behind /crew:config --set: the machine-file planner and the repo-file planner, the per-leaf and merged-file checks both share, and where each refuses.
+
+```mermaid
+flowchart TB
+
+    subgraph Write["The WRITE side - /crew:config --set, and the menu's Save (machine layer)"]
+        direction TB
+        PLAN["<b>plan_global_write()</b><br/>crew_config.py:2936, <i>pure</i>"]
+        ISG{"per LEAF:<br/>allowed?"}
+        REFUSE>"GlobalWriteRefused (class :2286)<br/>names the path AND lists every allowed one"]
+        MERGED{"merged file<br/>OK?"}
+        WIDEN["<b>_plan_on()</b><br/>writes the judged leaves,<br/>marks each with _widens()"]
+        WRITE["<b>write_global_config()</b><br/>the only crew write<br/>outside the repo"]
+    end
+
+    PLAN --> ISG
+    ISG -->|"refused leaf"| REFUSE
+    ISG -->|ok| MERGED
+    MERGED -->|"bad value in the merged file"| REFUSE
+    MERGED -->|ok| WIDEN
+    WIDEN --> WRITE
+    subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
+        direction TB
+        RPLAN["<b>plan_repo_write()</b><br/>crew_config.py:3136"]
+        RREF>"<b>RepoWriteRefused</b><br/>(class :2988)"]
+        RWIDEN["<b>repo_widens()</b> :3068<br/>the ratchet against<br/>what is in force"]
+        RWRITE["<b>write_repo_config()</b><br/>crew_config.py:3162<br/>never creates the file"]
+        RPLAN -->|"refused leaf, or a bad value in the merged file"| RREF
+        RPLAN --> RWIDEN --> RWRITE
+    end
+    ISG -.->|"the same per-leaf judgement and merged-file check"| RPLAN
+    MERGED ~~~ RPLAN
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-write.mmd`](../../docs/diagrams/data-flow-crew-config-write.mmd)
+
+### Data flow crew config
+
+How one crew config value reaches a run, and what may set it where, as a map of the part diagrams (each box is one data-flow-crew-config-<part>.mmd); only the main flows between parts are drawn. no-python is a standalone fallback with no link to any other part, see data-flow-crew-config-no-python.mmd.
+
+```mermaid
+flowchart LR
+    menu["<b>menu</b><br/>/crew:config menu + file layer"]
+    read["<b>read</b><br/>sources, filter, merge"]
+    write["<b>write</b><br/>machine and repo writers"]
+    ratchet["<b>ratchet</b><br/>ratchet tables, exceptions"]
+    autoclear["<b>autoclear</b><br/>autoClear read and writer"]
+    twofiles["<b>two-files</b><br/>OPEN: config.json or crew.json"]
+    split["<b>split</b><br/>what may be set where"]
+    shell["<b>shell-route</b><br/>shellRoute config"]
+
+    menu -->|"writes both files"| read
+    menu -->|"Save"| write
+    read -.->|"same template"| write
+    write -.->|"widening notice"| ratchet
+    read -.->|"raw files"| autoclear
+    read -.->|"repo file"| twofiles
+    read -.->|"resolved config"| split
+    read -->|"resolved config"| shell
+```
+
+Source: [`docs/diagrams/data-flow-crew-config.mmd`](../../docs/diagrams/data-flow-crew-config.mmd)
+
+### Process crew brief crew context
+
+The crew-context SessionStart hook: how it reads the config, applies the stale-handoff rule and the auto-resume decision, and what it emits as additionalContext for each session source.
+
+```mermaid
+flowchart TB
+    CC[crew-context]
+    subgraph crewContext["crew-context (crew_context.py)"]
+        CC --> cc1{".crew/ directory?<br/>:993"}
+        cc1 -- no --> ccx([emit nothing])
+        cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
+        cc2 --> cc3{"memory.inject?<br/>:1000-1003"}
+        cc3 -- off --> cc4[incident banner only]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:881-892"]
+        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch"}
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
+        stale -- no --> cc6
+        arch --> cc6
+        stale -. "stale but the move failed:<br/>note stays, stale passed on (:893)" .-> cc6
+        cc6{"auto-resume armed?<br/>:900"}
+        cc6 -- "no (off)" --> src{"source?"}
+        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :687"]
+        rs1 --> src
+        src -- startup --> ptr["pointer + next action<br/>:908-910"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
+    end
+
+    ptr --> out(["additionalContext JSON<br/>:1090"])
+    full --> out
+    cc4 --> out
+```
+
+Source: [`docs/diagrams/process-crew-brief-crew-context.mmd`](../../docs/diagrams/process-crew-brief-crew-context.mmd)
+
+### Process crew brief handoff read
+
+The handoff-read SessionStart hook: the three checks that make it exit, and when it prints the handoff note. In crew 1.0 it usually exits, because crew-context delivers the note instead.
+
+```mermaid
+flowchart TB
+    HR[handoff-read]
+    subgraph handoffRead["handoff-read.sh"]
+        HR --> hr1{"source is<br/>clear/compact/resume/fork?<br/>:34"}
+        hr1 -- no --> hrx([exit 0])
+        hr1 -- yes --> hr2{"memory.inject on?<br/>:41 (1.0 default: on)"}
+        hr2 -- yes --> hrx
+        hr2 -- no --> hr3{"resolved config.json?<br/>(own, else main checkout's)<br/>:48-50"}
+        hr3 -- no --> hrx
+        hr3 -- yes --> hr4[stale check / print note<br/>:69-95]
+    end
+
+    hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
+```
+
+Source: [`docs/diagrams/process-crew-brief-handoff-read.mmd`](../../docs/diagrams/process-crew-brief-handoff-read.mmd)
+
+### Process crew brief platform sync
+
+The platform-sync SessionStart hook: silent without a crew config, otherwise it heals a broken config and records the machine it is running on.
+
+```mermaid
+flowchart TB
+    PS[platform-sync]
+    subgraph platformSync["platform-sync (crew_platform.py)"]
+        PS --> ps1{"config or .crew/?<br/>:507-530"}
+        ps1 -- no --> psx([exit 0, silent])
+        ps1 -- yes --> ps2["heal_config if broken<br/>:547-563"]
+        ps2 --> ps3["detect machine,<br/>write changed platform fields<br/>:566-584"]
+    end
+```
+
+Source: [`docs/diagrams/process-crew-brief-platform-sync.mmd`](../../docs/diagrams/process-crew-brief-platform-sync.mmd)
+
+### Process crew brief status
+
+What /crew:status reads when run on demand, and the one place it differs from the SessionStart hooks: it checks a fixed handoff path and applies no stale rule.
+
+```mermaid
+flowchart TB
+    subgraph status["/crew:status (on demand)"]
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets ... handoff<br/>:211-240"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:231),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+    end
+```
+
+Source: [`docs/diagrams/process-crew-brief-status.mmd`](../../docs/diagrams/process-crew-brief-status.mmd)
+
+### Process crew brief
+
+What crew 1.0 does when a session starts: hooks.json fans out to three SessionStart hooks, each drawn in its own file, plus the on-demand /crew:status report.
+
+```mermaid
+flowchart TB
+    start([Session starts<br/>source: startup / resume / clear / compact / fork])
+    start --> reg["3 SessionStart pairs<br/>hooks.json:3-10"]
+
+    reg --> HR["handoff-read<br/>process-crew-brief-handoff-read.mmd"]
+    reg --> PS["platform-sync<br/>process-crew-brief-platform-sync.mmd"]
+    reg --> CC["crew-context<br/>process-crew-brief-crew-context.mmd"]
+
+    status(["/crew:status (on demand)<br/>process-crew-brief-status.mmd"])
+```
+
+Source: [`docs/diagrams/process-crew-brief.mmd`](../../docs/diagrams/process-crew-brief.mmd)
+
+### Process crew lifecycle approve
+
+How /crew:approve, typed by the user only, records or refuses a plan approval through the approval hook, including the group-approval path, and how the ticket then moves to planned.
+
+```mermaid
+flowchart TB
+    subgraph approve["/crew:approve - typed by the user only"]
+        ap0["user types /crew:approve id<br/>approve.md:5"]
+        ap0 --> ap1{"approval-hook verdict?<br/>hooks.json:14"}
+        ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
+        ap1 -- recorded --> ap2["approval.json =<br/>digest(spec.md, plan.md)<br/>:12-13"]
+        ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded<br/>until the user's --confirm<br/>approve.md:27-32"]
+        apg -- "confirmed, every hash unchanged" --> ap2
+    end
+
+    ap2 --> planned["spec.md 'status: planned',<br/>move --to planned<br/>plan.md:60-63"]
+    planned --> to_im0>"next: implement part<br/>crew_ticket.py validate"]
+```
+
+Source: [`docs/diagrams/process-crew-lifecycle-approve.mmd`](../../docs/diagrams/process-crew-lifecycle-approve.mmd)
+
+### Process crew lifecycle brainstorm
+
+How a request enters the crew lifecycle: a small change takes /crew:fix, anything else goes through /crew:brainstorm until the user approves a direction and the ticket moves to ready.
+
+```mermaid
+flowchart TB
+    ask([A request])
+    ask --> small{"small change?<br/>brainstorm.md:90-91"}
+    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :75, :95"]
+    small -- no --> BR
+
+    subgraph brainstorm["/crew:brainstorm"]
+        BR["mint T-####: crew_tracker.py create<br/>INDEX row 'direction'<br/>brainstorm.md:15-40"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:45, :54"]
+        br2 --> br3["write direction.md, show, STOP<br/>:63-73"]
+    end
+
+    br3 --> ok1{user approves<br/>the direction?}
+    ok1 -- no --> br2
+    ok1 -- yes --> rdy["crew_tracker.py move --to ready<br/>brainstorm.md:81"]
+
+    fix -.-> BR
+    fix -. "same /crew:approve,<br/>/crew:review, /crew:done" .-> to_ap0>"next: approve part<br/>user types /crew:approve id"]
+    rdy --> to_sp1>"next: spec-plan part<br/>direction.md?"]
+```
+
+Source: [`docs/diagrams/process-crew-lifecycle-brainstorm.mmd`](../../docs/diagrams/process-crew-lifecycle-brainstorm.mmd)
+
+### Process crew lifecycle done
+
+/crew:done's four checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
+
+```mermaid
+flowchart TB
+    subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
+        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
+        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-66"}
+        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-98"]
+        dn1 -- fail --> dnx([refuse done])
+        dn2 -- fail --> dnx
+        dn3 -- fail --> dnx
+        dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:100-103"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:105-110"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:111-115" --> to_im5>"back: implement part<br/>then /crew:review last"]
+    end
+```
+
+Source: [`docs/diagrams/process-crew-lifecycle-done.mmd`](../../docs/diagrams/process-crew-lifecycle-done.mmd)
+
+### Process crew lifecycle implement
+
+/crew:implement from the approval check to handing over to /crew:review: the plan steps under the scope guard, the refresh-artifacts loop and the required standards self-check.
+
+```mermaid
+flowchart TB
+    subgraph implement["/crew:implement"]
+        im0{"plan approved?<br/>implement.md:17-23"}
+        im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
+        im0 -- yes --> im1["scope_base --record (kept if activate<br/>recorded; exit 1 could not tell), then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
+        im1 --> im2["steps in order, test first,<br/>scope-guard on every write<br/>:38-42"]
+        im2 --> im3a["changed-file list, verify<br/>:59, :69"]
+        im3a --> im3["step 6: tests, then /crew:docs<br/>:88-91"]
+        im3 --> rf1{"crew_refresh_check.py<br/>:94"}
+        rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
+        rf2 --> rf1
+        rf1 -- "fresh-uncommitted" --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:99"]
+        rf3 --> rf1
+        rf1 -- "stop" --> rfx([report the reason, stop])
+        rf1 -- fresh --> sc1["required standards self-check<br/>:106-110"]
+        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:111-113"]
+        im4 --> im5["then /crew:review last<br/>:114"]
+    end
+
+    im5 --> to_pf0>"next: review part<br/>preflight first"]
+
+    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
+```
+
+Source: [`docs/diagrams/process-crew-lifecycle-implement.mmd`](../../docs/diagrams/process-crew-lifecycle-implement.mmd)
+
+### Process crew lifecycle review
+
+/crew:review: the preflight, pre-review and self-check gates that run before a round is spent, then the review rounds and their verdicts, ending in a receipt or NEEDS_REPLAN.
+
+```mermaid
+flowchart TB
+    subgraph review["/crew:review - two rounds per ticket"]
+        pf0{"preflight (#264):<br/>receipt, gate, budget?"}
+        pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
+        pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
+        vg0 --> to_im5
+        pf0 -- "go on" --> pr0{"pre-review checks<br/>pass? (L-0574)"}
+        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 5, no round spent<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
+        fx0 --> to_im5
+        pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check<br/>stamped?"}
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:850-861" --> replan
+        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> to_sc1
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Copilot /<br/>crew:reviewer fallback<br/>review.md:25-28, :451"]
+        rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
+        rv2 -- "CLEAN (exact: no other line)" --> rcpt["receipt written<br/>:510"]
+        rv2 -- "FINDINGS (stray prose<br/>ignored and named)" --> rv3{"final round,<br/>0 BLOCK?"}
+        rv3 -- "auto-accept or owner :508" --> rcpt
+        rv3 -- "fix, round 2" --> again_rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> again_rv1
+        rv2 -- "INCOMPLETE (reviewer / tree, a contract-like<br/>or shortfall stray line): counts" --> again_rv1
+        rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan<br/>or autopilot auto-reject])
+    end
+
+    again_rv1>"again: reserve a round,<br/>run the reviewers (above)"]
+    to_im5>"back: implement part<br/>then /crew:review last"]
+    to_sc1>"back: implement part<br/>required standards self-check"]
+    rcpt --> to_dn1>"next: done part<br/>1 review receipt"]
+```
+
+Source: [`docs/diagrams/process-crew-lifecycle-review.mmd`](../../docs/diagrams/process-crew-lifecycle-review.mmd)
+
+### Process crew lifecycle spec plan
+
+/crew:spec writes spec.md from the approved direction, then /crew:plan writes plan.md, amending the spec's Touch list first when a step reaches outside it, and stops for approval.
+
+```mermaid
+flowchart TB
+    subgraph spec["/crew:spec"]
+        sp1{"direction.md?<br/>spec.md:10"}
+        sp1 -- missing --> spx([refuse: run /crew:brainstorm])
+        sp1 -- yes --> sp2["write spec.md<br/>Touch one path per bullet<br/>:15, :38-43"]
+        sp2 --> sp3["crew_tracker.py move --to spec<br/>:45-48"]
+    end
+
+    subgraph plan["/crew:plan"]
+        sp3 --> pl1["write plan.md: steps with<br/>Files / Test / Risk / Standards<br/>plan.md:27, :36"]
+        pl1 --> pl2{"every Files: entry<br/>inside Touch?<br/>:44"}
+        pl2 -- no --> amend["amend spec Touch first<br/>spec.md:57"]
+        amend --> pl1
+        pl2 -- yes --> pl3["show the plan, STOP<br/>:49"]
+    end
+
+    pl3 --> to_ap0>"next: approve part<br/>user types /crew:approve id"]
+```
+
+Source: [`docs/diagrams/process-crew-lifecycle-spec-plan.mmd`](../../docs/diagrams/process-crew-lifecycle-spec-plan.mmd)
+
+### Process crew lifecycle
+
+The whole crew ticket lifecycle at a glance, one node per stage; each stage is drawn in full in its own process-crew-lifecycle-<part>.mmd file.
+
+```mermaid
+flowchart LR
+    ask([A request])
+    fix["/crew:fix<br/>(brainstorm part)"]
+    brainstorm["/crew:brainstorm<br/>(brainstorm part)"]
+    spec["/crew:spec<br/>(spec-plan part)"]
+    plan["/crew:plan<br/>(spec-plan part)"]
+    approve["/crew:approve<br/>(approve part)"]
+    implement["/crew:implement<br/>(implement part)"]
+    review["/crew:review<br/>(review part)"]
+    done["/crew:done<br/>(done part)"]
+    ask -- "small: yes" --> fix
+    ask -- "small: no" --> brainstorm
+    fix -.-> brainstorm
+    brainstorm --> spec --> plan --> approve --> implement --> review --> done
+    fix -. "same /crew:approve,<br/>/crew:review, /crew:done" .-> approve
+```
+
+Source: [`docs/diagrams/process-crew-lifecycle.mmd`](../../docs/diagrams/process-crew-lifecycle.mmd)
+<!-- crew-diagrams:end -->

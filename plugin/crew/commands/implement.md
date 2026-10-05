@@ -88,7 +88,7 @@ confirm the `.crew/verify.json` rule it falls under actually fires.
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
 Coverage above is the tests. Then `/crew:docs`, deciding which documents this touches ("none" is common and
-correct). Then commit, and check the code maps, diagrams and code graph this ticket's changed paths reach:
+correct). Then commit, and check the code maps, diagrams, code graph and README diagram embeds (`crew_diagrams.py`) this ticket's changed paths reach:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1

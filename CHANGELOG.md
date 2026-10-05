@@ -154,6 +154,54 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `8ad90da2`; a reviewer's later checkout measured 619 to 0). `dos` and `fuzz` are not used as
   evidence: Nuclei's own `.nuclei-ignore` already hides most of them.
 
+### Added — `crew` 1.0.362: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
+
+- **What changed.** `plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`
+  writes every diagram under `docs.diagramsDir` into the README nearest its
+  `%% Anchors:` paths, between `<!-- crew-diagrams:begin -->` and
+  `<!-- crew-diagrams:end -->` (each a whole line): a `## Diagrams` heading, then
+  per diagram its title, `%% Purpose:` text, the fenced mermaid block and a source
+  link - read exactly as `diagram_doc.py` reads it (a test pins the two over every
+  diagram in this repo). Text outside the markers is never touched; a second run
+  changes no byte; CRLF READMEs stay CRLF. Never a target: the repo-root README, a
+  `SKILL.md`, a README in the diagrams dir, one another generator owns
+  (`docs/qa/README.md`). `%% Embed: <README>|none` overrides. A Bitbucket `origin`
+  gets the rendered SVG plus the source in `<details>`, with a warning when git
+  ignores the SVG. `check` exits 1 on drift, malformed markers or anything
+  unreadable; a README never embedded is `pending` and passes.
+- **Behaviour change at `/crew:done` check 4.** `crew_refresh_check.py` prints a
+  `diagram-embeds` line per README whose section has drifted (judged over every
+  diagram, whatever the ticket reached): `stale` with `refresh with ...
+  crew_diagrams.py embed --root .`, which `/crew:implement` step 6 runs; malformed
+  markers are `stale` with a new `stop - needs judgement` ending; an unreadable
+  source is `unknown`. Either refuses done. `scripts/check-marketplace.py` runs the
+  same check (`check_diagram_embeds`), with `scripts/_test/check-diagram-embeds.py`
+  as its must-fail/must-pass suite (CI and `gate-runner.py`).
+- **Built on #375, not against it.** The diagrams page (`docs/diagrams/README.md`,
+  `index.html`, `diagram_doc.py`), the readability check and the flat
+  `<kind>-<topic>[-<part>].mmd` naming are #375's and unchanged. Not built here: the
+  spec's per-kind directory layout and nested discovery (it conflicts with #375's
+  flat naming - for the owner), the spec's own index writer (#375's page is it).
+  Split out earlier: the lint and theme (L-0547) and this repo's diagram migration
+  and redraw (L-0548).
+- **First `embed` run in this repo.** `plugin/crew/README.md` (22 diagrams),
+  `plugin/localgpu/README.md` (4) and `skills/README.md` (7) now carry the section
+  exactly as `embed` wrote it, so `check --root .` reports fresh with nothing
+  pending and `check_diagram_embeds` gates real sections. `localgpu` goes to
+  0.1.21 for its README.
+- **Known limits / follow-ups.** Discovery is flat: only `.mmd` files directly in
+  the diagrams dir are embedded or judged, so a nested `.mmd` is neither embedded
+  nor flagged. `crew_diagrams.outside_markers` is unused until the completion-audit
+  allowance below lands. Plan steps not built here, for L-0547/L-0548 or a
+  follow-up: nested discovery by kind dir, the completion-audit allowance,
+  `render.sh` over nested dirs, the sabotage registry entries, and the diagram
+  migration/redraw.
+- **Harness follow-ups (tooling-PR rule).** The completion-audit allowance for a
+  README changed only inside the markers (`completion_audit.py`, using
+  `crew_diagrams.outside_markers`) and a `sabotage_diagrams.py` registration are
+  harness paths and are left out. Until the allowance lands, a ticket whose `embed`
+  refresh writes a README its Touch does not name is flagged by the Stop audit:
+  name the README in Touch.
 ### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
 
 - **Summary.** Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket
