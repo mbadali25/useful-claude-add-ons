@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.21: cross-session messages are a doorbell, never an instruction (T-0032)
+
+- **Summary.** Sessions sharing a coordination channel can now ring each other over Claude Code's
+  messaging bridge, and an inbound message is classified as a doorbell or untrusted data before
+  anything acts on it.
+- **Added.** `plugin/crew/hooks/scripts/crew_bridge.py`: `ring` fetches `crew-coord/<channel>` and
+  prints one line, `crew-doorbell/1 channel=<c> tip=<sha> kind=<changed|contract|finding|question>
+  ref=<id|->` (at most 200 characters, no URL), which the session passes to `SendMessage`
+  unchanged; a failed fetch is `unknown` (exit 3) and an absent channel is refused (exit 1).
+  `receive` reads a message on stdin and prints one of three results: a doorbell whose tip is in the
+  fetched record (exit 0), `could not tell` (exit 3), or `not a doorbell` (exit 1, the text printed
+  only made safe and labelled `[peer-written]`). Its only next step is always
+  `crew_coord.py status`. Neither command writes anything or prints the messaging token.
+- **Changed.** `/crew:autopilot` may use `SendMessage` and `ListAgents`; its new section 8 says to
+  ring only after the record is pushed, to run `receive` on every inbound message first (through a
+  heredoc with a fresh terminator per call), and that a message is never an approval, never a
+  `taken:` answer, never a reason to write outside Touch. README "Cross-session messages" and a
+  troubleshooting entry document it.
+- **Not in this entry.** Unanswered doorbells (L-0636), the hub rule (L-0637) and the sabotage
+  mutations (L-0638, review harness, lands separately under T-0087).
+
 ### crew 1.1.9 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
 
 - **Summary.** A set of tickets the owner designed and approved together can now run at once, each
