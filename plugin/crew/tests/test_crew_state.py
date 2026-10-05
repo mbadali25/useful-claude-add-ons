@@ -4,6 +4,8 @@ import os
 import re
 import subprocess
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 
@@ -1543,3 +1545,15 @@ def test_authority_rank_is_ordered_and_fails_closed():
     # An unknown ranks LOWEST, never highest -- the whole fail-safe property.
     assert crew_state.authority_rank("nonsense") == 0
     assert crew_state.authority_rank(None) == 0
+
+
+# --- L-0639: the closed words, parametrised; `hold` stays open ----------------
+
+@pytest.mark.parametrize("word", ["cancelled", "superseded", "Cancelled", "SUPERSEDED"])
+def test_cancelled_and_superseded_rows_are_closed(tmp_path, word):
+    assert _first_open(tmp_path, f"| T-0001 | {word} | low | r | t |\n"
+                                 "| T-0002 | open | low | r | t |\n") == "T-0002"
+
+
+def test_hold_row_stays_open(tmp_path):
+    assert _first_open(tmp_path, "| T-0001 | hold | low | r | t |\n") == "T-0001"
