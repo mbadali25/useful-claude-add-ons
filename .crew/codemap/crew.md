@@ -2035,8 +2035,20 @@ Added after this note's anchor; read in full at the L-0677 build head. The only 
   calls `review_metrics.record` right after `review_ledger.record` accepts the round and before
   review.json (`plugin/crew/hooks/scripts/review_run.py`, grep `review_metrics.record`), one row
   per round into the MAIN checkout's file (`crew_common._main_checkout`), nothing when git cannot
-  name it. Readers (`crew_state.read_metrics`, `crew_standards.metric`) still read `<root>/.crew/`,
-  so from a linked worktree they do not see it yet - JUDGEMENT: a follow-up reader change.
+  name it. Readers resolve the same file since L-0582: DERIVED (at the commit adding this text)
+  `crew_common.metrics_crew_dir` (`plugin/crew/hooks/scripts/crew_common.py:200`) returns the
+  main checkout's `.crew/` from a linked worktree, `root`'s own otherwise, and `(None, problem)`
+  when git cannot tell - including a linked worktree whose common dir is not named `.git`
+  (`--separate-git-dir`, or a bare repository's worktree: `crew_common._metrics_main`, `crew_common.py:217`), which
+  `_main_checkout` itself still reads as "own" for the repo config; `crew_state.read_metrics` (`plugin/crew/hooks/scripts/crew_state.py:313`)
+  turns a problem into the verdict `could not tell: <why>` with `rate` None, `crew_standards.metric`
+  (`plugin/crew/hooks/scripts/crew_standards.py:840`) exits 1 before any read or `--record`
+  write, and `crew_status._metrics_line` (`plugin/crew/hooks/scripts/crew_status.py:197`) prints
+  `metrics  could not tell (...)` and names a lane's own `metrics.jsonl`/`metrics.md` as not
+  counted (`crew_common.stranded_metrics_copies`, `crew_common.py:247`). None falls back to the
+  worktree's own copy. `review_metrics.metrics_path` still joins the path itself (one AST-allowed
+  site in `plugin/crew/tests/test_metrics_location.py`'s lint) - JUDGEMENT: delegating it is a
+  harness edit for a tooling PR. `crew_metrics.py`'s `metrics.jsonl` WRITER still uses `root`.
 - `.crew/endpoints.json` and its lock file `.crew/endpoints.json.oslock`
   (created on first use, never deleted); see above.
 
@@ -4277,3 +4289,5 @@ to that branch's content commits. This section does not move the file's `anchor:
   `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR).
 
 **Re-anchored `42effe14` -> `69de978c` on 2026-10-04 (T-0041 feature half, crew version set at landing, after merging origin/main into T-0041-build).** `69de978c` changes .crew/verify.json, plugin/crew/README.md, plugin/crew/agents/{explorer,researcher,security}.md, plugin/crew/commands/{done,debug}.md, plugin/crew/hooks/scripts/_test/validate-prompts.py, plugin/crew/skills/{crew-best-practices,crew-brainstorm,crew-plan}/SKILL.md and the new plugin/crew/tests/test_verify_before_stating.py: inserted lines only, plus `**Unverified**` renamed in place in researcher.md, the crew-best-practices description (`:3`) and `.crew/verify.json:554` gaining a comma before a rule appended last. Every body citation of the form `<changed file>:N` in this note was listed by script against each file's first inserted line (verify.json 554, README 2804, explorer 55, researcher 70, security 143, debug 95, done 86, validate-prompts 106, crew-best-practices 76, crew-brainstorm 41, crew-plan 73); every hit was a line number of another file or a dated provenance position, so no body citation moved. One body fact is new and not yet written into the sections above: `validate-prompts.py` now also runs `check_verification_rule()` (`plugin/crew/hooks/scripts/_test/validate-prompts.py:345`, called from `main` at `:381`), which fails when an `agents/*.md` (reviewer exempt by name at `:116`) or `crew-best-practices` loses "Verify before you state", or when explorer, researcher, security, `done.md` or `debug.md` loses its `**Not verified` report section (DERIVED, read at this anchor). No suite was executed for this note.
+
+**L-0582 (2026-10-04, on `62889e15`, the merge of origin/main `ce235468`; the crew version is set at landing).** Only the `.crew/metrics.md` writers bullet was re-derived, at the commit adding this note, by reading the four cited functions. The anchor stays `42effe14`: the rest of this map was not re-verified against the files main changed since, so moving it would claim a check nobody ran. Batch 6 merge: the `crew_common.py` and `crew_status.py` citations in that bullet were re-taken by content on the merged tree (`crew_state.py:313`, `crew_standards.py:840` unmoved).

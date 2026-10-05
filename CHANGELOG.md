@@ -88,6 +88,49 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   Claude fallback in `review.md`'s heredoc; their `validate-prompts.py` checks and
   `sabotage_review.py` entries; the troubleshooting and working-with-codex guide rows.
 
+### Fixed — `crew`: review metrics are read from the main checkout's `.crew/` in a linked worktree (L-0582)
+
+- **What changed.** One resolver, `crew_common.metrics_crew_dir(root)` ->
+  `(crew_dir, problem)`, names the `.crew/` that holds review metrics: the
+  main checkout's from a linked worktree, `root`'s own otherwise (a plain
+  directory, a submodule, the main checkout). A linked worktree whose common
+  dir is not named `.git` (a main made with `git init --separate-git-dir`, or
+  a worktree of a bare repository) is could-not-tell, since git names no
+  main checkout there; the repo config's resolution (T-0088) is unchanged.
+  `crew_state.read_metrics`
+  (`/crew:status` health, `/crew:split`'s `health.rate`), `crew_standards.py
+  metric` (read and `--record` append) and `/crew:status`'s `metrics` line
+  all go through it. When git cannot name the main checkout, nothing falls
+  back to the worktree's own copy: `read_metrics` returns the verdict
+  `could not tell: <why>` with no rate (never `no data`, and neither health
+  trigger fires), `metric` exits 1 before any read or write, and the status
+  line says `metrics  could not tell (<why>)`. A lane's own stranded
+  `.crew/metrics.jsonl` or `.crew/metrics.md` is named on the same status
+  line as `not counted`; it is not read, merged or moved.
+- **Why.** `review_run.py` has written rows to the main checkout's file
+  since L-0578, but every reader still joined `.crew/metrics.md` to the root
+  it was given, so from a lane it read its own (usually absent) copy as
+  "no data", and `metric --record` created that copy.
+- **Tests.** `plugin/crew/tests/test_metrics_location.py` (25 cases): real
+  `git worktree add` fixtures whose lane holds a decoy file with different
+  counts; must-find from the lane and from the main checkout; could-not-tell
+  from a `.git` file naming a missing gitdir, from git not answering, and
+  from `--separate-git-dir` and bare-repository worktrees (every caller); the
+  stranded note for both file names; and an AST lint that fails on any
+  `os.path.join(..., ".crew", "metrics.md" | "metrics.jsonl")` outside
+  `crew_common.py` beyond three allowed sites (`crew_migrate.py` 2,
+  `crew_metrics.py` 1, `review_metrics.py` 1). 18 of the first 20 are red
+  against main (the two green are the main-checkout must-allow controls), and
+  the four layout cases were red against the first cut of this fix. Six
+  mutations were applied by hand and each turned its named tests red.
+- **Not changed.** `crew_metrics.py`'s `metrics.jsonl` writer (run by
+  `/crew:done`) still writes `root`'s copy, so a lane's jsonl rows are now
+  named as not counted rather than counted; `review_metrics.metrics_path`
+  (the writer, which still resolves `--separate-git-dir` and bare-repository
+  worktrees to the lane's own file) and the sabotage entries are harness
+  paths, left for a separate tooling PR (TODO.md, L-0582 follow-ups).
+  Docs: guides none - no guide describes where `metrics.md` is read from.
+
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched

@@ -43,8 +43,9 @@ the evidence keys you rely on (`EVIDENCE_KEYS`); a split needs
 `separable-criteria`: criteria that cannot be verified together.
 
 The findings rate is **repo-wide**: it says tickets here tend to be too large,
-not that this one is. If it is your only evidence, say so and let the user
-decide.
+not that this one is. It comes from `.crew/metrics.md` (the main checkout's,
+also from a linked worktree); a `could not tell` verdict has no rate. If it is
+your only evidence, say so and let the user decide.
 
 **If the ticket is not too large, say so and stop** — write
 `decision: not-too-big`. A command that always finds work is a command nobody
