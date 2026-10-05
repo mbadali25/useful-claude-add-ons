@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.0.347**: The review/gate harness runs the git `shutil.which` found. On Windows, crew's review and verify checks now run the same git your shell runs, so a git wrapper earlier on PATH can no longer make a check pass on the wrong answer.
 - **crew 1.0.346**: Cloud-guard bash tests no longer flake with exit 2304 on Windows. Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343, 0.8s into a run bounded at 120s, empty stderr) and ...
+- **repository**: The README shows the two latest updates and links to the changelog. The README's "What's new" is now two lines, the newest two changelog entries, and a link to the changelog, instead of about 500 lines of update history.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

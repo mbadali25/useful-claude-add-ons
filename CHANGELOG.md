@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.347: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
+### Fixed — `crew` NEXT: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
 
 - **Summary.** On Windows, crew's review and verify checks now run the same git your shell runs, so a git wrapper earlier on PATH can no longer make a check pass on the wrong answer.
 - **What changed.** The harness files PR A left on its lint's allowlist now run
