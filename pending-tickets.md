@@ -23,6 +23,7 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 
 | # | Group | Branch | PRs | Placeholder crew | Status |
 |---|---|---|---|---|---|
+| 0 | G0 coord + wave (prerequisites, lands first) | `rush/g0-coord-wave` | T-0030 (`T-0030-coord`), T-0029 (`T-0029-wave`), feature halves; harness halves go to H1/H2 | 1.1.9 | building |
 | 1 | G1 ports: tracker, gitignore, graph, migrate | `rush/g1-ports` | #478, #464, #376, #346, #367, #370 | 1.1.1 | building |
 | 2 | G1b ports: reference, hygiene, help, archive, CI | `rush/g1b-ports` | #345, #349, #359, #341, #324 | 1.1.6 | building |
 | 3 | G2 autopilot ports | `rush/g2-autopilot` | #354, #395, #342, #358, #369, #363, #365, #366 | 1.1.2 | building |
@@ -46,8 +47,8 @@ sets 1.2.0. The drift check dates a version from its first commit, so every re-m
 | PRs | Blocked by | Note |
 |---|---|---|
 | L-0541 | its direction/spec is only in the owner's local ticket folder | owner 2026-10-05: ready to build. Owner's local session: publish `docs/tickets/L-0541/` to branch `L-0541-build` (as the other handoffs). If it is not there when G6 reaches it, the builder drafts a spec from T-0012's split and T-0056's dependency rows, has Codex review the spec, then builds |
-| #408 T-0031, #410 L-0633, #412 L-0634, #434 T-0032, #437 L-0636, #442 L-0637; H2: #415 L-0635, #448 L-0638 | **T-0030** (`crew_coord.py`) | Code only on the owner's machine (branch `T-0030-coord`, not on the remote; main has no `crew_coord.py`). Owner: push T-0030 (or publish its handoff) so it can join the rush |
-| #410 L-0633, #412 L-0634, #442 L-0637, #443 T-0067 (G6); H2: #415, #448 | **T-0029** (`crew_wave.py`, the autopilot wave) | Same: in progress locally, "far behind main", no `crew_wave.py` on main. Owner: push T-0029 or publish its handoff |
+| #408 T-0031, #410 L-0633, #412 L-0634, #434 T-0032, #437 L-0636, #442 L-0637; H2: #415 L-0635, #448 L-0638 | **T-0030** (`crew_coord.py`) | Pushed 2026-10-05 as `T-0030-coord`; ported in G0. The blocked PRs un-skip once G0 lands in `release/1.2.0` |
+| #410 L-0633, #412 L-0634, #442 L-0637, #443 T-0067 (G6); H2: #415, #448 | **T-0029** (`crew_wave.py`, the autopilot wave) | Pushed 2026-10-05 as `T-0029-wave`; ported in G0, after T-0030. Same un-skip rule |
 | #445 L-0648 | L-0564 (ordering only) | promote-gate review follow-ups in the same files; not a hard blocker, whichever lands second merges main |
 | #490 L-0690 | L-0609 (constraint only) | wallclock flake in `test_ps1_python_probe.py`: new tests must not assert an upper time bound. Not a hard blocker |
 | #391 | n/a | the landing session's notes branch; not touched by this rush |
