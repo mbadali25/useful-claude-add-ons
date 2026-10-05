@@ -1787,8 +1787,8 @@ def settings(root):
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
                               "approves or takes an answer) and autopilot reads as off")]}
-    result = _settings_at(top)
-    result["warnings"] += crew_config.autopilot_inert_warnings(top, _failure)  # T-0070
+    result = crew_autopilot_sleep.with_log_warnings(top, _settings_at(top))  # L-0653
+    result["warnings"] += crew_config.autopilot_inert_warnings(top, _failure)  # T-0070  # T-0070
     return result
 
 
@@ -2310,6 +2310,7 @@ def approve(root, ticket):
         _PINNED.decisions = {}
     text = (f"self-approved {ticket} under approval={got['policy']}, "
             f"risk={got['risk'] if got['known'] else 'unknown (high)'}{got.get('sleep', '')}")
+    text += crew_autopilot_sleep.log_approval(top, ticket)  # L-0653: asleep, the log entry
     if successor is not None and not successor[0]:
         return 3, f"{text}\nreview is still NEEDS_REPLAN -- {successor[1]}"
     return 0, text
@@ -2446,12 +2447,11 @@ def questions_text(result):
 
 GOAL_ROUTE_FIRST = "goal takes free text, never on a shell line: the command runs route --root . --first goal"
 # Script actions whose code (parsers, usage and `main`) lives in a sibling module.
-EXTRA_ACTIONS = {"goal-propose": "crew_autopilot_goal", "goal-approve": "crew_autopilot_goal",
-                 "goal-run": "crew_autopilot_goal", "goal-mark": "crew_autopilot_handoff",
-                 "handoff-resume": "crew_autopilot_handoff", "tracker": "crew_autopilot_docs",
-                 "sleep": "crew_autopilot_sleep", "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split",
-                 "slice": "crew_autopilot_slices", "slice-done": "crew_autopilot_slices",
-                 "next-slice": "crew_autopilot_slices"}
+EXTRA_ACTIONS = {**dict.fromkeys(("goal-propose", "goal-approve", "goal-run"), "crew_autopilot_goal"),
+                 **dict.fromkeys(("goal-mark", "handoff-resume"), "crew_autopilot_handoff"),
+                 **dict.fromkeys(("sleep", "wake", "sleep-note", "sleep-summary"), "crew_autopilot_sleep"),
+                 **dict.fromkeys(("slice", "slice-done", "next-slice"), "crew_autopilot_slices"),
+                 "tracker": "crew_autopilot_docs", "split": "crew_autopilot_split"}
 
 
 def stops():

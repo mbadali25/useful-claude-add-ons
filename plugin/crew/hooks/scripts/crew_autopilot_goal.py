@@ -499,7 +499,7 @@ def split_approved(root, slug):
         return dict(no, reason=f"could not tell whether the split is approved "
                                f"({type(exc).__name__}: {exc})")
     if state == "match":
-        return dict(no, approved=True, via="user-prompt", owner="",
+        return dict(no, approved=True, via="user-prompt", owner="", proposal_sha256=digest,
                     risk=goal_risk(goal["tickets"])["risk"],
                     reason="the owner approved this proposal")
     policy = split_policy(top, slug, goal)
@@ -527,7 +527,7 @@ def split_approved(root, slug):
         return dict(base, reason=f"could not re-read the goal file before noting the approval "
                                  f"({type(exc).__name__}: {exc})")
     return dict(base, approved=True, via=via, owner="", warnings=warnings,
-                reason=policy["reason"])
+                proposal_sha256=digest, reason=policy["reason"])
 
 
 def split_approved_text(slug, result):
@@ -565,7 +565,7 @@ def main(args):
             result = split_approved(args.root, args.goal)
             code, text = (0 if result["approved"] else 2), split_approved_text(args.goal, result)
             if result["approved"]:
-                minted = backlog.mint_goal(args.root, args.goal)
+                minted = backlog.mint_goal(args.root, args.goal, result["proposal_sha256"])
                 result["mint"] = minted
                 code = 2 if minted["stop"] else 0
                 text = "\n".join([text] + backlog.mint_text(minted)

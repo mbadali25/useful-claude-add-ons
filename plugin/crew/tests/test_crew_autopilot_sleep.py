@@ -1594,3 +1594,191 @@ def test_a_manual_sleep_outside_the_window_never_loosens_deploy(tmp_path, monkey
 
     assert (got, day, tighter, _asks(root, "nonProd")["verdict"]) == (
         "none", {"deploy": "none"}, "none", "ask")
+
+
+@pytest.mark.parametrize("night,want", [({"deploy": "none"}, "none"), ({}, "nonprod")],
+                         ids=["override-none", "all-reads-nonprod"])
+def test_manual_sleep_admits_a_deploy_only_tightening(tmp_path, monkeypatch, clock, capsys,
+                                                      night, want):
+    """L-0654 review r1: with day `deploy: all`, a manual sleep outside the window
+    tightens deploy even when approval and questions would not change."""
+    clock(DAY)
+    root = _deploy_repo(tmp_path, monkeypatch, "all", dict({"schedule": "22:00-07:00"}, **night))
+    with open(os.path.join(root, ".crew", "config.json"), encoding="utf-8") as handle:
+        config = json.load(handle)
+    config["scope"] = {"mode": "off", "allowCliApproval": True}
+    _write(os.path.join(root, ".crew", "config.json"), json.dumps(config))
+    os.system(f"git init -q {root}")  # the manual record lives under the git common dir
+
+    code = crew_autopilot.main(["sleep", "--root", root])
+    out = capsys.readouterr().out
+
+    assert (code, "tightens deploy" in out, crew_autopilot.settings(root)["deploy"],
+            _asks(root, "prod")["verdict"]) == (0, True, want, "ask")
+
+
+# --- L-0653: the sleep log and the morning summary --------------------------------------
+
+def _log(root):
+    return os.path.join(str(root), ".work", "autopilot", crew_sleep.LOG_NAME)
+
+
+def _log_text(root):
+    path = _log(root)
+    return open(path, encoding="utf-8").read() if os.path.exists(path) else None
+
+
+def _approving(tmp_path):
+    """A repo whose low-risk ticket `approve` allows by night (sleep.approval=self)."""
+    return _repo(tmp_path, approval="human", sleep=_night(approval="self"), risk="low")
+
+
+@pytest.mark.parametrize("when,count", [(NIGHT, 1), (DAY, 0)], ids=["asleep", "awake"])
+def test_approve_asleep_logs_one_entry(tmp_path, clock, when, count):
+    clock(when)
+    root = _repo(tmp_path, approval="self", sleep=_night(approval="self"), risk="low")
+
+    code, text = crew_autopilot.approve(str(root), T)
+    entries = crew_sleep.unreported(_log_text(root) or "")
+
+    assert (code, len(entries), [(e["ticket"], e["kind"]) for e in entries],
+            "warning" in text) == (0, count, [(T, "approved")] * count, False)
+
+
+def test_approve_asleep_names_the_night_setting(tmp_path, clock):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+
+    crew_autopilot.approve(str(root), T)
+
+    assert crew_sleep.unreported(_log_text(root))[0]["setting"] == "sleep.approval=self (day human)"
+
+
+def test_sleep_note(tmp_path, clock, capsys):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    asleep = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "answered",
+                  "--text", "Q1: Option A")
+    clock(DAY)
+    before = _log_text(root)
+    awake = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")
+
+    assert (asleep[0], awake[0], _log_text(root) == before,
+            [e["kind"] for e in crew_sleep.unreported(before)]) == (0, 2, True, ["answered"])
+
+
+@pytest.mark.parametrize("text", ["two\nlines", "a | b | approved | c", "- reported 2026-10-05T00:00:00",
+                                  "x\n- reported 2026-10-05T00:00:00", " - 2026 | T-9 | approved | y | z"])
+def test_log_fields_cannot_forge_an_entry(tmp_path, clock, capsys, text):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+
+    _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text", text)
+
+    lines = _log_text(root).splitlines()
+    assert (len(lines), lines[0].startswith("- 2026-10-04T23:00:00 | T-1 | note | "),
+            len(crew_sleep.unreported(_log_text(root)))) == (1, True, 1)
+
+
+def test_summary_reports_once(tmp_path, clock, capsys):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    crew_autopilot.approve(str(root), T)
+    _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "answered", "--text", "Q1: Option A")
+    clock(DAY)
+
+    first = _cmd(root, capsys, "sleep-summary")
+    after_first = _log_text(root)
+    second = _cmd(root, capsys, "sleep-summary")
+
+    assert (first[0], first[1].splitlines()[:2], len(first[1].splitlines()),
+            after_first.splitlines()[-1].startswith("- reported "),
+            second, _log_text(root) == after_first) == (
+        0, ["sleep summary: 2 decision(s) while asleep", f"{T}:"], 4, True,
+        (0, "no unreported sleep decisions\n"), True)
+
+
+def test_summary_asleep_marks_nothing(tmp_path, clock, capsys):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    crew_autopilot.approve(str(root), T)
+    before = _log_text(root)
+
+    code, out = _cmd(root, capsys, "sleep-summary")
+
+    assert (code, "sleep summary: 1" in out, _log_text(root) == before) == (0, True, True)
+
+
+def test_settings_names_unreported_decisions(tmp_path, clock):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    crew_autopilot.approve(str(root), T)
+    asleep = crew_autopilot.settings(str(root))["warnings"]
+    clock(DAY)
+    awake = crew_autopilot.settings(str(root))["warnings"]
+    crew_autopilot_sleep.sleep_summary(str(root))
+    reported = crew_autopilot.settings(str(root))["warnings"]
+
+    named = [w for w in awake if "sleep decisions are unreported" in w]
+    assert (named, [w for w in asleep + reported if "unreported" in w]) == (
+        ["1 sleep decisions are unreported - run crew_autopilot.py sleep-summary"], [])
+
+
+def test_wake_prints_the_summary(tmp_path, clock, capsys):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    crew_autopilot.approve(str(root), T)
+
+    code, out = _cmd(root, capsys, "wake")
+
+    lines = out.splitlines()
+    assert (code, lines[0].startswith("awake"), lines[1]) == (
+        0, True, "sleep summary: 1 decision(s) while asleep")
+
+
+@pytest.mark.parametrize("how", ["directory", "dangling-link"])
+def test_unreadable_log_is_not_empty(tmp_path, clock, capsys, how):
+    clock(DAY)
+    root = _approving(tmp_path)
+    path = _log(root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if how == "directory":
+        os.makedirs(path)
+    else:
+        os.symlink(path + ".gone", path)
+
+    warnings = crew_autopilot.settings(str(root))["warnings"]
+    code, out = _cmd(root, capsys, "sleep-summary")
+
+    assert (any("sleep log could not be read" in w for w in warnings), code,
+            "no unreported" in out) == (True, 1, False)
+
+
+def test_approve_survives_an_unwritable_log(tmp_path, clock):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    _write(os.path.join(str(root), ".work", "autopilot"), "a file where the folder goes")
+
+    code, text = crew_autopilot.approve(str(root), T)
+
+    assert (code, text.splitlines()[0].startswith(f"self-approved {T}"),
+            "warning: sleep log not written" in text,
+            os.path.exists(crew_ticket.approval_path(str(root), T))) == (
+        0, True, True, True)
+
+
+def test_two_processes_append_whole_lines(tmp_path, clock):
+    """Concurrent appends from two processes: every line whole, none lost."""
+    import subprocess  # pylint: disable=import-outside-toplevel
+    import sys  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path)
+    code = ("import sys, datetime; sys.path.insert(0, sys.argv[1]); import crew_autopilot_sleep as s, "
+            "crew_sleep as c\nfor n in range(200):\n    s._append(sys.argv[2], c.log_line("
+            "datetime.datetime(2026, 10, 4, 23, 0), 'T-1', 'note', f'{sys.argv[3]}-{n}', 'x'))")
+    scripts = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
+    procs = [subprocess.Popen([sys.executable, "-c", code, scripts, str(root), tag])  # pylint: disable=consider-using-with
+             for tag in ("a", "b")]
+    assert [p.wait(timeout=60) for p in procs] == [0, 0]
+
+    entries = crew_sleep.unreported(_log_text(root))
+    assert (len(_log_text(root).splitlines()), len(entries)) == (400, 400)

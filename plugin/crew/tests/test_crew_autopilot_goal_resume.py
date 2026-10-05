@@ -96,7 +96,8 @@ def test_goal_mark_keeps_the_rest_of_the_file_byte_for_byte(tmp_path):
 
     handoff.goal_mark(str(root), slug, "running", "T-0001")
 
-    strip = lambda text: {k: v for k, v in json.loads(text).items() if k != "run"}  # noqa: E731
+    def strip(text):
+        return {k: v for k, v in json.loads(text).items() if k != "run"}
     assert (_read(_path(root, slug)).split('"run"')[0] == first.split('"run"')[0],
             strip(first) == strip(_read(_path(root, slug)))) == (True, True)
 
@@ -652,3 +653,24 @@ def test_two_resume_lines_keep_the_drift_check(tmp_path, monkeypatch):
     text = f"resume: /crew:autopilot --goal {slug}\nresume: /crew:done T-0001\n"
 
     assert crew_goal_state.running_goal_handoff(str(root), text) is False
+
+
+@pytest.mark.parametrize("how", ["dangling-link", "a-file"])
+def test_a_goal_folder_that_is_not_a_directory_is_unknown_not_missing(tmp_path, monkeypatch, how):
+    """L-0658 review r3: `.work/autopilot` that is a dangling link (or a file)
+    makes every goal file under it unreadable, never absent."""
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    folder = root / ".work" / "autopilot"
+    import shutil  # pylint: disable=import-outside-toplevel
+    shutil.rmtree(folder)
+    if how == "dangling-link":
+        os.symlink(str(tmp_path / "gone"), str(folder))
+    else:
+        _write(folder, "not a folder")
+    _goal_handoff(root, slug)
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (crew_goal_state.run_state(str(root), slug)["state"], got["stop"],
+            "could not read" in got["reason"]) == ("unknown", True, True)

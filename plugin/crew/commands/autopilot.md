@@ -76,7 +76,7 @@ The policy (T-0010; `next`'s reason names it; `human` always stops) is one write
 prints `self-approved ...` (report it by name, go round again) or `refused:` (stop; the human types `/crew:approve <ticket>`). For a question, research it (crew:explorer, crew:researcher)
 into `questions.md`: `## Q<n>: <question>`, a `Research:` line, then 2-4 `### Option <id>` blocks, the first marked `(recommended)`, each with a `Cost:` line. Then run
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py questions-check --root . --ticket <ticket>`:
-`valid=1 action=take` - add `taken: Option <id> by autopilot (<policy>)`, answer the item `none - <option> (autopilot)`, recheck, report each `taken:`; anything else stops.
+`valid=1 action=take` - add `taken: Option <id> by autopilot (<policy>)`, answer the item `none - <option> (autopilot)`, recheck, report each `taken:`, and while `sleep=asleep` run `crew_autopilot.py sleep-note --root . --ticket <ticket> --kind answered --text "Q<n>: Option <id>"` for each (L-0653; it writes only the local sleep log); anything else stops. `settings` warning `sleep decisions are unreported`: run `crew_autopilot.py sleep-summary --root .` and print its lines.
 
 A review phase ends at its verdict: stop following `review.md` once the round is recorded, from `/crew:review` or inside `/crew:implement` step 6; never fix and rerun inside the phase. Report
 BLOCK and FIX lines verbatim; fixing, `review_ledger.py --accept` and `gh pr review` are the human's. Go back through `next`: it stops at FINDINGS or an unrefunded INCOMPLETE (a

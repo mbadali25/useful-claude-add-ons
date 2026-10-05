@@ -39,6 +39,12 @@ def run_state(root, slug):
     try:
         os.lstat(path)
     except FileNotFoundError:
+        # A `.work` or `.work/autopilot` entry that is there but no directory
+        # (a dangling link, a file) cannot say the goal is absent (review r3).
+        for parent in (os.path.dirname(path), os.path.dirname(os.path.dirname(path))):
+            if os.path.lexists(parent) and not os.path.isdir(parent):
+                return {"state": "unknown", "ticket": None,
+                        "reason": f"{os.path.basename(parent)} is not a directory it can read"}
         return {"state": "missing", "ticket": None, "reason": ""}
     except OSError as exc:  # there or not, it cannot be told: never "missing"
         return {"state": "unknown", "ticket": None,

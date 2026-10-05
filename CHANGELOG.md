@@ -9,6 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.24: sleep log and morning summary (L-0653)
+
+- **Summary.** Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
+- **What changed.** `.work/autopilot/sleep-log.md` (local, append-only, one whole line per write, never committed or read to decide anything): `approve` appends an `approved` entry after its receipt while asleep (a log that cannot be written never undoes the approval; it warns); `crew_autopilot.py sleep-note --ticket <id> --kind answered|note --text <t>` appends one entry, only while asleep; `crew_autopilot.py sleep-summary` prints the unreported entries and, once awake, appends a `- reported` marker. `wake` prints the summary when there is one, and `settings` warns while decisions are unreported. Fields are folded to one line with `|` replaced, so none can forge an entry or a marker; an unreadable log is never read as empty. `autopilot.md` calls `sleep-note` for each answer it takes while asleep.
+- **Also (L-0654 review round 1).** A manual sleep whose only tightening is `deploy` is admitted.
+- **Also (L-0541 review round 5).** Minting re-checks, under the goal lock, that the proposal is still the one approved; a goal whose remaining tickets were all cancelled or superseded stops for the owner instead of reporting done.
+- **Also (L-0658 review round 3).** A `.work/autopilot` that is a dangling link or a file makes a goal file could-not-tell, never missing.
+- **Tests.** `test_crew_autopilot_sleep.py` (one entry per approve asleep, sleep-note asleep and awake, forged fields, the summary once, asleep marks nothing, settings' count, wake's summary, an unreadable log, an unwritable log, two processes appending), and the only-writer test in `test_crew_autopilot_policy.py`.
+
 ### Added — crew 1.1.24: sleep deploy override, `nonprod` only; production always waits while asleep (L-0654)
 
 - **Summary.** While autopilot is asleep it may deploy to non-production environments if you allow it, and it never deploys to production unattended.

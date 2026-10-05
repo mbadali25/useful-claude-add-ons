@@ -4838,4 +4838,14 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `day["deploy"]` and a `deployNote`. `crew_autopilot._settings_at` returns its answer as
   `deploy`; `_decide` pins the note and `deploy_allowed` appends it to the reason.
 - JUDGEMENT. Inert until T-0045 dispatches a deploy; `unknown` leaves the day value (main's
-  behaviour), as the spec chose.
+  behaviour), as the spec chose. Review r1: a manual sleep whose only tightening is `deploy`
+  is admitted (`crew_autopilot_sleep.sleep_now`).
+
+## The sleep log and the morning summary (L-0653, rush/g6b-goals-sleep)
+
+- DERIVED. Text in `plugin/crew/hooks/scripts/crew_sleep.py` (`log_line`, `marker_line`,
+  `unreported`, `summary_text`; the module still opens nothing); the file in
+  `plugin/crew/hooks/scripts/crew_autopilot_sleep.py` (`_append`: one O_APPEND write per line;
+  `log_approval`, `sleep_note`, `sleep_summary`, `with_log_warnings`). Call sites in
+  `crew_autopilot.py`: `approve` appends after its receipt; `settings` adds the warnings;
+  `EXTRA_ACTIONS` routes `sleep-note` and `sleep-summary`.

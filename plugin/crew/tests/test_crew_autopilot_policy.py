@@ -1043,3 +1043,29 @@ def test_backlog_grants_nothing_plan_does_not(tmp_path, approval, risk, allow):
 
     assert (answers["backlog"], answers["plan"][0], answers["plan"][2]) == (
         answers["plan"], False, 2)
+
+
+# --- L-0653: `sleep-note` and `sleep-summary` write only the sleep log -------------
+
+def test_sleep_log_actions_are_only_writing_the_sleep_log(tmp_path, monkeypatch):
+    import datetime  # pylint: disable=import-outside-toplevel
+    import crew_sleep  # pylint: disable=import-outside-toplevel
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _repo(tmp_path, approval="human", risk="low")
+    config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    config["autopilot"]["sleep"] = {"schedule": "22:00-07:00", "approval": "self"}
+    _write(root / ".crew" / "config.json", json.dumps(config))
+    log = str(root / ".work" / "autopilot" / crew_sleep.LOG_NAME)
+    monkeypatch.setattr(crew_sleep, "now", lambda: datetime.datetime(2026, 10, 4, 23, 0))
+    before = _files(root)
+
+    noted = _main(root, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")
+    after_note = _files(root)
+    monkeypatch.setattr(crew_sleep, "now", lambda: datetime.datetime(2026, 10, 5, 12, 0))
+    summed = _main(root, "sleep-summary")
+    after_summary = _files(root)
+
+    def changed(old, new):
+        return sorted(p for p in set(old) | set(new) if old.get(p) != new.get(p))
+    assert (noted, changed(before, after_note), summed, changed(after_note, after_summary)) == (
+        0, [log], 0, [log])

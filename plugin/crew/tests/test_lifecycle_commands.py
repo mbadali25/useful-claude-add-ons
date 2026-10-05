@@ -489,3 +489,12 @@ def test_handoff_command_asks_handoff_resume():
             "a goal line it prints wins over the next command" in flat,
             "crew_autopilot.py handoff-resume --root ." in skill,
             "wins over the next command" in skill) == (True, True, True, True)
+
+
+def test_autopilot_logs_taken_answers_while_asleep_and_reports_them():
+    """L-0653: the command notes each answer it takes while asleep, and runs the
+    morning summary when settings says decisions are unreported."""
+    flat = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert ("crew_autopilot.py sleep-note --root . --ticket <ticket> --kind answered" in flat,
+            "crew_autopilot.py sleep-summary --root ." in flat) == (True, True)

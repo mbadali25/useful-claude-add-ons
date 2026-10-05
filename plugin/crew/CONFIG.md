@@ -2992,6 +2992,23 @@ questions=<override|-> source=<schedule|manual>` on its third (L-0652 adds
 `maxTokensPerSession` on its fourth (L-0541); `--json` adds `day` (the two day values)
 and `sleep`.
 
+**Sleep log and morning summary (L-0653).** Every decision autopilot makes
+while asleep -- an `approve` (`approved`), and each answer the command takes
+(`sleep-note --kind answered`) -- is appended to `.work/autopilot/sleep-log.md`
+as `- <ISO local time> | <ticket> | <kind> | <text> | <setting>`, with the
+setting that allowed it (`sleep.approval=self (day risk)`). The log is local
+(`.work/` is ignored; two worktrees keep two logs), append-only (one write of
+one whole line, O_APPEND), never committed and never read to decide anything:
+it grants nothing. Every field is folded to one line with `|` replaced, so no
+field can forge an entry or a `- reported` marker. `crew_autopilot.py
+sleep-summary` prints the entries after the last marker, grouped by ticket,
+and appends a new marker -- not while still asleep, and not when there is
+nothing to report. `wake` prints the summary after its state line, and once
+the window has ended `settings` warns `<n> sleep decisions are unreported`. A
+log that cannot be written never undoes an approval (`warning: sleep log not
+written`); a log that is there and cannot be read is said so, never "nothing
+to report".
+
 **Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
 every day, `HH:MM-HH:MM` in the machine's local time: start inclusive, end
 exclusive, and a start later than the end crosses midnight (`22:00-07:00` is

@@ -1591,3 +1591,35 @@ def test_a_goal_file_write_that_fails_names_the_ticket_it_made(tmp_path, monkeyp
     assert (code, "minted: ticket 1 T-0001" in out, "unminted: ticket 2" in out,
             "T-0002 was made for ticket 2 but its id did not reach the goal file" in out) == (
         2, True, True, True)
+
+
+# --- L-0541 review round 5 -------------------------------------------------------
+
+def test_a_proposal_edited_after_the_approval_is_not_minted(tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, approval="self", tracker="files")
+    slug = _goal(root)["slug"]
+    path = root / ".work" / "autopilot" / f"{slug}.json"
+    real = crew_autopilot_goal.split_approved
+
+    def approve_then_edit(top, name):
+        got = real(top, name)
+        data = json.loads(_read(path))
+        data["tickets"][0]["title"] = "a different first ticket"
+        _write(path, json.dumps(data))
+        return got
+    monkeypatch.setattr(crew_autopilot_goal, "split_approved", approve_then_edit)
+
+    code = _main(root, "goal-approve", "--goal", slug)
+
+    assert (code, "changed after its split approval" in capsys.readouterr().out,
+            os.path.isdir(root / ".work" / "tickets")) == (2, True, False)
+
+
+def test_a_goal_whose_tickets_all_ended_without_work_is_not_done(tmp_path):
+    tickets = [{"title": "only ticket", "risk": "low", "depends_on": []}]
+    root, slug, _ids = _minted(tmp_path, tickets=tickets)
+    _set_status(root, "T-0001", "cancelled")
+
+    got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+
+    assert (got["stop"], got["done"], "the owner decides" in got["reason"]) == (True, False, True)

@@ -8,6 +8,20 @@ through `ap`, a lazy handle, so importing this module never imports it back.
 
     python3 crew_autopilot.py sleep --root . [--by <text>]
     python3 crew_autopilot.py wake --root .
+    python3 crew_autopilot.py sleep-note --root . --ticket <id> --kind answered|note --text <t>
+    python3 crew_autopilot.py sleep-summary --root .
+
+L-0653: the sleep log, `.work/autopilot/sleep-log.md` (local: `.work/` is
+ignored; never read to decide anything). Every write is one `os.write` of one
+whole line to a descriptor opened with O_APPEND, so nothing is truncated and
+two writers cannot interleave inside a line. `approve` appends an `approved`
+entry while asleep (`log_approval`; a log that cannot be written leaves the
+approval standing and says so); `sleep-note` appends an `answered` or `note`
+entry, only while asleep (exit 2 and nothing written awake); `sleep-summary`
+prints the entries not yet reported, grouped by ticket, and -- not while
+asleep -- appends a `- reported` marker; `wake` prints it after its state
+line; `settings` warns while unreported entries wait (`log_warnings`). A log
+that is there and cannot be read is said so, never "nothing to report".
 """
 import datetime
 import importlib
@@ -121,6 +135,10 @@ def sleep_now(root, by="cli"):
                    f"({'; '.join(found['warnings'])[:200]})")
     tightens = [key for key in crew_sleep.OVERRIDES if _stricter(
         found["overrides"].get(key), conf["day"].get(key))]
+    day_deploy = conf["day"].get("deploy", conf["deploy"])  # L-0654: deploy tightens too
+    if crew_sleep.deploy_overlay(day_deploy, {"state": crew_sleep.ASLEEP, "tightenOnly": True,
+                                              "deploy": found.get("deploy")}, {}) != day_deploy:
+        tightens.append("deploy")
     if found["state"] != crew_sleep.ASLEEP and not tightens:
         return 2, ("refused: no autopilot.sleep override is stricter than its day value, and "
                    "until L-1504 a manual sleep only tightens, so it would change nothing")
@@ -181,11 +199,129 @@ def wake_now(root):
     return 0, f"awake; the schedule resumes at {when.strftime('%H:%M')}"
 
 
-def main(args):
-    """`sleep` and `wake` (L-0652): one line; a crash is a refusal (exit 1)."""
+# --- L-0653: the sleep log --------------------------------------------------------
+
+NOTHING = "no unreported sleep decisions"
+
+
+def log_path(top):
+    return os.path.join(top, ".work", "autopilot", crew_sleep.LOG_NAME)
+
+
+def _read_log(top):
+    """`(text, why)`: the log's text ("" when absent), or None with why for a
+    log that is there and cannot be read -- never read as empty."""
+    path = log_path(top)
     try:
-        code, text = sleep_now(args.root, args.by) if args.action == "sleep" \
-            else wake_now(args.root)
+        with open(path, encoding="utf-8") as handle:
+            return handle.read(), ""
+    except FileNotFoundError:
+        return ("", "") if not os.path.lexists(path) else (None, "it is a dangling link")
+    except (OSError, ValueError) as exc:
+        return None, f"{type(exc).__name__}"
+
+
+def _append(top, line):
+    """One whole line, one `os.write`, O_APPEND: never truncates, never splits."""
+    path = log_path(top)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = line.encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o644)
+    try:
+        if os.write(fd, data) != len(data):
+            raise OSError("short write to the sleep log")
+    finally:
+        os.close(fd)
+
+
+def _setting(conf, key):
+    """`sleep.<key>=<night> (day <day>)` when the night value applied, else `<key>=<value>`."""
+    if key in (conf["sleep"].get("applied") or []):
+        return f"sleep.{key}={conf[key]} (day {conf['day'].get(key)})"
+    return f"{key}={conf[key]}"
+
+
+def log_approval(top, ticket):
+    """`approve`'s entry, after its receipt (L-0653): "" when awake or written,
+    else a warning line -- an approval is never undone by its log."""
+    try:
+        conf = ap.settings(top)
+        if conf["sleep"]["state"] != crew_sleep.ASLEEP:
+            return ""
+        _append(top, crew_sleep.log_line(crew_sleep.now(), ticket, "approved",
+                                         "plan approved by autopilot", _setting(conf, "approval")))
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return ap._one_line(f"\nwarning: sleep log not written ({ap._failure(exc)})")
+    return ""
+
+
+def sleep_note(root, ticket, kind, text):
+    """(exit code, text) for `sleep-note`: one entry, only while asleep."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    if kind not in ("answered", "note"):
+        return 2, "refused: --kind is answered or note"
+    conf = ap.settings(top)
+    if conf["sleep"]["state"] != crew_sleep.ASLEEP:
+        return 2, f"refused: autopilot is not asleep ({conf['sleep']['state']}); nothing written"
+    setting = _setting(conf, "questions") if kind == "answered" else (
+        f"sleep={conf['sleep'].get('schedule') or conf['sleep'].get('source', 'manual')}")
+    _append(top, crew_sleep.log_line(crew_sleep.now(), ticket, kind, text, setting))
+    return 0, "noted"
+
+
+def sleep_summary(root):
+    """(exit code, text) for `sleep-summary`: the unreported entries, then --
+    not while asleep -- one marker. Nothing unreported writes nothing."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    text, why = _read_log(top)
+    if text is None:
+        return 1, f"refused: the sleep log could not be read ({why}); it is not empty"
+    entries = crew_sleep.unreported(text)
+    if not entries:
+        return 0, NOTHING
+    out = crew_sleep.summary_text(entries)
+    if ap.settings(top)["sleep"]["state"] == crew_sleep.ASLEEP:
+        return 0, out + "\n(still asleep: reported again after the window ends)"
+    _append(top, crew_sleep.marker_line(crew_sleep.now()))
+    return 0, out
+
+
+def with_log_warnings(top, conf):
+    """`conf` (`settings`' answer) with `log_warnings` added to its warnings."""
+    conf["warnings"] = list(conf["warnings"]) + log_warnings(top, conf)
+    return conf
+
+
+def log_warnings(top, conf):
+    """`settings`' warnings about the log (L-0653): unreported entries while
+    not asleep, or a log that cannot be read. Never raises."""
+    try:
+        text, why = _read_log(top)
+        if text is None:
+            return [f"sleep log could not be read ({why}); {log_path(top)} is not read as empty"]
+        count = len(crew_sleep.unreported(text))
+        if count and conf["sleep"]["state"] != crew_sleep.ASLEEP:
+            return [f"{count} sleep decisions are unreported - run crew_autopilot.py sleep-summary"]
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return [f"sleep log could not be read ({ap._failure(exc)})"]
+    return []
+
+
+def main(args):
+    """`sleep`, `wake` (L-0652), `sleep-note` and `sleep-summary` (L-0653).
+    `wake` prints the summary after its state line. A crash is a refusal (exit 1)."""
+    try:
+        if args.action == "sleep-note":
+            code, text = sleep_note(args.root, args.ticket, args.kind, args.text)
+        elif args.action == "sleep-summary":
+            code, text = sleep_summary(args.root)
+        elif args.action == "sleep":
+            code, text = sleep_now(args.root, args.by)
+        else:
+            code, text = wake_now(args.root)
+            summary = sleep_summary(args.root)[1] if code == 0 else NOTHING
+            text += "" if summary == NOTHING else "\n" + summary
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         code, text = 1, ap._one_line(f"refused: {ap._failure(exc)}")
     sys.stdout.write(text + "\n")
@@ -193,7 +329,11 @@ def main(args):
 
 
 def add_parsers(sub):
-    """`sleep` and `wake` on crew_autopilot.py's subparsers."""
-    for name in ("sleep", "wake"):
+    """`sleep`, `wake`, `sleep-note` and `sleep-summary` on crew_autopilot.py's subparsers."""
+    for name in ("sleep", "wake", "sleep-note", "sleep-summary"):
         sub.add_parser(name).add_argument("--root", default=".")
     sub.choices["sleep"].add_argument("--by", default="cli")
+    note = sub.choices["sleep-note"]
+    note.add_argument("--ticket", required=True)
+    note.add_argument("--kind", required=True)
+    note.add_argument("--text", required=True)

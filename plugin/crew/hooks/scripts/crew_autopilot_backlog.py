@@ -206,8 +206,11 @@ def next_goal_ticket(root, slug, goal=None):
                         f"{dep_why or 'not closed'} - the owner decides")
         return {"ticket": ticket, "index": n, "done": False, "stop": False,
                 "reason": f"{ticket}: {place}"}
-    note = f" ({', '.join(settled)} settled without work)" if settled else ""
-    return stop(f"every ticket of goal {slug} is closed: the goal is done{note}", done=True)
+    if settled:  # L-0541 review r5: settled is not closed, so the goal is not done
+        return stop(f"no ticket of goal {slug} is left to work, but {', '.join(settled)} "
+                    "ended without work (cancelled or superseded): the owner decides whether "
+                    "the goal is done")
+    return stop(f"every ticket of goal {slug} is closed: the goal is done", done=True)
 
 
 def handoff_pick(top, slug):
@@ -349,15 +352,20 @@ def _adopt(top, slug, n, m):
     return found[0] if found else None
 
 
-def mint_goal(root, slug):
+def mint_goal(root, slug, approved_digest=None):
     """`{"minted": [(n, id, title)], "unminted": [(n, title)], "stop", "reason",
-    "warnings"}`. The caller holds the split approval (`split_approved`)."""
+    "warnings"}`. The caller holds the split approval (`split_approved`) of
+    the proposal whose `goal_digest` is `approved_digest`; under the lock the
+    file must still hold that proposal, or nothing is minted."""
     goal_mod = _goal()
     top = _top(root)
     out = {"minted": [], "unminted": [], "stop": False, "reason": "", "warnings": []}
     with goal_lock(top, slug):
         goal = goal_mod.read_goal(top, slug)
         digest = goal_mod.goal_digest(goal)
+        if approved_digest is not None and digest != approved_digest:
+            return dict(out, stop=True, reason="the proposal changed after its split approval; "
+                        "nothing was minted - ask for the approval again")
         tickets = goal["tickets"]
         for n, entry in enumerate(tickets):
             if entry["id"]:

@@ -55,6 +55,14 @@ effective `all` reads as `nonprod` -- production never runs unattended
 asleep. Awake, off or `unknown`, the day value stands. `deploy_allowed`
 reads the result through `crew_autopilot._settings_at`, and its reason
 names the sleep state when that changed the answer.
+
+L-0653: the sleep log's text. `log_line` builds one entry,
+`- <ISO local time> | <ticket> | <kind> | <text> | <setting>`, every field
+folded to one printable line with `|` replaced, so no field can start a
+second entry or a `- reported <ISO>` marker (`marker_line`). `unreported`
+reads the entries after the last marker; `summary_text` groups them by
+ticket. The file itself is crew_autopilot_sleep.py's: this module still
+opens nothing.
 """
 import datetime
 import re
@@ -345,3 +353,61 @@ def _scheduled(block, when, policies):
                 "warnings": warnings}
     state = ASLEEP if in_window(start, end, when.hour * 60 + when.minute) else AWAKE
     return {"state": state, "schedule": value, "overrides": overrides, "warnings": warnings}
+
+
+# --- L-0653: the sleep log's text (the file is crew_autopilot_sleep.py's) --------
+
+LOG_NAME = "sleep-log.md"
+LOG_KINDS = ("approved", "answered", "note")
+LOG_FIELD_MAX = 300
+_ENTRY_RE = re.compile(r"^- (\S+) \| (.*?) \| (approved|answered|note) \| (.*?) \| (.*)$")
+_MARK_RE = re.compile(r"^- reported (\S+)$")
+
+
+def log_field(value):
+    """One field: printable, one line, no `|`, at most LOG_FIELD_MAX, `-` when empty."""
+    text = value if isinstance(value, str) else render(value)
+    text = " ".join("".join(c if c.isprintable() else " " for c in text).split())
+    return text.replace("|", "/")[:LOG_FIELD_MAX] or "-"
+
+
+def log_line(when, ticket, kind, text, setting):
+    """One log entry, newline included. `when` is a naive local datetime."""
+    if kind not in LOG_KINDS:
+        raise ValueError(f"kind {kind!r} is not one of {'|'.join(LOG_KINDS)}")
+    stamp = when.replace(microsecond=0).isoformat()
+    return " | ".join([f"- {stamp}", log_field(ticket), kind, log_field(text),
+                       log_field(setting)]) + "\n"
+
+
+def marker_line(when):
+    """The `- reported <ISO>` line `sleep-summary` appends after reporting."""
+    return f"- reported {when.replace(microsecond=0).isoformat()}\n"
+
+
+def unreported(text):
+    """The entries after the last marker, as `{"at", "ticket", "kind", "text",
+    "setting"}`, in order. A line that is neither is not an entry."""
+    entries = []
+    for line in (text or "").splitlines():
+        if _MARK_RE.match(line):
+            entries = []
+            continue
+        found = _ENTRY_RE.match(line)
+        if found:
+            entries.append(dict(zip(("at", "ticket", "kind", "text", "setting"), found.groups())))
+    return entries
+
+
+def summary_text(entries):
+    """The morning summary: a heading line, then the entries grouped by ticket."""
+    tickets = []
+    for entry in entries:
+        if entry["ticket"] not in tickets:
+            tickets.append(entry["ticket"])
+    lines = [f"sleep summary: {len(entries)} decision(s) while asleep"]
+    for ticket in tickets:
+        lines.append(f"{ticket}:")
+        lines += [f"  {e['at']} {e['kind']}: {e['text']} ({e['setting']})"
+                  for e in entries if e["ticket"] == ticket]
+    return "\n".join(lines)
