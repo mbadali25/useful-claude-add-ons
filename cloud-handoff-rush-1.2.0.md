@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T18:19Z
+Last updated: 2026-10-05T18:25Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T18:25Z #542 H1 CI red on Windows shard 2: L-0690 test_a_timed_out_probe_says_so (unpack) and T-0098 supersede by_fullwidth_auto (None.startswith). Sent to H1 lander with instruction to collect all Windows shard failures into one push.
 - 2026-10-05T18:19Z Owner: L-0640 superseded-by lives in next.md, as built (open question 4 closed).
 - 2026-10-05T18:19Z G3 landed on branch (5fa60b93, crew 1.1.5; group review 6 rounds -> CLEAN, all fixes fail-closed). PR #543 -> release opened. G0 lander started (crew 1.1.6; will re-merge release after #543 merges).
 - 2026-10-05T18:15Z G2 cleared: slices logic is one total function checked against an exhaustive oracle (fails on old code; last Codex round asked only for more test cases). T-0059 stays in 1.2.0. G6 split and started: G6a (autopilot core, base G2+G0+release), G6b (L-0541 goals family first, then sleep; base G2+release). New logic goes in new modules (crew_autopilot.py over its line limit).
