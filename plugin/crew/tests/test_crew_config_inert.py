@@ -371,3 +371,12 @@ def test_a_dotted_key_under_a_known_setting_is_still_inert(tmp_path):
                                    git=False)
 
     assert [e["key"] for e in crew_config.inert_settings(str(root))] == ["autopilot.mode.foo"]
+
+
+def test_a_block_under_a_scalar_setting_is_named(tmp_path):
+    """T-0070 port review r8 FIX: `autopilot.mode` is a scalar, not an open
+    table, so `{"mode": {"foo": "x"}}` names `autopilot.mode.foo`."""
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"mode": {"foo": "x"}}},
+                                   git=False)
+
+    assert "autopilot.mode.foo" in [e["key"] for e in crew_config.inert_settings(str(root))]

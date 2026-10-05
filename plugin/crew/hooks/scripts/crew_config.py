@@ -2246,12 +2246,17 @@ def installed_version():
 
 
 def _known_leaf(parts, known):
-    """True when the key tuple `parts` or one of its prefixes is a default
-    leaf -- the prefix case is an open table (`dev.roles`) or a scalar default
-    the user replaced with a block, both of which crew reads as one setting.
-    Tuples, never dotted text: a key `mode.foo` is not a child of `mode`."""
+    """True when the key tuple `parts` is a default leaf, or sits under one
+    whose default is an open table (`dev.roles`, an empty `{}`). `known` maps
+    each default leaf's key tuple to its default value. A scalar default the
+    user replaced with a block (`autopilot.mode: {"foo": 1}`) is not a
+    table, so `mode.foo` is named. Tuples, never dotted text: a key
+    `mode.foo` is not a child of `mode`."""
     parts = tuple(parts)
-    return any(parts[:i] in known for i in range(1, len(parts) + 1))
+    if parts in known:
+        return True
+    return any(parts[:i] in known and isinstance(known[parts[:i]], dict)
+               for i in range(1, len(parts)))
 
 
 def inert_settings(root, path=None):
@@ -2290,10 +2295,10 @@ def inert_settings(root, path=None):
             block[parts[1]] = copy.deepcopy(row["effective"])
             personal[dotted] = ("global" if row["heldDownBy"] == "global"
                                 or row["repo"] is None else "repo")
-    known = {parts for parts, _value in _leaf_items(default_config())}
+    known = dict(_leaf_items(default_config()))
     # A machine-only block (T-0044's `unattendedCloud`) is known from the
     # machine file, which its own reader reads; a repo copy stays unknown.
-    known_global = known | {parts for parts, _value in _leaf_items(default_global_config())}
+    known_global = {**known, **dict(_leaf_items(default_global_config()))}
 
     def layer(parts):
         dotted = ".".join(parts)
