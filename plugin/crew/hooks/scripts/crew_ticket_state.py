@@ -59,6 +59,9 @@ CANNOT_TELL = "cannot tell"
 LEDGER_NOT_REPLAN = ("EMPTY", review_ledger.IN_REVIEW, review_ledger.REVIEWED,
                      review_ledger.ACCEPTED)
 
+# The header's field block: the `key: value` pairs that end line 1, set off
+# from the title by the template's column gap (two or more spaces, or a tab).
+_FIELD_BLOCK_RE = re.compile(r"(?:\s{2,}|\t)((?:[A-Za-z][\w-]*:[ \t]*\S+[ \t]*)+)$")
 _STATUS_FIELD_RE = re.compile(r"(?:^|\s)status:\s*(\S+)", re.IGNORECASE)
 _DEPENDS_RE = re.compile(r"^depends-on:\s*(.*?)\s*$", re.IGNORECASE)
 
@@ -111,11 +114,13 @@ def _prose_closing(top, ticket):
 
 
 def _header_status(spec_text):
-    """The word after `status:` on the spec's header line, lower-cased, or None.
-    A title that carries its own `status:` with another word makes the field
-    ambiguous: None (cannot tell), never the title's word."""
-    words = {m.lower() for m in _STATUS_FIELD_RE.findall(crew_ticket.header_line(spec_text))}
-    return words.pop() if len(words) == 1 else None
+    """The `status:` field of the spec's header line, lower-cased, or None.
+    Only the field block that ends the line counts (`<title>   status: spec
+    risk: low`), so a `status:` in the title is never read as the field; no
+    field block, or more than one `status:` in it, is None (cannot tell)."""
+    block = _FIELD_BLOCK_RE.search(crew_ticket.header_line(spec_text).rstrip())
+    words = [m.lower() for m in _STATUS_FIELD_RE.findall(block.group(1))] if block else []
+    return words[0] if len(words) == 1 else None
 
 
 def _spec(top, ticket):

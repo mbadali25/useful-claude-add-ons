@@ -188,6 +188,18 @@ def test_title_carrying_status_does_not_close_a_dependency(tmp_path):
     assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "unknown"
 
 
+@pytest.mark.parametrize("header", ["# T-0002 Explain status: done reporting",
+                                    "# T-0002 Explain status: done reporting   risk: low",
+                                    "# T-0002 x          status: done   status: spec"])
+def test_title_status_without_a_status_field_is_unknown(tmp_path, header):
+    """Round 5: a `status:` in the title is not the header's status field."""
+    root = _repo(tmp_path)
+    folder = root / ".work" / "tickets" / "T-0002"
+    folder.mkdir(parents=True)
+    (folder / "spec.md").write_text(header + "\n## Intent\nx\n", encoding="utf-8")
+    assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "unknown"
+
+
 def test_missing_spec_is_unknown_not_unblocked(tmp_path):
     root = _repo(tmp_path)
     got = _view(root)
