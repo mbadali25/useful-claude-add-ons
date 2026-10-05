@@ -897,3 +897,23 @@ def test_an_unrecognised_predecessor_state_is_a_stop(tmp_path, monkeypatch):
     why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2")
 
     assert "could not read slice 1's PR state" in why, why
+
+
+def test_an_open_predecessor_does_not_hide_an_unreadable_slice_under_it(tmp_path, monkeypatch):
+    """Fix review r3 BLOCK: chain 3 -> 2 -> 1, slice 2 OPEN, slice 1's PR
+    unreadable, slice 3 merged into slice 2's branch - still a stop."""
+    plan = _plan(slices="### Slice 1: first\nSteps: 1, 2\nBase: main\n\n"
+                        "### Slice 2: second\nSteps: 3-4\nBase: slice 1\n\n"
+                        "### Slice 3: third\nSteps: 5\nBase: slice 2\n")
+    root = _ticket(tmp_path, header="status: in-progress   risk: low", plan=plan)
+    _state(root, current=3, done=[1, 2, 3], shipped=[
+        _shipped(1, BRANCH), _shipped(2, f"{BRANCH}-s2", base=BRANCH),
+        _shipped(3, f"{BRANCH}-s3", base=f"{BRANCH}-s2")])
+    _merged_world(monkeypatch, {BRANCH: None, f"{BRANCH}-s2": ("OPEN", BRANCH),
+                                f"{BRANCH}-s3": ("MERGED", f"{BRANCH}-s2")})
+    ctx = crew_autopilot_slices.context(str(root), T)
+    assert not ctx["error"], ctx
+
+    why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s3")
+
+    assert "could not read slice 1's PR state" in why, why

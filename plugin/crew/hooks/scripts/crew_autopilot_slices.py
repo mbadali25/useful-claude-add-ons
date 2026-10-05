@@ -223,6 +223,11 @@ def _verified_merged(top, ctx, j, depth):
     branch = entry.get("branch")
     if not isinstance(branch, str) or not branch:
         return None, f"slices.json records no branch for slice {j} - a human looks", set(), ""
+    # The chain beneath slice j first, whatever j's own state: an OPEN or
+    # CLOSED j must not hide an unreadable slice under it.
+    allowed, why = _allowed_bases(top, ctx, j, depth)
+    if allowed is None:
+        return None, why, set(), ""
     state = "MERGED"
     if not crew_ship._full_sha(entry.get("merge_sha")):  # pylint: disable=protected-access
         pr = crew_ship.read_pr(top, branch)
@@ -232,9 +237,6 @@ def _verified_merged(top, ctx, j, depth):
                           + (f": {state!r}" if state else "") + ") - a human looks"), set(), ""
         if state != "MERGED":
             return False, "", set(), state
-    allowed, why = _allowed_bases(top, ctx, j, depth)
-    if allowed is None:
-        return None, why, set(), ""
     view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
     found = view.get("baseRefName") if isinstance(view, dict) else None
     if not isinstance(found, str) or not found:
