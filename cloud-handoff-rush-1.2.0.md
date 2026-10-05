@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T12:31Z
+Last updated: 2026-10-05T12:42Z
 
 ## >>> RESUME HERE
 
@@ -84,6 +84,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T12:42Z H3 built (L-0528, L-0514, L-0518 tooling, L-0522 PR2, L-0527 all CLEAN; head ddb96134, crew 1.1.12). T-0033 held: owner question. C-0022 minted. codex-review.sh now </dev/null (a round hung on stdin). H3 waits for H1 to land first.
 - 2026-10-05T12:31Z gpt-6-sol returned 'model at capacity' on G8 r2; codex-review.sh now retries up to 6x with 1-16 min backoff (all builders share it). G8 r2 re-running.
 - 2026-10-05T12:29Z G8 group review r1: 1 BLOCK (verify rules 2/3 lacked --pending-bump) - verified real, fixed in 346ca361 (tests 398 passed/2 skipped, version-drift 12/12). Group review r2 running.
 - 2026-10-05T12:02Z G8 done (L-0517, L-0511 PR1, L-0530 all CLEAN). Re-bumped to crew 1.1.1 (6c8d475a), opened PR #539 -> release/1.2.0, final group Codex review running. C-0021 minted (L-0530 sabotage -> H2).
