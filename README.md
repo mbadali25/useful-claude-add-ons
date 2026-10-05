@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew, gizmoduck, localgpu**: Six changes in one update: `/crew:migrate` carries your `autopilot` settings over instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one, the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to ping only for deploy results and questions that stopped Claude, each led by a subject.
 - **repository**: One cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners. `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session: besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists every tool as ok or MISSING at the end.
-- **crew 1.0.349**: Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket until you release it, autopilot can push, open and (only when every required check allows) merge a ticket's pull request after `/crew:done`, and in a worktree it reads the ticket's INDEX row from the main checkout and commits refreshed artifacts itself.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

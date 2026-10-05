@@ -9,7 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — `crew`: `/crew:migrate` carries `autopilot` to crew.json's top-level `autopilot` and says which file crew reads (T-0105)
+### crew, gizmoduck, localgpu — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
+
+- **Summary.** Six changes in one update: `/crew:migrate` carries your `autopilot` settings over
+  instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one,
+  the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are
+  safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to
+  ping only for deploy results and questions that stopped Claude, each led by a subject.
+
+#### Changed — `crew`: `/crew:migrate` carries `autopilot` to crew.json's top-level `autopilot` and says which file crew reads (T-0105)
 
 - **Summary.** Migrating an older crew setup no longer files your `autopilot` settings under
   "unmapped": they land at crew.json's top-level `autopilot`, with a note that this copy is never
@@ -32,39 +40,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `shellRoute`, `cloud`, `environments`, `scope`, `tickets`, `route`) and the "retireable
   .crew/config.json" line are unchanged. Sabotage rows for the mapping and note are L-0683, a
   separate tooling-only PR. Docs: guides none - no guide describes the crew.json key table.
-### Changed — repository: one cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners (C-0009)
-
-- **Summary.** `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session:
-  besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists
-  every tool as ok or MISSING at the end.
-- **What changed.** Optional steps, in the script's existing `step` style: `pwsh` (the newest
-  stable tag found with `git ls-remote --tags`, because api.github.com answers 403 here; that
-  tag's linux tarball, checked against the release's `hashes.sha256`, unpacked to
-  `/opt/microsoft/powershell/7` and linked as `/usr/local/bin/pwsh` once it reports a version;
-  Microsoft's apt repo is the fallback for a refused download, a missing or wrong hash, or a pwsh
-  that cannot start), `mermaid` (mermaid-cli
-  12.0.0, as verify-gate.yml pins it, with `PUPPETEER_SKIP_DOWNLOAD=1`), `mcp-deps` (`npm ci` in
-  `mcp-servers/` when `node_modules` is missing or older than `package-lock.json`) and
-  `gizmoduck` (`plugin/gizmoduck/bootstrap.sh` when any scanner is missing, then each scanner
-  re-checked on PATH; `SKIP_GIZMODUCK=1` skips it). Until the C-0008 fix (PR #506) lands,
-  bootstrap.sh resolves the Nuclei version through api.github.com, which answers 403 here; the
-  failed Nuclei install fails the template update, which exits 1 and stops bootstrap before the
-  other scanners. The step is then reported FAILED and setup still exits 0. With #506, Nuclei
-  installs here and bootstrap runs to the end.
-- **Time limits.** The script's own curl calls carry `--connect-timeout`/`--max-time`, `git
-  ls-remote` a low-speed limit and a `timeout`, and pwsh's version probe a 60-second `timeout`.
-  npm installs and bootstrap.sh's own curl calls have no time limit. Every step runs with stdin
-  from `/dev/null` and `DEBIAN_FRONTEND=noninteractive`.
-- **apt.** Every apt-get call passes `-o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600`,
-  because the image ships `/tmp` as 755 root:root and apt's `_apt` user cannot write its
-  key-check files there; `/tmp` itself is left alone. `apt-get clean` follows each install
-  (its failure does not fail the step), since disk is a fixed per-session allowance. pwsh moved out of the apt step into its own.
-- **pytest.** The CORE `py-libs` step treats an importable pytest other than 8.x as missing and
-  re-pins `pytest~=8.0`, removes the image's uv-tool pytest 9 (isolated, no xdist, ahead of it on
-  PATH), and fails unless PATH resolves pytest 8.x. The CORE `ruff` step fails unless PATH
-  resolves ruff 0.16.x.
-- Repository tooling outside any plugin, so no version bump.
-### Added — `crew`: `crew_memory.py migrate` converts a memory folder, previewed and opt-in, and `restore` undoes one (L-0678)
+#### Added — `crew`: `crew_memory.py migrate` converts a memory folder, previewed and opt-in, and `restore` undoes one (L-0678)
 
 - **Summary.** You can now turn every full-text memory in one native memory folder into a vault
   note plus a pointer in one previewed run, and turn any one pointer back into full text.
@@ -92,7 +68,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   never edited or deleted. Neither runs automatically. Documented in the `crew-memory` skill
   ("Converting existing memories"), the crew README and the memory guide chapter.
 - **Tests.** `plugin/crew/tests/test_crew_memory_migrate.py`, 52 cases, all under `tmp_path`.
-### Changed — `crew`: the CI receipt lists a command the gate said it could not judge as UNKNOWN (L-0673)
+#### Changed — `crew`: the CI receipt lists a command the gate said it could not judge as UNKNOWN (L-0673)
 
 - **Summary.** The CI verify-gate receipt's per-command list now shows UNKNOWN for a command the gate
   could not judge or never finished, and says when the list is partial because the gate died.
@@ -117,7 +93,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `verify-gate.sh --all` on a rule exiting 130 lists it UNKNOWN. Sabotage-tested by hand: dropping
   the UNKNOWN branch, dropping the in-flight entry, forcing `log_complete` true, letting a per-rule
   line no longer reset it, and matching the command only by the regex each turned a test red.
-### Changed — `gizmoduck`: Nuclei scans are safe by default (T-0108)
+#### Changed — `gizmoduck`: Nuclei scans are safe by default (T-0108)
 
 - **Summary.** A Nuclei scan now skips dos, intrusive and fuzz templates and sends at most 50
   requests per second unless you opt out by name, so a default scan can find less and take longer
@@ -154,8 +130,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `8ad90da2`; a reviewer's later checkout measured 619 to 0). `dos` and `fuzz` are not used as
   evidence: Nuclei's own `.nuclei-ignore` already hides most of them.
 
-### Added — `crew`: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
+#### Added — `crew`: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
 
+- **Summary.** Each diagram now also appears inside the README of the code it describes, kept
+  current by a generator, and `/crew:done` and the marketplace gate refuse a README whose diagrams
+  have drifted from their sources.
 - **What changed.** `plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`
   writes every diagram under `docs.diagramsDir` into the README nearest its
   `%% Anchors:` paths, between `<!-- crew-diagrams:begin -->` and
@@ -202,8 +181,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   harness paths and are left out. Until the allowance lands, a ticket whose `embed`
   refresh writes a README its Touch does not name is flagged by the Stop audit:
   name the README in Touch.
-### Changed — `crew`: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
+#### Changed — `crew`: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
 
+- **Summary.** crew's Telegram and Teams pings now come from one sender and only for deploy results
+  and for Claude stopping to wait on you, each line led by a subject such as `Question` or `Deploy
+  FAILED` and saying what it waits on; the per-phase pings are gone, and the webhook and token
+  settings are read only from your machine-global config.
 - **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always
   exits 0) replaces the send logic that `notify.sh` and `notify.ps1` each carried. The two are now thin
   wrappers that keep `event_claim.py`'s one-sender election and hand the payload over.
@@ -258,6 +241,40 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   sender and both wrappers to them. The sabotage module (`sabotage_notify.py`, 17 mutations, each run by hand
   red on its named test) is a harness-only follow-up, since `sabotage*.py` is in `check-tooling-pr.py`'s
   `HARNESS`. The pwsh parity cases skip without pwsh and were not run.
+
+### Changed — repository: one cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners (C-0009)
+
+- **Summary.** `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session:
+  besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists
+  every tool as ok or MISSING at the end.
+- **What changed.** Optional steps, in the script's existing `step` style: `pwsh` (the newest
+  stable tag found with `git ls-remote --tags`, because api.github.com answers 403 here; that
+  tag's linux tarball, checked against the release's `hashes.sha256`, unpacked to
+  `/opt/microsoft/powershell/7` and linked as `/usr/local/bin/pwsh` once it reports a version;
+  Microsoft's apt repo is the fallback for a refused download, a missing or wrong hash, or a pwsh
+  that cannot start), `mermaid` (mermaid-cli
+  12.0.0, as verify-gate.yml pins it, with `PUPPETEER_SKIP_DOWNLOAD=1`), `mcp-deps` (`npm ci` in
+  `mcp-servers/` when `node_modules` is missing or older than `package-lock.json`) and
+  `gizmoduck` (`plugin/gizmoduck/bootstrap.sh` when any scanner is missing, then each scanner
+  re-checked on PATH; `SKIP_GIZMODUCK=1` skips it). Until the C-0008 fix (PR #506) lands,
+  bootstrap.sh resolves the Nuclei version through api.github.com, which answers 403 here; the
+  failed Nuclei install fails the template update, which exits 1 and stops bootstrap before the
+  other scanners. The step is then reported FAILED and setup still exits 0. With #506, Nuclei
+  installs here and bootstrap runs to the end.
+- **Time limits.** The script's own curl calls carry `--connect-timeout`/`--max-time`, `git
+  ls-remote` a low-speed limit and a `timeout`, and pwsh's version probe a 60-second `timeout`.
+  npm installs and bootstrap.sh's own curl calls have no time limit. Every step runs with stdin
+  from `/dev/null` and `DEBIAN_FRONTEND=noninteractive`.
+- **apt.** Every apt-get call passes `-o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600`,
+  because the image ships `/tmp` as 755 root:root and apt's `_apt` user cannot write its
+  key-check files there; `/tmp` itself is left alone. `apt-get clean` follows each install
+  (its failure does not fail the step), since disk is a fixed per-session allowance. pwsh moved out of the apt step into its own.
+- **pytest.** The CORE `py-libs` step treats an importable pytest other than 8.x as missing and
+  re-pins `pytest~=8.0`, removes the image's uv-tool pytest 9 (isolated, no xdist, ahead of it on
+  PATH), and fails unless PATH resolves pytest 8.x. The CORE `ruff` step fails unless PATH
+  resolves ruff 0.16.x.
+- Repository tooling outside any plugin, so no version bump.
+
 ### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
 
 - **Summary.** Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket
