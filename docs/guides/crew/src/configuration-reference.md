@@ -82,7 +82,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**138 keys**: 81 settable in the machine-global file, 57 repo-only.
+**141 keys**: 81 settable in the machine-global file, 60 repo-only.
 
 Columns:
 
@@ -381,6 +381,9 @@ Columns:
 | `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
 | `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 | `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
+| `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.348 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |
+| `autopilot.knownFailures` | repo | `[]` | list of check names (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.348 | Required checks whose `fail` does not block a merge, matched by exact name; anything but a list of strings reads as `[]`, with a warning. |
+| `autopilot.ciTimeoutMinutes` | repo | `60` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.348 | Minutes `ship` waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning. |
 
 ### `tickets`
 
@@ -404,14 +407,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 |---|---|---|---|---|---|
 | `guards.deployWorkflow` | new key | both, ratchet | block |  | Whether crew may dispatch a deploy workflow. |
 | `environments.workflows` | new key | repo | {} |  | Deploy workflows per environment. |
-
-### T-0011
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `autopilot.ship` | new key | repo | merge | `pr` \| `merge` | After `/crew:done`, open a PR (`pr`) or also merge it once required checks are green (`merge`). |
-| `autopilot.knownFailures` | new key | repo | [] |  | Required checks that may fail without blocking a merge, matched by exact name. |
-| `autopilot.ciTimeoutMinutes` | new key | repo | 60 |  | How long ship waits for CI; still pending at the timeout stops. |
 
 ### T-0012
 

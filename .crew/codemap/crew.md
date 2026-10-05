@@ -854,6 +854,12 @@ the merge is `merge_argv` (`:360`), `gh pr merge <n> --merge --match-head-commit
 call that leaves the PR not MERGED with a queue on (or unreadable) runs `_dequeue` (`:497`), the
 one GraphQL mutation, and stops. Tests: `plugin/crew/tests/test_crew_autopilot_ship.py`; no
 `SHIP_MUTATIONS` in `sabotage_autopilot.py` on this branch (a harness-only follow-up, T-0087).
+Since batch 7 the part that reads no review ledger - `ship_decision`, the gh/git adapter
+(`_run_gh`, `_push`, `read_pr`, `read_checks`, `read_merge_queue`, `_dequeue`, the argv builders,
+`_branch`, `_default_branch`, `_clean_tree`, `_tree_stop`) and `merged_phase` - lives in
+`plugin/crew/hooks/scripts/crew_ship.py`
+(crew_autopilot.py had passed pylint's 3400-line cap), and `_run_gh`/`_push` run
+`crew_common.require_tool`'s path (L-1508); the cites above are T-0011's, before the move.
 
 **Worktree-aware reads and `commit-refresh` (T-0063, crew 1.0.348).** DERIVED on T-0063-build
 at `309575c2`; its line numbers are that commit's, not the anchor's. `_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:530`) first asks `_main_folder`
