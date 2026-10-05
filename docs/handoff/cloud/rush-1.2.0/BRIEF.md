@@ -117,3 +117,9 @@ coordinator right after the restart.
 Per ticket: at most 6 Codex rounds. If round 6 is still BLOCK/FIX, fix what it found, push, stop the
 loop, and report the round-6 findings verbatim plus your fix commit; the coordinator reviews that
 fix itself.
+
+## Never kill other agents' processes
+
+Never `pkill`/`killall` by pattern (e.g. `pkill -f 'codex exec'`): a dozen agents share this machine,
+and a pattern kill takes their reviews and tests down too. Kill only a PID you started yourself.
+`codex-review.sh` already closes stdin, so a review no longer hangs on it.
