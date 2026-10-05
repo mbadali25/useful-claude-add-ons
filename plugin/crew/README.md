@@ -2416,7 +2416,7 @@ different machines — work one backlog, each **claims** a ticket before working
 it, so two sessions never hold the same one. The record is not in `.work/`
 (ignored and per worktree) but on a git branch, `crew-coord/<channel>`, on a
 shared remote. Its tree holds `claims/<repo>__<id>.json` per claim and an
-append-only `log.jsonl`.
+append-only `log.jsonl`. You claim with the commands below: no crew command claims for you yet - neither a `/crew:autopilot` run nor a wave, which only run `status` first.
 
 ```
 python3 hooks/scripts/crew_coord.py status  --channel <c> --remote origin
