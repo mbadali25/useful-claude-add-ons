@@ -364,7 +364,9 @@ def _version_at(top, ref):
         version = json.loads(done.stdout).get("version") if done.returncode == 0 else None
     except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
         return None
-    found = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version or "")
+    if not isinstance(version, str):  # a number, list or null is unreadable, never a crash
+        return None
+    found = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version)
     return tuple(int(n) for n in found.groups()) if found else None
 
 

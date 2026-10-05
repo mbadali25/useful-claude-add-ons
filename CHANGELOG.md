@@ -43,7 +43,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   process refreshes it every 10 minutes while the session's Claude process lives. `recover` adopts a
   claim after the session id changes only on the same machine and worktree, with the local identity
   file naming the old holder and its process provably gone; anything else is presented for the owner.
-  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured.
+  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured, before a
+  run and before a wave starts.
   The README's "Cross-session claims" section documents channels, the TTL and the no-force rule.
 - **Not in this entry.** The sabotage mutations (`sabotage_coord.py`, registered in `sabotage.py`)
   are review harness and land separately (T-0087).

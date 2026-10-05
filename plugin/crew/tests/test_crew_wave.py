@@ -454,6 +454,22 @@ def test_plan_landing_version_unknown_when_head_has_none(tmp_path):
     assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", "unknown"]]
 
 
+@pytest.mark.parametrize("version", ["1.1.6", 116, None, ["1.1.6"]], ids=["string", "number", "null", "list"])
+def test_plan_landing_version_unknown_when_a_version_is_not_a_string(tmp_path, version):
+    # Group review r2 (rush g0): a JSON number reached re.fullmatch and raised TypeError.
+    root = _repo(tmp_path)
+    _write(root / "plugin" / "crew" / ".claude-plugin" / "plugin.json",
+           json.dumps({"name": "crew", "version": version}))
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "plugin")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
+    _set(root, "s", ["T-1"])
+
+    expected = "1.1.7" if version == "1.1.6" else "unknown"
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", expected]]
+
+
 def test_plan_landing_version_unknown_without_origin(tmp_path):
     root = _repo(tmp_path)
     _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
