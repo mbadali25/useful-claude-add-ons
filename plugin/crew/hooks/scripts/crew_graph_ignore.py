@@ -87,10 +87,15 @@ shape, an unreadable denylist file or `.graphifyignore`, a nested
 evaluated), a deny-all Read rule: each makes the status `unknown` with its
 reason, exit 2. None of them reads as covered.
 
+A `.gitignore` `!` line re-includes for graphify only from a directory below
+the root: graphify reads each directory's `.gitignore` before its
+`.graphifyignore` (0.9.65 and 0.9.76 `_load_dir_own_ignore`), so the root
+`.gitignore` never overrides the root `.graphifyignore`, while a nested one is
+read after it (`_reopened`).
+
 Accepted risk, not checked: graphify's line parser strips inline comments
 and leading whitespace where git does not (git then reports "not excluded",
-which fails closed); a nested `.gitignore` whose `!` re-includes a file for
-graphify's walk; a Read rule written for a session started below the root.
+which fails closed); a Read rule written for a session started below the root.
 
 ## --write
 
@@ -380,7 +385,8 @@ def _reopened(top, paths, files, git):
     `.graphifyignore` excludes. Matched case-folded, so a doubt counts as
     re-included, never as covered."""
     out = set()
-    for rel in [p for p in paths if p.rsplit("/", 1)[-1] == ".gitignore"]:
+    # The root .gitignore is read before the root .graphifyignore, which wins.
+    for rel in [p for p in paths if p.rsplit("/", 1)[-1] == ".gitignore" and "/" in p]:
         text = _read(top, rel) or ""
         negs = [line.rstrip("\r")[1:] for line in text.split("\n") if line.startswith("!")]
         base = rel[:-len(".gitignore")]
@@ -401,20 +407,11 @@ def _matches(paths, patterns, git, fold_case=False):
     None if git gave none) for each path any line matches, `!` included."""
     if not paths or not patterns:
         return {}
-    with tempfile.TemporaryDirectory(prefix="crew-graph-ignore-") as scratch:
-        if _run_git(git, scratch, ["init", "-q", "."]).returncode != 0:
-            raise _Unknown("git could not create its scratch repository")
-        empty = os.path.join(scratch, "empty-excludes")
-        with open(os.path.join(scratch, ".git", "info", "exclude"), "w",
-                  encoding="utf-8", newline="\n") as handle:
-            handle.write("".join(p + "\n" for p in patterns))
-        with open(empty, "w", encoding="utf-8", newline="\n"):
-            pass
-        stdin = "".join(p + "\0" for p in paths).encode("utf-8", "surrogateescape")
-        done = _run_git(git, scratch, ["-c", f"core.excludesFile={empty}",
-                                       "-c", f"core.ignoreCase={str(fold_case).lower()}",
-                                       "check-ignore", "--no-index", "--stdin", "-z",
-                                       "-v", "-n"], stdin=stdin)
+    try:
+        done = _check_ignore(paths, patterns, git, fold_case)
+    except OSError as exc:  # no usable temp dir, a failed write or cleanup
+        raise _Unknown(f"git's scratch repository could not be prepared "
+                       f"({type(exc).__name__}: {shown(str(exc))})") from exc
     if done.returncode not in (0, 1):
         raise _Unknown("git check-ignore failed: "
                        + shown(done.stderr.decode("utf-8", "replace").strip()[:200]))
@@ -425,6 +422,25 @@ def _matches(paths, patterns, git, fold_case=False):
         if pattern:
             out[path] = (int(line) if line.isdigit() else None, pattern)
     return out
+
+
+def _check_ignore(paths, patterns, git, fold_case):
+    """git check-ignore's answer for `paths` under `patterns`, from a scratch
+    repository in a temporary directory. Raises _Unknown or OSError."""
+    with tempfile.TemporaryDirectory(prefix="crew-graph-ignore-") as scratch:
+        if _run_git(git, scratch, ["init", "-q", "."]).returncode != 0:
+            raise _Unknown("git could not create its scratch repository")
+        empty = os.path.join(scratch, "empty-excludes")
+        with open(os.path.join(scratch, ".git", "info", "exclude"), "w",
+                  encoding="utf-8", newline="\n") as handle:
+            handle.write("".join(p + "\n" for p in patterns))
+        with open(empty, "w", encoding="utf-8", newline="\n"):
+            pass
+        stdin = "".join(p + "\0" for p in paths).encode("utf-8", "surrogateescape")
+        return _run_git(git, scratch, ["-c", f"core.excludesFile={empty}",
+                                       "-c", f"core.ignoreCase={str(fold_case).lower()}",
+                                       "check-ignore", "--no-index", "--stdin", "-z",
+                                       "-v", "-n"], stdin=stdin)
 
 
 def _ignore_lines(root):
@@ -464,6 +480,9 @@ def coverage(root, git="git"):
         denied, uncovered = _judge(top, paths, groups, _ignore_lines(top), git)
     except _Unknown as exc:
         result["reason"] = str(exc)
+        return result
+    except OSError as exc:  # status and refresh-check call this directly: never a crash
+        result["reason"] = f"coverage could not be told ({type(exc).__name__}: {shown(str(exc))})"
         return result
     result.update(status=UNCOVERED if uncovered else COVERED, uncovered=uncovered,
                   denied=len(denied), reason=None)

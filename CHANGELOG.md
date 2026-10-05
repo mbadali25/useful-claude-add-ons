@@ -63,8 +63,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - `--write` writes through a symlinked `.graphifyignore` only to an ignore file inside the
   repository and never into `.git`; anything else is unknown, exit 2, nothing written. A
   `.graphifyignore` line holding a backslash never counts as covering (git un-escapes it, graphify
-  does not), and a denylisted file a `.gitignore` `!` line re-includes is uncovered, because
-  graphify applies that negation after `.graphifyignore`.
+  does not), and a denylisted file a nested `.gitignore` `!` line re-includes is uncovered,
+  because graphify applies that negation after the root `.graphifyignore` (the root `.gitignore`
+  is read before it, so its `!` lines never re-include). A temporary directory that cannot be made
+  reads `unknown`, never a crash of `/crew:status` or the refresh check.
 - `crew_refresh_check.py` reports the graph `unknown` and not refreshable, naming the paths and
   `crew_graph_ignore.py --write`, while any denylisted path is uncovered or coverage cannot be told,
   so neither it nor autopilot names a graphify command then. `/crew:status` gains a `graph-ignore`

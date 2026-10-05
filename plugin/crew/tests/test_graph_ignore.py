@@ -109,15 +109,44 @@ def test_a_backslash_escaped_line_does_not_count_as_covering(tmp_path, capsys):
     assert (code, "!secret.pem" in out) == (1, True), out
 
 
-@pytest.mark.parametrize("gitignore", ["sub/.gitignore", ".gitignore"])
+@pytest.mark.parametrize("gitignore", ["sub/.gitignore"])
 def test_a_gitignore_negation_reopens_a_covered_secret(tmp_path, capsys, gitignore):
-    """Review round 5: graphify applies a `.gitignore` `!` line after
-    `.graphifyignore`, so `!x.pem` there makes it read `sub/x.pem`."""
+    """Review round 5: graphify applies a nested `.gitignore` `!` line after
+    the root `.graphifyignore`, so `!x.pem` there makes it read `sub/x.pem`.
+    (The root `.gitignore` case moved to the test below: it stays covered.)"""
     root = _repo(tmp_path, {"sub/x.pem": "KEY\n", ".graphifyignore": "*.pem\n", gitignore: "!x.pem\n"})
 
     code, out = _check(root, capsys)
 
     assert (code, "sub/x.pem" in out) == (1, True), out
+
+
+@pytest.mark.parametrize("negation", ["!x.pem", "!sub/x.pem", "!*.pem"])
+def test_a_root_gitignore_negation_leaves_it_covered(tmp_path, capsys, negation):
+    """Group review r5 (g1-ports): graphify reads a directory's `.gitignore`
+    before its `.graphifyignore` (0.9.65 and 0.9.76), so the root one's `!`
+    never overrides the root `.graphifyignore`."""
+    root = _repo(tmp_path, {"sub/x.pem": "KEY\n", ".graphifyignore": "*.pem\n",
+                            ".gitignore": negation + "\n"})
+
+    code, out = _check(root, capsys)
+
+    assert code == 0, out
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError, PermissionError])
+def test_a_scratch_directory_failure_is_unknown_never_a_crash(tmp_path, monkeypatch, error):
+    """Group review r5 (g1-ports): no usable temporary directory makes
+    coverage unknown with its reason, for the callers that use it directly."""
+    root = _denylisted_config(tmp_path)
+
+    def broken(*_args, **_kwargs):
+        raise error("No usable temporary directory found")
+    monkeypatch.setattr(crew_graph_ignore.tempfile, "TemporaryDirectory", broken)
+    cover = crew_graph_ignore.coverage(str(root))
+
+    assert (cover["status"], "No usable temporary directory" in cover["reason"]) == (
+        crew_graph_ignore.UNKNOWN, True), cover
 
 
 def test_a_gitignore_negation_elsewhere_leaves_it_covered(tmp_path, capsys):
