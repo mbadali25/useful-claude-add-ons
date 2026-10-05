@@ -77,12 +77,41 @@ if [[ "$1" == apt-get ]]; then
 fi
 # Safety net: this stub really runs what it is given, so a bootstrap.sh that
 # stopped honouring the test directories would install into the machine's
-# own. Refuse any real install location instead.
-for a in "$@"; do
-  case "$a" in
-    /usr/local/bin*|/opt|/opt/*|/var/lib/apt*)
-      echo "sudo-stub: refusing real path $a" >&2; exit 97 ;;
+# own. Refuse any real install location instead - spelled directly, reached
+# through `..` or a symlink (realpath -m), as an --opt=VALUE, VAR=VALUE or -tDIR, or
+# inside an `sh -c` string.
+is_system() {
+  case "$1" in
+    /usr/local/bin*|/opt|/opt/*|/var/lib/apt*) return 0 ;;
   esac
+  return 1
+}
+# Only a path-like argument (one holding a `/`) is canonicalised, against
+# this stub's own cwd: a bare word - a flag, a package name - resolved there
+# would read as a system path whenever the cwd is under /opt, as a CI
+# runner's checkout is.
+refuse_if_system() {
+  local a="$1" c
+  [[ -n "$a" ]] || return 0
+  case "$a" in
+    *=*) refuse_if_system "${a#*=}" ;;
+    -t?*) refuse_if_system "${a#-t}" ;;
+  esac
+  [[ "$a" == -* || "$a" != */* ]] && return 0
+  c=$(realpath -m -- "$a" 2>/dev/null) || c="$a"
+  if is_system "$a" || is_system "$c"; then
+    echo "sudo-stub: refusing real path $a" >&2; exit 97
+  fi
+  return 0
+}
+prev=""
+for a in "${@:2}"; do   # the arguments after the command
+  refuse_if_system "$a"
+  if [[ "$prev" == -c ]]; then
+    read -ra words <<<"$(tr ";|&<>()'\\"" ' ' <<<"$a")"
+    for w in "${words[@]}"; do refuse_if_system "$w"; done
+  fi
+  prev="$a"
 done
 exec "$@"
 """
@@ -115,6 +144,45 @@ def stubs(tmp_path):
             "inst_opt": tmp_path / "inst-opt", "apt_lists": tmp_path / "apt-lists"}
 
 
+_GUARDED_DIRS = ("/usr/local/bin", "/opt")
+
+
+def _top_level_snapshot(d):
+    """Names, sizes and mtimes of d's direct entries (lstat, no recursion), or
+    None when d does not exist. Cheap enough to take around every test."""
+    try:
+        names = os.listdir(d)
+    except FileNotFoundError:
+        return None
+    snap = {}
+    for n in names:
+        try:
+            st = os.lstat(os.path.join(d, n))
+            snap[n] = (st.st_size, st.st_mtime_ns)
+        except FileNotFoundError:
+            snap[n] = None
+    try:
+        snap["."] = os.lstat(d).st_mtime_ns
+    except FileNotFoundError:
+        pass
+    return snap
+
+
+@pytest.fixture(autouse=True)
+def _system_dirs_tripwire():
+    """Fail any test after which /usr/local/bin or /opt changed at the top
+    level. The sudo stub really runs what it is given; this suite once
+    overwrote real /usr/local/bin binaries."""
+    before = {d: _top_level_snapshot(d) for d in _GUARDED_DIRS}
+    yield
+    for d in _GUARDED_DIRS:
+        after = _top_level_snapshot(d)
+        if after != before[d]:
+            b, a = before[d] or {}, after or {}
+            changed = sorted(k for k in set(b) | set(a) if b.get(k) != a.get(k))
+            pytest.fail(f"this test changed the real {d}: {changed}")
+
+
 def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
     stubs["tags"].write_text(
         "".join(f"{_sha(i)}\trefs/tags/{t}\n" for i, t in enumerate(tags, 1)))
@@ -136,7 +204,8 @@ def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
     env.update(extra_env or {})
     proc = subprocess.run(
         [_BASH, "-c", f'source "$0"; {script}', str(_BOOTSTRAP)],
-        capture_output=True, text=True, env=env, timeout=30, check=False)
+        capture_output=True, text=True, env=env, timeout=30, check=False,
+        cwd=str(stubs["tmp"]))
     return proc, stubs["log"].read_text()
 
 
@@ -752,6 +821,7 @@ def test_the_sqlmap_wrapper_quotes_its_path(stubs):
 _NIKTO_UNKNOWN = "echo 'Unknown option: version'; echo; echo '   Options:'; exit 0"
 _NIKTO_OK = ('if [[ "$1" == -Version ]]; then echo "Nikto 2.6.1 (LW 2.5)"; exit 0; fi\n'
              "echo 'Unknown option: version'; exit 0")
+_NIKTO_VERSION_RC1 = "echo 'Nikto 2.6.1 (LW 2.5)'; exit 1"
 
 
 def _fake_nikto(stubs, body):
@@ -763,6 +833,16 @@ def _fake_nikto(stubs, body):
 def test_nikto_that_only_prints_unknown_option_is_reinstalled(stubs):
     # Must-block: exit 0 with no version string is not "installed".
     _fake_nikto(stubs, _NIKTO_UNKNOWN)
+    proc, log = _run(stubs, "install_nikto; echo rc=$?")
+    assert "fails its check - reinstalling" in proc.stdout, proc.stdout + proc.stderr
+    assert "already installed" not in proc.stdout
+    assert f"sudo {_APT_OPTS} install -y nikto" in log, log
+
+
+def test_nikto_that_prints_a_version_but_exits_1_is_reinstalled(stubs):
+    # Must-block: the version string alone is not enough, probe_nikto also
+    # needs exit 0. Twin of the .ps1 `version-but-rc1` case below.
+    _fake_nikto(stubs, _NIKTO_VERSION_RC1)
     proc, log = _run(stubs, "install_nikto; echo rc=$?")
     assert "fails its check - reinstalling" in proc.stdout, proc.stdout + proc.stderr
     assert "already installed" not in proc.stdout
@@ -782,7 +862,7 @@ def test_nikto_that_prints_its_version_is_skipped(stubs):
 @pytest.mark.parametrize("body,expect", [
     (_NIKTO_UNKNOWN, "RUNS=False"),
     (_NIKTO_OK, "RUNS=True"),
-    ("echo 'Nikto 2.6.1 (LW 2.5)'; exit 1", "RUNS=False"),
+    (_NIKTO_VERSION_RC1, "RUNS=False"),
 ], ids=["unknown-option-rc0", "version", "version-but-rc1"])
 def test_ps1_nikto_check_reads_the_version_not_the_exit_code(stubs, body, expect):
     perl = stubs["tmp"] / "fakeperl"
@@ -792,6 +872,45 @@ def test_ps1_nikto_check_reads_the_version_not_the_exit_code(stubs, body, expect
     ps = f"Write-Output \"RUNS=$(Test-NiktoRuns -PerlExe '{perl}' -NiktoPl 'nikto.pl')\""
     proc, _ = _run_ps(stubs, body=ps)
     assert expect in proc.stdout, proc.stdout + proc.stderr
+
+
+@ps_only
+def test_ps1_fresh_strawberry_perl_is_on_path_for_the_nikto_probe(stubs):
+    # Must-allow: no perl anywhere until winget installs Strawberry Perl. The
+    # install puts it on PATH only for new terminals, so Install-Nikto must
+    # prepend its bin dir itself or Test-NiktoRuns finds no perl.
+    strawberry = stubs["tmp"] / "Strawberry" / "perl" / "bin"
+    strawberry.mkdir(parents=True)
+    sysbin = stubs["tmp"] / "sysbin"    # bash only, so no host perl is found
+    sysbin.mkdir()
+    (sysbin / "bash").symlink_to(_BASH)
+    tools = stubs["tmp"] / "tools"
+    fake_perl = "#!/usr/bin/env bash\nshift\n" + _NIKTO_OK
+    ps = f"""
+$env:PATH = '{sysbin}'
+$ToolsDir = '{tools}'
+if (Get-Command perl -ErrorAction SilentlyContinue) {{ throw 'a perl was on PATH before the install' }}
+function git {{ $global:LASTEXITCODE = 0 }}
+function winget {{
+  Add-Content -Path $env:STUB_LOG -Value "winget $args"
+  foreach ($n in 'perl', 'perl.exe') {{
+    $f = Join-Path '{strawberry}' $n
+    Set-Content -Path $f -Value @'
+{fake_perl}
+'@
+    & '{shutil.which("chmod")}' 755 $f
+  }}
+  $global:LASTEXITCODE = 0
+}}
+Install-Nikto -StrawberryBin '{strawberry}'
+Write-Output "PATH0=$(($env:PATH -split [IO.Path]::PathSeparator)[0])"
+"""
+    proc, log = _run_ps(stubs, body=ps)
+    out = proc.stdout + proc.stderr
+    assert "winget install --id StrawberryPerl.StrawberryPerl" in log, out
+    assert "ERR=" not in proc.stdout, out
+    assert "nikto cloned to" in out, out
+    assert f"PATH0={strawberry}\n" in proc.stdout, out
 
 
 # --- C-0015.1: a link inside the templates dir is refused, never followed ----
@@ -909,10 +1028,69 @@ def test_no_override_and_no_flag_is_silent(stubs):
     assert proc.stderr == "", proc.stderr
 
 
-def test_the_sudo_stub_refuses_real_install_paths(stubs):
-    # The net under every install test: with the overrides ignored, nothing
-    # may reach /usr/local/bin or /opt.
-    proc, _ = _run(stubs, "sudo mkdir -p /opt/gizmoduck-should-not-exist; echo rc=$?")
-    assert "rc=97" in proc.stdout, proc.stdout + proc.stderr
-    assert not os.path.exists("/opt/gizmoduck-should-not-exist")
-    assert "refusing real path /opt/gizmoduck-should-not-exist" in proc.stderr
+def _sudo_stub_decision(stubs, *args, cwd=None):
+    """Run the sudo stub with `true` as the command, so a broken guard still
+    executes nothing that could write anywhere. Returns (rc, stderr)."""
+    env = dict(os.environ, STUB_LOG=str(stubs["log"]))
+    proc = subprocess.run([_BASH, str(stubs["bin"] / "sudo"), "true", *args],
+                          capture_output=True, text=True, env=env, timeout=30,
+                          check=False, cwd=str(cwd or stubs["tmp"]))
+    return proc.returncode, proc.stderr
+
+
+@pytest.mark.parametrize("args", [
+    ("/opt/gizmoduck-should-not-exist",),
+    ("/usr/local/bin/nuclei",),
+    ("/var/lib/apt/lists/x",),
+    ("{tmp}/../../../../../../../opt/x",),
+    ("{tmp}/looks-like-opt/x",),               # parent is a symlink to /opt
+    ("--target-directory=/usr/local/bin",),
+    ("--target-directory={tmp}/looks-like-opt",),
+    ("-t", "/opt"),
+    ("-t/opt",),
+    ("DEST=/opt/x",),
+    ("sh", "-c", ": src /usr/local/bin/nuclei"),
+    ("sh", "-c", ": src;/opt/x"),
+    ("sh", "-c", ": '{tmp}/looks-like-opt/x'"),
+], ids=["opt", "usr-local-bin", "apt-lists", "dotdot", "symlinked-parent",
+        "target-directory", "target-directory-symlink", "dash-t", "dash-t-joined",
+        "var-assign", "sh-c", "sh-c-semicolon", "sh-c-quoted-symlink"])
+def test_the_sudo_stub_refuses_real_install_paths(stubs, args):
+    # Must-block. The net under every install test: with the overrides
+    # ignored, nothing may reach /usr/local/bin or /opt. The command is `true`,
+    # so even a broken guard touches no real directory (and the tripwire
+    # fixture would still catch one that did).
+    (stubs["tmp"] / "looks-like-opt").symlink_to("/opt", target_is_directory=True)
+    argv = [a.format(tmp=stubs["tmp"]) for a in args]
+    rc, err = _sudo_stub_decision(stubs, *argv)
+    assert rc == 97, (argv, err)
+    assert "sudo-stub: refusing real path" in err, err
+
+
+@pytest.mark.parametrize("args", [
+    ("{tmp}/inst-opt/x",),
+    ("--target-directory={tmp}/inst-bin",),
+    ("-t", "{tmp}/inst-bin"),
+    ("sh", "-c", ": src {tmp}/inst-opt/x"),
+    ("https://github.com/acme/tool/releases/download/v1/t.tar.gz?a=b",),
+], ids=["tmp", "target-directory", "dash-t", "sh-c", "url"])
+def test_the_sudo_stub_allows_test_paths(stubs, args):
+    # Must-allow: the stub must still run what the install tests give it.
+    argv = [a.format(tmp=stubs["tmp"]) for a in args]
+    rc, err = _sudo_stub_decision(stubs, *argv)
+    assert rc == 0, (argv, err)
+    assert err == "", err
+
+
+def test_the_sudo_stub_judges_bare_words_by_path_not_by_cwd(stubs):
+    # A CI runner checks out under /opt/actions-runner, so the stub's cwd can
+    # resolve into /opt. Flags and bare words are not paths there (must-allow);
+    # a relative path that lands in /opt still is (must-block). The cwd is a
+    # symlink to /opt, entered read-only, and the command is `true`.
+    opt_cwd = stubs["tmp"] / "looks-like-opt"
+    opt_cwd.symlink_to("/opt", target_is_directory=True)
+    rc, err = _sudo_stub_decision(stubs, "-rf", "rm", "nuclei", "install", cwd=opt_cwd)
+    assert rc == 0, err
+    rc, err = _sudo_stub_decision(stubs, "sub/x", cwd=opt_cwd)
+    assert rc == 97, err
+    assert "refusing real path sub/x" in err
