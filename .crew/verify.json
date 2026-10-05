@@ -111,6 +111,7 @@
               "python3 scripts/_test/version-drift.py",
               "python3 scripts/_test/verifying-doc.py",
               "python3 scripts/sync-updates.py --check",
+              "python3 scripts/_test/sync-updates.py",
               "./scripts/_test/menu-groups.sh",
               "bash scripts/_test/check-powershell.sh",
               "bash scripts/_test/ps-install-keys.sh",

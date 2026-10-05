@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
-"""Regenerate the UPDATE.md blocks mirrored into README files.
+"""Regenerate the generated blocks in the README files.
+
+Two kinds of block, one script, one ``--check``.
+
+**The root README's "What's new".** ``CHANGELOG.md`` is the history. The root
+``README.md`` shows only its newest two entries, one line each, between
+``<!-- BEGIN CHANGELOG.md -->`` markers, then a link to the full changelog. A
+line is the entry's heading -- ``<subject> <version>: <title>``, with a trailing
+ticket reference dropped -- and one sentence: the entry's ``**Summary.**``
+bullet when it has one, else the first sentence of its first bullet, else
+nothing. Generated so it cannot go stale: the root README used to carry the
+three UPDATE.md mirrors below, about 500 lines that sat on crew 0.17.0 while
+crew shipped 1.0.344 (L-1518).
+
+**The component READMEs' "What's new".**
 
 Each component directory -- ``plugin/``, ``skills/``, ``mcp-servers/`` -- owns an
 ``UPDATE.md`` listing what is newly possible there, newest first. That file is the
 single source. Everything above its first ``## `` heading is preamble and stays
 local to it; the sections below are mirrored into the directory's own
-``README.md`` and into the repository ``README.md``, between markers named after
-the source path:
+``README.md`` (not the root one, since L-1518), between markers named after the
+source path:
 
     <!-- BEGIN plugin/UPDATE.md -->
     <!-- END plugin/UPDATE.md -->
 
 which is the same convention the existing ``README.md`` mirror blocks use.
 
-Two rules fall out of mirroring one text into two directory depths:
+Two rules fall out of mirroring one text into a README that is not its
+directory's own file, and they stay although each source now has one host:
 
 * **Headings are demoted one level.** A mirrored section always sits underneath a
   heading its host README supplies, so a source ``##`` renders as ``###``.
 * **The mirrored sections carry no relative links.** ``../CHANGELOG.md`` is
-  correct in at most one of the two hosts. Keep links in the preamble, which is
+  correct in at most one host depth, and a second host can come back. Keep links in the preamble, which is
   never mirrored, and write paths in the sections as inline code.
 
 Run with no arguments to rewrite every block. Run with ``--check`` to verify the
@@ -38,12 +53,27 @@ from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Component directory -> the READMEs its UPDATE.md is mirrored into.
+# Component directory -> the READMEs its UPDATE.md is mirrored into. The root
+# README.md is not one: it shows the changelog's newest entries instead (L-1518).
 SOURCES = {
-    "plugin": ("plugin/README.md", "README.md"),
-    "skills": ("skills/README.md", "README.md"),
-    "mcp-servers": ("mcp-servers/README.md", "README.md"),
+    "plugin": ("plugin/README.md",),
+    "skills": ("skills/README.md",),
+    "mcp-servers": ("mcp-servers/README.md",),
 }
+
+CHANGELOG = "CHANGELOG.md"
+WHATS_NEW_HOST = "README.md"
+WHATS_NEW_COUNT = 2
+# One line per entry, so a fallback first sentence is cut to this many characters.
+SENTENCE_LIMIT = 240
+
+ENTRY_HEADING = re.compile(
+    r"^### (?:Added|Changed|Fixed|Removed|Deprecated|Security)\b\s*(?:[\u2014\u2013-]\s*)?(.*)$"
+)
+# A trailing "(T-0037, PR A)" or "(L-1518)": a ticket reference means nothing to
+# a reader deciding whether to update.
+TICKET_SUFFIX = re.compile(r"\s*\([^()]*\b[A-Z]+-\d+\b[^()]*\)\s*$")
+BULLET_LABEL = re.compile(r"^\*\*([^*]+?)\*\*\s*")
 
 
 def read(path: Path) -> str:
@@ -139,6 +169,112 @@ def splice(text: str, marker: str, body: str, where: str) -> str:
     return text[: start + len(begin)] + f"\n\n{body}\n\n" + text[stop:]
 
 
+def changelog_entries(text: str, limit: int = WHATS_NEW_COUNT) -> list[tuple[str, list[str]]]:
+    """Return the newest ``limit`` entries as (heading text, bullet texts).
+
+    An entry is a ``### Added|Changed|Fixed|...`` heading below the first
+    ``## [`` release heading. Its bullets are the top-level ``- `` items up to
+    the next heading, each with its continuation lines joined by spaces. Fenced
+    code is skipped so a ``###`` inside an example is not an entry.
+    """
+    entries: list[tuple[str, list[str]]] = []
+    in_release = False
+    fenced = False
+    current: list[str] | None = None
+    joining = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        if line.startswith("## "):
+            in_release = line.startswith("## [")
+            current = None
+            continue
+        if line.startswith("#"):
+            current = None
+            match = ENTRY_HEADING.match(line) if in_release else None
+            if match:
+                if len(entries) == limit:
+                    break
+                current = []
+                entries.append((match.group(1).strip() or line[4:].strip(), current))
+            continue
+        if current is None:
+            continue
+        if line.startswith("- "):
+            current.append(line[2:].strip())
+            joining = True
+        elif not line.strip() or line.lstrip().startswith(("- ", "* ")):
+            # A blank line or a nested list ends the bullet's lead sentence.
+            joining = False
+        elif current and joining and line.startswith("  "):
+            current[-1] += " " + line.strip()
+    return entries
+
+
+def first_sentence(text: str) -> str:
+    """Return ``text`` up to its first full stop outside inline code."""
+    in_code = False
+    for index, char in enumerate(text):
+        if char == "`":
+            in_code = not in_code
+        elif char in ".!?" and not in_code:
+            after = text[index + 1 : index + 2]
+            if after in ("", " ") and not text[: index + 1].endswith(("e.g.", "i.e.", "etc.")):
+                return text[: index + 1]
+    return text
+
+
+def shorten(text: str, limit: int = SENTENCE_LIMIT) -> str:
+    """Cut ``text`` to ``limit`` characters at a space outside inline code."""
+    if len(text) <= limit:
+        return text
+    cut = -1
+    in_code = False
+    for index, char in enumerate(text[:limit]):
+        if char == "`":
+            in_code = not in_code
+        elif char == " " and not in_code:
+            cut = index
+    return (text[:cut] if cut > 0 else text[:limit]).rstrip(" ,;:") + " ..."
+
+
+def summary(bullets: list[str]) -> str:
+    """One plain sentence for a reader: a ``**Summary.**`` bullet, else the first bullet's."""
+    for bullet in bullets:
+        label = BULLET_LABEL.match(bullet)
+        if label and label.group(1).strip().rstrip(".").lower() == "summary":
+            return bullet[label.end() :].strip()
+    if not bullets:
+        return ""
+    first = BULLET_LABEL.sub("", bullets[0], count=1).strip()
+    return shorten(first_sentence(first))
+
+
+def entry_line(heading: str, bullets: list[str]) -> str:
+    """``- **<subject> <version>**: <Title>. <sentence>`` -- one line per entry."""
+    subject, _, title = TICKET_SUFFIX.sub("", heading).partition(": ")
+    if not title:
+        subject, title = "", subject
+    subject = subject.replace("`", "")
+    title = title.strip().rstrip(".")
+    title = title[:1].upper() + title[1:]
+    line = f"- **{subject.strip()}**: {title}." if subject.strip() else f"- {title}."
+    sentence = summary(bullets)
+    return f"{line} {sentence}" if sentence else line
+
+
+def render_whats_new(changelog: str) -> str:
+    """The root README's "What's new" block body, from the newest changelog entries."""
+    entries = changelog_entries(changelog)
+    if not entries:
+        fail(f"{CHANGELOG} has no '### Added/Changed/Fixed ...' entry under a '## [' heading")
+    lines = [entry_line(heading, bullets) for heading, bullets in entries]
+    return "\n".join(lines) + f"\n\nFull history: [{CHANGELOG}]({CHANGELOG})."
+
+
 def fail(message: str) -> NoReturn:
     print(f"sync-updates: {message}", file=sys.stderr)
     raise SystemExit(2)
@@ -169,6 +305,15 @@ def main() -> int:
                 fail(f"{target} does not exist")
             current = updated.get(target, read(path))
             updated[target] = splice(current, f"{name}/UPDATE.md", body, target)
+
+    changelog = ROOT / CHANGELOG
+    if not changelog.is_file():
+        fail(f"{CHANGELOG} does not exist")
+    host = ROOT / WHATS_NEW_HOST
+    if not host.is_file():
+        fail(f"{WHATS_NEW_HOST} does not exist")
+    current = updated.get(WHATS_NEW_HOST, read(host))
+    updated[WHATS_NEW_HOST] = splice(current, CHANGELOG, render_whats_new(read(changelog)), WHATS_NEW_HOST)
 
     stale = sorted(target for target, text in updated.items() if text != read(ROOT / target))
 
