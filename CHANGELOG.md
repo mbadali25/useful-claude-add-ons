@@ -227,6 +227,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the 13 sites put back to a bare `"git"` turned its test red. No sabotage
   anchor quoted a changed argv; the 8 entries anchored within 15 lines of a
   change still match exactly once and go red.
+
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched

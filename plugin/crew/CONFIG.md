@@ -196,8 +196,8 @@ on batch-6-build after merging T-0050: T-0050 made the five personal
 branch after merging main ce235468 it measured 79 / 132 / 53, and 77 / 129 / 52
 before that merge. 76 / 138 / 62 was measured
 on T-0074's branch after merging main 8c0843ca; the repo-only
-`autopilot.maxAutoReplans` is the one T-0074 added, and the generated tables in
-§10 and §11 state the same 76 / 138 / 62. This paragraph said 75 / 136 / 61
+`autopilot.maxAutoReplans` is the one T-0074 added. The generated tables in
+§10 and §11 state the current 81 / 138 / 57. This paragraph said 75 / 136 / 61
 until then, behind main's 76 / 137 / 61 after T-0017 added
 `context.autoClear.wrapUp` to both layers. 75 / 136 / 61 was measured
 on T-0053's branch after merging main 86d96fa1; the repo-only

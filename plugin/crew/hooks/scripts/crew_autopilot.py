@@ -1017,8 +1017,8 @@ def _unreadable_autopilot(top):
 
 def _unreadable_machine_autopilot():
     """Why the machine-global file's `autopilot` block cannot be told, or "".
-    Since T-0050 every autopilot key is personal and the machine file can hold
-    one -- a global `approval: human` the stricter-wins rule keeps. But
+    Since T-0050 the personal autopilot keys (`crew_state.PERSONAL_KEYS`) can be
+    set in the machine file -- a global `approval: human` the stricter-wins rule keeps. But
     `crew_config.read_global_config` collapses a corrupt machine file to `{}`,
     so without this check that `human` would silently read as the default
     `risk`: the unknown collapsing into the wider value. The path is read at

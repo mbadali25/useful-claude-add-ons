@@ -63,7 +63,7 @@ ALLOWLIST = (
      "gate_text": 'if found is not None or os.name == "nt":'},
     {"file": "plugin/crew/hooks/scripts/crew_platform.py", "function": "_wsl_facts",
      "tool": "ip", "reason": "WSL2 only: _wsl_facts is called only when platform.system() is Linux",
-     "gate": "plugin/crew/hooks/scripts/crew_platform.py:144",
+     "gate": "plugin/crew/hooks/scripts/crew_platform.py:145",
      "gate_text": 'if system == "Linux":'},
     {"file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
      "function": "_macos_obsidian_running", "tool": "ps",
