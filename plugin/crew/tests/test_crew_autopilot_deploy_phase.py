@@ -315,9 +315,14 @@ def test_github_null_is_deploy_target(tmp_path, monkeypatch):
     assert "github-shape" in got["reason"]
 
 
-def test_an_unreadable_promotions_file_is_deploy_target(tmp_path, monkeypatch):
+@pytest.mark.parametrize("form", ["directory", "dangling-symlink"])
+def test_an_unreadable_promotions_file_is_deploy_target(tmp_path, monkeypatch, form):
     root = _repo(tmp_path, monkeypatch)
-    (tmp_path / "repo" / ".work" / "PROMOTIONS.md").mkdir()
+    path = tmp_path / "repo" / ".work" / "PROMOTIONS.md"
+    if form == "directory":
+        path.mkdir()
+    else:
+        path.symlink_to(tmp_path / "gone.md")
     got = _after(root)
     assert (got["phase"], got["stop"]) == ("deploy-target", True)
     assert "promotions-unreadable" in got["reason"]

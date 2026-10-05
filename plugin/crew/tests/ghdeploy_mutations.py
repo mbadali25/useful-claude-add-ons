@@ -747,5 +747,9 @@ GHDEPLOY_MUTATIONS = (
     ("autopilot deploy: an unreadable PROMOTIONS.md reads as no row", APD,
      '        raise ValueError(f"promotions-unreadable: {path}: {exc}") from exc\n',
      "        return None\n",
-     _A + "test_an_unreadable_promotions_file_is_deploy_target"),
+     _A + "test_an_unreadable_promotions_file_is_deploy_target[directory]"),
+    ("autopilot deploy: a dangling PROMOTIONS.md symlink reads as no row", APD,
+     "    if not os.path.lexists(path):\n        return None  # absent",
+     "    if not os.path.exists(path):\n        return None  # absent",
+     _A + "test_an_unreadable_promotions_file_is_deploy_target[dangling-symlink]"),
 )
