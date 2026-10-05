@@ -188,6 +188,16 @@ def test_a_json_null_source_is_unknown_not_absent(tmp_path, home, capsys, where)
     assert (code, "MISSING" in out) == (2, False), out
 
 
+def test_an_install_path_os_cannot_take_is_unknown_not_a_crash(tmp_path, home, capsys):
+    _home(home, enabled={"voltagent@mkt": True})
+    _write(home / "plugins" / "installed_plugins.json",
+           '{"version": 2, "plugins": {"voltagent@mkt": [{"installPath": "bad\\u0000path"}]}}')
+
+    code, out = _main(_repo(tmp_path, ["voltagent:security-auditor"]), capsys)
+
+    assert (code, "ValueError" in out) == (2, True), out
+
+
 def test_crew_roles_resolve_even_when_registry_unreadable(tmp_path, home, capsys):
     _home(home)
     _write(home / "plugins" / "installed_plugins.json", "{not json")

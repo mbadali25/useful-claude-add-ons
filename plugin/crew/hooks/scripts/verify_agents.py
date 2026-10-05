@@ -68,7 +68,7 @@ def _read(path):
             return handle.read(), None
     except FileNotFoundError:
         return None, None
-    except (OSError, UnicodeDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         return None, f"{path}: {exc.__class__.__name__}"
 
 
@@ -146,7 +146,7 @@ def _agents_in(directory):
         entries = sorted(os.listdir(directory))
     except FileNotFoundError:
         return set(), []
-    except OSError as exc:
+    except (OSError, ValueError) as exc:  # ValueError: an embedded NUL in a registry path
         return set(), [f"{directory}: {exc.__class__.__name__}"]
     names, problems = set(), []
     for entry in entries:
