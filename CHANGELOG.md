@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.1.8: pre-review checks, L-0574's round-10 follow-ups (L-0605)
+### Fixed — crew 1.1.4: pre-review checks, L-0574's round-10 follow-ups (L-0605)
 
 - **Summary.** The pre-review linter checks and the review runner no longer crash on Windows timeouts,
   an unreadable output file or a swapped manifest, escape bidirectional control characters in status
@@ -40,7 +40,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   signal, a failed read or a selector error is could-not-check, and the cleanup is bounded by one
   post-kill deadline. macOS (no `os.waitid`) keeps the old behaviour.
 
-### Changed — `crew` 1.1.8: review ledger supersede and accepter correction, and the override line in the review prompt (H1 harness bundle: T-0098, T-0109, T-0101)
+### Changed — crew 1.1.4: review ledger supersede and accepter correction, and the override line in the review prompt (H1 harness bundle: T-0098, T-0109, T-0101)
 
 - **Summary.** An owner can now send an accepted review back to replanning with one recorded command,
   correct who accepted a round without voiding it, and the review prompt tells the reviewer when a
@@ -90,7 +90,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `sabotage_review.py`, each red on its named test through `sabotage.py`'s runner. Harness only
   (T-0087): no feature path rides along.
 
-### Changed — `crew` 1.1.8: the gate round takes the merge train (exit 10) and the reviewer sees rerere replays (L-0526)
+### Changed — crew 1.1.4: the gate round takes the merge train (exit 10) and the reviewer sees rerere replays (L-0526)
 
 - **What changed.** Once a clone's merge train is armed (`crew_train.py arm`), `review_run.py`
   calls `crew_train.acquire` after the CLEAN-receipt short-circuit and the verify gate and before
@@ -127,7 +127,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   machine-local and did not reach this branch; `crew_train.py`'s docstring still says neither
   caller imports it (a feature path, so not edited in a tooling PR). Both are in `TODO.md`.
 
-### Fixed - `crew` 1.1.8: the sabotage step finishes on Linux, and a skipped mutation never reads as green (L-0608)
+### Fixed — crew 1.1.4: the sabotage step finishes on Linux, and a skipped mutation never reads as green (L-0608)
 
 - **Why the step died.** The `cloud guard r1: azureProfile.json opened whatever it is` mutation makes
   the hook read `/dev/zero` unbounded. Its test's `_run_bounded` capped time but not memory, so the
@@ -158,7 +158,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   stopped reading the value in 0.20.15. Each now has a test that can fail. The bash deadline entry has
   a bash-only twin. The stop-budget entries are aimed at their `[sh]` or `[ps1]` case.
 
-### Fixed — `crew` 1.1.8: crew's own bookkeeping never trips the completion audit or stales a review receipt (T-0068)
+### Fixed — crew 1.1.4: crew's own bookkeeping never trips the completion audit or stales a review receipt (T-0068)
 
 TSS-510's `/crew:done` deadlocked in a repository whose `.gitignore` does not ignore `.crew/*`: the
 completion audit listed `.crew/.scope-base` and `.crew/metrics.md` as out of Touch, and running the
@@ -235,7 +235,7 @@ review bundle and staled the accepted receipt with no round left.
   `commands/implement.md` step 6, which are prompts outside the harness; `verify.knownFailures`
   (TSS F496) and `.gitignore` writes from `/crew:init` / `/crew:migrate` stay out, as the spec says.
 
-### Changed — `crew` 1.1.8: the verify gate, the review gate and the scope wrappers inherit the main checkout's config in a lane (L-0681)
+### Changed — crew 1.1.4: the verify gate, the review gate and the scope wrappers inherit the main checkout's config in a lane (L-0681)
 
 - **Summary.** In a linked worktree with no crew config of its own, the verify gate, the review
   gate and the scope and completion wrappers now read the main checkout's `.crew/config.json`, as
@@ -258,7 +258,7 @@ review bundle and staled the accepted receipt with no round left.
   `test_no_hook_script_names_the_own_config_path`, are in `test_worktree_config_shell.py`;
   `sabotage_limit_worktree.py` holds the mutations for the whole T-0096 family.
 
-### Fixed — `crew` 1.1.8: a timed-out python probe says so, and a failed probe shows what it tried (L-0690)
+### Fixed — crew 1.1.4: a timed-out python probe says so, and a failed probe shows what it tried (L-0690)
 
 - **Summary.** On a loaded Windows machine the PowerShell completion audit, scope guard, approval
   hook and verify gate no longer report "no usable python" when the python probe simply ran out of
