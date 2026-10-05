@@ -47,7 +47,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 03:30 UTC
+Last updated: 2026-10-05 03:38 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -106,6 +106,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 04:45: #357 final re-check 0 BLOCK 0 FIX. Batch 7 builder started: #357, #353, #368, + #366 if its Windows pre-flight (dispatched now on T-0059-build) is green. Carry #357 NIT (C1/bidi into _UNSAFE_PATH). Minted C-0007 (trailing-space repo path breaks focus via crew_ticket.toplevel).
 - 04:35: #357 re-check 0 BLOCK 1 FIX: _focus_remedy printed via _one_line collapses whitespace after quoting (wrong file for 'two  spaces', tab, newline; PS curly quotes). Fix: command only when paste-safe else json path. Lock (F2) verified: race keeps both entries. verify-gate red only on check-marketplace bump (log checked).
 - 04:20: #357 at 38bd282e with F1/F2/N1/N2 + main merge; sabotage: no lock -> 3 red, focus-off-offer -> 12 red. Focused re-check started (stale-lock + hostile-path checks). Subscribed to #357.
 - 04:02: note.sh: stamp file via git rev-parse --git-dir (worktree .git is a file).
