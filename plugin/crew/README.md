@@ -971,7 +971,7 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 | `pick the goal back up`, `resume the goal` | never routes: asks you to type `/crew:autopilot run --goal <slug>` |
 | `focus on <id>` (an explicit id only) | `/crew:autopilot focus <ticket>` |
 | `run <id> and <id> in parallel`, `run <id>, <id> and <id> in parallel` (two or more distinct ids) | `/crew:autopilot wave <ticket> <ticket> ...`; an id with no folder asks, naming it |
-| `split this ticket`, `split it`, `split <id>`, `this ticket is too big`, `<id> is too big` | `/crew:autopilot split <ticket>` (never `/crew:split`, the Jira command) |
+| `split this ticket`, `split it`, `split <id>`, `this ticket is too big`, `<id> is too big` | `/crew:autopilot split <ticket>` (never `/crew:split` directly) |
 | `I'm heading to bed`, `heading to bed`, `going to sleep`, `I'm going to sleep` | `/crew:autopilot sleep`; the line also asks Claude to say what changed and how to undo it |
 | `I'm back` | `/crew:autopilot wake` |
 | `good night`, `morning`, `good morning` (bare greetings) | never routes (owner decision, 2026-10-04): asks "did you mean `/crew:autopilot sleep`?" (or `wake`) |

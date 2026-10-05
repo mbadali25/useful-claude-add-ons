@@ -71,8 +71,9 @@ goes through `_route`, so a command `_clip` would change asks (T-0069).
 
 ## L-0662 -- wave, split, sleep and wake
 
-Four more rows behind the same gate, inert (no line) until each command's
-ticket adds its name to `crew_autopilot.SUBCOMMANDS`. Each passes `_screen`'s
+Four more rows behind the same gate. wave and split stay inert (no line) until
+their command's ticket adds its name to `crew_autopilot.SUBCOMMANDS`; sleep and
+wake are live since L-0652 put them there. Each passes `_screen`'s
 allowlist; sleep and wake add only the apostrophe of `I'm` (ASCII, or the
 curly one in that one position).
 
