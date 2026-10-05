@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T11:22Z
+Last updated: 2026-10-05T11:38Z
 
 ## >>> RESUME HERE
 
@@ -35,7 +35,7 @@ Last updated: 2026-10-05T11:22Z
   `main` takes the next free 1.1.x in the LAST commit; re-merge => re-bump (the drift check dates a
   version from its first commit). Other plugins bump their own patch.
 - **New tickets** minted by this rush start at **C-0020**, recorded in `pending-tickets.md`.
-- **Commits** end with `Claude-Session:` only (no Co-Authored-By) - prior owner rule; confirm pending.
+- **Commits** end with `Claude-Session:` only (no Co-Authored-By) - owner confirmed 2026-10-05.
 - **Add groups as needed** for late tickets (owner 2026-10-05).
 - The other landing session (ended at crew 1.1.0, #512) stays out of #324-#538 (owner asked it, 2026-10-05).
 
@@ -76,13 +76,15 @@ Untouched: #391 (the other session's notes branch).
 
 ### Waiting on the owner
 
-1. Expected 30-40 new tickets; GitHub shows 20 (#515-#538). Complete?
-2. T-0030 "1 of 3": parts 2 and 3 for 1.2.0?
-3. SQL and PHP standards from public evidence only (specs lean on private repos): OK?
-4. Commit trailer rule (`Claude-Session:` only): still current?
+1. Owner's local session to send its list of tickets pushed today; coordinator diffs it against #515-#538.
+
+Decided 2026-10-05: T-0030 "1 of 3" = the family T-0030 -> T-0031 (#408) -> T-0032 (#434), all in the
+rush; SQL/PHP ship thin from public evidence with C-0020 to re-check against private repos;
+commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T11:38Z Owner decisions: diff ticket list (awaiting list); T-0030 1-of-3 is the T-0030/31/32 family; SQL+PHP ship thin, C-0020 minted; trailers Claude-Session only.
 - 2026-10-05T11:22Z Owner approved: landing order H1 -> H3 -> release -> H2; L-0515 nothing to build (folded into L-0520); T-0033 question to owner only if the builder finds one.
 - 2026-10-05T11:22Z Owner asked the other landing session to stay out of #324-#538.
 - 2026-10-05T11:05Z Handoff notes created (this file); brief, review script, schema and note.sh copied to docs/handoff/cloud/rush-1.2.0/.
