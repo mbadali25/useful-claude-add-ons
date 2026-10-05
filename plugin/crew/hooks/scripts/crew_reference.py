@@ -87,11 +87,12 @@ SECRET_PATTERNS = (
     ("url-credentials", re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s/:@<>{}$]+:[^\s/@<>{}$]+@")),
     ("authorization-header", re.compile(
         r"(?i)\bauthorization[\"']?\s*[:=]\s*[\"']?(?:bearer|basic|token|digest)\s+"
-        r"(?![<$%{])(?![*xX.]+(?:\s|$|[\"'`,;)]))"
-        # 8+ characters anywhere; any length when the value ends the line or
-        # a quoted string (`Basic YTpi` is `a:b`), so prose after the scheme
-        # word (`Bearer token from env`) still passes.
-        r"(?:[A-Za-z0-9._~+/=-]{8,}|[A-Za-z0-9._~+/=-]+(?=\s*(?:$|[\"'`,;)])))")),
+        r"(?![<$%{])(?![*xX.]+(?:\s|$|[\"'`,;)|#]))"
+        # 8+ characters anywhere; any length when the value ends the line, a
+        # quoted string, a Markdown table cell (`|`) or comes before a `#`
+        # comment (`Basic YTpi` is `a:b`), so prose after the scheme word
+        # (`Bearer token from env`) still passes.
+        r"(?:[A-Za-z0-9._~+/=-]{8,}|[A-Za-z0-9._~+/=-]+(?=\s*(?:$|[\"'`,;)|#])))")),
     # A quoted literal assigned to a credential-named key, spaces and all (a
     # passphrase is still a password). A value starting `$`, `<`, `{` or `%`
     # is a placeholder, and backticks are not quotes, so
