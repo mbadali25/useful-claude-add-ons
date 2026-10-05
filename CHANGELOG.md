@@ -68,8 +68,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **What changed.** New `plugin/crew/skills/stack-php/SKILL.md` covers loose comparison,
   `empty("0")`, array-key behaviour, bound SQL parameters, output escaping, `unserialize`,
   per-file `strict_types`, byte strings, time zones and `composer.lock`. It has a `## Standards`
-  section and a proposed verify.json rule, `php -l` over tracked `.php`/`.phtml` files, which
-  exits 77 with `TOOL MISSING` when `php` is absent. New `stack-php/references/candidates.md`
+  section and a proposed verify.json rule: `php -l` over tracked and untracked `.php`/`.phtml`
+  files. The rule exits 77 with `TOOL MISSING` when `php` is absent, and with `NO INPUT` when
+  there is no PHP file to check. New `stack-php/references/candidates.md`
   covers PHP-01 (bound parameters and allow-listed identifiers), PHP-P1 (no `unserialize` of
   data an attacker can influence), PHP-P2 (context escaping) and PHP-P3 (strict comparison).
   Each gives its public change sets, its verdict and a php.net Source sentence, re-matched
@@ -82,7 +83,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   public change sets are WordPress plugins. PHP-02..PHP-20 were not assessed, so the spec's
   `grep -c '^PHP-' >= 20` and "at least 20 PHP-NN in stack-php" checks do not pass. That is a
   reported deviation, with no placeholder rows added. The verify rule was run against real PHP
-  8.3.6 on the build host: exit 0 on a clean file, and nonzero on a parse error.
+  8.3.6 on the build host. It exits 0 on a clean untracked file, 1 on a parse error, and 77 with
+  no input.
 
 ### Added — crew: Angular 2+ candidate standards, no gated set yet (L-0538)
 

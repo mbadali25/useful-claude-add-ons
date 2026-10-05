@@ -26,7 +26,8 @@ already uses: a framework's query builder, escaping helper or container wins ove
 - **`empty("0")` is true.** So are `0`, `""`, `[]` and `null`. Test for the case meant:
   `isset`, `=== null`, `=== ""`, `count() === 0`.
 - **Array keys survive more than expected.** `array_filter()` keeps the original keys, so
-  `json_encode()` of the result emits an object, not a list - wrap it in `array_values()`.
+  when it removes anything but the tail, `json_encode()` emits an object, not a list - wrap
+  it in `array_values()`.
   `array_merge()` renumbers integer keys; `+` keeps the left side's keys and drops the
   right side's duplicates.
 - **SQL values go through bound parameters**, never concatenation, even after an escaping
@@ -68,7 +69,7 @@ production engine and charset, not SQLite.
 {
   "paths": ["**/*.php", "**/*.phtml"],
   "run": [
-    "sh -c 'command -v php >/dev/null 2>&1 || { echo \"TOOL MISSING: php is not on PATH, so the syntax check DID NOT RUN. This is a missing tool, not a passing or failing check. Install PHP to check locally.\" >&2; exit 77; }; git ls-files -z -- \"*.php\" \"*.phtml\" | xargs -0 -r -n 1 php -l'"
+    "sh -c 'command -v php >/dev/null 2>&1 || { echo \"TOOL MISSING: php is not on PATH, so the syntax check DID NOT RUN. This is a missing tool, not a passing or failing check. Install PHP to check locally.\" >&2; exit 77; }; [ -n \"$(git ls-files --cached --others --exclude-standard -- \"*.php\" \"*.phtml\")\" ] || { echo \"NO INPUT: no tracked or untracked .php/.phtml file, so the syntax check DID NOT RUN.\" >&2; exit 77; }; git ls-files --cached --others --exclude-standard -- \"*.php\" \"*.phtml\" | { rc=0; while IFS= read -r f; do [ -f \"$f\" ] || continue; php -l \"$f\" || rc=1; done; exit $rc; }'"
   ],
   "reach": "local",
   "why": "php -l refuses a file that does not parse before a human reviews the diff"

@@ -40,7 +40,7 @@ it runs `REVOKE ALL ON FUNCTION ... FROM PUBLIC` and grants `EXECUTE` only to th
 that need it. `CREATE OR REPLACE` does not keep an earlier `SET` clause, so state it again
 every time. Without the pin, a caller can shadow an object the function uses and run it
 with the definer's privileges. The default `EXECUTE` grant to `PUBLIC` makes the function
-callable by every role.
+callable by every role that has `USAGE` on its schema.
 
 Public change sets (message text only):
 - `contatoatacadista-83e743a6` (felipebalcao/contatoatacadista@83e743a6): "pin search_path

@@ -32,9 +32,11 @@ research ids.
 Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
 3 public change sets, which do not count, all WordPress plugins.
 
-Values reach SQL only as bound parameters: PDO or mysqli prepared statements,
-`$wpdb->prepare` placeholders, and generated placeholder lists for `IN (...)`. Never
-concatenate, even after `esc_sql` or `real_escape_string`. An identifier (an `ORDER BY`
+Values reach SQL only through the driver's bound parameters (PDO or mysqli prepared
+statements, with a generated placeholder list for `IN (...)`), or, where a framework offers
+no binding, through its placeholder API: WordPress's `$wpdb->prepare` substitutes escaped
+values into the SQL string rather than binding them. Never concatenate, even after
+`esc_sql` or `real_escape_string`. An identifier (an `ORDER BY`
 column, a table) comes from a fixed allow-list. Prepare the statement even when the
 parameter list is empty, so there is one code path.
 
@@ -56,19 +58,21 @@ exclusively uses prepared statements, the developer can be sure that no SQL inje
 will occur (however, if other portions of the query are being built up with unescaped
 input, SQL injection is still possible)."
 
-Public verdict: admitted on public stand-ins (3, all WordPress). That does not count
-under the owner's decision.
+The Source covers driver binding. The public evidence is all WordPress's placeholder API,
+which is escaping, not binding. Public verdict: admitted on public stand-ins (3, all
+WordPress). That does not count under the owner's decision.
 
-### PHP-P1 Never `unserialize()` data an attacker can influence: use JSON, or restrict `allowed_classes`
+### PHP-P1 Never `unserialize()` data an attacker can influence: decode it as JSON
 
 Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
 4 public change sets, which do not count.
 
 This is probably the spec's left-out "untrusted-input `unserialize`" candidate. Data from
 a request, cookie, cache, queue or database column that another party can write is
-decoded with `json_decode`, not `unserialize` or `maybe_unserialize`. Where PHP
-serialization cannot be avoided, pass `['allowed_classes' => false]` or an explicit class
-list and check the result's type. The manual says even that is not safe for user input.
+decoded with `json_decode`, not `unserialize` or `maybe_unserialize`. `allowed_classes`
+is not a defence for such data: the manual says it is unsafe for untrusted input whatever
+the option. For serialized data only trusted code wrote, pass `['allowed_classes' => false]`
+or an explicit class list and check the result's type.
 
 Public change sets (message text only):
 - `askmydocs-29d98922` (lopadova/AskMyDocs@29d98922): a Copilot PR review found a queued
@@ -100,13 +104,17 @@ a security review found a query parameter echoed raw into an HTML attribute, and
 `luna-551e9816` (as above), where a code review found a requested path reflected without
 `htmlspecialchars()`.
 
+Source: https://www.php.net/manual/en/function.htmlspecialchars.php: "Certain characters have
+special significance in HTML, and should be represented by HTML entities if they are to
+preserve their meanings." Public verdict: candidate (2).
+
 ### PHP-P3 Security decisions use strict comparison (`===`, `in_array(..., true)`, `hash_equals`)
 
 Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
 0 public change sets found.
 
 Source: https://www.php.net/manual/en/function.in-array.php: "Searches for needle in
-haystack using loose comparison unless strict is set."
+haystack using loose comparison unless strict is set." Public verdict: candidate (0).
 
 ## Not assessed
 
