@@ -9,6 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: .NET candidate standards and defaults, no gated .NET set yet (L-0535)
+
+- **Summary.** `stack-dotnet` now lists two candidate .NET standards with their sources, plus
+  the test-framework and `Result` defaults. None is enforced, because no rule this build could
+  write has three reviewed change sets that count.
+- **What changed.** New `plugin/crew/skills/stack-dotnet/references/candidates.md` covers
+  DOTNET-P1 (never block on async code) and DOTNET-P2 (no per-call `HttpClient`). Each entry
+  gives its public change sets, its verdict and a Microsoft Learn Source sentence, re-matched
+  against the raw page. The file also gives the spec's per-rule counts for DOTNET-01..20 and the
+  conventions, which have no id. `stack-dotnet/SKILL.md` gains a `## Standards` section with the
+  defaults: xUnit + NSubstitute + FluentAssertions for new test projects, and the repository's
+  own `Result<TValue, TError>` with no package mandated. Its async and `HttpClient` pitfalls point
+  at the candidates. No `references/dotnet.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  bar. The spec expected DOTNET-08, -13 and -15 to ship on the owner's private re-count, but
+  their rule text is in the owner's research, which this build did not have. That is a reported
+  deviation.
+
 ### Added — crew: SQL candidate standards, no gated SQL set yet (L-0532)
 
 - **Summary.** `stack-sql` now lists three candidate SQL standards with their sources. None is

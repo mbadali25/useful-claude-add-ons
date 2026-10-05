@@ -218,7 +218,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-qa-standards` | Harness (H1-H11), review-process (R1-R12), gate and environment (G1-G5, E1-E7) standards with a report-only audit and a generated QA-process doc; also the recurring-findings probe index, derived from `crew-standards` (each class names the standards it echoes; the standard wins on a conflict). Backs `/crew:init`, `/crew:upgrade`, `/crew:implement` step 2 |
 | `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy |
 | `stack-bash` | Bash pitfalls, checks and `verify.json` wiring — quoting, pipeline exit codes, Git Bash surprises |
-| `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section |
+| `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section; no gated .NET set yet, its candidate standards, conventions and test-framework defaults |
 | `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening |
 | `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding; the PYTHON standards set's pointer and its candidates |
 | `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking; no gated SQL set yet, its candidate standards and their sources |

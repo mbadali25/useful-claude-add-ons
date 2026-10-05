@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: .NET candidate standards and defaults, no gated .NET set yet. `stack-dotnet` now lists two candidate .NET standards with their sources, plus the test-framework and `Result` defaults. None is enforced, because no rule this build could write has three reviewed change sets that count.
 - **crew**: SQL candidate standards, no gated SQL set yet. `stack-sql` now lists three candidate SQL standards with their sources. None is enforced, because no SQL rule yet has three reviewed change sets that count.
-- **crew**: Standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch`. A review round crew scored INCOMPLETE no longer gets a standards-proposals file, a SHA-256 git repository can stamp its self-check and pass the review gate, and the plan's standards can be listed before any scope base exists.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
