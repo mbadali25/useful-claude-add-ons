@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T18:13Z
+Last updated: 2026-10-05T18:15Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T18:15Z G2 cleared: slices logic is one total function checked against an exhaustive oracle (fails on old code; last Codex round asked only for more test cases). T-0059 stays in 1.2.0. G6 split and started: G6a (autopilot core, base G2+G0+release), G6b (L-0541 goals family first, then sleep; base G2+release). New logic goes in new modules (crew_autopilot.py over its line limit).
 - 2026-10-05T18:13Z H1 landed on branch (c309e324, crew 1.1.4, main 97dda0bd merged; group review 5 rounds -> CLEAN; full crew suite 13959 passed). Merge-train exit renumbered 6 -> 10 (L-0528 reserves 5-7). PR #542 -> main opened; waiting for CI.
 - 2026-10-05T17:48Z G0 final fix CLEAN (repo-key sweep found nothing). G0 jumps the release queue (after G3). Started G3c (#408, #410, #412) and G3d (#434, #437, #442, #455), both based on rush/g0-coord-wave + release.
 - 2026-10-05T17:41Z G0 fixes done (head 3488fbe4): invalid lane ids (T-0029), port in repo key and immediate recovery on provably dead PID (T-0030, owner decisions). Reused PID with different start time stays 'presented, never adopted' per spec line 64. Capped at r6 -> coordinator review of 3488fbe4 running (incl. repo-key sweep). Harness patches refreshed: coord 103 mutations, wave 16.
