@@ -52,7 +52,7 @@
   "_note_preReview": [
     "Read by review_run.py (review_checks.py) BEFORE a review round is reserved, not by the Stop gate (L-0574).",
     "Each changed file in the review bundle is linted at its base blob and at its bundle blob; a finding the bundle ADDS",
-    "(keyed path+rule+message, line numbers ignored) refuses the round with exit 5. A tool that is missing, crashes, times",
+    "(keyed path+rule+message, line numbers ignored) refuses the round with exit 9. A tool that is missing, crashes, times",
     "out, prints unparseable output or cannot parse a changed file is COULD NOT CHECK - never a pass - and also refuses",
     "unless --allow-unverified. check-marketplace.py, self-claims and version drift are NOT here: the verify gate already",
     "runs them (rules[0] and the docs/scripts rules) and the review preflight already refuses a tree that gate has not passed.",

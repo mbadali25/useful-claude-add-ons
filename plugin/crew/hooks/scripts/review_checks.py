@@ -41,7 +41,7 @@ read, a config entry this module does not understand, and a file the tool
 could not parse on either side (ShellCheck SC1072, ruff `invalid-syntax`,
 PSScriptAnalyzer `ParseError`, actionlint `syntax-check`), because then that
 file was not checked, and a broken base would baseline new findings away.
-`review_run.py` refuses a round on `fail` and on `could-not-check` (exit 5,
+`review_run.py` refuses a round on `fail` and on `could-not-check` (exit 9,
 nothing reserved). `--allow-unverified` overrides only `could-not-check`, and
 review.json records the override.
 
