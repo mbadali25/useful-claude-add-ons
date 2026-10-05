@@ -381,8 +381,10 @@ class Remote:
     def create(self, args):
         head = args[args.index("--head") + 1]
         self.created.append(list(args))
-        self.prs[head] = _pr("OPEN", number=10 + len(self.created),
-                             head=git(self.root, "rev-parse", "HEAD").strip())
+        self.prs[head] = dict(_pr("OPEN", number=10 + len(self.created),
+                                  head=git(self.root, "rev-parse", "HEAD").strip()),
+                              baseRefName=(args[args.index("--base") + 1]
+                                           if "--base" in args else "main"))
         return (0, "https://example.test/pull/x\n", "")
 
     def merge(self, args):
@@ -632,3 +634,29 @@ def test_next_slice_refused_unless_next_names_it(tmp_path, monkeypatch):
     got = crew_autopilot_slices.next_slice(str(root), T)
 
     assert (got["ok"], "not next-slice" in got["reason"]) == (False, True)
+
+
+# --- port review round 1 (release/1.2.0) ----------------------------------------
+
+def test_existing_slice_pr_on_another_base_is_not_shipped(tmp_path, monkeypatch):
+    """T-0059 port review BLOCK: a retargeted or hand-opened PR would merge
+    into a branch the plan did not name; ship stops, nothing pushed."""
+    prs = {BRANCH: dict(_pr("OPEN", number=5), baseRefName="develop")}
+    root, fake, _, pushes = _ship_env(tmp_path, monkeypatch, prs=prs)
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], "based on develop, not main" in got["reason"], pushes,
+            fake.ran("pr", "merge")) == ("stop", True, [], []), got
+
+
+def test_slice_pr_created_before_a_stop_is_recorded(tmp_path, monkeypatch):
+    """T-0059 port review FIX: a PR ship opened and then stopped on (a failed
+    check) is on record, so its slice's branch is known to next-slice."""
+    root, fake, _, _ = _ship_env(tmp_path, monkeypatch)
+    fake.answers["pr_checks"] = _checks(("check", "fail"))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert got["action"] == "stop", got
+    assert [(e["slice"], e["branch"]) for e in _read_state(root)["shipped"]] == [(1, BRANCH)]

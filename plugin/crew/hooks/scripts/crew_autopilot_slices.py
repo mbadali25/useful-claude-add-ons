@@ -248,10 +248,35 @@ def ship_slice(top, ticket, ctx, branch, default, ship_from):
         return ap._ship_result(ticket, "stop", True, (  # pylint: disable=protected-access
             order or "could not read an earlier slice's PR state") + " - nothing pushed")
     base = slice_base(ctx["piece"]["n"], ctx["slices"], merged, branches, default)
+    wrong = _pr_base_stop(top, branch, base)
+    if wrong:
+        return ap._ship_result(ticket, "stop", True, wrong + " - nothing pushed")  # pylint: disable=protected-access
     result = ship_from(create_argv(ticket, ctx, branch, base))
-    if result["action"] in ("open-pr", "merged"):
+    # Any PR this run left behind is recorded -- one created before a stop
+    # (checks failed or timed out) included -- so a person merging it later
+    # still leaves the slice's branch on record for next-slice.
+    if result["action"] in ("open-pr", "merged") or result.get("pr"):
         record_shipped(top, ticket, ctx, branch, base)
     return result
+
+
+def _pr_base_stop(top, branch, base):
+    """The reason an existing PR for `branch` may not ship, or "": its base
+    must be the plan's (`slice_base`). A retargeted or hand-opened PR would
+    merge into some other branch. Could not read is a stop too."""
+    pr = crew_ship.read_pr(top, branch)
+    if pr is None:
+        return f"could not read the PR state for {branch}"
+    if pr.get("state") == "NONE":
+        return ""
+    view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
+    found = view.get("baseRefName") if isinstance(view, dict) else None
+    if not isinstance(found, str) or not found:
+        return f"could not read the base branch of {branch}'s PR #{pr.get('number')}"
+    if found != base:
+        return (f"{branch}'s PR #{pr.get('number')} is based on {found}, not {base} (the "
+                "plan's base for this slice) - a person retargets it")
+    return ""
 
 
 def slice_command(ticket):

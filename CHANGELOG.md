@@ -68,6 +68,11 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   pylint's module-length limit; `crew_ship.merged_phase` takes the
   `finished` hook that names `next-slice`. `done.md` and `implement.md` stay
   inside their 120-line budgets, edited in place.
+- **Port review fixes.** `ship` stops (nothing pushed) when the slice's
+  branch already has a PR on another base than the plan's; a PR ship opened
+  and then stopped on (a failed or timed-out check) is recorded in
+  `slices.json`; `Base: slice 0` is refused; the README's writer list names
+  sliced `ship`'s `slices.json`.
 
 ### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 
@@ -155,7 +160,9 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   or a firing trigger is unanswered), `split --check` holds a `slices` decision
   at plan to the plan's `## PR slices` (a plan with no section is not a sliced
   one), and a `--check` the gate refuses drops the passing record
-  `crew_split.check` wrote, so `confirm` can never trust it.
+  `crew_split.check` wrote, so `confirm` can never trust it. Round 3: a
+  `metrics.md` holding a review row whose counts do not parse is a malformed
+  source (`unknown`), never "no review recorded".
 
 ### Added — crew 1.1.2: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
 
@@ -275,7 +282,9 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   never pass a judge). Round 4 also denies and probes `~/.ssh`, `~/.git-credentials` and
   `~/.config/git/credentials`, strips `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_SSH`/
   `GIT_SSH_COMMAND`, and never prints a failing `aws` command's stderr (the check names the command
-  and its exit code).
+  and its exit code). Round 5: `~/.terraformrc` is denied and probed and `TERRAFORM_CONFIG`
+  stripped; the session gets `credential.helper` reset to empty through `GIT_CONFIG_COUNT`, so no
+  helper `~/.gitconfig` names (`store --file <anywhere>`, a script) answers git.
 - Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.
@@ -366,7 +375,7 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   is named `(repo, not read)`; and a config file that is there and cannot be read
   is `could not tell (...)`, never an empty list (sorted first, so a cut line
   still says it); a repo `[]` scope is named too, and a key holding a `.` is one
-  key, never two levels.
+  key, never two levels -- in the machine file's dropped keys too.
 - **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
   ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
   and `approval_hook.py`), the bare `/crew:approve` listing what is pending,
