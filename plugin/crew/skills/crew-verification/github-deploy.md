@@ -18,7 +18,7 @@ last line verbatim.
 | 2. dispatch | the printed `gh workflow run ...`, **as its own Bash call**, exactly as printed | The cloud guard and promote-gate judge it there. A block is gate 1 failing: fix the precondition it names. A non-zero exit is a stop. |
 | 3. identify | `crew_ghdeploy.py identify` | 0: the run is named; go on. 3: could-not-tell (two candidates, none in time, unreadable): **stop**. Do not pick a run from the Actions tab yourself; go to step 5. |
 | 4. watch | `crew_ghdeploy.py watch` | 75: the slice ended with the run unfinished: **run watch again**. 0: pass. 1: fail. 3: unknown (unreadable, or still running at the deadline: the run is left running and named). Go to step 5 on 0, 1 or 3. |
-| 5. record | `crew_ghdeploy.py record` | 0: written to `.work/PROMOTIONS.md`. 3: the state file has a run but no verdict: run watch first. |
+| 5. record | `crew_ghdeploy.py record` | 0: written to `.work/PROMOTIONS.md`. 3, by reason: `record-without-verdict` - run watch first, then record; `state-file-missing` / `state-file-unreadable` - prepare never ran or its file is damaged: nothing can be recorded from it, so stop and report that the deploy is unrecorded; `promotions-unreadable` - `.work/PROMOTIONS.md` cannot be read (a directory, permissions): fix that file, then run record again. |
 
 After a pass, gates 3 to 5 run as for any environment and promote writes the
 table row as today. On fail, unknown or could-not-tell, the sequence stops at

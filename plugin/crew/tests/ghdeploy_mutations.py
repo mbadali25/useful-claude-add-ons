@@ -570,6 +570,10 @@ GHDEPLOY_MUTATIONS = (
      '    text = _ANSI.sub("", str(text)).replace("|", "/")\n',
      '    text = str(text).replace("|", "/")\n',
      _T + "test_record_fail"),
+    ("ghdeploy record: an unreadable PROMOTIONS.md is replaced by a fresh one", GH,
+     '        raise CouldNotTell("promotions-unreadable", f"{path}: {exc}") from exc\n',
+     '        old = HEADER\n',
+     _T + "test_record_an_unreadable_promotions_file_is_could_not_tell"),
     # --- record must-allow non-vacuity --------------------------------------
     ("ghdeploy record: a pass writes the not-run row too", GH,
      '    if outcome != "pass":\n        add.append(_clean(f"  previous all-pass sha',

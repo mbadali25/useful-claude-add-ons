@@ -1739,6 +1739,7 @@ def test_record_without_verdict(tmp_path, monkeypatch):
     assert text == _PREV and gh.calls == []
 
 
+@_scenario
 def test_record_is_atomic(tmp_path, monkeypatch):
     """A record that raises while building the excerpt leaves the file
     byte-identical, and so does a failed replace."""
@@ -1804,3 +1805,18 @@ def test_watch_one_call_ends_inside_the_bash_limit(tmp_path, monkeypatch):
     assert lines[-1] == "result=unknown run=13 reason=view-unreadable"
     assert seen == [(["run", "watch"], 570), (["run", "view"], 25)]
     assert clock["now"] - start < 600
+
+
+@_scenario
+def test_record_an_unreadable_promotions_file_is_could_not_tell(tmp_path, monkeypatch):
+    """A PROMOTIONS.md that cannot be read is exit 3 and left as it was; it
+    is never replaced by a fresh header."""
+    root = _record_repo(tmp_path, monkeypatch)
+    (root / ".work").mkdir(exist_ok=True)
+    (root / ".work" / "PROMOTIONS.md").mkdir()
+    gh = FakeGh({("run", "view"): (0, _FAIL_LOG)})
+    code, lines = _run(monkeypatch, gh, "record", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=promotions-unreadable"
+    assert (root / ".work" / "PROMOTIONS.md").is_dir()
+    assert sorted(p.name for p in (root / ".work").iterdir()) == ["PROMOTIONS.md"]
