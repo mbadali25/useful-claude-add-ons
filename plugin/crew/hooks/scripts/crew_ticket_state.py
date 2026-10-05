@@ -59,6 +59,7 @@ CANNOT_TELL = "cannot tell"
 LEDGER_NOT_REPLAN = ("EMPTY", review_ledger.IN_REVIEW, review_ledger.REVIEWED,
                      review_ledger.ACCEPTED)
 
+_STATUS_FIELD_RE = re.compile(r"(?:^|\s)status:\s*(\S+)", re.IGNORECASE)
 _DEPENDS_RE = re.compile(r"^depends-on:\s*(.*?)\s*$", re.IGNORECASE)
 
 
@@ -110,13 +111,11 @@ def _prose_closing(top, ticket):
 
 
 def _header_status(spec_text):
-    """The word after `status:` on the spec's header line, lower-cased, or None."""
-    header = crew_ticket.header_line(spec_text)
-    at = header.lower().find("status:")
-    if at < 0:
-        return None
-    rest = header[at + len("status:"):].split()
-    return rest[0].lower() if rest else None
+    """The word after `status:` on the spec's header line, lower-cased, or None.
+    A title that carries its own `status:` with another word makes the field
+    ambiguous: None (cannot tell), never the title's word."""
+    words = {m.lower() for m in _STATUS_FIELD_RE.findall(crew_ticket.header_line(spec_text))}
+    return words.pop() if len(words) == 1 else None
 
 
 def _spec(top, ticket):
