@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.1.10: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None` (L-0530)
+### Changed — crew 1.1.1: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None` (L-0530)
 
 - **Summary.** When a ticket's INDEX status is a word crew does not know, the tracker now says so, and for a
   retired word it names the crew word to write instead; it still never guesses a lane.

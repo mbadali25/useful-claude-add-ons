@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.10**: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None`. When a ticket's INDEX status is a word crew does not know, the tracker now says so, and for a retired word it names the crew word to write instead; it still never guesses a lane.
+- **crew 1.1.1**: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None`. When a ticket's INDEX status is a word crew does not know, the tracker now says so, and for a retired word it names the crew word to write instead; it still never guesses a lane.
 - **check-marketplace.py --pending-bump**: A draft PR reports version drift as pending at land, repository tooling, no plugin version. A build branch no longer has to bump a plugin version to get a green draft PR: version drift there reads `pending at land`, and a ready PR or a push to main still fails on it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
