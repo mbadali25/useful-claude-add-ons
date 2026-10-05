@@ -3845,6 +3845,25 @@ flowchart TB
 
 Source: [`docs/diagrams/data-flow-crew-config-two-files.mmd`](../../docs/diagrams/data-flow-crew-config-two-files.mmd)
 
+### Data flow crew config unattended
+
+unattendedCloud (T-0044): read from the MACHINE file only by crew_unattended.py, never through resolve_config; a repo copy is dropped from resolution and reported as ignored.
+
+```mermaid
+flowchart LR
+    GLB2[("~/.claude/crew/config.json<br/>unattendedCloud")]
+    REPO2[(".crew/config.json")]
+    UCREAD["crew_unattended.py<br/>resolve_target :345"]
+    UCDROP["resolve_config / explain_config<br/>repo copy dropped, repoIgnored"]
+    CHAIN["run_checks :767<br/>settings, export, identity, sandbox probe"]
+    GLB2 -->|"machine file only"| UCREAD
+    REPO2 -.->|"environments.nonProd only"| UCREAD
+    REPO2 -.->|"unattendedCloud ignored"| UCDROP
+    UCREAD --> CHAIN
+```
+
+Source: [`docs/diagrams/data-flow-crew-config-unattended.mmd`](../../docs/diagrams/data-flow-crew-config-unattended.mmd)
+
 ### Data flow crew config write
 
 The two writers behind /crew:config --set: the machine-file planner and the repo-file planner, the per-leaf and merged-file checks both share, and where each refuses.

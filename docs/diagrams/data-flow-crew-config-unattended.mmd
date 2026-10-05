@@ -6,8 +6,7 @@
 %%    crew_state.GLOBAL_CONFIG_PATH directly; resolve_target (:345) judges it, with the repo's
 %%    environments.nonProd (cloud_guard.environments_config) as the second layer for --environment.
 %% Note UCDROP: resolve_config drops a repo copy (crew_config.py:845); explain_config reports the
-%%    global layer alone and flags repoIgnored (crew_config.py:1730
-1785).
+%%    global layer alone and flags repoIgnored (crew_config.py:1730-1785).
 flowchart LR
     GLB2[("~/.claude/crew/config.json<br/>unattendedCloud")]
     REPO2[(".crew/config.json")]
