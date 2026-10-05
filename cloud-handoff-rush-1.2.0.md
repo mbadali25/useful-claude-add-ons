@@ -42,7 +42,8 @@ Last updated: 2026-10-05T12:42Z
 ## State
 
 - `main` = `a555ff37` (crew 1.1.0). `release/1.2.0` = `a555ff37` (fast-forwarded 2026-10-05).
-- Nothing from the rush has merged yet. No group PRs opened yet (only #514, this notes PR).
+- Merged into release/1.2.0: #539 G8 (c510b764, crew 1.1.1). Next free crew version: **1.1.2**.
+- Open group PRs: #540 H3 -> main (lands after H1). Source PRs are closed when their content reaches main.
 
 ### Groups (scope given to each builder)
 

@@ -33,7 +33,7 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
 | 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | waiting on PRs |
 | 8 | G6 autopilot builds, sleep, goals | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435, then L-0541 (no PR yet), #459, #463, #469 | next free | after G2 lands (T-0012) |
-| 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511 PR 1, L-0530 (L-0511 PR 2 deferred) | 1.1.1 | built; PR #539, final group review running |
+| 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511 PR 1, L-0530 (L-0511 PR 2 deferred) | 1.1.1 | **merged into release/1.2.0** (#539, c510b764) |
 | 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
 | 9b | H3 review-harness tickets (to main, alone) — built, head ddb96134, crew 1.1.12; T-0033 on hold (owner question) | `rush/h3-review` | L-0528, L-0514, T-0033, L-0518 (tooling half), L-0522 PR 2 of 3 (#538, never reviewed), L-0527 | next free | waiting on PRs |
 | 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
@@ -57,7 +57,7 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | L-0528 (#526) | `review_run.py` EXIT_UNVERIFIED and EXIT_PROBE_LIMITED both 5 | H3 | `review_*.py` is HARNESS |
 | L-0518 (#533) | T-0085 round-4 findings in crew-standards / review_run self-check gate | G7 feature half, H3 tooling half | split per its handoff |
 | L-0514 (#529) | INCOMPLETE review rounds retry automatically after a tool-failure refund | H3 | review loop |
-| T-0033 (#527) | version-only re-bump does not stale a review receipt | H3 | review receipt hash |
+| T-0033 (#527) | version-only re-bump does not stale a review receipt | none | owner 2026-10-05: close as superseded by L-0522 PR 2 when #540 lands |
 | L-0525 (#522) | sabotage suite: 13 vacuous entries, 1 unproven, cloud-guard r1 OOM | H2 | sabotage suite |
 | L-0519 (#525) | reconcile crew-standards with crew-qa-standards | G7 | lands first in G7: the language sets below build on one reconciled source |
 | L-0522 (#538) | delta gate, PR 2 of 3 (`L-0522-tooling`) | H3 | harness (`review_delta.py`, ledger, run, sabotage); ~2,100 lines never reviewed; PRs 1 and 3 of 3 not seen |
@@ -91,6 +91,8 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0020 | Re-check the SQL (L-0532) and PHP (L-0533) standards sets against the owner's private repos; admit or drop rules the public-evidence pass could not settle | owner decision 2026-10-05: ship thin from public evidence | L-0532, L-0533 landed | needs ticket |
 | C-0021 | Sabotage entries for L-0530: the `read` could-not-tell branch, and a hint applied as a write (`sabotage_tracker.py`, harness) | G8 report | L-0530 on main | H2 lane |
 | C-0022 | `plugin/crew/docs/external-tool-formats.md:65` cites `review_run.py:1106` for the verdict parser; it is at `:1112` (wrong on main already; the named-citation test skips bare `:N` cites) | H3 report | none | needs ticket |
+| C-0023 | `crew_autopilot._header_status` / `_successor` share L-0639/L-0640's fixed weaknesses: a `status:` in the title read as the field; `split-into: TBD` counted as a successor | G3 report | none (L-0550 may supersede) | needs ticket |
+| C-0024 | `review_ledger.summary` reports `EMPTY` for a `state: null` ledger that records rounds; other readers may treat it as clean (harness: tooling-only PR) | G3 report | none | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
