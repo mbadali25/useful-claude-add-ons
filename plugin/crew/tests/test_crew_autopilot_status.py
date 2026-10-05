@@ -1199,3 +1199,61 @@ def test_status_renders_needs_owner_within_the_line_budget(tmp_path):
     assert (code, _field(lines, "phase").startswith("phase: needs-owner"),
             _field(lines, "waiting on").split(" - ")[0], len(lines) <= crew_autopilot.STATUS_MAX_LINES) == (
         0, True, "waiting on: owner", True)
+
+
+# --- T-0027: status prints no policy-value warning (T-0010 review round 6 FIX) ------------------
+
+def _status_both(root):
+    """status's text lines and its --json output."""
+    code, lines = _lines(root)
+    done = subprocess.run([sys.executable, _SCRIPT, "status", "--root", str(root), "--json"],
+                          capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+    return code, lines, json.loads(done.stdout)
+
+
+@pytest.mark.parametrize("key", ["approval", "questions"])
+@pytest.mark.parametrize("value", ["bogus", True, ["self"]], ids=["string", "bool", "list"])
+def test_status_prints_no_policy_value_warning(tmp_path, key, value):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, risk="low")
+    config = root / ".crew" / "config.json"
+    settings = json.loads(config.read_text(encoding="utf-8"))
+    settings["autopilot"][key] = value
+    _write(config, json.dumps(settings))
+    bad = _status_both(root)
+    del settings["autopilot"][key]
+    _write(config, json.dumps(settings))
+
+    plain = _status_both(root)
+
+    assert bad == plain
+    # The approve phase's own reason names autopilot.approval in both runs; no
+    # warning line may name either policy key.
+    assert not [line for line in bad[1] if line.startswith("warning:") and (
+        "autopilot.approval" in line or "autopilot.questions" in line)]
+
+
+def test_status_keeps_a_non_policy_warning(tmp_path):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval="bogus", risk="low")
+    config = root / ".crew" / "config.json"
+    settings = json.loads(config.read_text(encoding="utf-8"))
+    settings["autopilot"]["mode"] = "Plan"
+    _write(config, json.dumps(settings))
+
+    warnings = [line for line in _lines(root)[1] if line.startswith("warning:")]
+
+    assert (any("autopilot.mode is 'Plan'" in w for w in warnings),
+            any("autopilot.approval" in w for w in warnings)) == (True, False)
+
+
+@pytest.mark.parametrize("text", ["{bad", json.dumps({"autopilot": ["x"]})],
+                         ids=["unreadable", "non-object-block"])
+def test_status_keeps_the_could_not_tell_warning(tmp_path, text):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, risk="low")
+    _write(root / ".crew" / "config.json", text)
+
+    warnings = [line for line in _lines(root)[1] if line.startswith("warning:")]
+
+    assert (len(warnings), ".crew/config.json" in warnings[0]) == (1, True), warnings

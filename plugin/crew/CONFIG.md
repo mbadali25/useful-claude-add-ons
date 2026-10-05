@@ -3142,7 +3142,12 @@ T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside
 the checkout instead: a push, a PR and at most one merge commit), and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
 same under every setting, and at the approve phase it names
-`/crew:approve <id>`; `next` is what names the policy's route. The one policy
+`/crew:approve <id>`; `next` is what names the policy's route. A policy value
+that is not a policy (`approval: "bogus"`) is warned about by `settings`
+(`policyWarnings`), never by `status` (T-0027); `status` keeps every other
+warning, the could-not-tell one for an unreadable config included. `approve`
+under such an unreadable config refuses naming that cause, not "autopilot.mode is
+not plan". The one policy
 effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
 

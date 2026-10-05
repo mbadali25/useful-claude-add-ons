@@ -242,6 +242,7 @@ dispatch, passes the class from T-0005's classifier, proceeds only on the exact
 verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
 not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
+# pylint: disable=too-many-lines  # over 3400 in the 1.2.0 rush; new logic goes to crew_autopilot_*.py
 import argparse
 import datetime
 import hashlib
@@ -1758,7 +1759,8 @@ def _unreadable_machine_autopilot():
 def settings(root):
     """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
     "questions", "maxAutoReplans", "ship", "knownFailures", "ciTimeoutMinutes",
-    "warnings"}`. Read through
+    "warnings", "policyWarnings"}` (T-0027: the approval/questions value warnings,
+    also in `warnings`, which `status` leaves out). Read through
     `crew_config.resolve_config`, which reads both layers: the autopilot keys
     with a `crew_state.PERSONAL_KEYS` row are personal (T-0050), so where
     `.crew/config.json` and the machine-global file both set one the stricter
@@ -1798,7 +1800,8 @@ def settings(root):
                 "ciTimeoutMinutes": crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"],
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
-                              "approves or takes an answer) and autopilot reads as off")]}
+                              "approves or takes an answer) and autopilot reads as off")],
+                "policyWarnings": []}
     result = _settings_at(top)
     result["warnings"] += crew_config.autopilot_inert_warnings(top, _failure)  # T-0070
     return result
@@ -1860,10 +1863,11 @@ def _settings_at(top):
         warnings.append(f"autopilot.ciTimeoutMinutes is {timeout!r}, not a positive "
                         f"integer; using {default_timeout}")
         timeout = default_timeout
-    day = {}
+    day, policy_warnings = {}, []  # T-0027: status leaves the policy-value warnings out
     for key in ("approval", "questions"):
         day[key], warning = _policy_setting(block, key)
-        warnings += [warning] if warning else []
+        policy_warnings += [warning] if warning else []
+    warnings += policy_warnings
     sleep = _sleep_at(top, block)
     warnings += sleep.pop("warnings")
     policies, sleep["applied"] = _overlay(day, sleep)
@@ -1872,7 +1876,7 @@ def _settings_at(top):
             "approval": policies["approval"], "questions": policies["questions"],
             "maxAutoReplans": replans,
             "ship": ship, "knownFailures": list(known), "ciTimeoutMinutes": timeout,
-            "day": day, "sleep": sleep, "warnings": warnings}
+            "day": day, "sleep": sleep, "warnings": warnings, "policyWarnings": policy_warnings}
 
 
 # Strictest first: under a sleep state that cannot be told, a valid night
@@ -2306,8 +2310,10 @@ def approve(root, ticket):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     human = f"the human types /crew:approve {ticket}"
     if not settings(top)["armed"]:
-        return 2, (f"refused: autopilot.mode is not plan, so autopilot approves nothing; "
-                   f"{human}")
+        cause = _unreadable_autopilot(top)  # T-0027: name the cause, never "mode is not plan"
+        return 2, (f"refused: {cause}, so autopilot could not tell whether it is armed and "
+                   f"approves nothing; {human}" if cause else f"refused: autopilot.mode is not "
+                   f"plan, so autopilot approves nothing; {human}")
     got = approval_policy(top, ticket)
     if not got["allow"]:
         return 2, f"refused: {got['reason']}; {human}"
@@ -3104,7 +3110,9 @@ def status(root, ticket=None):
         pick = bare = resume_target(top, policy=False)
     disk = pick.get("next") or {}
     found = pick.get("ticket")
-    return {"mode": conf["mode"], "maxPhases": conf["maxPhases"], "warnings": conf["warnings"],
+    policy = conf.get("policyWarnings") or []  # T-0027: status reads no policy
+    return {"mode": conf["mode"], "maxPhases": conf["maxPhases"],
+            "warnings": [w for w in conf["warnings"] if w not in policy],
             "ticket": found, "source": pick.get("source"), "reason": pick.get("reason", ""),
             "phase": disk.get("phase") or UNKNOWN, "command": disk.get("command") or "",
             "stop": bool(disk.get("stop", True)), "phase_reason": disk.get("reason", ""),

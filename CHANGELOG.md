@@ -9,6 +9,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.1.22: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
+
+- **Summary.** `/crew:autopilot status` now reads the same whatever `autopilot.approval` and
+  `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read
+  instead of telling you to arm a mode that may already say `plan`.
+- **status.** `settings` returns the approval/questions value warnings (`"bogus", not one of
+  human|self|risk`) in a new `policyWarnings` key as well as in `warnings`; `status` leaves those
+  out and keeps every other warning, including the single could-not-tell one for an unreadable
+  `.crew/config.json` or a non-object `autopilot` block. `settings`, `approval_policy` and
+  `question_policy` still carry the value warning.
+- **approve.** Unarmed because the config could not be read (not JSON, not an object, or an
+  `autopilot` value that is not an object), `approve` refuses with that cause; a plain unarmed
+  config keeps today's "autopilot.mode is not plan" refusal.
+- **Not in this entry.** Two sabotage mutations for these (T-0087 harness): a later tooling PR.
+  T-0010 round 6's other findings are L-0542 and L-0543.
+
 ### Fixed — crew 1.1.22: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
 
 - **Summary.** A code block under a ticket's `## Open questions` heading no longer hides the

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.22**: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read. `/crew:autopilot status` now reads the same whatever `autopilot.approval` and `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read instead of telling you to arm a mode that may already say `plan`.
 - **crew 1.1.22**: Autopilot's open-questions stop sees through code fences, and stops when it cannot tell. A code block under a ticket's `## Open questions` heading no longer hides the questions after it from autopilot; a fence autopilot cannot read for certain now stops the run instead of reading as "no questions".
-- **crew 1.1.22**: Autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE. After a FINDINGS review the autopilot stop now tells you to refresh before the next round, and a review you accepted that a later edit staled goes back through refresh and review instead of being reported as unfinished.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

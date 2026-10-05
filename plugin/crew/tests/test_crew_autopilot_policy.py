@@ -1009,3 +1009,34 @@ def test_settings_cli_json_prints_both_policies(tmp_path, approval, questions):
     got = json.loads(_cli(root, "settings", "--json").stdout)
 
     assert (got["approval"], got["questions"]) == (approval, questions)
+
+
+# --- T-0027: settings keeps the policy-value warning; approve names an unreadable config --------
+
+def test_settings_still_reports_a_policy_value_warning(tmp_path):
+    root = _repo(tmp_path, approval="bogus", risk="low")
+
+    got = crew_autopilot.settings(str(root))
+    printed = _cli(root, "settings").stdout
+    policy = crew_autopilot.approval_policy(str(root), T)
+
+    def named(lines):
+        return [w for w in lines if "autopilot.approval is 'bogus'" in w]
+    assert (len(named(got["warnings"])), len(named(got["policyWarnings"])),
+            "warning: autopilot.approval is 'bogus'" in printed,
+            len(named(policy.get("warnings") or []))) == (1, 1, True, 1)
+
+
+@pytest.mark.parametrize("text,cause", [
+    ("{bad", "could not be read"), ("[1]", "could not be read"),
+    (json.dumps({"scope": {"allowCliApproval": True}, "autopilot": ["x"]}), "not an object")],
+    ids=["not-json", "top-level-list", "non-object-block"])
+def test_autopilot_approve_names_a_config_it_could_not_read(tmp_path, text, cause):
+    root = _repo(tmp_path, approval="self", risk="low")
+    _raw_config(root, text)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, done.stdout.startswith("refused:"), cause in done.stdout,
+            "autopilot.mode is not plan" in done.stdout, f"/crew:approve {T}" in done.stdout,
+            _receipt(root)) == (2, True, True, False, True, None), done.stdout
