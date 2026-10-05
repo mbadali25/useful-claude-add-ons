@@ -29,7 +29,12 @@
 
 resolve_pwsh() {
   if [ -n "${PWSH:-}" ]; then
-    if [ -f "$PWSH" ] && [ -x "$PWSH" ]; then printf '%s\n' "$PWSH"; return 0; fi
+    # A path must be an executable file (command -v accepts any existing
+    # path); a bare name is looked up on PATH.
+    case "$PWSH" in
+      */*) if [ -f "$PWSH" ] && [ -x "$PWSH" ]; then printf '%s\n' "$PWSH"; return 0; fi
+           return 1 ;;
+    esac
     command -v "$PWSH" 2>/dev/null && return 0
     return 1
   fi

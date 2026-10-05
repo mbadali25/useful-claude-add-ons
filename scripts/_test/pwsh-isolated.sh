@@ -124,10 +124,15 @@ STUB_REC="$REC" PWSH="$TMP/no-such-pwsh" sh "$LAUNCHER" -NoProfile >/dev/null 2>
 err1=$(cat "$TMP/err")
 STUB_REC="$REC" PWSH="" PATH="$TMP/empty" "$(command -v sh)" "$LAUNCHER" -NoProfile >/dev/null 2>"$TMP/err"; rc2=$?
 err2=$(cat "$TMP/err")
-if [ $rc1 = 77 ] && [ $rc2 = 77 ] && [[ "$err1" == *"TOOL MISSING: pwsh"* ]] \
-   && [[ "$err2" == *"TOOL MISSING: pwsh"* ]] && [ ! -e "$REC" ]; then
+# A PWSH path that exists but is not executable is missing too, not a failed run (126).
+cp "$STUB" "$TMP/pwsh-not-executable"; chmod -x "$TMP/pwsh-not-executable"
+STUB_REC="$REC" PWSH="$TMP/pwsh-not-executable" sh "$LAUNCHER" -NoProfile >/dev/null 2>"$TMP/err"; rc3=$?
+err3=$(cat "$TMP/err")
+if [ $rc1 = 77 ] && [ $rc2 = 77 ] && [ $rc3 = 77 ] && [[ "$err1" == *"TOOL MISSING: pwsh"* ]] \
+   && [[ "$err2" == *"TOOL MISSING: pwsh"* ]] && [[ "$err3" == *"TOOL MISSING: pwsh"* ]] \
+   && [ ! -e "$REC" ]; then
   ok missing_pwsh_is_77_and_starts_nothing
-else bad missing_pwsh_is_77_and_starts_nothing "rc=$rc1/$rc2 record=$( [ -e "$REC" ] && echo written)"; fi
+else bad missing_pwsh_is_77_and_starts_nothing "rc=$rc1/$rc2/$rc3 record=$( [ -e "$REC" ] && echo written)"; fi
 
 # no_cache_dir_means_no_run
 : >"$TMP/a-file"
