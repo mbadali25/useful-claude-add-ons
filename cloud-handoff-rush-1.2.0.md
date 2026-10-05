@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T18:30Z
+Last updated: 2026-10-05T18:34Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T18:34Z #542 H1 lander fixed the 5 Windows failures, all on the test side (UTF-8 decode in _cli, byte pipes in _classify, probe ignores the skipped-extension twin); head 28e95dab, crew 1.1.4, fix-range Codex CLEAN. Coordinator read the diff: no assertion dropped. Waiting for CI, then merge to main.
 - 2026-10-05T18:30Z MERGED #543 (G3) into release/1.2.0 at 2c911427, crew 1.1.5 (30/30 CI, Codex group r6 CLEAN). G0 lander told release moved: re-merge, keep crew 1.1.6. Source PRs for G3 close when release reaches main. Next free 1.1.7.
 - 2026-10-05T18:25Z #542 H1 CI red on Windows shard 2: L-0690 test_a_timed_out_probe_says_so (unpack) and T-0098 supersede by_fullwidth_auto (None.startswith). Sent to H1 lander with instruction to collect all Windows shard failures into one push.
 - 2026-10-05T18:19Z Owner: L-0640 superseded-by lives in next.md, as built (open question 4 closed).
