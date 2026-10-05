@@ -233,7 +233,7 @@
       "name": "gizmoduck",
       "source": "./plugin/gizmoduck",
       "description": "Nuclei vulnerability scans on hosts and websites, or the whole scanner routine (checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto, gated sqlmap) from one manifest with a coverage table and a dated docs/security-scans layout, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings after one batch confirmation. No hooks, no agents.",
-      "version": "0.5.12"
+      "version": "0.5.13"
     },
     {
       "name": "localgpu",

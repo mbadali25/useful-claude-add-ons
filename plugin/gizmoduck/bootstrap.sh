@@ -271,6 +271,14 @@ apt_install() {
   apt_get clean || echo "!! apt-get clean failed - continuing" >&2
 }
 
+# Each install runs in try_install's subshell, so an array append there is
+# lost; a skip is also written to SKIP_LOG (set when the script runs), and
+# finish reads it back.
+mark_skipped() {
+  SKIPPED+=("$1")
+  if [[ -n "${SKIP_LOG:-}" ]]; then printf '%s\n' "$1" >> "$SKIP_LOG"; fi
+}
+
 # --user and a tool only a package manager provides: report it as present
 # when $2 is on PATH, else add it to SKIPPED (separate from FAILED) and say
 # which package an image needs.
@@ -280,7 +288,7 @@ user_package_tool() {
     echo ">> ${name}: present (${path})"
   else
     echo ">> ${name}: SKIPPED - needs a package manager (add '${pkg}' to the image)"
-    SKIPPED+=("$name")
+    mark_skipped "$name"
   fi
 }
 
@@ -464,20 +472,31 @@ probe_nikto() {
   grep -qiE 'nikto[^0-9]*[0-9]+\.[0-9]+' <<<"$out"
 }
 
+# probe_nikto's check for a nikto.pl run through perl.
+probe_nikto_pl() {
+  local out
+  out=$(perl "$1" -Version 2>&1) || return 1
+  grep -qiE 'nikto[^0-9]*[0-9]+\.[0-9]+' <<<"$out"
+}
+
 # --user: nikto's own repository, where scripts/scanners/nikto.py finds
 # <tool home>/nikto/program/nikto.pl. It runs under perl, a package.
 install_nikto_user() {
   if ! command -v perl >/dev/null 2>&1; then
     echo ">> nikto: SKIPPED - needs perl (add 'perl' and 'libxml-writer-perl' to the image)"
-    SKIPPED+=("nikto")
+    mark_skipped "nikto"
     return 0
   fi
   local dir="${OPT_DIR}/nikto"
   # Like already_installed: a clone that has nikto.pl is kept, with no
   # network call, unless GIZMODUCK_BOOTSTRAP_FORCE=1.
-  if [[ -f "$dir/program/nikto.pl" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
-    echo ">> nikto: already installed (${dir}) - skipping; GIZMODUCK_BOOTSTRAP_FORCE=1 updates it"
-    return 0
+  if [[ -s "$dir/program/nikto.pl" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    if probe_nikto_pl "$dir/program/nikto.pl"; then
+      echo ">> nikto: already installed (${dir}) - skipping; GIZMODUCK_BOOTSTRAP_FORCE=1 updates it"
+      return 0
+    fi
+    echo ">> nikto: ${dir} is present but fails its check - reinstalling"
+    rm -rf "$dir"
   fi
   if [[ -d "$dir/.git" ]]; then
     git_net 600 -C "$dir" pull --ff-only
@@ -497,7 +516,7 @@ install_testssl() {
       # testssl.sh --version passes without hexdump and every scan then
       # refuses, so an install here would read as working and is not one.
       echo ">> testssl.sh: SKIPPED - needs hexdump (add 'bsdextrautils' to the image)"
-      SKIPPED+=("testssl.sh")
+      mark_skipped "testssl.sh"
       return 0
     else
       apt_install bsdextrautils
@@ -738,6 +757,9 @@ print_plan() {
 # 0, with a last line naming every skipped tool. Sourced, the suite drives it
 # with FAILED / SKIPPED preset.
 finish() {
+  if [[ -n "${SKIP_LOG:-}" && -s "$SKIP_LOG" ]]; then
+    mapfile -t SKIPPED < "$SKIP_LOG"
+  fi
   echo
   if [[ ${#FAILED[@]} -gt 0 ]]; then
     echo "!! ${#FAILED[@]} tool(s) failed to install: ${FAILED[*]}" >&2
@@ -791,6 +813,9 @@ if [[ $DRY_RUN == 1 ]]; then
   print_plan
   exit 0
 fi
+
+SKIP_LOG=$(mktemp) || { echo "!! cannot create a temporary file" >&2; exit 2; }
+trap 'rm -f -- "$SKIP_LOG"' EXIT
 
 if [[ $USER_MODE == 1 ]]; then
   echo ">> --user: installing into the tool home ${TOOL_HOME}"

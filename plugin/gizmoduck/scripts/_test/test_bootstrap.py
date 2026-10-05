@@ -264,3 +264,39 @@ def test_no_install_step_calls_sudo_directly():
         if not allowed.search(code):
             offenders.append(f"{n}: {line.strip()}")
     assert not offenders, offenders
+
+
+def test_a_skip_inside_try_install_reaches_the_last_line(env, tmp_path):
+    # try_install runs each install in a subshell: the skip must survive it.
+    e, _fakes, _log = env
+    e["GIZMODUCK_HOME"] = str(tmp_path / "toolhome")
+    script = ('source "$0"; USER_MODE=1; SKIP_LOG=$(mktemp); '
+              'try_install nmap install_nmap; try_install wkhtmltopdf install_prereqs; '
+              'finish; echo "rc=$?"; rm -f -- "$SKIP_LOG"')
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    lines = proc.stdout.splitlines()
+    assert lines[-1] == "rc=0", proc.stdout + proc.stderr
+    assert lines[-2] == "GIZMODUCK_BOOTSTRAP_SKIPPED: nmap wkhtmltopdf (PDF reports)", lines
+
+
+@pytest.mark.parametrize("works", [True, False])
+def test_user_mode_cached_nikto_is_kept_only_when_it_runs(env, tmp_path, works):
+    # A cached clone is kept with no network call only when perl runs it.
+    e, fakes, log = env
+    out = "Nikto 2.5.0" if works else "Can't locate object method"
+    _fake(fakes, "perl", f'#!{_BASH}\necho "{out}"\n')
+    opt = tmp_path / "opt"
+    (opt / "nikto" / "program").mkdir(parents=True)
+    (opt / "nikto" / "program" / "nikto.pl").write_text("#!/usr/bin/perl\n", newline="\n")
+    script = f'source "$0"; USER_MODE=1; OPT_DIR={opt}; install_nikto_user; echo "rc=$?"'
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    calls = log.read_text()
+    if works:
+        assert "nikto: already installed" in proc.stdout, proc.stdout + proc.stderr
+        assert proc.stdout.splitlines()[-1] == "rc=0"
+        assert "git" not in calls, calls
+    else:
+        assert "fails its check - reinstalling" in proc.stdout, proc.stdout + proc.stderr
+        assert "git" in calls and "clone" in calls, calls
