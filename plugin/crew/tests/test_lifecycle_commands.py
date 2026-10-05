@@ -472,8 +472,9 @@ def test_autopilot_low_context_handoff_uses_handoff_resume():
             "written as printed" in section,
             "with `resume: /crew:autopilot <ticket>` as its resume line" in section,
             "goal-mark --root . --goal <slug> --state stopped" in section,
+            "not for this context handoff, which leaves the goal `running`" in section,
             "goal-mark --root . --goal <slug> --state running --ticket <ticket>" in flat) == (
-        True, True, False, True, True)
+        True, True, False, True, True, True)
 
 
 def test_handoff_command_asks_handoff_resume():

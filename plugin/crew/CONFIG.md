@@ -1399,7 +1399,9 @@ as stale, or one judged stale that could not be archived; the handoff is the
 automatic PreCompact skeleton (its Changed files list is bare `git` output, so
 a file named `resume: ...` would otherwise be read as the line); no `resume:`
 line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
-that does not match the checkout; a missing `.work/tickets/<id>/` or
+that does not match the checkout (the ticket form only: a `--goal` line is
+judged by its goal file instead, L-0658 -- missing, unreadable, not started,
+`done` or `stopped` waits, and only `running` may run); a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin (a
 `--goal` line is written only while that goal's `run.state` is `running`,
 T-0056: `crew_autopilot.py handoff-resume` decides every writer's line, and its

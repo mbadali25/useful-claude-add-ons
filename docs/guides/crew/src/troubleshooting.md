@@ -623,6 +623,22 @@ command — no keystrokes appear at all.
   `crew_autoclear_setup.py apply-method sendkeys --yes` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
   to opt in, after reading what SendKeys does. See `plugin/crew/CONFIG.md` §14.
 
+### "bare /crew:autopilot stopped on a goal"
+
+**Symptom:** `/crew:autopilot` with no argument stops naming autopilot goals, or a `fell through:`
+line names a stopped goal.
+
+With no usable handoff, a bare run looks for a running goal in `.work/autopilot/` before the active
+ticket (the order is argument, handoff, running goal, active ticket, INDEX; L-0659).
+
+- **`several autopilot goals are running: a, b`:** pick one: `/crew:autopilot --goal <slug>`.
+- **`could not tell whether an autopilot goal is running: .work/autopilot/<slug>.json ... could not be
+  read`:** the file is not JSON, not an object, or its `run.state` is not `running`, `stopped` or
+  `done`. Fix or remove it; until then the active ticket is not driven, because a goal might be
+  running. Naming the work (`/crew:autopilot <ticket>` or `--goal <slug>`) still runs.
+- **`goal <slug> stopped: <reason>`** as a `fell through:` line: a goal you or a cap stopped is never
+  resumed by a bare run; `/crew:autopilot --goal <slug>` resumes it when you choose to.
+
 ### "Claude Code compacted by itself"
 
 **Symptom:** the session cleared or summarised itself with no `/clear` or `/compact` typed, and no

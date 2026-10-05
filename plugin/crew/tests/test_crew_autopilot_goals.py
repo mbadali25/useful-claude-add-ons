@@ -1393,6 +1393,8 @@ def test_goal_resume_from_handoff(tmp_path):
     _set_status(root, "T-0001", "done")
     crew_ticket.activate(str(root), "T-0001")
     _goal_handoff(root, slug)
+    import crew_autopilot_handoff  # pylint: disable=import-outside-toplevel
+    crew_autopilot_handoff.goal_mark(str(root), slug, "running", "T-0001")  # T-0056, L-0658
 
     got = crew_autopilot.resume_target(str(root))
     shown = crew_autopilot.status(str(root))
@@ -1509,3 +1511,34 @@ def test_a_token_count_that_raises_is_could_not_tell(tmp_path, monkeypatch):
     assert (got["stop"], "could not tell" in got["reason"],
             crew_autopilot_backlog.goal_run_text(got).splitlines()[-1]) == (
         True, True, f"resume: /crew:autopilot --goal {slug}")
+
+
+# --- L-0541 review round 2 -------------------------------------------------------
+
+@pytest.mark.parametrize("phase,want", [("ship", "T-0001"), ("next-slice", "T-0001"),
+                                        ("closed", "T-0002")])
+def test_a_done_ticket_still_owed_its_ship_is_worked_before_the_next(tmp_path, monkeypatch,
+                                                                     phase, want):
+    root, slug, _ids = _minted(tmp_path)
+    _set_status(root, "T-0001", "done")
+    real = crew_autopilot._phase  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_autopilot, "_phase", lambda top, ticket, policy=True: (
+        dict(real(top, ticket, policy), phase=phase) if ticket == "T-0001"
+        else real(top, ticket, policy)))
+
+    got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+
+    assert (got["ticket"], got["stop"]) == (want, False)
+
+
+def test_a_done_check_that_raises_is_could_not_tell(tmp_path, monkeypatch):
+    root, slug, _ids = _minted(tmp_path)
+    _set_status(root, "T-0001", "done")
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk")
+    monkeypatch.setattr(crew_autopilot, "_phase", boom)
+
+    got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+
+    assert (got["ticket"], got["stop"], "could not tell" in got["reason"]) == (None, True, True)

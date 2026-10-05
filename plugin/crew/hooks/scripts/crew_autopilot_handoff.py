@@ -33,7 +33,6 @@ exit 0; a crash prints `resume: none` and `kind=unknown`, never a traceback
 alone.
 """
 import datetime
-import glob
 import importlib
 import json
 import os
@@ -113,7 +112,14 @@ def running_goals(root):
     top = _top(root)
     folder = os.path.join(top, ".work", "autopilot")
     slug_ok = _goal()._goal_slug_ok  # pylint: disable=protected-access
-    for path in sorted(glob.glob(os.path.join(glob.escape(folder), "*.json"))):
+    try:
+        names = sorted(n for n in os.listdir(folder) if n.endswith(".json"))
+    except FileNotFoundError:
+        names = []
+    except OSError as exc:  # there, and cannot be listed: never "no goals"
+        out["unknown"].append(f".work/autopilot/ (could not list it: {type(exc).__name__})")
+        names = []
+    for path in (os.path.join(folder, n) for n in names):
         name = os.path.basename(path)[:-len(".json")]
         if name.endswith(".proposal") or not slug_ok(name):
             continue

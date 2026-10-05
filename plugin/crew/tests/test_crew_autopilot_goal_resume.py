@@ -289,3 +289,268 @@ def test_goal_survives_a_handoff_from_every_writer(tmp_path, monkeypatch):
                     if l.startswith("resume:")]
 
     assert (low_context, command, skeleton if _BASH else [want]) == (want, want, [want])
+
+
+# --- L-0658: a --goal handoff is checked against the goal file -----------------------
+
+def _goal_handoff(root, slug, branch="some-other-branch", head="0123456789"):
+    _write(root / ".work" / "HANDOFF.md",
+           f"# Handoff\nwritten: 2026-10-05T00:00:00Z\nbranch: {branch}\nhead: {head}\n"
+           f"resume: /crew:autopilot --goal {slug}\n\n## Next action\ncontinue the goal\n")
+
+
+def test_goal_handoff_survives_a_branch_switch(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    _goal_handoff(root, slug)
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["source"], got["stop"], got["goal"]) == (
+        "T-0002", "handoff", False, slug)
+
+
+@pytest.mark.parametrize("state,stops,words", [
+    ("missing", False, "does not exist"),
+    ("not-json", True, "could not read"),
+    ("done", False, "is done"),
+    ("stopped", True, "token cap"),
+    ("paused", True, "could not read"),
+    ("no-run", False, "has not started"),
+])
+def test_goal_handoff_not_running_is_not_taken(tmp_path, monkeypatch, state, stops, words):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    path = _path(root, slug)
+    data = json.loads(_read(path))
+    if state == "missing":
+        os.remove(path)
+    elif state == "not-json":
+        _write(path, "{cut")
+    elif state == "no-run":
+        data.pop("run")
+        _write(path, json.dumps(data))
+    else:
+        data["run"] = {"state": state, "ticket": "T-0002", "reason": "token cap reached"}
+        _write(path, json.dumps(data))
+    _goal_handoff(root, slug)
+
+    got = crew_autopilot.resume_target(str(root))
+    shown = crew_autopilot.status(str(root))["resume_line"]
+
+    reason = got["reason"] if stops else " ".join(got["fallthrough"])
+    assert (got["stop"] if stops else got["source"] != "handoff", words in reason,
+            got["goal"] == slug if stops else got.get("goal") is None,
+            shown.startswith(f"not usable: /crew:autopilot --goal {slug} - "),
+            "token cap" in shown) == (True, True, True, True, False)
+
+
+def test_ticket_handoff_branch_mismatch_still_falls_through(tmp_path, monkeypatch):
+    root, _slug = _minted_goal(tmp_path, monkeypatch)
+    _write(root / ".work" / "HANDOFF.md",
+           "# Handoff\nbranch: some-other-branch\nhead: 0123456789\n"
+           "resume: /crew:autopilot T-0002\n")
+
+    got = crew_autopilot.resume_target(str(root))
+    shown = crew_autopilot.status(str(root))["resume_line"]
+
+    assert (got["source"] != "handoff", "branch:" in " ".join(got["fallthrough"]),
+            shown.endswith("its branch: does not match this checkout")) == (True, True, True)
+
+
+def test_status_shows_a_running_goal_handoff_as_usable_across_branches(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    _goal_handoff(root, slug)
+
+    shown = crew_autopilot.status(str(root))["resume_line"]
+
+    assert shown == f"/crew:autopilot --goal {slug} (usable)"
+
+
+def test_goal_resumes_after_switching_to_the_next_ticket_branch(tmp_path, monkeypatch):
+    """The owner's scenario, part (b): goal at ticket 2 of 3, a handoff written
+    on ticket 2's branch, ticket 3's branch checked out, resume continues."""
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    subprocess.run(["git", "checkout", "-q", "-b", "T-0002-build"], cwd=str(root), check=True)
+    _write(root / ".work" / "HANDOFF.md", "# Handoff\nbranch: T-0002-build\nhead: "
+           + subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(root),
+                            capture_output=True, text=True, check=True).stdout.strip()
+           + "\n" + handoff.handoff_resume(str(root), "T-0002")["line"] + "\n")
+    index = root / ".work" / "INDEX.md"
+    _write(index, _read(index).replace("T-0002 | ready |", "T-0002 | done |"))
+    subprocess.run(["git", "checkout", "-q", "-b", "T-0003-build"], cwd=str(root), check=True)
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "ticket 3 starts"],
+                   cwd=str(root), check=True)
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["source"], got["stop"], got["goal"]) == (
+        "T-0003", "handoff", False, slug)
+
+
+# --- T-0056 review round 1 -----------------------------------------------------------
+
+def test_an_unlistable_goal_folder_is_unknown(tmp_path, monkeypatch):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, "T-0001")
+    handoff.goal_mark(str(root), _goal(root), "running")
+    real = os.listdir
+
+    def denied(path):
+        if str(path).endswith(os.path.join(".work", "autopilot")):
+            raise PermissionError(13, "denied")
+        return real(path)
+    monkeypatch.setattr(os, "listdir", denied)
+
+    got = handoff.handoff_resume(str(root), "T-0001")
+
+    assert (got["line"], got["kind"], ".work/autopilot/" in got["reason"]) == (
+        "resume: none", "unknown", True)
+
+
+def test_a_run_that_cannot_be_marked_running_stops(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    index = root / ".work" / "INDEX.md"
+    _write(index, _read(index).replace("T-0002 | ready |", "T-0002 | done |"))
+
+    def boom(*_args, **_kwargs):
+        raise OSError("read-only file system")
+    monkeypatch.setattr(handoff, "goal_mark", boom)
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+    transcript = tmp_path / "t.jsonl"
+
+    got = crew_autopilot_backlog.goal_run(str(root), slug, "s1", str(transcript))
+
+    assert (got["ticket"], got["stop"], "could not record" in got["reason"]) == (
+        None, True, True)
+
+
+# --- L-0659: bare /crew:autopilot finds a running goal ---------------------------------
+
+def _second_goal(root, state="running", text=None):
+    slug = _goal(root, goal="another goal")
+    if text is not None:
+        _write(_path(root, slug), text)
+    else:
+        handoff.goal_mark(str(root), slug, state, None, "token cap reached")
+    return slug
+
+
+def test_bare_resume_finds_the_one_running_goal(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["source"], got["goal"], got["stop"],
+            "no .work/HANDOFF.md" in got["fallthrough"]) == (
+        "T-0002", "goal-file", slug, False, True)
+
+
+def test_two_running_goals_stop_and_list_both(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    other = _second_goal(root)
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["stop"], slug in got["reason"], other in got["reason"],
+            "name one: /crew:autopilot --goal <slug>" in got["reason"]) == (
+        None, True, True, True, True)
+
+
+@pytest.mark.parametrize("text", ["{cut", "[1]", '{"run": {"state": "paused"}}'])
+@pytest.mark.parametrize("beside", [True, False], ids=["beside-running", "alone"])
+def test_unreadable_goal_file_stops_bare_resume(tmp_path, monkeypatch, text, beside):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    if not beside:
+        handoff.goal_mark(str(root), slug, "done")
+    crew_ticket_activate(root, "T-0002")
+    bad = _second_goal(root, text=text)
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["stop"], f".work/autopilot/{bad}.json" in got["reason"],
+            "could not be read" in got["reason"]) == (None, True, True, True)
+
+
+def crew_ticket_activate(root, ticket):
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    crew_ticket.activate(str(root), ticket)
+
+
+def test_stopped_goal_is_named_not_resumed(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    handoff.goal_mark(str(root), slug, "stopped", "T-0002", "token cap reached")
+    crew_ticket_activate(root, "T-0002")
+
+    got = crew_autopilot.resume_target(str(root))
+
+    note = [w for w in got["fallthrough"] if slug in w]
+    assert (got["ticket"], got["source"], got["goal"], len(note),
+            "token cap reached" in note[0], f"/crew:autopilot --goal {slug}" in note[0]) == (
+        "T-0002", "active-ticket", None, 1, True, True)
+
+
+@pytest.mark.parametrize("how", ["done", "no-folder"])
+def test_no_goal_keeps_todays_order(tmp_path, monkeypatch, how):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    crew_ticket_activate(root, "T-0002")
+    if how == "done":
+        handoff.goal_mark(str(root), slug, "done")
+    else:
+        import shutil  # pylint: disable=import-outside-toplevel
+        shutil.rmtree(root / ".work" / "autopilot")
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["source"], got["goal"], got["fallthrough"],
+            got["disagreement"]) == ("T-0002", "active-ticket", None, ["no .work/HANDOFF.md"], "")
+
+
+def test_argument_wins_over_a_running_goal(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    _second_goal(root)
+    crew_ticket_activate(root, "T-0002")
+
+    by_ticket = crew_autopilot.resume_target(str(root), ticket="T-0002")
+    by_goal = crew_autopilot.resume_target(str(root), goal=slug)
+
+    assert ((by_ticket["source"], by_ticket["stop"], by_ticket["goal"]),
+            (by_goal["source"], by_goal["ticket"], by_goal["stop"])) == (
+        ("argument", False, None), (f"goal:{slug}", "T-0002", False))
+
+
+def test_a_usable_ticket_handoff_wins_and_names_the_goal(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    crew_ticket_activate(root, "T-0002")
+    branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(root),
+                            capture_output=True, text=True, check=True).stdout.strip()
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(root),
+                          capture_output=True, text=True, check=True).stdout.strip()
+    _write(root / ".work" / "HANDOFF.md",
+           f"# Handoff\nbranch: {branch}\nhead: {head}\nresume: /crew:autopilot T-0002\n")
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["source"], slug in got["disagreement"]) == (
+        "T-0002", "handoff", True)
+
+
+def test_status_shows_the_running_goal_bare_would_take(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    before = sorted(os.listdir(root / ".work" / "autopilot"))
+
+    text = crew_autopilot.status_text(crew_autopilot.status(str(root)))
+
+    assert (text.splitlines()[1], len(text.splitlines()) <= crew_autopilot.STATUS_MAX_LINES,
+            sorted(os.listdir(root / ".work" / "autopilot")) == before) == (
+        f"ticket: T-0002 (from goal-file, goal {slug})", True, True)
+
+
+def test_goal_resumes_after_a_crash(tmp_path, monkeypatch):
+    """The owner's scenario, part (c): goal at ticket 2 of 3, the session dies
+    with no handoff; a new session's bare run resumes ticket 2 at its phase."""
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    assert not os.path.exists(root / ".work" / "HANDOFF.md")
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["goal"], got["next"]["phase"], got["activate"]) == (
+        "T-0002", slug, crew_autopilot.next_phase(str(root), "T-0002")["phase"], True)

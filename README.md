@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.23**: A running autopilot goal is written into every handoff - goal run state and `handoff_resume`. While an autopilot goal runs, every handoff names the goal (`resume: /crew:autopilot --goal <slug>`) instead of the ticket in hand, so a resume after `/clear` continues the goal.
-- **crew 1.1.23**: Autopilot goal runs - the approved split is minted, the goal's tickets are worked in dependency order with `mode: backlog`, each through its own approval, inside per-run caps, resumable with `--goal`. Once a goal's split is approved, autopilot mints its tickets and works them one at a time with `/crew:autopilot --goal <slug>`, stopping at each ticket the policy will not approve and at its ticket and token caps.
+- **crew 1.1.23**: Bare `/crew:autopilot` finds a running goal when there is no usable handoff. A session that died without writing a handoff no longer loses its autopilot goal: a bare `/crew:autopilot` resumes the one running goal before falling back to the active ticket.
+- **crew 1.1.23**: A `--goal` handoff is checked against the goal file, not the branch and head. A goal handoff written on one ticket's branch now resumes the goal after the next ticket's branch is checked out, as long as the goal is still running.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

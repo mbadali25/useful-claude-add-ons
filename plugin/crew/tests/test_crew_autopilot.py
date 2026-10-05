@@ -1084,9 +1084,10 @@ def test_resume_goal_line_stops_until_t0012(tmp_path, stub_resume):  # pylint: d
 
     got = crew_autopilot.resume_target(str(root))
 
-    # L-0541: a goal line resumes the goal; with no goal file it stops naming it.
-    assert (got["ticket"], got["stop"], "goal ship-it" in got["reason"] or "ship-it.json" in got["reason"]) == (
-        None, True, True)
+    # L-0541 resumes a goal line; L-0658 judges it by its goal file, and a goal
+    # file that does not exist falls through, naming it, to the active ticket.
+    assert (got["ticket"], got["source"], "ship-it.json" in got["fallthrough"][0]) == (
+        "T-2", "active-ticket", True)
 
 
 def test_resume_active_ticket(tmp_path):

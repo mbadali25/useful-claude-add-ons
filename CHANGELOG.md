@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.23: bare `/crew:autopilot` finds a running goal when there is no usable handoff (L-0659)
+
+- **Summary.** A session that died without writing a handoff no longer loses its autopilot goal: a bare `/crew:autopilot` resumes the one running goal before falling back to the active ticket.
+- **The order.** Argument, handoff, running goal, active ticket, INDEX. One running goal resumes at its next ticket (source `goal-file`); several stop and list them (`name one: /crew:autopilot --goal <slug>`); a goal file that cannot be read stops as could-not-tell and the active ticket is not driven; a `stopped` goal is named in a `fell through:` line with its reason and `--goal` command and never resumed; with no goal, or only `done` ones, the answer is exactly today's.
+- **Also.** An argument still wins, and so does a usable ticket handoff, with a `disagreement:` line naming the running goal. Status shows `(from goal-file, goal <slug>)`. Autopilot's context handoff now leaves the goal `running` (it is not a stop), so the next session resumes it.
+- **Tests.** `test_crew_autopilot_goal_resume.py` (one goal, two goals, unreadable alone and beside a running goal, stopped, no goal, argument and handoff win, status, the owner's crash scenario).
+
+### Changed — crew 1.1.23: a `--goal` handoff is checked against the goal file, not the branch and head (L-0658)
+
+- **Summary.** A goal handoff written on one ticket's branch now resumes the goal after the next ticket's branch is checked out, as long as the goal is still running.
+- **What changed.** `crew_goal_state.py` (new) reads a goal file's run state; `crew_resume.decide`, `crew_autopilot._handoff_ticket` and status's resume line take a `resume: /crew:autopilot --goal <slug>` line only while that goal is `running`, and no longer compare its `branch:` and `head:`. The ticket form is checked exactly as before. A missing, unreadable, not-started, `done` or `stopped` goal is not taken: `decide` waits; `resume_target` falls through (missing, not started, done) or stops (unreadable as could-not-tell; stopped, named with its reason and `/crew:autopilot --goal <slug>`). Every other auto-resume condition still binds a goal handoff.
+- **Also (L-0541 review round 2).** A ticket marked done is closed for the goal picker only once autopilot's phase table says `closed`, so a goal never starts the next ticket before the current one ships.
+- **Also (T-0056 review round 1).** A goal run whose `running` mark cannot be written stops instead of running unmarked; a goal folder that cannot be listed is could-not-tell for `handoff-resume`.
+- **Tests.** `test_crew_autopilot_goal_resume.py` (cross-branch resume, the six must-block cases, the owner's scenario part (b)), `test_crew_resume.py` (`decide` across branches, must-block cases, every other condition kept, ticket form unchanged).
+
 ### Added — crew 1.1.23: a running autopilot goal is written into every handoff - goal run state and `handoff_resume` (T-0056)
 
 - **Summary.** While an autopilot goal runs, every handoff names the goal (`resume: /crew:autopilot --goal <slug>`) instead of the ticket in hand, so a resume after `/clear` continues the goal.

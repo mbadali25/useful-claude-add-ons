@@ -4800,3 +4800,29 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `plugin/crew/hooks/scripts/handoff-write.ps1:522`.
 - JUDGEMENT. The function lives outside `crew_autopilot.py` (the spec names it
   `crew_autopilot.handoff_resume`) because that module sits at pylint's 3400-line limit.
+
+## A `--goal` handoff is judged by the goal file (L-0658, rush/g6b-goals-sleep)
+
+- DERIVED. `plugin/crew/hooks/scripts/crew_goal_state.py` (standalone, so `crew_resume` imports it
+  without `crew_autopilot`): `run_state` (`:35`) and `handoff_refusal` (`:59`), only `running`
+  usable, an unreadable file `unknown`. Three sites ask it and skip `branch:`/`head:` for the goal
+  form only: `crew_resume.decide` (`plugin/crew/hooks/scripts/crew_resume.py:775`, the shared tail
+  `_decide_rest` `:790`, so every other auto-resume condition still binds), `_handoff_ticket`
+  through `crew_autopilot_backlog.handoff_pick` (`plugin/crew/hooks/scripts/crew_autopilot.py:1598`,
+  `crew_autopilot_backlog.py:213`) and status's resume line through `status_goal_line`
+  (`crew_autopilot.py:3060`, `crew_autopilot_backlog.py:230`).
+- DERIVED. L-0541 review round 2: a ticket marked done is closed for the picker only once
+  `_phase` says `closed` (`_lifecycle_closed`, `crew_autopilot_backlog.py:157`), so an unshipped
+  ticket is worked before the next.
+- JUDGEMENT. In `resume_target` a missing, not-started or done goal falls through with its reason;
+  an unreadable or stopped one stops. `decide` waits on all of them.
+
+## Bare `/crew:autopilot` finds a running goal (L-0659, rush/g6b-goals-sleep)
+
+- DERIVED. `resume_target`'s order is argument, handoff, running goal, active ticket, INDEX: one
+  call, `crew_autopilot_backlog.goal_source`, serves `--goal <slug>` and, with no ticket yet, the
+  discovery over `crew_autopilot_handoff.running_goals` (`plugin/crew/hooks/scripts/crew_autopilot.py`,
+  the `if not ticket:` block before the active pointer). Several running goals or an unreadable goal
+  file stop; a stopped goal is a fall-through line; none or only done ones leave the order as it was.
+  A usable ticket handoff still wins, with `running_goal_note` as its `disagreement:` line; status
+  prints `(from goal-file, goal <slug>)` on its ticket line.

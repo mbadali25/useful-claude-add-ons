@@ -453,7 +453,7 @@ def test_status_resume_line_usable(tmp_path):
     (f"resume: /crew:autopilot {T}", "0123456789", "head: does not match this checkout"),
     (f"resume: /crew:approve {T}", None, "/crew:approve is excluded from auto-resume"),
     ("resume: rm -rf ~ EVIL", None, "not an allowlisted /crew: command"),
-    ("resume: /crew:autopilot --goal ship-it", None, "ship-it.json is not there"),
+    ("resume: /crew:autopilot --goal ship-it", None, "ship-it.json does not exist"),
 ], ids=["head", "excluded", "not-allowlisted", "goal"])
 def test_status_resume_line_mismatch_reason(tmp_path, line, head, reason):
     root = _approved(tmp_path)

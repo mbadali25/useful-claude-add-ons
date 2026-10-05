@@ -36,6 +36,10 @@ cleanly, clear, and pick up where it stopped.
    `crew_autopilot.py handoff-resume`, which answers `resume: /crew:autopilot --goal <slug>` for
    the one running goal. Two running goals or an unreadable goal file give `resume: none`: it could
    not tell which goal runs, and it never falls back to the ticket form, which would drop the goal.
+   With no usable handoff at all (a crash, a killed terminal), a bare `/crew:autopilot` looks for a
+   running goal before the active ticket: the order is argument, handoff, running goal, active
+   ticket, INDEX. One running goal resumes; two stop and list both; a goal file it cannot read stops
+   (could not tell, so the active ticket is not driven); a stopped goal is named, never resumed.
 3. **Resume.** The new session starts with the handoff and its next action already in context,
    within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
    `initialUserMessage`, so you press Enter to continue. Claude Code 2.1.282 drops it in an
@@ -50,7 +54,8 @@ cleanly, clear, and pick up where it stopped.
    stale, or is stale and could not be archived; the handoff is the automatic PreCompact skeleton;
    no resume line, `resume: none`, or a line the grammar refuses (a second line, trailing text, an
    unknown command, or an excluded one such as `/crew:approve`); the note's `branch:` or `head:`
-   does not match the checkout; the ticket directory or goal file is missing; the command is not
+   does not match the checkout (a ticket line only: a `--goal` line is judged by its goal file, and
+   waits unless that goal is `running`); the ticket directory or goal file is missing; the command is not
    installed; `handoff-author.json` could not be read; no record of which session wrote this
    handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the handoff was written by
    another session; this session's process could not be identified (always on a host without

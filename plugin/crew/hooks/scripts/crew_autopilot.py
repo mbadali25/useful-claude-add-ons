@@ -209,7 +209,7 @@ it commits exactly the paths the check lists, which leaves the working state
 1. `.work/HANDOFF.md`'s `resume:` line, parsed by T-0006's
    `crew_resume.parse_resume` (never re-parsed here), naming a ticket, with
    `branch:` and `head:` equal to this checkout; a `--goal <slug>` line (L-0541)
-   answers that goal's next ticket, or its stop.
+   answers that goal's next ticket, or its stop. Then (L-0659) the one running goal.
 2. This worktree's active-ticket pointer (`crew_ticket.resolve_active`).
 3. `.work/INDEX.md`, only when exactly one open ticket has a folder.
 
@@ -1594,7 +1594,9 @@ def _handoff_ticket(top):
         return None, "", None, f"the handoff's resume: line is not usable ({reason})"
     command, arg, kind = parsed.get("command"), parsed.get("arg"), parsed.get("kind")
     goal = arg if command == AUTOPILOT and kind == "goal" else None
-    if not goal and (kind != "ticket" or not arg):
+    if goal:  # L-0541, L-0658: the goal file judges it, never branch: and head:
+        return _backlog().handoff_pick(top, goal)
+    if kind != "ticket" or not arg:
         return None, "", None, f"the handoff's resume: {command} names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
     head = crew_state._HANDOFF_HEAD_RE.search(text)  # pylint: disable=protected-access
@@ -1608,8 +1610,6 @@ def _handoff_ticket(top):
         return None, "", None, (f"the handoff's head: "
                                 f"{head.group(1) if head else '(missing)'} is not this "
                                 f"checkout's {here_head[:12] or '(unknown)'}")
-    if goal:  # L-0541: the goal's next ticket, or its stop
-        return _backlog().handoff_pick(top, goal)
     if not os.path.isdir(crew_ticket.ticket_dir(top, arg)):
         return None, "", None, f"the handoff names {arg}, which has no .work/tickets/ folder"
     render = getattr(resume, "render", None)
@@ -1630,24 +1630,23 @@ def resume_target(root, ticket=None, policy=True, goal=None):
                 "next": None, "activate": False, "goal": goal, "done": False}
 
     hint, source, why = "", "argument", ""
-    if goal:
-        source, pick = f"goal:{goal}", _backlog().next_goal_ticket(top, goal)
-        if pick["stop"]:
-            return dict(stopped(source, pick["reason"]), done=pick["done"])
-        ticket = pick["ticket"]
-    elif ticket:
+    if ticket and not goal:
         crew_ticket.check_ticket(ticket)
         there, missing_why = _main_folder(top, ticket)
         if there or missing_why:
             return stopped(source, _folder_elsewhere(top, ticket, there, missing_why))
         if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             return stopped(source, f"{ticket} has no .work/tickets/ folder")
-    else:
+    elif not goal:
         ticket, hint, stop_reason, why = _handoff_ticket(top)
         source = "handoff"
         goal = hint.split()[-1] if hint.startswith(f"{AUTOPILOT} {GOAL_FLAG} ") else None
         if stop_reason:
             return stopped(source, stop_reason)
+    if not ticket:  # L-0541's `--goal <slug>`; L-0659: a running goal before the active pointer
+        ticket, goal, source, early = _backlog().goal_source(top, goal, fallthrough, why, source)
+        if early:
+            return dict(stopped(source, early["reason"]), done=early["done"])
     if not ticket:
         fallthrough.append(why)
         active, where, broken = crew_ticket.resolve_active(top)
@@ -1682,7 +1681,7 @@ def resume_target(root, ticket=None, policy=True, goal=None):
                        f"the human re-points it: crew_ticket.py activate --ticket {ticket}."
                        + _also(focus_guard(top, "run", ticket)))
     disk = next_phase(top, ticket, policy=policy)
-    disagreement = ""
+    disagreement = _backlog().running_goal_note(top) if source == "handoff" and not goal else ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
         disagreement = (f"the handoff says {hint}, the disk says "
                         f"{disk['command'] or disk['phase']}; disk wins")
@@ -3056,9 +3055,10 @@ def _resume_line(top, bare):
     # `_handoff_ticket`'s checks in its order, in fixed text, on THIS read's
     # text: `bare` came from an earlier read the file may have been rewritten
     # since, so it vouches for the ticket only after these pass.
+    if goal:  # L-0658: judged by the goal file, never branch: and head:
+        return _backlog().status_goal_line(top, rendered, parsed["arg"], bare)
     if parsed.get("kind") != "ticket" or not parsed.get("arg"):
-        if not goal:
-            return f"not usable: {rendered} - it names no ticket"
+        return f"not usable: {rendered} - it names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
     head = crew_state._HANDOFF_HEAD_RE.search(text)  # pylint: disable=protected-access
     here_head = (git_out(top, "rev-parse", "HEAD") or "").lower()
@@ -3066,9 +3066,6 @@ def _resume_line(top, bare):
         return f"not usable: {rendered} - its branch: does not match this checkout"
     if not head or not here_head or not here_head.startswith(head.group(1).lower()):
         return f"not usable: {rendered} - its head: does not match this checkout"
-    if goal:
-        took = not bare.get("stop") and bare.get("goal") == parsed["arg"]
-        return f"{rendered} (usable)" if took else f"not usable: {rendered} - {bare.get('reason')}"
     if not _existing_ticket(top, parsed["arg"]):
         return f"not usable: {rendered} - its ticket has no .work/tickets/ folder"
     if _takes(bare, parsed.get("arg"), "handoff"):
@@ -3110,7 +3107,7 @@ def status(root, ticket=None):
             "review": _review(top, found) if found else "unknown (no ticket)",
             "resume_line": _resume_line(top, bare),
             "fallthrough": list(pick.get("fallthrough") or []),
-            "disagreement": pick.get("disagreement") or ""}
+            "disagreement": pick.get("disagreement") or "", "goal": pick.get("goal")}
 
 
 def _one_line(value):
@@ -3123,7 +3120,8 @@ def status_text(result):
              if result.get("mode") in ("plan", BACKLOG) else
              "mode: off - `autopilot.mode: plan` in .crew/config.json arms it"]
     if result.get("ticket"):
-        lines.append(f"ticket: {result['ticket']} (from {result.get('source')})")
+        lines.append(f"ticket: {result['ticket']} (from {result.get('source')}"
+                     + (f", goal {result['goal']})" if result.get("goal") else ")"))
     else:
         lines.append(f"ticket: none - {result.get('reason') or 'cannot tell'}")
     if result.get("stop"):

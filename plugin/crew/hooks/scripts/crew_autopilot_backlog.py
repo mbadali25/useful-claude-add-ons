@@ -58,6 +58,7 @@ import re
 import time
 
 import crew_autopilot as ap
+import crew_goal_state as goal_state
 import crew_state
 import crew_ticket
 from crew_common import read_text
@@ -134,7 +135,7 @@ def ticket_state(top, ticket):
         return "unknown", (f"{ticket} has no row in .work/INDEX.md"
                            + (f" ({row['why']})" if row["why"] else ""))
     if status in CLOSED:
-        return "closed", ""
+        return _lifecycle_closed(top, ticket)
     if status in SETTLED:
         return "settled", f"{ticket} is {status} in .work/INDEX.md"
     if status in WAITING:
@@ -147,10 +148,22 @@ def ticket_state(top, ticket):
         return "unknown", f"{ap._rel(top, spec)} exists but could not be read"
     header = ap._header_status(text) if text is not None else None  # pylint: disable=protected-access
     if header in HEADER_CLOSED:
-        return "closed", ""
+        return _lifecycle_closed(top, ticket)
     if header in SETTLED:
         return "settled", f"{ticket}'s spec.md header is {header}"
     return "open", ""
+
+
+def _lifecycle_closed(top, ticket):
+    """A ticket marked done is closed only once `next`'s phase table says
+    `closed`: a `done` ticket still owed its `ship` (or a sliced plan's next
+    slice) is the one to work, so the goal never starts the next ticket
+    before it ships. A phase check that raises is could-not-tell."""
+    try:
+        phase = ap._phase(top, ticket, policy=False)["phase"]  # pylint: disable=protected-access
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return "unknown", f"could not tell whether {ticket} is closed ({type(exc).__name__})"
+    return ("closed", "") if phase == "closed" else ("open", "")
 
 
 def next_goal_ticket(root, slug, goal=None):
@@ -199,9 +212,77 @@ def next_goal_ticket(root, slug, goal=None):
 
 def handoff_pick(top, slug):
     """`_handoff_ticket`'s answer for a `--goal <slug>` line: `(ticket, hint,
-    stop_reason, why)` from `next_goal_ticket`."""
+    stop_reason, why)`. L-0658: the goal file's run state decides, never the
+    handoff's branch: and head:. Only a `running` goal is taken, at
+    `next_goal_ticket`; a missing, not-started or done goal falls through
+    with its reason; a goal that cannot be read, or one stopped (named with
+    its reason and the command that resumes it), stops."""
+    hint = f"{ap.AUTOPILOT} {ap.GOAL_FLAG} {slug}"
+    kind, why = goal_state.handoff_refusal(top, slug)
+    if kind in ("missing", "none", "done"):
+        return None, "", None, f"the handoff resumes {hint}, but {why}"
+    if why:
+        return None, hint, why, ""
     pick = next_goal_ticket(top, slug)
-    return pick["ticket"], f"{ap.AUTOPILOT} {ap.GOAL_FLAG} {slug}", pick["stop"] and pick["reason"], ""
+    return pick["ticket"], hint, pick["stop"] and pick["reason"], ""
+
+
+def goal_source(top, goal, fallthrough, why, source):
+    """`resume_target`'s goal step: `(ticket, goal, source, early)`, `early`
+    a `{"reason", "done"}` stop or None. With `goal` (L-0541's `--goal
+    <slug>` argument): that goal's next ticket. Without (L-0659, bare and no
+    usable handoff): this checkout's goal files -- one running goal is
+    resumed at its next ticket (source `goal-file`, the handoff's `why` kept
+    as a fall-through); several stop and list them; a goal file that cannot
+    be read stops as could-not-tell, so the active ticket is not driven; a
+    stopped goal is named as a fall-through and never resumed; none, or only
+    done ones, leaves today's order untouched."""
+    if goal:
+        pick = next_goal_ticket(top, goal)
+        early = {"reason": pick["reason"], "done": pick["done"]} if pick["stop"] else None
+        return pick["ticket"], goal, f"goal:{goal}", early
+    goals = importlib.import_module("crew_autopilot_handoff").running_goals(top)
+    if goals["unknown"]:
+        return None, None, "goal-file", {"done": False, "reason": (
+            "could not tell whether an autopilot goal is running: "
+            + "; ".join(goals["unknown"]) + " could not be read - fix or remove it, or "
+            "name the work: /crew:autopilot <ticket> or --goal <slug>")}
+    if len(goals["running"]) > 1:
+        return None, None, "goal-file", {"done": False, "reason": (
+            "several autopilot goals are running: " + ", ".join(goals["running"])
+            + " - name one: /crew:autopilot --goal <slug>")}
+    for slug in goals["stopped"]:
+        fallthrough.append(goal_state.handoff_refusal(top, slug)[1])
+    if not goals["running"]:
+        return None, None, source, None
+    slug = goals["running"][0]
+    pick = next_goal_ticket(top, slug)
+    if pick["stop"]:
+        return None, slug, "goal-file", {"reason": pick["reason"], "done": pick["done"]}
+    fallthrough.append(why)
+    return pick["ticket"], slug, "goal-file", None
+
+
+def running_goal_note(top):
+    """L-0659: a usable ticket handoff wins over a running goal; this names
+    the goal(s) it won over for `resume`'s `disagreement:` line, or ""."""
+    try:
+        running = importlib.import_module("crew_autopilot_handoff").running_goals(top)["running"]
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return ""
+    return (f"goal {', '.join(running)} is running; the handoff's ticket wins - "
+            f"/crew:autopilot --goal {running[0]} resumes the goal") if running else ""
+
+
+def status_goal_line(top, rendered, slug, bare):
+    """Status's resume line for a `--goal` handoff (L-0658): the same goal-file
+    judgement as `handoff_pick`, in fixed text -- nothing read from the file."""
+    why = goal_state.handoff_refusal(top, slug, echo=False)[1]
+    if not why and bare.get("stop"):
+        why = bare.get("reason") or "resume_target stopped"
+    elif not why and (bare.get("goal") != slug or bare.get("source") != "handoff"):
+        why = f"bare {ap.AUTOPILOT} does not take it"
+    return f"not usable: {rendered} - {why}" if why else f"{rendered} (usable)"
 
 
 def closed_in_goal(top, slug, ticket):
@@ -383,6 +464,10 @@ def _marked(top, slug, result):
         importlib.import_module("crew_autopilot_handoff").goal_mark(
             top, slug, state, result["ticket"], "" if state == "running" else result["reason"])
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        if state == "running":  # unmarked, every handoff would drop the goal: stop
+            return dict(result, ticket=None, stop=True, activate=False, run=None,
+                        reason=f"could not record goal {slug} as running ({exc}), so a "
+                               "handoff could not name it")
         result = dict(result, warnings=[f"the goal's run state was not written ({exc})"])
     return result
 
