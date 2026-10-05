@@ -917,3 +917,143 @@ def test_an_open_predecessor_does_not_hide_an_unreadable_slice_under_it(tmp_path
     why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s3")
 
     assert "could not read slice 1's PR state" in why, why
+
+
+# --- the merged-slice decision against a reference oracle (coordinator, round 5) ---
+#
+# Every combination, for chains of 1-3 slices, of: the slices.json entry
+# (absent, valid, a non-string base, a list base; each with or without a
+# recorded merge_sha) and the LIVE PR (OPEN, CLOSED, MERGED into its declared
+# base, MERGED into the default branch, MERGED into a wrong branch,
+# unreadable, an unknown state). The oracle below is written from the rule,
+# not from the code: a destination is allowed only when every slice under it
+# on the chain is verified MERGED, by a live read, into a base its own plan
+# allows; the live state decides and a recorded merge_sha only corroborates;
+# anything unknown, unreadable or malformed anywhere on the chain is a stop;
+# the default branch only once the whole chain is verified.
+
+import itertools  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
+
+_ENTRIES = ("absent", "valid", "valid+sha", "intbase", "intbase+sha", "listbase",
+            "listbase+sha")
+_LIVES = ("OPEN", "CLOSED", "M-declared", "M-default", "M-wrong", "unreadable", "unknown")
+_SHAPES = {  # last slice's declared bases, slice 1 first
+    "1": ("main",), "2>1": ("main", 1), "3>2>1": ("main", 1, 2),
+    "3>1,2main": ("main", "main", 1), "3main": ("main", 1, "main")}
+_STOP = "stop"
+
+
+def _branch(j):
+    return BRANCH if j == 1 else f"{BRANCH}-s{j}"
+
+
+def _declared(bases, j):
+    base = bases[j - 1]
+    return "main" if base == "main" else _branch(base)
+
+
+def _oracle_allowed(bases, facts, k):
+    """frozenset of destinations slice k may merge into, or _STOP."""
+    entry_k = facts[k][0]
+    if entry_k.startswith(("intbase", "listbase")):
+        return _STOP
+    # Slice k's branch is derived from slice 1's: recorded without it, it
+    # cannot be checked.
+    if entry_k != "absent" and facts[1][0] == "absent":
+        return _STOP
+    base = bases[k - 1]
+    if base == "main":
+        return frozenset({"main"})
+    status = _oracle_status(bases, facts, base)
+    if status in (_STOP, "NONE"):
+        return _STOP
+    allowed_j = _oracle_allowed(bases, facts, base)
+    return frozenset({_branch(base)}) | (allowed_j if status == "MERGED" else frozenset())
+
+
+def _oracle_status(bases, facts, j):
+    """"NONE", "OPEN", "CLOSED", "MERGED" or _STOP for slice j."""
+    entry, live = facts[j]
+    if entry == "absent":
+        return "NONE"
+    if entry.startswith(("intbase", "listbase")):
+        return _STOP
+    allowed_j = _oracle_allowed(bases, facts, j)
+    if allowed_j == _STOP or live in ("unreadable", "unknown"):
+        return _STOP
+    if live in ("OPEN", "CLOSED"):
+        return _STOP if entry.endswith("+sha") else live
+    found = {"M-declared": _declared(bases, j), "M-default": "main", "M-wrong": "develop"}[live]
+    return "MERGED" if found in allowed_j else _STOP
+
+
+def _oracle_merged(bases, facts):
+    merged, gap = set(), False
+    for k in range(1, len(bases) + 1):
+        status = _oracle_status(bases, facts, k)
+        if status == _STOP or (status != "NONE" and gap):
+            return _STOP
+        gap = gap or status == "NONE"
+        if status == "MERGED":
+            merged.add(k)
+    return frozenset(merged)
+
+
+def _oracle_merged_into(bases, facts, k):
+    """"" when slice k's own live PR counts as merged into its allowed set."""
+    allowed = _oracle_allowed(bases, facts, k)
+    live = facts[k][1]
+    if allowed == _STOP or not live.startswith("M-"):
+        return _STOP
+    found = {"M-declared": _declared(bases, k), "M-default": "main", "M-wrong": "develop"}[live]
+    return "" if found in allowed else _STOP
+
+
+def _world(bases, facts):
+    """An in-memory ctx and gh answers for one combination."""
+    slices = [{"n": n, "name": f"s{n}", "steps": [n], "base": b, "files": []}
+              for n, b in enumerate(bases, start=1)]
+    shipped, gh = [], {}
+    for j, (entry, live) in facts.items():
+        if entry != "absent":
+            base = {"intbase": 5, "listbase": ["main"]}.get(entry.split("+")[0],
+                                                           _declared(bases, j))
+            shipped.append({"slice": j, "pr": 10 + j, "branch": _branch(j), "base": base,
+                            "merge_sha": "c" * 40 if entry.endswith("+sha") else None})
+        found = {"M-declared": _declared(bases, j), "M-default": "main",
+                 "M-wrong": "develop"}.get(live, _declared(bases, j))
+        state = {"OPEN": "OPEN", "CLOSED": "CLOSED", "unknown": "QUEUED"}.get(live, "MERGED")
+        gh[_branch(j)] = None if live == "unreadable" else {"state": state,
+                                                            "baseRefName": found}
+    ctx = {"error": "", "slices": slices, "m": len(bases), "piece": slices[-1],
+           "state": {"current": len(bases), "done": [], "shipped": shipped}}
+    return ctx, gh
+
+
+@pytest.mark.parametrize("shape", sorted(_SHAPES))
+def test_merged_slice_decision_matches_the_oracle(monkeypatch, shape):
+    bases = _SHAPES[shape]
+    world = {}
+    monkeypatch.setattr(crew_ship, "_default_branch", lambda top: "main")
+    monkeypatch.setattr(crew_ship, "_gh", lambda top, args: world.get(args[2]))
+    monkeypatch.setattr(crew_ship, "read_pr", lambda top, branch: (
+        dict(world[branch], number=1) if world.get(branch) else None))
+    per_slice = list(itertools.product(_ENTRIES, _LIVES))
+    wrong = []
+    for combo in itertools.product(per_slice, repeat=len(bases)):
+        facts = dict(enumerate(combo, start=1))
+        ctx, gh = _world(bases, facts)
+        world.clear()
+        world.update(gh)
+        k = len(bases)
+        allowed, _why = crew_autopilot_slices._allowed_bases(  # pylint: disable=protected-access
+            "/r", ctx, k)
+        merged, _why = crew_autopilot_slices.merged_slices("/r", ctx, k + 1)
+        into = crew_autopilot_slices.merged_base_stop("/r", ctx, _branch(k))
+        got = (_STOP if allowed is None else frozenset(allowed),
+               _STOP if merged is None else frozenset(merged), _STOP if into else "")
+        want = (_oracle_allowed(bases, facts, k), _oracle_merged(bases, facts),
+                _oracle_merged_into(bases, facts, k))
+        if got != want:
+            wrong.append((combo, got, want))
+    assert not wrong, f"{len(wrong)} combinations disagree; first: {wrong[:3]}"

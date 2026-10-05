@@ -154,114 +154,156 @@ def _shipped_entry(ctx, n):
     return next((e for e in ctx["state"]["shipped"] if e.get("slice") == n), None)
 
 
-def merged_slices(top, ctx, upto):
-    """(set of merged slice numbers below `upto`, {slice: PR state}), or
-    (None, why) when a shipped slice's state, merge destination or chain
-    cannot be read, or it merged anywhere its plan does not allow. A recorded
-    `merge_sha` goes through the same verified-base decision
-    (`_verified_merged`) as a PR read as MERGED: never trusted alone."""
-    merged, states = set(), {}
-    for k in range(1, upto):
-        entry = _shipped_entry(ctx, k)
-        if entry is None:
-            continue
-        # One read per slice: the state judged is the state recorded, so a PR
-        # that merges between two reads is never counted unverified.
-        done, why, _allowed, state = _verified_merged(top, ctx, k, 0)
-        if done is None:
-            return None, why
-        states[k] = state
-        if done:
-            merged.add(k)
-    return merged, states
+# --- the merged-slice decision (one total function) --------------------------------
+#
+# A slice's PR may have merged only into a base its plan allows. `_allowed`
+# is that set for slice k: `Base: main` is the default branch alone; `Base:
+# slice <j>` is slice j's branch, and -- only once slice j is verified MERGED
+# into its own allowed set by a LIVE read -- whatever slice j may merge into
+# (GitHub retargets a stacked PR when its base merges), so the default branch
+# is reached only after the whole chain under k is verified. `_verdict` is
+# one live read of a shipped slice, judged against its own `_allowed`. Every
+# fact either rests on is checked first, whatever the slice's own state:
+# a missing or malformed slices.json entry on the chain, a live state that
+# is not OPEN, CLOSED or MERGED or cannot be read, a merge destination that
+# cannot be read, a recorded merge_sha the live state contradicts, or a
+# merge anywhere else is a stop (`_Stop`), never a known value. A recorded
+# merge_sha or base only ever corroborates; the live read decides. `memo`
+# holds one read per slice per decision.
 
-
-def _allowed_bases(top, ctx, k, depth=0):
-    """`(allowed, why)`: the ONE set of branches slice `k`'s PR may have merged
-    into, from its declared base and the verified chain under it, or
-    `(None, why)` -- a stop -- when anything it rests on is unknown or
-    malformed. `Base: main` is the default branch alone. `Base: slice <j>` is
-    slice j's branch, plus whatever slice j's own PR could merge into once
-    slice j is verified merged INTO one of those (GitHub retargets a stacked
-    PR when its base merges). A recorded base is never trusted on its own."""
-    by_n = {s["n"]: s for s in ctx["slices"]}
-    entry = _shipped_entry(ctx, k) or {}
-    recorded = entry.get("base")
-    if recorded is not None and not (isinstance(recorded, str) and recorded):
-        return None, (f"slices.json records slice {k}'s base as {recorded!r}, not a branch "
-                      "name - a human looks")
-    default = crew_ship._default_branch(top)  # pylint: disable=protected-access
-    if not default:
-        return None, "could not read the default branch"
-    base = by_n[k]["base"]
-    if base == "main":
-        return {default}, ""
-    if not is_int(base) or base not in by_n or base >= k or depth > len(by_n):
-        return None, f"slice {k}'s Base: is not an earlier slice - a human looks"
-    below = (slice_branches(ctx) or {}).get(base)
-    if not below:
-        return None, f"slice {base}'s branch is not recorded, so slice {k}'s base is unknown"
-    merged, why, under, _state = _verified_merged(top, ctx, base, depth + 1)
-    if merged is None:
-        return None, why
-    return ({below} | under) if merged else {below}, ""
-
-
-# The PR states a slice can be in; anything else gh answers is unknown.
 _PR_STATES = ("OPEN", "CLOSED", "MERGED")
 
 
-def _verified_merged(top, ctx, j, depth):
-    """`(merged, why, allowed_j, state)`: True only when slice j's PR merged
-    INTO a base its own chain allows; False when it has not shipped, or its
-    PR is OPEN or CLOSED; None (a stop, `why` set) when its state is anything
-    else or unreadable, its destination or chain cannot be read, or it merged
-    anywhere else. `state` is the one state this read judged."""
+class _Stop(Exception):
+    """A fact the decision rests on is unknown, malformed or wrong."""
+
+
+def _default(top, memo):
+    if "default" not in memo:
+        memo["default"] = crew_ship._default_branch(top)  # pylint: disable=protected-access
+    if not isinstance(memo["default"], str) or not memo["default"]:
+        raise _Stop("could not read the default branch")
+    return memo["default"]
+
+
+def _entry(ctx, j):
+    """Slice j's slices.json entry checked for shape, or None when absent."""
     entry = _shipped_entry(ctx, j)
     if entry is None:
-        return False, "", set(), "NONE"
-    branch = entry.get("branch")
-    if not isinstance(branch, str) or not branch:
-        return None, f"slices.json records no branch for slice {j} - a human looks", set(), ""
-    # The chain beneath slice j first, whatever j's own state: an OPEN or
-    # CLOSED j must not hide an unreadable slice under it.
-    allowed, why = _allowed_bases(top, ctx, j, depth)
-    if allowed is None:
-        return None, why, set(), ""
-    state = "MERGED"
-    if not crew_ship._full_sha(entry.get("merge_sha")):  # pylint: disable=protected-access
-        pr = crew_ship.read_pr(top, branch)
-        state = pr.get("state") if isinstance(pr, dict) else None
-        if state not in _PR_STATES:
-            return None, (f"could not read slice {j}'s PR state ({branch}"
-                          + (f": {state!r}" if state else "") + ") - a human looks"), set(), ""
-        if state != "MERGED":
-            return False, "", set(), state
-    view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
+        return None
+    expected = (slice_branches(ctx) or {}).get(j)
+    branch, base, sha = entry.get("branch"), entry.get("base"), entry.get("merge_sha")
+    if not isinstance(branch, str) or not branch or branch != expected:
+        raise _Stop(f"slices.json records slice {j}'s branch as {branch!r}, not "
+                    f"{expected!r} - a human looks")
+    if base is not None and not (isinstance(base, str) and base):
+        raise _Stop(f"slices.json records slice {j}'s base as {base!r}, not a branch name "
+                    "- a human looks")
+    if sha is not None and not crew_ship._full_sha(sha):  # pylint: disable=protected-access
+        raise _Stop(f"slices.json records slice {j}'s merge_sha as {sha!r} - a human looks")
+    return entry
+
+
+def _live(top, branch, memo, j):
+    """One live read of slice j's PR (on `branch`): `(state, destination)`."""
+    if branch not in memo:
+        memo[branch] = crew_ship._gh(top, ["pr", "view", branch,  # pylint: disable=protected-access
+                                           "--json", "state,baseRefName"])
+    view = memo[branch]
+    state = view.get("state") if isinstance(view, dict) else None
     found = view.get("baseRefName") if isinstance(view, dict) else None
-    if not isinstance(found, str) or not found:
-        return None, f"could not read where slice {j}'s PR ({branch}) was merged", set(), ""
-    if found not in allowed:
-        return None, (f"slice {j}'s PR ({branch}) merged into {found}, not a base the plan "
-                      f"names ({', '.join(sorted(allowed))}) - the chain did not reach its "
-                      "base; a person looks"), set(), ""
-    return True, "", allowed, state
+    if state not in _PR_STATES:
+        raise _Stop(f"could not read slice {j}'s PR state ({branch}"
+                    + (f": {state!r}" if state else "") + ") - a human looks")
+    return state, (found if isinstance(found, str) and found else None)
+
+
+def _allowed(top, ctx, k, memo):
+    """The set of branches slice k's PR may have merged into; raises _Stop."""
+    by_n = {s["n"]: s for s in ctx["slices"]}
+    _entry(ctx, k)
+    default = _default(top, memo)
+    base = by_n[k]["base"]
+    if base == "main":
+        return {default}
+    if not is_int(base) or base not in by_n or base >= k:
+        raise _Stop(f"slice {k}'s Base: is not an earlier slice - a human looks")
+    state, allowed_j = _verdict(top, ctx, base, memo)
+    if state == "NONE":
+        raise _Stop(f"slice {base} has not shipped, yet slice {k} stacks on it - a human looks")
+    below = slice_branches(ctx)[base]
+    return {below} | allowed_j if state == "MERGED" else {below}
+
+
+def _verdict(top, ctx, j, memo):
+    """`(state, allowed_j)` for slice j: "NONE" when it has not shipped, else
+    its live OPEN, CLOSED or MERGED -- MERGED only into `allowed_j`; raises
+    _Stop for anything else."""
+    key = ("verdict", j)
+    if key in memo:
+        return memo[key]
+    entry = _entry(ctx, j)
+    if entry is None:
+        memo[key] = ("NONE", set())
+        return memo[key]
+    allowed_j = _allowed(top, ctx, j, memo)
+    state, found = _live(top, entry["branch"], memo, j)
+    if entry.get("merge_sha") and state != "MERGED":
+        raise _Stop(f"slices.json records slice {j} merged, but its PR is {state} - a "
+                    "human looks")
+    if state == "MERGED" and found not in allowed_j:
+        raise _Stop(f"slice {j}'s PR ({entry['branch']}) merged into "
+                    f"{found or '(unreadable)'}, not a base the plan names "
+                    f"({', '.join(sorted(allowed_j))}) - the chain did not reach its base; "
+                    "a person looks")
+    memo[key] = (state, allowed_j)
+    return memo[key]
+
+
+def merged_slices(top, ctx, upto):
+    """(set of merged slice numbers below `upto`, {slice: state}), or (None,
+    why) when the decision stops. Slices ship in order, so a shipped slice
+    after an unshipped one is a stop too."""
+    merged, states, memo, gap = set(), {}, {}, None
+    try:
+        for k in range(1, upto):
+            state, _allowed_k = _verdict(top, ctx, k, memo)
+            if state != "NONE" and gap is not None:
+                raise _Stop(f"slices.json records slice {k} shipped but not slice {gap} - a "
+                            "human looks")
+            if state == "NONE" and gap is None:
+                gap = k
+            states[k] = state
+            if state == "MERGED":
+                merged.add(k)
+    except _Stop as stop:
+        return None, str(stop)
+    return merged, states
+
+
+def _allowed_bases(top, ctx, k):
+    """`(allowed, why)` for slice k: the set, or (None, why) on a stop."""
+    try:
+        return _allowed(top, ctx, k, {}), ""
+    except _Stop as stop:
+        return None, str(stop)
 
 
 def _merged_into_stop(top, ctx, k, branch):
-    """The reason slice `k`'s merged PR (on `branch`) did not reach a base the
-    plan names, or ""; anything unknown or malformed is a stop."""
-    allowed, why = _allowed_bases(top, ctx, k)
-    if allowed is None:
-        return why
-    view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
-    found = view.get("baseRefName") if isinstance(view, dict) else None
-    if not isinstance(found, str) or not found:
-        return f"could not read where {branch}'s merged PR was merged"
-    if found not in allowed:
-        return (f"{branch}'s PR merged into {found}, not a base the plan names "
-                f"({', '.join(sorted(allowed))}) - slice {k} did not reach its base; a "
-                "person looks")
+    """The reason slice k's PR (on `branch`) does not count as merged into a
+    base its plan allows, or ""."""
+    memo = {}
+    try:
+        allowed = _allowed(top, ctx, k, memo)
+        state, found = _live(top, branch, memo, k)
+        if state != "MERGED":
+            raise _Stop(f"{branch}'s PR is {state}, not merged")
+        if found not in allowed:
+            raise _Stop(f"{branch}'s PR merged into {found or '(unreadable)'}, not a base the "
+                        f"plan names ({', '.join(sorted(allowed))}) - slice {k} did not "
+                        "reach its base; a person looks")
+    except _Stop as stop:
+        return str(stop)
     return ""
 
 
