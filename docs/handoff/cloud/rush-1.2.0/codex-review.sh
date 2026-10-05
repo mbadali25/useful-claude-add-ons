@@ -19,7 +19,7 @@ rc=1
 for try in 1 2 3 4 5 6; do
   rm -f "$OUT"
   (cd "$WT" && timeout 3000 codex exec -m gpt-6-sol -c model_reasoning_effort=high -s read-only --skip-git-repo-check \
-    --output-schema $S/review-schema.json -o "$OUT" "$PROMPT") > "$S/reviews/$LABEL-$SHA.log" 2>&1
+    --output-schema $S/review-schema.json -o "$OUT" "$PROMPT" </dev/null) > "$S/reviews/$LABEL-$SHA.log" 2>&1
   rc=$?
   [ -s "$OUT" ] && break
   grep -q "at capacity" "$S/reviews/$LABEL-$SHA.log" || break
