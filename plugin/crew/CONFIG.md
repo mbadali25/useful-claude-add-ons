@@ -787,7 +787,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `context.autoClear.command` | both | not validated - read by `hooks/scripts/crew_autocycle.py` (expects string) | `"/clear"` |
 | `context.autoClear.delaySeconds` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `3` |
 | `context.autoClear.minHandoffLines` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `5` |
-| `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`); `/crew:migrate`'s `apply-migrate --scan-root <dir>` finds the repos that opted in under 0.20.x | `null` |
+| `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `context.autoClear.onlySessions` | machine-only | list of session ids, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `context.autoClear.wrapUp` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `resume.auto` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_resume.py`) | `null` |
@@ -842,6 +842,9 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.questions` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
 | `route.enabled` | both | `false` \| `true` (checked in `hooks/scripts/crew_route.py`) | `false` |
 <!-- generated:config-keys-global end -->
+
+To find the repos to list in `context.autoClear.onlyRepos`, `/crew:migrate`'s
+`apply-migrate --scan-root <dir>` looks for the ones that opted in under 0.20.x (T-0106).
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
