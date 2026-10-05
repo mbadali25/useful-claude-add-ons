@@ -81,8 +81,8 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   stacked slice whose base chain leaves out an earlier slice it shares (or may
   share) Files with. Round 4: a merged slice PR counts as shipped only when it
   merged into a base the plan could name (the default branch, its recorded
-  base, or a branch on its own `Base: slice` chain -- never an unrelated
-  slice's), and an earlier slice's PR merged elsewhere does not count as
+  base, a branch on its own `Base: slice` chain -- never an unrelated
+  slice's -- or the default branch only once that whole chain has merged), and an earlier slice's PR merged elsewhere does not count as
   merged for the next slice's order check; two Step headings with one number
   are refused.
 

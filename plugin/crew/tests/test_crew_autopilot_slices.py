@@ -755,3 +755,22 @@ def test_a_predecessor_merged_elsewhere_is_not_merged(tmp_path, monkeypatch):
     merged, why = crew_autopilot_slices.merged_slices(str(root), ctx, 2)
 
     assert (merged, "merged into develop" in why) == (None, True), why
+
+
+def test_stacked_slice_merged_into_main_before_its_base_is_not_shipped(tmp_path, monkeypatch):
+    """T-0059 port review r6 BLOCK: slice 2 (`Base: slice 1`) merged into the
+    default branch while slice 1 is still open skipped its dependency."""
+    root = _ticket(tmp_path, header="status: in-progress   risk: low")
+    _state(root, current=2, done=[1, 2], shipped=[_shipped(1, BRANCH),
+                                                   _shipped(2, f"{BRANCH}-s2", base=BRANCH)])
+
+    def view(args):
+        if args[2] == BRANCH:
+            return _view(dict(_pr("OPEN", number=11), baseRefName="main"))
+        return _view(dict(_pr("MERGED", number=12), baseRefName="main"))
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(pr_view=view, repo_view=MAIN))
+    ctx = crew_autopilot_slices.context(str(root), T)
+
+    why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2")
+
+    assert f"merged into main, not a base the plan names ({BRANCH})" in why, why

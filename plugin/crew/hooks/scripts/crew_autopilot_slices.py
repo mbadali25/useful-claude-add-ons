@@ -187,15 +187,29 @@ def _allowed_bases(top, ctx, k):
     chain. Never an unrelated earlier slice's branch."""
     by_n = {s["n"]: s for s in ctx["slices"]}
     branches = slice_branches(ctx) or {}
-    allowed = {crew_ship._default_branch(top),  # pylint: disable=protected-access
-               (_shipped_entry(ctx, k) or {}).get("base")}
-    base, seen = by_n[k]["base"], set()
-    while isinstance(base, int) and base in by_n and base not in seen:
-        seen.add(base)
+    allowed = {(_shipped_entry(ctx, k) or {}).get("base")}
+    base, chain = by_n[k]["base"], []
+    while isinstance(base, int) and base in by_n and base not in chain:
+        chain.append(base)
         allowed.add(branches.get(base))
         base = by_n[base]["base"]
+    # The default branch only once the whole stacked chain under slice k has
+    # merged: before that, a PR merged straight into it skipped a dependency.
+    if all(_chain_slice_merged(top, ctx, j) for j in chain):
+        allowed.add(crew_ship._default_branch(top))  # pylint: disable=protected-access
     allowed.discard(None)
     return allowed
+
+
+def _chain_slice_merged(top, ctx, j):
+    """True when slice `j` is recorded merged, or its PR reads MERGED."""
+    entry = _shipped_entry(ctx, j)
+    if entry is None:
+        return False
+    if crew_ship._full_sha(entry.get("merge_sha")):  # pylint: disable=protected-access
+        return True
+    pr = crew_ship.read_pr(top, entry.get("branch") or "")
+    return isinstance(pr, dict) and pr.get("state") == "MERGED"
 
 
 def _merged_into_stop(top, ctx, k, branch):
