@@ -12,15 +12,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 ### Changed — `crew`: `/crew:migrate` carries `autopilot` to crew.json's top-level `autopilot` and says which file crew reads (T-0105)
 
 - **Summary.** Migrating an older crew setup no longer files your `autopilot` settings under
-  "unmapped": they land at crew.json's top-level `autopilot`, with a note that crew reads them from
-  `.crew/config.json`, so that is the file to edit.
+  "unmapped": they land at crew.json's top-level `autopilot`, with a note that this copy is never
+  read: crew reads `.crew/config.json`, and the personal keys also your machine-global file, where
+  the stricter value wins.
 - **What changed.** `crew_migrate.MAPPING` gains the row `autopilot -> autopilot` (and the docstring
   table its matching row), so the block is carried whole to crew.json's top level and no `unmapped`
   line is printed for it. A new `AUTOPILOT_FILE_NOTE` is printed as a `note` line in preview and apply
   and written to crew.json `notes` whenever the config has an `autopilot` key, whatever its value,
   after the existing `pm.authority: autonomous` note when both apply. `to_legacy` still rebuilds the
-  original config exactly. Crew still reads `autopilot` from `.crew/config.json` only
-  (`crew_autopilot.py` is not edited); once that file is gone, the existing `settings` warning about
+  original config exactly. Crew still reads `autopilot` from `.crew/config.json`, and the personal
+  keys (`mode`, `maxPhases`, `deploy`, `approval`, `questions`) also from `~/.claude/crew/config.json`,
+  stricter wins (CONFIG.md §20a); `crew_autopilot.py` is not edited. Once that file is gone, the existing `settings` warning about
   an `autopilot` block in `.crew/crew.json` now fires for a migrated repo.
 - **Behaviour change.** A crew.json written by an older crew keeps `unmapped.autopilot`, so re-running
   `/crew:migrate` there now reports a `CONFLICT` on crew.json instead of "already migrated

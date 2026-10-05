@@ -25,7 +25,8 @@ Preview writes nothing. Show me its output verbatim and point out:
   `retired.pm` and records in `crew.json` `notes`: it arms nothing, and
   `/crew:autopilot` is its successor, off until `autopilot.mode: plan`; and any
   `autopilot` block, which lands at crew.json's top-level `autopilot` with a note
-  (`AUTOPILOT_FILE_NOTE`): crew reads that key from `.crew/config.json` only.
+  (`AUTOPILOT_FILE_NOTE`): that copy is never read; crew reads `.crew/config.json`,
+  and the personal keys also the machine file, stricter wins (CONFIG.md §20a).
 
 Then list the path-scoped rules apply will generate from the code map:
 

@@ -34,8 +34,10 @@ crew.json alone -- that inverse is what the round-trip test asserts.
 A setting 1.0 carries but no longer acts on is also said out loud: crew.json
 gains a `notes` list and the report a `note` line. Today that is two cases:
 `pm.authority: autonomous` -> "/crew:autopilot drives one ticket; set
-autopilot.mode: plan to enable"; and any `autopilot` key -> crew reads it from
-`.crew/config.json` only, so the crew.json copy is not read.
+autopilot.mode: plan to enable"; and any `autopilot` key -> the crew.json copy
+is never read: crew reads `autopilot` from `.crew/config.json`, and the personal
+keys also from `~/.claude/crew/config.json`, where the stricter value wins
+(CONFIG.md §20a).
 
 | config.json (<= 7) | crew.json (1)            | Note |
 |--------------------|--------------------------|------|
@@ -65,7 +67,7 @@ autopilot.mode: plan to enable"; and any `autopilot` key -> crew reads it from
 | `guards`           | `guards`                 | |
 | `production`       | `production`             | |
 | `change`           | `change`                 | |
-| `autopilot`        | `autopilot`              | read from `.crew/config.json` only |
+| `autopilot`        | `autopilot`              | never read here: `.crew/config.json` (+ machine file, §20a) |
 
 `MAPPING` below is this table as code; a test asserts the two agree.
 
@@ -128,10 +130,13 @@ RENAMED = {"qa-reviewer": "reviewer"}
 # and in crew.json, never dropped silently.
 AUTOPILOT_NOTE = ("pm.authority: autonomous - /crew:autopilot drives one ticket; set "
                   "autopilot.mode: plan to enable (kept under retired.pm)")
-# crew reads `autopilot` from `.crew/config.json` alone (crew_autopilot.settings),
+# crew_autopilot.settings reads `autopilot` from `.crew/config.json` and, for the
+# personal keys (crew_guards.PERSONAL_KEYS, T-0050), the machine-global file too,
 # so the copy migrate writes to crew.json arms nothing (T-0105).
-AUTOPILOT_FILE_NOTE = ("autopilot - the copy in crew.json is not read; crew reads this key "
-                       "from .crew/config.json, so edit it there")
+AUTOPILOT_FILE_NOTE = ("autopilot - the copy in crew.json is never read; crew reads autopilot "
+                       "from .crew/config.json, and the personal keys also from "
+                       "~/.claude/crew/config.json, where the stricter value wins "
+                       "(CONFIG.md section 20a)")
 
 # `LETTERS-digits`, the shape the rest of crew recognises as a ticket id
 # (crew_state._TICKET_RE). Anchored, so it doubles as a path-safety check: an

@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew**: `/crew:migrate` carries `autopilot` to crew.json's top-level `autopilot` and says which file crew reads. Migrating an older crew setup no longer files your `autopilot` settings under "unmapped": they land at crew.json's top-level `autopilot`, with a note that crew reads them from `.crew/config.json`, so that is the file to edit.
+- **crew**: `/crew:migrate` carries `autopilot` to crew.json's top-level `autopilot` and says which file crew reads. Migrating an older crew setup no longer files your `autopilot` settings under "unmapped": they land at crew.json's top-level `autopilot`, with a note that this copy is never read: crew reads `.crew/config.json`, and the personal keys also your machine-global file, where the stricter value wins.
 - **crew 1.0.348**: Four crew changes in one update: a check for GitHub Actions deploy entries, agents that say what they did not verify, review metrics read from the main checkout in a worktree, and personal autopilot defaults you can set once for every repo, with a backup before each config write.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

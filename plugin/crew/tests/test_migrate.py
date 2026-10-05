@@ -501,7 +501,7 @@ def test_autopilot_key_note_names_config_json(repo, capsys):
     line = f"note   {crew_migrate.AUTOPILOT_FILE_NOTE}"
     note = crew_migrate.AUTOPILOT_FILE_NOTE
     assert (preview_code, unchanged, preview.count(line), applied.count(line), crew["notes"],
-            "autopilot" in note, ".crew/config.json" in note, "not read" in note) == (
+            "autopilot" in note, ".crew/config.json" in note, "never read" in note) == (
         0, True, 1, 1, [note], True, True, True)
 
 
@@ -564,3 +564,13 @@ def test_crew_json_from_an_older_mapping_is_a_conflict_and_is_left_intact(repo):
     code = crew_migrate.main(["--root", repo, "--apply"])
 
     assert (code, _snapshot(repo, skip_backups=False)) == (1, before)
+
+
+def test_autopilot_note_names_both_files_and_the_stricter_rule():
+    """Since T-0050 the personal autopilot keys are read from the machine-global
+    file too, so a note naming only `.crew/config.json` would mislead."""
+    note = crew_migrate.AUTOPILOT_FILE_NOTE
+
+    assert ("never read" in note, ".crew/config.json" in note,
+            "~/.claude/crew/config.json" in note, "stricter" in note, "20a" in note) == (
+        True, True, True, True, True)

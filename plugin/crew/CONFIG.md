@@ -2881,7 +2881,9 @@ adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
 no word. Migrate carries the block to crew.json's top-level `autopilot` with
-a note (`AUTOPILOT_FILE_NOTE`) naming `.crew/config.json` as the file to edit.
+a note (`AUTOPILOT_FILE_NOTE`): that copy is never read; crew reads
+`.crew/config.json`, and the personal keys also the machine-global file, where
+the stricter value wins (§20a).
 `settings` prints `mode`, `maxPhases`, `deploy` and `maxAutoReplans`
 on its first text line, the effective `approval` and `questions` on its second, and
 `sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
