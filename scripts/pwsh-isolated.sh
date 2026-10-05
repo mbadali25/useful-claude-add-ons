@@ -16,8 +16,9 @@
 #    pwsh is not started on the shared cache.
 # 3. pwsh runs with the arguments exactly as given and stdin from /dev/null
 #    (callers loop over `while read`, whose input pwsh must not consume).
-# 4. TERM, INT or HUP to this script ends the pwsh child too: `timeout`
-#    signals only its direct child, which is this script.
+# 4. TERM, INT or HUP to this script ends the pwsh child too (with TERM:
+#    a background child of sh ignores INT): `timeout` signals only its
+#    direct child, which is this script. That death gets a TOOL BROKEN line.
 # 5. The directory is removed on every exit path, and the exit status is
 #    pwsh's own. No retry, ever.
 # 6. A status of 128 or more adds one `TOOL BROKEN: pwsh` line to stderr
@@ -59,10 +60,18 @@ export XDG_CACHE_HOME
 child=""
 cleanup() { rm -rf "$dir"; }
 # shellcheck disable=SC2329  # invoked from the traps below
+# The child gets TERM whatever arrived: a background job of a non-interactive
+# shell starts with INT ignored, so a forwarded INT would not end it.
 forward() {
   sig=$1
-  [ -n "$child" ] && kill "-$sig" "$child" 2>/dev/null
-  [ -n "$child" ] && wait "$child" 2>/dev/null
+  if [ -n "$child" ]; then
+    kill -TERM "$child" 2>/dev/null
+    wait "$child" 2>/dev/null
+    crc=$?
+    if [ "$crc" -ge 128 ]; then
+      echo "TOOL BROKEN: pwsh exited ${crc} (signal $((crc - 128))) after this launcher got SIG${sig} and ended it - no .ps1 check result" >&2
+    fi
+  fi
   cleanup
   trap - "$sig"
   kill "-$sig" "$$"

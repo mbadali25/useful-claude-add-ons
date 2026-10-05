@@ -141,19 +141,54 @@ else bad no_cache_dir_means_no_run "rc=$rc err=$(cat "$TMP/err")"; fi
 if command -v timeout >/dev/null 2>&1; then
   rm -f "$REC"
   start=$(date +%s)
-  STUB_MODE=sleep STUB_REC="$REC" PWSH="$STUB" timeout 2 sh "$LAUNCHER" -NoProfile >/dev/null 2>&1; rc=$?
+  STUB_MODE=sleep STUB_REC="$REC" PWSH="$STUB" timeout 2 sh "$LAUNCHER" -NoProfile >/dev/null 2>"$TMP/err"; rc=$?
   took=$(( $(date +%s) - start ))
   sleep 1
   pid=$(field pid); d=$(dirname "$(field cache)")
   alive=no; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive=yes
-  if [ $rc = 124 ] && [ $took -lt 10 ] && [ $alive = no ] && [ ! -e "$d" ]; then
+  if [ $rc = 124 ] && [ $took -lt 10 ] && [ $alive = no ] && [ ! -e "$d" ] \
+     && grep -q '^TOOL BROKEN: pwsh' "$TMP/err"; then
     ok a_timeout_ends_the_child
   else
-    bad a_timeout_ends_the_child "rc=$rc took=${took}s child_alive=$alive cache_left=$( [ -e "$d" ] && echo yes || echo no)"
+    bad a_timeout_ends_the_child "rc=$rc took=${took}s child_alive=$alive cache_left=$( [ -e "$d" ] && echo yes || echo no) err=$(cat "$TMP/err")"
     [ $alive = yes ] && kill "$pid" 2>/dev/null
   fi
 else
   skip "a_timeout_ends_the_child - no timeout(1) here"
+fi
+
+# an_interrupt_ends_the_child: INT to the launcher (started with INT at its
+# default, as a terminal's Ctrl-C would find it) ends the sleeping stub.
+if [ ${#PY[@]} != 0 ]; then
+  rm -f "$REC"
+  rc=$(STUB_MODE=sleep STUB_REC="$REC" PWSH="$STUB" "${PY[@]}" - "$LAUNCHER" "$REC" <<'PY'
+import os, signal, subprocess, sys, time
+launcher, rec = sys.argv[1], sys.argv[2]
+proc = subprocess.Popen(["sh", launcher, "-NoProfile"], stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL, restore_signals=True)
+for _ in range(100):
+    if os.path.exists(rec) and "pid=" in open(rec).read():
+        break
+    time.sleep(0.1)
+proc.send_signal(signal.SIGINT)
+try:
+    print(proc.wait(timeout=10))
+except subprocess.TimeoutExpired:
+    proc.kill()
+    print("hung")
+PY
+)
+  sleep 1
+  pid=$(field pid); d=$(dirname "$(field cache)")
+  alive=no; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive=yes
+  if [ "$rc" != hung ] && [ $alive = no ] && [ ! -e "$d" ]; then
+    ok an_interrupt_ends_the_child
+  else
+    bad an_interrupt_ends_the_child "launcher=$rc child_alive=$alive"
+    [ $alive = yes ] && kill "$pid" 2>/dev/null
+  fi
+else
+  skip "an_interrupt_ends_the_child - no python here"
 fi
 
 # stdin_is_not_consumed
