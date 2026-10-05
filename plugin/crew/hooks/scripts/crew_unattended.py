@@ -121,7 +121,9 @@ STORE_PATHS = (
     os.path.join(".claude", "crew", "config.json"),
     # Forge credentials git and ssh read on their own: SSH keys, git's
     # credential-store files (gitcredentials(7)).
-    ".ssh", ".git-credentials", os.path.join(".config", "git", "credentials"))
+    ".ssh", ".git-credentials", os.path.join(".config", "git", "credentials"),
+    # Terraform's CLI config can hold an HCP Terraform token too.
+    ".terraformrc")
 
 # Inherited variables that carry, or point at, a cloud or forge credential.
 # Dropped from the launched session's environment (and from the export's).
@@ -136,7 +138,7 @@ _STRIP_NAMES = frozenset((
     # environment-set config can name a credential helper.
     "GIT_ASKPASS", "SSH_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
     "GIT_CONFIG_COUNT", "GITLAB_TOKEN", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
-    "GIT_SSH", "GIT_SSH_COMMAND"))
+    "GIT_SSH", "GIT_SSH_COMMAND", "TERRAFORM_CONFIG"))
 
 # The launched session and the probe load the user's settings and the sealed
 # `--settings` only: a cloned repo's `.claude/settings.json` and
@@ -483,6 +485,13 @@ def sealed_env(base, creds, region, sealed_dir):
         "AWS_CONFIG_FILE": os.path.join(sealed_dir, "aws-config"),
         "AWS_SHARED_CREDENTIALS_FILE": os.path.join(sealed_dir, "no-credentials"),
         "CREW_UNATTENDED": "1",
+        # An empty `credential.helper` resets git's helper list, so a helper
+        # the user's ~/.gitconfig names (`store --file <anywhere>`, a script)
+        # never answers git in the sealed session. Environment config wins
+        # over every config file (git-config(1), GIT_CONFIG_COUNT).
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "credential.helper",
+        "GIT_CONFIG_VALUE_0": "",
     })
     return env
 

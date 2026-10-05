@@ -615,7 +615,7 @@ def test_core_stores_cover_the_named_paths():
                     ".config/gcloud", ".kube", ".config/gh",
                     ".docker/config.json", ".claude/crew/config.json",
                     # T-0044 port review r4: git's and ssh's own stores.
-                    ".ssh", ".git-credentials", ".config/git/credentials"):
+                    ".ssh", ".git-credentials", ".config/git/credentials", ".terraformrc"):
             assert f"{home}/{rel}" in got, (home, rel)
 
 
@@ -1298,3 +1298,14 @@ def test_read_machine_not_utf8_reads_corrupt(tmp_path, monkeypatch):
     path.write_bytes(b'{"unattendedCloud": "\xff"}')
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
     assert cu._read_machine() == "corrupt"  # pylint: disable=protected-access
+
+
+def test_sealed_env_resets_git_credential_helpers_and_drops_terraform_config():
+    """T-0044 port review r5 BLOCK: a helper the user's ~/.gitconfig names
+    (`store --file <anywhere>`) never answers git, and Terraform's legacy
+    config alias is not inherited."""
+    env = cu.sealed_env({"TERRAFORM_CONFIG": "/x", "GIT_CONFIG_KEY_0": "x", "PATH": "/b"},
+                        {"AccessKeyId": "a", "SecretAccessKey": "s", "SessionToken": "t",
+                         "Expiration": "e"}, "eu-west-1", "/tmp/sealed")
+    assert ("TERRAFORM_CONFIG" not in env, env["GIT_CONFIG_COUNT"], env["GIT_CONFIG_KEY_0"],
+            env["GIT_CONFIG_VALUE_0"]) == (True, "1", "credential.helper", "")
