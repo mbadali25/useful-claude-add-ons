@@ -501,7 +501,27 @@ URL go into the state file (exit 0). It never picks among candidates, and
 unparseable `createdAt`, a state file that is missing, unreadable or older
 than 600 seconds (`stale-prepare`) is exit 3 with no run id written; do not
 watch or record a run by hand then. Its only `gh` call is `run list`.
-**Not built yet:** watching the run and recording it.
+
+**`watch` (L-0646)** - `crew_ghdeploy.py watch --root . --env <name> [--index
+N] [--slice-seconds S]` - follows the identified run with `gh run watch <id>
+--exit-status --interval 15` for one slice (default 540 seconds, at most 570,
+inside the Bash tool's limit) or until the deadline (`t0` + `watchMinutes`),
+polling `gh run view` every 15 seconds instead when the watch cannot run.
+**Exit 75** means the slice ended before the deadline with the run unfinished:
+call it again. The watch's own exit code never decides; the verdict comes from
+`gh run view --json status,conclusion,headSha,jobs,url`, is written into the
+state file and printed as the last line:
+- **pass (exit 0)** - conclusion `success`, every job matching `deployJob`
+  succeeded (at least one matches; with no `deployJob` the reason says the
+  deploy job was not checked) and, with no `shaInput`, the run's head sha is
+  the one deployed;
+- **fail (exit 1)** - any other conclusion (`cancelled` too), a deploy job
+  skipped, failed or absent, or a head sha mismatch;
+- **unknown (exit 3)** - the view is unreadable, or the run is still running
+  at the deadline (it is named and left running); no run id in the state file
+  is could-not-tell (exit 3).
+It never cancels, re-runs or approves a run: its only `gh` calls are `run
+watch` and `run view`. **Not built yet:** recording the result.
 
 ### The promotion record
 

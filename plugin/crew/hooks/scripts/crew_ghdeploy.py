@@ -3,6 +3,7 @@
     python3 crew_ghdeploy.py check   --root DIR --env NAME
     python3 crew_ghdeploy.py prepare --root DIR --env NAME [--index N]
     python3 crew_ghdeploy.py identify --root DIR --env NAME [--index N]
+    python3 crew_ghdeploy.py watch    --root DIR --env NAME [--index N] [--slice-seconds S]
 
 T-0045 slice 1. An environment in `.crew/verify.json` may carry a `github`
 entry -- one object or a list of them -- that describes a
@@ -86,6 +87,7 @@ Exit codes, with the last stdout line always `result=...`:
 import argparse
 import calendar
 import datetime
+import fnmatch
 import json
 import os
 import re
@@ -599,14 +601,16 @@ STATE_DIR = os.path.join(".crew", ".ghdeploy")
 SNAPSHOT_LIMIT = 50
 
 
-def _run_gh(args, root):
+def _run_gh(args, root, timeout=600):
     """`(exit status, stdout)` of `gh <args>` in `root`; the one seam every
     `gh` call goes through, stubbed by the tests. A gh that cannot start is
-    exit 127."""
+    exit 127; one still running after `timeout` seconds is killed, exit 124."""
     try:
         proc = subprocess.run([crew_common.require_tool("gh")] + list(args), cwd=root,
                               capture_output=True, text=True, check=False,
-                              stdin=subprocess.DEVNULL, timeout=600)
+                              stdin=subprocess.DEVNULL, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, ""
     except (OSError, subprocess.SubprocessError) as exc:
         return 127, str(exc)
     return proc.returncode, proc.stdout
@@ -749,6 +753,7 @@ def prepare(root, env, index):
              "ref": entry["ref"], "sha": sha, "actor": actor, "t0": t0,
              "snapshot": sorted(r["databaseId"] for r in runs),
              "correlationId": corr, "command": command, "class": klass,
+             "shaInput": entry.get("shaInput"), "deployJob": entry.get("deployJob"),
              "identifySeconds": entry.get("identifySeconds",
                                           RANGES["identifySeconds"][2]),
              "watchMinutes": watch, "deadline": t0 + watch * 60}
@@ -881,6 +886,108 @@ def identify(root, env, index):
     raise CouldNotTell("none-in-timeout", f"no new run within {state['identifySeconds']}s")
 
 
+# --- watch (L-0646) --------------------------------------------------------
+#
+# `watch` follows the identified run in slices that fit the Bash tool's
+# 600-second limit, then reads the run itself. Each call runs `gh run watch
+# <id> --exit-status --interval 15` for at most one slice or until the
+# deadline (`t0` + `watchMinutes`); when the watch cannot run, it polls `gh
+# run view` every 15 seconds for the rest of the slice instead. A slice that
+# ends with the run unfinished before the deadline is exit 75: call again.
+# THE WATCH EXIT CODE NEVER DECIDES: it is recorded, and the verdict comes
+# from `gh run view --json status,conclusion,headSha,jobs,url` -
+#   pass (0)    completed, conclusion `success`, every job matching
+#               `deployJob` succeeded (at least one matches) and, with no
+#               `shaInput`, the run's head sha is the state's sha;
+#   fail (1)    any other conclusion (`cancelled` too), a deploy job that
+#               did not succeed or is absent, or a head sha mismatch;
+#   unknown (3) the view is unreadable, the run is still running at the
+#               deadline (it is left running and named), or no run id.
+# It never cancels, re-runs or approves: its only `gh` calls are `run watch`
+# and `run view`. The verdict and its reason go into the state file.
+
+SLICE_SECONDS = 540
+SLICE_MAX = 570
+VIEW_INTERVAL = 15
+VIEW_FIELDS = "status,conclusion,headSha,jobs,url"
+EXIT = {"pass": 0, "fail": 1, "unknown": 3}
+
+
+def judge(view, state):
+    """`(verdict, reason)` from one `gh run view` answer (None: unreadable)."""
+    if not isinstance(view, dict):
+        return "unknown", "view-unreadable"
+    if view.get("status") != "completed":
+        return "unknown", "still-running"
+    conclusion = view.get("conclusion")
+    if not isinstance(conclusion, str) or not conclusion:
+        return "unknown", "conclusion-unreadable"
+    if conclusion != "success":
+        return "fail", f"conclusion-{conclusion}"
+    if not state.get("shaInput"):
+        head = view.get("headSha")
+        if not isinstance(head, str) or not head:
+            return "unknown", "headsha-unreadable"
+        if head != state["sha"]:
+            return "fail", "headsha-mismatch"
+    glob = state.get("deployJob")
+    if not glob:
+        return "pass", "success-deploy-job-not-checked"
+    jobs = view.get("jobs")
+    if not isinstance(jobs, list) or not all(
+            isinstance(j, dict) and isinstance(j.get("name"), str) for j in jobs):
+        return "unknown", "jobs-unreadable"
+    matched = [j for j in jobs if fnmatch.fnmatchcase(j["name"], glob)]
+    if not matched:
+        return "fail", "deploy-job-absent"
+    for job in matched:
+        if job.get("conclusion") != "success":
+            return "fail", f"deploy-job-{job.get('conclusion') or 'unfinished'}"
+    return "pass", "success-deploy-job-succeeded"
+
+
+def _view(root, run_id):
+    return _gh_json(["run", "view", str(run_id), "--json", VIEW_FIELDS], root)
+
+
+def watch(root, env, index, slice_seconds=SLICE_SECONDS):
+    """`(exit code, lines)` for `watch`; writes the verdict into the state file."""
+    path = state_path(root, env, index)
+    state = read_state(root, env, index)
+    run_id = state.get("runId")
+    if not isinstance(run_id, int) or isinstance(run_id, bool):
+        raise CouldNotTell("no-run-id-in-state", "the state file names no run; "
+                                                 "identify could not tell, so nothing is watched")
+    deadline = state.get("deadline")
+    if not isinstance(deadline, int) or isinstance(deadline, bool):
+        raise CouldNotTell("state-file-unreadable", f"{path} holds no deadline")
+    start = _clock()
+    end = min(start + slice_seconds, deadline)
+    watched = None
+    if end > start:
+        watched, _out = _run_gh(["run", "watch", str(run_id), "--exit-status",
+                                 "--interval", str(VIEW_INTERVAL)], root,
+                                timeout=max(1, int(end - start)))
+    view = _view(root, run_id)
+    # A watch that could not run: poll the view for the rest of the slice.
+    while judge(view, state)[1] == "still-running" and _clock() + VIEW_INTERVAL <= end \
+            and watched not in (None, 124):
+        _sleep(VIEW_INTERVAL)
+        view = _view(root, run_id)
+    verdict, reason = judge(view, state)
+    if reason == "still-running" and _clock() < deadline:
+        return 75, [f"run {run_id} is still running; the slice ended before the deadline",
+                    f"result=again run={run_id} watch-exit={watched}"]
+    url = view.get("url") if isinstance(view, dict) else None
+    state.update(verdict=verdict, verdictReason=reason, watchExit=watched,
+                 runUrl=url if isinstance(url, str) and url else state.get("runUrl"))
+    write_state(path, state)
+    lines = [f"run {run_id}: {state.get('runUrl') or '-'}"]
+    if reason == "still-running":
+        lines.append(f"run {run_id} is still running at the deadline; it is left running")
+    return EXIT[verdict], lines + [f"result={verdict} run={run_id} reason={reason}"]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="crew_ghdeploy.py")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -895,6 +1002,11 @@ def main(argv=None):
     cmd.add_argument("--root", default=".")
     cmd.add_argument("--env", required=True)
     cmd.add_argument("--index", type=int, default=0)
+    cmd = sub.add_parser("watch", help="pass, fail or unknown from the run (L-0646)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
+    cmd.add_argument("--slice-seconds", type=int, default=SLICE_SECONDS)
     args = parser.parse_args(argv)
     # A name or key in a message may hold any character, and a Windows
     # console or pipe is cp1252: an unencodable one must not turn a verdict
@@ -907,6 +1019,13 @@ def main(argv=None):
             lines = prepare(root, args.env, args.index)
         elif args.command == "identify":
             lines = identify(root, args.env, args.index)
+        elif args.command == "watch":
+            if not 1 <= args.slice_seconds <= SLICE_MAX:
+                raise Refused("slice-seconds-range", f"--slice-seconds must be 1 to {SLICE_MAX}, "
+                                                     "inside the Bash tool's 600-second limit")
+            code, lines = watch(root, args.env, args.index, args.slice_seconds)
+            print("\n".join(lines))
+            return code
         else:
             lines = check(root, args.env)
     except Refused as exc:

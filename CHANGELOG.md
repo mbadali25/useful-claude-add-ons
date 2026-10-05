@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: `crew_ghdeploy.py watch` answers pass, fail or unknown from the run and its deploy job (L-0646)
+
+- **Summary.** `watch` follows the identified run with `gh run watch` in slices that fit the Bash
+  tool's limit (exit 75: call again), then reads `gh run view`. A green run is not a deploy: pass
+  needs conclusion `success`, the `deployJob` job(s) succeeded, and with no `shaInput` the run's head
+  sha is the one deployed. A skipped or absent deploy job, a cancelled run or a sha mismatch is fail;
+  an unreadable view or a run still going at the deadline is unknown (the run is left running).
+- **The watch exit code never decides**, and the run is never cancelled, re-run or approved. The
+  verdict and its reason go into the state file.
+
 ### Added — `crew` 1.1.4: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell (L-0645)
 
 - **Summary.** After the dispatch, `identify` finds the one run it created: a run of `gh run list`

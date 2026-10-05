@@ -910,7 +910,7 @@ class FakeGh:  # pylint: disable=too-few-public-methods
                         for k, v in answers.items()}
         self.calls = []
 
-    def __call__(self, args, _root):
+    def __call__(self, args, _root, **_kw):
         args = list(args)
         self.calls.append(args)
         for key in sorted(self.answers, key=len, reverse=True):
@@ -1191,9 +1191,9 @@ def test_helper_never_dispatches(tmp_path, monkeypatch):
     seen = []
     real = FakeGh.__call__
 
-    def spy(self, args, root):
+    def spy(self, args, root, **kw):
         seen.append(list(args))
-        return real(self, args, root)
+        return real(self, args, root, **kw)
     monkeypatch.setattr(FakeGh, "__call__", spy)
     for index, scenario in enumerate(_SCENARIOS):
         where = tmp_path / f"scenario-{index}"
@@ -1399,3 +1399,172 @@ def test_identify_writes_run_atomically(tmp_path, monkeypatch):
         _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
     assert path.read_bytes() == before
     assert sorted(p.name for p in path.parent.iterdir()) == ["staging-0.json"]
+
+
+# --- watch (L-0646) -----------------------------------------------------------
+
+_WATCH_ENTRY = dict(_SEQ_SHA_ENTRY, deployJob="deploy*")
+
+
+class ClockGh(FakeGh):  # pylint: disable=too-few-public-methods
+    """FakeGh whose `run watch` takes time: a 124 (killed at its timeout)
+    advances the clock by that timeout, anything else by 80 seconds."""
+
+    def __init__(self, answers, clock):
+        super().__init__(answers)
+        self.clock = clock
+        self.timeouts = []
+
+    def __call__(self, args, root, **kw):
+        code, out = super().__call__(args, root, **kw)
+        if list(args[:2]) == ["run", "watch"]:
+            self.timeouts.append(kw.get("timeout"))
+            self.clock["now"] += kw.get("timeout", 0) if code == 124 else 80
+        return code, out
+
+
+def _watch_repo(tmp_path, monkeypatch, entry=None, run_id=13, now=_T0 + 10):
+    """A repo after prepare and identify (run `run_id`, deadline t0 + 3600),
+    with an advancing clock: `(root, clock)`."""
+    root = _seq_repo(tmp_path, monkeypatch, entry=_WATCH_ENTRY if entry is None else entry)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 0, lines
+    state = _state(root)
+    if run_id is not None:
+        state["runId"] = run_id
+    crew_ghdeploy.write_state(str(root / ".crew" / ".ghdeploy" / "staging-0.json"), state)
+    clock = {"now": now}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    monkeypatch.setattr(crew_ghdeploy, "_sleep",
+                        lambda s: clock.__setitem__("now", clock["now"] + s))
+    return root, clock
+
+
+def _view(root, status="completed", conclusion="success", jobs=(("deploy-prod", "success"),),
+          head=None):
+    return _ok({"status": status, "conclusion": conclusion,
+                "headSha": head or _head(root), "url": "https://github.com/o/r/actions/runs/13",
+                "jobs": [{"name": n, "conclusion": c} for n, c in jobs]})
+
+
+def _watch(monkeypatch, root, clock, watch, view, *extra):
+    gh = ClockGh({("run", "watch"): watch, ("run", "view"): view}, clock)
+    code, lines = _run(monkeypatch, gh, "watch", "--root", str(root), "--env", "staging",
+                       *extra)
+    return code, lines, gh
+
+
+_NO_SHA_WATCH = {k: v for k, v in _WATCH_ENTRY.items() if k != "shaInput"}
+
+_WATCH_CASES = {
+    # name: (entry, watch answers, view answers (root -> list), exit, verdict line)
+    "watch-exit0-conclusion-failure": (None, [(0, "")],
+                                       lambda r: [_view(r, conclusion="failure")],
+                                       1, "fail", "conclusion-failure"),
+    "deploy-job-skipped": (None, [(0, "")],
+                           lambda r: [_view(r, jobs=[("build", "success"),
+                                                     ("deploy-prod", "skipped")])],
+                           1, "fail", "deploy-job-skipped"),
+    "deploy-job-absent": (None, [(0, "")], lambda r: [_view(r, jobs=[("build", "success")])],
+                          1, "fail", "deploy-job-absent"),
+    "cancelled": (None, [(1, "")], lambda r: [_view(r, conclusion="cancelled")],
+                  1, "fail", "conclusion-cancelled"),
+    "headsha-mismatch": (_NO_SHA_WATCH, [(0, "")], lambda r: [_view(r, head="0" * 40)],
+                         1, "fail", "headsha-mismatch"),
+    "watch-nonzero-view-unreadable": (None, [(1, "")], lambda r: [(1, "")],
+                                      3, "unknown", "view-unreadable"),
+    "view-not-json": (None, [(0, "")], lambda r: [(0, "not json")],
+                      3, "unknown", "view-unreadable"),
+    "jobs-unreadable": (None, [(0, "")], lambda r: [_ok({"status": "completed",
+                                                         "conclusion": "success",
+                                                         "headSha": _head(r), "jobs": None})],
+                        3, "unknown", "jobs-unreadable"),
+    "nonprod-happy": (None, [(0, "")], lambda r: [_view(r)], 0, "pass",
+                      "success-deploy-job-succeeded"),
+    "no-deploy-job-configured": (dict(_SEQ_SHA_ENTRY), [(0, "")], lambda r: [_view(r)],
+                                 0, "pass", "success-deploy-job-not-checked"),
+    "watch-nonzero-view-success": (None, [(1, "token type not supported")],
+                                   lambda r: [_view(r)], 0, "pass",
+                                   "success-deploy-job-succeeded"),
+    "no-shainput-head-matches": (_NO_SHA_WATCH, [(0, "")], lambda r: [_view(r)],
+                                 0, "pass", "success-deploy-job-succeeded"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_WATCH_CASES))
+def test_watch_verdict(tmp_path, monkeypatch, name):
+    """The verdict comes from the run view, never the watch exit code, and
+    goes into the state file and the last line."""
+    entry, watch, view, code_wanted, verdict, reason = _WATCH_CASES[name]
+    root, clock = _watch_repo(tmp_path, monkeypatch, entry=entry)
+    code, lines, gh = _watch(monkeypatch, root, clock, watch, view(root))
+    assert code == code_wanted, lines
+    assert lines[-1] == f"result={verdict} run=13 reason={reason}"
+    state = _state(root)
+    assert (state["verdict"], state["verdictReason"]) == (verdict, reason)
+    assert state["watchExit"] == watch[0][0]
+    assert ["run", "watch", "13", "--exit-status", "--interval", "15"] in gh.calls
+
+
+for _name in sorted(_WATCH_CASES):
+    _scenario(lambda t, m, _n=_name: test_watch_verdict(t, m, _n))
+
+
+@_scenario
+def test_watch_timeout_is_unknown_and_never_cancels(tmp_path, monkeypatch):
+    """In progress at the deadline: unknown, the run named and left running."""
+    root, clock = _watch_repo(tmp_path, monkeypatch, now=_T0 + 3600 - 100)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(124, "")],
+                             [_view(root, status="in_progress", conclusion="")])
+    assert code == 3, lines
+    assert lines[-1] == "result=unknown run=13 reason=still-running"
+    assert any("left running" in line for line in lines)
+    assert gh.timeouts == [100]
+    assert not any(c[:2] == ["run", "cancel"] for c in gh.calls)
+
+
+@_scenario
+def test_watch_queued_then_success(tmp_path, monkeypatch):
+    """The first slice ends before the deadline (exit 75, no verdict); the
+    second passes."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(124, "")],
+                             [_view(root, status="queued", conclusion="")])
+    assert code == 75, lines
+    assert lines[-1].startswith("result=again run=13")
+    assert gh.timeouts == [540] and "verdict" not in _state(root)
+    code, lines, _gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)])
+    assert code == 0, lines
+    assert _state(root)["verdict"] == "pass"
+
+
+@_scenario
+def test_watch_a_watch_that_cannot_run_polls_the_view(tmp_path, monkeypatch):
+    """The watch fails at once: the view is polled every 15 seconds and the
+    run finishing inside the slice is judged then."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    views = [_view(root, status="in_progress", conclusion="")] * 3 + [_view(root)]
+    code, lines, gh = _watch(monkeypatch, root, clock, [(1, "")], views)
+    assert code == 0, lines
+    assert len([c for c in gh.calls if c[:2] == ["run", "view"]]) == 4
+
+
+@_scenario
+def test_watch_no_run_id_in_state(tmp_path, monkeypatch):
+    root, clock = _watch_repo(tmp_path, monkeypatch, run_id=None)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=no-run-id-in-state"
+    assert gh.calls == [] and "verdict" not in _state(root)
+
+
+def test_watch_slice_seconds_range(tmp_path, monkeypatch):
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    for bad in ("0", "571"):
+        code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)],
+                                 "--slice-seconds", bad)
+        assert code == 2 and lines[-1] == "result=refused reason=slice-seconds-range"
+        assert gh.calls == []
+    code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)],
+                             "--slice-seconds", "30")
+    assert code == 0 and gh.timeouts == [30]

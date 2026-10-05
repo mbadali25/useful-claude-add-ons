@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.4**: `crew_ghdeploy.py watch` answers pass, fail or unknown from the run and its deploy job. `watch` follows the identified run with `gh run watch` in slices that fit the Bash tool's limit (exit 75: call again), then reads `gh run view`. A green run is not a deploy: pass needs conclusion `success`, the `deployJob` job(s) succeeded, and with no `shaInput` the run's head sha is the one deployed. A skipped or absent deploy job, a cancelled run or a sha mismatch is fail; an unreadable view or a run still going at the deadline is unknown (the run is left running).
 - **crew 1.1.4**: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell. After the dispatch, `identify` finds the one run it created: a run of `gh run list` that was not in `prepare`'s snapshot, is a `workflow_dispatch` on the ref, was created no earlier than 30 seconds before `prepare`, and carries the correlation id in its title when one was sent. Its id and URL go into the state file.
-- **crew 1.1.4**: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch. Before a `github` environment's dispatch, `prepare` checks the entry, asks T-0009's classifier which environment the dispatch deploys to, and confirms the actor, the sha on the remote and (with no `shaInput`) the branch tip; it then records the actor's existing runs so the new one can be found afterwards, and prints the dispatch for the session to run itself.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
