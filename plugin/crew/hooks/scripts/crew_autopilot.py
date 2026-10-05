@@ -143,12 +143,6 @@ force says `take`. Exit 0 valid, 1 not.
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
 
-`next --runner <r>` (T-0049) then asks `crew_inflight.holds` who drives the
-ticket, after the table and before the checks below: `live`, `stale` or
-`unknown` stops as `in-flight` (stale and unknown with the owner's clear
-command as the command), `elsewhere` as `handover-elsewhere`; `free` and
-`mine` change nothing. An import error or a raise is `in-flight`, never a pass.
-Without `--runner` nothing reads the marker.
 T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off):
 an out-of-rounds FINDINGS round with a BLOCK that `auto_replan_policy` allows
 is `auto-replan`, whose command is `auto-reject`; refused only by the cap it
@@ -324,10 +318,8 @@ FIXED_STOPS = (
                            "the ticket disagree"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
-    ("in-flight", "with --runner: another runner holds the ticket here, or its marker is "
-                  "stale or cannot be read (T-0049)"),
-    ("handover-elsewhere", "with --runner: a fresh holder drives the ticket from another "
-                           "worktree (T-0049)"),
+    ("in-flight", "with --runner: another runner holds the ticket here, or its marker is stale or unreadable"),
+    ("handover-elsewhere", "with --runner: a fresh holder drives the ticket from another worktree"),
     ("drift", "explicitly focused and approved: a changed path is outside the ticket's Touch "
               "(completion_audit.audit), or the audit could not run"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
@@ -1321,28 +1313,12 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
-def _inflight(root, ticket, runner, result):
-    """`result` turned into the in-flight stop, or None when `holds` says the
-    ticket is free or this runner's (T-0049). Anything else stops."""
+def _inflight(root, ticket, runner, result):  # T-0049: next_stop's stop or None; a raise is in-flight
     try:
-        answer = importlib.import_module("crew_inflight").holds(root, ticket, runner=runner)
-        state = answer["state"]
+        stop = importlib.import_module("crew_inflight").next_stop(root, ticket, runner)
     except Exception as exc:  # pylint: disable=broad-except
-        return dict(result, phase="in-flight", stop=True, command="", reason=(
-            f"in-flight: unknown - crew_inflight could not tell who holds {ticket}: "
-            f"{_failure(exc)}"))
-    if state in ("free", "mine"):
-        return None
-    who = (f"{answer.get('runner') or 'a runner'} holds {ticket} since "
-           f"{answer.get('since') or '?'} in {answer.get('worktree') or '?'}")
-    if state == "elsewhere":
-        return dict(result, phase="handover-elsewhere", stop=True, command="", reason=(
-            f"handover-elsewhere: {who} - drive it from {answer.get('worktree') or '?'}"))
-    clear = answer.get("clear") or ""
-    reason = f"in-flight: {state} - {who}"
-    reason += f": {answer['why']}" if answer.get("why") else ""
-    reason += f" - the owner clears it: {clear}" if clear else ""
-    return dict(result, phase="in-flight", stop=True, command=clear, reason=reason)
+        stop = {"phase": "in-flight", "command": "", "reason": f"in-flight: unknown - {ticket}: {_failure(exc)}"}
+    return dict(result, stop=True, **stop) if stop else None
 
 
 def _commit_refresh(ticket, answer, paths):
@@ -1382,19 +1358,15 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
     A focused, approved ticket whose tree has drifted outside Touch stops as
-    `drift` first (`_drift`). `policy=False` is `status`'s: see `_phase`. `runner` (T-0049) adds the
-    in-flight check: see `_inflight`."""
+    `drift` first (`_drift`). `policy=False` is `status`'s: see `_phase`; `runner`: `_inflight` (T-0049)."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
     rerun = result.pop("refunded_rerun", False)
     drift = _drift(root, ticket, result)
     if drift is not None:
         return drift
-    if result["stop"]:
+    if result["stop"] or (runner and (result := _inflight(root, ticket, runner, result) or result)["stop"]):
         return result
-    held = _inflight(root, ticket, runner, result) if runner else None
-    if held:
-        return held
     active, where, broken = crew_ticket.resolve_active(
         crew_ticket.toplevel(root) or os.path.abspath(root))
     if broken or active != ticket:
@@ -3261,9 +3233,7 @@ def _cli_deploy(args):
                              "root": None}), report
 
 
-def _runner_ok(runner):
-    """False only for a runner crew_inflight names as unknown; an import
-    failure is True here and the in-flight stop in next_phase."""
+def _runner_ok(runner):  # an import failure is True here, and next's in-flight stop
     try:
         return runner in importlib.import_module("crew_inflight").RUNNERS
     except Exception:  # pylint: disable=broad-except
@@ -3317,9 +3287,7 @@ def main(argv):
     given.add_argument("--first", default=None)
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
-    # No `choices`: crew_inflight.RUNNERS is checked lazily, so an import
-    # error is the in-flight stop rather than a usage error.
-    sub.choices["next"].add_argument("--runner", default="")
+    sub.choices["next"].add_argument("--runner", default="")  # checked lazily: _runner_ok
     deploy = sub.add_parser("deploy-allowed")
     deploy.add_argument("--json", action="store_true")
     deploy.add_argument("--root", default=".")

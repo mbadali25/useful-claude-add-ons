@@ -564,6 +564,28 @@ def holds(root, ticket, runner=None, session=None, wait=None):
         return _answer("unknown", ticket, f"could not tell: {exc!r}")
 
 
+def next_stop(root, ticket, runner):
+    """`crew_autopilot.py next --runner`'s stop (T-0049): None when `holds`
+    says the ticket is free or `runner`'s, else `{phase, command, reason}`:
+    `elsewhere` is `handover-elsewhere`; `live`, `stale`, `unknown` and any
+    other state are `in-flight`, with the owner's clear command as the
+    command when `holds` names one. A raise propagates: the caller stops."""
+    answer = holds(root, ticket, runner=runner)
+    state = answer["state"]
+    if state in ("free", "mine"):
+        return None
+    who = (f"{answer.get('runner') or 'a runner'} holds {ticket} since "
+           f"{answer.get('since') or '?'} in {answer.get('worktree') or '?'}")
+    if state == "elsewhere":
+        return {"phase": "handover-elsewhere", "command": "", "reason": (
+            f"handover-elsewhere: {who} - drive it from {answer.get('worktree') or '?'}")}
+    clear = answer.get("clear") or ""
+    reason = f"in-flight: {state} - {who}"
+    reason += f": {answer['why']}" if answer.get("why") else ""
+    reason += f" - the owner clears it: {clear}" if clear else ""
+    return {"phase": "in-flight", "command": clear, "reason": reason}
+
+
 def _assess(root, ticket, runner, session, wait):
     """(answer, marker, path). `wait` None means the caller holds the lock."""
     folder = inflight_dir(root)
