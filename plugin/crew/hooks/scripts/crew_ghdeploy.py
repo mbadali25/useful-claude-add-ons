@@ -572,6 +572,11 @@ def main(argv=None):
     cmd.add_argument("--root", default=".")
     cmd.add_argument("--env", required=True)
     args = parser.parse_args(argv)
+    # A name or key in a message may hold any character, and a Windows
+    # console or pipe is cp1252: an unencodable one must not turn a verdict
+    # into a traceback with no result line (#407 CI, U+0131 / U+1F88).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
     try:
         lines = check(os.path.abspath(args.root), args.env)
     except Refused as exc:

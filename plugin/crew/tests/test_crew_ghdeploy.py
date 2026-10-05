@@ -78,8 +78,10 @@ def _doc(github, deploy=None, env="staging"):
         "rollbackReason": "the fixture deploys nothing"}}}
 
 
-def _check(root, env="staging", path_env=None):
+def _check(root, env="staging", path_env=None, encoding=None):
     environ = dict(os.environ)
+    if encoding is not None:
+        environ["PYTHONIOENCODING"] = encoding
     if path_env is not None:
         environ["PATH"] = path_env
     return subprocess.run(
@@ -864,3 +866,14 @@ def test_nesting_past_a_fixed_bound_is_refused_on_every_interpreter(tmp_path, de
     ("[]", 1), ('"x"', 0), ('{"a": {"b": [1, {"c": []}]}}', 5)])
 def test_depth_skips_brackets_inside_strings(text, depth):
     assert crew_ghdeploy._depth(text) == depth  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("label", ["iota-subscript twin names (ps1 refuses)",
+                                   "dotless-i twin names (sh refuses)"])
+def test_a_non_ascii_name_in_a_message_survives_a_cp1252_stdout(tmp_path, label):
+    """Windows CI: printing the refusal (which names the key) on a cp1252
+    stdout raised UnicodeEncodeError, exit 1 with no result line."""
+    root, _expect = _config_repo(tmp_path, label)
+    proc = _check(root, env="production", encoding="cp1252")
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert _last(proc) == "result=refused reason=gate-refuses-map"

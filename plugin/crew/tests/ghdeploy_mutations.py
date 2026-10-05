@@ -267,6 +267,9 @@ GHDEPLOY_MUTATIONS = (
     ("ghdeploy: the depth scan ignores escapes", GH,
      "                escaped = True\n", "                pass\n",
      _T + "test_depth_skips_brackets_inside_strings"),
+    ("ghdeploy: an unencodable name in a message crashes check on cp1252", GH,
+     'sys.stdout.reconfigure(errors="backslashreplace")', 'sys.stdout.reconfigure(errors="strict")',
+     _T + "test_a_non_ascii_name_in_a_message_survives_a_cp1252_stdout"),
     # --- exit 3: could-not-tell -------------------------------------------
     ("ghdeploy: an absent map is not named as absent", GH,
      "    if not os.path.lexists(path):\n", "    if False:\n",
