@@ -959,7 +959,9 @@ def test_only_the_review_path_imports_the_train():
                      [node.module] if isinstance(node, ast.ImportFrom) else [])
             if "crew_train" in names:
                 importers.add(name)
-    assert importers <= {"review_run.py", "review_prompt.py"}, importers
+    # review_delta.py (L-0522) reads the train state, read-only, to bind the
+    # delta gate's integration ref to the entry check_land judges.
+    assert importers <= {"review_run.py", "review_prompt.py", "review_delta.py"}, importers
 
 
 # --- L-0558: review round 2 (codex) and the owner's rerere rule -----------------------------

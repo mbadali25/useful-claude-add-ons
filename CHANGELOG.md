@@ -9,6 +9,29 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.12 — L-0522 PR 2: the delta gate (tooling only; keeps nothing until the merge train is armed)
+
+- **Summary.** A review receipt can now survive a catch-up merge, a version bump and an anchor-only
+  refresh that add none of the ticket's own code, so a lane need not spend a review round on them,
+  but only in a clone whose merge train is armed; elsewhere every catch-up still needs a re-review.
+- **What changed.** New `plugin/crew/hooks/scripts/review_delta.py`. When
+  `review_ledger.check_receipt`'s rebuilt bundle no longer matches the receipt, `review_delta.judge`
+  keeps it only when it proves the ticket's own delta byte-identical to the reviewed one: the
+  reviewed head rebuilds the reviewed bundle (through T-0100's merged-main rule:
+  `review_patch._ticket_base_tree` and `merged_main.resolve` take the reviewed head in place of
+  HEAD), is an ancestor of HEAD, the integration base is the one commit this ticket's merge-train
+  entry binds, there is one merge base, the checkout is clean, the excluded paths are unchanged
+  (check E, which guards the fast path too), and every path outside a fixed allowlist (code maps,
+  rules and diagrams by anchor sha only; CHANGELOG, TODO, PLUGINS.md, BUDGETS.md; manifests by
+  the bumped plugin's version tokens only) has equal status, modes and blob ids. Anything unproven
+  is stale, "could not tell" its own reason; with no train entry it is `no train entry binds the
+  integration ref` (owner decision 2026-10-03). A kept receipt prints `receipt kept by delta gate:
+  ...`; `review_run.preflight` short-circuits on one only when the verify gate is VERIFIED or
+  NO_GATE; `crew_autopilot` (a declared seam) stops for a human when a refresh moved more than an
+  anchor and routes a stale artifact after review to its refresh. `test_review_delta.py` and the
+  L-0522 entries in `sabotage_review.py`, plus one for the pre-T-0100 plain-diff rebuild.
+  `check_land` does not pass its fetched sha yet (PR 3).
+
 ### crew 1.1.12 — L-0518 (tooling half): one locked read authorizes a gate skip; a gate that cannot run is exit 2
 
 - **Summary.** `/crew:review` can no longer spend a round with no self-check when a successor plan

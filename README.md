@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.12 — L-0522 PR 2**: The delta gate (tooling only; keeps nothing until the merge train is armed). A review receipt can now survive a catch-up merge, a version bump and an anchor-only refresh that add none of the ticket's own code, so a lane need not spend a review round on them, but only in a clone whose merge train is armed; elsewhere every catch-up still needs a re-review.
 - **crew 1.1.12 — L-0518 (tooling half)**: One locked read authorizes a gate skip; a gate that cannot run is exit 2. `/crew:review` can no longer spend a round with no self-check when a successor plan is approved mid-run, and a broken incident file makes a review "not run" instead of looking like FINDINGS.
-- **crew 1.1.12 — L-0514**: A refunded tool-failure review round retries once by itself. When Codex or Copilot loses a review round to a tool failure (a failed turn, a crash, empty output), `/crew:review` now retries it once on its own instead of stopping, and says why when it does not.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

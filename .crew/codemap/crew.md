@@ -952,6 +952,34 @@ autopilot suite pins `review_ledger._current_hash` equal across such a commit. T
 sabotage mutations are not in `sabotage_autopilot.py` yet: `plugin/crew/tests/sabotage*.py` is a
 harness path, so they land in their own lane.
 
+**The delta gate (L-0522).** DERIVED (re-found by content on rush/h3-review). `check_receipt`
+(`plugin/crew/hooks/scripts/review_ledger.py:869`, `base_sha=None`) runs check E
+(`review_delta.excluded_check`, `plugin/crew/hooks/scripts/review_delta.py:248`, called at
+`review_ledger.py:894`) before EITHER success return: `.work`, `graphify-out` and
+`.crew/metrics.md` diffed over receipt base -> reviewed head, reviewed head -> HEAD and reviewed
+head -> the index (`index_tree` `review_delta.py:179`), only `EXCLUDED_EXCEPTIONS` (`:77`, the two
+graph files, status M, mode 100644, not binary) allowed. On a hash mismatch `review_delta.judge`
+(`:684`, called at `review_ledger.py:910`) decides: the reviewed head rebuilds the reviewed
+bundle through T-0100's rule (`reviewed_bundle` `:189`, `review_patch._ticket_base_tree` with
+`head=` at `plugin/crew/hooks/scripts/review_patch.py:272`, `merged_main.resolve(..., head)`), is
+an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
+(`integration_ref` `:283`; never `_default_ref`), one merge base, a clean checkout
+(`_clean_head_tree` `:309`, `checkout_problem` `:320`), then the per-path interdiff of the
+reviewed bundle's base tree -> reviewed head against base -> `HEAD^{tree}`: byte identity outside
+the allowlist (`_match` `:357`, `fnmatchcase`); code maps, rules and diagrams compared with only
+their anchor sha normalised (`_anchor_normalised` `:396`; a failure there is `ANCHORED_BEYOND`
+`:64`); manifests compared as raw bytes outside the bumped plugin's version tokens
+(`_manifest_version_only` `:584`, `_json_spans` `:462`). `review_run.preflight` short-circuits a
+delta-kept CLEAN only when `review_gate.accepted_state` is VERIFIED or NO_GATE
+(`plugin/crew/hooks/scripts/review_run.py:702`); `crew_autopilot` stops for a human on
+`ANCHORED_BEYOND` before the budget refusal (`plugin/crew/hooks/scripts/crew_autopilot.py:1273`)
+and routes a stale artifact after review to its refresh, then stops (`:1312`); both answers'
+words are `review_delta.beyond_anchor_stop` (`:659`) and `after_review_refresh` (`:667`), since
+`crew_autopilot.py` sits at max-module-lines. JUDGEMENT: the gate binds its integration ref to the
+merge-train entry, so in a clone whose train is not armed it reads stale on every catch-up
+(fail-closed, owner decision 2026-10-03). Nothing passes `base_sha` yet (L-0522 PR 3 wires
+`check_land`).
+
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:708`) asks `review_ledger.receipt_stands`
 (`plugin/crew/hooks/scripts/review_ledger.py:709`) whether a FINDINGS receipt stands, the same
