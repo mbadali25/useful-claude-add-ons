@@ -9,6 +9,37 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — repository: PRs run only the heavy CI suites their changes reach (C-0001)
+
+- **Summary.** A pull request that changes only plain documentation, or only one plugin or skill,
+  now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite
+  still runs on push to main, the nightly schedule and workflow_dispatch.
+- **The rule, in one place.** `scripts/ci-select.py` reads `git diff --name-only --no-renames
+  HEAD^1 HEAD` on the PR merge commit and prints what to run; `pytest-crew.yml`, `pylint.yml`,
+  `shell-suites.yml` and `mcp-servers.yml` all gate on it. A path inside a component (crew,
+  gizmoduck, obsidian-vault, mcp-servers, and the skills with suites) selects that component; a
+  path any other suite was found reading selects that suite too; a plain `.md` outside `plugin/`,
+  `skills/`, `mcp-servers/`, `.claude/`, `.crew/` and `.github/` (and not a README, CHANGELOG,
+  CLAUDE, AGENTS or UPDATE.md) selects only the two crew tests that scan every document. Anything
+  else (`scripts/`, `.github/`, `.crew/`, root files), a non-PR event, an empty diff, a diff error
+  or an exception selects everything.
+- **Required checks unchanged.** No `on: pull_request: paths:` filter and no job-level skip: every
+  job still reports its check, its suite steps are gated, and a skip prints a `::notice::` saying
+  SKIPPED, not passed. A failed selector step is red, never a silent skip; in `mcp-servers.yml`
+  (which has a Windows leg) a failed select job leaves the output empty, and empty runs the suite.
+  The crew Windows jobs keep their own rule (`crew-windows-decide`).
+- **How the map was found.** Every skippable suite ran under `strace -f`, and crew's reads were
+  attributed to test files with a per-test audit hook. Crew's suite reads well outside
+  `plugin/crew/`: one test scans every tracked file, one every `.md`/`.html`, one every
+  `plugin/**`/`skills/**` `.py`, one every test file; five read `docs/guides/crew/**`; others run
+  doc-builder's, bitbucket's and github's scripts. doc-builder's suites read any
+  `*/assets/brand.json` and solomon-doc-builder's assets; obsidian-vault's reads crew's
+  `role-write-guard.ps1`. Each is a row in `READERS`.
+- **Tests.** `scripts/_test/ci-select.py` (in `marketplace.yml`, `scripts/gate-runner.py` and
+  `.crew/verify.json`): must-skip, must-select-one, must-select-all and fail-closed cases, real
+  merge-commit diffs, a rename out of a component, and the workflows' gates. Twelve sabotages of
+  the selector or a workflow gate each turned it red.
+
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched
