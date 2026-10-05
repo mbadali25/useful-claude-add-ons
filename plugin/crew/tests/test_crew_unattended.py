@@ -661,6 +661,19 @@ CORE_SETTINGS = [
      "unknown", "not JSON"),
     ("user-sandbox-not-object", [], {"sandbox": []}, "", "unknown",
      "not an object"),
+    # T-0044 port review r2 BLOCK: Claude Code applies a loaded file's `env`
+    # to the session, so a credential there would replace the sealed one.
+    ("user-env-aws-keys", [],
+     {"env": {"AWS_ACCESS_KEY_ID": "AKIA", "AWS_SECRET_ACCESS_KEY": "s",
+              "AWS_SESSION_TOKEN": "t"}}, "", "refuse", "AWS_ACCESS_KEY_ID"),
+    ("user-env-aws-profile", [], {"env": {"AWS_PROFILE": "admin"}}, "", "refuse",
+     "AWS_PROFILE"),
+    ("user-env-gh-token", [], {"env": {"GH_TOKEN": "x"}}, "", "refuse", "GH_TOKEN"),
+    ("user-env-not-object", [], {"env": ["AWS_PROFILE=x"]}, "", "unknown",
+     "`env` is not an object"),
+    ("user-env-harmless", [], {"env": {"EDITOR": "vim"}}, "", "ready", "no settings file"),
+    ("repo-env-aws", [("/r/.claude/settings.json", {"env": {"AWS_ROLE_ARN": "x"}}, "")],
+     None, "", "refuse", "AWS_ROLE_ARN"),
 ]
 
 
@@ -1205,3 +1218,19 @@ def test_no_credential_leaves_memory(world, capsys, outcome):
             blobs.append(fh.read())
     for sentinel in (KEY, SECRET, TOKEN):
         assert not [b for b in blobs if sentinel in b], sentinel
+
+
+def test_load_settings_not_utf8_is_unknown_not_a_crash(tmp_path):
+    """T-0044 port review r2 FIX: a settings file that is not UTF-8 is a
+    could-not-read, never a traceback."""
+    path = tmp_path / "settings.json"
+    path.write_bytes(b'{"env": "\xff\xfe"}')
+    obj, why = cu._load_settings(str(path))  # pylint: disable=protected-access
+    assert (obj, "not UTF-8" in why) == (None, True), why
+
+
+def test_read_machine_not_utf8_reads_corrupt(tmp_path, monkeypatch):
+    path = tmp_path / "config.json"
+    path.write_bytes(b'{"unattendedCloud": "\xff"}')
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
+    assert cu._read_machine() == "corrupt"  # pylint: disable=protected-access

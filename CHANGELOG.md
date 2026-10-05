@@ -111,7 +111,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - Port review fixes (release/1.2.0): `pwd` is imported only where it exists, so native Windows
   collects the suite and reaches its refusal; the sandbox probe is `unknown`, never `ready`, when
   its Claude process exits nonzero or a tool result carries `is_error`, whatever markers it printed
-  (an `OPEN` store still refuses).
+  (an `OPEN` store still refuses). The `settings` check refuses a user (or repo) settings file
+  whose `env` sets a variable the launch strips (`AWS_*`, `GH_TOKEN`, ...): Claude Code applies a
+  loaded file's `env` to the session, so it would replace the sealed credentials. A settings file
+  or machine config that is not UTF-8 is `unknown`, never a traceback.
 - Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.
@@ -144,8 +147,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `test_tracker_move_after_receipt_keeps_bundle_hash` shows a move leaves `review_patch`'s bundle hash
   unchanged for the files kind, an Obsidian vault outside the worktree and an ignored one inside it.
 - Port review fixes (release/1.2.0): a CHANGELOG line naming `1.1.0.1` no longer counts as naming
-  `1.1.0`; a `docs.json` deferral needs non-empty `key`, `why` and `unblock` or the check is
-  `unknown`; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
+  `1.1.0`, nor does `1.1.0-rc.1`, `1.1.0+b` or `1.1.0_2`; a `docs.json` deferral needs non-empty
+  `key`, `why` and `unblock` or the check is `unknown`, and reaches TODO.md only as its own added
+  entry naming the key as a whole id (never inside `T-00990`) with that why and unblock; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
   earlier plan do not stop a successor plan's first docs run.
 - Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
   its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
@@ -191,7 +195,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Port review fix (release/1.2.0).** In a linked worktree `--approvals` checks
   this checkout's INDEX and the main checkout's, as the walk reads both: an
   unreadable or non-UTF-8 main INDEX, or a main checkout git cannot name, is
-  `could not tell`, even when the local INDEX reads cleanly.
+  `could not tell`, even when the local INDEX reads cleanly; a main checkout with no
+  INDEX at all adds a `note:` line under the answer. `inert_settings` judges a
+  T-0050 personal key by the value in force (the ratchet), not repo precedence.
 - **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
   ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
   and `approval_hook.py`), the bare `/crew:approve` listing what is pending,

@@ -564,6 +564,8 @@ def _load_settings(path):
             text = handle.read()
     except FileNotFoundError:
         return None, ""
+    except UnicodeDecodeError:
+        return None, f"`{path}` is not UTF-8"
     except OSError as exc:
         return None, f"`{path}` cannot be read ({type(exc).__name__})"
     try:
@@ -605,6 +607,23 @@ def _reopens_a_store(entry, homes, base_dir, store_paths):
     return False
 
 
+def _credential_env(obj):
+    """The first `env` key in a settings object that the launch strips from the
+    session's environment (`_STRIP_PREFIXES`, `_STRIP_NAMES`), or None. Claude
+    Code applies a loaded settings file's `env` to its process, so such a key
+    would put a credential, or a pointer at one, back after the strip. An
+    `env` that is not an object is reported as itself: it cannot be judged."""
+    env = obj.get("env") if isinstance(obj, dict) else None
+    if env is None:
+        return None
+    if not isinstance(env, dict):
+        return "env"
+    for key in env:
+        if str(key).startswith(_STRIP_PREFIXES) or key in _STRIP_NAMES:
+            return key
+    return None
+
+
 def judge_settings(repo_files, user_file, homes, store_paths):
     """`(state, why)` for the settings files around the sealed `--settings`.
 
@@ -613,8 +632,9 @@ def judge_settings(repo_files, user_file, homes, store_paths):
     any `sandbox` key or `Read` allow rule in them refuses. The user file DOES
     load, and its lists merge with the sealed ones, so an `excludedCommands`
     entry (it runs unsandboxed), an `allowRead` that could re-open a store, or
-    `filesystem.disabled: true` refuses. A file that exists but cannot be read
-    is `unknown`. `repo_files` and `user_file` are `(path, obj, why)`."""
+    `filesystem.disabled: true` refuses, and so does an `env` key the launch
+    strips (an AWS credential set there would replace the sealed one). A file
+    that exists but cannot be read is `unknown`. `repo_files` and `user_file` are `(path, obj, why)`."""
     for path, obj, why in repo_files:
         if why:
             return UNKNOWN, f"settings: {why}"
@@ -623,6 +643,10 @@ def judge_settings(repo_files, user_file, homes, store_paths):
         if "sandbox" in obj:
             return REFUSE, (f"settings: `{path}` sets `sandbox`; a repo may not "
                             "shape the sealed sandbox")
+        key = _credential_env(obj)
+        if key:
+            return REFUSE, (f"settings: `{path}` sets `{key}` in `env`; a repo may not "
+                            "put a credential into a sealed session")
         rules = _read_allow_rules(obj)
         if rules:
             return REFUSE, (f"settings: `{path}` allows `{rules[0]}`; a repo "
@@ -630,6 +654,13 @@ def judge_settings(repo_files, user_file, homes, store_paths):
     path, obj, why = user_file
     if why:
         return UNKNOWN, f"settings: {why}"
+    key = _credential_env(obj)
+    if key == "env":
+        return UNKNOWN, f"settings: `{path}` `env` is not an object"
+    if key:
+        return REFUSE, (f"settings: `{path}` sets `{key}` in `env`; Claude Code applies it "
+                        "to the session, replacing the sealed credentials or pointing past "
+                        "them")
     box = obj.get("sandbox") if isinstance(obj, dict) else None
     if box is not None and not isinstance(box, dict):
         return UNKNOWN, f"settings: `{path}` `sandbox` is not an object"
@@ -790,7 +821,7 @@ def _read_machine():
             text = handle.read()
     except FileNotFoundError:
         return None
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return "corrupt"
     try:
         return json.loads(text)
