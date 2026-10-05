@@ -489,11 +489,17 @@ def lane_path(top, slug, ticket):
 
 def read_lane(root, slug, ticket):
     """(lane, 'ok'|'missing'|'corrupt'). A lane file that parses but is not
-    an object with a known `state` is `corrupt`: unknown, never a state."""
+    an object with a known `state`, naming this set and ticket, with a text
+    `version` and a text or null `worktree` -- the fields `start` writes -- is
+    `corrupt`: unknown, never a state (group review r3, rush g0: a bare
+    `{"state": "clean"}` was collected as a clean lane)."""
     data, state = _read_json(lane_path(_top(root), slug, ticket))
     if state != "ok":
         return None, state
-    if not isinstance(data, dict) or data.get("state") not in LIVE + STATES:
+    if (not isinstance(data, dict) or data.get("state") not in LIVE + STATES
+            or data.get("set") != slug or data.get("ticket") != ticket
+            or not isinstance(data.get("version"), str)
+            or not (data.get("worktree") is None or isinstance(data.get("worktree"), str))):
         return None, "corrupt"
     return data, "ok"
 

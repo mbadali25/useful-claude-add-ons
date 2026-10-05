@@ -2611,8 +2611,8 @@ two holders.
   command you are told to run.
 
 **After `/clear` or a resume, run `crew_coord.py status` first**, before any
-other work, and stop on any `needs the owner` line. (The autopilot resume step
-will run it itself once T-0004 lands; until then this line is the instruction.)
+other work, and stop on any `needs the owner` line. (`/crew:autopilot` runs it
+itself before a run or a wave when `.crew/config.json` has a `coord` block.)
 
 ---
 

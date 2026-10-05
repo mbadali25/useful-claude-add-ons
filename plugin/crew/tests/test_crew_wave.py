@@ -1014,12 +1014,41 @@ def test_collect_missing_lane_file_reads_unknown(tmp_path):
     assert (got["state"], "missing" in got["reason"]) == ("unknown", True)
 
 
-@pytest.mark.parametrize("text", ["{broken", "[]", '{"state": "CLEAN"}', '{"state": null}'])
+@pytest.mark.parametrize("text", ["{broken", "[]", '{"state": "CLEAN"}', '{"state": null}',
+                                  '{"state": "clean"}'])
 def test_collect_corrupt_lane_file_reads_unknown(tmp_path, text):
     root = _started(tmp_path)
     _write(root / ".work" / "autopilot" / "s" / "lanes" / "T-1.json", text)
 
     assert _state_of(_collect(root), "T-1")["state"] == "unknown"
+
+
+@pytest.mark.parametrize("drop, value", [("set", None), ("ticket", None), ("version", None),
+                                         ("set", "other"), ("ticket", "T-2"), ("version", 116),
+                                         ("worktree", 7)],
+                         ids=["no-set", "no-ticket", "no-version", "other-set", "other-ticket",
+                              "number-version", "number-worktree"])
+def test_collect_incomplete_clean_lane_file_reads_unknown(tmp_path, drop, value):
+    # Group review r3 (rush g0): `{"state": "clean"}` alone was collected as a clean lane.
+    root = _started(tmp_path)
+    lane, _ = _lane(root, "T-1")
+    lane["state"] = "clean"
+    if value is None:
+        del lane[drop]
+    else:
+        lane[drop] = value
+    _write(root / ".work" / "autopilot" / "s" / "lanes" / "T-1.json", json.dumps(lane))
+
+    got = _collect(root)
+
+    assert (_state_of(got, "T-1")["state"], [t for t, _ in got["land"]]) == ("unknown", [])
+
+
+def test_collect_complete_clean_lane_file_reads_clean(tmp_path):
+    root = _started(tmp_path)
+    _set_lane(root, "T-1", state="clean")
+
+    assert _state_of(_collect(root), "T-1")["state"] == "clean"
 
 
 def test_collect_unknown_when_the_wave_was_never_started(tmp_path):
