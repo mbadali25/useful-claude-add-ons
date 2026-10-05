@@ -164,6 +164,17 @@ def test_a_dispatch_deploy_removed_from_the_working_map_still_matches(flavour, r
     assert "uncommitted changes" in err and "(dev" in err
 
 
+def test_a_working_map_without_environments_still_reads_the_committed_dispatches(
+        flavour, repo):
+    """L-0664 r1: an uncommitted edit dropping `environments` must not let the
+    REST spelling of a committed dispatch deploy through."""
+    _write_map(repo, {"note": "environments removed"}, commit=False)
+    code, err = gate(repo, REST.format(env="development"), flavour)
+    assert code == 2, err
+    assert "uncommitted changes" in err and "(dev" in err
+    assert repo.in_flight() is None
+
+
 def test_the_helper_failing_blocks(flavour, repo, tmp_path, monkeypatch):
     """A helper that crashes is never "not a deploy"."""
     scripts = tmp_path / "scripts-copy"

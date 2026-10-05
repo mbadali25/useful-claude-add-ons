@@ -192,4 +192,8 @@ PROMOTE_TREE_MUTATIONS = (
      "  if ($dispatchExit -ne 0) {\n",
      "  if ($false) {\n",
      _D + "test_the_helper_failing_blocks[ps1]"),
+    ("promote-gate.ps1 exits before the dispatch read when the dirty map lost environments", PS1,
+     "if (-not $envProperty -and $envNames.Count -eq 0 -and -not $mapDirty) { exit 0 }\n",
+     "if (-not $envProperty -and $envNames.Count -eq 0) { exit 0 }\n",
+     _D + "test_a_working_map_without_environments_still_reads_the_committed_dispatches[ps1]"),
 )

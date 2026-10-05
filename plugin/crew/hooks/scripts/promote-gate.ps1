@@ -440,7 +440,9 @@ if ($vm -isnot [System.Management.Automation.PSCustomObject]) {
   Deny-UnreadableMap ".crew/verify.json does not hold a JSON object."
 }
 $envProperty = $vm.PSObject.Properties['environments']
-if (-not $envProperty -and $envNames.Count -eq 0) { exit 0 }
+# With the map dirty, a working map that lost `environments` still has the
+# committed map's dispatches read below (L-0664 r1), as the .sh does.
+if (-not $envProperty -and $envNames.Count -eq 0 -and -not $mapDirty) { exit 0 }
 if ($envProperty -and $envProperty.Value -isnot [System.Management.Automation.PSCustomObject]) {
   Deny-UnreadableMap "``environments`` in .crew/verify.json is not an object, so no environment can be read out of it."
 }
