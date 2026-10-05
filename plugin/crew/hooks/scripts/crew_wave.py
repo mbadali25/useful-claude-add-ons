@@ -200,6 +200,8 @@ def write_set(root, slug, tickets, deps=None):
         rows.append(row)
     if not rows:
         raise WaveError("a set names at least one ticket")
+    if len(set(tickets)) != len(tickets):
+        raise WaveError("a set names each ticket once")
     _write_json(set_path(_top(root), slug), {"schema": SCHEMA, "set": slug, "tickets": rows})
 
 
@@ -217,6 +219,9 @@ def _valid_set(data, slug):
         return False
     rows = data.get("tickets")
     if not isinstance(rows, list) or not rows:
+        return False
+    ids = [row.get("id") if isinstance(row, dict) else None for row in rows]
+    if len(set(map(repr, ids))) != len(ids):  # a ticket named twice is one lane listed twice
         return False
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("id"), str):
@@ -392,6 +397,8 @@ def _entries(root, slug, tickets):
         return [(row["id"], row.get("deps")) for row in data["tickets"]]
     for ticket in tickets or []:
         _plain_id(ticket)
+    if len(set(tickets or [])) != len(tickets or []):
+        raise WaveError("a wave names each ticket once")
     return [(ticket, None) for ticket in tickets or []]
 
 
@@ -518,8 +525,8 @@ def _lane_shape_ok(data, slug, ticket):
         return False
     if data["state"] not in SET_UP:
         return True
-    placed = isinstance(data["worktree"], str) or data.get("removed") is True
-    return isinstance(data.get("branch"), str) and bool(data["branch"]) and placed
+    placed = (isinstance(data["worktree"], str) and data["worktree"] != "") or data.get("removed") is True
+    return data.get("branch") == branch_for(ticket) and placed
 
 
 def write_lane(root, slug, ticket, lane):

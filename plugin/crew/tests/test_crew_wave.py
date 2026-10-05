@@ -257,6 +257,30 @@ def test_set_cli_writes_the_set(tmp_path):
         0, [{"id": "T-1", "deps": []}, {"id": "T-2", "deps": ["T-1"]}])
 
 
+def test_set_cli_refuses_a_ticket_named_twice(tmp_path):
+    # Group review r7 (rush g0): a duplicate became a later wave of itself and two clean lines.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "T-1")
+
+    assert (done.returncode != 0, crew_wave.read_set(str(root), "s")) == (True, (None, "missing"))
+
+
+def test_a_set_file_naming_a_ticket_twice_is_corrupt(tmp_path):
+    root = _repo(tmp_path)
+    _write(root / ".work" / "autopilot" / "s.json",
+           json.dumps({"schema": 1, "set": "s", "tickets": [{"id": "T-1"}, {"id": "T-1"}]}))
+
+    assert crew_wave.read_set(str(root), "s") == (None, "corrupt")
+
+
+def test_plan_refuses_a_ticket_named_twice(tmp_path):
+    root = _repo(tmp_path)
+
+    with pytest.raises(crew_wave.WaveError):
+        crew_wave.plan(str(root), tickets=["T-1", "T-1"])
+
+
 @pytest.mark.parametrize("deps", ["T-1=", "T-1=,", "T-1= ", "T-1=T-2,", "T-1=,T-2", "T-1=T-2,,T-3", "T-1"],
                          ids=["empty", "comma", "space", "trailing", "leading", "double", "no-equals"])
 def test_set_cli_refuses_a_dependency_list_that_is_not_none_or_ids(tmp_path, deps):
@@ -1045,10 +1069,12 @@ def test_collect_corrupt_lane_file_reads_unknown(tmp_path, text):
 @pytest.mark.parametrize("drop, value", [("set", None), ("ticket", None), ("version", None),
                                          ("set", "other"), ("ticket", "T-2"), ("version", 116),
                                          ("worktree", 7), ("base", None), ("base", ""),
-                                         ("branch", None), ("branch", ""), ("worktree", "null")],
+                                         ("branch", None), ("branch", ""), ("worktree", "null"),
+                                         ("worktree", ""), ("branch", "T-2-wave")],
                          ids=["no-set", "no-ticket", "no-version", "other-set", "other-ticket",
                               "number-version", "number-worktree", "no-base", "empty-base",
-                              "no-branch", "empty-branch", "null-worktree-not-removed"])
+                              "no-branch", "empty-branch", "null-worktree-not-removed",
+                              "empty-worktree", "other-tickets-branch"])
 def test_collect_incomplete_clean_lane_file_reads_unknown(tmp_path, drop, value):
     # Group review r3 (rush g0): `{"state": "clean"}` alone was collected as a clean lane.
     root = _started(tmp_path)
