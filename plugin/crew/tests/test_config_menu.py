@@ -2072,6 +2072,7 @@ def test_delete_move_back_displaced_with_the_path_gone_does_not_say_moved_back(
     assert _bytes(parked) == changed and not os.path.lexists(_config(root))
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the race is injected through os.link, POSIX's move")
 def test_delete_move_back_displaced_names_where_the_original_is(
         tmp_path, capsys, monkeypatch):
     """The move back (backup -> path) finds a foreign file at the backup name
