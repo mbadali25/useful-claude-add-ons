@@ -9,6 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.10: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None` (L-0530)
+
+- **Summary.** When a ticket's INDEX status is a word crew does not know, the tracker now says so, and for a
+  retired word it names the crew word to write instead; it still never guesses a lane.
+- **`read`.** An INDEX status outside the ten-word vocabulary reads `disagree: "could not tell"` with
+  `INDEX status <s> is not a status crew knows (direction, ready, needs-owner, spec, planned, in-progress,
+  review, done, cancelled, superseded)`; a missing INDEX status reads `could not tell` as well. It no longer
+  prints `INDEX status <s> expects None`. `read --json` consumers: `disagree` can now be the string
+  `"could not tell"`, not only a boolean. A known status reads exactly as before.
+- **Retired words.** `RETIRED_STATUSES` (`approved` -> `spec`, `merged` -> `done`, `closed` -> `done`,
+  `new` -> `direction`, `parked` -> `needs-owner`) appends `; the crew word is <w>` to that note, to
+  `move --to <s>`'s `maps to no lane` refusal, and to the could-not-tell refusal for a move from such a word.
+  It is a hint only: no lane, write or exit code changes, and `land-blocked` gets none.
+- **Docs and tests.** `commands/obsidian-sync.md`, the README's Ticket statuses, the memory-and-obsidian guide
+  and the code map describe it; eight new tracker and vocabulary tests. Sabotage entries for the new branch are
+  a separate tooling-only follow-up (harness path).
+
 ### Changed — `check-marketplace.py --pending-bump`: a draft PR reports version drift as pending at land, repository tooling, no plugin version (L-0511, PR 1)
 
 - **Summary.** A build branch no longer has to bump a plugin version to get a green draft PR: version drift

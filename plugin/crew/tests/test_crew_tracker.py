@@ -2637,3 +2637,96 @@ def test_the_new_words_are_table_rows():
         {"needs-owner": "backlog", "cancelled": "done", "superseded": "done"}, ("needs-owner",),
         ("cancelled", "superseded"),
         ("direction", "ready", "spec", "planned", "in-progress", "review", "done"), ("in-progress", "done"))
+
+
+# --- L-0530: a word crew does not know is named, never mapped -----------------
+
+KNOWN_LIST = "direction, ready, needs-owner, spec, planned, in-progress, review, done, cancelled, superseded"
+RETIRED = {"approved": "spec", "merged": "done", "closed": "done", "new": "direction",
+           "parked": "needs-owner"}
+
+
+def _read_with_index_status(tmp_path, status, lane="done"):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(ROW.replace("| spec |", f"| {status} |"),
+                                             encoding="utf-8", newline="\n")
+    board = vault / "Boards" / "repo" / "Board.md"
+    text = board.read_text(encoding="utf-8")
+    moved, _, _ = crew_tracker.move_card(crew_tracker.parse_board(text, COLUMNS)[0], CARD, lane)
+    board.write_text(moved, encoding="utf-8", newline="\n")
+    return root
+
+
+def test_read_retired_status_names_the_crew_word(tmp_path):
+    root = _read_with_index_status(tmp_path, "merged")
+
+    got = crew_tracker.read(str(root), CARD)
+    done = _cli(root, "read", "--ticket", CARD)
+
+    obsidian = got["results"][1]
+    assert (obsidian["state"], obsidian["lane"], obsidian["disagree"], obsidian["reason"]) == (
+        "read", "Done", "could not tell",
+        f"INDEX status merged is not a status crew knows ({KNOWN_LIST}); the crew word is done")
+    assert "expects None" not in done.stdout + done.stderr
+
+
+def test_read_unknown_status_has_no_hint(tmp_path):
+    root = _read_with_index_status(tmp_path, "land-blocked")
+
+    obsidian = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (obsidian["disagree"], obsidian["reason"]) == (
+        "could not tell", f"INDEX status land-blocked is not a status crew knows ({KNOWN_LIST})")
+
+
+def test_move_to_retired_status_hints_and_writes_nothing(tmp_path):
+    root = _files_repo(tmp_path, "T-0001 | spec | low | repo | t\n")
+    before = _snapshot(tmp_path)
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "approved")
+
+    assert (done.returncode, done.stdout.strip(), _snapshot(tmp_path) == before) == (
+        1, "files: could not update: status approved maps to no lane; the crew word is spec", True)
+
+
+def test_move_from_retired_status_hints(tmp_path):
+    root = _files_repo(tmp_path, "T-0001 | new | low | repo | t\n")
+    before = _snapshot(tmp_path)
+
+    refused = _cli(root, "move", "--ticket", "T-0001", "--to", "spec")
+    untouched = _snapshot(tmp_path) == before
+    reopened = _cli(root, "move", "--ticket", "T-0001", "--to", "spec", "--reopen")
+
+    assert (refused.returncode, refused.stdout.strip(), untouched) == (
+        1, "files: could not update: could not tell whether new -> spec goes backwards ('new' is not "
+           "a status crew knows); pass --reopen if the move is meant; the crew word is direction", True)
+    assert (reopened.returncode, _index(root)) == (0, "T-0001 | spec | low | repo | t\n")
+
+
+@pytest.mark.parametrize("word", sorted(RETIRED))
+def test_retired_hint_is_text_only(tmp_path, word):
+    """A hint never moves a lane, a write or an exit code: a retired word behaves as an unknown one."""
+    outcomes = []
+    for i, status in enumerate((word, "shipped-ish")):
+        root = _files_repo(tmp_path / f"m{i}", "T-0001 | spec | low | repo | t\n")
+        before = _snapshot(tmp_path / f"m{i}")
+        done = _cli(root, "move", "--ticket", "T-0001", "--to", status)
+        read_root = _read_with_index_status(tmp_path / f"r{i}", status, "inProgress")
+        obsidian = crew_tracker.read(str(read_root), CARD)["results"][1]
+        outcomes.append((done.returncode, _snapshot(tmp_path / f"m{i}") == before,
+                         obsidian["state"], obsidian["lane"], obsidian["disagree"]))
+
+    assert outcomes[0] == outcomes[1] == (1, True, "read", "In Progress", "could not tell")
+    assert crew_tracker.RETIRED_STATUSES[word] == RETIRED[word]
+
+
+def test_read_without_an_index_row_could_not_tell(tmp_path):
+    """No INDEX status at all is not a disagreement either: it could not be told."""
+    root = _read_with_index_status(tmp_path, "spec")
+    (root / ".work" / "INDEX.md").write_text("", encoding="utf-8", newline="\n")
+
+    files, obsidian = crew_tracker.read(str(root), CARD)["results"]
+
+    assert (files["state"], obsidian["disagree"], obsidian["reason"]) == (
+        "could not read", "could not tell", "INDEX status could not be read")

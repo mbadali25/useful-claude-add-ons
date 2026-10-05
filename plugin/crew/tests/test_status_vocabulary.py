@@ -86,3 +86,14 @@ def test_memory_and_obsidian_guide_lane_table_lists_every_tracker_status():
     guide = _read(os.pardir, os.pardir, "docs", "guides", "crew", "src", "memory-and-obsidian.md")
 
     assert sorted(set(crew_tracker.LANE_FOR_STATUS) - _table_words(guide, "| Ticket status |")) == []
+
+
+def test_retired_words_are_hints_never_lanes():
+    """L-0530: a retired INDEX word names its crew word; it is never a status crew knows."""
+    retired = crew_tracker.RETIRED_STATUSES
+
+    assert (sorted(set(retired) & set(crew_tracker.LANE_FOR_STATUS)),
+            sorted(w for w in retired.values() if w not in crew_tracker.LANE_FOR_STATUS),
+            "land-blocked" in retired) == ([], [], False)
+    assert sorted(crew_tracker.KNOWN_STATUSES) == sorted(crew_tracker.LANE_FOR_STATUS)
+    assert len(crew_tracker.KNOWN_STATUSES) == len(set(crew_tracker.KNOWN_STATUSES))
