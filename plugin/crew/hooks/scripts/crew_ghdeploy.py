@@ -700,6 +700,13 @@ def classify(root, env, command):
     return klass[0]
 
 
+def branch(ref):
+    """The branch NAME of an entry's ref: `refs/heads/main` is `main`. The
+    branches API and `gh run list -b` take a name, and a run's `headBranch`
+    is one; the dispatch itself keeps the ref as written."""
+    return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+
+
 def _actor(root):
     user = _gh_json(["api", "user"], root)
     login = user.get("login") if isinstance(user, dict) else None
@@ -722,14 +729,15 @@ def prepare(root, env, index):
     if not isinstance(remote, dict) or remote.get("sha") != sha:
         raise Refused("sha-not-on-remote", f"{sha} is not on the remote; push it first")
     if not entry.get("shaInput"):
-        tip = _gh_json(["api", f"repos/{{owner}}/{{repo}}/branches/{entry['ref']}"], root)
+        tip = _gh_json(["api", f"repos/{{owner}}/{{repo}}/branches/{branch(entry['ref'])}"],
+                       root)
         tip = tip.get("commit") if isinstance(tip, dict) else None
         tip = tip.get("sha") if isinstance(tip, dict) else None
         if tip != sha:
             raise Refused("branch-tip-not-head",
                           f"with no `shaInput` the workflow deploys {entry['ref']!r}'s tip "
                           f"({tip or 'unreadable'}), which is not HEAD {sha}")
-    runs = _gh_json(["run", "list", "-w", entry["workflow"], "-b", entry["ref"],
+    runs = _gh_json(["run", "list", "-w", entry["workflow"], "-b", branch(entry["ref"]),
                      "-e", "workflow_dispatch", "-u", actor, "-L", str(SNAPSHOT_LIMIT),
                      "--json", "databaseId"], root)
     if not isinstance(runs, list) or not all(
@@ -820,7 +828,7 @@ def pick_run(runs, state):
     candidates, near = [], 0
     for run in runs:
         if run["databaseId"] in seen or run.get("event") != "workflow_dispatch" \
-                or run.get("headBranch") != state["ref"]:
+                or run.get("headBranch") != branch(state["ref"]):
             continue
         created = _created(run.get("createdAt"))
         if created is None:
@@ -847,7 +855,7 @@ def identify(root, env, index):
     polls = state["identifySeconds"] // POLL_SECONDS + 1
     answered = near = 0
     for poll in range(polls):
-        runs = _gh_json(["run", "list", "-w", state["workflow"], "-b", state["ref"],
+        runs = _gh_json(["run", "list", "-w", state["workflow"], "-b", branch(state["ref"]),
                          "-e", "workflow_dispatch", "-u", state["actor"],
                          "-L", str(SNAPSHOT_LIMIT), "--json", RUN_FIELDS], root)
         if runs is not None:

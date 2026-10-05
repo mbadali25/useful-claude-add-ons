@@ -1091,6 +1091,7 @@ def test_prepare_refuses_an_environment_without_a_github_entry(tmp_path, monkeyp
     assert not (root / ".crew" / ".ghdeploy").exists()
 
 
+@_scenario
 def test_prepare_refuses_an_env_name_that_leaves_the_state_dir(tmp_path, monkeypatch):
     """An environment named `../x` exists in the map, but its state file
     would land outside `.crew/.ghdeploy/`: refused before any gh call."""
@@ -1104,6 +1105,7 @@ def test_prepare_refuses_an_env_name_that_leaves_the_state_dir(tmp_path, monkeyp
     assert not (root / ".crew" / ".ghdeploy").exists()
 
 
+@_scenario
 def test_prepare_refuses_a_corrupt_machine_environments_block(tmp_path, monkeypatch):
     """The dispatch guard reads the machine layer's block too: a corrupt one
     is unknown-environment, never the repo layer's nonProd answer."""
@@ -1116,7 +1118,10 @@ def test_prepare_refuses_a_corrupt_machine_environments_block(tmp_path, monkeypa
     assert not (root / ".crew" / ".ghdeploy").exists()
 
 
-@pytest.mark.parametrize("answer", [{"commit": None}, {"commit": "abc"}, [], "x"])
+_BRANCH_ANSWERS = [{"commit": None}, {"commit": "abc"}, [], "x"]
+
+
+@pytest.mark.parametrize("answer", _BRANCH_ANSWERS)
 def test_prepare_a_malformed_branch_answer_is_not_head(tmp_path, monkeypatch, answer):
     root = _seq_repo(tmp_path, monkeypatch, entry=_no_branch_entry())
     answers = _prepare_answers(_head(root))
@@ -1125,6 +1130,31 @@ def test_prepare_a_malformed_branch_answer_is_not_head(tmp_path, monkeypatch, an
     assert code == 2, lines
     assert lines[-1] == "result=refused reason=branch-tip-not-head"
     assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+for _answer in _BRANCH_ANSWERS:
+    _scenario(lambda t, m, _a=_answer: test_prepare_a_malformed_branch_answer_is_not_head(t, m, _a))
+
+
+@_scenario
+def test_prepare_and_identify_take_a_full_branch_ref(tmp_path, monkeypatch):
+    """`check` accepts `refs/heads/main`: the dispatch keeps it, but the
+    branches GET, `run list -b` and the run's `headBranch` use the name."""
+    entry = dict(_no_branch_entry(), ref="refs/heads/main")
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry)
+    doc = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+    doc["environments"]["staging"]["deploy"] = [crew_ghdeploy.prefix(entry)]
+    (root / ".crew" / "verify.json").write_text(json.dumps(doc), encoding="utf-8")
+    gh = FakeGh(_prepare_answers(_head(root)))
+    code, lines = _prepare(monkeypatch, root, gh)
+    assert code == 0, lines
+    assert "--ref refs/heads/main" in lines[-2]
+    assert ["api", "repos/{owner}/{repo}/branches/main"] in gh.calls
+    assert [c[5] for c in gh.calls if c[:2] == ["run", "list"]] == ["main"]
+    gh = FakeGh({("run", "list"): _ok([_new_run(13, created=1_000_002)])})
+    code, lines = _run(monkeypatch, gh, "identify", "--root", str(root), "--env", "staging")
+    assert code == 0, lines
+    assert gh.calls[0][5] == "main" and _state(root)["runId"] == 13
 
 
 def test_prepare_classifier_crash_refuses(tmp_path, monkeypatch):

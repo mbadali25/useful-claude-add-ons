@@ -32,7 +32,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `env-name-path`. A corrupt machine-global `environments` block is `unknown-environment`, as the
   dispatch guard reads it.
 - **State.** `.crew/.ghdeploy/<env>-<N>.json`, written through a temp file and `os.replace`. Its only
-  `gh` calls are `api user`, two GETs and `run list`; it never dispatches. `check` and `prepare` now
+  `gh` calls are `api user`, two GETs and `run list`; it never dispatches. A `refs/heads/<name>` ref
+  is dispatched as written and queried by its branch name. `check` and `prepare` now
   share one entry validator (`validated`).
 
 ### Added — `crew` 1.1.4: promote-gate gates a workflow dispatch of a declared deploy, in either spelling (T-0062)
