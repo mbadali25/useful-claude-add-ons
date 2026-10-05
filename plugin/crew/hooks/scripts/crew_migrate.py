@@ -9,6 +9,7 @@ What moves, and what does not:
 | Source (0.20)                          | Target (1.0)                                  | Original      |
 |----------------------------------------|-----------------------------------------------|---------------|
 | `.crew/config.json` (schema <= 7)      | `.crew/crew.json` (schema 1, table below)     | kept, retireable |
+| `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above            | backed up, restored |
 | `.work/tickets/<ID>.md` (files mode)   | `.work/tickets/<ID>/ticket.md` + provenance   | kept          |
 | `.work/cache/<ID>.md` (jira/sdp/obsidian) | `.work/tickets/<ID>/ticket.md` + provenance | kept          |
 | `.crew/metrics.md`                     | `.crew/metrics.jsonl`, missing values UNKNOWN | kept          |
@@ -22,6 +23,15 @@ Nothing a user owns is deleted or moved in place. Every target is new, and apply
 refuses when a target already exists with different bytes, so the only thing
 `--rollback` ever has to do is remove what apply created -- after checking the
 bytes are still the ones apply wrote.
+
+One exception, and only for a pre-0.20 config (no `schema` key, or an integer
+1-6): `.crew/config.json` is brought to the current schema by
+`crew_upgrade.upgrade_config` -- the code `/crew:upgrade` ran -- and rewritten
+in place in the same apply, before crew.json is built from it. Its original is
+copied into the backup first, the manifest records it as `existed` with its
+`originalSha256`, and both the in-process undo and `--rollback` write those
+original bytes back. They never remove it. A block the upgrade could not
+migrate is a conflict, so a half-upgraded config never reaches crew.json.
 
 ## crew.json schema 1 -- the whole mapping
 
@@ -71,16 +81,19 @@ keys also from `~/.claude/crew/config.json`, where the stricter value wins
 
 `MAPPING` below is this table as code; a test asserts the two agree.
 
-Standard library only. Exit 0 on success (or a clean preview), 1 when the
+Standard library, plus crew's own `crew_upgrade` for a pre-0.20 config. Exit 0
+on success (or a clean preview), 1 when the
 migration cannot proceed (conflict, unreadable source, interrupted apply), 2 on
 a usage error.
 """
 
 import argparse
+import copy
 import hashlib
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 import time
@@ -149,13 +162,19 @@ _METRIC_FIELDS_1_0 = (
     "escapedDefects",
 )
 JOURNAL_FILES = ("pm-journal.md", "pm-standing.md")
+CONFIG_REL = ".crew/config.json"
+# `crew_upgrade` lives in the crew-graph skill, two levels up from here.
+UPGRADE_DIR = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir,
+    "skills", "crew-graph", "scripts"))
+UPGRADE_NOTE_PREFIX = "config.json upgraded from schema "
 BACKUP_DIR = os.path.join(".crew", "backups")
 TMP_SUFFIX = ".crew-migrate.tmp"
 
 # Every path apply may write, and so every path rollback may remove. A
 # manifest naming anything else was not written by this tool.
 _TARGET_RE = re.compile(
-    r"^(?:\.crew/crew\.json|\.crew/metrics\.jsonl"
+    r"^(?:\.crew/crew\.json|\.crew/config\.json|\.crew/metrics\.jsonl"
     r"|\.crew/archive/(?:pm-journal|pm-standing)\.md"
     r"|\.work/tickets/[A-Z][A-Z0-9]*-\d+/(?:ticket(?:\.[a-z-]+)?\.md|provenance\.json))$")
 
@@ -253,13 +272,15 @@ def _json_bytes(obj):
     return (json.dumps(obj, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def atomic_write(path, data):
+def atomic_write(path, data, mode=None):
     """Write `data` to `path` via a sibling temp file and `os.replace`.
 
     The payload is fully built before anything is opened, and the target is
     only ever replaced whole -- never truncated in place (CLAUDE.md, the
     `open(p, "w")` landmine). The temp file is created exclusively under a
     unique name, so no file already beside the target is truncated or removed.
+    `mode`, when given, is set on the temp file before it replaces the target
+    (mkstemp's own is 0600).
     """
     parent = os.path.dirname(path) or "."
     os.makedirs(parent, exist_ok=True)
@@ -270,6 +291,8 @@ def atomic_write(path, data):
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         _remove(tmp)
@@ -328,17 +351,40 @@ def to_legacy(crew):
     return legacy
 
 
+def _upgrade_module():
+    """`crew_upgrade`, imported only when a pre-0.20 config needs it, or
+    MigrateError. Never a fallback to migrating the old config unupgraded."""
+    path = UPGRADE_DIR
+    try:
+        if path not in sys.path:
+            sys.path.insert(0, path)
+        import crew_upgrade  # pylint: disable=import-outside-toplevel
+    except (ImportError, OSError) as exc:
+        raise MigrateError(f"cannot load crew_upgrade from {path}: {exc} - a pre-0.20 "
+                           "config needs it; nothing is migrated") from exc
+    return crew_upgrade
+
+
+def _config_bytes(cfg):
+    """The bytes `crew_upgrade.run()` writes, as UTF-8 LF on every OS."""
+    return (json.dumps(cfg, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
 def _load_legacy(root):
+    """(config dict, raw bytes, upgrade) -- `upgrade` is None for a config at
+    LEGACY_SCHEMA_MAX, else {"from": the schema int, or None when absent}."""
     path = os.path.join(root, ".crew", "config.json")
     data = _read_bytes(path)
     if data is None:
-        return None, None
+        return None, None, None
     try:
         cfg = json.loads(data.decode("utf-8-sig"))
     except (ValueError, UnicodeDecodeError) as exc:
         raise MigrateError(f".crew/config.json is not valid JSON: {exc}") from exc
     if not isinstance(cfg, dict):
         raise MigrateError(".crew/config.json is not a JSON object")
+    if "schema" not in cfg:
+        return cfg, data, {"from": None}
     schema = cfg.get("schema")
     if isinstance(schema, bool) or not isinstance(schema, int):
         raise MigrateError(
@@ -348,7 +394,12 @@ def _load_legacy(root):
         raise MigrateError(
             f".crew/config.json schema {schema} is newer than {LEGACY_SCHEMA_MAX}; "
             "this migrate does not know it and refuses to guess")
-    return cfg, data
+    if schema <= 0:
+        raise MigrateError(f".crew/config.json schema {schema} is not a schema crew ever "
+                           "wrote; nothing is migrated")
+    if schema < LEGACY_SCHEMA_MAX:
+        return cfg, data, {"from": schema}
+    return cfg, data, None
 
 
 # ---------------------------------------------------------------- tickets
@@ -452,7 +503,7 @@ def metrics_rows(text):
 def build_plan(root):
     """Read-only. Returns a plan dict; nothing on disk changes."""
     root = os.path.abspath(root)
-    plan = {"root": root, "writes": [], "conflicts": [], "notes": [],
+    plan = {"root": root, "writes": [], "conflicts": [], "notes": [], "upgrade": [],
             "retireable": [], "unmapped": [], "skipped": [], "untouched": []}
 
     def want(rel, data, why):
@@ -475,19 +526,25 @@ def build_plan(root):
             plan["conflicts"].append(
                 f"{rel.replace(os.sep, '/')}: exists with different content - not overwritten")
 
-    cfg, _raw = _load_legacy(root)
+    cfg, raw, upgrade = _load_legacy(root)
     tracker = "files"
     if cfg is None:
         if _read_bytes(os.path.join(root, ".crew", "crew.json")) is None:
             plan["notes"].append(".crew/config.json absent - no config to migrate")
-    else:
+    elif upgrade is None or _plan_upgrade(plan, root, cfg, raw, upgrade):
+        if upgrade is not None:
+            cfg = plan.pop("upgraded")
         crew, unmapped = to_crew(cfg)
         if to_legacy(crew) != cfg:
             raise MigrateError("internal: config mapping does not round-trip; refusing")
+        if upgrade is not None:
+            crew.setdefault("notes", []).append(
+                f"{UPGRADE_NOTE_PREFIX}{upgrade['from'] or 'absent'} to {cfg['schema']} in "
+                "the same apply (crew_upgrade.upgrade_config); rollback restores the original")
         plan["unmapped"] = unmapped
         plan["notes"].extend(crew.get("notes", []))
         tracker = cfg.get("tracker") if isinstance(cfg.get("tracker"), str) else "files"
-        want(os.path.join(".crew", "crew.json"), _json_bytes(crew),
+        want(os.path.join(".crew", "crew.json"), _crew_json_bytes(root, crew),
              f"config schema {cfg['schema']} -> crew.json schema {CREW_SCHEMA}")
         plan["retireable"].append(".crew/config.json")
 
@@ -543,10 +600,72 @@ def build_plan(root):
     return plan
 
 
+def _plan_upgrade(plan, root, cfg, raw, upgrade):
+    """The pre-0.20 stage. Puts `config.json`'s in-place write first in
+    `plan["writes"]` and the upgraded dict under `plan["upgraded"]`, and
+    returns True; or records a conflict, writes nothing, and returns False."""
+    crew_upgrade = _upgrade_module()
+    current = crew_upgrade.crew_state.SCHEMA_CURRENT
+    if current != LEGACY_SCHEMA_MAX:
+        raise MigrateError(f"internal: crew_upgrade's current schema is {current}, "
+                           f"migrate maps {LEGACY_SCHEMA_MAX}; refusing")
+    upgraded, notes = crew_upgrade.upgrade_config(copy.deepcopy(cfg))
+    headline = crew_upgrade._absent_global_headline(notes)  # pylint: disable=protected-access
+    lines = crew_upgrade._config_lines(notes)  # pylint: disable=protected-access
+    plan["upgrade"].extend(line for line in ([headline] if headline else []) + lines if line)
+    if notes["unmigrated"]:
+        plan["conflicts"].append(
+            ".crew/config.json: the pre-0.20 upgrade left these blocks unmigrated (wrong "
+            f"type, left as written): {', '.join(notes['unmigrated'])} - fix them by hand, "
+            "then preview again")
+        return False
+    path = contained(root, CONFIG_REL)
+    if os.path.lexists(path + TMP_SUFFIX):
+        plan["conflicts"].append(f"{CONFIG_REL}{TMP_SUFFIX}: exists - migrate stages "
+                                 "through that name and will not overwrite it")
+        return False
+    data = _config_bytes(upgraded)
+    plan["writes"].insert(0, {
+        "path": CONFIG_REL, "data": data,
+        "why": f"upgrade: schema {upgrade['from'] or 'absent'} -> {current} "
+               "(crew_upgrade.upgrade_config)",
+        "pre_sha256": _sha(raw), "replaces": True, "original": raw})
+    # crew.json is built from the config AS WRITTEN (sorted keys), the dict a
+    # re-run reads back, so a second apply plans byte-identical crew.json.
+    plan["upgraded"] = json.loads(data.decode("utf-8"))
+    return True
+
+
+def _crew_json_bytes(root, crew):
+    """crew.json's bytes. After a pre-0.20 apply, config.json is current and
+    a re-run no longer knows it was upgraded, so the crew.json on disk carries
+    one upgrade note this run cannot produce. When that is the ONLY difference,
+    plan the on-disk bytes, so a second apply is a no-op, not a conflict."""
+    data = _json_bytes(crew)
+    current = _read_bytes(os.path.join(root, ".crew", "crew.json"))
+    if current is None or current == data:
+        return data
+    try:
+        notes = json.loads(current.decode("utf-8")).get("notes")
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        return data
+    if not isinstance(notes, list):
+        return data  # a malformed crew.json stays a conflict, never a crash
+    upgrade_notes = [n for n in notes if isinstance(n, str)
+                     and n.startswith(UPGRADE_NOTE_PREFIX)]
+    if len(upgrade_notes) != 1:
+        return data
+    with_note = dict(crew, notes=list(crew.get("notes", [])) + upgrade_notes)
+    return _json_bytes(with_note) if _json_bytes(with_note) == current else data
+
+
 def render_plan(plan, mode):
     out = [f"crew migrate {mode}: {plan['root']}"]
     for item in plan["writes"]:
-        out.append(f"  write  {item['path']}  ({item['why']})")
+        verb = "upgrade" if item.get("replaces") else "write"
+        out.append(f"  {verb}  {item['path']}  ({item['why']})")
+    for line in plan.get("upgrade", []):
+        out.append(f"  upgrade  {line}")
     for note in plan["notes"]:
         out.append(f"  note   {note}")
     for key in plan["unmapped"]:
@@ -618,7 +737,8 @@ def apply_plan(plan):
     staged as a sibling temp file; (3) manifest -> `committing`; (4) one
     `os.replace` per target; (5) manifest -> `applied`. An exception in (2)-(4)
     undoes whatever landed and removes the temps before re-raising, so the tree
-    is the old one. A hard kill in (4) leaves the manifest at `committing`,
+    is the old one; a landed file edited since it landed is left as it is and
+    named, as `--rollback` would refuse it. A hard kill in (4) leaves the manifest at `committing`,
     which every later run reports, and `--rollback` finishes the undo.
 
     Every target is resolved inside the repository before it is touched, its
@@ -640,13 +760,12 @@ def apply_plan(plan):
         data = _read_bytes(os.path.join(root, rel))
         if data is not None:
             atomic_write(os.path.join(backup, "sources", rel), data)
-    rels = [w["path"] for w in plan["writes"]]
+    rels = [w["path"] for w in plan["writes"] if not w.get("replaces")]
     manifest = {
         "tool": "crew_migrate", "crewSchema": CREW_SCHEMA, "state": "prepared",
         "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "createdDirs": _missing_dirs(root, rels),
-        "targets": [{"path": w["path"], "existed": False, "sha256": _sha(w["data"])}
-                    for w in plan["writes"]],
+        "targets": [_manifest_target(w) for w in plan["writes"]],
     }
     atomic_write(_manifest_path(backup), _json_bytes(manifest))
 
@@ -655,6 +774,9 @@ def apply_plan(plan):
         for item in plan["writes"]:
             os.makedirs(os.path.dirname(contained(root, item["path"])), exist_ok=True)
             path = contained(root, item["path"])
+            # A replaced config.json keeps its own permission bits (a 0600
+            # file stays 0600); a created file is 0666 less the umask.
+            mode = _mode_of(path) if item.get("replaces") else None
             try:
                 fd = os.open(path + TMP_SUFFIX,
                              os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0))
@@ -666,25 +788,63 @@ def apply_plan(plan):
                 fh.write(item["data"])
                 fh.flush()
                 os.fsync(fh.fileno())
+            # os.open made it 0777 less the umask; dropping the execute bits
+            # leaves 0666 less the umask without reading the umask.
+            staged_mode = _mode_of(path + TMP_SUFFIX)
+            if mode is None and staged_mode is not None:
+                mode = staged_mode & 0o666
+            if mode is not None:
+                os.chmod(path + TMP_SUFFIX, mode)
         manifest["state"] = "committing"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
         for item, path in staged:
             _check_pre_state(root, item)
             os.replace(path + TMP_SUFFIX, path)
-            landed.append(path)
+            landed.append((item, path))
         manifest["state"] = "applied"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
     except BaseException:
-        for path in landed:
-            _remove(path)
+        left = _undo_landed(landed)
         for _, path in staged:
             _remove(path + TMP_SUFFIX)
         _prune_dirs(root, manifest["createdDirs"])
         manifest["state"] = "rolled-back"
         manifest["note"] = "apply raised; undone in-process"
+        if left:
+            manifest["note"] += "; edited since apply, left as is: " + ", ".join(left)
+            print("crew migrate: edited since apply, not removed or restored; resolve by hand:\n  "
+                  + "\n  ".join(left), file=sys.stderr)
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
         raise
     return backup
+
+
+def _undo_landed(landed):
+    """Undo each landed write whose file still holds the bytes apply wrote,
+    as `--rollback` does: restore a replaced config.json, remove a created
+    file. A file edited since it landed is left as it is -- restoring or
+    removing it would lose that edit -- and its path is returned."""
+    left = []
+    for item, path in landed:
+        current = _read_bytes(path)
+        if current is None and not item.get("replaces"):
+            continue
+        if current is None or _sha(current) != _sha(item["data"]):
+            left.append(item["path"])
+        elif item.get("replaces"):
+            atomic_write(path, item["original"], _mode_of(path))
+        else:
+            _remove(path)
+    return left
+
+
+def _manifest_target(write):
+    """A created file is `existed: False`; the one file apply replaces
+    (a pre-0.20 config.json) is `existed: True` with its original's hash."""
+    if write.get("replaces"):
+        return {"path": write["path"], "existed": True, "sha256": _sha(write["data"]),
+                "originalSha256": write["pre_sha256"]}
+    return {"path": write["path"], "existed": False, "sha256": _sha(write["data"])}
 
 
 def _check_pre_state(root, item):
@@ -693,6 +853,14 @@ def _check_pre_state(root, item):
     if now != item.get("pre_sha256"):
         raise MigrateError(f"{item['path']} changed since the plan was built; not "
                            "overwritten, and this apply is undone")
+
+
+def _mode_of(path):
+    """The permission bits of `path`, or None when it cannot be read."""
+    try:
+        return stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        return None
 
 
 def _remove(path):
@@ -710,6 +878,15 @@ def _prune_dirs(root, rels):
             pass
 
 
+def _existed_ok(rel, target):
+    """config.json is the one target apply replaces: it must say `existed`
+    and carry its original's hash. Every other target must not, or rollback
+    would restore bytes over a file it should remove -- or remove a config."""
+    if rel == CONFIG_REL:
+        return target.get("existed") is True and isinstance(target.get("originalSha256"), str)
+    return target.get("existed", False) is False
+
+
 def _manifest_entries(root, manifest):
     """([(target, abs path)], [dir rel]) from a manifest, or MigrateError
     before anything is removed. A target must be a path apply writes, resolve
@@ -722,7 +899,8 @@ def _manifest_entries(root, manifest):
     for target in targets:
         rel = target.get("path") if isinstance(target, dict) else None
         if (not isinstance(rel, str) or not _TARGET_RE.match(rel)
-                or not isinstance(target.get("sha256"), str)):
+                or not isinstance(target.get("sha256"), str)
+                or not _existed_ok(rel, target)):
             raise MigrateError(f"manifest names {rel!r}, which migrate never writes; "
                                "refusing the whole rollback")
         out.append((target, contained(root, rel)))
@@ -758,26 +936,51 @@ def rollback(root, backup):
     if manifest.get("state") == "rolled-back":
         return []
     targets, dirs = _manifest_entries(root, manifest)
+    originals = _backed_up_originals(backup, targets)
     edited = []
     for target, path in targets:
         current = _read_bytes(path)
-        if current is not None and _sha(current) != target["sha256"]:
+        if target.get("existed"):
+            if current is None or _sha(current) not in (target["sha256"],
+                                                        target["originalSha256"]):
+                edited.append(target["path"])
+        elif current is not None and _sha(current) != target["sha256"]:
             edited.append(target["path"])
     if edited:
-        raise MigrateError("edited since apply, not removed; resolve by hand:\n  "
+        raise MigrateError("edited since apply, not removed or restored; resolve by hand:\n  "
                            + "\n  ".join(edited))
     removed = []
     for target, path in targets:
         staged = _read_bytes(path + TMP_SUFFIX)
         if staged is not None and _sha(staged) == target["sha256"]:
             os.remove(path + TMP_SUFFIX)
-        if os.path.exists(path):
+        if target.get("existed"):
+            if _sha(_read_bytes(path)) == target["sha256"]:
+                atomic_write(path, originals[target["path"]], _mode_of(path))
+                removed.append(("restored", target["path"]))
+        elif os.path.exists(path):
             os.remove(path)
-            removed.append(target["path"])
+            removed.append(("removed", target["path"]))
     _prune_dirs(root, dirs)
     manifest["state"] = "rolled-back"
     atomic_write(_manifest_path(backup), _json_bytes(manifest))
     return removed
+
+
+def _backed_up_originals(backup, targets):
+    """{rel: original bytes} for each replaced target, read from the backup
+    and checked against the manifest's `originalSha256` before anything
+    changes -- a forged or damaged backup is never written over a config."""
+    originals = {}
+    for target, _path in targets:
+        if not target.get("existed"):
+            continue
+        data = _read_bytes(os.path.join(backup, "sources", *target["path"].split("/")))
+        if data is None or _sha(data) != target["originalSha256"]:
+            raise MigrateError(f"{target['path']}: the backed-up original does not match "
+                               "the manifest's originalSha256; refusing the whole rollback")
+        originals[target["path"]] = data
+    return originals
 
 
 # ---------------------------------------------------------------- main
@@ -793,10 +996,11 @@ def main(argv=None):
     root = os.path.abspath(args.root)
     try:
         if args.rollback:
-            removed = rollback(root, args.rollback)
+            done = rollback(root, args.rollback)
+            removed = [rel for verb, rel in done if verb == "removed"]
             print(f"crew migrate rollback: removed {len(removed)} file(s) apply created")
-            for rel in removed:
-                print(f"  removed  {rel}")
+            for verb, rel in done:
+                print(f"  {verb}  {rel}")
             return 0
         plan = build_plan(root)
         if not args.apply:

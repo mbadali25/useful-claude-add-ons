@@ -1476,6 +1476,21 @@ Obsidian vault). A CLI the commands call, not a hook.
   refused with nothing written (`move`, `:1481`). `STATUS_ORDER` (`:91`) is
   read by `_backwards` (`:654`): a move backwards, or from a status crew does
   not know, is `could not update` unless `--reopen`.
+- DERIVED (L-0530; measured on this tree, anchors not moved): a word outside
+  the table is named, never mapped. `RETIRED_STATUSES`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:119`: approved -> spec,
+  merged -> done, closed -> done, new -> direction, parked -> needs-owner)
+  feeds `_crew_word_hint` (`plugin/crew/hooks/scripts/crew_tracker.py:133`),
+  a text-only `; the crew word is <w>` appended to `move`'s `maps to no lane`
+  refusal (`plugin/crew/hooks/scripts/crew_tracker.py:1604`) and to
+  `_backwards`' unknown-current refusal. `_obsidian_read`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:1534`) reports an INDEX status
+  outside `LANE_FOR_STATUS` as `disagree: "could not tell"` with the note
+  `INDEX status <s> is not a status crew knows (<KNOWN_STATUSES>)`, and a
+  missing INDEX status as `could not tell` too; only a known status can
+  disagree. JUDGEMENT: `land-blocked` has no row on purpose (no owner
+  decision maps it); `test_status_vocabulary.py` holds the table disjoint
+  from `LANE_FOR_STATUS`.
 - DERIVED (T-0037; measured on this tree, anchors not moved):
   the ticket status vocabulary's one owner is this table. `OWNER_STATUSES`
   (`plugin/crew/hooks/scripts/crew_tracker.py:101`, `needs-owner`: open,
@@ -1517,7 +1532,12 @@ Obsidian vault). A CLI the commands call, not a hook.
   (`:632`) refuses `|` and every break `str.splitlines` honours. Obsidian =
   files + the board (`_obsidian_create` `:1343`, `_obsidian_move` `:1388`,
   `_obsidian_read` `:1427`); a move whose INDEX half refuses writes no board
-  (`:1422`), as a create whose INDEX half refuses writes no card (`:1376`).
+  (`:1422`), and a move's board half re-reads INDEX inside the board's
+  atomic update and places the card in the lane for the status INDEX holds
+  then (T-0071 #3, `_obsidian_move` `edit`), refusing with `could not tell
+  where INDEX has` when the row is gone or unknown, and reads INDEX again
+  after the write, placing the card again while INDEX moved on
+  (`_board_following_index`, at most `WRITE_TRIES`), as a create whose INDEX half refuses writes no card (`:1376`).
   Jira/SDP answer `delegated` with `<sync> <KEY> --push --to <status>` at
   `_PUSH_AT` (`:115`: `in-progress`, `done`) and `nothing to push` otherwise
   (`_push` `:1457`, `_delegated` `:1452`); CLI exit codes 0/1/3/2
@@ -1570,17 +1590,24 @@ Obsidian vault). A CLI the commands call, not a hook.
   "could not tell", naming the directory. `_pinned_check` gains it through its re-walk;
   its own held comparison is kept as defence in depth.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
-  `repo-id:` (`_NOTE_REPO_ID` `:1279`, trailing `\r` excluded so a CRLF note
-  reads as written; `_card_owner` `:1283` -> ours / foreign / unknown). The id
-  is `repo_id` (`:594`): the origin URL through `normal_url` (`:555`,
-  lowercased, `.git` stripped; an ssh origin - scp-style or a scheme in
-  `_SSH_SCHEMES` `:552` - keeps its username and drops a password, every other
-  scheme drops the whole userinfo); for a local origin (`_local_path` `:577`,
-  a `file://` path percent-decoded as git decodes it), an absolute path's
+  `repo-id:` (`_NOTE_REPO_ID` `:1403`, trailing `\r` excluded so a CRLF note
+  reads as written, a quote stripped only as a matched pair, T-0071 #4;
+  `_card_owner` `:1407` -> ours / foreign / unknown). The id
+  is `repo_id` (`:643`): the origin URL through `normal_url` (`:570`,
+  scheme and host with port case-folded, user and path kept as written
+  (T-0071 #1), `.git` stripped; an ssh origin - scp-style or a scheme in
+  `_SSH_SCHEMES` `:567` - keeps its username and drops a password, every other
+  scheme drops the whole userinfo); for a local origin (`_local_path` `:603`,
+  a `file://` path through the pure `_file_url_path(url, windows)` `:621`:
+  the authority dropped on POSIX, an empty or `localhost` one and the `/`
+  before a drive letter dropped on Windows, then percent-decoded as git
+  decodes it), an absolute path's
   realpath, and for a relative one - `../origin/app.git` names a different
   repository from each checkout - the git common dir's realpath, as with no
   origin; `None` (git could not say) refuses via `_no_identity` (`:1312`).
-  `_foreign` (`:1302`) refuses create, move and read; unknown refuses create
+  `_foreign` (`:1426`) refuses create, move and read, and names the
+  `repo-id:` line to write when the note's id is this repo's case-folded
+  (an older crew's lowercased id, never accepted); unknown refuses create
   and move with the `repo-id:` fix (`_unclaimed` `:1307`) and is a caveat on
   read. There is no claim by title: a card's text matching this repo's INDEX
   title is not an owner. `repo_name` (`:620`) is a human label only.
@@ -1588,14 +1615,17 @@ Obsidian vault). A CLI the commands call, not a hook.
   on LF alone by `_board_lines` `:761`; the done lane must carry exactly one
   `**Complete**`, `_complete_markers` `:841`), `find_card` (`:865`; a card is
   the first id on its first line), `move_card` (`:926`; a card already in its
-  lane is repaired in place by `_checkbox` `:913`, which also gives a card
-  with no box one (`_BOX` `:910`), and one above `**Complete**` in Done is
+  lane is repaired in place by `_checkbox` `:971`, which also gives a card
+  with no box one (`_BOX` `:967`, a marker only when a space, tab or line end
+  follows; a glued `- [ ]T-0042` is repaired, T-0071 #6), and one above `**Complete**` in Done is
   moved below it), `add_card` (`:953`), written by `_board_write` (`:1208`).
   The ticket note (`_note_text` `:1227`) is an exclusive create
   (`_create_note_once` `:1236`, `_NOTE_FLAGS` `:292`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:61`,
-  `implement.md:33` and `:113`, `done.md:82` and `fix.md:27`, `:73`, `:81`,
-  `:90`, `:92` (all under `plugin/crew/commands/`); brainstorm and fix take
+  `implement.md:33` and `:113`, `done.md:82` and `fix.md:27` (`resolve`, T-0071 #5), `:30`, `:79`,
+  `:87`, `:96`, `:98` (all under `plugin/crew/commands/`); fix, like
+  brainstorm, resolves the tracker kind first and under Jira or SDP creates
+  through MCP and uses its key; brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
@@ -1799,6 +1829,30 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   budget beside rules 0 and 16 (the `**/*.py` rule, 38s; both `why` texts still call it 15), and rule 26 (58s) is deferred at Stop on a
   hook-script edit (its `why` says so first). Confirmed
   present, **not run and not read** by this note.
+
+**The secrets-denylist gate on the graph (T-0064, crew 1.0.237).** DERIVED at `687759ce`
+(T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167); line citations re-measured at the 1.2.0 port. `_graph`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1388`) calls `_graph_ignore_refusal` (`:1366`,
+called at `:1396`) after its "no code changed" return and before the graphify-missing check.
+While `crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore`
+does not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
+graphify command is run and autopilot's `_settles` stops on it unchanged. The checker is
+`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:145`), `translate_rule`
+for `Read(...)` deny rules (`:207`), `denylist` (`:272`), `candidates` (`:299`, `git ls-files
+--cached --others`, no `--exclude-standard`), `_judge` (`:343`; an unexcluded `sub/` is
+unknown, a symlink is judged by its target too, and a denylisted file a `.gitignore` `!` line
+re-includes is uncovered: `_reopened`, `:366`), `_ignored` (`:383`, git's own `check-ignore
+--no-index` in a scratch repository with the user's global excludes disabled), `coverage`
+(`:436`), `write` (`:535`, temp file then `os.replace`; a literal only for a `_plain`
+(`:467`) path, never over a `!` line `_reincluded` (`:487`) finds) and `main` (`:624`). `crew_status.py`
+prints the same answer as its `graph-ignore` line (`_graph_ignore_line`,
+`plugin/crew/hooks/scripts/crew_status.py:237`, appended at `:324`). Tests:
+`plugin/crew/tests/test_graph_ignore.py`, `plugin/crew/tests/test_graph_ignore_graphify.py` (real
+graphify; skips without it), and new cases in `test_refresh_check.py` and `test_status.py`. The
+last `.crew/verify.json` rule maps them. Its mutations were run by hand; they join
+`plugin/crew/tests/sabotage_refresh.py` in a harness-only change, because `sabotage*.py` is in
+`HARNESS` (`scripts/check-tooling-pr.py`). JUDGEMENT: graphify's post-commit hook still builds
+without the check; `/crew:status`'s line is the only warning on that path.
 
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
@@ -2180,6 +2234,49 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   writes a temp beside it, re-compares, `os.replace`, then re-classifies.
 - JUDGEMENT: no state file is the design; a re-run is a no-op because converted rows are
   pointers on the next read. Nothing calls either subcommand but the `crew-memory` skill.
+## `.gitignore` kept right for the languages in the repo (T-0039)
+
+Derived at `13a019e7` (T-0039 review round 1), citations re-measured after the port's review rounds, not at this map's `anchor:`; the anchor above was
+not moved because the rest of this map was not re-checked against main's later changes.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_gitignore.py` is standard library only, three subcommands (`main`, `plugin/crew/hooks/scripts/crew_gitignore.py:748`; `_run`
+  `:774`): `check` (read-only report), `apply` (the only writer) and `summary` (one line). Exit codes
+  0/1/2/3/4/5 = current / pending / usage / owner / unknown / refused (`plugin/crew/hooks/scripts/crew_gitignore.py:93`). `main` turns any
+  unexpected exception into `unknown ...` exit 4, never 1, and sets stdout/stderr to
+  `errors="replace"` so an unencodable tracked path cannot crash the report.
+- DERIVED: evidence is `git ls-files --cached --others --exclude-standard` (`list_files`, `plugin/crew/hooks/scripts/crew_gitignore.py:265`),
+  so an ignored file is never evidence; `detect` (`plugin/crew/hooks/scripts/crew_gitignore.py:279`) matches each `LANGUAGES` row's
+  extensions and manifest basenames (`plugin/crew/hooks/scripts/crew_gitignore.py:110`). A row whose pattern holds `{dir}` is anchored once
+  per manifest directory; every other row emits one pattern probed in each evidence directory,
+  uncapped (`candidates`, `plugin/crew/hooks/scripts/crew_gitignore.py:305`). `NOISE` (`plugin/crew/hooks/scripts/crew_gitignore.py:177`) and `SECRETS`
+  (`plugin/crew/hooks/scripts/crew_gitignore.py:189`; the `.env.*` row re-includes `.env.example`, `.sample`, `.template`, `.dist`,
+  `.defaults`) are always candidates. The github/gitignore sha is `PROVENANCE` (`plugin/crew/hooks/scripts/crew_gitignore.py:95`), also
+  in `plugin/crew/NOTICE.md`.
+- DERIVED: "covered" is `git check-ignore --no-index --stdin` under a throwaway bare GIT_DIR with
+  `core.excludesFile` at the null device (`_covered`, `plugin/crew/hooks/scripts/crew_gitignore.py:490-498`): only the working tree's
+  ignore files count. Status 0/1 only; anything else raises `Unknown` (`_git`, `plugin/crew/hooks/scripts/crew_gitignore.py:229`), and an
+  OSError reading any ignore file is `Unknown` too (`_read_bytes`, `plugin/crew/hooks/scripts/crew_gitignore.py:350`). Tracked matches are
+  `ls-files --cached --ignored --exclude-from=<row>` (`_tracked`, `plugin/crew/hooks/scripts/crew_gitignore.py:501`); a SECRETS match, or a
+  Terraform state row's (`secret`), is `needs-owner`.
+- DERIVED: `measure` (`plugin/crew/hooks/scripts/crew_gitignore.py:512`) classes each candidate `covered`, `overridden` (`plugin/crew/hooks/scripts/crew_gitignore.py:534`),
+  `conflict` (`_negations` `plugin/crew/hooks/scripts/crew_gitignore.py:410`, `_conflict` `plugin/crew/hooks/scripts/crew_gitignore.py:448`) or `missing`. Lines are split on LF
+  only, as git does (`_keep_lines` `plugin/crew/hooks/scripts/crew_gitignore.py:339`, `_lines` `plugin/crew/hooks/scripts/crew_gitignore.py:345`), so `block_span` (`plugin/crew/hooks/scripts/crew_gitignore.py:382`) and
+  the `where` a finding names agree with git.
+- DERIVED: `apply` (`plugin/crew/hooks/scripts/crew_gitignore.py:690`) refuses (exit 5) a non-regular `.gitignore`, the opt-out line, and an
+  active ticket whose Touch lacks `.gitignore` or a broken pointer (`_ticket_refusal`, `plugin/crew/hooks/scripts/crew_gitignore.py:662`).
+  `render` (`_render_impl`, `plugin/crew/hooks/scripts/crew_gitignore.py:636`) is pure and puts the block at the top on first write;
+  `_forbidden` (`plugin/crew/hooks/scripts/crew_gitignore.py:213`) drops a `.crew`/`.work` pattern; `_write_atomic` (`plugin/crew/hooks/scripts/crew_gitignore.py:677`) writes a temp
+  file and `os.replace`s it; `read_gitignore` (`plugin/crew/hooks/scripts/crew_gitignore.py:357`) keeps CRLF and a BOM.
+- DERIVED: `/crew:status` prints `gitignore <summary>` after the codemap line
+  (`plugin/crew/hooks/scripts/crew_status.py:226`, appended at `:323`); an import failure still prints
+  the line as unknown. Callers in prose: crew-setup `phases.md` Phase 1, `onboard.md` item 6 and
+  `--refresh`, `plugin/crew/commands/implement.md:105-106` (`check`). Tests:
+  `plugin/crew/tests/test_crew_gitignore.py` and `test_status_gitignore_line_*` in
+  `plugin/crew/tests/test_status.py`, under the last rule of `.crew/verify.json`.
+- JUDGEMENT: `.gitignore` is deliberately not a refresh artifact (`crew_refresh_check.REFRESH_ARTIFACT_PATHS`):
+  an ignore line written inside a ticket without Touch could hide its own files from the completion
+  audit. Known limit: a committed test-fixture key is still `needs-owner`. The sabotage mutations are
+  hand-run (listed in the verify rule's `why`); registering them is a harness PR (TODO.md).
 
 ## Entry points
 
@@ -2289,9 +2386,14 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   fresh subshell + temp file (see above) rather than a direct pipe.
 - `role-write-guard.sh`/`.ps1` -> `role_write_guard.py`, piped the raw hook
   JSON on stdin, judged, and exited 0 or 2 only.
-- `crew_migrate.py` -> both `.crew/config.json` (read) and `.crew/crew.json`
-  (write, `--apply` only), with `--rollback` restoring a backup
-  byte-identical (module docstring, **not read further**).
+- `crew_migrate.py` -> both `.crew/config.json` (read; rewritten in place
+  only for a pre-0.20 config - no `schema`, or 1-6 - by the upgrade stage,
+  `plugin/crew/hooks/scripts/crew_migrate.py` `_load_legacy`/`_plan_upgrade`,
+  which calls `crew_upgrade.upgrade_config`) and `.crew/crew.json` (write,
+  `--apply` only), with `--rollback` removing what apply created and
+  restoring `config.json` byte-identical from the backup
+  (`plugin/crew/hooks/scripts/crew_migrate.py` `rollback`/`_backed_up_originals`).
+  DERIVED (T-0038).
 
 ## Unverified at this anchor
 

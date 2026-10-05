@@ -19,7 +19,7 @@ can write to. Every step says how to check that it worked before you move on.
 | 1 | Install Claude Code and the marketplace | `claude --version` prints a version | 3 |
 | 2 | Install the `crew` plugin | `/crew:status` answers | 1 |
 | 3 | Set up the repository with `/crew:init` | `/crew:status` shows a `config` line | 3 |
-| 4 | Existing 0.20 repos only: `/crew:migrate` | `/crew:status` shows `crew.json schema 1` | 1 |
+| 4 | Existing 0.20 or older repos: `/crew:migrate` | `/crew:status` shows `crew.json schema 1` | 1 |
 | 5 | First ticket | a ticket directory under `.work/tickets/` | 2 |
 
 ## 1. Install Claude Code and the marketplace
@@ -80,14 +80,17 @@ Init is phased and resumable: it detects the platform, writes the config, and
 asks before each change. Stop after the config phase if you are short on time;
 `/crew:init` picks up where it left off.
 
-Check: `/crew:status` now shows a `config` line naming a schema.
+Check: `/crew:status` now shows a `config` line naming a schema, and a
+`gitignore current` line: init added the ignore patterns for the languages it
+found, inside one `# crew:gitignore:managed` block at the top of `.gitignore`,
+without touching your own lines.
 
 Today `/crew:init` still writes the 0.20 `.crew/config.json`. Run step 4
 straight after it until init writes `.crew/crew.json` itself.
 
 ## 4. Existing repositories: migrate once
 
-If the repository already used crew 0.20, or you just ran `/crew:init`:
+If the repository already used crew 0.20 or earlier (an older config is upgraded in the same run), or you just ran `/crew:init`:
 
 ```text
 /crew:migrate
