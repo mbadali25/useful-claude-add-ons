@@ -848,7 +848,7 @@ def _split_url(url):
     if found:
         scheme, authority, path = found.groups()
         host, port = re.match(r"^(.*?)(?::([0-9]*))?$", authority.rpartition("@")[2]).groups()
-        port = str(int(port)) if port else ""
+        port = (port.lstrip("0") or "0") if port else ""  # no int(): a 5,000-digit port must not raise
         if host and port and port != _DEFAULT_PORTS.get(scheme.lower()):
             host = f"{host}:{port}"
     else:
@@ -965,7 +965,10 @@ def owner_name(url):
                           "is not percent-encoded UTF-8")
         parts = [_key_part(p) for p in ["dev.azure.com"] + names]
     elif host:
-        name = host.partition(":")[0]  # a non-default port, kept by _split_url
+        name, _, port = host.partition(":")  # a non-default port, kept by _split_url
+        if port and not (len(port) <= 5 and 1 <= int(port) <= 65535):
+            return None, (f"origin's URL has the shape {_url_shape(name, segments)}, and its port is not a "
+                          "TCP port (1-65535)")
         if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in [name] + segments):
             return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a part of it is not "
                           "letters, digits, '.', '_', '-' (at most 64)")
