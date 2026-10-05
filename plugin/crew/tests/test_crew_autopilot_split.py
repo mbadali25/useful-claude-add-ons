@@ -641,3 +641,13 @@ def test_metrics_with_a_malformed_review_row_is_not_absent(tmp_path):
         "2026-01-01 | T-9 | codex | many | some\n", encoding="utf-8")
 
     assert "findings-rate" not in crew_split.absent_sources(str(root))
+
+
+def test_metrics_with_a_short_review_row_is_not_absent(tmp_path):
+    """T-0058 port review r4 BLOCK: a row missing a cell is malformed too."""
+    root = _repo(tmp_path)
+    (root / ".crew" / "metrics.md").write_text(
+        "date | ticket | reviewer | BLOCK | FIX\n2026-01-01 | T-9 | codex | 0\n",
+        encoding="utf-8")
+
+    assert "findings-rate" not in crew_split.absent_sources(str(root))

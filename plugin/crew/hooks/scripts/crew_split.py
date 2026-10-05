@@ -331,18 +331,22 @@ def absent_sources(top):
 
 
 def _row_like(path):
-    """True when metrics.md holds a line shaped like a review row (five or more
-    `|` cells, not the header, not a `---` separator): read_metrics skips one
-    whose counts do not parse, so `tickets: 0` beside it is a malformed
-    source -- unknown -- never "no review recorded"."""
+    """True when metrics.md holds a table line that is not the header or a
+    `---` separator: read_metrics skips a row with too few cells or counts
+    that do not parse, so `tickets: 0` beside one is a malformed source --
+    unknown -- never "no review recorded"."""
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             lines = handle.read().splitlines()
     except OSError:
         return True
     for line in lines:
+        if "|" not in line:
+            continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 5 or cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
+        # Any table line but the header and a `---` separator: a row with too
+        # few cells is as malformed as one whose counts do not parse.
+        if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
             continue
         return True
     return False
