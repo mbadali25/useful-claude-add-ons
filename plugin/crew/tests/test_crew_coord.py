@@ -1919,15 +1919,58 @@ def test_heartbeat_loop_exits_when_the_watched_pid_is_reused(capsys, monkeypatch
 
 # --- Step 7 successor: review round 3 (T-0030-coord--fBUyjd) --------------------
 
+# Owner decision (rush g0): a provably gone holder is adopted at once, fresh heartbeat or not;
+# an end that cannot be proven waits for the TTL and, past it, is still only presented.
+
 @pytest.mark.parametrize("minutes", [0, 29], ids=["0m", "29m"])
-def test_recover_refuses_a_fresh_heartbeat_whose_pid_reads_gone(capsys, monkeypatch, wt, remote, minutes):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), fresh=True)
+def test_recover_adopts_a_fresh_heartbeat_whose_pid_is_provably_gone(capsys, monkeypatch, wt, remote, minutes):
+    old_pid = _dead_pid()
+    _claim_as_old(capsys, monkeypatch, wt, old_pid, fresh=True)  # this namespace recorded: provable
     _shift_clock(monkeypatch, minutes)
-    monkeypatch.setattr(crew_coord, "probe_holder", lambda _holder: crew_coord.PidProbe("gone", None, True))
+
+    code, out = _run(capsys, wt, "recover")
+
+    assert code == 0, out
+    assert (_claim_file(remote)["holder"]["session"], _log(remote)[-1]["detail"]) == (
+        "sess-new", f"adopted from sess-old (pid {old_pid} gone)")
+
+
+_UNPROVABLE = {
+    "sandbox": dict(pidns=None),  # pid invisible at claim time: no namespace recorded
+    "other-namespace": dict(pidns="pid:[1]"),
+    "other-host": dict(machine="other-host"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_UNPROVABLE))
+def test_recover_never_adopts_a_fresh_claim_whose_end_cannot_be_proven(capsys, monkeypatch, wt, remote, case):
+    if case != "other-host":
+        _linux_only()
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), fresh=True, **_UNPROVABLE[case])
+
+    code, out = _run(capsys, wt, "recover")
+
+    _assert_presented_not_adopted(code, out, remote, "another machine" if case == "other-host" else "cannot tell")
+
+
+@pytest.mark.parametrize("probe", [crew_coord.PidProbe("unknown", None, False),
+                                   crew_coord.PidProbe("gone", None, False)], ids=["probe-error", "unmeasured"])
+def test_recover_never_adopts_a_fresh_claim_when_the_probe_cannot_tell(capsys, monkeypatch, wt, remote, probe):
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), fresh=True)
+    monkeypatch.setattr(crew_coord, "probe_holder", lambda _holder: probe)
 
     code, out = _run(capsys, wt, "recover")
 
     _assert_presented_not_adopted(code, out, remote, "heartbeat is fresh")
+
+
+@pytest.mark.parametrize("start", ["1", None], ids=["reused-pid", "no-start-time"])
+def test_recover_never_adopts_a_fresh_claim_whose_pid_is_alive(capsys, monkeypatch, wt, remote, live_pid, start):
+    _claim_as_old(capsys, monkeypatch, wt, live_pid, start=start, fresh=True)
+
+    code, out = _run(capsys, wt, "recover")
+
+    _assert_presented_not_adopted(code, out, remote, "different start time" if start else "is alive")
 
 
 def test_recover_adopts_a_stale_heartbeat_whose_pid_is_gone(capsys, monkeypatch, wt, remote):

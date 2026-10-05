@@ -1266,10 +1266,14 @@ def _refuse_held(key, claim, ttl):
 
 def assess_recovery(claim, key, top, me, ttl):
     """(adoptable, reason). Every check must pass; the first failure is the
-    reason. The deciding signal is the heartbeat: a live holder's loop keeps
-    heartbeat_at fresh, so a claim is adoptable only once it is older than the
-    TTL. The pid check can then only refuse -- whether a process is alive
-    cannot be told reliably from inside a sandbox."""
+    reason. Owner decision (rush g0), the spec's must-allow case: a holder whose
+    process is PROVABLY gone -- probe_holder reads `gone`, measured, which on
+    Linux needs the PID namespace recorded at claim time to be this one -- is
+    adopted at once, heartbeat fresh or not. Where its end cannot be proven (a
+    sandbox's namespace, a probe error, no recorded namespace) the heartbeat
+    decides how long to wait, and even past the TTL nothing unproven is adopted:
+    it is presented. A pid alive, or reused with another start time, is refused
+    (the spec's must-block list)."""
     old = claim["holder"]
     if me is None:
         return False, "cannot tell who this session is (CLAUDE_CODE_SESSION_ID absent)"
@@ -1286,20 +1290,21 @@ def assess_recovery(claim, key, top, me, ttl):
     named = entry and any(t["ticket"] == key and t["holder"] == old for t in entry["tickets"])
     if not named:
         return False, "the local identity file does not name this claim's holder"
-    if not is_stale(claim, ttl):
-        return False, (f"its heartbeat is fresh ({age_text(heartbeat_age(claim))} ago; the TTL is {ttl:g} minutes), "
-                       "so the old session may still be running, whatever its pid reads")
     probe = probe_holder(old)
     pid = old.get("pid")
+    if probe.state == "gone" and probe.measured:
+        return True, f"pid {pid} gone"
     if probe.state == "alive" and old.get("pid_start") and probe.start and probe.start != old["pid_start"]:
         return False, (f"pid {pid} is now a different process (different start time); the old session's "
                        "end is not proven")
     if probe.state == "alive":
         return False, f"pid {pid} is alive, so the old session may still be running"
-    if probe.state != "gone" or not probe.measured:
-        return False, (f"the PID check cannot tell whether pid {pid} is gone (another PID namespace, or a "
-                       "platform whose check was not measured)")
-    return True, f"pid {pid} gone"
+    if not is_stale(claim, ttl):
+        return False, (f"its heartbeat is fresh ({age_text(heartbeat_age(claim))} ago; the TTL is {ttl:g} minutes) "
+                       f"and the PID check cannot tell whether pid {pid} is gone, so the old session may still "
+                       "be running")
+    return False, (f"the PID check cannot tell whether pid {pid} is gone (another PID namespace, or a "
+                   "platform whose check was not measured)")
 
 
 def _presented(chan, claim, key, top, me, ttl):
@@ -1312,8 +1317,8 @@ def _presented(chan, claim, key, top, me, ttl):
     else:
         head = f"yours from a previous session - needs the owner: {reason}"
         if "may still be running" in reason:
-            action = ("let the old session finish or release it; if it has ended, run recover again once its "
-                      "heartbeat is older than the TTL")
+            action = ("let the old session finish or release it; if it has ended, run status again once its "
+                      "heartbeat is older than the TTL - an end that cannot be proven then goes to the owner")
         else:
             action = (f"the owner runs crew_coord.py release --break --by <name> {flags} from a terminal "
                       "outside Claude Code, once the old session is confirmed gone")

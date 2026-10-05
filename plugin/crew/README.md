@@ -2535,13 +2535,12 @@ two holders.
   recommended action. `recover` adopts one only when all of these hold: the
   claim's machine is this host, its worktree is this worktree, the local
   identity file (`<git-common-dir>/crew/coord-identity.json`, written by the
-  script) names the claim's holder, **the claim's heartbeat is older than the
-  TTL**, and the holder's `CLAUDE_PID` is provably gone. The heartbeat is the
-  deciding signal: whether a process is alive cannot be told reliably from
-  inside a sandbox, but a live holder's heartbeat keeps its claim fresh, so a
-  fresh heartbeat reads `needs the owner` whatever the pid says, and the pid
-  check can only refuse. Anything else — another machine, a fresh heartbeat,
-  a live pid, a pid reused with a different start time, a missing or corrupt
+  script) names the claim's holder, and the holder's `CLAUDE_PID` is
+  **provably gone** — then at once, however fresh its heartbeat (owner
+  decision, rush g0). Where the end cannot be proven (a sandbox's namespace,
+  a probe error, macOS), a fresh heartbeat says to wait for the TTL, and past
+  it the claim is still only presented. Anything else — another machine, a
+  live pid, a pid reused with a different start time, a missing or corrupt
   identity file, a check that cannot tell — reads `needs the owner: <reason>`
   and is never adopted. A pid check that cannot tell reads **alive**. On
   Linux a pid reads gone only from the **PID namespace** the claim recorded
