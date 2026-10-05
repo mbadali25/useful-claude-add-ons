@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T14:39Z
+Last updated: 2026-10-05T14:47Z
 
 ## >>> RESUME HERE
 
@@ -93,6 +93,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T14:47Z Owner: gpt-5.6-sol allowed as review fallback. codex-review.sh: gpt-6-sol x3 then gpt-5.6-sol x3 on capacity; the model used is printed and logged.
 - 2026-10-05T14:39Z Owner accepted recommendations 1-7 (H3 may land before H1; <=8 agents; land-when-ready; 6-round cap; close source PRs at main; G6 sleep tickets slip if G2 is last; keep gpt-6-sol).
 - 2026-10-05T13:36Z L-0639 r7 on 08677b9: fix confirmed correct; only BLOCK is the version bump (set at landing) -> treated as CLEAN. G3 (L-0639, L-0640) ready to land after G1; its T-0030-blocked tickets (#408, #410, #412) become a later G3c after G0.
 - 2026-10-05T13:35Z G1 built (T-0071, L-0604, T-0039, T-0064, T-0038; T-0081 superseded by #513). LANDING.md procedure written; lander agent landing G1 into release as crew 1.1.2. C-0025 (G1 sabotage -> H2), C-0026 (/crew:upgrade stub).
