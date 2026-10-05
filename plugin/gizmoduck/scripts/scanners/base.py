@@ -59,20 +59,38 @@ def tool_home():
         return None
 
 
-def _is_executable(path):
+def _windows():
+    """Kept in one place so a test can ask for Windows lookup rules without
+    patching os.name, which the rest of the process also reads."""
+    return os.name == "nt"
+
+
+def is_executable(path):
+    """A file this process may run: a file with the execute bit off Windows,
+    any file on Windows (where os.access X_OK is true for every file)."""
     try:
-        return path.is_file() and os.access(path, os.X_OK)
+        return Path(path).is_file() and (_windows() or os.access(path, os.X_OK))
     except OSError:
         return False
+
+
+def _names(binary):
+    """`binary`, and on Windows each PATHEXT extension of it when it has none,
+    as shutil.which tries them: `dependency-check` is `dependency-check.bat`."""
+    if not _windows() or Path(binary).suffix:
+        return [binary]
+    exts = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(os.pathsep)
+    return [binary] + [binary + ext.lower() for ext in exts if ext]
 
 
 def which(binary):
     """<tool home>/bin/<binary> when it is an executable file, else PATH."""
     home = tool_home()
     if home is not None:
-        candidate = home / "bin" / binary
-        if _is_executable(candidate):
-            return str(candidate)
+        for name in _names(binary):
+            candidate = home / "bin" / name
+            if is_executable(candidate):
+                return str(candidate)
     return shutil.which(binary)
 
 

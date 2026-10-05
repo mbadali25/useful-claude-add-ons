@@ -105,6 +105,40 @@ def test_which_ignores_a_non_executable_file_in_tool_home_bin(home, path_dir):
     assert Path(base.which("trivy")) == on_path
 
 
+def test_which_tries_windows_extensions_in_tool_home(home, path_dir, monkeypatch):
+    bat = _exe(home / "bin" / "dependency-check.bat")
+    monkeypatch.setattr(base, "_windows", lambda: True)
+    monkeypatch.setenv("PATHEXT", os.pathsep.join([".COM", ".EXE", ".BAT", ".CMD"]))
+    assert base.which("dependency-check") == str(bat)
+
+
+@POSIX_ONLY
+def test_zap_non_executable_wrapper_is_not_a_route(monkeypatch, tmp_path, path_dir):
+    java = _exe(path_dir / "java")
+    zdir = tmp_path / "myzap"
+    zdir.mkdir()
+    for name in ("zap.sh", "zap.bat"):
+        (zdir / name).write_text("not runnable")
+        (zdir / name).chmod(0o644)
+    jar = zdir / "zap-2.17.0.jar"
+    jar.write_text("jar")
+    monkeypatch.setenv("GIZMODUCK_ZAP_HOME", str(zdir))
+    assert zap._resolve_zap_command() == [str(java), "-jar", str(jar)]
+
+
+def test_testssl_puts_tool_home_hexdump_on_its_path(home, path_dir):
+    _exe(home / "bin" / "hexdump")
+    assert testssl._hexdump_dir() == str(home / "bin")
+    _exe(path_dir / "hexdump")
+    _exe(home / "bin" / "hexdump")
+    assert testssl._hexdump_dir() == str(home / "bin")  # tool home wins, still not on PATH
+
+
+def test_testssl_hexdump_already_on_path_needs_no_prepend(path_dir):
+    _exe(path_dir / "hexdump")
+    assert testssl._hexdump_dir() is None
+
+
 def test_override_states_unset_ok_broken(monkeypatch, tmp_path):
     monkeypatch.delenv("GIZMODUCK_X", raising=False)
     assert base.override("GIZMODUCK_X", base.existing_file).state == base.UNSET

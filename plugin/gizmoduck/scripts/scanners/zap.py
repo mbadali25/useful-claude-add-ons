@@ -76,7 +76,9 @@ def _search_zap_dir(directory):
         return None
     for name in _wrapper_names():
         for candidate in [directory / name, *sorted(directory.glob(f"*/{name}"))]:
-            if candidate.is_file():
+            # A wrapper that cannot run (no execute bit off Windows) is not a
+            # route: the jar below, or nothing, is the honest answer.
+            if base.is_executable(candidate):
                 return ("wrapper", str(candidate))
     for jar in sorted(directory.glob("**/zap-*.jar")):
         return ("jar", str(jar))

@@ -128,8 +128,13 @@ def _hexdump_dir():
     MSYS2 install already on the caller's PATH) - see the module comment on
     _MSYS2_HEXDUMP_CANDIDATES for why this is needed at all under Git Bash.
     """
-    if base.which("hexdump"):
-        return None
+    found = base.which("hexdump")
+    if found:
+        # Found in the tool home's bin, which is not on PATH: testssl.sh's own
+        # subprocess would not find it there, so that directory is prepended.
+        parent = str(Path(found).parent)
+        on_path = [os.path.normcase(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+        return None if os.path.normcase(parent) in on_path else parent
     for candidate in _MSYS2_HEXDUMP_CANDIDATES:
         if candidate and (Path(candidate) / "hexdump.exe").is_file():
             return candidate
