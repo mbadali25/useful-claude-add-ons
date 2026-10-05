@@ -70,6 +70,6 @@ read as "checked, none found" to the refresh check and to the next reader.
 The Generated header's sha is what `crew_refresh_check.py` judges the doc against: when a path it
 cites changes, `/crew:implement` step 6 prints `reference integrations: stale ... refresh with
 /crew:reference --integrations`, and `/crew:done` check 4 refuses until it is refreshed. No header or
-no citation is `unknown`. `docs/reference/` is a refresh-artifact dir, so an approved ticket may write
-it without a Touch entry. `--audit` reports calls with no entry and entries whose anchor no longer
+no citation is `unknown`. `docs/reference/integrations.md` (that one file, not the rest of
+`docs/reference/`) is a refresh artifact, so an approved ticket may write it without a Touch entry. `--audit` reports calls with no entry and entries whose anchor no longer
 holds.

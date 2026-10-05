@@ -60,6 +60,8 @@ UNDOCUMENTED = "undocumented - needs a human"
 # An `Auth:` line that names something: `Auth:` alone says nothing.
 _AUTH_RE = re.compile(r"Auth:[ \t]*\S")
 KINDS = ("integrations",)
+# An opening or closing code fence: three or more backticks or tildes.
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 # (name, pattern). Order is the report order when one line holds several.
 SECRET_PATTERNS = (
@@ -124,28 +126,33 @@ def generated_header(text):
 
 
 def _sections(lines):
-    """[(heading line number, [lines])] for each `### ` entry. A heading
-    inside a ``` or ~~~ fence is an example, not an entry or a section end,
-    and a fenced line is no part of an entry's body: an anchor or `Auth:`
-    line in an example is not evidence for the call the entry documents."""
-    found, fence = [], None
+    """[(heading line number, [lines], under a `## ` system)] for each `### `
+    entry. A heading inside a ``` or ~~~ fence is an example, not an entry or
+    a section end, and a fenced line is no part of an entry's body: an anchor
+    or `Auth:` line in an example is not evidence for the call the entry
+    documents. A fence closes only on a run of its own character at least as
+    long as the one that opened it (CommonMark), so a ```` example holding
+    ``` lines stays one example."""
+    found, fence, system = [], None, False
     for number, line in enumerate(lines, 1):
-        marker = line.lstrip()[:3]
-        if fence is None and marker in ("```", "~~~"):
-            fence = marker
+        run = _FENCE_RE.match(line)
+        if fence is None and run:
+            fence = run.group(1)
             continue
         if fence is not None:
-            if marker == fence:
+            if (run and run.group(1)[0] == fence[0] and len(run.group(1)) >= len(fence)
+                    and not line.strip()[len(run.group(1)):].strip()):
                 fence = None
             continue
         if line.startswith("### "):
-            found.append((number, []))
+            found.append((number, [], system))
         elif line.startswith("## ") or line.startswith("# "):
+            system = line.startswith("## ")
             if found and found[-1][1] is not None:
-                found.append((None, None))
+                found.append((None, None, system))
         if found and found[-1][1] is not None:
             found[-1][1].append(line)
-    return [(n, body) for n, body in found if n is not None]
+    return [(n, body, under) for n, body, under in found if n is not None]
 
 
 def _line_count(path):
@@ -206,7 +213,10 @@ def _entries(lines, shown):
         return [f"{shown}:1: no `### ` entry - a repo with no outbound calls writes no "
                 "integrations.md and says so in the report"]
     problems = []
-    for number, body in sections:
+    for number, body, under_system in sections:
+        if not under_system:
+            problems.append(f"{shown}:{number}: entry is not under a `## ` external-system "
+                            "heading")
         if not any(ANCHOR_RE.search(line) for line in body):
             problems.append(f"{shown}:{number}: entry has no `path:line` anchor")
         if not any(_AUTH_RE.match(line) for line in body):

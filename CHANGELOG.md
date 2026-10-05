@@ -178,10 +178,11 @@ sabotage registrations for this ticket's mutations in `sabotage_review.py`,
   path it cites changed: `stale` with `refresh with /crew:reference --integrations`; no header or
   no citation is `unknown` and refreshable; an unreadable doc, or one whose presence cannot be told,
   is `unknown` and a stop. `api.md`, `features.md` and `flows/` are not judged.
-  `docs/reference` joins `REFRESH_ARTIFACT_PATHS`, so an approved ticket may write it without Touch
-  (the same approval conditions as the other four dirs, pinned by the scope-guard and
-  completion-audit must-block cases, now including `docs/referenceX/a.md`), and a refresh commit
-  there stales nothing.
+  The one file `docs/reference/integrations.md` joins `REFRESH_ARTIFACT_PATHS` (matched exactly,
+  `REFRESH_ARTIFACT_FILES`), so an approved ticket may write it without Touch (the same approval
+  conditions as the four dirs, pinned by the scope-guard and completion-audit must-block cases,
+  which also refuse `docs/referenceX/a.md`, `api.md`, `flows/` and `integrations.md.bak`), and a
+  refresh commit of it stales nothing. The rest of `docs/reference/` stays judged against Touch.
 - **Split out (L-0549).** `--flows [<name>]`, the flow-doc lint and the flow parts of the docs.
   The refresh check judges no `docs/reference/flows/` doc until a command writes one.
 - **Tests and sabotage.** `plugin/crew/tests/test_reference_docs.py` (must-allow and must-block,

@@ -177,6 +177,21 @@ def test_an_anchor_or_auth_line_only_in_a_fenced_example_is_no_evidence(tmp_path
             any("no `Auth:` line" in p for p in problems)) == (True, True), problems
 
 
+def test_a_four_backtick_example_holding_a_three_backtick_line_stays_an_example(tmp_path):
+    doc = (HEADER + "\n# Integrations\n\nNo outbound calls. The format:\n\n"
+           "````markdown\n```\n## Shop\n\n" + ENTRY + "````\n")
+
+    problems = _problems(tmp_path, doc)
+
+    assert any("no `### ` entry" in p for p in problems), problems
+
+
+def test_an_entry_outside_any_system_heading_is_refused(tmp_path):
+    problems = _problems(tmp_path, _doc(system=""))
+
+    assert any("not under a `## ` external-system heading" in p for p in problems), problems
+
+
 def test_a_fence_inside_an_entry_does_not_end_it(tmp_path):
     entry = ENTRY.replace("Retries: 3", "```\n## not a section\n### not an entry\n```\nRetries: 3")
 
