@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: Terraform candidate standards and settled questions, no gated set yet. `stack-terraform` now lists three candidate Terraform standards with their sources, and settles three questions: `for_each` in `import` blocks needs Terraform 1.7.0, CMK for log groups stays a flagged candidate, and literal ARNs are banned in new code. Nothing is enforced.
 - **crew**: .NET candidate standards and defaults, no gated .NET set yet. `stack-dotnet` now lists two candidate .NET standards with their sources, plus the test-framework and `Result` defaults. None is enforced, because no rule this build could write has three reviewed change sets that count.
-- **crew**: SQL candidate standards, no gated SQL set yet. `stack-sql` now lists three candidate SQL standards with their sources. None is enforced: this build showed no SQL rule with three reviewed change sets that count, and the owner-private evidence, which may hold more, was not consulted.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

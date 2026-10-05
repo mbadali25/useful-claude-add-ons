@@ -36,11 +36,22 @@ knowing which account is targeted.
 - **An unpinned provider upgrades under you between plans**; `~>` on a major version still
   lets a minor version change behaviour. The lock file belongs in the commit.
 - **Secrets do not belong in variables with defaults, committed `.tfvars`, or outputs** -
-  `sensitive = true` hides a value from CLI output, not from the state.
+  `sensitive = true` hides a value from CLI output, not from the state. (Candidate
+  TERRAFORM-P1 in `references/candidates.md`.)
 - **`depends_on` added to fix a race usually hides a missing reference.** Implicit
   dependencies through attribute references are what let Terraform parallelise correctly.
 - **A module interface is an API.** Renaming a variable breaks every caller; adding a
   required variable breaks them at plan time. Say which callers were checked.
+
+## Standards
+
+No gated Terraform standards set ships yet (L-0536). The spec's re-count of the owner's
+repositories put no rule above two reviewed change sets, and public change sets do not
+count (owner, 2026-10-05). When a rule is earned, the set is `references/terraform.md` in
+`crew-standards`, set id `TF` (the loader takes 2-6 capitals), keeping the research number.
+The candidates, their sources and the settled questions (`for_each` in `import` needs
+1.7.0; CMK for log groups; literal ARNs) are in `references/candidates.md`. They are
+guidance, not rows of the self-check.
 
 ## Verification
 

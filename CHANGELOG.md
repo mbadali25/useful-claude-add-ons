@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: Terraform candidate standards and settled questions, no gated set yet (L-0536)
+
+- **Summary.** `stack-terraform` now lists three candidate Terraform standards with their
+  sources, and settles three questions: `for_each` in `import` blocks needs Terraform 1.7.0,
+  CMK for log groups stays a flagged candidate, and literal ARNs are banned in new code.
+  Nothing is enforced.
+- **What changed.** New `plugin/crew/skills/stack-terraform/references/candidates.md` covers
+  TERRAFORM-03 (no literal account IDs or ARNs), TERRAFORM-P1 (secrets never outputs; sensitive
+  inputs) and TERRAFORM-12 (CMK for CloudWatch log groups). Each gives its change sets, its
+  verdict and HashiCorp Source sentences, re-matched against the raw pages. The 1.7.0 floor is
+  confirmed from the raw `v1.7` CHANGELOG. `stack-terraform/SKILL.md` gains a `## Standards`
+  section. It says no set ships, and that when one is earned its id is `TF`: the loader accepts
+  2-6 capitals, so the spec's `TERRAFORM` would be refused. No set file, test, loader or gate
+  change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The spec's private re-count put no rule above two. Public change
+  sets do not count (owner decision), and the private PR review threads were not reachable. The
+  spec's check that all of TERRAFORM-01..-19 appear in the stack skill does not pass, because
+  their rule text was not available. That is a reported deviation.
+
 ### Added — crew: .NET candidate standards and defaults, no gated .NET set yet (L-0535)
 
 - **Summary.** `stack-dotnet` now lists two candidate .NET standards with their sources, plus
