@@ -46,7 +46,10 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0001 | TOP PRIORITY (owner). Owner request 2026-10-05: per-component CI skip (gizmoduck/crew/each skill/mcp run only if changed; shared paths run all) plus docs-only PRs skip Pytest, Pylint, Shell suites, MCP servers via a shared decide script (crew-windows-decide pattern, fail-closed: unknown diff runs). Marketplace, Instruction budgets, Verify gate always run. `.md` files that are prompts or are read by suites/checks are NOT docs. | builder on `C-0001-build` | CI-only PR, lands ALONE |
 
-Next free untracked ID: **C-0002** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0002 | From #496 review (NIT): on Windows, when git resolves to a `.cmd` shim, cmd.exe drops `^` from `^{commit}` / `^{tree}` peels at completion_audit.py:184, review_patch.py:282, :382, so the completion audit and the review bundle always refuse there (fail-closed). Use a peel without `^`. Harness: lands alone. | none yet | follow-up after #496 |
+| C-0003 | From #496 review (NIT, pre-existing): verify_fingerprint `_sub_changed` turns a git failure into "nothing changed" and `_head` reports a failing git as "no-head", so an unknown collapses into the safe-looking value (CLAUDE.md Lessons). test_verify_fingerprint_listings_run_the_git_which_resolves pins the empty result. Harness: lands alone. | none yet | follow-up |
+
+Next free untracked ID: **C-0004** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 

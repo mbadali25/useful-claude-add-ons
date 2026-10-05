@@ -24,7 +24,7 @@ main = 7ba4c184 (#499 L-1518 merged), crew 1.0.345.
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
 | #497 L-1512 | `L-1512-build` e8a3fb48 | re-check 0 BLOCK / 1 FIX (version 1.0.412 -> 1.0.346); Windows CI green | builder: merge main, 1.0.346, sync-updates; then land alone |
-| #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; version 1.0.413 must become main+1 | review running; lands ALONE after #497 |
+| #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; review 0 BLOCK / 2 FIX (version, sync-updates after main merge) + Summary-bullet NIT | builder waits for #497 merge, then one push at 1.0.347; lands ALONE |
 | T-0045 (was #407) | `T-0045-v2-build` (new) | owner chose FRESH BRANCH from main (batch 5 merged-then-reverted #407's old head); cp1252 + depth fixes done | builder rebuilding, closes #407 -> batch 6 |
 | Batch 6 | not started | T-0045 v2, #353 T-0011 + #366 T-0059, more | batch PR per LANDPREP (sync-updates step) |
 
@@ -45,7 +45,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:15 UTC
+Last updated: 2026-10-05 01:21 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -104,6 +104,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:30: #496 review 0 BLOCK 2 FIX (version, sync-updates). Builder holds until #497 merges, then 1.0.347 in one push. Minted C-0002 (.cmd git drops ^ peels on Windows, fail-closed) and C-0003 (verify_fingerprint unknown->nothing-changed).
 - 01:20: MERGED #499 L-1518 -> 7ba4c184. Owner: #407 -> fresh branch from main (T-0045-v2-build). #497 re-check 0/1 (version); builder fixing. #496 CI green, review started. C-0001 agent accidentally pkilled a reviewer's pytest; asked reviewer to confirm its rule 4/7 runs were complete. LANDPREP: never merge-then-revert in a batch; alone PRs = main+1 at land.
 - 00:56: L-1508 PR B #496 (harness-only, lands alone) green at 1a264e2a: 9 harness files run require_tool(git), allowlist emptied of harness, 20 new tests, 13/13 sites sabotage-red; crew 1.0.413 placeholder; ready for review
 - 00:47: #407 47061a7a: fixed 200-level nesting bound (3.11/3.12/3.13 green locally) + cp1252 stdout fix (root cause of 8588ab74 Windows reds); NOT merged with main efcf4666 (main reverted #407 in 5ee34bc0; revert-of-revert was denied, owner decision needed); CI running
