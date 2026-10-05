@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.3**: Derived `blocked` and `needs-replan`, and `next.md`. A spec can name the tickets it waits on with a `depends-on:` line, and crew can now tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan. An optional `next.md` in the ticket folder says who the ticket waits on and what happens next.
+- **crew 1.1.5**: Derived `blocked` and `needs-replan`, and `next.md`. A spec can name the tickets it waits on with a `depends-on:` line, and crew can now tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan. An optional `next.md` in the ticket folder says who the ticket waits on and what happens next.
 - **crew 1.1.2**: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself. A `.crew/config.json` with no `schema` key, or an integer 1-6, is brought to the current schema by `crew_upgrade.upgrade_config` (the code `/crew:upgrade` ran) and migrated to `.crew/crew.json` in the same run.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

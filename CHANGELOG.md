@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.1.3: derived `blocked` and `needs-replan`, and `next.md` (L-0639, L-0640)
+### Added — crew 1.1.5: derived `blocked` and `needs-replan`, and `next.md` (L-0639, L-0640)
 
 - **Summary.** A spec can name the tickets it waits on with a `depends-on:` line, and crew can now
   tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan.
