@@ -727,3 +727,55 @@ def test_the_sqlmap_wrapper_quotes_its_path(stubs):
     proc, _ = _run(stubs, script, git="ok",
                    extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1", "GIZMODUCK_OPT_DIR": str(opt)})
     assert f'exec python3 "{opt}/sqlmap/sqlmap.py" "$@"' in proc.stdout, proc.stdout + proc.stderr
+
+
+# --- C-0015.2: nikto's skip-if-present must prove nikto runs ----------------
+#
+# Measured against sullo/nikto 2.6.1 (312645d8): `nikto --version` prints
+# "Unknown option: version" plus the usage text and exits 0; `nikto -Version`
+# prints "Nikto 2.6.1 (LW 2.5)" and exits 0. So an exit code proves nothing,
+# and the probe has to read a version string out of `-Version`.
+
+_NIKTO_UNKNOWN = "echo 'Unknown option: version'; echo; echo '   Options:'; exit 0"
+_NIKTO_OK = ('if [[ "$1" == -Version ]]; then echo "Nikto 2.6.1 (LW 2.5)"; exit 0; fi\n'
+             "echo 'Unknown option: version'; exit 0")
+
+
+def _fake_nikto(stubs, body):
+    p = stubs["bin"] / "nikto"
+    p.write_text("#!/usr/bin/env bash\n" + body + "\n", newline="\n")
+    p.chmod(0o755)
+
+
+def test_nikto_that_only_prints_unknown_option_is_reinstalled(stubs):
+    # Must-block: exit 0 with no version string is not "installed".
+    _fake_nikto(stubs, _NIKTO_UNKNOWN)
+    proc, log = _run(stubs, "install_nikto; echo rc=$?")
+    assert "fails its check - reinstalling" in proc.stdout, proc.stdout + proc.stderr
+    assert "already installed" not in proc.stdout
+    assert f"sudo {_APT_OPTS} install -y nikto" in log, log
+
+
+def test_nikto_that_prints_its_version_is_skipped(stubs):
+    # Must-allow.
+    _fake_nikto(stubs, _NIKTO_OK)
+    proc, log = _run(stubs, "install_nikto; echo rc=$?")
+    assert "nikto: already installed" in proc.stdout, proc.stdout + proc.stderr
+    assert "rc=0" in proc.stdout
+    assert log == "", log
+
+
+@ps_only
+@pytest.mark.parametrize("body,expect", [
+    (_NIKTO_UNKNOWN, "RUNS=False"),
+    (_NIKTO_OK, "RUNS=True"),
+    ("echo 'Nikto 2.6.1 (LW 2.5)'; exit 1", "RUNS=False"),
+], ids=["unknown-option-rc0", "version", "version-but-rc1"])
+def test_ps1_nikto_check_reads_the_version_not_the_exit_code(stubs, body, expect):
+    perl = stubs["tmp"] / "fakeperl"
+    # The fake "perl" drops its first argument (nikto.pl) and acts as nikto.
+    perl.write_text("#!/usr/bin/env bash\nshift\n" + body + "\n", newline="\n")
+    perl.chmod(0o755)
+    ps = f"Write-Output \"RUNS=$(Test-NiktoRuns -PerlExe '{perl}' -NiktoPl 'nikto.pl')\""
+    proc, _ = _run_ps(stubs, body=ps)
+    assert expect in proc.stdout, proc.stdout + proc.stderr

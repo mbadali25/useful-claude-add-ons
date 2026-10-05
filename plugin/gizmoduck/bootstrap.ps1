@@ -364,7 +364,26 @@ function Install-Nikto {
     git clone --depth 1 https://github.com/sullo/nikto.git $dir
   }
   if ($LASTEXITCODE -ne 0) { throw "git clone/pull failed for nikto" }
-  Write-Host ">> nikto cloned to $dir - run via: perl `"$dir\program\nikto.pl`" -h <target>"
+  $niktoPl = Join-Path $dir "program\nikto.pl"
+  if (-not (Test-NiktoRuns -PerlExe "perl" -NiktoPl $niktoPl)) {
+    throw "nikto was cloned to $dir but 'perl $niktoPl -Version' printed no version - it cannot run yet (a Perl installed just now needs a new terminal: re-run bootstrap there)"
+  }
+  Write-Host ">> nikto cloned to $dir - run via: perl `"$niktoPl`" -h <target>"
+}
+
+# True only when nikto actually runs: `-Version` exits 0 AND prints a version
+# string ("Nikto 2.6.1 (LW 2.5)"). Exit 0 alone proves nothing - `--version`
+# is not a nikto option, yet it prints "Unknown option: version" and exits 0
+# (measured on nikto 2.6.1). Twin of bootstrap.sh's probe_nikto.
+function Test-NiktoRuns {
+  param([Parameter(Mandatory)][string]$PerlExe, [Parameter(Mandatory)][string]$NiktoPl)
+  if (-not (Get-Command $PerlExe -ErrorAction SilentlyContinue)) { return $false }
+  $out = & {
+    $ErrorActionPreference = "Continue"
+    & $PerlExe $NiktoPl -Version 2>&1 | ForEach-Object { "$_" }
+  }
+  if ($LASTEXITCODE -ne 0) { return $false }
+  return [bool]($out | Where-Object { $_ -match '(?i)nikto\D*\d+\.\d+' } | Select-Object -First 1)
 }
 
 function Install-Testssl {

@@ -312,8 +312,19 @@ install_nmap() {
 }
 
 install_nikto() {
-  already_installed nikto nikto && return 0
+  already_installed nikto nikto probe_nikto && return 0
   apt_install nikto
+}
+
+# `nikto --version` is not a nikto option: it prints "Unknown option: version"
+# and the usage text, and still exits 0 (measured on nikto 2.6.1), so the
+# default probe passes for any nikto that merely starts. `-Version` prints
+# "Nikto 2.6.1 (LW 2.5)", so require that version string as well as exit 0.
+# Twin of bootstrap.ps1's Test-NiktoRuns.
+probe_nikto() {
+  local out
+  out=$("$1" -Version 2>&1) || return 1
+  grep -qiE 'nikto[^0-9]*[0-9]+\.[0-9]+' <<<"$out"
 }
 
 install_testssl() {
