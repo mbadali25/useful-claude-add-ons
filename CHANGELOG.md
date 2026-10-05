@@ -45,6 +45,239 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   and `approval_hook.py`), the bare `/crew:approve` listing what is pending,
   and the sabotage registrations for this change's tests in
   `sabotage_autopilot.py` and `sabotage_context.py`.
+### crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21 — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
+
+- **Summary.** Six changes in one update: `/crew:migrate` carries your `autopilot` settings over
+  instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one,
+  the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are
+  safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to
+  ping only for deploy results and questions that stopped Claude, each led by a subject.
+
+#### Changed — `crew`: `/crew:migrate` carries `autopilot` to crew.json's top-level `autopilot` and says which file crew reads (T-0105)
+
+- **Summary.** Migrating an older crew setup no longer files your `autopilot` settings under
+  "unmapped": they land at crew.json's top-level `autopilot`, with a note that this copy is never
+  read: crew reads `.crew/config.json`, and the personal keys also your machine-global file, where
+  the stricter value wins.
+- **What changed.** `crew_migrate.MAPPING` gains the row `autopilot -> autopilot` (and the docstring
+  table its matching row), so the block is carried whole to crew.json's top level and no `unmapped`
+  line is printed for it. A new `AUTOPILOT_FILE_NOTE` is printed as a `note` line in preview and apply
+  and written to crew.json `notes` whenever the config has an `autopilot` key, whatever its value,
+  after the existing `pm.authority: autonomous` note when both apply. `to_legacy` still rebuilds the
+  original config exactly. Crew still reads `autopilot` from `.crew/config.json`, and the personal
+  keys (`mode`, `maxPhases`, `deploy`, `approval`, `questions`) also from `~/.claude/crew/config.json`,
+  stricter wins (CONFIG.md §20a); `crew_autopilot.py` is not edited. Once that file is gone, the existing `settings` warning about
+  an `autopilot` block in `.crew/crew.json` now fires for a migrated repo.
+- **Behaviour change.** A crew.json written by an older crew keeps `unmapped.autopilot`, so re-running
+  `/crew:migrate` there now reports a `CONFLICT` on crew.json instead of "already migrated
+  (identical)". Apply still never overwrites: roll the old migrate back with its backup directory, or
+  leave it.
+- **Not in this change.** The seven other live keys that land under `unmapped` (`resume`,
+  `shellRoute`, `cloud`, `environments`, `scope`, `tickets`, `route`) and the "retireable
+  .crew/config.json" line are unchanged. Sabotage rows for the mapping and note are L-0683, a
+  separate tooling-only PR. Docs: guides none - no guide describes the crew.json key table.
+#### Added — `crew`: `crew_memory.py migrate` converts a memory folder, previewed and opt-in, and `restore` undoes one (L-0678)
+
+- **Summary.** You can now turn every full-text memory in one native memory folder into a vault
+  note plus a pointer in one previewed run, and turn any one pointer back into full text.
+- **What changed.** `crew_memory.py migrate --memory-dir <dir> --tag <tag> [--tag ...] [--only
+  <file name> ...] [--type <type>] [--project <p>] [--note-dir <vault folder>] [--apply]` runs
+  `save` over every memory file in the folder (never `MEMORY.md`), in name order. Without
+  `--apply` it writes nothing and prints one row per file: `convert`, `append` (a note with this
+  `memory_id` exists), `skip: already a pointer`, `skip: <state>` for a pointer that does not
+  resolve or is `malformed`, or `refuse: <reason>` for anything `save` refuses, a title that is
+  not a portable file name (`< > : " / \ | ? *`, a control character, a trailing dot or space,
+  a device name such as `CON`, `COM0` or `LPT1`), two files that would write one note (`duplicate
+  note path`, compared case-folded), an existing note whose frontmatter `project:` is not this
+  run's (`note belongs to another project`), or a folder named like a memory (`not a file`).
+  The project is `--project`, else `<slug>` for a folder `~/.claude/projects/<slug>/memory`,
+  else the repository folder's name, so a second project's folder never appends to the first's
+  notes. With `--apply` each `convert` and `append` row goes through
+  `save`'s apply one file at a time; a failed file is reported with `save`'s `kept-full-text`
+  reason and the rest go on. With no writable vault it prints `nothing to migrate: <reason>`
+  (exit 0 for `no vault configured`, 1 otherwise). Exit 0 only when nothing is pending,
+  refused or failed. No state file is written, so a re-run is a no-op.
+  `crew_memory.py restore --file <memory file> [--apply]` puts a resolving pointer's note text
+  (after its frontmatter, LF-only) back as the body, the pointer file's frontmatter kept byte for
+  byte; it writes through a temp file and `os.replace` under `save`'s lock, then confirms the file
+  reads as `full-text`. Any other state is printed with exit 1 and nothing written; the note is
+  never edited or deleted. Neither runs automatically. Documented in the `crew-memory` skill
+  ("Converting existing memories"), the crew README and the memory guide chapter.
+- **Tests.** `plugin/crew/tests/test_crew_memory_migrate.py`, 52 cases, all under `tmp_path`.
+#### Changed — `crew`: the CI receipt lists a command the gate said it could not judge as UNKNOWN (L-0673)
+
+- **Summary.** The CI verify-gate receipt's per-command list now shows UNKNOWN for a command the gate
+  could not judge or never finished, and says when the list is partial because the gate died.
+- **What changed.** `ci_receipt.parse_log` reads T-0082's
+  `verify-gate: COULD NOT TELL (<reason>): <cmd>` line as the state UNKNOWN, and a command the gate
+  named failed, skipped or could-not-tell with no elapsed line after it (a gate killed mid-rule) is
+  listed UNKNOWN with `seconds` null instead of being dropped. The receipt records `log_complete`,
+  true only when the `verify-gate: <N>s total across` line comes after the last per-rule line, so a
+  total line echoed in a failing rule's output does not count; with a non-zero gate exit and an
+  incomplete log the job summary says the list is partial. `/crew:verify` gains "A rule passes only
+  on a completion record": the reasons a rule reads "could not tell", that it fails the turn, and
+  that it never advances the marker.
+- **What did not change.** What `build` and `check` accept: `pass`, the gate state and rc, the
+  outstanding entries and the clean-tree test. No new receipt schema version; nothing reads
+  `commands[].state` for a decision. A failing rule whose own output holds a line shaped like the
+  gate's `verify-gate: <N>s  <cmd>` still adds a row for that text (an older parser limit, not
+  changed here).
+- **Tests.** `test_ci_receipt.py`: a could-not-tell line (including a reason holding `): `) reads
+  UNKNOWN; a log without the total line keeps each parsed state, lists the in-flight command
+  UNKNOWN and marks the receipt and summary partial; a total line inside a failing rule's output
+  followed by a killed rule leaves the log incomplete (captured from the real gate); a real
+  `verify-gate.sh --all` on a rule exiting 130 lists it UNKNOWN. Sabotage-tested by hand: dropping
+  the UNKNOWN branch, dropping the in-flight entry, forcing `log_complete` true, letting a per-rule
+  line no longer reset it, and matching the command only by the regex each turned a test red.
+#### Changed — `gizmoduck`: Nuclei scans are safe by default (T-0108)
+
+- **Summary.** A Nuclei scan now skips dos, intrusive and fuzz templates and sends at most 50
+  requests per second unless you opt out by name, so a default scan can find less and take longer
+  than before.
+- **Behaviour change.** `gizmoduck.py scan` and the routine's Nuclei adapter now build one command
+  line, `gizmoduck.nuclei_argv`, which adds `-etags dos,intrusive,fuzz` and `-rl 50` (Nuclei's own
+  default is 150). A `diff` against an older baseline shows nothing new for that reason alone, but
+  a report's counts can drop.
+- **Opting out.** `scan --intrusive` drops the tag exclusion (only after the target's owner has
+  authorised intrusive testing); `scan --rate-limit N` (an integer of 1 or more) replaces the 50. A
+  rate flag in `scan --extra` stands in place of the default; with `--rate-limit` too it is exit 2.
+  In a routine manifest: `options.nuclei_intrusive` (a real boolean, now a gate option) and
+  `options.nuclei_rate_limit`. The Nuclei cell records `ran(safe)` or `ran(safe+intrusive)`
+  instead of a bare `ran`; coverage still counts both as `ran`.
+- **Refused in a manifest.** Nuclei's `extra` option must be a string and may not carry a tag,
+  rate, attack or config-file flag: the spec's eight (`-etags`, `-exclude-tags`, `-itags`,
+  `-include-tags`, `-rl`, `-rate-limit`, `-rlm`, `-rate-limit-minute`), nine more found in
+  `nuclei -h` on v3.11.1 (`-it`, `-include-templates`, `-dast`, `-fuzz`, `-dts`, `-dast-server`,
+  `-per-host-rate-limit`, `-rld`, `-rate-limit-duration`), and `-config`, `-tp`, `-profile`,
+  whose files can set any of those unseen. The manifest is refused at parse time with exit 2; a
+  hand-built `Manifest` meets the same refusal in the adapter, recorded `error:returncode=-1`.
+  The builder itself refuses a `nuclei_rate_limit` that is not an integer of 1 or more (`0`,
+  `-1`, `true`) and a `nuclei_intrusive` that is not a real boolean (`"false"`).
+- **Your own Nuclei config is checked in a routine run.** Every `-rl` gizmoduck emits carries
+  `-rld 1s`. Before the routine starts Nuclei it reads the config file Nuclei would merge
+  (`<user config dir>/nuclei/config.yaml` and `$NUCLEI_CONFIG_DIR/config.yaml`); one that sets
+  `include-tags`, `include-templates`, a rate key, `per-host-rate-limit`, `dast`, `fuzz` or
+  `profile`, or that exists but cannot be read, refuses the Nuclei cell. `scan --extra` stays a
+  raw passthrough whose safety is the user's.
+- **Best-effort.** The exclusion is tag-based: a template that marks itself intrusive only
+  under `info.metadata` (three upstream templates do) is not excluded.
+- **Verified against Nuclei v3.11.1** with the template lister (no traffic): `-tags intrusive`
+  lists 622 templates and `-etags dos,intrusive,fuzz -tags intrusive` lists 0 (templates at
+  `8ad90da2`; a reviewer's later checkout measured 619 to 0). `dos` and `fuzz` are not used as
+  evidence: Nuclei's own `.nuclei-ignore` already hides most of them.
+
+#### Added — `crew`: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
+
+- **Summary.** Each diagram now also appears inside the README of the code it describes, kept
+  current by a generator, and `/crew:done` and the marketplace gate refuse a README whose diagrams
+  have drifted from their sources.
+- **What changed.** `plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`
+  writes every diagram under `docs.diagramsDir` into the README nearest its
+  `%% Anchors:` paths, between `<!-- crew-diagrams:begin -->` and
+  `<!-- crew-diagrams:end -->` (each a whole line): a `## Diagrams` heading, then
+  per diagram its title, `%% Purpose:` text, the fenced mermaid block and a source
+  link - read exactly as `diagram_doc.py` reads it (a test pins the two over every
+  diagram in this repo). Text outside the markers is never touched; a second run
+  changes no byte; CRLF READMEs stay CRLF. Never a target: the repo-root README, a
+  `SKILL.md`, a README in the diagrams dir, one another generator owns
+  (`docs/qa/README.md`). `%% Embed: <README>|none` overrides. A Bitbucket `origin`
+  gets the rendered SVG plus the source in `<details>`, with a warning when git
+  ignores the SVG. `check` exits 1 on drift, malformed markers or anything
+  unreadable; a README never embedded is `pending` and passes.
+- **Behaviour change at `/crew:done` check 4.** `crew_refresh_check.py` prints a
+  `diagram-embeds` line per README whose section has drifted (judged over every
+  diagram, whatever the ticket reached): `stale` with `refresh with ...
+  crew_diagrams.py embed --root .`, which `/crew:implement` step 6 runs; malformed
+  markers are `stale` with a new `stop - needs judgement` ending; an unreadable
+  source is `unknown`. Either refuses done. `scripts/check-marketplace.py` runs the
+  same check (`check_diagram_embeds`), with `scripts/_test/check-diagram-embeds.py`
+  as its must-fail/must-pass suite (CI and `gate-runner.py`).
+- **Built on #375, not against it.** The diagrams page (`docs/diagrams/README.md`,
+  `index.html`, `diagram_doc.py`), the readability check and the flat
+  `<kind>-<topic>[-<part>].mmd` naming are #375's and unchanged. Not built here: the
+  spec's per-kind directory layout and nested discovery (it conflicts with #375's
+  flat naming - for the owner), the spec's own index writer (#375's page is it).
+  Split out earlier: the lint and theme (L-0547) and this repo's diagram migration
+  and redraw (L-0548).
+- **First `embed` run in this repo.** `plugin/crew/README.md` (22 diagrams),
+  `plugin/localgpu/README.md` (4) and `skills/README.md` (7) now carry the section
+  exactly as `embed` wrote it, so `check --root .` reports fresh with nothing
+  pending and `check_diagram_embeds` gates real sections. `localgpu` goes to
+  0.1.21 for its README.
+- **Known limits / follow-ups.** Discovery is flat: only `.mmd` files directly in
+  the diagrams dir are embedded or judged, so a nested `.mmd` is neither embedded
+  nor flagged. `crew_diagrams.outside_markers` is unused until the completion-audit
+  allowance below lands. Plan steps not built here, for L-0547/L-0548 or a
+  follow-up: nested discovery by kind dir, the completion-audit allowance,
+  `render.sh` over nested dirs, the sabotage registry entries, and the diagram
+  migration/redraw.
+- **Harness follow-ups (tooling-PR rule).** The completion-audit allowance for a
+  README changed only inside the markers (`completion_audit.py`, using
+  `crew_diagrams.outside_markers`) and a `sabotage_diagrams.py` registration are
+  harness paths and are left out. Until the allowance lands, a ticket whose `embed`
+  refresh writes a README its Touch does not name is flagged by the Stop audit:
+  name the README in Touch.
+#### Changed — `crew`: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
+
+- **Summary.** crew's Telegram and Teams pings now come from one sender and only for deploy results
+  and for Claude stopping to wait on you, each line led by a subject such as `Question` or `Deploy
+  FAILED` and saying what it waits on; the per-phase pings are gone, and the webhook and token
+  settings are read only from your machine-global config.
+- **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always
+  exits 0) replaces the send logic that `notify.sh` and `notify.ps1` each carried. The two are now thin
+  wrappers that keep `event_claim.py`'s one-sender election and hand the payload over.
+- **Two events send.** `deploy`: every `/crew:promote` result, `Promotion passed` silent and `Deploy FAILED`
+  loud. `question`: Claude Code stopped and is waiting on you, from the `Notification` hook filtered on
+  `notification_type` (`permission_prompt`, `worker_permission_prompt`, `elicitation_dialog`,
+  `elicitation_url_dialog`, `agent_needs_input`, or `notify.questionTypes`). `idle_prompt` never pings; an
+  unknown or missing type stays quiet and is logged to `<git-common-dir>/crew/notify/unrecognised.log`.
+  `blocker` is reserved until T-0060: accepted in `notify.events`, sends nothing.
+- **Every line leads with a subject** (`Question`, `Needs permission`, `Promotion passed`, `Deploy FAILED`),
+  then `[<repo>/<branch>]` (the ticket on a detached HEAD, never `HEAD`), the active ticket and its phase, and
+  what Claude is waiting on: the payload's message plus the pending question, the pending tool, or the last
+  assistant text, read from the transcript, capped at 200 characters and redacted. A fixed "Claude is waiting
+  on you" is never sent.
+- **Measured, not assumed** (a live `Notification` capture on Claude Code 2.1.285, pinned as test fixtures):
+  a Bash permission prompt and an AskUserQuestion both arrive as `permission_prompt` with the fixed message
+  "Claude needs your permission", naming neither tool, so the tool is read from the transcript's pending
+  `tool_use`. A message that does name AskUserQuestion is still honoured.
+- **Less spam.** One ping per waiting episode (`session_id` + `prompt_id`); the same event + ticket + reason
+  once per `notify.realertHours` (default 6). Both records advance only on a confirmed send. Telegram's 429
+  `retry_after` is honoured once inside a 10 s budget, sends are paced a second apart, and text goes as
+  escaped HTML - ported from the notify skill's `tg.py`, not imported.
+- **Retired:** the `/crew:init` per-phase and `/crew:done` per-ticket pings, and both `context-watch` pings.
+  `/crew:review`'s per-round line stays in `review.md` (a harness file, removed by a harness-only change) and
+  sends nothing: `review` maps to the reserved `blocker`. An old config still works: `gate` reads as
+  `deploy`, `waiting` as `question`, `phase`/`review`/`done` as `blocker`, each with a notice, never a
+  silent drop.
+- **Config.** The machine-global `notify` block is honoured (the twins read only `.crew/config.json` before);
+  a repo value overrides it, and an explicit repo `"provider": "none"` opts out with a notice. The repo and
+  global templates now write `provider: null`, so notifications stay off until a provider is set. The notify
+  skill's `telegram.bot_token_env` / `chat_id` fill a null `tokenEnv` / `chatId`, read-only; its example chat
+  id counts as unset. New keys `notify.realertHours` and `notify.questionTypes` (134 repo / 76 global leaves, counted
+  after merging T-0048 at `ce235468`).
+- **Review hardening.** `CREW_NOTIFY_TELEGRAM_BASE` (the test server's address) is honoured only for an
+  http(s) URL whose host is exactly `127.0.0.1`, `::1` or `localhost`; anything else is ignored and the send goes
+  to `api.telegram.org`, since the bot token rides in the URL path and a cloned repo's settings `env` could
+  otherwise send it elsewhere. `notify.tokenEnv` and `notify.urlEnv` count only from the machine-global layer (a
+  repo's is ignored with a notice), redirects are refused (a 3xx is a failed send, not a second request carrying
+  the token), and `crew_notify.py config` prints `chatId` masked (wholly when 2 characters or fewer). A deploy with no `--outcome` whose reason
+  names neither pass nor fail is `Promotion outcome unknown` (loud), never `Promotion passed`.
+  `/crew:promote` sends through `notify.sh deploy ... --outcome` (its python resolver: Git Bash has no
+  `python3`), and `notify.ps1`'s direct call forwards `--outcome` too. Approving a permission prompt does not
+  start a new waiting episode; only your next typed message does.
+- **Configuration reference.** `crew_keys.py` carries rows for both new keys and rewrites the five
+  existing `notify.*` rows for `crew_notify.py`; `notify.tokenEnv` and `notify.urlEnv` render as
+  `machine-only`, derived from `crew_notify.GLOBAL_ONLY_KEYS` (the table `effective_config` enforces),
+  not restated. `plugin/crew/CONFIG.md`'s generated tables and
+  `docs/guides/crew/src/configuration-reference.md` are regenerated from them.
+- **Tests.** `test_crew_notify.py` (a local HTTP server stands in for `api.telegram.org`; no test reads the
+  machine's global config or reaches the network), `test_crew_notify_hooks.py` (including a bash-only
+  must-block/must-allow case for the twin claim), and the updated twin tests. `.crew/verify.json` maps the
+  sender and both wrappers to them. The sabotage module (`sabotage_notify.py`, 17 mutations, each run by hand
+  red on its named test) is a harness-only follow-up, since `sabotage*.py` is in `check-tooling-pr.py`'s
+  `HARNESS`. The pwsh parity cases skip without pwsh and were not run.
+
 ### Fixed — gizmoduck 0.5.7: bootstrap works where the GitHub API is blocked (C-0008)
 
 - **Summary.** `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on

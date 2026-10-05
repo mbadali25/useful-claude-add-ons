@@ -72,7 +72,8 @@ corrupt file from the template plus that profile, as a dry run until
   for you.
 - **Notifications.** In the machine file, set `notify.provider` and the
   environment variable names in `notify.urlEnv` / `notify.tokenEnv`. The
-  secret stays in your environment, never in the file.
+  secret stays in your environment, never in the file. Those two are
+  machine-only: a repo file's value is ignored with a notice.
 
 The reasoning behind each key is in `plugin/crew/CONFIG.md`, which ships with
 the plugin.
@@ -82,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**141 keys**: 81 settable in the machine-global file, 60 repo-only.
+**143 keys**: 83 settable in the machine-global file, 60 repo-only.
 
 Columns:
 
@@ -235,11 +236,13 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `notify.provider` | both | `"none"` | not validated - read by `plugin/crew/hooks/scripts/notify.sh` (expects string) | 0.11.0 or earlier | Where notifications go; `none` is off. |
-| `notify.urlEnv` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/notify.sh` (expects string or null) | 0.11.0 or earlier | Environment variable holding the webhook URL. |
-| `notify.tokenEnv` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/notify.sh` (expects string or null) | 0.11.0 or earlier | Environment variable holding the token. |
-| `notify.chatId` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/notify.sh` (expects string or null) | 0.11.0 or earlier | Chat id for chat providers. |
-| `notify.events` | both | `["phase", "gate", "waiting"]` | not validated - read by `plugin/crew/hooks/scripts/notify.sh` (expects list of event names) | 0.11.0 or earlier | Events that notify. A list is one leaf. |
+| `notify.provider` | both | `null` | telegram, teams, none or null; any other value sends nothing (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 0.11.0 or earlier | Where notifications go: `telegram`, `teams` or `none` (off). A repo null inherits the machine provider; a repo `none` opts this repo out. |
+| `notify.urlEnv` | machine-only | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Name of the environment variable holding the Teams webhook URL. Honoured from the machine file only; a repo's is ignored with a notice. |
+| `notify.tokenEnv` | machine-only | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Name of the environment variable holding the Telegram bot token; null may be filled from the notify skill's `bot_token_env`. Honoured from the machine file only. |
+| `notify.chatId` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Telegram chat id; null may be filled from the notify skill's `chat_id`, and the skill's example value counts as unset. |
+| `notify.events` | both | `["blocker", "deploy", "question"]` | list of event names; an unknown name is dropped with a notice (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 0.11.0 or earlier | Events that notify: `deploy`, `question`, and `blocker` (reserved, sends nothing yet). The pre-1.0 names `gate`, `waiting`, `phase`, `review` and `done` are mapped with a notice. A list is one leaf. |
+| `notify.realertHours` | both | `6` | number of hours; negative or non-number reads as the default (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 1.0.350 | The same event + ticket + reason is sent once per this many hours; a question pings once per waiting episode. |
+| `notify.questionTypes` | both | `null` | list of notification_type strings, or null; a non-list reads as null and a non-string entry is dropped (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 1.0.350 | The Claude Code `notification_type` values that count as a question; null uses the built-in five (`crew_notify.QUESTION_TYPES`). |
 
 ### `platform`
 

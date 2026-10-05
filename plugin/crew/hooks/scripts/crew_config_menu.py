@@ -69,7 +69,8 @@ _KNOWN_VALUES = {
     # plugin/crew/commands/jira-sync.md:11, plugin/crew/commands/sdp-sync.md:11,
     # plugin/crew/commands/obsidian-sync.md:11; `files` is the default.
     "tracker": ("files", "jira", "sdp", "obsidian"),
-    # plugin/crew/hooks/scripts/notify.sh:33 (`none` exits), :55, :61.
+    # plugin/crew/hooks/scripts/crew_notify.py `_filter` (`none` exits) and
+    # `_deliver` (telegram, teams); a repo null inherits the global provider.
     "notify.provider": ("none", "telegram", "teams"),
     # plugin/crew/commands/sdp-sync.md:63
     "sdp.noteVisibility": ("private", "public"),

@@ -38,6 +38,7 @@ from __future__ import annotations
 import crew_autopilot
 import crew_config
 import crew_guards
+import crew_notify
 import crew_platform
 import crew_shell
 import crew_state
@@ -291,17 +292,43 @@ KEY_META = {
     "emergency.maxTtlMinutes": _row("Longest incident lifetime; never below "
                                     "`ttlMinutes`.", "type", since=FIRST,
                                     source=_S + "crew_incident.py", type_="integer"),
-    # --- notify
-    "notify.provider": _unv("Where notifications go; `none` is off.", FIRST,
-                            _S + "notify.sh", "string"),
-    "notify.urlEnv": _unv("Environment variable holding the webhook URL.", FIRST,
-                          _S + "notify.sh", "string or null"),
-    "notify.tokenEnv": _unv("Environment variable holding the token.", FIRST,
-                            _S + "notify.sh", "string or null"),
-    "notify.chatId": _unv("Chat id for chat providers.", FIRST, _S + "notify.sh",
-                          "string or null"),
-    "notify.events": _unv("Events that notify. A list is one leaf.", FIRST,
-                          _S + "notify.sh", "list of event names"),
+    # --- notify (crew_notify.py since T-0051; notify.sh / notify.ps1 are wrappers)
+    "notify.provider": _row("Where notifications go: `telegram`, `teams` or `none` (off). A "
+                            "repo null inherits the machine provider; a repo `none` opts "
+                            "this repo out.", "type", since=FIRST,
+                            source=_S + "crew_notify.py",
+                            type_="telegram, teams, none or null; any other value sends "
+                                  "nothing"),
+    "notify.urlEnv": _unv("Name of the environment variable holding the Teams webhook URL. "
+                          "Honoured from the machine file only; a repo's is ignored with a "
+                          "notice.", FIRST, _S + "crew_notify.py", "string or null"),
+    "notify.tokenEnv": _unv("Name of the environment variable holding the Telegram bot "
+                            "token; null may be filled from the notify skill's "
+                            "`bot_token_env`. Honoured from the machine file only.", FIRST,
+                            _S + "crew_notify.py", "string or null"),
+    "notify.chatId": _unv("Telegram chat id; null may be filled from the notify skill's "
+                          "`chat_id`, and the skill's example value counts as unset.",
+                          FIRST, _S + "crew_notify.py", "string or null"),
+    "notify.events": _row("Events that notify: `deploy`, `question`, and `blocker` "
+                          "(reserved, sends nothing yet). The pre-1.0 names `gate`, "
+                          "`waiting`, `phase`, `review` and `done` are mapped with a "
+                          "notice. A list is one leaf.", "type", since=FIRST,
+                          source=_S + "crew_notify.py",
+                          type_="list of event names; an unknown name is dropped with a "
+                                "notice"),
+    "notify.realertHours": _row("The same event + ticket + reason is sent once per this "
+                                "many hours; a question pings once per waiting "
+                                "episode.", "type", since="1.0.350",
+                                source=_S + "crew_notify.py",
+                                type_="number of hours; negative or non-number reads as "
+                                      "the default"),
+    "notify.questionTypes": _row("The Claude Code `notification_type` values that count as "
+                                 "a question; null uses the built-in five "
+                                 "(`crew_notify.QUESTION_TYPES`).", "type",
+                                 since="1.0.350", source=_S + "crew_notify.py",
+                                 type_="list of notification_type strings, or null; a "
+                                       "non-list reads as null and a non-string entry "
+                                       "is dropped"),
     # --- platform (written by platform-sync)
     "platform.os": _unv("Detected OS, stamped by platform-sync.", FIRST,
                         _S + "crew_platform.py", "string or null"),
@@ -547,7 +574,11 @@ def values_of(key):
     return KEY_META[key]["values"]
 
 
-_MACHINE_ONLY = tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
+# context.autoClear's machine-only keys, and the notify keys crew_notify honours
+# from the machine file alone (T-0051: each names the variable whose value becomes
+# the request URL, so a cloned repo may not choose it).
+_MACHINE_ONLY = (tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
+                 + tuple("notify." + k for k in crew_notify.GLOBAL_ONLY_KEYS))
 
 
 def layer_of(key):

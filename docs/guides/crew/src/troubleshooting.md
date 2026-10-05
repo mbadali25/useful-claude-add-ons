@@ -75,7 +75,7 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands and wrong-identity commands | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
 | `PreToolUse` (`Write`\|`Edit`\|`MultiEdit`\|`NotebookEdit`\|`Bash`\|`PowerShell`) | `scope-guard.sh` | plan-approval + ticket scope guard | `scope.mode` (`off`/`report`/`block`/`auto`), `scope.allowCliApproval` | `off`, `false` |
 | `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | `context.autoWrapUp`, `context.handoffPath` | on |
-| `Notification` | `notify.sh` | pings an external channel | `notify.provider` (`none` disables it), `notify.events` | `none` |
+| `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events`, `notify.questionTypes` | off |
 | `Stop` | `verify-gate.sh` | runs `.crew/verify.json`'s checks | `verifyGate` (boolean) | `true` |
 | `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.5` |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
@@ -360,6 +360,12 @@ The command log carries status `unknown` for such a rule; the record sync leaves
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
 rule is not ended by the gate.
 
+The CI receipt (`ci_receipt.py`, L-0673) lists such a command as `UNKNOWN`, and so a command the
+gate named failed, skipped or could-not-tell but never finished (a gate killed mid-rule). A log
+whose `verify-gate: <N>s total across` line does not come after its last per-rule line records
+`log_complete: false`; when the gate also exited non-zero, the job summary says the list is
+partial. The list is informative only: what the receipt accepts did not change.
+
 ## Autopilot in a worktree, and the refresh check
 
 - **Symptom: autopilot stops with `cannot tell whether <id>'s direction is approved` in a
@@ -607,7 +613,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `verifyGate` | repo only | bool | `false`: the Stop verify gate does not run at all |
 | `context.enabled` | both layers | bool | `false`: `context-watch.sh` (the Stop nag) does nothing |
 | `context.autoClear.enabled`, `autoWrapUp` | both layers | bool | each independently disables one leg of the wrap-up/clear loop |
-| `notify.provider` | both layers | provider name / `none` | `none`: the `Notification` hook sends nothing |
+| `notify.provider` | both layers (a repo null inherits the global one) | `telegram`/`teams`/`none` | a repo `none` opts out even when the global file names a provider: no `question` ping, no `deploy` result (`crew_notify.py config --root .` says so) |
 | `change.requireForProduction` | both layers, ratchets (may only turn ON) | bool | `false`: promoting needs no approved change request |
 | `install.policy` | both layers, ratchets | see `plugin/crew/CONFIG.md` §"install" | narrowest tier refuses more install actions |
 

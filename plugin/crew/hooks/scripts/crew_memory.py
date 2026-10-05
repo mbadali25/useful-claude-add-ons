@@ -5,6 +5,10 @@
     python3 crew_memory.py save --file <memory file> --tag <tag> [--tag ...]
         [--title <t>] [--note <path>] [--type <type>] [--project <p>]
         [--root <repo>] [--apply] [--json]
+    python3 crew_memory.py migrate --memory-dir <dir> --tag <tag> [--tag ...]
+        [--only <file name> ...] [--type <type>] [--project <p>]
+        [--note-dir <vault folder>] [--root <repo>] [--apply] [--json]
+    python3 crew_memory.py restore --file <memory file> [--root <repo>] [--apply] [--json]
 
 A native memory file (`~/.claude/projects/<project>/memory/<fact>.md`) is a
 frontmatter block and a body. Its body may be exactly one line,
@@ -54,6 +58,15 @@ file, reads it back and resolves the pointer, and only then replaces the
 native body through a temp file and `os.replace`. Every refusal or failure
 leaves the native file byte-identical; a dangling pointer is never written.
 Dry run by default.
+
+`migrate` and `restore` (L-0678; tests in
+plugin/crew/tests/test_crew_memory_migrate.py) add no write path. `migrate`
+plans `save` for every memory in one directory (never `MEMORY.md`), refuses a
+title that is not a portable file name and two files that would write one
+note, and with `--apply` runs `save`'s apply per row in name order; a failed
+row never stops or undoes the others. `restore` replaces one resolving
+pointer's body with its note's text; the note is never edited. No state file:
+the preview is recomputed from disk, so a re-run is a no-op.
 
 Standard library only. `resolve` and `check` write nothing anywhere.
 Exit 0 for `resolved` / `full-text`, 1 for every other state, 2 for usage.
@@ -1103,6 +1116,232 @@ def _save_cli(args, root):
     return row["exit"]
 
 
+# --- migrate and restore (L-0678): save in a loop, and the way back ----------
+
+# A title Windows cannot hold as a file name: a reserved character or control
+# character, a trailing dot or space, or a device name (with any extension).
+_UNPORTABLE = re.compile(r'[<>:"/\\|?*\x00-\x1f]|[. ]$')
+_DEVICES = frozenset(["CON", "PRN", "AUX", "NUL", *(d + n for d in ("COM", "LPT")
+                                                      for n in "0123456789\u00b9\u00b2\u00b3")])
+_PROJECT = re.compile(r"project:[ \t]*(.+?)[ \t]*")
+
+
+def portable(title):
+    """Whether `title` is a file name on every platform crew runs on."""
+    return not _UNPORTABLE.search(title) and title.split(".")[0].upper() not in _DEVICES
+
+
+def _migrate_row(path, root, opts):
+    """`(action, plan or reason)` for one memory file; nothing is written.
+    A pointer (or pointer attempt) is a `skip`; a file `save` would refuse is
+    a `refuse`; else `convert` or `append` with `save`'s plan."""
+    if not os.path.isfile(path):
+        return "refuse: not a file", "not a regular file"
+    row = resolve_file(path, root)
+    if row["state"] == "resolved":
+        return "skip: already a pointer", "already a pointer"
+    if row["state"] == "unreadable":
+        return "refuse: unreadable", row["reason"]
+    if row["state"] != "full-text":
+        return f"skip: {row['state']}", row["reason"]
+    try:
+        raw = _read_bytes(path).decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return "refuse: unreadable", f"cannot read as UTF-8: {exc}"
+    title = _field(_split_raw(raw.lstrip("﻿"))[0], _NAME_LINE)
+    if not title:
+        return "refuse: no name: line", "no name: line in the memory"
+    if not portable(title):
+        return "refuse: title is not a portable file name", f"title {title!r}"
+    project = opts["project"] or _default_project(os.path.dirname(path), root)
+    folder = (opts["note_dir"] or f"memories/{project}").strip("/")
+    plan = plan_save(path, root, opts["tags"], note=f"{folder}/{title}.md", kind=opts["type"],
+                     project=project)
+    if plan["state"] != "pending":
+        return f"refuse: {plan['reason']}", plan["reason"]
+    if plan["existing"] is not None:
+        owner = _owner(plan["existing"])
+        if owner[0] != project:
+            why = f"note belongs to another project ({owner[0] or 'unknown project'}/{owner[1]})"
+            return f"refuse: {why}", why
+    return ("convert" if plan["action"] == "create" else "append"), plan
+
+
+def _default_project(directory, root):
+    """`<slug>` for Claude Code's `~/.claude/projects/<slug>/memory`, so two
+    projects' folders never share notes; else the basename of --root."""
+    folder = os.path.abspath(directory)
+    if os.path.basename(folder) == "memory":
+        return os.path.basename(os.path.dirname(folder))
+    return os.path.basename(root)
+
+
+def _owner(existing):
+    """`(project, memory_id)` from an existing note's frontmatter (None when
+    absent or unreadable): an `append` only joins a note of this project."""
+    try:
+        text = existing.decode("utf-8").lstrip("\ufeff")
+    except UnicodeDecodeError:
+        return None, None
+    front = _split_raw(text)[0]
+    return _field(front, _PROJECT), _field(front, _MEMORY_ID)
+
+
+def plan_migrate(directory, names, root, opts):
+    """One `{file, action, plan | reason}` per name, in order. Two rows that
+    would write one note (compared case-folded) are both refused."""
+    out = []
+    for name in names:
+        action, detail = _migrate_row(os.path.join(directory, name), root, opts)
+        key = "plan" if isinstance(detail, dict) else "reason"
+        out.append({"file": name, "action": action, key: detail})
+    notes = [r["plan"]["note"].casefold() for r in out if "plan" in r]
+    for row in out:
+        if "plan" in row and notes.count(row["plan"]["note"].casefold()) > 1:
+            row.update(action="refuse: duplicate note path", reason=row.pop("plan")["note"])
+    return out
+
+
+def _migrate_names(directory, only):
+    """`(sorted memory files to migrate, None)`, or `(None, usage message)`."""
+    names = sorted(n for n in os.listdir(directory)
+                   if _listed(n) and not _is_index(os.path.join(directory, n)))
+    missing = [n for n in only if n not in names]
+    if missing:
+        return None, f"--only names no memory file here: {', '.join(missing)}"
+    return [n for n in names if not only or n in only], None
+
+
+def _migrate_apply(row, plan):
+    done = apply_save(plan)
+    if done["state"] == "pointer-written":
+        row["action"] = {"convert": "converted", "append": "appended"}[row["action"]]
+    else:
+        row.update(action="failed", reason=done["state"])
+
+
+def _migrate_cli(args, root):
+    if not os.path.isdir(args.memory_dir):
+        print(f"crew_memory: no such directory: {args.memory_dir}", file=sys.stderr)
+        return 2
+    names, problem = _migrate_names(args.memory_dir, args.only)
+    if problem:
+        print(f"crew_memory migrate: {problem}", file=sys.stderr)
+        return 2
+    vault, reason, code = writer_vault(root)
+    if vault is None:
+        _emit(json.dumps({"rows": [], "nothing": reason}) if args.json
+              else f"nothing to migrate: {reason}")
+        return code
+    opts = {"tags": args.tag, "type": args.type, "project": args.project,
+            "note_dir": args.note_dir}
+    table = plan_migrate(args.memory_dir, names, root, opts)
+    counts = {}
+    for row in table:
+        plan = row.pop("plan", None)
+        if plan:
+            row.update(vault=plan["vault"], note=plan["note"])
+            if args.apply:
+                _migrate_apply(row, plan)
+        head = row["action"].split(":")[0]
+        counts[head] = counts.get(head, 0) + 1
+    if args.json:
+        _emit(json.dumps({"rows": table, "counts": counts}, ensure_ascii=False))
+    else:
+        for row in table:
+            where = f"({row['reason']})" if "reason" in row else \
+                f"-> {row['vault']}/{row['note']}"
+            _emit(f"{row['action']}  {row['file']}  {where}")
+        _emit(", ".join(f"{c} {a}" for a, c in counts.items()) or "no memory files")
+        if not args.apply and {"convert", "append"} & set(counts):
+            _emit("nothing written; run again with --apply to convert")
+        _emit("MEMORY.md was not edited")
+    pending = not args.apply and {"convert", "append"} & set(counts)
+    return 1 if pending or {"refuse", "failed"} & set(counts) else 0
+
+
+def plan_restore(path, root):
+    """`{state, exit, ...}`: `pending` with the native bytes to write (the
+    pointer file's frontmatter kept byte-for-byte, a blank line, the note's
+    text after its frontmatter, LF-only), else the final state."""
+    if os.path.islink(path):
+        return {"state": "refused", "exit": 1, "reason": "the memory file is a symlink"}
+    row = resolve_file(path, root)
+    if row["state"] != "resolved":
+        return dict(row, exit=0 if row["state"] == "full-text" else 1)
+    try:
+        native = _read_bytes(path)
+        note = _read_bytes(row["path"]).decode("utf-8").lstrip("﻿")
+        text = native.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return dict(row, state="unreadable", exit=1, reason=f"cannot read: {exc}")
+    body = _LINE_BREAK.sub("\n", _split_raw(note)[1]).strip("\n")
+    bom = "﻿" if text.startswith("﻿") else ""
+    front = _split_raw(text[len(bom):])[0]
+    if front and not front.endswith(("\n", "\r")):
+        front += "\n"
+    new = front + ("\n" if front else "") + body + "\n"
+    if not body.strip() or classify(split_body(new))[0] != "full-text":
+        return dict(row, state="refused", exit=1,
+                    reason="the note's text is empty or reads as a pointer; nothing written")
+    return dict(row, state="pending", exit=1, native=native, new=(bom + new).encode("utf-8"),
+                first=body.split("\n", 1)[0], lines=body.count("\n") + 1)
+
+
+def apply_restore(plan):
+    """Replace the native file through a temp file and `os.replace`, under
+    `save`'s lock on it, re-compared first; then confirm it reads full-text.
+    Raises OSError when the lock cannot be taken at all."""
+    path = plan["file"]
+    locks = _take_lock(path)
+    if locks is None:
+        return dict(plan, state="refused", exit=1, reason=BUSY)
+    try:
+        temp = _write_temp(os.path.dirname(os.path.abspath(path)), plan["new"],
+                           stat.S_IMODE(os.stat(path).st_mode))
+        try:
+            if _read_bytes(path) != plan["native"]:
+                return dict(plan, state="refused", exit=1,
+                            reason="the memory file changed during restore")
+            os.replace(temp, path)
+        finally:
+            _drop(temp)
+    except OSError as exc:
+        return dict(plan, state="refused", exit=1, reason=f"restore write failed: {exc}")
+    finally:
+        _release(locks)
+    if resolve_file(path, plan["root"])["state"] != "full-text":
+        return dict(plan, state="refused", exit=1, reason="it does not read back as full-text")
+    return dict(plan, state="restored", exit=0, reason=None)
+
+
+def _restore_cli(args, root):
+    if not os.path.isfile(args.file):
+        print(f"crew_memory: no such file: {args.file}", file=sys.stderr)
+        return 2
+    row = dict(plan_restore(args.file, root), file=args.file, root=root)
+    if row["state"] == "pending" and args.apply:
+        try:
+            row = apply_restore(row)
+        except OSError as exc:
+            row = dict(row, state="refused", exit=1, reason=f"lock failed: {exc}")
+    shown = {k: row.get(k) for k in ("state", "reason", "file", "vault", "note", "first",
+                                     "lines")}
+    if args.json:
+        _emit(json.dumps(shown, ensure_ascii=False))
+        return row["exit"]
+    _emit(f"state: {'dry-run' if row['state'] == 'pending' else row['state']}")
+    for key, label in (("vault", "vault"), ("note", "note"), ("first", "first line"),
+                       ("lines", "lines"), ("reason", "reason")):
+        if row.get(key) is not None:
+            _emit(f"{label}: {row[key]}")
+    if row["state"] == "pending":
+        _emit("nothing written; run again with --apply to write")
+    elif row["state"] == "full-text":
+        _emit("nothing to restore")
+    return row["exit"]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1112,21 +1351,33 @@ def main(argv=None):
     every.add_argument("--memory-dir", required=True)
     keep = sub.add_parser("save", help="write the vault note, then make the memory a pointer")
     keep.add_argument("--file", required=True)
-    keep.add_argument("--tag", action="append", default=[])
     keep.add_argument("--title")
     keep.add_argument("--note")
-    keep.add_argument("--type", choices=NOTE_TYPES, default="concept")
-    keep.add_argument("--project")
-    keep.add_argument("--apply", action="store_true")
-    for each in (one, every, keep):
+    move = sub.add_parser("migrate", help="preview, then save, every full-text memory")
+    move.add_argument("--memory-dir", required=True)
+    move.add_argument("--only", action="append", default=[])
+    move.add_argument("--note-dir")
+    back = sub.add_parser("restore", help="turn one pointer back into full text")
+    back.add_argument("--file", required=True)
+    for each in (keep, move):
+        each.add_argument("--tag", action="append", default=[])
+        each.add_argument("--type", choices=NOTE_TYPES, default="concept")
+        each.add_argument("--project")
+    for each in (one, every, keep, move, back):
         each.add_argument("--root", default=".")
         each.add_argument("--json", action="store_true")
+    for each in (keep, move, back):
+        each.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
-    if args.command == "save":
+    if args.command in ("save", "migrate"):
         if not args.tag or not all(TAG.fullmatch(tag) for tag in args.tag):
-            keep.error(f"at least one --tag, each matching {TAG.pattern}")
-        return _save_cli(args, root)
+            sub.choices[args.command].error(f"at least one --tag, each matching {TAG.pattern}")
+        if args.command == "migrate" and args.project and "/" in args.project:
+            move.error("--project may not hold '/'")
+        return (_save_cli if args.command == "save" else _migrate_cli)(args, root)
+    if args.command == "restore":
+        return _restore_cli(args, root)
     if args.command == "resolve":
         if not os.path.isfile(args.file):
             print(f"crew_memory: no such file: {args.file}", file=sys.stderr)

@@ -1,7 +1,11 @@
-# Outbound-only notifier (native Windows). Mirrors notify.sh.
-# Never reads from chat, never accepts instructions.
-# Usage: notify.ps1 <event> <one-line message>
-#   events: phase | gate | review | waiting | done
+# Outbound-only notifier (native Windows). Mirrors notify.sh: a thin wrapper.
+# Never reads from chat, never accepts instructions. Every rule (config
+# layering, the event filter, dedupe, Telegram/Teams, the message line) lives
+# in crew_notify.py; kept here is the one-sender election with notify.sh.
+# Usage: notify.ps1 hook                (the Notification hook; payload on stdin)
+#        notify.ps1 <event> <reason> [--outcome pass|fail]
+#                                       (a direct call; deploy | question, or a
+#                                        pre-1.0 name crew_notify.py maps)
 param(
   [string]$Event = "info",
   [string]$Msg = ""
@@ -287,82 +291,45 @@ function Complete-CrewEventClaim([string]$Claim) {
   } catch { }
 }
 
-function Get-CrewRepoConfigDir([string]$Root) {
-  # @{ Dir; Source }: the `.crew/` the repo config is read from, and own, main
-  # or unknown. Twin of crew_repo_config_dir in _common.sh and of
-  # crew_common.repo_config_dir (T-0088, T-0096): own files win whole, never
-  # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
-  # into each script that needs it (a dot-sourced function is invisible to
-  # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
-  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
-  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
-  # root, likely) in either path compared below reads `unknown`, never `main`.
-  if (-not $Root) { $Root = '.' }
-  $own = Join-Path $Root '.crew'
-  $result = @{ Dir = $own; Source = 'own' }
-  foreach ($n in 'crew.json', 'config.json') {
-    if (Get-Item -LiteralPath (Join-Path $own $n) -Force -ErrorAction SilentlyContinue) { return $result }
-  }
-  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
-  $result.Source = 'unknown'
-  # git prints paths as UTF-8; a native command's output is decoded with
-  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
-  # this one call and put the caller's back.
-  $encoding = [Console]::OutputEncoding
-  try {
-    $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
-    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-    $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
-  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
-  if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
-  $real = New-Object System.Collections.Generic.List[string]
-  foreach ($p in $lines) {
-    $full = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $base $p }))
-    for ($at = $full; $at; $at = Split-Path -Parent $at) {
-      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
-      if (-not $item -or $item.LinkType) { return $result }
-    }
-    $real.Add($full.TrimEnd('\', '/'))
-  }
-  $result.Source = 'own'
-  $same = if ($env:OS -eq 'Windows_NT') { $real[0] -eq $real[1] } else { $real[0] -ceq $real[1] }
-  if ($same -or (Split-Path -Leaf $real[1]) -cne '.git') { return $result }
-  $main = Join-Path (Split-Path -Parent $real[1]) '.crew'
-  foreach ($n in 'crew.json', 'config.json') {
-    if (Get-Item -LiteralPath (Join-Path $main $n) -Force -ErrorAction SilentlyContinue) {
-      return @{ Dir = $main; Source = 'main' }
-    }
-  }
-  return $result
-}
-
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root -ErrorAction SilentlyContinue
-# L-0680: the resolved repo config (Get-CrewRepoConfigDir, T-0096): a linked
-# worktree with none of its own reads the main checkout's; own files win whole;
-# `unknown` reads only the own .crew/. Also run in-process by context-watch.ps1
-# with `&`: this script's scope gets its own copy, byte-identical to the caller's.
-$cfgPath = Join-Path (Get-CrewRepoConfigDir '.').Dir 'config.json'
-if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf)) { exit 0 }
 
-# No hook_once claim here on purpose: Notification can fire many times per
-# session, and a duplicate ping is a safe failure -- a suppressed one is not.
-# The per-EVENT claim below is a different thing: on Windows both flavours
-# of this hook run for one Notification, and event_claim.py lets exactly one
-# of them send it (keyed on the payload, so the next Notification is new).
-# Called in-process by context-watch.ps1, whose stdin is already read: an
-# empty payload is not a hook event and always sends.
-
-$cfg = (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).notify
-if ($null -eq $cfg) { exit 0 }
-$provider = $cfg.provider
-if (-not $provider -or $provider -eq "none") { exit 0 }
-$events = $cfg.events
-if ($events) {
-  $eventList = $events -split ","
-  if ($eventList -notcontains $Event) { exit 0 }
+function Invoke-CrewNotify([string[]]$NotifyArgs, [byte[]]$Payload) {
+  # Runs crew_notify.py with $NotifyArgs, handing it $Payload as raw stdin bytes.
+  # Exit 0 whatever happens: a notifier never fails a hook.
+  $py = Resolve-CrewPython
+  if (-not $py) { return }
+  try {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $py
+    Set-CrewProcessArguments $psi (@((Join-Path $PSScriptRoot 'crew_notify.py')) + $NotifyArgs)
+    $psi.WorkingDirectory = (Get-Location).Path
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    if ($Payload -and $Payload.Length -gt 0) {
+      $proc.StandardInput.BaseStream.Write($Payload, 0, $Payload.Length)
+      $proc.StandardInput.BaseStream.Flush()
+    }
+    $proc.StandardInput.Close()
+    if (-not $proc.WaitForExit(14000)) { try { $proc.Kill() } catch { } }
+  } catch { }
 }
 
+if ($Event -ne 'hook') {
+  # A direct call: no payload, not a hook event, no twin to race -- no claim.
+  if (-not $Event) { exit 0 }
+  # The rest is forwarded like notify.sh's "$@" (`--outcome pass|fail`); a
+  # single-dash `-outcome` is normalised, since PowerShell may hand either over.
+  $rest = @($args | ForEach-Object { if ("$_" -match '^--?outcome$') { '--outcome' } else { "$_" } })
+  Invoke-CrewNotify (@('send', '--root', '.', '--event', $Event, '--reason', $Msg) + $rest) $null
+  exit 0
+}
+
+# No hook_once claim here on purpose: Notification can fire many times per
+# session. The per-EVENT claim is a different thing: on Windows both flavours
+# of this hook run for one Notification, and event_claim.py lets exactly one
+# of them send it (keyed on the payload, so the next Notification is new).
 # Raw BYTES, not [Console]::In.ReadToEnd(): event_claim.py hashes the payload,
 # and the bash twin hands it the bytes as received.
 $stdinStream = [Console]::OpenStandardInput()
@@ -372,62 +339,8 @@ $stdinBytes = $memStream.ToArray()
 $claim = Test-CrewEventClaim 'notify' $stdinBytes
 if ($null -eq $claim) { exit 0 }
 
-$repo = Split-Path -Leaf (git rev-parse --show-toplevel 2>$null)
-if (-not $repo) { $repo = Split-Path -Leaf (Get-Location) }
-$branch = (git branch --show-current 2>$null)
-
-# One line. No diffs, no findings text, no ticket bodies, no secrets.
-# A chat channel is a less controlled place than the repo; keep payloads dull.
-$msgTrunc = if ($Msg.Length -gt 280) { $Msg.Substring(0, 280) } else { $Msg }
-$repoPart = if ($branch) { "$repo/$branch" } else { $repo }
-$text = "[$repoPart] ${Event}: $msgTrunc"
-
-switch ($provider) {
-  "teams" {
-    $urlEnv = $cfg.urlEnv
-    $url = if ($urlEnv) { [Environment]::GetEnvironmentVariable($urlEnv) } else { $null }
-    if (-not $url) { [Console]::Error.WriteLine("notify: `$$urlEnv not set"); Complete-CrewEventClaim $claim; exit 0 }
-    $body = @{
-      type = "message"
-      attachments = @(@{
-        contentType = "application/vnd.microsoft.card.adaptive"
-        content = @{
-          type = "AdaptiveCard"
-          version = "1.4"
-          body = @(@{ type = "TextBlock"; text = $text; wrap = $true })
-        }
-      })
-    } | ConvertTo-Json -Depth 10
-    try {
-      Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 10 | Out-Null
-      Complete-CrewEventClaim $claim
-    } catch {}
-  }
-  "telegram" {
-    $tokEnv = $cfg.tokenEnv
-    $tok = if ($tokEnv) { [Environment]::GetEnvironmentVariable($tokEnv) } else { $null }
-    $chat = $cfg.chatId
-    if (-not $tok -or -not $chat) { [Console]::Error.WriteLine("notify: telegram token or chatId missing"); Complete-CrewEventClaim $claim; exit 0 }
-    $disableNotif = if ($Event -eq "waiting") { "false" } else { "true" }
-    $tgBody = @{
-      chat_id = $chat
-      text = $text
-      disable_notification = $disableNotif
-    }
-    try {
-      Invoke-RestMethod -Uri "https://api.telegram.org/bot$tok/sendMessage" -Method Post -Body $tgBody -TimeoutSec 10 | Out-Null
-      Complete-CrewEventClaim $claim
-    } catch {}
-  }
-  default {
-    # Parity with notify.sh: an unrecognised provider used to fall through
-    # this switch with no arm running at all, so Complete-CrewEventClaim was
-    # never called -- the claim stayed "claimed" forever, the bash twin
-    # waited out the grace on every notification and then took over,
-    # hitting the same unknown provider and orphaning another generation.
-    # Nothing can be sent for an unknown provider, so release the claim.
-    [Console]::Error.WriteLine("notify: unknown provider '$provider'")
-    Complete-CrewEventClaim $claim
-  }
-}
+# crew_notify.py owns retries and its own dedupe, so the claim is reported
+# "sent" whatever it answered: a claim left open only makes the twin re-send.
+Invoke-CrewNotify @('hook', '--root', '.') $stdinBytes
+Complete-CrewEventClaim $claim
 exit 0

@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.0.364**: Inert settings are named, and `/crew:status --approvals` lists only what needs you. `crew_config.inert_settings(root)` names every setting the installed crew does not act on: a resolved key outside `default_config()` (not `platform.*` or `schema`; keys under an open table such as `dev.roles` count as known), a value in ...
-- **gizmoduck 0.5.7**: Bootstrap works where the GitHub API is blocked. `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on networks that refuse `api.github.com`, such as a Claude Code cloud session, and skips tools that are already installed when you run it again.
+- **crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21**: Six changes in one update: `/crew:migrate` carries your `autopilot` settings over instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one, the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to ping only for deploy results and questions that stopped Claude, each led by a subject.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

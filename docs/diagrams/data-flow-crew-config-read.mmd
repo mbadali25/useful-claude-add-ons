@@ -28,8 +28,9 @@
 %%    cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:132 (T-0096). Own config.json or crew.json
 %%    wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits
 %%    nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both
-%%    flavours; the .ps1 copies at notify.ps1:290, handoff-read.ps1:186, handoff-write.ps1:286,
-%%    context-watch.ps1:29).
+%%    flavours; the .ps1 copies at handoff-read.ps1:186, handoff-write.ps1:286,
+%%    context-watch.ps1:29). T-0051 made notify.ps1 a thin wrapper around crew_notify.py with no
+%%    resolver copy of its own.
 %%    Still own-file only: the verify gate, the scope and completion wrappers.
 %% Note TMPL: default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 <b>81 leaves</b> (executed,
 %%    batch-7-build) across <b>20 blocks</b>: autopilot (T-0050's five personal keys), qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves),

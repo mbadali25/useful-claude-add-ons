@@ -1,6 +1,6 @@
 ---
 name: crew-notify
-description: Set up outbound notifications to Microsoft Teams or Telegram, and explain the two-way MCP options. Use when the user says set up notifications, notify me, send to Teams, set up a Telegram bot, post updates to a channel, wire up a webhook, or asks how to get alerted when a phase finishes or a gate fails.
+description: Set up outbound notifications to Microsoft Teams or Telegram - deploy results and "Claude stopped and is waiting" questions - and explain the two-way MCP options. Use when the user says set up notifications, notify me, send to Teams, set up a Telegram bot, post updates to a channel, wire up a webhook, or asks how to get alerted when a promotion fails or Claude is waiting on them.
 ---
 
 # Notifications
@@ -92,35 +92,71 @@ addressed to it — which is fine here, since crew never reads anyway.
 
 ## Configuration
 
-```json
-"notify": {
-  "provider": "teams",
-  "urlEnv": "CREW_TEAMS_WEBHOOK",
-  "events": ["phase", "gate", "waiting"]
-}
-```
-
-Telegram:
+Set it once, machine-wide, in `~/.claude/crew/config.json` - `notify` is a
+global key ("the person's own chat, not the project's"). A repo's
+`.crew/config.json` overrides any key it sets; a repo that leaves `provider`
+null inherits the global one, and a repo that says `"provider": "none"` opts
+out on purpose (`crew_notify.py config` prints that it overrides the global
+provider). `tokenEnv` and `urlEnv` are read from the global file only: a
+repo's is ignored, with a notice, so a cloned repo cannot pick which variable
+becomes the request URL. That cannot stop a repo setting the variable's
+value: a project's `.claude/settings.json` `env` block can set the variable
+your global `urlEnv` or `tokenEnv` names for sessions in that repo, and crew
+cannot tell that value from yours. Redirects are refused. `config` masks `chatId`.
 
 ```json
 "notify": {
   "provider": "telegram",
   "tokenEnv": "CREW_TELEGRAM_TOKEN",
-  "chatId": "-1001234567890",
-  "events": ["phase", "gate", "review", "waiting"]
+  "chatId": "-1009876543210",
+  "events": ["blocker", "deploy", "question"],
+  "realertHours": 6
 }
 ```
 
-| Event | Fires when |
-|---|---|
-| `phase` | A `/crew:init` phase completes or blocks |
-| `gate` | The verification gate fails |
-| `review` | A review finishes, with the BLOCK/FIX counts |
-| `waiting` | Claude is waiting on you (the `Notification` hook) |
-| `done` | A ticket completes the full loop |
+Teams: `"provider": "teams", "urlEnv": "CREW_TEAMS_WEBHOOK"`. The Teams branch
+is tested against a local server only; no live Teams send has been claimed.
 
-Opt into few. A channel that pings on everything gets muted within a week, and a
-muted channel is worse than no channel because you believe you are covered.
+If the notify skill is set up on the same machine, its
+`~/.config/notify/config.json` `telegram.bot_token_env` and `chat_id` fill a
+null `tokenEnv` / `chatId` - read-only, never the provider. Its example chat id
+`-1001234567890` counts as unset.
+
+| Event | Fires when | Subject | Loud? |
+|---|---|---|---|
+| `deploy` | Every `/crew:promote` result | `Promotion passed` / `Deploy FAILED` / `Promotion outcome unknown` | all but a pass |
+| `question` | Claude Code stopped and is waiting on you (the `Notification` hook) | `Question` / `Needs permission` | yes |
+| `blocker` | Reserved until T-0060: accepted here, sends nothing | - | - |
+
+**Question types.** `permission_prompt`, `worker_permission_prompt`,
+`elicitation_dialog`, `elicitation_url_dialog` and `agent_needs_input`, or the
+list in `notify.questionTypes`. `idle_prompt` ("finished, idle") never pings,
+and neither does any other type; an unknown or missing type is logged, one line
+each, to `<git-common-dir>/crew/notify/unrecognised.log` (capped at 200 lines).
+The subject is `Question` for an elicitation, `agent_needs_input`, or a
+permission prompt for AskUserQuestion; `Needs permission` for any other tool.
+Measured on Claude Code 2.1.285: both arrive as `permission_prompt` with the
+fixed message "Claude needs your permission", so the tool is read from the
+session transcript's pending `tool_use`.
+
+**What it is waiting on.** A question carries the payload's message plus the
+first line of the pending question (AskUserQuestion's text), the pending
+tool's name and description, or else Claude's last text - capped at 200
+characters and passed through a redaction filter first.
+
+**Once per waiting episode.** A question pings once per `session_id` +
+`prompt_id`: no repeat until you have typed your next message in that session
+and Claude asked again. Approving a permission prompt does not reset it (the
+`prompt_id` is unchanged), so a second prompt in the same turn is silent. On top of that, the same event + ticket + reason is sent once per
+`realertHours` (default 6). Both records advance only after a confirmed send,
+so a failed send is retried next time rather than lost.
+
+**Retired.** The per-phase, per-review and per-ticket pings are gone. An old
+config's `events` still works: `gate` reads as `deploy`, `waiting` as
+`question`, and `phase`, `review` and `done` as the reserved `blocker` - each
+with a one-line notice, never a silent drop. `/crew:review` still carries its
+`notify.sh review` line until a harness-only change removes it; it maps to
+`blocker` and sends nothing.
 
 Secrets live in environment variables. The webhook URL **is** the credential for
 Teams — anyone holding it can post to that channel as the Flow bot. Treat it
@@ -128,14 +164,31 @@ like a password and keep it out of git.
 
 ## Payload discipline
 
-One line. No diffs, no review findings, no ticket bodies, no file contents, no
-error text that might contain a connection string. A chat channel is a less
-controlled place than your repository: it syncs to phones, it is searchable by
-people outside the project, and in Teams it may be retained under policies you
-do not control.
+One line, led by a subject that says what happened:
 
-`notify.sh` truncates at 280 characters for exactly this reason. Send the fact,
-not the detail — the detail is in the repo where it belongs.
+```
+Needs permission [my-repo/T-0042-build] T-0042 (implement) Claude needs your permission - Bash: Run the migration
+Deploy FAILED [my-repo/main] T-0042 (review) prod a1b2c3d - FAILED at gate 3
+```
+
+A detached HEAD shows the ticket, never `HEAD`. No diffs, no review findings,
+no ticket bodies, no file contents, no error text that might contain a
+connection string. A chat channel is a less controlled place than your
+repository: it syncs to phones, it is searchable by people outside the project,
+and in Teams it may be retained under policies you do not control.
+
+`crew_notify.py` cuts the reason at 280 characters and the transcript excerpt at
+200, and runs every line - and everything it writes to its state directory -
+through `redact`: the values of environment variables named like a token,
+secret, password or key, Telegram bot tokens, `Bearer` values, and `sk-`,
+`ghp_`, `github_pat_`, `xox?-` and `AKIA` strings. It is a deny-list; the caps
+bound what a miss can leak. Send the fact, not the detail — the detail is in
+the repo where it belongs.
+
+The sender is one module, `hooks/scripts/crew_notify.py` (`send`, `hook`,
+`config`); `notify.sh` and `notify.ps1` are thin wrappers that keep the
+one-sender election between the two shells. It honours a 429's `retry_after`,
+paces sends a second apart, and always exits 0.
 
 ---
 

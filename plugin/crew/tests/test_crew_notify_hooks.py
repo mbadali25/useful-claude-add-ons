@@ -1,0 +1,309 @@
+"""The wrappers, the hook entry and the callers around crew_notify.py (T-0051).
+
+notify.sh and notify.ps1 are thin: every rule lives in crew_notify.py, once.
+These hold the wrappers to that, hold hooks.json to one unfiltered entry per
+flavour, hold the commands to the retired pings staying retired, and run one
+payload set through each wrapper against a fake Telegram.
+"""
+import http.server
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import threading
+import urllib.parse
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
+from review_fixtures import init_repo
+
+CREW = pathlib.Path(__file__).resolve().parent.parent
+SCRIPTS = CREW / "hooks" / "scripts"
+COMMANDS = CREW / "commands"
+PWSH = crew_fixtures.resolve_pwsh()
+BASH = crew_fixtures.resolve_bash()
+TOKEN = "123456789:" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+
+def _read(path):
+    return pathlib.Path(path).read_text(encoding="utf-8")
+
+
+def _ps1_without_python_probe():
+    """notify.ps1 minus Resolve-CrewPython, whose shared probe legitimately
+    parses JSON (tests/test_ps1_python_probe.py holds it byte for byte)."""
+    text = _read(SCRIPTS / "notify.ps1")
+    start = text.index("function Resolve-CrewPython")
+    end = text.index("function Format-CrewProcessArgument")
+    return text[:start] + text[end:]
+
+
+def test_notify_ps1_has_no_send_logic():
+    text = _ps1_without_python_probe()
+
+    assert ("crew_notify.py" in text,
+            [word for word in ("api.telegram.org", "Invoke-RestMethod", "ConvertFrom-Json",
+                               "config.json") if word in text]) == (True, [])
+
+
+def test_notify_sh_has_no_send_logic():
+    text = _read(SCRIPTS / "notify.sh")
+
+    assert ("crew_notify.py" in text,
+            [word for word in ("curl", "config.json", "api.telegram.org") if word in text]) == (
+                True, [])
+
+
+def test_hooks_json_notification_passes_hook_and_no_matcher():
+    entries = json.loads(_read(CREW / "hooks" / "hooks.json"))["hooks"]["Notification"]
+
+    commands = [hook["command"] for entry in entries for hook in entry["hooks"]]
+    assert ([("matcher" in entry) for entry in entries], len(commands),
+            all(re.search(r'notify\.(sh|ps1)\\?" hook(;|$)', command) for command in commands)) == (
+                [False, False], 2, True)
+
+
+# --- the callers ------------------------------------------------------------------------------
+
+# review.md's per-round ping is retired too, but review.md is in
+# scripts/check-tooling-pr.py's HARNESS, so its removal lands as a
+# harness-only change. Until then its legacy `notify.sh review ...` maps to
+# the reserved `blocker` and sends nothing:
+# test_review_md_legacy_ping_maps_to_reserved_blocker below.
+_RETIRED = (COMMANDS / "done.md", COMMANDS / "init.md",
+            SCRIPTS / "context-watch.sh", SCRIPTS / "context-watch.ps1")
+
+
+def test_retired_callers_gone():
+    calls = {path.name: [line for line in _read(path).splitlines()
+                         if re.search(r"notify\.(sh|ps1)", line)] for path in _RETIRED}
+
+    assert (calls, "notify.sh deploy" in _read(COMMANDS / "promote.md")) == (
+        {path.name: [] for path in _RETIRED}, True)
+
+
+def test_promote_sends_deploy_for_every_result():
+    """The deploy line carries --outcome and sits after both result branches,
+    not inside the all-green one. It goes through notify.sh, whose `crew_py`
+    resolver finds python3/python/py: Git Bash on Windows has no `python3`, so
+    a bare `python3` here fails there (CLAUDE.md, Landmines)."""
+    text = _read(COMMANDS / "promote.md")
+    line = next(line for line in text.splitlines() if "notify.sh deploy" in line)
+    after_pass = text.index("**All gates green:**")
+    after_fail = text.index("**Any gate failed:**")
+
+    assert ("--outcome <pass|fail>" in line, text.index(line) > max(after_pass, after_fail),
+            "for every result" in text, re.search(r"\bpython3?\b", line)) == (
+                True, True, True, None)
+
+
+def test_notify_ps1_direct_call_forwards_the_rest():
+    """notify.ps1's direct call forwards what follows <event> <reason> (the
+    `--outcome`), as notify.sh's "$@" does. Static: pwsh runs it below when present."""
+    text = _read(SCRIPTS / "notify.ps1")
+    line = next(line for line in text.splitlines()
+                if "Invoke-CrewNotify" in line and "'send'" in line)
+
+    assert ("+ $rest" in line, "$rest = @($args" in text) == (True, True)
+
+
+# --- the wrappers against a fake Telegram ----------------------------------------------------
+
+class _Fake(http.server.BaseHTTPRequestHandler):
+    texts = []
+
+    def do_POST(self):  # pylint: disable=invalid-name
+        body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode("utf-8")
+        _Fake.texts.append(urllib.parse.parse_qs(body).get("text", [""])[0])
+        data = b'{"ok": true, "result": {}}'
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *_args):  # pylint: disable=arguments-differ
+        pass
+
+
+@pytest.fixture(name="fake")
+def _fake_telegram():
+    _Fake.texts = []
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Fake)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+def _repo(tmp_path, name):
+    """A repo, and beside it a scratch HOME whose machine-global crew config names
+    the token's variable: notify.tokenEnv is honoured from that layer only."""
+    root = init_repo(tmp_path / name)
+    (root / ".crew").mkdir()
+    (root / ".crew" / "config.json").write_text(json.dumps({"notify": {
+        "provider": "telegram", "chatId": "4242",
+        "events": ["deploy", "question"], "realertHours": 6, "questionTypes": None}}),
+        encoding="utf-8")
+    home = _home(root)
+    (home / ".claude" / "crew").mkdir(parents=True)
+    (home / ".claude" / "crew" / "config.json").write_text(json.dumps({"notify": {
+        "tokenEnv": "CREW_TEST_TG_TOKEN"}}), encoding="utf-8")
+    return root
+
+
+def _home(root):
+    return root.parent / f"home-{root.name}"
+
+
+_PARITY = [("permission_prompt", "p-1"), ("elicitation_dialog", "p-2"),
+           ("agent_needs_input", "p-3"), ("idle_prompt", "p-4"), (None, "p-5"),
+           ("brand_new_type", "p-6")]
+
+
+def _payload(root, ntype, prompt):
+    out = {"session_id": "parity", "hook_event_name": "Notification", "cwd": str(root),
+           "message": "Claude needs your permission", "prompt_id": prompt,
+           "transcript_path": str(root / "missing.jsonl")}
+    if ntype:
+        out["notification_type"] = ntype
+    return json.dumps(out).encode()
+
+
+def _env(root, base, windows):
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CREW_NOTIFY_TELEGRAM_BASE=base,
+               CREW_TEST_TG_TOKEN=TOKEN, HOME=str(_home(root)), USERPROFILE=str(_home(root)))
+    env.pop("OS", None)
+    if windows:
+        env["OS"] = "Windows_NT"
+    return env
+
+
+def _through(flavour, root, base):
+    before = len(_Fake.texts)
+    for ntype, prompt in _PARITY:
+        if flavour == "sh":
+            cmd = [BASH, str(SCRIPTS / "notify.sh"), "hook"]
+        else:
+            cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"), "hook"]
+        done = subprocess.run(cmd, input=_payload(root, ntype, prompt), cwd=str(root),
+                              env=_env(root, base, flavour == "ps1"), capture_output=True,
+                              check=False, timeout=120)
+        assert done.returncode == 0, done.stderr
+    return len(_Fake.texts) - before
+
+
+@pytest.mark.skipif(BASH is None, reason="needs bash")
+def test_notify_sh_hook_sends_the_question_types_only(tmp_path, fake):
+    assert _through("sh", _repo(tmp_path, "sh"), fake) == 3
+
+
+@pytest.mark.skipif(PWSH is None or BASH is None,
+                    reason="needs pwsh and bash - the parity run was NOT made")
+def test_wrapper_parity_under_pwsh(tmp_path, fake):
+    counts = (_through("sh", _repo(tmp_path, "sh"), fake),
+              _through("ps1", _repo(tmp_path, "ps1"), fake))
+
+    assert counts == (3, 3)
+
+
+@pytest.mark.skipif(BASH is None, reason="needs bash")
+@pytest.mark.parametrize("legacy,subject", [("gate", "Promotion passed"),
+                                            ("waiting", "Question")])
+def test_legacy_cli_call_is_mapped_not_dropped(tmp_path, fake, legacy, subject):
+    root = _repo(tmp_path, "legacy")
+
+    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), legacy, "qa abc - pass"],
+                          cwd=str(root), env=_env(root, fake, False), capture_output=True,
+                          stdin=subprocess.DEVNULL, check=False, timeout=60)
+
+    assert (done.returncode, [text.split(" [")[0] for text in _Fake.texts]) == (0, [subject])
+
+
+def _direct(flavour, root, base, *args):
+    if flavour == "sh":
+        cmd = [BASH, str(SCRIPTS / "notify.sh"), *args]
+    else:
+        cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"), *args]
+    return subprocess.run(cmd, cwd=str(root), env=_env(root, base, flavour == "ps1"),
+                          capture_output=True, stdin=subprocess.DEVNULL, check=False,
+                          timeout=120)
+
+
+@pytest.mark.parametrize("flavour", [
+    pytest.param("sh", marks=pytest.mark.skipif(BASH is None, reason="needs bash")),
+    pytest.param("ps1", marks=pytest.mark.skipif(PWSH is None,
+                                                  reason="needs pwsh - NOT run")),
+])
+def test_direct_call_forwards_outcome(tmp_path, fake, flavour):
+    """promote.md's line: `notify.sh deploy "<reason>" --outcome fail`. A reason
+    that names neither result reads as unknown, so only a forwarded --outcome
+    makes this `Deploy FAILED`."""
+    root = _repo(tmp_path, f"direct-{flavour}")
+
+    done = _direct(flavour, root, fake, "deploy", "qa abc - gate 3 broke", "--outcome", "fail")
+
+    assert (done.returncode, [text.split(" [")[0] for text in _Fake.texts]) == (
+        0, ["Deploy FAILED"])
+
+
+@pytest.mark.skipif(BASH is None, reason="needs bash")
+def test_the_token_never_reaches_wrapper_output(tmp_path, fake):
+    root = _repo(tmp_path, "leak")
+    env = _env(root, "http://127.0.0.1:9", False)
+
+    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "hook"],
+                          input=_payload(root, "permission_prompt", "p-1"), cwd=str(root),
+                          env=env, capture_output=True, check=False, timeout=60)
+
+    assert TOKEN.encode() not in done.stdout + done.stderr
+
+
+@pytest.mark.skipif(BASH is None, reason="needs bash")
+def test_review_md_legacy_ping_maps_to_reserved_blocker(tmp_path, fake):
+    """review.md still carries `notify.sh review ...` until its harness-only
+    removal lands. The legacy name maps to the reserved `blocker`, so the call
+    sends nothing, exits 0 and says so on stderr, naming T-0060."""
+    root = _repo(tmp_path, "review")
+    line = next(line for line in _read(COMMANDS / "review.md").splitlines()
+                if "notify.sh review" in line)
+
+    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "review", "0 BLOCK, 1 FIX (x)"],
+                          cwd=str(root), env=_env(root, fake, False), capture_output=True,
+                          stdin=subprocess.DEVNULL, check=False, timeout=60, text=True)
+
+    assert ("notify.sh review" in line, done.returncode, _Fake.texts, done.stdout.strip(),
+            "legacy 'review' read as 'blocker'" in done.stderr, "T-0060" in done.stderr) == (
+                True, 0, [], "filtered", True, True)
+
+
+def _twin_claims_and_sends(root, payload):
+    """What the PowerShell twin does first: take the claim, then report it sent."""
+    claim = subprocess.run([sys.executable, str(SCRIPTS / "event_claim.py"), "notify", str(root),
+                            "ps1"], input=payload, cwd=str(root), capture_output=True,
+                           check=False, timeout=60)
+    token = claim.stdout.decode().strip()
+    sent = subprocess.run([sys.executable, str(SCRIPTS / "event_claim.py"), "--sent", token],
+                          cwd=str(root), capture_output=True, check=False, timeout=60)
+    return claim.returncode, bool(token), sent.returncode
+
+
+@pytest.mark.skipif(BASH is None, reason="needs bash")
+def test_notify_sh_stands_down_when_the_twin_already_sent(tmp_path, fake):
+    """Must-block, bash only (the pwsh parity tests skip without pwsh): the
+    twin has claimed and sent this Notification, so notify.sh sends nothing.
+    Must-allow in the same run: a new prompt_id is a new event and sends."""
+    root = _repo(tmp_path, "twin")
+    same = _payload(root, "permission_prompt", "p-twin")
+    twin = _twin_claims_and_sends(root, same)
+
+    runs = [subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "hook"], input=body, cwd=str(root),
+                           env=_env(root, fake, False), capture_output=True, check=False,
+                           timeout=60).returncode
+            for body in (same, _payload(root, "permission_prompt", "p-next"))]
+
+    assert (twin, runs, len(_Fake.texts)) == ((0, True, 0), [0, 0], 1)

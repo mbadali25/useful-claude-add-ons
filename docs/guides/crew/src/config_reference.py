@@ -255,7 +255,8 @@ corrupt file from the template plus that profile, as a dry run until
   for you.
 - **Notifications.** In the machine file, set `notify.provider` and the
   environment variable names in `notify.urlEnv` / `notify.tokenEnv`. The
-  secret stays in your environment, never in the file.
+  secret stays in your environment, never in the file. Those two are
+  machine-only: a repo file's value is ignored with a notice.
 
 The reasoning behind each key is in `plugin/crew/CONFIG.md`, which ships with
 the plugin.

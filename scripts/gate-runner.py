@@ -156,6 +156,7 @@ TABLE = (
     _py_suite("self-claims", "scripts/_test/self-claims.py"),
     _py_suite("crew-ignore-policy", "scripts/_test/crew-ignore-policy.py"),
     _py_suite("verifying-doc", "scripts/_test/verifying-doc.py"),
+    _py_suite("check-diagram-embeds", "scripts/_test/check-diagram-embeds.py"),
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),

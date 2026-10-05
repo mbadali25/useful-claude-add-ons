@@ -211,6 +211,14 @@ a handoff skeleton), it is a visible duplicate, so `notify.sh` and
 emitting: one atomic `O_CREAT|O_EXCL` file per generation
 (`plugin/crew/hooks/scripts/event_claim.py:29-38`), so both flavours racing
 for the same event have exactly one winner.
+Since T-0051 the two notify twins are thin wrappers: they keep the claim and
+hand the payload to `plugin/crew/hooks/scripts/crew_notify.py` (`hook`,
+`send`, `config`), which owns the config layering (`resolve_config`, so a
+lane worktree reads the main checkout's config), the `notification_type`
+filter, the subject line, the dedupe and episode records under
+`<git-common-dir>/crew/notify/`, and the Telegram/Teams send. DERIVED:
+`plugin/crew/hooks/scripts/notify.sh` and `plugin/crew/hooks/scripts/notify.ps1`
+name no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
 
 **Context-watch's forced-continuation marker is now session-scoped, not
 repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:59-60` defines
@@ -293,7 +301,10 @@ Re-executed on T-0066's branch after merging main `155fe6d8` (crew 1.0.342), whi
 merge of `c9263465`). Re-executed on T-0053's branch after merging main `86d96fa1`: 136 / 75 / 61 / 0 -
 T-0053's three repo-only `autopilot.sleep` keys on top of those 133. Re-executed on `batch-7-build` after merging T-0011 (#353) onto main `47f71e93`, which asserts 138: 141 / 81 / 60 / 0 -
 T-0011's `autopilot.ship`, `autopilot.knownFailures` (an empty list, one leaf) and `autopilot.ciTimeoutMinutes`, repo-only
-(`crew_state.REPO_ONLY_AUTOPILOT`). `plugin/crew/tests/test_crew_config.py` asserts 141. T-0004's `CHANGELOG.md` entry
+(`crew_state.REPO_ONLY_AUTOPILOT`). `plugin/crew/tests/test_crew_config.py` asserts 141.
+Re-executed on T-0051's merge of main `abddc302`: 143 / 83 / 60 / 0 - T-0051's `notify.realertHours` and
+`notify.questionTypes`, both layers, on top of main's 141; `plugin/crew/tests/test_crew_config.py` asserts 143.
+T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:703-704` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:692-693` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
@@ -598,6 +609,14 @@ they disagree:
   the same for `route` (`:361-364`) - and it is the sharper case, because
   its only caller is `crew_context.route_item`, inside the one hook that reads
   `crew.json` first for `memory.inject`: one hook, two files, by key.
+- DERIVED (T-0105): `/crew:migrate` carries a config's `autopilot` block to
+  crew.json's top-level `autopilot` (`MAPPING` row,
+  `plugin/crew/hooks/scripts/crew_migrate.py:121`), not `unmapped`, and says
+  the copy is never read: `AUTOPILOT_FILE_NOTE` (`:136`), added by
+  `migration_notes` (`:307`, `:315`) to the report and crew.json `notes`.
+  Crew still reads the key from `config.json` (the personal keys also from
+  the machine-global file, stricter wins, §20a), never crew.json; the mapping means the
+  `settings` warning above fires once `config.json` is gone.
   Flagging it is this
   note's job; **deciding which file should win, or whether `crew_config.py`
   should learn to read `crew.json` too, is a decision for scribe to record,
@@ -1986,38 +2005,38 @@ instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
 Added after this note's anchor; read in full at the T-0084 build head. Read-only: nothing here
 writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, migration L-0678).
 
-- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:92` - the pointer grammar, one line
-  `vault: <name> | note: <path>`; `:137` `_path_problem` refuses an absolute, backslash, `:`
-  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:106`
-  `_invisible`); `:199` `classify` - a pointer attempt (`:160` `_attempt`: the first non-blank
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:105` - the pointer grammar, one line
+  `vault: <name> | note: <path>`; `:150` `_path_problem` refuses an absolute, backslash, `:`
+  in any segment, `.`/`..`/empty segment, non-`.md` or Cc/Cf/Zl/Zp-character path (`:119`
+  `_invisible`); `:212` `classify` - a pointer attempt (`:173` `_attempt`: the first non-blank
   line, Cf removed and stripped, starts `vault` + optional whitespace + `:` in any case, and
-  `note:`/`|` (`:97` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
-  non-blank line starts `|` or `note:` (`:98` `_WRAPPED`), or the line is a bare vault name or nothing after the colon
-  (`:101` `_BARE`)) must be the whole body and match exactly (`:178` `_grammar`), else
+  `note:`/`|` (`:110` `_ATTEMPT_MARK`, `note` starting a word) is on that line, or the second
+  non-blank line starts `|` or `note:` (`:111` `_WRAPPED`), or the line is a bare vault name or nothing after the colon
+  (`:114` `_BARE`)) must be the whole body and match exactly (`:191` `_grammar`), else
   `malformed`; any other body, a prose line starting `Vault:` included, is `full-text`.
-- DERIVED `crew_memory.py:125` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
+- DERIVED `crew_memory.py:138` `split_body` - CRLF, LF and a lone CR end a line; the frontmatter
   is split on its first two `---` lines and never parsed as YAML.
-- DERIVED `crew_memory.py:256` `_config` - a config is absent only when `os.lstat` raises
-  FileNotFoundError; anything else must read (at most `CONFIG_CAP`, 1 MiB, `:102`), parse as a
-  JSON object with no duplicate key (`:246` `_no_duplicates`) and no RecursionError, and pass
-  its schema (`:214` `_obsidian_problem`: `vaults` an object of objects with a string `path`,
-  `vaultPath` a string; `:232` `_crew_problem`: `memory` an object, `memory.vaultPath` a string
+- DERIVED `crew_memory.py:269` `_config` - a config is absent only when `os.lstat` raises
+  FileNotFoundError; anything else must read (at most `CONFIG_CAP`, 1 MiB, `:115`), parse as a
+  JSON object with no duplicate key (`:259` `_no_duplicates`) and no RecursionError, and pass
+  its schema (`:227` `_obsidian_problem`: `vaults` an object of objects with a string `path`,
+  `vaultPath` a string; `:245` `_crew_problem`: `memory` an object, `memory.vaultPath` a string
   or null), or it is `config unreadable: <path>: <field>`.
-- DERIVED `crew_memory.py:317` `vault_path` - schema-checks the Obsidian config
-  (`crew_recall.obsidian_config_path()`, `:323`) and both crew layers (`:288-289`) before
+- DERIVED `crew_memory.py:330` `vault_path` - schema-checks the Obsidian config
+  (`crew_recall.obsidian_config_path()`, `:336`) and both crew layers (`:288-289`) before
   resolving; a bad Obsidian config stops every name, a bad crew config stops `memory` (and any
   name when there is no Obsidian config); `role: ignore` is `vault-unknown`; only the name
-  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:293`) and
-  then, only with no `vaults` block, the top-level `vaultPath`. `:298` `_vault_dir` stats and
+  `memory` falls back to `crew_config.resolve_config(root)["memory"]["vaultPath"]` (`:306`) and
+  then, only with no `vaults` block, the top-level `vaultPath`. `:311` `_vault_dir` stats and
   lists the vault.
-- DERIVED `crew_memory.py:365` `note_path` - `os.lstat` per component: a link is
+- DERIVED `crew_memory.py:378` `note_path` - `os.lstat` per component: a link is
   `outside-vault`, a missing component `note-missing`, any other OSError `unreadable`; the real
   path must stay under the vault's real path, be a regular file (a directory or FIFO there is
-  `unreadable`) and open (`:112` `_open_regular`, non-blocking with an fstat `S_ISREG` check).
-- DERIVED `crew_memory.py:438` `_check_one` - `check` lists every `*.md` (suffix in any case)
-  but the exact name `MEMORY.md` (`:429`; on a case-insensitive filesystem `memory.md` is that file); `os.stat` follows links and only a regular file is
+  `unreadable`) and open (`:125` `_open_regular`, non-blocking with an fstat `S_ISREG` check).
+- DERIVED `crew_memory.py:451` `_check_one` - `check` lists every `*.md` (suffix in any case)
+  but the exact name `MEMORY.md` (`:442`; on a case-insensitive filesystem `memory.md` is that file); `os.stat` follows links and only a regular file is
   opened, so a dangling link, FIFO, device or directory is `unreadable` unopened.
-- DERIVED `crew_memory.py:1106` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+- DERIVED `crew_memory.py:1345` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
   1 for any other state, 2 for usage, a missing `--file`/`--memory-dir` or an unlistable folder.
 - JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
   because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
@@ -2031,8 +2050,8 @@ citations taken with `grep -n` there.
   cache; `require_tool` (`:58`) raises `ToolNotFound` (`:53`), a `FileNotFoundError`, so a site's
   existing `except (OSError, ...)` takes the path a missing bare name took. `git_out` (`:87`) runs
   it.
-- DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:129`
-  and `:144`, `plugin/crew/hooks/scripts/crew_instructions.py:293`,
+- DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:133`
+  and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:293`,
   `plugin/crew/hooks/scripts/crew_refresh_check.py:503`, `:517`, `:548`,
   `plugin/crew/hooks/scripts/crew_state.py:2198`, `plugin/crew/hooks/scripts/crew_status.py:52`,
   `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,
@@ -2059,42 +2078,42 @@ citations taken with `grep -n` there.
 
 Added after this note's anchor; read in full at the L-0677 build head. The only writer in
 `crew_memory.py`; the read side above is unchanged except that `resolve_file` now calls
-`resolve_pointer` (`plugin/crew/hooks/scripts/crew_memory.py:416`), which `save` reuses.
+`resolve_pointer` (`plugin/crew/hooks/scripts/crew_memory.py:429`), which `save` reuses.
 
-- DERIVED `crew_memory.py:521` `writer_vault` - obsidian-vault's writer rule restated: with roles
+- DERIVED `crew_memory.py:534` `writer_vault` - obsidian-vault's writer rule restated: with roles
   the single `primary` (none or several refused), without roles `default: true` else the first,
   with no `vaults` block the name `memory`; the name is resolved by `vault_path`, so writer and
   resolver agree, and the folder must hold `.obsidian/`. Nothing configured is
   `no vault configured`, exit 0; a non-boolean `guard.asciiOnly` is `config unreadable`.
-- DERIVED `crew_memory.py:643` `plan_save` - reads the native bytes once, classifies them
+- DERIVED `crew_memory.py:656` `plan_save` - reads the native bytes once, classifies them
   (`already-pointer` / a resolve state / `malformed`), derives title, note path (through
-  `_path_problem`), ASCII rule, containment (`:562` `_contained`: lstat walk, a symlink is
-  `outside-vault`) and `create` / `append` / `unchanged` / `collision` (`:598`
+  `_path_problem`), ASCII rule, containment (`:575` `_contained`: lstat walk, a symlink is
+  `outside-vault`) and `create` / `append` / `unchanged` / `collision` (`:611`
   `_existing_action`, matching `memory_id`), and computes the full note text and the new native
-  bytes before anything is opened for write. `:476` `today` is the only clock read.
-- DERIVED `crew_memory.py:970` `apply_note` - create = temp file (`:724` `_write_temp`, fsynced)
+  bytes before anything is opened for write. `:489` `today` is the only clock read.
+- DERIVED `crew_memory.py:983` `apply_note` - create = temp file (`:737` `_write_temp`, fsynced)
   then `os.link` to the name (never over an existing file); append = re-read, compare, temp and
-  `os.replace`; containment re-checked after `makedirs`. `:997` `apply_pointer` re-reads the
+  `os.replace`; containment re-checked after `makedirs`. `:1010` `apply_pointer` re-reads the
   native file, refuses if it changed, writes a temp beside it with the mode copied, then
-  `os.replace`. `:1025` `apply_save` orders them: note, read-back (bytes equal AND
+  `os.replace`. `:1038` `apply_save` orders them: note, read-back (bytes equal AND
   `resolve_pointer` resolved), pointer; each failure is `kept-full-text: <reason>` with the native
-  file byte-identical. `:1079` `_save_cli` is the `save` subcommand (dry run unless `--apply`).
-- DERIVED (review rounds 2-3) `crew_memory.py:929` `_locked` - `apply_save` takes kernel
+  file byte-identical. `:1092` `_save_cli` is the `save` subcommand (dry run unless `--apply`).
+- DERIVED (review rounds 2-3) `crew_memory.py:942` `_locked` - `apply_save` takes kernel
   locks, the note's then the native file's (one or two each), for the whole write, one non-blocking try each;
   a busy lock is `another save is running now`, any OSError `lock failed`, and every lock
-  already held is released (`:915` `_release`). `:892` `_take_lock` opens (never deletes)
-  `<sha256 of each key>.lock` - `:851` `_lock_keys`: the case-folded real path, plus `dev:ino`
-  when the file exists - in `:831` `_lock_dir` (no absolute base is `lock failed: no cache
+  already held is released (`:928` `_release`). `:905` `_take_lock` opens (never deletes)
+  `<sha256 of each key>.lock` - `:864` `_lock_keys`: the case-folded real path, plus `dev:ino`
+  when the file exists - in `:844` `_lock_dir` (no absolute base is `lock failed: no cache
   folder`) (`$XDG_CACHE_HOME` or `~/.cache`,
-  `%LOCALAPPDATA%` on Windows, then `crew/memory-locks`) and locks it with `:793`
-  `_posix_try_lock` (`flock LOCK_EX|LOCK_NB`) or `:806` `_windows_try_lock`
+  `%LOCALAPPDATA%` on Windows, then `crew/memory-locks`) and locks it with `:806`
+  `_posix_try_lock` (`flock LOCK_EX|LOCK_NB`) or `:819` `_windows_try_lock`
   (`msvcrt.locking LK_NBLCK`, byte 0); the OS drops the lock when its holder dies. Round 1's
-  TTL lock files beside the files are gone. `:626` `_is_index` refuses `MEMORY.md`, and a
-  case variant only when it is the same file. `:1038` `_apply_locked` re-checks the native bytes under the locks
-  (`:1015` `_now_pointer`: `already-pointer` when another save won); `apply_note` and
-  `apply_pointer` re-compare right before each `os.replace`. `:947` `_create_exclusive`
+  TTL lock files beside the files are gone. `:639` `_is_index` refuses `MEMORY.md`, and a
+  case variant only when it is the same file. `:1051` `_apply_locked` re-checks the native bytes under the locks
+  (`:1028` `_now_pointer`: `already-pointer` when another save won); `apply_note` and
+  `apply_pointer` re-compare right before each `os.replace`. `:960` `_create_exclusive`
   falls back to an `O_EXCL` create, never `os.replace`, when hard links are refused;
-  `:761` `_fsync_dir`; `:746` `_new_mode` (0644 less the umask).
+  `:774` `_fsync_dir`; `:759` `_new_mode` (0644 less the umask).
 - JUDGEMENT: the locks exclude only other `save` runs by the same user on the same machine
   (not a save on another machine syncing the vault, nor Claude Code or Obsidian, which never
   take them); an edit by another program in the
@@ -2103,6 +2122,36 @@ Added after this note's anchor; read in full at the L-0677 build head. The only 
 - JUDGEMENT: Claude Code 2.1.289 kept a one-line pointer body across three new sessions in a
   probe (it rewrote the frontmatter on an update and kept the body); a later version that
   rewrites it shows as `full-text` in `check`, and `save` can be run again.
+
+## Native-memory migrate and restore (L-0678)
+
+Added after this note's anchor; read in full at the L-0678 build head. No new write path:
+`migrate` is a loop over `plan_save` / `apply_save`, `restore` one native-file replace.
+
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:1134` `_migrate_row` - one row per file:
+  not a regular file is `refuse: not a file`; `resolve_file` first (`resolved` is `skip: already a pointer`, `unreadable` a refuse, any
+  other non-`full-text` state `skip: <state>`), then the `name:` line, `:1129` `portable`
+  (`:1123` `_UNPORTABLE`: `<>:"/\|?*`, Cc, a trailing dot or space; plus device names), then
+  `plan_save` with the note `<note-dir or memories/<project>>/<title>.md`; a non-`pending`
+  plan is `refuse: <reason>`, `create` is `convert`, `append`/`unchanged` is `append` only when
+  the existing note's `project:` (`:1179` `_owner`) is this run's, else `refuse: note belongs to
+  another project`. `:1170` `_default_project`: `<slug>` for `.../<slug>/memory`, else
+  --root's basename.
+- DERIVED `crew_memory.py:1190` `plan_migrate` - two pending rows with one note path,
+  case-folded, are both `refuse: duplicate note path`. `:1205` `_migrate_names` lists `*.md`
+  minus the index (`_listed`, `_is_index`), sorted; an `--only` name not there is exit 2.
+- DERIVED `crew_memory.py:1223` `_migrate_cli` - `writer_vault` first (`nothing to migrate:
+  <reason>`, its exit code); with `--apply` each pending row goes through `:1215`
+  `_migrate_apply` (`apply_save`) in name order, a failure being `failed` with the
+  `kept-full-text` state and the loop going on. Exit 1 while a row is pending (dry run),
+  refused or failed.
+- DERIVED `crew_memory.py:1263` `plan_restore` - only a resolving pointer, not a symlink;
+  new bytes = BOM + the pointer file's frontmatter bytes + a blank line + the note's text after
+  its frontmatter, LF-only; refused when that text is empty or would classify as anything but
+  `full-text`. `:1291` `apply_restore` takes `save`'s `_take_lock` on the native file,
+  writes a temp beside it, re-compares, `os.replace`, then re-classifies.
+- JUDGEMENT: no state file is the design; a re-run is a no-op because converted rows are
+  pointers on the next read. Nothing calls either subcommand but the `crew-memory` skill.
 
 ## Entry points
 
@@ -4407,6 +4456,13 @@ to that branch's content commits. This section does not move the file's `anchor:
   `plugin/crew/hooks/scripts/handoff-write.ps1:388`, `plugin/crew/hooks/scripts/context-watch.ps1:434`.
   `notify.ps1` run with `&` from `context-watch.ps1` gets its own script scope, so its copy only
   shadows the caller's identical one.
+- **JUDGEMENT (T-0051, batch 8).** The two bullets above no longer hold for notify:
+  T-0051 made `notify.sh` and `notify.ps1` thin wrappers around `crew_notify.py`, so
+  `notify.ps1` carries no `Get-CrewRepoConfigDir` (six copies remain, `PS_COPIES` in
+  `plugin/crew/tests/test_worktree_config_shell.py` names notify.ps1's removal) and
+  `crew_notify.py` reads the config itself. Its dedupe state is written to
+  `<git-common-dir>/crew/notify`, shared by every worktree, not kept in the lane. The
+  `notify.*` line cites above are pre-T-0051 and were not re-derived.
 - **DERIVED.** handoff-write keeps the literal own-or-unknown gate in its non-`main` branch
   (`plugin/crew/hooks/scripts/handoff-write.sh:23`, `plugin/crew/hooks/scripts/handoff-write.ps1:396`):
   there the resolved directory is the own `.crew/`, and `plugin/crew/tests/sabotage_resume.py`
