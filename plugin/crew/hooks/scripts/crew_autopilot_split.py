@@ -100,7 +100,12 @@ def _slice_problems(top, ticket):
     got = parse(plan)  # pylint: disable=not-callable
     problems = got[1] if isinstance(got, tuple) and len(got) == 2 else (
         got.get("problems") if isinstance(got, dict) else None)
-    return list(problems) if isinstance(problems, (list, tuple)) else None
+    if not isinstance(problems, (list, tuple)):
+        return None
+    if not problems and isinstance(got, tuple) and not got[0]:
+        # No section at all is a valid unsliced plan, but not a `slices` one.
+        return ["plan.md has no ## PR slices section, which a slices decision needs"]
+    return list(problems)
 
 
 def gate(top, ticket, stage, answer, policy=True):
@@ -192,10 +197,21 @@ def _not_current(top, ticket):
     size = _size_check(top, ticket, stage)
     if size["unknown"]:
         return [_unknown_words(stage, size["unknown"])]
-    answered = crew_split.parse_proposal(
-        read_text(os.path.join(folder, crew_split.PROPOSAL)) or "")["answered"]
-    missing = [f for f in size["fired"] if f not in answered]
-    return [f"answered: does not name {', '.join(missing)}"] if missing else []
+    proposal = crew_split.parse_proposal(
+        read_text(os.path.join(folder, crew_split.PROPOSAL)) or "")
+    missing = [f for f in size["fired"] if f not in proposal["answered"]]
+    if missing:
+        return [f"answered: does not name {', '.join(missing)}"]
+    if stage == "plan" and size["fired"] and proposal.get("decision") == "slices":
+        # The gate's slices rule: at plan, `slices` stands only on a plan
+        # whose `## PR slices` passes parse_slices.
+        slices = _slice_problems(top, ticket)
+        if slices is None:
+            return [f"the slices decision needs the plan's ## PR slices checked, which "
+                    f"arrives with {SLICES_ARRIVE}"]
+        if slices:
+            return ["the plan's ## PR slices fail: " + "; ".join(str(p) for p in slices)]
+    return []
 
 
 def add_parsers(sub):
@@ -219,7 +235,12 @@ def main(args):
         crew_ticket.check_ticket(args.ticket)
         if args.check:
             decision, problems = crew_split.check(top, args.ticket)
-            problems = problems + _not_current(top, args.ticket)
+            stale = _not_current(top, args.ticket)
+            if stale and not problems:
+                # check recorded a pass the gate does not grant: never leave
+                # it for confirm to trust.
+                crew_split._drop(crew_split.check_record_path(top, args.ticket))  # pylint: disable=protected-access
+            problems = problems + stale
             lines = [f"problem: {p}" for p in problems] or [f"ok decision={decision}"]
             code = 1 if problems else 0
         elif args.apply:

@@ -150,7 +150,12 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   and the prompt router asks with the focus refusal once it has resolved the
   ticket). `absent_sources` judges the metrics file `measure` reads (the main
   checkout's, from a linked worktree), so an unreadable main-checkout
-  `metrics.md` stays `unknown`, never `unmeasured`.
+  `metrics.md` stays `unknown`, never `unmeasured`. Round 2: `crew_split.py apply --via
+  autopilot` itself holds the gate's rules (no apply while a measure is unknown
+  or a firing trigger is unanswered), `split --check` holds a `slices` decision
+  at plan to the plan's `## PR slices` (a plan with no section is not a sliced
+  one), and a `--check` the gate refuses drops the passing record
+  `crew_split.check` wrote, so `confirm` can never trust it.
 
 ### Added — crew 1.1.2: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
 

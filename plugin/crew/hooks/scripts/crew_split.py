@@ -1034,6 +1034,14 @@ def apply(top, ticket, via, session=None):
         if not policy["allow"]:
             raise SplitError(f"the split policy refused: {policy['reason']}; nothing was "
                              f"written - the owner runs /crew:split {ticket}")
+        # The size gate's own rules, on every --via autopilot entry point: no
+        # apply while a measure is unknown, nor for a decision taken before a
+        # trigger now firing (crew_autopilot_split._not_current).
+        import crew_autopilot_split  # pylint: disable=import-outside-toplevel
+        stale = crew_autopilot_split._not_current(top, ticket)  # pylint: disable=protected-access
+        if stale:
+            raise SplitError(f"{PROPOSAL} cannot be applied: " + "; ".join(stale)
+                             + f"; nothing was written - the owner runs /crew:split {ticket}")
     _refuse_mode(top)
     folder = _folder(top, ticket)
     spec_path = os.path.join(folder, "spec.md")

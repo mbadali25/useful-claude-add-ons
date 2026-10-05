@@ -21,6 +21,7 @@ import os
 import subprocess
 import sys
 
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
@@ -586,3 +587,46 @@ def test_split_runs_under_focus_on_the_same_ticket(tmp_path):
 
     assert (got["sub"], got["stop"], got["ticket"]) == ("split", False, ticket), got
     assert other["stop"] is True and "focus is on" in other["reason"], other
+
+
+# --- port review round 2 (release/1.2.0) ----------------------------------------
+
+def test_crew_split_apply_via_autopilot_holds_the_gate_rules(tmp_path):
+    """T-0058 port review r2 BLOCK: `crew_split.py apply --via autopilot`
+    itself refuses a decision that misses a trigger now firing."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12, steps=9)
+    _decision(root, ticket, "split", "acceptance-count")
+
+    with pytest.raises(crew_split.SplitError) as caught:
+        crew_split.apply(str(root), ticket, "autopilot")
+
+    assert "answered: does not name plan-steps" in str(caught.value)
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+
+
+def test_split_check_holds_a_slices_decision_to_the_plan(tmp_path):
+    """T-0058 port review r2 FIX: at plan, --check refuses a `slices`
+    decision the gate would not let through (no ## PR slices section)."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12, steps=1)
+    _decision(root, ticket, "slices", "acceptance-count")
+
+    gate = _next(root, ticket)
+    run = _cli(root, "split", "--ticket", ticket, "--check")
+
+    assert (gate["phase"], gate["stop"]) == ("plan", True), gate
+    assert (run.returncode, "no ## PR slices section" in run.stdout) == (1, True), run.stdout
+
+
+def test_a_failed_split_check_leaves_no_passing_record(tmp_path):
+    """T-0058 port review r2 FIX: a --check the gate refuses drops the record
+    crew_split.check wrote, so confirm can never trust it."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12, steps=9)
+    _decision(root, ticket, "split", "acceptance-count")
+
+    run = _cli(root, "split", "--ticket", ticket, "--check")
+
+    assert run.returncode == 1, run.stdout
+    assert not os.path.lexists(crew_split.check_record_path(str(root), ticket))
