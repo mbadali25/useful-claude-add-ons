@@ -161,6 +161,36 @@ def test_train_crash_refuses_never_reserves(lanes, tmp_path, monkeypatch, capsys
     assert _ledger_snapshot(lanes["repo"]) == before
 
 
+def test_a_train_skipped_for_a_spent_budget_never_reserves_gated(lanes, tmp_path, monkeypatch,
+                                                                 capsys):
+    """H1 group review r3 (must-block): preflight reads the budget as spent
+    and skips the train; a round refunded before run's reservation must not
+    turn that into a gated reservation with no train held. The reservation is
+    made on preflight's own decision, ungated, so the locked ledger, no longer
+    spent, refuses it (GATE_CHANGED) and nothing is reserved."""
+    assert _train(lanes["repo"], "arm") == 0
+    before = _ledger_snapshot(lanes["repo"])
+    reads = []
+
+    def spent_once(_args):
+        reads.append(1)
+        return len(reads) == 1
+
+    def no_train(*_args, **_kwargs):
+        raise AssertionError("the train was asked although the budget read spent")
+    monkeypatch.setattr(review_run, "_budget_spent", spent_once)
+    monkeypatch.setattr(crew_train, "acquire", no_train)
+    scratch = tmp_path / "s-refunded"
+    scratch.mkdir()
+    _bundle(lanes["T-1"], "T-1", scratch)
+    code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
+                            str(scratch), "--provider", "claude", "--reserve-only"])
+
+    err = capsys.readouterr().err
+    assert (code, review_ledger.GATE_CHANGED in err) == (review_run.EXIT_USAGE, True), err
+    assert _ledger_snapshot(lanes["repo"]) == before
+
+
 # --- L-0526 review round 1: budget first, and the train before the later gates ---------------
 
 def _entries(repo):

@@ -399,7 +399,7 @@ STANDARDS_MUTATIONS = (
     (
         "the self-check gate answers before a spent budget",
         REVIEW_RUN,
-        "    gated = not _budget_spent(args)\n",
+        "    gated = not (_budget_spent(args) if spent is None else spent)\n",
         "    gated = True\n",
         ("tests/test_review_run_standards.py::"
          "test_run_reports_a_spent_budget_before_the_selfcheck"),

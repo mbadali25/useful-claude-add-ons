@@ -103,7 +103,7 @@ TRAIN_MUTATIONS = (
      "    if False:\n",
      _R + "test_second_overlapping_gate_round_is_refused_unspent"),
     ("R4 a spent budget still takes the train", RUN,
-     "    if _budget_spent(args):\n        return None\n    return train_gate(args)\n",
+     "    if args.budget_spent:\n        return None\n    return train_gate(args)\n",
      "    return train_gate(args)\n",
      _R + "test_a_spent_budget_is_refused_without_taking_the_train"),
     ("R7 an unreadable ledger takes the train", RUN,
@@ -111,10 +111,14 @@ TRAIN_MUTATIONS = (
      "    return (ledger.get(\"state\") in (review_ledger.NEEDS_REPLAN,)\n",
      _R + "test_an_unreadable_ledger_is_refused_without_taking_the_train"),
     ("R8 an unreadable ledger is answered by a later check", RUN,
-     "    if not _budget_spent(args):\n",
-     "    if review_ledger.status(args.root, args.ticket).get(\"state\") != "
-     "review_ledger.NEEDS_REPLAN:\n",
+     "    gated = not (_budget_spent(args) if spent is None else spent)\n",
+     "    gated = review_ledger.status(args.root, args.ticket).get(\"state\") != "
+     "review_ledger.NEEDS_REPLAN\n",
      _R + "test_an_unreadable_ledger_is_answered_before_the_later_checks"),
+    ("R10 run re-reads the budget preflight skipped the train on", RUN,
+     "    gated = not (_budget_spent(args) if spent is None else spent)\n",
+     "    gated = not _budget_spent(args)\n",
+     _R + "test_a_train_skipped_for_a_spent_budget_never_reserves_gated"),
     ("R9 a FIFO train state is opened and blocks", RUN,
      "        if odd:\n            _err(f\"review-run: train: could not tell ({odd}); "
      "no round reserved\\n\")\n",

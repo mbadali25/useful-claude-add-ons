@@ -1485,11 +1485,18 @@ def preflight(args):
     questions 1 and 2 (`_receipt_and_gate`), then 3 (`train_gate`) unless
     the budget is already spent (`_budget_spent`): then `reserve` refuses it
     (exit 4) and the train is never taken, so a ticket that cannot gate can
-    never hold the train other lanes wait behind."""
+    never hold the train other lanes wait behind.
+
+    The budget answer is kept on `args.budget_spent` for `run`, which must
+    reserve on the SAME decision (H1 group review r3): a round refunded
+    between two reads would otherwise skip the train here yet reserve gated
+    there. A skipped train always reserves ungated, so `reserve` refuses a
+    ledger that is no longer spent under its lock (L-0518's GATE_CHANGED)."""
     short = _receipt_and_gate(args)
     if short is not None:
         return short
-    if _budget_spent(args):
+    args.budget_spent = _budget_spent(args)
+    if args.budget_spent:
         return None
     return train_gate(args)
 
@@ -1799,8 +1806,11 @@ def run(args):
     # rather than sending the author to answer and restamp for nothing.
     # `reserve` re-reads the ledger under its lock and is what refuses. One
     # predicate with the train's (review of 6ec829c9): an unreadable ledger
-    # is refused by `reserve` too, so no later check answers first.
-    gated = not _budget_spent(args)
+    # is refused by `reserve` too, so no later check answers first. The
+    # decision is preflight's own (`args.budget_spent`), never a second read:
+    # a skipped train must reserve ungated.
+    spent = getattr(args, "budget_spent", None)
+    gated = not (_budget_spent(args) if spent is None else spent)
     if gated:
         refused = prereview_gate(args)
         if refused is None:
