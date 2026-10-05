@@ -1384,3 +1384,46 @@ def test_a_sigkill_aimed_at_anything_live_during_the_probe_cannot_end_the_hook(t
     assert code == 0, err
     assert decision == "deny", (decision, err)
     assert "[cloudDestructive]" in reason, reason
+
+
+@needs_bash
+@pytest.mark.skipif(os.name == "nt", reason=(
+    "the stub answers with this python's POSIX path; Windows paths through "
+    "the probe's cygpath fallback are covered by the resolver suite"))
+@pytest.mark.wallclock
+def test_the_guard_still_decides_inside_its_hook_timeout_with_a_lingering_python(tmp_path):
+    """Must-block, review round 2: a `python3` that answers with the real
+    interpreter and exits, but leaves a child holding its stdout for 30s, held
+    the strict probe -- and so the hook -- past hooks.json's 15s cloud-guard
+    timeout, which PreToolUse treats as non-blocking. The guard must still
+    deny inside that bound."""
+    _fixture(tmp_path, ARMED)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    pidfile = bindir / "child.pid"
+    stub = bindir / "python3"
+    stub.write_text(
+        "#!/bin/sh\n"
+        "( sleep 30 ) &\n"
+        f"echo $! > '{pidfile.as_posix()}'\n"
+        f"echo '{sys.executable}'\nexit 0\n",
+        encoding="ascii", newline="\n")
+    os.chmod(stub, 0o755)
+    env = _clean_env(tmp_path, {"PATH": crew_fixtures.shell_path("sh", [bindir])})
+    body = {"tool_name": "Bash",
+            "tool_input": {"command": "aws s3 rm s3://bucket/ --recursive"},
+            "cwd": str(tmp_path / "repo")}
+    try:
+        proc = subprocess.run(
+            _argv("bash"), input=json.dumps(body).encode("utf-8"),
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env=env, cwd=str(tmp_path), timeout=15, check=False)
+    finally:
+        try:
+            os.kill(int(pidfile.read_text(encoding="ascii").strip()), 9)
+        except (OSError, ValueError):
+            pass
+    assert proc.returncode == 0
+    doc = json.loads(proc.stdout.decode("utf-8"))
+    assert doc["hookSpecificOutput"]["permissionDecision"] == "deny", doc
+

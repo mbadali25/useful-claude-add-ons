@@ -178,3 +178,68 @@ def test_a_hung_candidate_is_killed_where_read_t_times_out_with_status_1(
     out, log = _drive(tmp_path, path, header, fn, "exec sleep 60\n",
                       prelude=READ_AS_BASH_32)
     _assert_hung_candidate_killed(out, log, fn)
+
+
+def _leftover_stub(directory, prints, seconds=20):
+    """A `python3` that answers and exits 0 at once but leaves a background
+    child running `seconds`, with the stub's own stdout, behind it. Its pid
+    goes to `child.pid` so the test can end it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    pidfile = directory / "child.pid"
+    stub = directory / "python3"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f"( sleep {seconds} ) &\n"
+        f"echo $! > '{pidfile.as_posix()}'\n"
+        f"echo '{prints}'\n"
+        "exit 0\n", encoding="ascii", newline="\n")
+    os.chmod(stub, 0o755)
+    return pidfile
+
+
+def _end_child(pidfile):
+    try:
+        os.kill(int(pidfile.read_text(encoding="ascii").strip()), 9)
+    except (OSError, ValueError):
+        pass
+
+
+@needs_bash
+@_POSIX_ONLY
+@pytest.mark.wallclock
+@pytest.mark.parametrize("path,header,fn", PROBES[:2])
+def test_a_child_left_holding_the_candidates_stdout_does_not_hold_the_probe(
+        tmp_path, path, header, fn):
+    """Review round 2: the strict probe read the candidate's answer from a
+    `$(...)` pipe, so a candidate that exited 0 but left a child holding
+    stdout kept the probe waiting for EOF until that child ended -- 40s
+    against role-write-guard's 10s hook timeout, a non-blocking fail-open.
+    The candidate's stdout is now a process substitution that reads one
+    line (bounded by the probe's `read -t`) and prints it to the `$()`; the
+    child holds that pipe, is not killed (no kill on the clean path), and
+    cannot hold the probe. Bounded at 5s against the child's 20s."""
+    bindir = tmp_path / "bin"
+    pidfile = _leftover_stub(bindir, "/the/stub/answer")
+    tools = tmp_path / "python-free-bin"
+    tools.mkdir()
+    crew_fixtures.link_path_dirs(
+        tools, skip=lambda name: name.startswith(("python", "py")))
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        KILL_SPY + _function_raw_source(path, header) + "\n"
+        f'r=$({fn}); printf "RESULT:%s\\n" "$r"\n',
+        encoding="utf-8", newline="\n")
+    log = tmp_path / "probe.log"
+    log.write_text("", encoding="utf-8")
+    env = dict(os.environ, PROBE_LOG=log.as_posix(),
+               PATH=crew_fixtures.shell_path("sh", [bindir], base=str(tools)))
+    try:
+        proc = subprocess.run([_BASH, str(driver)], stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              text=True, env=env, timeout=5, check=False)
+    finally:
+        _end_child(pidfile)
+    # The answer names no file, so the strict probe rejects it: what
+    # matters is that the probe returned, promptly.
+    assert "RESULT:" in proc.stdout, proc.stdout
+    assert log.read_text(encoding="utf-8") == "", "a kill on the clean path"

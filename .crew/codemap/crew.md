@@ -186,12 +186,12 @@ and `approval-hook` (plan-approval-by-user-prompt) are new hooks, and
 `PreToolUse` grew from 2 pairs to 4 (`cloud-guard`, `scope-guard` are new).
 
 **Role-write-guard fails closed without python.**
-`plugin/crew/hooks/scripts/role-write-guard.sh:366-372` resolves its own
+`plugin/crew/hooks/scripts/role-write-guard.sh:380-386` resolves its own
 private python (`_resolve_role_write_python`, `:43-` — hand-copied from
 `_common.sh`'s `crew_py_strict`, not shared, "because it is the one hook
 that can BLOCK a tool call and its test suite patches this file textually",
 comment at `:34-41`); if no candidate resolves at all, or one resolves but
-the interpreter then fails to launch (`role-write-guard.sh:385-400`, any
+the interpreter then fails to launch (`role-write-guard.sh:399-414`, any
 exit status other than 0 or 2), `_role_write_fallback_decision`
 (`:326-346`) blocks (`exit 2`) any restricted role and only allows an
 unrestricted one through, unjudged, with a named reason on stderr — "could
@@ -1864,7 +1864,7 @@ Added after this note's anchor; read in full at the L-0677 build head. The only 
   `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:540` — `classify`, the
   decision function; `:685` — `main()`.
-- `plugin/crew/hooks/scripts/role-write-guard.sh:366` — where the strict
+- `plugin/crew/hooks/scripts/role-write-guard.sh:380` — where the strict
   private-resolver result feeds the guard's fail-closed fallback.
 - `plugin/crew/hooks/scripts/event_claim.py` — no single entry point read
   this pass beyond the module docstring; called from `notify.sh` and
@@ -4097,15 +4097,15 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 Added 2026-10-04 on `T-0096-build`; the citations are to that branch's content
 commit. This section does not move the file's `anchor:`.
 
-- **DERIVED.** `crew_repo_config_dir` (`plugin/crew/hooks/scripts/_common.sh:351`)
+- **DERIVED.** `crew_repo_config_dir` (`plugin/crew/hooks/scripts/_common.sh:365`)
   sets `CREW_CFG_DIR` / `CREW_CFG_SOURCE` (`own`, `main`, `unknown`) by the rules of
   `crew_common.repo_config_dir` (`plugin/crew/hooks/scripts/crew_common.py:96`), with no
-  python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:377`) prints a
+  python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:391`) prints a
   resolved path. The PowerShell twin `Get-CrewRepoConfigDir` is one body copied into
   `plugin/crew/hooks/scripts/cloud-guard.ps1:192`, `plugin/crew/hooks/scripts/promote-gate.ps1:142`
   and `plugin/crew/hooks/scripts/auto-clear.ps1:132`.
 - **DERIVED.** Routed readers: `crew_incident_active`'s `standDown` read
-  (`plugin/crew/hooks/scripts/_common.sh:446`), `_cloud_guard_armed`
+  (`plugin/crew/hooks/scripts/_common.sh:460`), `_cloud_guard_armed`
   (`plugin/crew/hooks/scripts/cloud-guard.sh:40-53`, a missing resolver armed at `:42`, `unknown` at `:44`),
   `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:248-249`),
   promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:201`)
@@ -4152,7 +4152,7 @@ to that branch's content commits. This section does not move the file's `anchor:
   (`plugin/crew/tests/test_worktree_config_shell.py:892`) fails on any executable line in the
   eight scripts naming `.crew/config.json` or `.crew/crew.json` beyond `OWN_PATH_ALLOWED` (`:869`).
 - **DERIVED.** The handoff path stays inside the checkout (review round 1, B1): bash through
-  `crew_handoff_path` (`plugin/crew/hooks/scripts/_common.sh:391`), which calls
+  `crew_handoff_path` (`plugin/crew/hooks/scripts/_common.sh:405`), which calls
   `crew_state.handoff_path`, and context-watch's own read (`plugin/crew/hooks/scripts/context-watch.sh:354`);
   PowerShell through `Get-CrewHandoffPath`, three byte-identical copies
   (`plugin/crew/hooks/scripts/handoff-read.ps1:235`, `plugin/crew/hooks/scripts/handoff-write.ps1:335`,

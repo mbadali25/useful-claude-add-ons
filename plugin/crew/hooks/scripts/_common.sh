@@ -197,8 +197,18 @@ crew_py_strict() {
     # No kill runs after a clean exit, not even at the reaped candidate's
     # group: a child it left behind is not killed (under MSYS a native one
     # never was), and one holding stdout is bounded by the hook's own
-    # timeout, not by this probe. `trap '' PIPE`: a watchdog that already
-    # timed out is gone, and writing to it must not signal this subshell.
+    # timeout, not by this probe. The candidate's stdout is a process
+    # substitution that reads ONE line, bounded by the same `read -t`, and
+    # prints it to this `$()`: a child the candidate leaves holding its
+    # stdout holds that pipe, not this `$()`'s, so it cannot keep the probe
+    # waiting for EOF past the hook's timeout (review round 2). Not a temp
+    # file: that made every hook's python depend on `mktemp`, whose failure
+    # the hooks handle on purpose. The reader is in the candidate's group,
+    # so a timeout's kill takes it too.
+    # `trap '' PIPE`: a watchdog that already timed out is gone, and
+    # writing to it must not signal this subshell. A same-user process can
+    # write `done` through /proc/<probe>/fd/3 and stand the watchdog down
+    # early; that is the user's own processes, outside what this bounds.
     # L-1512: the previous `sleep`
     # watchdog was SIGKILLed, group and all, on EVERY call, while still
     # alive; on Windows CI a SIGKILL sent there ended the hook's own bash.exe
@@ -208,7 +218,11 @@ crew_py_strict() {
     # this loop's own input.
     real=$(
       set -m
-      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
+      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null > >(
+        line=
+        IFS= read -r -t "$_crew_py_strict_probe_timeout" line
+        printf '%s\n' "$line"
+      ) &
       pid=$!
       set +m
       exec 3> >(

@@ -7,8 +7,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 ### Fixed - `crew`: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched
-  the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343,
-  0.8s into a run bounded at 120s, empty stderr) and `test_identity_bash[aws-read-known-profile-
+  the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343, 0.8s
+  into a run bounded at 120s, empty stderr) and `test_identity_bash[aws-read-known-profile-
   other-cloud-pinned-ok]` on #356. 2304 is `9 << 8`, how msys2-runtime's `pinfo::exit` reports a
   process no Cygwin parent started that died of signal 9. Not the test's subprocess timeout (it
   raises, and never fired), not the wrapper's own status path (it prints, and exits 2), not a fork
@@ -19,88 +19,38 @@ All notable changes to this repository are documented here. Format follows [Keep
   observed on a Windows host. A hook killed that way is a PreToolUse status other than 0 or 2, so
   the agent would have run the command unjudged.
 - The probe (`crew_py_strict`, its byte copy in `role-write-guard.sh`, and `crew_py`) makes no kill
-  call on the normal path. Its watchdog is the builtin `read -t` in a process substitution, on a pipe
-  the probe holds, and the probe writes `done` there once its candidate has exited: that line alone
-  stands the watchdog down, and a timeout, EOF without it, or an error kills, as before. Positive
-  because bash 3.2 (macOS) answers a timed-out `read -t` with 1, the status EOF gives, so a watchdog
-  deciding on the status (review round 1) never killed a hung candidate there. Nothing is signalled
-  after a clean exit, not even the reaped candidate's group: a child it left behind is no longer
-  killed (under MSYS a native one never was), and one holding stdout is bounded by the hook's own
-  timeout. No `sleep` process is forked per probe, so the bound holds on a host without `sleep`.
+  call on the normal path. Its watchdog is the builtin `read -t` in a process substitution, on a
+  pipe the probe holds, and the probe writes `done` there once its candidate has exited: that line
+  alone stands the watchdog down, and a timeout, EOF without it, or an error kills, as before.
+  Positive because bash 3.2 (macOS) answers a timed-out `read -t` with 1, the status EOF gives, so a
+  watchdog deciding on the status (review round 1) never killed a hung candidate there. Nothing is
+  signalled after a clean exit, not even the reaped candidate's group: a child it left behind is no
+  longer killed (under MSYS a native one never was), and one holding stdout is bounded by the hook's
+  own timeout. No `sleep` process is forked per probe, so the bound holds on a host without `sleep`.
+- The strict probe (`crew_py_strict` and its copy) no longer waits for EOF on the candidate's stdout
+  (review round 2): a candidate that exited 0 but left a child holding stdout kept `real=$(...)`
+  waiting for that child - 40s against role-write-guard's 10s hook timeout, the same non-blocking
+  fail-open. The candidate's stdout is now a process substitution that reads one line, bounded by
+  the probe's `read -t`, and prints it; the child holds that pipe and is not killed. Not a temp
+  file: that made every hook's python depend on `mktemp`, and two suites that make `mktemp` fail on
+  purpose (auto-clear's notify path, verify-gate's 34d) went red.
 - `test_cloud_guard.py`'s `run_hook` read a killed hook's empty stdout as `allow`. A hook ended by a
   signal (`-N` on POSIX, `N << 8` from Git Bash on Windows) is now `could not tell`, and the failure
   names the signal instead of a bare `assert 2304 == 0`.
 - Tests: `test_python_probe_signals.py` drives each probe copy with `kill` shadowed by a spy that
   logs every call - an answering or failing candidate makes no kill call; a hung one is still killed
-  and is no python, also with `read` answering a timeout the bash 3.2 way. In `test_cloud_guard.py`,
-  a `BASH_ENV` that turns every kill at a live target into `kill -9 $$` reproduces the Windows
-  failure on Linux (red before the fix: the hook died with no output), and one that kills the hook
-  outright must read as could-not-tell. Sabotaged: main's `_common.sh` turns five cases red (the
-  four `crew_py_strict`/`crew_py` clean-path cases and the `BASH_ENV` one); a group kill after the
-  clean exit turns four red; deciding on `read`'s status turns the two bash-3.2 cases of those
-  functions red; dropping the signal decode turns the could-not-tell case red. The `obsidian-vault`
-  plugin carries the same probe in three hooks and is not changed here (L-1516).
-### Changed — `crew` 1.0.344: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
-
-- **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
-  gains three rows beside `STATUS_ORDER`: `OWNER_STATUSES = ("needs-owner",)`
-  (open, waiting on the owner, Obsidian Backlog lane) and
-  `CLOSED_STATUSES = ("cancelled", "superseded")` (closed, Done lane,
-  checked). `move --to` any of them is accepted; any move out of `done`,
-  `cancelled` or `superseded` needs `--reopen` and is otherwise refused with
-  nothing written, and `needs-owner` moves to and from any open word without
-  it. The closed words close a ticket in every reader: `crew_state`'s table
-  and prose readers (the session brief, `crew_ticket.resolve_active`'s INDEX
-  fallback, and approval precheck through `_index_closed`, with
-  `crew_ticket.py` unedited), autopilot's `INDEX_DONE` and a new
-  `HEADER_CLOSED` (`done`, `cancelled`, `superseded`; a header `merged` still
-  does not close), and `/crew:status`, which lists them on no line. A closed
-  reason quotes the spec's `split-into: <ids>` (T-0052) or `superseded-by:
-  <id>` line. Autopilot stops an INDEX `needs-owner` row as phase
-  `needs-owner`, waiting on `owner`, naming the ticket's unanswered
-  `## Open questions` or saying none is recorded - never as "cannot tell
-  whether direction is approved". `/crew:status` prints
-  `owner    <ids> (needs-owner)`. The README gains a "Ticket statuses" table;
-  `obsidian-sync.md`, `status.md`, `autopilot.md`, the memory-and-obsidian
-  guide's lane table and `crew_keys.py`'s `obsidian.columns.backlog`/`.done`
-  summaries (so the generated configuration reference) name the words.
-- **Why.** Nothing on main knew these words: a `cancelled` INDEX row read as
-  OPEN, so the session brief could name a cancelled ticket as the current
-  one, autopilot stopped on it as "cannot tell whether direction is
-  approved", and `move --to cancelled` refused with "maps to no lane".
-  T-0052, T-0058 and T-0059 (#364, #365, #366) cite this vocabulary, and
-  T-0039 and T-0040 name `needs-owner`.
-- **Approval is unchanged.** `crew_ticket.STATUS_VALUES` keeps its seven
-  values and `approval_digest` is untouched, so a blocking hook accepts
-  nothing new. `in-progress` and every other `STATUS_VALUES` word keep an
-  approval (T-0059's non-final slice); a header edit to `cancelled` or
-  `superseded` stales it on purpose, and `needs-owner` (never a header word)
-  stales it like any unknown word. Tests pin both and the tuple's literal
-  value.
-- **Trackers.** Jira and SDP push none of the three (`_PUSH_AT` stays
-  `in-progress`, `done`): the line says "nothing to push" and exits 0, and
-  the owner closes a cancelled Jira or SDP item by hand. No `obsidian.columns`
-  key is added, so a cancelled card sits checked in Done. No new command: a
-  ticket is cancelled with `crew_tracker.py move --to cancelled`.
-- **Owner approval.** The owner approved (2026-10-04) every `OWNER CHECK:`
-  choice in T-0037's reconstructed spec as written: `needs-owner` is never a
-  spec header word; `STATUS_VALUES` is unchanged; the Obsidian closed words go
-  to the `done` lane, checked; Jira/SDP push nothing; no separate needs-owner
-  queue (a non-ticket item is minted `ready`, then moved); two PRs.
-- **Tests.** `test_status_vocabulary.py` (new) holds `CLOSED_STATUSES` to
-  `crew_state._TABLE_DONE_WORDS`, `_DONE_RE`, `crew_autopilot.INDEX_DONE` and
-  `HEADER_CLOSED`, keeps it and `needs-owner` out of `STATUS_VALUES`, and
-  checks the `obsidian-sync.md`, README and memory-and-obsidian guide
-  tables list every `LANE_FOR_STATUS` key. Must-block and must-allow cases in
-  `test_crew_tracker.py`, `test_crew_state.py`, `test_crew_ticket.py`,
-  `test_approval_digest.py`, `test_crew_autopilot.py`,
-  `test_crew_autopilot_status.py` and `test_status.py`. A new
-  `.crew/verify.json` rule maps the four scripts, `obsidian-sync.md`, the
-  README and the guide source to the vocabulary, precheck and approval suites.
-- **Two PRs (owner rule T-0087).** This is PR A, the feature: it changes no
-  `HARNESS` path. Its 19 sabotage mutations were run by hand, each red on its
-  named test, and are registered in `sabotage_*.py` by PR B
-  (`T-0037-sabotage`), a tooling PR that lands alone after this one.
+  and is no python, also with `read` answering a timeout the bash 3.2 way; a candidate leaving a
+  child on its stdout returns within 5s. In `test_cloud_guard.py`, a `BASH_ENV` that turns every
+  kill at a live target into `kill -9 $$` reproduces the Windows failure on Linux (red before the
+  fix: the hook died with no output), one that kills the hook outright must read as could-not-tell,
+  and a `python3` leaving a child on its stdout for 30s must not keep the guard from denying inside
+  hooks.json's 15s. Sabotaged: main's `_common.sh` turns six cases red (the four
+  `crew_py_strict`/`crew_py` clean-path cases, the leftover-child case of `crew_py_strict`, and the
+  `BASH_ENV` one); a group kill after the clean exit turns four red; deciding on `read`'s status
+  turns the two bash-3.2 cases of those functions red; the pipe capture put back turns the
+  leftover-child probe case and the guard's 15s case red; dropping the signal decode turns the
+  could-not-tell case red. The `obsidian-vault` plugin carries the same probe in three hooks and is
+  not changed here (L-1516).
 
 ### Changed — `obsidian-vault` 0.5.0: vault recall relevance (T-0083)
 
