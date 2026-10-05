@@ -86,21 +86,26 @@ is_system() {
   esac
   return 1
 }
+# Only a path-like argument (one holding a `/`) is canonicalised, against
+# this stub's own cwd: a bare word - a flag, a package name - resolved there
+# would read as a system path whenever the cwd is under /opt, as a CI
+# runner's checkout is.
 refuse_if_system() {
   local a="$1" c
   [[ -n "$a" ]] || return 0
-  c=$(realpath -m -- "$a" 2>/dev/null) || c="$a"
-  if is_system "$a" || is_system "$c"; then
-    echo "sudo-stub: refusing real path $a" >&2; exit 97
-  fi
   case "$a" in
     *=*) refuse_if_system "${a#*=}" ;;
     -t?*) refuse_if_system "${a#-t}" ;;
   esac
+  [[ "$a" == -* || "$a" != */* ]] && return 0
+  c=$(realpath -m -- "$a" 2>/dev/null) || c="$a"
+  if is_system "$a" || is_system "$c"; then
+    echo "sudo-stub: refusing real path $a" >&2; exit 97
+  fi
   return 0
 }
 prev=""
-for a in "$@"; do
+for a in "${@:2}"; do   # the arguments after the command
   refuse_if_system "$a"
   if [[ "$prev" == -c ]]; then
     read -ra words <<<"$(tr ";|&<>()'\\"" ' ' <<<"$a")"
@@ -199,7 +204,8 @@ def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
     env.update(extra_env or {})
     proc = subprocess.run(
         [_BASH, "-c", f'source "$0"; {script}', str(_BOOTSTRAP)],
-        capture_output=True, text=True, env=env, timeout=30, check=False)
+        capture_output=True, text=True, env=env, timeout=30, check=False,
+        cwd=str(stubs["tmp"]))
     return proc, stubs["log"].read_text()
 
 
@@ -1022,13 +1028,13 @@ def test_no_override_and_no_flag_is_silent(stubs):
     assert proc.stderr == "", proc.stderr
 
 
-def _sudo_stub_decision(stubs, *args):
+def _sudo_stub_decision(stubs, *args, cwd=None):
     """Run the sudo stub with `true` as the command, so a broken guard still
     executes nothing that could write anywhere. Returns (rc, stderr)."""
     env = dict(os.environ, STUB_LOG=str(stubs["log"]))
     proc = subprocess.run([_BASH, str(stubs["bin"] / "sudo"), "true", *args],
                           capture_output=True, text=True, env=env, timeout=30,
-                          check=False, cwd=str(stubs["tmp"]))
+                          check=False, cwd=str(cwd or stubs["tmp"]))
     return proc.returncode, proc.stderr
 
 
@@ -1074,3 +1080,17 @@ def test_the_sudo_stub_allows_test_paths(stubs, args):
     rc, err = _sudo_stub_decision(stubs, *argv)
     assert rc == 0, (argv, err)
     assert err == "", err
+
+
+def test_the_sudo_stub_judges_bare_words_by_path_not_by_cwd(stubs):
+    # A CI runner checks out under /opt/actions-runner, so the stub's cwd can
+    # resolve into /opt. Flags and bare words are not paths there (must-allow);
+    # a relative path that lands in /opt still is (must-block). The cwd is a
+    # symlink to /opt, entered read-only, and the command is `true`.
+    opt_cwd = stubs["tmp"] / "looks-like-opt"
+    opt_cwd.symlink_to("/opt", target_is_directory=True)
+    rc, err = _sudo_stub_decision(stubs, "-rf", "rm", "nuclei", "install", cwd=opt_cwd)
+    assert rc == 0, err
+    rc, err = _sudo_stub_decision(stubs, "sub/x", cwd=opt_cwd)
+    assert rc == 97, err
+    assert "refusing real path sub/x" in err
