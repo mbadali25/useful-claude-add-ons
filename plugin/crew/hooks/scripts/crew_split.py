@@ -294,9 +294,13 @@ def absent_sources(top):
     absent = {}
     if not os.path.lexists(os.path.join(top, ".crew", "codemap")):
         absent["subsystems"] = "no .crew/codemap/ in this repository"
-    path = os.path.join(top, ".crew", "metrics.md")
+    # The file `measure` reads (crew_state.read_metrics): the main checkout's,
+    # also from a linked worktree. A path git cannot name is not "absent".
+    path, problem = crew_common.metrics_md_path(top)
     why = None
-    if not os.path.lexists(path):
+    if problem or path is None:
+        why = None
+    elif not os.path.lexists(path):
         why = "no .crew/metrics.md (no review recorded)"
     elif os.path.isfile(path):
         try:

@@ -548,3 +548,41 @@ def test_autopilot_never_runs_crew_split():
 def test_command_says_jira_always_stops_for_the_owner():
     flat = " ".join(_command_text().split())
     assert "Jira" in flat and "always" in flat.split("Jira", 1)[1][:200]
+
+
+# --- port review round 1 (release/1.2.0) ----------------------------------------
+
+def test_absent_sources_reads_the_main_checkouts_metrics_from_a_worktree(tmp_path, monkeypatch):
+    """T-0058 port review BLOCK: `measure` reads the main checkout's
+    metrics.md from a linked worktree, so `absent_sources` must judge that
+    file: an unreadable main file is not `unmeasured`."""
+    root = _repo(tmp_path / "main")
+    (root / ".crew" / "metrics.md").write_text("date | ticket\n", encoding="utf-8")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    (wt / ".crew" / "metrics.md").unlink(missing_ok=True)
+    real = open
+
+    def denied(path, *args, **kwargs):
+        if str(path) == str(root / ".crew" / "metrics.md"):
+            raise PermissionError(13, "Permission denied")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", denied)
+
+    assert "findings-rate" not in crew_split.absent_sources(str(wt))
+
+
+def test_split_runs_under_focus_on_the_same_ticket(tmp_path):
+    """T-0058 port review BLOCK: `split <focused ticket>` looks at the
+    focused ticket's size; it is not other work."""
+    root = _repo(tmp_path)
+    ticket = _ticket(root, count=12)
+    assert crew_autopilot.main(["focus", "--root", str(root), "--ticket", ticket]) == 0
+
+    got = crew_autopilot.route_args(str(root), f"split {ticket}")
+    other = crew_autopilot.route_args(str(root), "split T-9999")
+
+    assert (got["sub"], got["stop"], got["ticket"]) == ("split", False, ticket), got
+    assert other["stop"] is True and "focus is on" in other["reason"], other

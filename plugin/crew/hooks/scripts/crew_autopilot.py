@@ -2576,7 +2576,7 @@ def focus_guard(root, sub, ticket=""):
     marker that could not be read refuses everything else -- whether focus is
     on cannot be told, so nothing may start or switch work. Focused on T-A: a
     pointer naming anything but T-A refuses all but `focus T-A` (which
-    re-points it); else `run` with no ticket or T-A, and `focus` alone or
+    re-points it); else `run` or `split` with no ticket or T-A, and `focus` alone or
     `focus T-A`, run; anything else -- another ticket, `assign`, `goal`, a
     subcommand this does not know -- is refused."""
     if sub == "status" or sub in NO_TICKET or (sub == "focus" and ticket == FOCUS_OFF):
@@ -2596,7 +2596,8 @@ def focus_guard(root, sub, ticket=""):
                  else f"names {state['pointer'] or 'no ticket'}")
         return (f"focus is on {focus}, but this worktree's active-ticket pointer {names}: "
                 f"type {AUTOPILOT} focus {focus} to re-point it, or {FOCUS_RELEASE}")
-    if sub == "run" and ticket in ("", focus):
+    # T-0058: `split` looks at the focused ticket's size; it starts no other work.
+    if sub in ("run", "split") and ticket in ("", focus):
         return None
     what = (f"{AUTOPILOT} {sub} {ticket}" if ticket else f"{AUTOPILOT} {sub}").strip()
     return (f"focus is on {focus}: {what} would start or switch to other work, which focus "

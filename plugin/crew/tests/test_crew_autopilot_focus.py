@@ -585,8 +585,9 @@ _LATER = ("wave", "split")
 _PLAIN = [("take care of the login audit", "/crew:autopilot assign the login audit"),
           ("work toward zero flaky tests", "/crew:autopilot goal zero flaky tests"),
           ("run T-1 and T-2 in parallel", "/crew:autopilot wave T-1 T-2"),
-          ("split it", "/crew:autopilot split T-1"),
-          ("T-1 is too big", "/crew:autopilot split T-1")]
+          # T-0058: `split` of the focused ticket runs; of another ticket it is refused.
+          ("split T-2", "/crew:autopilot split T-2"),
+          ("T-2 is too big", "/crew:autopilot split T-2")]
 
 
 def _live(monkeypatch):
@@ -1168,3 +1169,12 @@ def test_hooks_json_registers_no_focus_hook():
         data = handle.read()
 
     assert (b"crew_autopilot" in data, b"focus" in data.lower()) == (False, False)
+
+
+def test_plain_text_split_of_the_focused_ticket_routes(tmp_path):
+    """T-0058: `split` of the focused ticket looks at its size; it routes."""
+    root = _focused(tmp_path)
+
+    got = crew_route.decide(str(root), "split it")
+
+    assert (got["outcome"], got["command"]) == ("route", f"/crew:autopilot split {T}"), got

@@ -85,6 +85,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   -> /crew:split <id>`, once per `split.md`. Two of the mutations (the gate
   after plan removed; the Jira refusal removed) were re-run on the port, each
   red; the rest were not re-run here. `autopilot.md` is 115 of its 120 lines.
+- **Port review fixes.** Under T-0020's focus, `split <focused ticket>` runs
+  (it looks at that ticket's size; `split` of another ticket is still refused,
+  and the prompt router asks with the focus refusal once it has resolved the
+  ticket). `absent_sources` judges the metrics file `measure` reads (the main
+  checkout's, from a linked worktree), so an unreadable main-checkout
+  `metrics.md` stays `unknown`, never `unmeasured`.
 
 ### Added — crew 1.1.2: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
 
