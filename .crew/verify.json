@@ -81,9 +81,9 @@
                 "**/pyproject.toml", "plugin/**", "skills/**", "MARKETPLACE.md",
                 "skills-lock.json"],
       "seconds": 9,
-      "run": ["python3 scripts/check-marketplace.py"],
+      "run": ["python3 scripts/check-marketplace.py --pending-bump"],
       "reach": "local",
-      "why": "8s (it was 95s until the history walk's blob reads were cached on 2026-09-13; re-time it rather than trusting either figure), and the ONLY check that catches a content change shipped with no version bump - CLAUDE.md's first stop-and-ask, and the defect that had main red from 12e43eee to 5238be3d. _verify/smoke.sh is NOT a substitute: it deliberately omits the version-drift walk (58 revisions of marketplace.json, the slow half) and would have stayed green on exactly that bug. reach: local - check-marketplace.py reads only this repo's own tracked files and git history; it makes no network call." },
+      "why": "L-0511 / REPO-03: at Stop this rule runs with --pending-bump, because a build branch carries no version bump until land: version drift prints as `pending at land:` and does not fail; every other check fails as before, and on branch main the flag is ignored (a note: line says so) so drift fails there. The land step, CI on a ready PR and every push to main run the full check, which is what keeps CLAUDE.md's first stop-and-ask closed. 8s (it was 95s until the history walk's blob reads were cached on 2026-09-13; re-time it rather than trusting either figure), and the ONLY check that catches a content change shipped with no version bump - CLAUDE.md's first stop-and-ask, and the defect that had main red from 12e43eee to 5238be3d. _verify/smoke.sh is NOT a substitute: it deliberately omits the version-drift walk (58 revisions of marketplace.json, the slow half) and would have stayed green on exactly that bug. reach: local - check-marketplace.py reads only this repo's own tracked files and git history; it makes no network call." },
 
     { "paths": ["plugin/PLUGINS.md", "plugin/README.md", "plugin/*/README.md",
                 "**/SKILL.md", "scripts/install-prerequisites.sh",

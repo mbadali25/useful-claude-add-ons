@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **check-marketplace.py --pending-bump**: A draft PR reports version drift as pending at land, repository tooling, no plugin version. A build branch no longer has to bump a plugin version to get a green draft PR: version drift there reads `pending at land`, and a ready PR or a push to main still fails on it.
 - `scripts/gate-runner.py` records its heavy-run slot, repository tooling, no plugin version. The local gate runner's status file now names the heavy-run slot it ran in, and a reviewed patch makes the machine-local heavy-run wrapper log every slot wait to one JSONL file.
-- **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

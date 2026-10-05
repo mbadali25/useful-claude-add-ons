@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — `check-marketplace.py --pending-bump`: a draft PR reports version drift as pending at land, repository tooling, no plugin version (L-0511, PR 1)
+
+- **Summary.** A build branch no longer has to bump a plugin version to get a green draft PR: version drift
+  there reads `pending at land`, and a ready PR or a push to main still fails on it.
+- **The flag.** `python3 scripts/check-marketplace.py --pending-bump` prints each version-drift finding as
+  `pending at land: <plugin>: ...` and exits 0 for that check alone; every other check fails as before. On
+  branch `main` the flag is ignored and a `note:` line says so; a detached HEAD (a CI merge ref) is not `main`.
+- **Where it runs.** The Marketplace workflow passes it only when `github.event.pull_request.draft` is true and
+  now also runs on `ready_for_review`, so marking a PR ready re-runs the full check on the same head (`main`
+  requires `check`, strict, no merge queue). Verify rule 0 runs it at Stop. REPO-03 in `.crew/standards.md`
+  says so. `scripts/gate-runner.py` pins both CI strings and still runs the full check locally.
+- **Tests.** Five new `scripts/_test/version-drift.py` cases run the real `main()`; each was sabotaged by hand
+  and went red.
+
 ### Changed — `scripts/gate-runner.py` records its heavy-run slot, repository tooling, no plugin version (L-0517)
 
 - **Summary.** The local gate runner's status file now names the heavy-run slot it ran in, and a
