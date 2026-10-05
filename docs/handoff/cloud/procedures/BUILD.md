@@ -20,3 +20,6 @@ Every PR title must START with its ticket id(s) (e.g. `T-0057: ...`; a bundle li
 
 ## CI load
 WITHDRAWN 2026-10-04: do NOT add [skip ci] to commits (the session's permission system treats it as a CI bypass). Push normally.
+
+## Cloud ticket IDs (owner rule 2026-10-05)
+New untracked cloud-session tickets are numbered C-0001, C-0002, ... (next free: see CLOUD-SESSION-TICKETS.md). L-1500 to L-1518 keep their IDs.

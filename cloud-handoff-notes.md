@@ -12,7 +12,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 ### Owner rules in force (all sessions)
 - Merge only with 0 BLOCK + 0 FIX on the current head, CI green on that head, in order. Merge commits only; never squash/rebase/force-push. Commits carry only `Claude-Session: <url>`; never Co-Authored-By. No `[skip ci]` (withdrawn: the permission system treats it as a CI bypass).
 - Harness paths (`HARNESS` in scripts/check-tooling-pr.py) land ALONE (T-0087). Docs-only PRs need no gates.
-- PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets L-15xx ids (next free: **L-1515**).
+- PR titles start with ticket id(s); body has a `Tickets:` line. Untracked work gets **C-NNNN** ids (owner 2026-10-05; next free: **C-0001**). L-1500 to L-1518 were minted earlier and keep their IDs.
 - **Batches of 5-6** (raised 2026-10-04 evening).
 - **Version: ONE bump per batch via a single BATCH PR** (owner 2026-10-04 23:1x): merge the batch's PR branches into `batch-<n>-build`, reset versions to main's, one version commit last, merge only the batch PR. See `procedures/LANDPREP.md` "Batch PR". Harness PRs still alone. #394 (628f1360, 1.0.344) lands alone as already prepped.
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
