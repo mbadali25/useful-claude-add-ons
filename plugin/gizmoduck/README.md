@@ -51,9 +51,9 @@ gizmoduck runs **inside** a container or a CI job; it never drives Docker itself
   apt runs with `DEBIAN_FRONTEND=noninteractive`.
 - **`--user`** installs, with no elevation anywhere, every tool that needs no package manager
   into the tool home (`GIZMODUCK_HOME`, else `$XDG_DATA_HOME/gizmoduck`, else
-  `~/.local/share/gizmoduck`; see "Where gizmoduck looks for tools"): Nuclei, trivy, testssl.sh,
-  sqlmap, dependency-check, ZAP and (when `perl` is present) nikto, with checkov and semgrep through
-  `pip3 install --user`. It needs `curl`, `unzip`, `git` and `python3` first and exits 2 naming
+  `~/.local/share/gizmoduck`; see "Where gizmoduck looks for tools"): Nuclei, trivy, sqlmap,
+  dependency-check, ZAP, and testssl.sh and nikto when `hexdump` and `perl` are present; checkov
+  and semgrep go through `pip3 install --user` and are linked into the tool home's `bin`. It needs `curl`, `unzip`, `git` and `python3` first and exits 2 naming
   any that are missing. Tools only a package manager provides are reported as present or
   **skipped**, never installed. Add these to the image when you want them:
 
@@ -63,7 +63,7 @@ gizmoduck runs **inside** a container or a CI job; it never drives Docker itself
   | `openjdk-17-jre` | ZAP and dependency-check (Java 17+; without it both **fail** under `--user`) |
   | `perl`, `libxml-writer-perl` | nikto |
   | `wkhtmltopdf` | PDF reports (HTML reports work without it) |
-  | `bsdextrautils` | `hexdump`, which testssl.sh needs to run |
+  | `bsdextrautils` | `hexdump`, without which testssl.sh is skipped under `--user` |
 
 - **Exit status**, so a pipeline can gate on it: `0` nothing failed; `1` a tool or the Nuclei
   template download failed (it used to exit 0 after a partial install); `2` a usage or

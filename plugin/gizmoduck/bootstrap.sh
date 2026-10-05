@@ -473,6 +473,12 @@ install_nikto_user() {
     return 0
   fi
   local dir="${OPT_DIR}/nikto"
+  # Like already_installed: a clone that has nikto.pl is kept, with no
+  # network call, unless GIZMODUCK_BOOTSTRAP_FORCE=1.
+  if [[ -f "$dir/program/nikto.pl" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    echo ">> nikto: already installed (${dir}) - skipping; GIZMODUCK_BOOTSTRAP_FORCE=1 updates it"
+    return 0
+  fi
   if [[ -d "$dir/.git" ]]; then
     git_net 600 -C "$dir" pull --ff-only
   else
@@ -488,7 +494,11 @@ install_testssl() {
   # minimal image lacks (measured in the Claude Code cloud image).
   if ! command -v hexdump >/dev/null 2>&1; then
     if [[ $USER_MODE == 1 ]]; then
-      echo "!! testssl.sh: no hexdump, which it needs to run - add 'bsdextrautils' to the image" >&2
+      # testssl.sh --version passes without hexdump and every scan then
+      # refuses, so an install here would read as working and is not one.
+      echo ">> testssl.sh: SKIPPED - needs hexdump (add 'bsdextrautils' to the image)"
+      SKIPPED+=("testssl.sh")
+      return 0
     else
       apt_install bsdextrautils
     fi
@@ -554,6 +564,23 @@ install_trivy_asset() {
 install_checkov() {
   already_installed checkov checkov && return 0
   pip3 install --user --upgrade checkov
+  link_user_script checkov
+}
+
+# --user: pip --user puts a tool's script in Python's own user base
+# (`python3 -m site --user-base`/bin, usually ~/.local/bin), which need not be
+# on PATH and is never the tool home. Link it into the tool home's bin, where
+# gizmoduck looks first; a script pip did not leave there fails the tool.
+link_user_script() {
+  [[ $USER_MODE == 1 ]] || return 0
+  local base
+  base=$(python3 -m site --user-base) || return 1
+  if [[ ! -x "$base/bin/$1" ]]; then
+    echo "!! $1: pip reported success but $base/bin/$1 is not there" >&2
+    return 1
+  fi
+  mkdir -p "${BIN_DIR}"
+  ln -sf "$base/bin/$1" "${BIN_DIR}/$1"
 }
 
 install_semgrep() {
@@ -562,6 +589,7 @@ install_semgrep() {
   # see a check that is MISSING - an authorization gate nobody wrote has no
   # signature, no CVE and no misconfigured resource to find.
   pip3 install --user --upgrade semgrep
+  link_user_script semgrep
 }
 
 install_depcheck() {
@@ -691,10 +719,16 @@ print_plan() {
   else
     plan_package_tool "nikto" nikto
   fi
-  plan_line "testssl.sh" "${OPT_DIR}/testssl.sh, linked in ${BIN_DIR}" "$self"
+  if [[ $USER_MODE == 1 ]] && ! command -v hexdump >/dev/null 2>&1; then
+    plan_line "testssl.sh" "-" "SKIPPED: needs a package manager (hexdump: bsdextrautils)"
+  else
+    plan_line "testssl.sh" "${OPT_DIR}/testssl.sh, linked in ${BIN_DIR}" "$self"
+  fi
   plan_line "trivy" "${BIN_DIR}/trivy" "$self"
-  plan_line "checkov" "pip3 install --user" "$pip"
-  plan_line "semgrep" "pip3 install --user" "$pip"
+  local pipdest="pip3 install --user"
+  [[ $USER_MODE == 1 ]] && pipdest="pip3 install --user, linked in ${BIN_DIR}"
+  plan_line "checkov" "$pipdest" "$pip"
+  plan_line "semgrep" "$pipdest" "$pip"
   plan_line "dependency-check" "${OPT_DIR}/dependency-check, linked in ${BIN_DIR}" "$java"
   plan_line "sqlmap" "${OPT_DIR}/sqlmap, wrapper in ${BIN_DIR}" "$self"
   plan_line "OWASP ZAP" "${ZAP_ROOT}/ZAP_<version>, zap.sh linked in ${BIN_DIR}" "$java"

@@ -178,7 +178,7 @@ def test_user_mode_lists_package_only_tools_as_skipped(env, tmp_path):
     e["GIZMODUCK_HOME"] = str(tmp_path / "toolhome")
     proc = _run(e, "--user", "--dry-run")
     plans = _plans(proc)
-    for tool in ("nmap", "wkhtmltopdf"):
+    for tool in ("nmap", "wkhtmltopdf", "testssl.sh"):  # testssl.sh: no hexdump here
         line = next(ln for ln in plans if ln.startswith(f"plan: {tool} "))
         assert "SKIPPED" in line and "FAILED" not in line, line
     nmap = _fake(fakes, "nmap", f"#!{_BASH}\nexit 0\n")

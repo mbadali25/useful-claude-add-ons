@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — gizmoduck 0.5.11: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
+### Changed — gizmoduck 0.5.12: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
 
 - **Summary.** `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`,
   `--user` installs every tool that needs no package manager into the tool home without root,
@@ -21,8 +21,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   is not a terminal so a password prompt cannot hang a pipeline. Not root and no `sudo`: exit 2,
   pointing at `--user`. apt runs with `DEBIAN_FRONTEND=noninteractive` (through `env`, so sudo's
   environment reset cannot drop it).
-- **`--user`.** No elevation anywhere. Nuclei, trivy, testssl.sh, sqlmap, dependency-check, ZAP and
-  (with `perl` present) nikto go into the gizmoduck tool home (L-0684's rule, held together with
+- **`--user`.** No elevation anywhere. Nuclei, trivy, sqlmap, dependency-check, ZAP, and testssl.sh
+  and nikto when `hexdump` and `perl` are present, go into the gizmoduck tool home; checkov and
+  semgrep's `pip3 install --user` scripts are linked into its `bin` (L-0684's rule, held together with
   `scanners/base.py` by a test); downloads stage in `<tool home>/.download`. nmap, wkhtmltopdf and
   perl are reported present or SKIPPED, never installed; ZAP and dependency-check without a
   Java 17+ runtime FAIL naming `openjdk-17-jre`. `curl`, `unzip`, `git` and `python3` are checked
