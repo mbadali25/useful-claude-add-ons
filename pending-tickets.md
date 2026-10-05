@@ -109,6 +109,10 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0038 | Vacuous sabotage entry "an edit to scope_guard.py runs no pytest rule" (`sabotage_refresh.py`): GREEN on main a555ff37 too, because several rules map scope_guard.py | H1 report | none | H lane |
 | C-0039 | `crew_train.py` reads state.json / merge log non-blocking, regular files only (today only the harness callers refuse a FIFO) | H1 report | feature PR | needs ticket |
 | C-0040 | Rejoin the PowerShell probe carriers and bash twins after L-0690, so the other nine `.ps1` hooks and `_common.sh` report timeouts too | H1 report | L-0690 on main | needs ticket |
+| C-0041 | Bring `Resolve-CrewBash` in `verify-gate.ps1` into line with PWSH-16 (a bounded proof run; Application-only `Get-Command git`) | G7 report (Codex flag) | none (harness file: H lane) | needs ticket |
+| C-0042 | PWSH sabotage entries: the four `STANDARDS_MUTATIONS` for `sabotage_standards.py` (in `.work/tickets/L-0534/notes.md`) | G7 report | L-0534 on main; L-0539 | H lane |
+| C-0043 | Owner supplies publishable Earned-by text for NG-07, NODE-08, DOTNET-08/-13/-15 (they reach the bar privately) so they can be promoted from candidates | G7 report | owner research files | owner action |
+| C-0044 | `docs/tickets/L-0534/direction.md:21` says every `.ps1` is ASCII-only, but two `exo_preflight.ps1` files start with a BOM (owner's doc, left unedited) | G7 report | none | owner action |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
