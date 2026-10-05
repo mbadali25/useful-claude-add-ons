@@ -724,6 +724,22 @@ def test_collect_reports_an_invalid_started_lane_id_and_keeps_the_valid_lanes(tm
             any("T-9" in line for line in report["approvals"])) == ({"T-1", "T-2"}, True, False, True, False)
 
 
+def test_a_set_file_id_with_a_trailing_newline_is_refused_not_printed(tmp_path):
+    # Codex review of the fix range, round 4 (rush g0): `T-9\n` in both the set file and
+    # start.json skipped validation and reached `/crew:approve T-9\n`.
+    root = _started(tmp_path)
+    path = crew_wave.set_path(str(root), "s")
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    data["tickets"].append({"id": "T-9\n"})
+    text = json.dumps(data)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+    with pytest.raises(crew_wave.WaveError, match="corrupt"):
+        _collect(root)
+
+
 def test_relaunch_skips_terminal_lanes(tmp_path):
     root = _started(tmp_path)
     crew_wave.lane_done(str(root), "s", "T-1", "clean", "done checks passed")

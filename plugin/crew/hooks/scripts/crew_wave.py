@@ -193,14 +193,23 @@ def write_set(root, slug, tickets, deps=None):
     deps = deps or {}
     rows = []
     for ticket in tickets:
-        crew_ticket.check_ticket(ticket)
+        _plain_id(ticket)
         row = {"id": ticket}
         if ticket in deps:
-            row["deps"] = [crew_ticket.check_ticket(d) for d in deps[ticket]]
+            row["deps"] = [_plain_id(d) for d in deps[ticket]]
         rows.append(row)
     if not rows:
         raise WaveError("a set names at least one ticket")
     _write_json(set_path(_top(root), slug), {"schema": SCHEMA, "set": slug, "tickets": rows})
+
+
+def _plain_id(value):
+    """crew_ticket.check_ticket, plus no newline: its pattern's `$` lets one
+    trailing newline through, and an id is printed into `/crew:approve` lines."""
+    crew_ticket.check_ticket(value)
+    if "\n" in value:
+        raise crew_ticket.TicketError(f"ticket id {value!r} holds a newline")
+    return value
 
 
 def _valid_set(data, slug):
@@ -213,12 +222,12 @@ def _valid_set(data, slug):
         if not isinstance(row, dict) or not isinstance(row.get("id"), str):
             return False
         try:
-            crew_ticket.check_ticket(row["id"])
+            _plain_id(row["id"])
             deps = row.get("deps", [])
             if not isinstance(deps, list):
                 return False
             for dep in deps:
-                crew_ticket.check_ticket(dep)
+                _plain_id(dep)
         except crew_ticket.TicketError:
             return False
     return True
@@ -367,7 +376,7 @@ def _entries(root, slug, tickets):
             raise WaveError(f"set {slug} is {state}: .work/autopilot/{slug}.json")
         return [(row["id"], row.get("deps")) for row in data["tickets"]]
     for ticket in tickets or []:
-        crew_ticket.check_ticket(ticket)
+        _plain_id(ticket)
     return [(ticket, None) for ticket in tickets or []]
 
 
@@ -460,7 +469,7 @@ def lanes_dir(top, slug):
 
 
 def lane_path(top, slug, ticket):
-    return os.path.join(lanes_dir(top, slug), crew_ticket.check_ticket(ticket) + ".json")
+    return os.path.join(lanes_dir(top, slug), _plain_id(ticket) + ".json")
 
 
 def read_lane(root, slug, ticket):
@@ -479,7 +488,7 @@ def write_lane(root, slug, ticket, lane):
 
 
 def branch_for(ticket):
-    return f"{crew_ticket.check_ticket(ticket)}-wave"
+    return f"{_plain_id(ticket)}-wave"
 
 
 def _git(top, *args):
@@ -673,7 +682,7 @@ def lane_init(root, main, slug, ticket):
     """(ok, reason). The lane's first command, in its isolated worktree: the
     ticket branch, the ticket folder and `.crew/config.json` copied in, the
     approval and the scope guard's mode checked there, then activation."""
-    crew_ticket.check_ticket(ticket)
+    _plain_id(ticket)
     top, main_top = crew_ticket.toplevel(root), crew_ticket.toplevel(main)
     if not top or not main_top:
         return False, "not a git worktree"
@@ -892,16 +901,13 @@ def collect(root, slug):
     # A lane that was started stays in the report even if the set file was rewritten without it;
     # an entry that is not a ticket id is a problem, never read (a path like `../x`).
     for entry in started or []:
-        if entry in ids:
-            continue
         try:
-            crew_ticket.check_ticket(entry if isinstance(entry, str) else "")
-            if "\n" in entry:  # check_ticket's `$` lets one trailing newline through
-                raise crew_ticket.TicketError(entry)
+            _plain_id(entry if isinstance(entry, str) else "")
         except crew_ticket.TicketError:
             problems.append(f"start.json lists {entry!r}, which is not a ticket id; not read")
             continue
-        ids.append(entry)
+        if entry not in ids:
+            ids.append(entry)
     lanes = [_lane_row(top, slug, ticket, started, marks) for ticket in ids]
     questions = []
     for lane in lanes:
@@ -1075,7 +1081,7 @@ def _parse_deps(values):
         ticket, sep, rest = value.partition("=")
         if not sep:
             raise WaveError(f"--deps {value!r} is not <id>=<id>,<id> or <id>=none")
-        deps[crew_ticket.check_ticket(ticket.strip())] = (
+        deps[_plain_id(ticket.strip())] = (
             [] if rest.strip() == "none" else [d.strip() for d in rest.split(",") if d.strip()])
     return deps
 
