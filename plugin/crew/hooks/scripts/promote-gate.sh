@@ -124,8 +124,10 @@ import json, os, shutil, subprocess, sys, unicodedata
 # flavours choose the same environment for the same command:
 #   - normalise the command: drop every CR, then trailing newlines; a command
 #     that is then empty or whitespace deploys nothing;
-#   - a declared command matches when either one contains the other,
-#     literally, ignoring case (`*`, `?`, `[` are text, never wildcards);
+#   - a declared command matches when the command CONTAINS it (L-0689: a
+#     fragment of a declared command - `git rev-parse HEAD`, `development` -
+#     is no deploy), literally, ignoring case (`*`, `?`, `[` are text, never
+#     wildcards);
 #   - every key the gate reads (`environments`, `deploy`, and below
 #     `requires`, `rollback`, `rollbackReason`, `requireHuman`) is read
 #     ignoring case, as PowerShell property access does, and a map holding two
@@ -265,9 +267,11 @@ def matching(envs, strict):
                            "`deploy` that is not a command or a list of "
                            "commands", 4)
             continue
-        # Substring both ways: the declared command may be run with extra
-        # flags, or wrapped. Deliberately generous - a missed match means no gate.
-        if any(isinstance(d, str) and d and (fold(d) in fcmd or fcmd in fold(d))
+        # The command contains the declared text: run verbatim, with extra
+        # flags, or wrapped (`cd <dir> && <declared>`). Not the reverse (L-0689):
+        # a fragment of a declared command matched it, so `git rev-parse HEAD`
+        # wrote an in-flight marker for a deploy that never ran.
+        if any(isinstance(d, str) and d and fold(d) in fcmd
                for d in declared):
             hits.append(name)
     return hits

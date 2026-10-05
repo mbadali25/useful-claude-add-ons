@@ -450,7 +450,7 @@ _CONFIGS = {
     "inputless staging before production": (_envs(
         ("staging", {"workflow": "deploy.yml", "ref": "main"}, None),
         ("production", _PROD, None), human=("production",)),
-        {"staging": "staging,production", "production": "staging,production"}),
+        {"staging": "staging", "production": "staging,production"}),
     "shaInput-only staging before production": (_envs(
         ("staging", {"workflow": "deploy.yml", "ref": "main", "shaInput": "sha"}, None),
         ("production", _PROD, None), human=("production",)),
@@ -476,7 +476,7 @@ _CONFIGS = {
         ("qa", None, ["gh workflow run deploy.yml --ref main -f target=dev -f stage=qa"]),
         ("production", None, ["gh workflow run deploy.yml --ref main -f target=dev"
                               " -f stage=qa -f go=prod"]), human=("production",)),
-        {"dev": "dev,qa,production"}),
+        {"dev": "dev"}),
     # `*`, `?` and `[...]` are text to both gates: no wildcard claims a dispatch.
     "a star in an earlier plain string": (_envs(
         ("legacy", None, ["gh workflow run deploy.yml --ref main -f target=*"]),
@@ -700,7 +700,7 @@ _EXTRA = [
     # union with a dispatch, case variants in values
     ({"staging": "gh workflow run deploy.yml --ref main",
       "Prod": _PROD_PREFIX, "qa": "GH WORKFLOW RUN deploy.yml --ref main -f target=PROD"},
-     [_PROD_PREFIX + " -f sha=" + "0" * 40, "gh workflow run deploy.yml",
+     [_PROD_PREFIX + " -f sha=" + "0" * 40, "gh workflow run deploy.yml --ref main -f target=PROD",
       "gh workflow run deploy.yml --ref main -f target=staging"]),
     # CRLF map text, and CRs inside a deploy string and the command
     (_raw('\r\n"a": {"deploy": "./deploy.sh a\\r", ' + _RB + '},\r\n'

@@ -49,8 +49,8 @@ applies it (`load_map`, `gate_problem`, `gate_matches`):
     object is REFUSED by the gates, so `check` refuses it too
     (`gate-refuses-map`); `"deploy": []` and `[""]` declare nothing;
   - the command loses every CR and its trailing newlines, and a blank one
-    deploys nothing; a declared command matches when either one contains the
-    other, literally, ignoring case (`*`, `?`, `[` are text: `[!-[]` is four
+    deploys nothing; a declared command matches when the command contains
+    it (L-0689: not the reverse), literally, ignoring case (`*`, `?`, `[` are text: `[!-[]` is four
     characters, never a wildcard set);
   - EVERY matching environment applies, in file order, joined `staging,prod`:
     the union of their `requires`, `rollback` and `requireHuman`.
@@ -408,8 +408,7 @@ def gate_problem(envs):
 
 
 def _matches(command, dep):
-    return any(fold(dep) in fold(command) or fold(command) in fold(dep)
-               for fold in (_fold, _dotnet_fold))
+    return any(fold(dep) in fold(command) for fold in (_fold, _dotnet_fold))
 
 
 def gate_matches(command, envs):

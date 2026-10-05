@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.1.4: promote-gate no longer matches a fragment of a declared deploy (L-0689)
+
+- **Summary.** Both promote gates treated a command as a declared deploy when either text contained
+  the other, so `git rev-parse HEAD`, `HEAD` or `development` matched a declared
+  `gh workflow run deploy.yml -f environment=development -f ref=$(git rev-parse HEAD)`: the gate
+  wrote `.crew/.deploy-in-flight` and the Stop gate reported "DEPLOY NOT RECORDED" for a deploy that
+  never ran (reproduced). Now a command is a deploy only when it contains the declared text -
+  verbatim, with arguments after it, or wrapped (`cd <dir> && <declared>`), as before.
+- **Breaking.** A map whose real runs are shorter than the declared text (`cd infra && ./deploy.sh
+  prod` declared, `./deploy.sh prod` run) is no longer matched: declare the shortest text every real
+  run contains. promote-gate.ps1 uses the same literal, case-insensitive containment at both sites;
+  `crew_ghdeploy.py check`'s gate simulation follows. A marker an older crew left is documented,
+  not deleted.
+
 ### Fixed — `crew` 1.1.4: promote-gate reads the newest PROMOTIONS.md row for an environment and sha, not the first (L-0665)
 
 - **Summary.** Both promote gates decided `requires` from the FIRST row matching the upstream and the

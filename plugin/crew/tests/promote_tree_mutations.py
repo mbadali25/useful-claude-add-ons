@@ -25,6 +25,7 @@ DISPATCH = os.path.join(_SCRIPTS, "_promote_dispatch.py")
 _T = "tests/test_promote_gate_effective_tree.py::"
 _D = "tests/test_promote_gate_dispatch.py::"
 _R = "tests/test_promote_gate_rows.py::test_the_newest_row_decides"
+_M = "tests/test_promote_gate_match.py::"
 
 PROMOTE_TREE_MUTATIONS = (
     # Retargeted after review r1: the dirty-worktree case is now also caught by
@@ -218,4 +219,22 @@ PROMOTE_TREE_MUTATIONS = (
      "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'p"
      "ass') { 'pass' } else { 'fail' })\n",
      _R + "[pass-then-fail-ps1]"),
+    # L-0689: a fragment of a declared deploy is no deploy, both flavours, both maps.
+    ("promote-gate.sh matches a fragment of a declared deploy again", SH,
+     "        if any(isinstance(d, str) and d and fold(d) in fcmd\n",
+     "        if any(isinstance(d, str) and d and (fold(d) in fcmd or fcmd in fold(d))\n",
+     _M + "test_a_fragment_of_a_declared_deploy_is_not_a_deploy_must_allow[git rev-parse HEAD-sh]"),
+    ("promote-gate.sh matches a fragment against the committed map again", SH,
+     "        if any(isinstance(d, str) and d and fold(d) in fcmd\n",
+     "        if any(isinstance(d, str) and d and (fold(d) in fcmd or fcmd in fold(d))\n",
+     _M + "test_a_fragment_with_the_map_dirty_matches_nothing_committed[sh]"),
+    ("promote-gate.ps1 matches a fragment of a declared deploy again", PS1,
+     "    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0)\n",
+     "    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or\n"
+     "            $Dep.IndexOf($c, [StringComparison]::OrdinalIgnoreCase) -ge 0)\n",
+     _M + "test_a_fragment_of_a_declared_deploy_is_not_a_deploy_must_allow[git rev-parse HEAD-ps1]"),
+    ("promote-gate.ps1 reads a declared deploy as a wildcard pattern again", PS1,
+     "    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0)\n",
+     "    return ($c -like \"*$Dep*\")\n",
+     "tests/test_promote_gate_literal_match.py::test_a_deploy_holding_brackets_matches_itself_and_blocks[ps1]"),
 )

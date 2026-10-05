@@ -570,6 +570,12 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
   <code>.work/PROMOTIONS.md</code> row for that environment and sha is a failure, a <code>not-run</code> row from
   <code>crew_ghdeploy.py record</code>, or anything but three <code>pass</code> cells; an older pass no longer counts. Re-run
   <code>/crew:promote &lt;upstream&gt;</code> for that sha and let it append its row.</li>
+<li><strong>"DEPLOY NOT RECORDED" for a sha no deploy ran at</strong>: before L-0689 a command that was a FRAGMENT
+  of a declared deploy (<code>git rev-parse HEAD</code>, <code>development</code>) matched it, and the gate wrote
+  <code>.crew/.deploy-in-flight</code> for a deploy that never ran. A command now matches only when it
+  contains the declared text. A stale marker left by an older crew names that sha; check that no
+  deploy ran, then delete <code>.crew/.deploy-in-flight</code> by hand. If a real deploy is now unmatched,
+  its runs are shorter than the declared text: declare the shortest text every real run contains.</li>
 <li><strong>"no all-pass row for sha X"</strong> where X is the worktree's sha: the upstream environment passed a
   different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
   not carry over.</li>

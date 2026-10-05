@@ -436,7 +436,7 @@ header row. Then run `/crew:promote development --dry-run` and read the sequence
 back to me before anything real is deployed.
 
 **Two of these are enforced by a hook, not by good intentions.** `promote-gate.sh`
-runs on `PreToolUse` and refuses a command matching a declared `deploy` entry
+runs on `PreToolUse` and refuses a command that contains a declared `deploy` entry
 unless, for the sha at HEAD:
 
 - every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`

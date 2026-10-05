@@ -2868,8 +2868,11 @@ Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
 
 ### What a hook enforces, and what it cannot
 
-`promote-gate.sh` fires on `PreToolUse` and refuses any command matching a
-declared `deploy` entry unless, for the sha at HEAD of **the tree the deploy
+`promote-gate.sh` fires on `PreToolUse` and refuses any command that contains the declared text of a
+`deploy` entry (L-0689: verbatim, with arguments after it, or wrapped; a fragment such as `git
+rev-parse HEAD` is no deploy - a breaking change for a map whose real runs are SHORTER than the
+declared text: declare the shortest text every real run contains. A "DEPLOY NOT RECORDED" for a sha
+no deploy ran at, left by an older crew, is this bug) unless, for the sha at HEAD of **the tree the deploy
 runs from** (the Bash call's `cwd`, moved by a leading `cd <dir> &&` and named
 by any `git -C <dir>`; it must be a worktree of the same repository, and any
 literal sha in the command must be its HEAD):

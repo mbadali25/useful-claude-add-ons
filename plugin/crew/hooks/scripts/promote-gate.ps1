@@ -231,7 +231,8 @@ function Deny-UnreadableMap([string]$Why) {
 #   - normalise the command: drop every CR, then trailing newlines; a command
 #     that is then empty or whitespace deploys nothing (the
 #     IsNullOrWhiteSpace exit above);
-#   - a declared command matches when either one contains the other,
+#   - a declared command matches when the command CONTAINS it (L-0689: a
+#     fragment of a declared command is no deploy),
 #     literally, ignoring case (OrdinalIgnoreCase; the .sh folds each
 #     character's simple upper case, which agrees on ASCII and all but 29 BMP
 #     characters - its fold() names them);
@@ -361,8 +362,7 @@ function Assert-EnvironmentName([string]$Name, [string]$Where) {
 function Test-DeployMatch($Cmd, [string]$Dep, [string]$EnvName) {
   try {
     $c = $Cmd.Replace("`r", "").TrimEnd("`n")
-    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-            $Dep.IndexOf($c, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0)
   } catch {
     [Console]::Error.WriteLine("PROMOTION BLOCKED: could not compare the command with environment ``$EnvName``'s deploy in .crew/verify.json: $($_.Exception.Message)")
     [Console]::Error.WriteLine("  This is NOT a pass. Crew cannot tell whether this command deploys to")

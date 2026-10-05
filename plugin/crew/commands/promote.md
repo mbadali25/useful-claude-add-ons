@@ -308,8 +308,8 @@ Then, for every result (a pass silent, a failure loud), send `bash ${CLAUDE_PLUG
 Be precise about this, because the difference decides how much the sequence above
 can be trusted.
 
-**Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command matching a declared `deploy`
-entry - and, on either tool, on a workflow dispatch of a declared deploy workflow in either spelling
+**Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command that contains the declared `deploy`
+text (a fragment of it is no deploy) - and, on either tool, on a workflow dispatch of a declared deploy workflow in either spelling
 (`gh workflow run` or `gh api .../dispatches`; inputs must fit one environment; a dispatch it cannot read is
 could-not-tell and blocks; a `github` entry's `shaInput` must be given once, as that full sha) - and refuses it unless, for the sha at
 HEAD **of the tree the deploy runs from**: every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`;
