@@ -998,3 +998,74 @@ def test_shipped_defaults_send_nothing(tmp_path, monkeypatch, telegram, capsys):
 
     assert (words, telegram.requests, "notify.provider is none" in capsys.readouterr().err) == (
         ("off", "off"), [], True)
+
+
+# --- credentials as a Windows host had them (2026-10-05) --------------------------------------
+
+@pytest.mark.parametrize("raw", [TOKEN + "\r\n", TOKEN + " ", "  " + TOKEN + "\t\n"],
+                         ids=["crlf", "space", "both-ends"])
+def test_a_token_with_surrounding_whitespace_is_stripped_and_sent(tmp_path, telegram,
+                                                                  monkeypatch, raw):
+    monkeypatch.setenv(TOKEN_ENV, raw)
+    root = _repo(tmp_path, {"provider": "telegram", "chatId": " " + CHAT + " ",
+                            "events": ["deploy"]})
+
+    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+
+    assert (result, [r["path"] for r in telegram.requests],
+            telegram.requests[0]["form"]["chat_id"]) == ("sent", [f"/bot{TOKEN}/sendMessage"], CHAT)
+
+
+@pytest.mark.parametrize("bad", ["123456:AB CD", "not-a-token", TOKEN + " " + TOKEN])
+def test_a_value_that_cannot_be_a_bot_token_sends_nothing_and_says_so(tmp_path, telegram,
+                                                                      monkeypatch, capsys, bad):
+    monkeypatch.setenv(TOKEN_ENV, bad)
+    root = _repo(tmp_path)
+
+    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+
+    err = capsys.readouterr().err
+    assert (result, len(telegram.requests)) == ("missing-credentials", 0)
+    assert "does not look like a Telegram bot token" in err and "AB CD" not in err
+
+
+@pytest.mark.parametrize("glob,env,repo_chat,says", [
+    pytest.param({}, None, CHAT, "notify.tokenEnv is not set in ~/.claude/crew/config.json or",
+                 id="no-token-env"),
+    pytest.param({"tokenEnv": TOKEN_ENV}, "", CHAT, f"token missing: ${TOKEN_ENV} is empty",
+                 id="empty-token"),
+    pytest.param({"tokenEnv": TOKEN_ENV}, TOKEN, None, "chatId missing: set notify.chatId",
+                 id="no-chat"),
+])
+def test_a_missing_credential_names_which_one_and_where(tmp_path, monkeypatch, capsys,
+                                                       glob, env, repo_chat, says):
+    _global(tmp_path, monkeypatch, glob)
+    if env is None:
+        monkeypatch.delenv(TOKEN_ENV)
+    else:
+        monkeypatch.setenv(TOKEN_ENV, env)
+    root = _repo(tmp_path, {"provider": "telegram", "chatId": repo_chat, "events": ["deploy"]})
+
+    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+
+    assert result == "missing-credentials"
+    assert says in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("reply,why", [
+    pytest.param((400, {"ok": False, "description": "Bad Request: chat not found"}, 0),
+                 "HTTP 400: Bad Request: chat not found", id="http-400"),
+    pytest.param((401, {"ok": False, "description": "Unauthorized"}, 0),
+                 "HTTP 401: Unauthorized", id="http-401"),
+    pytest.param((200, {"ok": False, "description": "Forbidden: bot was blocked"}, 0),
+                 "ok: false: Forbidden: bot was blocked", id="ok-false"),
+])
+def test_a_refusal_names_telegrams_reason(tmp_path, telegram, capsys, reply, why):
+    telegram.responses.append(reply)
+    root = _repo(tmp_path)
+
+    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+
+    err = capsys.readouterr().err
+    assert result == f"failed:{why}" and f"send failed: {why}" in err
+    assert TOKEN not in err

@@ -73,7 +73,7 @@ ALLOWLIST = (
                    'else _macos_obsidian_running()')},
     {"file": "skills/notify/scripts/notifyd.py", "function": "_pid_alive", "tool": "tasklist",
      "reason": "Windows only, and tasklist ships as tasklist.exe, the one form CreateProcess tries",
-     "gate": "skills/notify/scripts/notifyd.py:261", "gate_text": 'if os.name == "nt":'},
+     "gate": "skills/notify/scripts/notifyd.py:301", "gate_text": 'if os.name == "nt":'},
     {"file": "plugin/crew/hooks/scripts/crew_shell.py", "function": "run", "tool": "bash",
      "reason": "POSIX only: run() takes `bash -c` only off native Windows",
      "gate": "plugin/crew/hooks/scripts/crew_shell.py:776", "gate_text": "if not on_windows():"},
