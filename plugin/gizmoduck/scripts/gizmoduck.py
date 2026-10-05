@@ -1412,6 +1412,14 @@ def cmd_diff(baseline, current, min_sev, title):
     return "\n".join(out)
 
 
+def _has_templates(tdir):
+    """True once any *.yaml exists under tdir (stops at the first)."""
+    for _root, _dirs, files in os.walk(tdir):
+        if any(f.endswith(".yaml") for f in files):
+            return True
+    return False
+
+
 def cmd_doctor():
     """Health check for the local toolchain. Exit non-zero if nuclei is missing."""
     ok = True
@@ -1438,7 +1446,14 @@ def cmd_doctor():
     tdir = next((d for d in (os.path.expanduser("~/nuclei-templates"),
                              os.path.expanduser("~/.local/nuclei-templates"))
                  if os.path.isdir(d)), None)
-    line("templates", tdir or "not found (run: nuclei -update-templates)", good=bool(tdir))
+    # An existing but EMPTY directory is not "OK": `nuclei -update-templates`
+    # creates it and exits 0 having downloaded nothing where api.github.com
+    # is refused (C-0008), and a template-less nuclei finds nothing anywhere.
+    if tdir and not _has_templates(tdir):
+        line("templates", f"{tdir} holds no templates (run: nuclei -update-templates, "
+                          "or bootstrap.sh / bootstrap.ps1)", good=False)
+    else:
+        line("templates", tdir or "not found (run: nuclei -update-templates)", good=bool(tdir))
 
     line("python", sys.version.split()[0])
 
