@@ -149,6 +149,29 @@ def test_lint_refuses_an_anchor_to_a_missing_file_or_past_its_end(tmp_path, anch
     assert any(":15: " in p and why in p and anchor in p for p in problems), problems
 
 
+def test_lint_refuses_an_empty_auth_line(tmp_path):
+    entry = ENTRY.replace("Auth: basic, key from env `SHIPSTATION_API_KEY`", "Auth:   ")
+
+    problems = _problems(tmp_path, _doc(entry))
+
+    assert any(":8: " in p and "no `Auth:` line" in p for p in problems), problems
+
+
+def test_a_fenced_example_entry_is_not_an_entry(tmp_path):
+    doc = (HEADER + "\n# Integrations\n\nThis repo makes no outbound calls. The format:\n\n"
+           "```markdown\n## Shop\n\n" + ENTRY + "```\n")
+
+    problems = _problems(tmp_path, doc)
+
+    assert any("no `### ` entry" in p for p in problems), problems
+
+
+def test_a_fence_inside_an_entry_does_not_end_it(tmp_path):
+    entry = ENTRY.replace("Retries: 3", "```\n## not a section\n### not an entry\n```\nRetries: 3")
+
+    assert _problems(tmp_path, _doc(entry)) == []
+
+
 def test_lint_refuses_a_doc_with_no_entry(tmp_path):
     problems = _problems(tmp_path, HEADER + "\n# Integrations\n\nNothing here.\n")
 
@@ -185,6 +208,8 @@ _SECRETS = [
      "b3JkZXJzOnMzY3JldA=="),
     ("assigned-literal", 'password = "' + _HUNTER + '"', _HUNTER),
     ("assigned-literal", 'password="' + "abc12" + '"', "abc12"),
+    ("assigned-literal", 'password = "' + "correct horse" + ' battery staple"', "battery staple"),
+    ("assigned-literal", "secret: '" + "two words" + "'", "two words"),
     ("assigned-unquoted", "password: " + _HUNTER, _HUNTER),
     ("assigned-unquoted", "api_key: " + "abcdef" + "123456789", "abcdef123456789"),
 ]

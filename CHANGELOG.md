@@ -70,12 +70,13 @@ sabotage registrations for this ticket's mutations in `sabotage_review.py`,
   `plugin/crew/hooks/scripts/crew_reference.py lint --root . --kind integrations <file>`, must exit
   0 before the draft is copied in: it refuses a doc whose first non-blank line is not the `>
   Generated from <repo>@<sha> on <date>` header (one inside a fenced example does not count), an
-  entry with no anchor or no `Auth:` line, an anchor to a missing file, outside the repo (symlinks
+  entry with no anchor or no (or an empty) `Auth:` line - a `###` inside a fenced example is not an
+  entry - an anchor to a missing file, outside the repo (symlinks
   resolved), absolute or `../`, at line 0 or past the file's end, a doc with no entry (a repo with
   no outbound calls writes no file), and seventeen secret pattern classes (AWS access key id and
   secret access key, private-key block, GitHub token and PAT, Slack token and webhook URL, `sk-`,
   Stripe, Google, npm and SendGrid keys, JWT, credentials in a URL, an `Authorization:` value, a
-  quoted or unquoted literal assigned to a password/secret/token/API-key name), naming the pattern
+  quoted (spaces and all) or unquoted literal assigned to a password/secret/token/API-key name), naming the pattern
   and line but never the value, nor an anchor's text on that line. The patterns are known shapes
   only: a novel token format passes (a stated gap; `crew:security` reviews auth lines). Exit 2 for a usage error or an unreadable file, never 0. `--audit` gains calls with no
   entry and entries whose anchor no longer holds.

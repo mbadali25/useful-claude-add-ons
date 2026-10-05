@@ -13,10 +13,11 @@ the repo, runs this, and copies it into `docs/reference/` only on exit 0.
   against (`generated_header`, which it imports from here); one further down,
   in a fenced example say, is not the header.
 - One `### ` entry per outbound call, grouped under a `## <external system>`
-  heading. A doc with no entry is refused: a repo with no outbound calls
+  heading; a `### ` inside a fenced example is not an entry. A doc with no
+  entry is refused: a repo with no outbound calls
   writes no integrations.md and says so in the report.
 - Every entry holds one or more backticked `path:line` / `path:start-end`
-  anchors (ANCHOR_RE) and a line starting `Auth:` -- naming WHERE the
+  anchors (ANCHOR_RE) and a non-empty line starting `Auth:` -- naming WHERE the
   credential comes from (an env var, a secret name, a config key), `none`,
   or `undocumented - needs a human`, which is counted, not refused.
 - Every anchor anywhere in the doc names a regular file inside `--root`
@@ -56,6 +57,8 @@ BAD_ANCHOR_RE = re.compile(r"`(?:/|\.\.[/\\])[^`\s]*:\d+(?:-\d+)?`")
 ANCHOR_RE = re.compile(
     r"`(\.?[A-Za-z0-9_][A-Za-z0-9_.@+-]*(?:/[A-Za-z0-9_.@+-]+)*):(\d+)(?:-(\d+))?`")
 UNDOCUMENTED = "undocumented - needs a human"
+# An `Auth:` line that names something: `Auth:` alone says nothing.
+_AUTH_RE = re.compile(r"Auth:[ \t]*\S")
 KINDS = ("integrations",)
 
 # (name, pattern). Order is the report order when one line holds several.
@@ -82,12 +85,13 @@ SECRET_PATTERNS = (
     ("authorization-header", re.compile(
         r"(?i)\bauthorization[\"']?\s*[:=]\s*[\"']?(?:bearer|basic|token|digest)\s+"
         r"(?![<$%{])[A-Za-z0-9._~+/=-]{8,}")),
-    # A quoted literal assigned to a credential-named key. A value starting
-    # `$`, `<`, `{` or `%` is a placeholder, and backticks are not quotes, so
+    # A quoted literal assigned to a credential-named key, spaces and all (a
+    # passphrase is still a password). A value starting `$`, `<`, `{` or `%`
+    # is a placeholder, and backticks are not quotes, so
     # ``token from env `ORDERS_API_TOKEN` `` stays allowed.
     ("assigned-literal", re.compile(
         r"(?i)[\w.-]*(?:password|passwd|secret|token|api[_-]?key)[\w.-]*[\"']?\s*[:=]\s*"
-        r"[\"'](?![$<{%])[^\"'\s]{4,}[\"']")),
+        r"([\"'])(?![$<{%])(?:(?!\1).){4,}\1")),
     # The same, unquoted (YAML, .env): a value of 8+ characters holding a
     # letter AND a digit and no `/` -- prose (`Token: undocumented - needs a
     # human`) and secret-manager paths (`secret: orders/prod2/api`) pass.
@@ -120,10 +124,18 @@ def generated_header(text):
 
 
 def _sections(lines):
-    """[(heading line number, [lines])] for each `### ` entry."""
-    found = []
+    """[(heading line number, [lines])] for each `### ` entry. A heading
+    inside a ``` or ~~~ fence is an example, not an entry or a section end."""
+    found, fence = [], None
     for number, line in enumerate(lines, 1):
-        if line.startswith("### "):
+        marker = line.lstrip()[:3]
+        if fence is None and marker in ("```", "~~~"):
+            fence = marker
+        elif fence is not None and marker == fence:
+            fence = None
+        elif fence is not None:
+            pass
+        elif line.startswith("### "):
             found.append((number, []))
         elif line.startswith("## ") or line.startswith("# "):
             if found and found[-1][1] is not None:
@@ -194,7 +206,7 @@ def _entries(lines, shown):
     for number, body in sections:
         if not any(ANCHOR_RE.search(line) for line in body):
             problems.append(f"{shown}:{number}: entry has no `path:line` anchor")
-        if not any(line.startswith("Auth:") for line in body):
+        if not any(_AUTH_RE.match(line) for line in body):
             problems.append(f"{shown}:{number}: entry has no `Auth:` line (name where the "
                             f"credential comes from, `none`, or `{UNDOCUMENTED}`)")
     return problems
