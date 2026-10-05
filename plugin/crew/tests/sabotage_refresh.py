@@ -23,7 +23,8 @@ approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.
 """
 import os
-import shutil
+
+import crew_fixtures
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _S = os.path.join(CREW, "hooks", "scripts")
@@ -336,7 +337,9 @@ REFRESH_MUTATIONS = (
 # The .ps1 twins need pwsh to run their test; without it the [ps1] cases skip
 # and a mutation could only read as vacuous, so they join where pwsh exists
 # (sabotage_tooling.py's convention) and the report says when they did not.
-if shutil.which("pwsh"):
+# Review of a73a1ed6: the shared resolver, as the target tests use, so a pwsh
+# installed off PATH (the documented Git Bash setup) still registers them.
+if crew_fixtures.resolve_pwsh():
     REFRESH_MUTATIONS += (
         ("the ps1 gate reports bookkeeping as unmapped", GATE_PS1,
          _PS1_DROP, "",

@@ -813,6 +813,17 @@ def test_an_entry_leaves_no_process_behind(tmp_path, monkeypatch, tail,
         assert _gone_within(pid), pid
 
 
+def test_ps1_refresh_rows_follow_the_shared_pwsh_resolver():
+    """Review of a73a1ed6: the .ps1 refresh rows join wherever their target
+    tests can run, which is what crew_fixtures.resolve_pwsh decides (a pwsh
+    off PATH included), not shutil.which."""
+    import crew_fixtures  # pylint: disable=import-outside-toplevel
+    import sabotage_refresh  # pylint: disable=import-outside-toplevel
+    labels = {m[0] for m in sabotage_refresh.REFRESH_MUTATIONS}
+    assert ("the ps1 gate reports bookkeeping as unmapped" in labels) is bool(
+        crew_fixtures.resolve_pwsh())
+
+
 def test_an_entry_stays_registered_until_its_tree_is_killed(tmp_path, monkeypatch):
     """Review of ee01a3ca: a signal during cleanup must still find the entry
     (kill_current), so it leaves the registry only after its tree is killed."""

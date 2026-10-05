@@ -229,6 +229,10 @@ def _new_job(proc):
                                             ctypes.sizeof(info)) or \
             not kernel32.AssignProcessToJobObject(
                 job, int(proc._handle)):  # pylint: disable=protected-access
+        # Review of a73a1ed6: a job that could not be set up is closed, not
+        # leaked once per entry.
+        kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+        kernel32.CloseHandle(job)
         return None
     return (kernel32, job)
 
