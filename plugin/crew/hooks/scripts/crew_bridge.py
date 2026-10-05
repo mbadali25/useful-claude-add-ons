@@ -137,7 +137,9 @@ def next_step(chan):
     remote = chan.remote
     if crew_coord.safe(remote, len(remote)) != remote:
         return f"next: crew_coord.py status --channel {chan.channel} --remote {crew_coord.UNSAFE}"
-    return f"next: crew_coord.py status --channel {chan.channel} --remote {shlex.quote(remote)}"
+    # `--remote -x` would read -x as an option; `--remote=-x` cannot.
+    joined = "=" if remote.startswith("-") else " "
+    return f"next: crew_coord.py status --channel {chan.channel} --remote{joined}{shlex.quote(remote)}"
 
 
 class RecordChannel(crew_coord.Channel):

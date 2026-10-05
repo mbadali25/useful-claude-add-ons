@@ -205,18 +205,23 @@ def test_receive_ancestor_tip_exits_0(world, capsys):
     assert [line for line in lines if line.startswith("next:")] == [NEXT]
 
 
-@pytest.mark.parametrize("remote", ["x;id", "a$(id)b", "q'x", "`id`&b|c", "r" * 120])
+@pytest.mark.parametrize("remote", ["x;id", "a$(id)b", "q'x", "`id`&b|c", "r" * 120, "-x", "--help"])
 def test_the_next_step_quotes_the_remote_whole(world, capsys, remote):
     _, work, _, tip = world
     url = git(work, "remote", "get-url", "origin")
-    git(work, "remote", "add", remote, url)
-    code, lines = run(work, ["receive", "--channel", CHANNEL, "--remote", remote], stdin=bell(tip).encode(),
+    git(work, "remote", "add", "--", remote, url)
+    code, lines = run(work, ["receive", "--channel", CHANNEL, f"--remote={remote}"], stdin=bell(tip).encode(),
                       capsys=capsys)
-    assert code == 0
-    assert [line for line in lines if line.startswith("next:")] == [
-        f"next: crew_coord.py status --channel {CHANNEL} --remote {shlex.quote(remote)}"]
-    words = shlex.split(lines[-1][len("next: "):])
-    assert words == ["crew_coord.py", "status", "--channel", CHANNEL, "--remote", remote]
+    # crew_coord's fetch hands git the remote as an argument, so git reads a
+    # leading-dash name as an option and the doorbell cannot be confirmed (3);
+    # the printed next step must still parse back to the exact remote.
+    assert code == (3 if remote.startswith("-") else 0)
+    nexts = [line for line in lines if line.startswith("next:")]
+    assert len(nexts) == 1
+    words = shlex.split(nexts[0][len("next: "):])
+    assert words[:4] == ["crew_coord.py", "status", "--channel", CHANNEL]
+    # crew_coord.py's own parser reads the printed words back to this exact remote.
+    assert crew_coord._parser().parse_args(words[1:]).remote == remote  # pylint: disable=protected-access
 
 
 # --- receive: could not tell --------------------------------------------------------
