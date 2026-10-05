@@ -1,7 +1,7 @@
 # Reconciling the codemap against the graph
 
-The one procedure `/crew:upgrade` and `/crew:onboard --refresh` both run,
-so the rules live here instead of twice. It's implemented by
+The procedure `/crew:onboard --refresh` runs, its one caller since
+`/crew:upgrade` was removed in T-0038, so the rules live in one place. It's implemented by
 `scripts/graph_reconcile.py` (pure text in, text out) and
 `scripts/crew_upgrade.py` (the file I/O and reporting around it).
 
@@ -86,9 +86,9 @@ as its `.crew/codemap/<name>.md` file:
 Only `DERIVE` headings belong in this file — `graph_reconcile.reconcile`
 ignores any key that's in `KEEP` or unrecognized, so putting `Does` or
 `Landmines` facts here has no effect either way. Producing this JSON from a
-graph query is the calling command's job (`/crew:upgrade`, `/crew:onboard
---refresh`), not this skill's — it's the contract those commands write to,
-not a script this skill runs on their behalf.
+graph query is the calling command's job (`/crew:onboard --refresh`), not
+this skill's — it's the contract that command writes to, not a script this
+skill runs on its behalf.
 
 Without `--derived`, or with an unreadable/malformed file, `crew_upgrade.py`
 treats it as `{}` and runs everything else (backup, config upgrade) with no

@@ -324,7 +324,7 @@ next authority."** For `reportTheme` that authority is `docs.theme`; for `docs.t
 doc-builder's own five-step resolution. Set `reportTheme` only when reports need a different
 brand from the rest of the docs, which is the client-deliverable case.
 
-`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:upgrade` rewrites that one
+`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:migrate` (upgrade stage) rewrites that one
 value to null — the only value the upgrade rewrites rather than preserving. Say so if the
 user asks why their config changed, and say why it was safe: **through 0.17.1 the key had no
 consumer at all**, so no value sitting in it could be a preference anyone formed by watching
@@ -466,6 +466,10 @@ the first secret exists is the only time it is free.
 .work/
 ```
 
+Language and tool patterns (`__pycache__/`, `node_modules/`, `/<project>/bin/`, ...) never go in
+this block: they are `crew_gitignore.py`'s managed block (`# crew:gitignore:managed`, at the top of
+the file), which Phase 1 applies and `/crew:onboard` keeps current. That script never edits this block.
+
 Everything under `.crew/` not on that list - `config.json` with its machine
 paths and its `pm.authority` trust decision, `STATUS.md`, `metrics.md`, the
 incident state - describes one checkout on one machine. A fresh clone runs
@@ -483,6 +487,23 @@ colleague and claim a dispatch that never happened there. `.crew/.hook-*` is the
 once-per-session claim marker (see `hooks/scripts/hook_once.py`): `.crew/*`
 already covers it, and it is named anyway because it is the entry whose absence
 shows up as noise in every `git status` rather than as a failure.
+
+## 3e. .graphifyignore from the secrets denylist
+
+`.gitignore` does not stop graphify reading a tracked file: only
+`.graphifyignore` can. So, before any graph is built, run:
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph_ignore.py --root . --write
+```
+
+It appends every missing denylist pattern to `.graphifyignore` under one
+marked block and changes nothing else. Report what it printed: the patterns
+it added, or that none were needed. On exit 1 (a path still uncovered, or a
+`!` line kept open) or 2 (the reason), report it and do not build a graph.
+Repo-specific secret paths (`config/`, `/init.php`) go in
+`.claude/secrets-denylist`, one gitignore pattern per line. Commit both files. The crew-graph skill's **Secrets denylist** section lists every
+source.
 
 ## 4. Write the repo CLAUDE.md
 
