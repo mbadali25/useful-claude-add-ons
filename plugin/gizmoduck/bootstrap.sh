@@ -500,16 +500,20 @@ install_nikto_user() {
     fi
     echo ">> nikto: ${dir} is present but fails its check - updating it"
   fi
+  # Each git failure returns explicitly: try_install runs this inside an
+  # `if`, where set -e does not stop a failing command.
   if [[ -d "$dir/.git" ]]; then
-    git_net 600 -C "$dir" pull --ff-only
+    git_net 600 -C "$dir" pull --ff-only || {
+      echo "!! nikto: git pull in ${dir} failed" >&2; return 1; }
   elif [[ -e "$dir" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
     # Not a clone this script made: never delete it without being told to.
     echo "!! nikto: ${dir} exists and is not a git clone - move it aside, or set GIZMODUCK_BOOTSTRAP_FORCE=1 to replace it" >&2
     return 1
   else
     rm -rf "$dir"
-    mkdir -p "$OPT_DIR"
-    git_net 600 clone --depth 1 https://github.com/sullo/nikto.git "$dir"
+    mkdir -p "$OPT_DIR" || return 1
+    git_net 600 clone --depth 1 https://github.com/sullo/nikto.git "$dir" || {
+      echo "!! nikto: git clone into ${dir} failed" >&2; return 1; }
   fi
   [[ -f "$dir/program/nikto.pl" ]] || return 1
   # The same run check as a cached copy: perl without nikto's modules

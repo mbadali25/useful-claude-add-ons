@@ -367,3 +367,22 @@ def test_user_mode_force_replaces_a_cached_non_clone_nikto(env, tmp_path):
     proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
                           text=True, timeout=30, check=False)
     assert "clone" in log.read_text(), proc.stdout + proc.stderr
+
+
+def test_user_mode_forced_nikto_refresh_whose_pull_fails_is_a_failure(env, tmp_path):
+    # A healthy cached clone under GIZMODUCK_BOOTSTRAP_FORCE=1 whose pull fails is
+    # not reported installed, even though the old nikto.pl still runs.
+    e, fakes, log = env
+    e["GIZMODUCK_BOOTSTRAP_FORCE"] = "1"
+    _fake(fakes, "perl", f'#!{_BASH}\necho "Nikto 2.5.0"\n')
+    _fake(fakes, "git", f'#!{_BASH}\necho "git $*" >> "$FAKE_LOG"\nexit 1\n')
+    opt = tmp_path / "opt"
+    (opt / "nikto" / "program").mkdir(parents=True)
+    (opt / "nikto" / ".git").mkdir()
+    (opt / "nikto" / "program" / "nikto.pl").write_text("#!/usr/bin/perl\n", newline="\n")
+    script = f'source "$0"; USER_MODE=1; OPT_DIR={opt}; try_install nikto install_nikto_user; echo "failed=${{FAILED[*]}}"'
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    assert "pull" in log.read_text()
+    assert proc.stdout.splitlines()[-1] == "failed=nikto", proc.stdout + proc.stderr
+    assert "git pull" in proc.stderr and "failed" in proc.stderr, proc.stderr

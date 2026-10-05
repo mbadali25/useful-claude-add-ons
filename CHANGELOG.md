@@ -81,7 +81,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `marketplace.yml` step and gate-runner table step, and `case_no_step_launches_pwsh_directly` in
   `scripts/_test/gate-runner.py`.
 
-### Changed — gizmoduck 0.5.16: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
+### Changed — gizmoduck 0.5.17: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
 
 - **Summary.** `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`,
   `--user` installs every tool that needs no package manager into the tool home without root,
@@ -105,7 +105,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   otherwise it is updated in place (`git pull`), never deleted first (`GIZMODUCK_BOOTSTRAP_FORCE=1`
   always updates it). A nikto directory that is not a git clone is left alone and the step fails
   naming `GIZMODUCK_BOOTSTRAP_FORCE=1`, which replaces it. A clone that perl still cannot run (no
-  XML::Writer) fails the step naming `libxml-writer-perl`. `--user --dry-run` needs no `HOME`.
+  XML::Writer) fails the step naming `libxml-writer-perl`, and so does a failed `git pull` or clone.
+  `--user --dry-run` needs no `HOME`.
 - **`GITHUB_TOKEN`.** Release lookups send it when set, as a header file descriptor, so it is on no
   command line and never printed.
 - **Docs.** The plugin README's new "CI and containers" section: root in a container, `--user`,
