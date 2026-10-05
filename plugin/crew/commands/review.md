@@ -469,7 +469,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TI
   --output "$SCRATCH/out.txt" --exit-code 0 --note "codex-probe=${PROBE_STATUS:-not-run}"
 ```
 
-An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 9 above - gate or pre-review checks - or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
+An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 9 above - gate or pre-review checks - or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle. A round the second call reports as a refunded `tool` failure is re-dispatched once (reserve again, rerun this block); a second failure, or any other INCOMPLETE, stops (L-0514).
 
 The fallback is genuinely weaker than a different family: the same model family reviewing itself
 finds fewer defects. Tell me when it is what ran, so I review harder myself.
@@ -483,7 +483,7 @@ Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back i
 no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray prose (the script ignores it and names
 it on a `review: FINDINGS kept; ...` line); a non-zero exit, empty output, a possibly misformatted contract line,
 a line admitting the review fell short, a skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as
-clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
+clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; 2a/2b retry a refunded round once in-process (L-0514), never a usage limit or a timeout, and `review: retry:` / `review: options:` lines say what stopped it.
 
 **Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
 guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go

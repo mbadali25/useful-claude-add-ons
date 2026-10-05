@@ -24,7 +24,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_status
 import review_ledger
 import review_run
-from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
+from review_fixtures import NO_BACKOFF, env_with_path, fake_reviewer_bin, git, init_repo
 
 SCRIPTS = os.path.dirname(os.path.abspath(review_run.__file__))
 GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden", "review",
@@ -78,8 +78,8 @@ def _review(tmp_path, mode="golden", read_form="full", out=GOLDEN_OUT, pad=0):
     manifest = _bundle(repo, scratch, pad)
     fakes = fake_reviewer_bin(tmp_path / "bin")
     result = subprocess.run(
-        [sys.executable, _script("review_run.py"), "--root", str(repo), "--ticket", "T1",
-         "--scratch", str(scratch), "--provider", "codex"],
+        NO_BACKOFF + ["--root", str(repo), "--ticket", "T1",
+                      "--scratch", str(scratch), "--provider", "codex"],
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120,
         env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode, FAKE_REVIEWER_GOLDEN_STREAM=STREAM,
                           FAKE_REVIEWER_GOLDEN_OUT=str(out),
@@ -127,8 +127,10 @@ def test_canary_over_limit_prompt_is_read_from_its_file(tmp_path):
 
 
 def test_canary_turn_failed_is_a_refunded_tool_failure(tmp_path):
+    """The failed turn is refunded and retried once (L-0514); the retry
+    fails the same way and is refunded too."""
     repo, _, _, result, review = _review(tmp_path, mode="turnfail")
 
     assert result.returncode == 3, result.stdout + result.stderr
     assert (review["failure_class"], review["refunded"]) == ("tool", True)
-    assert any("1 refunded" in line for line in crew_status._review_lines(str(repo)))  # pylint: disable=protected-access
+    assert any("2 refunded" in line for line in crew_status._review_lines(str(repo)))  # pylint: disable=protected-access

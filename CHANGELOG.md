@@ -9,6 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.12 — L-0514: a refunded tool-failure review round retries once by itself
+
+- **Summary.** When Codex or Copilot loses a review round to a tool failure (a failed turn, a
+  crash, empty output), `/crew:review` now retries it once on its own instead of stopping, and says
+  why when it does not.
+- **What changed.** `review_run.run` relaunches a round the ledger refunded (`failure_class: tool`),
+  at most `RETRY_LIMIT = 1` time per invocation, after `RETRY_BACKOFF_SECONDS = 30`, with the same
+  provider, model and effort. Before the retry `preflight` is asked again and the bundle re-hashed;
+  the failed round's `out.txt`, `stderr.txt`, `codex-events.jsonl` and `review.json` are kept as
+  `<name>.round<N>`, and its pre-review record is bound to the retry. Not retried, each with a
+  `review: retry: not retried - <why>` line and a `review: options:` line: a usage limit (the Claude
+  reviewer takes the next round), a timeout, a refused refund, a `reviewer` or `tree` INCOMPLETE, a
+  gate, receipt or bundle that changed, and the second failure. Only a refunded round retries, so a
+  retry never spends budget. The exit code is the last round's. `review.md` step 2c re-dispatches
+  the Claude fallback once on a refunded `tool` round. Autopilot's own refunded rerun is unchanged.
+  Thirteen tests in `test_review_refund.py` and seven `sabotage_review.py` entries.
+
 ### crew 1.1.12 — L-0528: review exit 5 means only a Codex limit
 
 - **Summary.** `/crew:review`'s "not run, verify gate not green or a pre-review check refused it" exit

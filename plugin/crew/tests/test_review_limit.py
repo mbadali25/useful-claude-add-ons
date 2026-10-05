@@ -23,7 +23,7 @@ import crew_status
 import review_ledger
 import review_limit
 import review_run
-from review_fixtures import git, init_repo
+from review_fixtures import NO_BACKOFF, git, init_repo
 
 LIMIT_MESSAGES = [
     pytest.param("You’ve hit your usage limit. Try again at 3:45 PM.", id="usage-curly"),
@@ -165,8 +165,8 @@ def _bundle(repo, scratch):
 
 def _script(repo, scratch, env, *extra):
     return subprocess.run(
-        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
-         "--scratch", str(scratch)] + list(extra),
+        NO_BACKOFF + ["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch)]
+        + list(extra),
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
         env=env, timeout=180)
 

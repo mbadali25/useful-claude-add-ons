@@ -603,6 +603,62 @@ REVIEW_FIX_MUTATIONS = (
         "tests/test_review_run_launch.py::test_review_run_exit_codes_are_distinct",
     ),
     (
+        # L-0514: a reviewer that broke the contract is relaunched; the retry can paper over it.
+        'a reviewer-class INCOMPLETE is retried',
+        REVIEW_RUN,
+        '    if failure != review_verdict.TOOL:\n',
+        '    if failure not in (review_verdict.TOOL, review_verdict.REVIEWER):\n',
+        "tests/test_review_refund.py::test_no_retry_for_reviewer_class",
+    ),
+    (
+        # L-0514: a retry past REFUND_LIMIT spends a budget round nobody chose to spend.
+        'a round whose refund was refused is retried',
+        REVIEW_RUN,
+        '    if row.get("refunded") is not True:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_refund_refused",
+    ),
+    (
+        # L-0514: a usage limit is relaunched into the same limit instead of the Claude reviewer.
+        'a usage-limited round is retried',
+        REVIEW_RUN,
+        '    if limit:\n        return "a usage limit',
+        '    if False:\n        return "a usage limit',
+        "tests/test_review_refund.py::test_no_retry_on_usage_limit",
+    ),
+    (
+        # L-0514: a timeout is relaunched, doubling a --timeout wait.
+        'a timed-out round is retried',
+        REVIEW_RUN,
+        '    if timed_out:\n        return (f"round {number} timed out',
+        '    if False:\n        return (f"round {number} timed out',
+        "tests/test_review_refund.py::test_no_retry_on_timeout",
+    ),
+    (
+        # L-0514: tool failures relaunch until the refunds run out.
+        'the retry limit is not checked',
+        REVIEW_RUN,
+        '    if retries >= RETRY_LIMIT:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_retry_limit_is_one_per_invocation",
+    ),
+    (
+        # L-0514: a tree the gate no longer accepts is reviewed again.
+        'preflight is not asked again before the retry',
+        REVIEW_RUN,
+        '    if preflight(args) is not None:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_the_gate_changed",
+    ),
+    (
+        # L-0514: a bundle that moved since the failed round is relaunched.
+        'the bundle is not re-hashed before the retry',
+        REVIEW_RUN,
+        '    if problems:\n        return f"the tree changed',
+        '    if False:\n        return f"the tree changed',
+        "tests/test_review_refund.py::test_no_retry_when_tree_changed",
+    ),
+    (
         # "Could not tell" reviews as though it were "passed".
         "an UNKNOWN gate state is let through to a review",
         REVIEW_RUN,

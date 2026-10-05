@@ -142,7 +142,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
   INCOMPLETE `reviewer`.
   **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
-  `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
+  `review: round N was a tool failure (...); refunded`. `review_run.py` retries it once by itself
+  (L-0514), except a usage limit or a timeout; `review: retry: not retried - <why>` says when it
+  did not. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
   too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
   Codex is out of quota, use the next eligible provider. A third tool failure under

@@ -97,6 +97,19 @@ review.json carries `failure_class`, and `refunded` / `refund_refused` as the
 ledger recorded them; a `review:` line says whether the round was refunded. A
 refunded round still exits 3.
 
+RETRY (L-0514). `run` relaunches a round the TOOL lost and the ledger
+refunded, once per invocation (`RETRY_LIMIT`), after `RETRY_BACKOFF_SECONDS`,
+with the same provider, model and effort: `preflight` is asked again and the
+bundle re-hashed first, the failed round's out.txt, stderr.txt,
+codex-events.jsonl and review.json are kept as `<name>.round<N>`, and a fresh
+round is reserved. Only a refunded round retries, so a retry never spends
+budget. Not retried, each with a `review: retry: not retried - <why>` line and
+a `review: options:` line: a reviewer or tree INCOMPLETE, a refund the ledger
+refused, a usage limit (T-0088's Claude reviewer takes the next round), a
+timeout (a retry could double a --timeout wait), a gate, receipt or bundle that
+changed, and the second tool failure. The exit code is the last round's. The
+claude provider records a round in two calls, so it never retries here.
+
 BEFORE ANY ROUND IS RESERVED, four questions, in this order (`preflight`,
 then `prereview_gate`, then `standards_gate`):
 
@@ -150,6 +163,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 
 import crew_common
 import crew_incident
@@ -184,6 +198,12 @@ LAUNCHED = ("codex", "copilot")
 PROBE_TIMEOUT = 120
 PROBE_PROMPT = "Reply with exactly the word OK. Do not run any command and do not read any file."
 EXIT_PROBE_LIMITED, EXIT_PROBE_FAILED, EXIT_PROBE_UNKNOWN = 5, 6, 7
+# The in-process retry of a refunded tool round (L-0514): constants, never config.
+RETRY_LIMIT = 1
+RETRY_BACKOFF_SECONDS = 30
+RETRY_KEPT = ("out.txt", "stderr.txt", "codex-events.jsonl")
+RETRY_OPTIONS = ("review: options: rerun /crew:review (a round that was not refunded spends a "
+                 "budget round), switch provider (qa.order), or replan")
 PROBE_OK, PROBE_LIMITED, PROBE_FAILED, PROBE_UNKNOWN = "ok", "limited", "failed", "unknown"
 VERIFY_GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-gate.sh")
 
@@ -872,6 +892,35 @@ def run(args):
         _out(f"ROUND={number}")
         return EXIT_CLEAN
 
+    retries = 0
+    while True:
+        status, timed_out, limit = _launch_round(args, exe, prompt, number)
+        if status != EXIT_INCOMPLETE:
+            return status
+        why = _retry_reason(args, number, timed_out, limit, retries)
+        if why is None:
+            time.sleep(RETRY_BACKOFF_SECONDS)
+            why = _retry_blocked(args)
+        if why is not None:
+            _out(f"review: retry: not retried - {why}")
+            _out(RETRY_OPTIONS)
+            return status
+        _keep_round_files(args, number)
+        _out(f"review: retry: round {number} was a tool failure; retrying once")
+        ok, retry_number, message = review_ledger.reserve(args.root, args.ticket,
+                                                          args.provider, args.model)
+        _err(f"review-run: {message}\n")
+        if not ok:
+            _out("review: retry: not retried - the ledger refused the retry's reservation")
+            _out(RETRY_OPTIONS)
+            return status
+        _carry_record(args, number, retry_number)
+        number, retries = retry_number, retries + 1
+        _keep_reserved_std(args, number)
+
+
+def _launch_round(args, exe, prompt, number):
+    """Launch round `number` and record it. (exit code, timed out, usage-limit line)."""
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout)
     extra = []
@@ -902,7 +951,78 @@ def run(args):
             then = (f"could not record it ({exc}), so the next probe calls Codex live "
                     "instead of answering limited from the record")
         _out(f"review: codex usage limit in round {number}: {limit!r}; {then}")
-    return status
+    return status, timed_out, limit
+
+
+def _retry_reason(args, number, timed_out, limit, retries):
+    """None when INCOMPLETE round `number` may be retried; else why not.
+
+    Only a `tool` round the ledger refunded retries, so a retry never spends
+    budget; a limit or a timeout is a tool round a relaunch does not fix."""
+    if limit:
+        return "a usage limit is not retried; the next round runs the Claude reviewer"
+    if timed_out:
+        return (f"round {number} timed out, and a retry could double a {args.timeout}s "
+                "wait")
+    rows = review_ledger.status(args.root, args.ticket).get("rounds") or []
+    row = next((r for r in rows if isinstance(r, dict) and r.get("round") == number), {})
+    failure = row.get("failure_class")
+    if failure != review_verdict.TOOL:
+        return (f"round {number} is a {failure or 'unclassified'} INCOMPLETE, which a retry "
+                "does not fix")
+    if row.get("refunded") is not True:
+        return f"round {number}'s refund was refused ({row.get('refund_refused') or 'unknown'})"
+    if retries >= RETRY_LIMIT:
+        return f"retry limit {RETRY_LIMIT} per invocation"
+    return None
+
+
+def _retry_blocked(args):
+    """After the backoff: None when the retry may reserve, else why not. The
+    gate and receipt are asked again (`preflight`), and the bundle re-hashed:
+    a tree that moved since the failed round is not the bundle it lost."""
+    if preflight(args) is not None:
+        return "the gate or the review receipt changed before the retry (above)"
+    try:
+        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
+        problems = bundle_problems(manifest)
+    except (OSError, ValueError) as exc:
+        problems = [f"the manifest could not be read ({exc})"]
+    if problems:
+        return f"the tree changed: {problems[0]}"
+    return None
+
+
+def _carry_record(args, previous, number):
+    """The retry lints nothing again: its bundle is the one round `previous`
+    was checked on (re-hashed above), so that round's pre-review record is
+    bound to round `number` too. A copy that fails is said, never fatal:
+    `finish` then reads `not-recorded`."""
+    if not getattr(args, "prereview_staged", None):
+        return
+    try:
+        source = review_checks.round_record_path(args.scratch, args.ticket, previous)
+        staged = os.path.join(args.scratch, f"prereview.retry-r{number}.json")
+        _write_atomic(staged, review_checks.read_regular(source, args.scratch).decode("utf-8"))
+        review_checks.bind_record(staged, args.scratch, args.ticket, number)
+    except (OSError, ValueError) as exc:
+        _err(f"review-run: could not carry the pre-review record to round {number} "
+             f"({exc}); review.json will say not-recorded\n")
+
+
+def _keep_round_files(args, number):
+    """Keep the failed round's scratch files and review.json as
+    `<name>.round<N>`, so the retry writes its own and the earlier stays
+    inspectable. A file that cannot be moved is said, never fatal."""
+    work_dir = args.work_dir or os.path.join(args.root, ".work", "tickets", args.ticket)
+    paths = [os.path.join(args.scratch, name) for name in RETRY_KEPT]
+    for path in paths + [os.path.join(work_dir, "review.json")]:
+        try:
+            os.replace(path, f"{path}.round{number}")
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            _err(f"review-run: could not keep {path} as .round{number} ({exc})\n")
 
 
 def probe(args):

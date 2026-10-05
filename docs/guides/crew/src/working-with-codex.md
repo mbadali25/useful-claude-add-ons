@@ -63,7 +63,9 @@ those.
 
 A review that exits non-zero, prints nothing, times out or ends in a failed turn is INCOMPLETE,
 never CLEAN. That is a tool failure, and the round is refunded automatically, up to two per plan
-(for example when Codex answers with its usage-limit `error` event). What crew relies on from
+(for example when Codex answers with its usage-limit `error` event). A refunded round that was not a
+usage limit or a timeout is retried once by `review_run.py` itself, after a 30-second backoff; a
+`review: retry:` line says whether it was, and why not. What crew relies on from
 Codex's `--json` stream is in `plugin/crew/docs/external-tool-formats.md`.
 
 The review prompt Codex reads ends with a **development standards checklist**: the rules and

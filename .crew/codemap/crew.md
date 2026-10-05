@@ -2417,6 +2417,14 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   Only the review rerun: the marker is set when `_toward_review` answers `review`
   (`:756`), so a refresh named again with its artifact still stale stops as no
   progress (review round 4).
+- DERIVED (L-0514): outside autopilot, `review_run.run` retries a refunded `tool`
+  round once in-process (`RETRY_LIMIT`, `RETRY_BACKOFF_SECONDS` beside the probe
+  codes in `plugin/crew/hooks/scripts/review_run.py`); `_retry_reason` refuses a
+  usage limit, a timeout, a non-`tool` class, a refused refund and the limit;
+  `_retry_blocked` re-asks `preflight` and re-hashes the bundle after the backoff;
+  `_keep_round_files` keeps the failed round's files as `.round<N>` and
+  `_carry_record` binds its pre-review record to the retry. Autopilot's refunded
+  rerun above is unchanged and still bounded by `REFUND_LIMIT`.
 - DERIVED (T-0087): the shared definitions at each review seam are
   `review_patch.MANIFEST_KEYS` / `OPTIONAL_MANIFEST_KEYS` / `PART_KEYS`
   (`plugin/crew/hooks/scripts/review_patch.py:126`, `:123`, `:124`) and
