@@ -105,8 +105,9 @@ completion audit admits an artifact a path you changed reaches, as a re-anchor (
 or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py rules`, the graph after a code change); anything
 else there needs Touch, and the audit names the reason. A `stop` ends the loop, on an artifact line (a missing tool, git unable to
 diff) or on the top line (a base that hides or may hide the change, an unreadable config): report it. Documents read `not measured`
-there: the docs check above judges them. Commit the refresh before `/crew:review $1` builds its bundle.
-Then the **required self-check** (`crew-standards` skill): run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
+there: the docs check above judges them. Commit the refresh before `/crew:review $1` builds its bundle. Then
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_gitignore.py check --root .`: on 1 `apply` only if Touch covers `.gitignore`,
+else list `missing` in the PR body; 3 goes to the owner; 4 is unknown. Then the **required self-check** (`crew-standards` skill): run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
 every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1` until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
 Set `spec.md`'s header to `status: review` — that edit keeps the approval: the digest normalises only the header's status value — and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`, handled as in step 1: the Review lane means the review is outstanding.
