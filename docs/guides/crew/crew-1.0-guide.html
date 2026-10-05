@@ -323,6 +323,18 @@ narrow your default and never widen it.</p>
 merges, pushes, opens a pull request or deploys today. Shipping arrives with
 T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
 <code>/crew:autopilot status</code> prints where a ticket stands, read-only.</p>
+<p><code>/crew:autopilot focus &lt;id&gt;</code> locks autopilot onto one ticket. Focus is on
+only after you type it: an active ticket on its own is not a focus. It writes
+a focus marker for this worktree (and points the active ticket at <code>&lt;id&gt;</code> if it
+named another, printing the scope-base line). While focused, autopilot refuses
+to run another ticket, <code>assign</code> and <code>goal</code>; <code>status</code>, <code>sleep</code> and <code>wake</code> still
+run. Once the plan is approved, <code>next</code> stops as <code>drift</code> on a changed path
+outside the plan's Touch list, or when that check could not run. A focus marker
+that cannot be read counts as "could not tell", and autopilot refuses new work
+until you repair or remove it. <code>focus --findings --ticket &lt;id&gt;</code> names where an
+out-of-scope finding goes. <code>/crew:autopilot focus</code> shows the lock and
+<code>/crew:autopilot focus off</code> releases it. Claude Code's built-in <code>/focus</code> is
+unrelated: it only toggles the display.</p>
 <p>A separate autopilot guide with worked examples is planned as T-0054.</p>
 <h2 id="trackers">Trackers</h2>
 <p>Source: <code>plugin/crew/hooks/scripts/crew_tracker.py</code> and
@@ -441,10 +453,6 @@ guide describes them as present.</p>
 <tr>
 <td>T-0019</td>
 <td><code>/crew:autopilot assign</code></td>
-</tr>
-<tr>
-<td>T-0020</td>
-<td><code>/crew:autopilot focus</code></td>
 </tr>
 <tr>
 <td>T-0029</td>

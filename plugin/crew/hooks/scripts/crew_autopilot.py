@@ -16,6 +16,8 @@
     python3 crew_autopilot.py sleep --root . [--by <text>]
     python3 crew_autopilot.py wake --root .
     python3 crew_autopilot.py auto-reject --root . --ticket <id>
+    python3 crew_autopilot.py focus --root . [--ticket <id> | --off |
+                                    --findings --ticket <id>]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -38,7 +40,37 @@ NEEDS_REPLAN -> IN_REVIEW (the successor continuation). `auto-reject` writes onl
 the review ledger, through `review_ledger.reject`: REVIEWED -> NEEDS_REPLAN, with
 `rejected.by` the constant AUTO_REJECT_BY. Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
-keeps its own bytecode setting.
+keeps its own bytecode setting. T-0020's `focus` is a script subcommand that
+writes too, and approves nothing: `focus --ticket` writes this worktree's entry
+in `<git-common-dir>/crew/autopilot-focus.json` and, when the active-ticket
+pointer names another ticket or none, re-points it (`crew_ticket.activate`,
+which records `.crew/.scope-base`); `focus --off` drops only the marker entry
+(below).
+
+## focus -- a scope lock on one ticket (T-0020)
+
+Focus is explicit (owner decision, 2026-10-05): it is on only once `focus
+<id>` writes this worktree's entry in the focus marker (`focus_path`), and
+`focus off` is the only thing that drops it. The active-ticket pointer alone is
+never a focus, so with no marker entry `route` answers exactly as without
+T-0020. No new hook. `focus_state` reads the marker; one that does not parse,
+cannot be read, is not a file, or holds an entry that is not a ticket is
+`unknown` -- could-not-tell, its own value, never "no focus" -- and
+`focus_guard` then refuses everything but `status`, `sleep` and `wake`, `next`
+stops as `drift`, and `focus off` refuses rather than delete it; each such
+message ends with the removal command for the marker's path
+(`_focus_remedy`). `focus` and `focus off` hold `_focus_lock` around the
+marker's read-modify-write, so two worktrees cannot drop each other's entry. While
+focused, `focus_guard` refuses `run` of any other ticket (named, or from the
+handoff in `resume`), `assign`, `goal` and any other subcommand, and all but
+`focus <id>` while the pointer disagrees with the focus; `sleep` and `wake`
+always run (L-0652). Once the focused ticket's plan is approved, every `next`
+runs the completion audit's own `audit(root, ticket)` (read-only): a changed
+path outside Touch, or an audit that could not run, stops as `drift`.
+`findings_target` names where an out-of-scope finding goes: `TODO.md` when the
+approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`. Every
+`focus` output ends with FOCUS_REMINDER: Claude Code's built-in `/focus` only
+toggles the display.
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -228,6 +260,8 @@ FIXED_STOPS = (
                           "approved"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
+    ("drift", "explicitly focused and approved: a changed path is outside the ticket's Touch "
+              "(completion_audit.audit), or the audit could not run"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
     ("auto-replan-cap", "autopilot.maxAutoReplans successor plans are already on the "
@@ -260,10 +294,10 @@ HUMAN_STOPS = (
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
 SUBCOMMANDS += ("sleep", "wake")  # L-0652: manual sleep mode
-AVAILABLE = frozenset({"status", "run", "sleep", "wake"})
+AVAILABLE = frozenset({"status", "run", "focus", "sleep", "wake"})
 # L-0652: the subcommands that take no ticket, not even a second word.
 NO_TICKET = frozenset({"sleep", "wake"})
-ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
+ARRIVES = {"assign": "T-0019", "goal": "T-0012"}
 GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
@@ -835,10 +869,14 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
-    `policy=False` is `status`'s: see `_phase`."""
+    A focused, approved ticket whose tree has drifted outside Touch stops as
+    `drift` first (`_drift`). `policy=False` is `status`'s: see `_phase`."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
     rerun = result.pop("refunded_rerun", False)
+    drift = _drift(root, ticket, result)
+    if drift is not None:
+        return drift
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -858,6 +896,45 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
             f"no progress: {last_command} ran and the files on disk still name it "
             f"({result['reason']}) - a human looks at why"))
     return result
+
+
+# `next`'s phases that stop yet are not a stop for the loop: the T-0010 policy
+# may approve or answer and go round again, so drift is judged before them.
+POLICY_PHASES = ("approve", "open-questions")
+
+
+def _drift(root, ticket, result):
+    """`next`'s drift stop (T-0020), or None. Judged only when this worktree is
+    focused on `ticket` and its plan is approved (before approval the audit
+    fails every path, and spec and plan write only `.work/`, which it skips),
+    and only ahead of a phase the loop would run. `completion_audit.audit` is
+    read-only; an audit that raised, or could not be imported, stops: it is
+    never a pass."""
+    if result["stop"] and result["phase"] not in POLICY_PHASES:
+        return None
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    state = focus_state(top)
+    if state["unknown"]:
+        return dict(result, phase="drift", stop=True, command="", reason=(
+            f"drift: whether {ticket} is focused, and so whether its tree must stay inside "
+            f"Touch, could not be told: {state['unknown']}"))
+    if state["focus"] != ticket:
+        return None
+    try:
+        if crew_ticket.accepted(top, ticket)["status"] != "approved":
+            return None
+        ok, lines = importlib.import_module("completion_audit").audit(top, ticket)
+    except Exception as exc:  # pylint: disable=broad-except
+        return dict(result, phase="drift", stop=True, command="", reason=(
+            f"drift: the audit could not run ({_failure(exc)}), so whether {ticket}'s tree "
+            "stays inside Touch cannot be told"))
+    if ok:
+        return None
+    shown = " ".join(" ".join(str(line).split()) for line in list(lines)[:2]) or (
+        "the completion audit failed and gave no reason")
+    return dict(result, phase="drift", stop=True, command="", reason=(
+        f"drift: {shown} - revert them, or file the finding (crew_autopilot.py focus "
+        f"--findings --ticket {ticket}) and amend Touch through /crew:plan"))
 
 
 HANDOFF_ABSENT = "no .work/HANDOFF.md"
@@ -974,7 +1051,8 @@ def resume_target(root, ticket=None, policy=True):
         return stopped(source, f"{source} names {ticket}, but this worktree's active ticket "
                        f"is {active}, and the scope guard and completion audit judge edits "
                        f"by {active}'s approval and Touch. Run /crew:autopilot {active}, or "
-                       f"the human re-points it: crew_ticket.py activate --ticket {ticket}")
+                       f"the human re-points it: crew_ticket.py activate --ticket {ticket}."
+                       + _also(focus_guard(top, "run", ticket)))
     disk = next_phase(top, ticket, policy=policy)
     disagreement = ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
@@ -1877,12 +1955,16 @@ def _existing_ticket(top, token):
         return False
 
 
-def route(root, first):
+def route(root, first, ticket=""):
     """`{"sub", "stop", "reason"}` for the command's first argument. First
     match, exact and case-sensitive: a SUBCOMMANDS name; nothing or `--goal`
     (run); an INDEX-shaped id or an existing `.work/tickets/<token>/` (run).
     Anything else stops: `crew_ticket` accepts `stauts` as an id, so a typo
-    is refused here rather than driven as a ticket."""
+    is refused here rather than driven as a ticket. Then T-0020's
+    `focus_guard`, before the AVAILABLE check, so `assign` and `goal` are
+    refused under an explicit focus whether or not they have landed. `ticket` is the word
+    after the subcommand when `route_args` knows it (FOCUS_OFF for `focus
+    off`); a bare id is its own ticket."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     token = first or ""
     if token in SUBCOMMANDS:
@@ -1890,12 +1972,16 @@ def route(root, first):
     elif token == "":
         sub = "run"
     elif token == GOAL_FLAG:
+        refusal = focus_guard(top, "goal")
         return {"sub": "run", "stop": True,
-                "reason": f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
+                "reason": refusal or f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
     elif _INDEX_ID.fullmatch(token) or _existing_ticket(top, token):
-        sub = "run"
+        sub, ticket = "run", token
     else:
         return {"sub": "", "stop": True, "reason": UNKNOWN_SUB}
+    refusal = focus_guard(top, sub, ticket)
+    if refusal:
+        return {"sub": sub, "stop": True, "reason": refusal}
     if sub not in AVAILABLE:
         return {"sub": sub, "stop": True,
                 "reason": f"{AUTOPILOT} {sub} arrives with {ARRIVES.get(sub, 'a later ticket')}"}
@@ -1911,21 +1997,379 @@ def route_args(root, text):
     word after a subcommand, or a bare ticket id itself. The command passes
     `$ARGUMENTS` whole because Claude Code numbers positional arguments from
     `$0` and leaves an out-of-range `$N` literal. A second word that is not a
-    ticket, or a third word, stops; it is never read as a ticket."""
+    ticket, or a third word, stops; it is never read as a ticket -- except
+    `focus off`, exactly, which sets `off` (T-0020): the only route to
+    `focus --off`, so focus is released only when the owner's own arguments
+    say so. A ticket is held to `focus_guard` once it is known."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     words = (text or "").split()
-    got = dict(route(top, words[0] if words else ""), ticket="")
+    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    off = words[:1] == ["focus"] and rest == [FOCUS_OFF]
+    got = dict(route(top, words[0] if words else "", FOCUS_OFF if off else ""), ticket="")
+    if got["sub"] == "focus":
+        got["off"] = off
     if got["stop"]:
         return got
-    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
     if words[:1] and words[0] in NO_TICKET and rest:
         return dict(got, stop=True, reason=f"{AUTOPILOT} {words[0]} takes no other word")
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
         return dict(route(top, GOAL_FLAG), ticket="")
+    if off:
+        return got
     if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
                                        or _existing_ticket(top, rest[0]))):
         return dict(got, stop=True, reason=NOT_A_TICKET)
+    refusal = focus_guard(top, got["sub"], rest[0]) if rest else None
+    if refusal:
+        return dict(got, stop=True, reason=refusal)
     return dict(got, ticket=rest[0] if rest else "")
+
+
+# --- focus (T-0020) -------------------------------------------------------------
+
+FOCUS_OFF = "off"
+FOCUS_RELEASE = f"{AUTOPILOT} focus off"
+FOCUS_REMINDER = ("reminder: Claude Code's built-in /focus only toggles the display (just "
+                  "your prompt, summary, and response); it does not scope work, and only "
+                  "you can type it")
+FOCUS_SCOPE_OFF = ("the scope guard is off: writes outside Touch are not refused as they "
+                   "happen; autopilot's drift stop still applies")
+FINDINGS_TODO = "TODO.md"
+FINDINGS_FILE = "out-of-scope.md"
+FINDINGS_WHY = "the scope guard exempts nothing outside Touch"
+
+
+def _also(text):
+    return f" {text}" if text else ""
+
+
+FOCUS_FILE = "autopilot-focus.json"
+
+
+def focus_path(root):
+    """`<git-common-dir>/crew/autopilot-focus.json`, the explicit focus marker,
+    or None outside git. A JSON object keyed by worktree top-level, as the
+    active-ticket pointer is, so a focus is this worktree's only."""
+    state = crew_ticket.state_dir(root)
+    return os.path.join(state, FOCUS_FILE) if state else None
+
+
+FOCUS_LOCK_WAIT = 5.0
+
+
+# PowerShell reads U+2018..U+201B as single quotes too.
+_PS_QUOTES = ("'", "\u2018", "\u2019", "\u201a", "\u201b")
+_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f\u2018-\u201b]|\s{2,}")
+
+
+def _posix_quoted(path):
+    return "'" + path.replace("'", "'\\''") + "'"
+
+
+def _ps_quoted(path):
+    for mark in _PS_QUOTES:
+        path = path.replace(mark, mark * 2)
+    return "'" + path + "'"
+
+
+def _paste_safe(path):
+    """Whether `path` survives into a printed command unchanged: no control
+    character, no run of whitespace (`_one_line` would collapse it), no
+    quote PowerShell also reads, and the POSIX command parses back to exactly
+    `rm -- <path>`."""
+    import shlex  # pylint: disable=import-outside-toplevel
+    if _UNSAFE_PATH.search(path):
+        return False
+    rm_part = f"rm -- {_posix_quoted(path)}"
+    try:
+        return shlex.split(rm_part) == ["rm", "--", path] and _one_line(rm_part) == rm_part
+    except ValueError:
+        return False
+
+
+def _remove_by_hand(path, effect):
+    """`effect`, then paste-ready removal commands for `path` (POSIX and
+    PowerShell) when it is paste-safe, else the path as JSON and "remove
+    this file by hand", with no command that could name another file."""
+    if not _paste_safe(path):
+        # JSON escapes control characters; a run of spaces is escaped too, so
+        # `_one_line`'s collapse cannot change the path it names.
+        shown = re.sub(r" {2,}", lambda run: "\\u0020" * len(run.group()), json.dumps(path))
+        return f"{effect}: remove this file by hand: {shown}"
+    return (f"{effect}: rm -- {_posix_quoted(path)} (POSIX shell) or "
+            f"Remove-Item -LiteralPath {_ps_quoted(path)} (PowerShell)")
+
+
+def _focus_remedy(path):
+    """The way out of an unknown marker, naming its exact path: `focus off`
+    refuses to touch a file it cannot read, so the human removes it."""
+    return _remove_by_hand(path, "removing it drops EVERY worktree's focus, not only this one's")
+
+
+def _focus_marker(top):
+    """(path, mapping, unknown). `unknown` is "" or why the marker could not be
+    read -- not a file, a file that does not parse (or cannot be read), one
+    that is not an object, or this worktree's entry not a ticket (an
+    INDEX-shaped id, or one with a `.work/tickets/` folder) -- ending with
+    `_focus_remedy`. An unknown is never read as "no focus"."""
+    path = focus_path(top)
+    if not path:
+        return None, {}, ""
+    if os.path.lexists(path) and not os.path.isfile(path):
+        return path, None, f"the focus marker {path} is not a file; {_focus_remedy(path)}"
+    data, state = crew_ticket._read_json(path)  # pylint: disable=protected-access
+    if state == "corrupt" or (state == "ok" and not isinstance(data, dict)):
+        return path, None, f"the focus marker {path} does not parse; {_focus_remedy(path)}"
+    mapping = data if state == "ok" else {}
+    entry = mapping.get(top)
+    if entry is not None and not (isinstance(entry, str) and (
+            _INDEX_ID.fullmatch(entry) or _existing_ticket(top, entry))):
+        return path, None, (f"the focus marker {path} names {entry!r}, not a ticket; "
+                            f"{_focus_remedy(path)}")
+    return path, mapping, ""
+
+
+class _FocusLockError(Exception):
+    """The marker's lock could not be taken; nothing was written."""
+
+
+class _focus_lock:  # pylint: disable=invalid-name,too-few-public-methods
+    """`<marker>.lock`, crew_config_files.Lock's exclusive create with a
+    bounded wait, around every read-modify-write of the marker: two worktrees
+    running `focus` at once would otherwise both read the old mapping and the
+    later write would drop the other's entry while both report success. A
+    lock that cannot be taken raises _FocusLockError; nothing writes
+    unlocked."""
+
+    def __init__(self, path):
+        import crew_config_files  # pylint: disable=import-outside-toplevel
+        self.path, self.files = path, crew_config_files
+        self.lock = crew_config_files.Lock(path, FOCUS_LOCK_WAIT)
+
+    def __enter__(self):
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            self.lock.__enter__()
+        except (self.files.Busy, OSError) as exc:
+            raise _FocusLockError(
+                f"refused: the focus marker's lock {self.path}.lock could not be taken "
+                f"({exc}); nothing written. If no focus command is running, a process "
+                "died holding it; " + _remove_by_hand(
+                    self.path + ".lock", "removing the lock releases it")) from exc
+        return self
+
+    def __exit__(self, *exc):
+        self.lock.__exit__(*exc)
+
+
+def focus_state(root):
+    """`{"focus", "unknown", "pointer", "broken", "why", "scope_mode"}` for this
+    worktree. `focus` is the explicit focus marker's ticket, set only by
+    `focus <id>` (owner decision, 2026-10-05): the active-ticket pointer alone
+    is never a focus. `unknown` is "" or why the marker could not be read --
+    could-not-tell, its own value, with `focus` None beside it. `pointer` is
+    the active-ticket pointer's ticket (never the `.work/INDEX.md` fallback);
+    `broken`/`why` are its state. `scope_mode` is
+    `crew_ticket.configured_mode`'s value."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    active, where, broken = crew_ticket.resolve_active(top)
+    mode, _why = crew_ticket.configured_mode(top)
+    _path, mapping, unknown = _focus_marker(top)
+    return {"focus": None if unknown else mapping.get(top), "unknown": unknown,
+            "pointer": active if where == "active-ticket" and not broken else None,
+            "broken": bool(broken), "why": where if broken else "", "scope_mode": mode}
+
+
+def focus_guard(root, sub, ticket=""):
+    """None when `sub` (with `ticket`, "" for none, FOCUS_OFF for `focus off`)
+    may run under this worktree's focus, else the refusal, naming the focused
+    ticket and `/crew:autopilot focus off`. `status`, `focus off` and the
+    NO_TICKET subcommands (L-0652's `sleep` and `wake`, which neither start nor
+    switch work) always run. No marker entry: no focus, everything runs. A
+    marker that could not be read refuses everything else -- whether focus is
+    on cannot be told, so nothing may start or switch work. Focused on T-A: a
+    pointer naming anything but T-A refuses all but `focus T-A` (which
+    re-points it); else `run` with no ticket or T-A, and `focus` alone or
+    `focus T-A`, run; anything else -- another ticket, `assign`, `goal`, a
+    subcommand this does not know -- is refused."""
+    if sub == "status" or sub in NO_TICKET or (sub == "focus" and ticket == FOCUS_OFF):
+        return None
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    state = focus_state(top)
+    if state["unknown"]:
+        return ("whether focus is on could not be told, so only status, sleep and wake run "
+                f"until the human repairs or removes the marker: {state['unknown']}")
+    focus = state["focus"]
+    if focus is None:
+        return None
+    if sub == "focus" and ticket in ("", focus):
+        return None
+    if state["pointer"] != focus:
+        names = (f"is broken ({state['why']})" if state["broken"]
+                 else f"names {state['pointer'] or 'no ticket'}")
+        return (f"focus is on {focus}, but this worktree's active-ticket pointer {names}: "
+                f"type {AUTOPILOT} focus {focus} to re-point it, or {FOCUS_RELEASE}")
+    if sub == "run" and ticket in ("", focus):
+        return None
+    what = (f"{AUTOPILOT} {sub} {ticket}" if ticket else f"{AUTOPILOT} {sub}").strip()
+    return (f"focus is on {focus}: {what} would start or switch to other work, which focus "
+            f"refuses. Type {FOCUS_RELEASE} first")
+
+
+def _scope_line(mode):
+    if mode == "off":
+        return f"scope.mode=off: {FOCUS_SCOPE_OFF}"
+    return (f"scope.mode={mode}: the scope guard and the completion audit judge every write "
+            "against the active ticket's Touch")
+
+
+def _write_marker(path, mapping):
+    """Write `mapping`, or remove the file when it is empty, so a released
+    focus leaves the common dir as it was."""
+    if mapping:
+        crew_ticket._write_json(path, mapping)  # pylint: disable=protected-access
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
+def _unknown_refusal(head, unknown):
+    return f"{head}: {unknown}"
+
+
+def focus_set(root, ticket):
+    """(ok, line). Writes this worktree's entry in the focus marker, then, only
+    when the active-ticket pointer names another ticket or none, points it at
+    `ticket` through `crew_ticket.activate` -- marker first, so a failed
+    activate leaves a focus the guard refuses on (pointer mismatch), never a
+    switch without one. The marker's read-modify-write holds `_focus_lock`,
+    and the focus-on-another-ticket check is made again inside it. `activate`
+    checks the id's shape only, so the folder is checked here. Refuses,
+    writing nothing, an unreadable marker, a lock it cannot take, a broken
+    pointer and a focus on another ticket; the same ticket again, already
+    pointed at, writes nothing. On a re-point `line` also carries activate's
+    scope-base line, an unknown or a fallback included, never dropped."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return False, f"refused: {root} is not a git repository"
+    path = focus_path(top)
+    if not path:
+        return False, "refused: there is no git common dir to keep the focus marker in"
+    state = focus_state(top)
+    if state["unknown"]:
+        return False, _unknown_refusal(
+            "refused: whether focus is on could not be told, so nothing is written",
+            state["unknown"])
+    if state["broken"]:
+        return False, (f"refused: the active-ticket pointer is broken ({state['why']}); "
+                       "the human repairs it (crew_ticket.py activate --ticket <id>)")
+    if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        return False, (f"refused: {ticket} has no .work/tickets/{ticket}/ folder, and a "
+                       "focus on it would be a broken pointer")
+    if state["focus"] not in (None, ticket):
+        return False, (f"refused: focus is on {state['focus']}; type {FOCUS_RELEASE} "
+                       "first")
+    if state["focus"] == ticket and state["pointer"] == ticket:
+        return True, f"focus={ticket} (already; nothing written)"
+    try:
+        with _focus_lock(path):
+            _path, mapping, unknown = _focus_marker(top)
+            if unknown:
+                return False, _unknown_refusal(
+                    "refused: whether focus is on could not be told, so nothing is written",
+                    unknown)
+            if mapping.get(top) not in (None, ticket):
+                return False, (f"refused: focus is on {mapping[top]}; type "
+                               f"{FOCUS_RELEASE} first")
+            if mapping.get(top) != ticket:
+                _write_marker(path, dict(mapping, **{top: ticket}))
+    except _FocusLockError as exc:
+        return False, str(exc)
+    line = f"focus={ticket} (this worktree only: {top})"
+    if state["pointer"] == ticket:
+        return True, line
+    # activate also records `.crew/.scope-base` (T-0061); its line -- a
+    # could-not-tell or a fallback included -- is the caller's to see.
+    message = crew_ticket.activate(top, ticket)[2]
+    was = state["pointer"] or "no ticket"
+    return True, f"{line}\nactive ticket: {was} -> {ticket}\n{message}".rstrip("\n")
+
+
+def focus_off(root):
+    """(ok, line). Drops this worktree's focus marker entry and no other,
+    under `_focus_lock`, and leaves the active-ticket pointer as it is: the
+    pointer was never the focus. A marker that could not be read is refused,
+    never deleted and never read as released (fail-closed): its line ends
+    with the removal command for the human."""
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return False, f"refused: {root} is not a git repository"
+    path = focus_path(top)
+    if not path:
+        return True, "focus=none (nothing was set)"
+    try:
+        with _focus_lock(path):
+            _path, mapping, unknown = _focus_marker(top)
+            if unknown:
+                return False, _unknown_refusal(
+                    "focus=unknown - focus off does not clear a marker it cannot read",
+                    unknown)
+            was = mapping.get(top)
+            if was is not None:
+                _write_marker(path, {key: value for key, value in mapping.items()
+                                     if key != top})
+    except _FocusLockError as exc:
+        return False, str(exc)
+    after = focus_state(top)
+    if after["unknown"]:
+        return False, _unknown_refusal("focus=unknown - focus off could not clear it",
+                                       after["unknown"])
+    if after["focus"] is not None:
+        return False, f"focus={after['focus']} - focus off could not clear it"
+    return True, f"focus=none (released {was})" if was else "focus=none (nothing was set)"
+
+
+def focus_show(root):
+    """(True, line): `focus=<id>`, `focus=none` or `focus=unknown <why>`."""
+    state = focus_state(root)
+    if state["unknown"]:
+        return True, f"focus=unknown {state['unknown']}"
+    return True, f"focus={state['focus'] or 'none'}"
+
+
+def findings_target(root, ticket):
+    """`{"path", "reason"}`: where an out-of-scope finding is filed while
+    focused. `TODO.md` only when `ticket`'s APPROVED Touch covers it; else the
+    ticket's own `.work/tickets/<id>/out-of-scope.md`, which the scope guard
+    always allows and the audit skips."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    approval = crew_ticket.accepted(top, ticket)
+    touch = (approval.get("touch") or []) if approval.get("status") == "approved" else []
+    if crew_ticket.in_touch(FINDINGS_TODO, touch):
+        return {"path": FINDINGS_TODO, "reason": f"{ticket}'s approved Touch covers TODO.md"}
+    return {"path": f".work/tickets/{ticket}/{FINDINGS_FILE}",
+            "reason": f"TODO.md is not in {ticket}'s approved Touch, and {FINDINGS_WHY}"}
+
+
+def focus_text(root, ticket="", off=False, findings=False):
+    """(code, text) for the `focus` CLI: the answer, the scope.mode line, and
+    FOCUS_REMINDER last, whatever happened. Exit 1 on a refusal or a crash."""
+    try:
+        if findings:
+            got = findings_target(root, ticket)
+            ok, line = True, f"findings={got['path']} reason={got['reason']}"
+        elif off:
+            ok, line = focus_off(root)
+        elif ticket:
+            ok, line = focus_set(root, ticket)
+        else:
+            ok, line = focus_show(root)
+        mode = focus_state(root)["scope_mode"]
+        lines = line.splitlines() + [_scope_line(mode)]
+    except Exception as exc:  # pylint: disable=broad-except
+        ok, lines = False, [f"refused: {_failure(exc)}"]
+    return (0 if ok else 1), "\n".join(_one_line(text) for text in lines + [FOCUS_REMINDER])
 
 
 # Who acts when `next` stops at each phase it names. A phase not here -- a
@@ -1935,6 +2379,7 @@ WAITING = {phase: "owner" for phase in (
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
     "done", "auto-replan", "auto-replan-cap", NEEDS_OWNER)}
 WAITING["closed"] = "nobody"
+WAITING["drift"] = "owner"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
 # UNKNOWN is also a string a file can hold, with a count computed beside it.
@@ -1975,6 +2420,9 @@ def _waiting(top, result, bare):
         return f"unknown (phase {phase!r} is not one status maps)"
     if who == "nobody":
         return "nobody - the ticket is closed"
+    if phase == "drift":
+        return ("owner - reverts the paths outside Touch, or amends Touch and approves "
+                "again")
     if phase == "review" and result.get("stop") and _reserved_round(top, result["ticket"]):
         return "reviewer - a round is reserved with no result"
     if not result.get("stop"):
@@ -2284,6 +2732,12 @@ def main(argv):
     sub.choices["sleep"].add_argument("--by", default="cli")
     for name in ("next", "approve", "questions-check", "auto-reject"):
         sub.choices[name].add_argument("--ticket", required=True)
+    focus = sub.add_parser("focus")
+    focus.add_argument("--root", default=".")
+    focus.add_argument("--ticket", default="")
+    focus_how = focus.add_mutually_exclusive_group()
+    focus_how.add_argument("--off", action="store_true")
+    focus_how.add_argument("--findings", action="store_true")
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
     given = sub.choices["route"].add_mutually_exclusive_group()
@@ -2315,6 +2769,14 @@ def main(argv):
         return _policy_main(args)
     if args.action in ("sleep", "wake"):
         return _manual_main(args)
+    if args.action == "focus":
+        if (args.off and args.ticket) or (args.findings and not args.ticket):
+            sys.stdout.write("refused: focus takes --ticket <id>, --off, or --findings "
+                             f"--ticket <id>\n{FOCUS_REMINDER}\n")
+            return 2
+        code, text = focus_text(args.root, args.ticket, args.off, args.findings)
+        sys.stdout.write(text + "\n")
+        return code
     if args.action == "status":
         try:
             result = status(args.root, args.ticket or None)
@@ -2328,8 +2790,10 @@ def main(argv):
         text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
     elif args.action == "route":
         result = route_args(args.root, args.args or "")
-        text = _line(sub=result["sub"], stop=int(result["stop"]), ticket=result["ticket"],
-                     reason=result["reason"])
+        fields = {"sub": result["sub"], "stop": int(result["stop"]), "ticket": result["ticket"]}
+        if "off" in result:
+            fields["off"] = int(result["off"])
+        text = _line(**fields, reason=result["reason"])
     elif args.action == "stops":
         result = stops()
         text = "\n".join(f"{kind} {row['id']}: {row['text']}"

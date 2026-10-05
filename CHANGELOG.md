@@ -9,6 +9,58 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew`: `/crew:autopilot focus`, an explicit scope lock on one ticket (T-0020)
+
+- **Summary.** `/crew:autopilot focus <id>` locks autopilot onto one ticket until you type `focus off`; an active ticket on its own is never treated as a focus, so plain-text requests get the same answer they get without focus.
+- **Why.** The owner's standing ask: roles "drifting into unrelated rabbit holes". Focus locks
+  autopilot onto one ticket so it cannot wander to another, cannot carry an unrelated change past
+  the next phase, and has somewhere to put what it noticed.
+- **Explicit focus only (owner decision, 2026-10-05).** Focus is on only once `focus <id>`
+  writes this worktree's entry in `<git-common-dir>/crew/autopilot-focus.json`, the focus
+  marker; `focus off` drops that entry (the file goes when none is left) and leaves the
+  active-ticket pointer alone; `focus` shows `focus=<id>`, `focus=none` or `focus=unknown <why>`.
+  An active-ticket pointer alone - set by `crew_ticket.py activate`, or the `.work/INDEX.md`
+  fallback - is never a focus, so with no marker entry `crew_autopilot.route` answers exactly as
+  before and main's plain-text router (T-0057, L-0662) gives the same answer for `assign`,
+  `goal`, `wave` and `split` text (today: asks, or no line, since those are not available yet). `focus <id>` re-points the
+  active ticket through `crew_ticket.activate` (which records `.crew/.scope-base`, T-0061, and
+  whose scope-base line `focus` prints) only when the pointer names another ticket or none; it
+  refuses, writing nothing, a ticket with no `.work/tickets/<id>/`, a broken pointer, an unreadable
+  marker, or a focus already on another ticket.
+- **While focused.** The router refuses `run` of another ticket (named, or from the handoff),
+  `assign`, `goal` and any other subcommand, naming `/crew:autopilot focus off`; if the pointer
+  stops naming the focused ticket, all but `focus <id>` is refused. `status`, `focus off`,
+  `sleep` and `wake` always run (they neither start nor switch work; L-0652). Once the plan is
+  approved, `next` runs `completion_audit.audit` read-only and stops as `drift` on a changed path
+  outside Touch, or when the audit could not run. `focus --findings --ticket <id>` names
+  `TODO.md` when the approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`. Every
+  `focus` output ends with a reminder that Claude Code's built-in `/focus` only toggles the
+  display and only the user can type it.
+- **An unreadable marker is could-not-tell, never "no focus".** A marker that is not a file,
+  does not parse, cannot be read, or holds an entry that is not a ticket (INDEX-shaped, or with a
+  `.work/tickets/` folder; `bogus` is unknown) reads `focus=unknown`; the router then refuses
+  everything but `status`, `sleep` and `wake`, `next` stops as `drift`, and `focus off` refuses
+  rather than delete it. Every such message ends with `rm -- '<path>'` and
+  `Remove-Item -LiteralPath '<path>'` for the exact path (only when the path is paste-safe; else
+  the path as JSON and "remove this file by hand"), and says removing it drops every worktree's
+  focus. A stale lock's refusal carries the same removal for the lock file.
+- **Two worktrees at once lose nothing.** `focus <id>` and `focus off` hold
+  `autopilot-focus.json.lock` (crew_config_files.Lock's exclusive create, at most 5 seconds)
+  around the marker's read-modify-write; a lock that cannot be taken refuses with nothing
+  written. A two-process test with an injected delay goes red without the lock.
+- **`focus` is a writer.** `test_crew_autopilot_policy.py`'s `WRITERS` names it deliberately:
+  on the already-active ticket `focus --ticket` adds exactly the marker and `focus --off` leaves
+  every file as before.
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_focus.py` (explicit focus: a pointer without
+  focus gives main's answer for assign/goal/wave/split text; focus refuses other work; focus off restores the
+  unfocused answer; sleep/wake always route; an unreadable marker refuses). `autopilot.md`
+  section 6 (4 lines), the file at 117 of 120 (`test_lifecycle_commands.py` leaves 3 for T-0012
+  and T-0019). `test_crew_route.py` drops "focus on T-1" from its not-yet-available rows, since
+  focus is available now.
+- **Docs.** The crew README ("Focus" under "Scope and approval", the subcommand table, the stops,
+  the writers), `plugin/PLUGINS.md`, the user guide, the crew code map, the generated rules, and
+  `.crew/verify.json`'s autopilot rule.
+
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that

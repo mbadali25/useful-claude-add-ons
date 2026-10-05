@@ -689,7 +689,7 @@ def _main(root, action, *rest):
 
 # T-0074: `auto-reject` is the module's second writer; L-0652's `sleep` and
 # `wake` the others (they write only the manual sleep state); nothing else writes.
-WRITERS = ("approve", "auto-reject", "sleep", "wake")
+WRITERS = ("approve", "auto-reject", "sleep", "wake", "focus")
 
 
 def _usage_subcommands():
@@ -717,6 +717,10 @@ def _out_of_rounds_block(root):
 # with them. What it pins is WRITERS: `approve` writes its receipt;
 # `auto-reject` only the ledger; L-0652's `sleep` and `wake` exactly
 # `<git-common-dir>/crew/autopilot-sleep.json` and nothing in the worktree;
+# T-0020's `focus` is a writer too, deliberately (owner decision, 2026-10-05:
+# explicit focus is its own marker): `focus --ticket` on the already-active
+# ticket writes exactly `<git-common-dir>/crew/autopilot-focus.json`, and
+# `focus --off` removes it, leaving every file as before;
 # every other subcommand leaves every file byte-identical.
 def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
@@ -741,6 +745,10 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     staged = _files(root)
     rejected = _main(root, "auto-reject", "--ticket", T)
     last = _files(root)
+    focused = _main(root, "focus", "--ticket", T)
+    after_focus = _files(root)
+    released = _main(root, "focus", "--off")
+    after_off = _files(root)
     capsys.readouterr()
 
     added = sorted(set(after) - set(before))
@@ -750,12 +758,17 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
                       os.path.join(crew_ticket.state_dir(str(root)), "scope-tickets.json")])
     manual = os.path.join(crew_ticket.state_dir(str(root)), "autopilot-sleep.json")
     changed = sorted(p for p in set(staged) | set(last) if staged.get(p) != last.get(p))
+    marker = os.path.join(crew_ticket.state_dir(str(root)), "autopilot-focus.json")
     assert (_usage_subcommands() - {run[0] for run in READ_ONLY_RUNS}, after_reads == before,
             code, added, {p: v for p, v in after.items() if p in before} == before,
             slept, sorted(set(after_sleep) - set(after)),
             {p: v for p, v in after_sleep.items() if p in after} == after,
-            woke, after_wake == after, rejected, changed) == (
-        set(WRITERS), True, 0, receipt, True, 0, [manual], True, 0, True, 0, [ledger])
+            woke, after_wake == after, rejected, changed,
+            focused, sorted(set(after_focus) - set(last)),
+            {p: v for p, v in after_focus.items() if p in last} == last,
+            released, after_off == last) == (
+        set(WRITERS), True, 0, receipt, True, 0, [manual], True, 0, True, 0, [ledger],
+        0, [marker], True, 0, True)
 
 
 def test_approve_refused_writes_nothing(tmp_path, monkeypatch, capsys):
