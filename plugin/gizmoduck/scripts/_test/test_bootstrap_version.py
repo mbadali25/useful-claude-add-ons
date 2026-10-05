@@ -37,8 +37,12 @@ esac
 """
 
 _GIT_BODY = """
+if [[ "$1" == -c ]]; then shift 2; fi
 if [[ "${STUB_GIT_MODE:-fail}" == ok && "$1" == ls-remote ]]; then
   cat "$STUB_GIT_TAGS"
+elif [[ "${STUB_GIT_MODE:-fail}" == ok && "$1" == clone ]]; then
+  dest="${@: -1}"
+  mkdir -p "$dest/http/cves" && echo "id: stub" > "$dest/http/cves/stub.yaml"
 else
   echo "fatal: unable to access: The requested URL returned error: 403" >&2
   exit 128
@@ -203,3 +207,116 @@ def test_trivy_falls_back_to_the_release_asset_when_its_install_script_fails(stu
     # The exact upstream asset name: Linux-64bit / Linux-ARM64, not amd64.
     assert f"releases/download/v0.75.0/trivy_0.75.0_Linux-{arch}.tar.gz" in log, log
     assert "releases/download/v0.75.0/trivy_0.75.0_checksums.txt" in log, log
+
+
+def _fake_nuclei(stubs, writes_templates):
+    body = 'echo "nuclei $*" >> "$STUB_LOG"\n'
+    if writes_templates:
+        body += 'mkdir -p "$HOME/nuclei-templates/dns" && echo "id: x" > "$HOME/nuclei-templates/dns/x.yaml"\n'
+    p = stubs["bin"] / "nuclei"
+    p.write_text("#!/usr/bin/env bash\n" + body + "exit 0\n", newline="\n")
+    p.chmod(0o755)
+
+
+def test_templates_from_nuclei_itself_need_no_git(stubs):
+    _fake_nuclei(stubs, writes_templates=True)
+    proc, log = _run(stubs, "update_nuclei_templates; echo rc=$?", git="ok", tags=["v10.4.9"])
+    assert "rc=0" in proc.stdout, proc.stderr
+    assert "nuclei -update-templates" in log
+    assert "git " not in log
+
+
+def test_update_that_exits_0_with_no_templates_falls_back_to_git_clone(stubs):
+    # Measured in the cloud sandbox: rc 0 and an empty ~/nuclei-templates.
+    _fake_nuclei(stubs, writes_templates=False)
+    proc, log = _run(stubs, "update_nuclei_templates; echo rc=$?", git="ok",
+                     tags=["v10.4.9", "v10.5.0-rc1", "v9.9.9"])
+    assert "rc=0" in proc.stdout, proc.stderr
+    assert "left no templates" in proc.stderr
+    assert "clone -q --depth 1 --branch v10.4.9 https://github.com/projectdiscovery/nuclei-templates.git" in log, log
+    assert (stubs["tmp"] / "nuclei-templates" / "http" / "cves" / "stub.yaml").is_file()
+
+
+def test_no_templates_anywhere_is_still_a_hard_failure(stubs):
+    _fake_nuclei(stubs, writes_templates=False)
+    proc, _ = _run(stubs, "update_nuclei_templates; echo reached-after")
+    assert proc.returncode == 1
+    assert "reached-after" not in proc.stdout
+    assert "template download failed" in proc.stderr
+
+
+# --- bootstrap.ps1's twin, Resolve-LatestTag -------------------------------
+#
+# Driven under pwsh with the script's function definitions loaded from its
+# AST (nothing at top level runs), Invoke-RestMethod shadowed by a function
+# and `git` a bash stub on PATH - so POSIX hosts only.
+
+_PS1 = _BOOTSTRAP.with_name("bootstrap.ps1")
+_PWSH = shutil.which("pwsh") or next(
+    (p for p in ("/opt/microsoft/powershell/7/pwsh", "/usr/bin/pwsh") if os.path.isfile(p)), None)
+
+_PS_DRIVER = r"""
+$ErrorActionPreference = "Stop"
+$t = $null; $e = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:PS1_PATH, [ref]$t, [ref]$e)
+if ($e.Count) { throw "parse errors in bootstrap.ps1: $($e.Count)" }
+$ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
+  ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
+function Invoke-RestMethod {
+  Add-Content -Path $env:STUB_LOG -Value "irm $($args[0])"
+  if ($env:STUB_CURL_MODE -eq "ok") { return [pscustomobject]@{ tag_name = "v9.9.9" } }
+  throw "Response status code does not indicate success: 403 (Forbidden)."
+}
+try {
+  $v = Resolve-LatestTag -Repo "acme/tool" -Tool "Widget Scanner"
+  Write-Output "TAG=$v"
+} catch {
+  Write-Output "ERR=$($_.Exception.Message)"
+}
+"""
+
+ps_only = pytest.mark.skipif(_PWSH is None or os.name == "nt",
+                             reason="needs pwsh and a POSIX shell for the git stub")
+
+
+def _run_ps(stubs, curl="fail", git="fail", tags=()):
+    stubs["tags"].write_text(
+        "".join(f"{_sha(i)}\trefs/tags/{t}\n" for i, t in enumerate(tags, 1)))
+    driver = stubs["tmp"] / "driver.ps1"
+    driver.write_text(_PS_DRIVER)
+    env = {
+        "PATH": f"{stubs['bin']}{os.pathsep}{os.environ.get('PATH', '')}",
+        "HOME": str(stubs["tmp"]),
+        "PS1_PATH": str(_PS1),
+        "STUB_LOG": str(stubs["log"]),
+        "STUB_GIT_TAGS": str(stubs["tags"]),
+        "STUB_CURL_MODE": curl,
+        "STUB_GIT_MODE": git,
+    }
+    proc = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(driver)],
+                          capture_output=True, text=True, env=env, timeout=120)
+    return proc, stubs["log"].read_text()
+
+
+@ps_only
+def test_ps1_api_ok_uses_api_and_never_asks_git(stubs):
+    proc, log = _run_ps(stubs, curl="ok", git="ok", tags=["v1.0.0"])
+    assert "TAG=v9.9.9" in proc.stdout, proc.stdout + proc.stderr
+    assert "irm https://api.github.com/repos/acme/tool/releases/latest" in log
+    assert "git " not in log
+
+
+@ps_only
+def test_ps1_api_fails_then_highest_stable_git_tag(stubs):
+    tags = ["v1.2.0", "v1.10.0", "v1.11.0-rc1", "v1.9.3", "v.1.0.0", "w2026-09-30", "9.0.0-beta"]
+    proc, log = _run_ps(stubs, git="ok", tags=tags)
+    assert "TAG=v1.10.0" in proc.stdout, proc.stdout + proc.stderr
+    assert "git ls-remote --tags --refs https://github.com/acme/tool.git" in log
+
+
+@ps_only
+def test_ps1_both_fail_throws_naming_the_tool(stubs):
+    proc, log = _run_ps(stubs)
+    assert "ERR=Widget Scanner: could not determine the latest version" in proc.stdout, \
+        proc.stdout + proc.stderr
+    assert "TAG=" not in proc.stdout

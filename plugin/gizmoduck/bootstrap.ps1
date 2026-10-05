@@ -127,14 +127,47 @@ function Update-NucleiTemplates {
   # worse outcome than a loud bootstrap failure the operator actually sees.
   $BinDir = Join-Path $ToolsDir "nuclei"
   $nuclei = Join-Path $BinDir "nuclei.exe"
+  #
+  # Success is judged by templates actually being on disk, not by the exit
+  # code alone: where api.github.com is refused, `nuclei -update-templates`
+  # exits 0 having downloaded nothing (measured on Linux in the Claude Code
+  # cloud sandbox, nuclei v3.11.1). Twin of bootstrap.sh's fallback: clone
+  # the same release with git, which those networks still allow.
   Write-Host ">> downloading Nuclei community templates..."
+  $tdir = Join-Path $HOME "nuclei-templates"
   & $nuclei -update-templates -silent
-  if ($LASTEXITCODE -ne 0) {
+  $updateRc = $LASTEXITCODE
+  if ($updateRc -eq 0 -and -not (Test-NucleiTemplatesPresent $tdir)) {
+    Write-Host ">> nuclei -update-templates left no templates in $tdir - trying git clone"
+    try {
+      $tag = Resolve-LatestTag -Repo "projectdiscovery/nuclei-templates" -Tool "nuclei templates"
+      $new = "$tdir.gizmoduck-clone"
+      if (Test-Path $new) { Remove-Item -Recurse -Force $new }
+      & {
+        $ErrorActionPreference = "Continue"
+        git -c advice.detachedHead=false clone -q --depth 1 --branch $tag `
+          https://github.com/projectdiscovery/nuclei-templates.git $new 2>&1 | Out-Host
+      }
+      if ($LASTEXITCODE -ne 0) { throw "git clone of nuclei-templates $tag failed" }
+      if (Test-Path $tdir) { Remove-Item -Recurse -Force $tdir }
+      Move-Item $new $tdir
+    } catch {
+      Write-Host "!! $($_.Exception.Message)" -ForegroundColor Red
+    }
+    if (-not (Test-NucleiTemplatesPresent $tdir)) { $updateRc = 1 }
+  }
+  if ($updateRc -ne 0) {
     Write-Host "!! template download failed. The engine is installed but has no templates," -ForegroundColor Red
     Write-Host "!! so a scan would report zero findings on every target." -ForegroundColor Red
     Write-Host "!! Re-run 'nuclei -update-templates' once the network allows it." -ForegroundColor Red
     exit 1
   }
+}
+
+function Test-NucleiTemplatesPresent([string]$Dir) {
+  if (-not (Test-Path $Dir)) { return $false }
+  return [bool](Get-ChildItem -Path $Dir -Recurse -Filter *.yaml -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1)
 }
 
 function Add-ToUserPath {

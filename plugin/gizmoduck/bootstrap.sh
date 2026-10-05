@@ -131,13 +131,54 @@ update_nuclei_templates() {
   # a soft-fail like the others below. A template-less Nuclei still runs and
   # still exits 0, but silently finds nothing on every target, which is a
   # worse outcome than a loud bootstrap failure the operator actually sees.
+  #
+  # Success is judged by templates actually being on disk, not by the exit
+  # code: where api.github.com is refused, `nuclei -update-templates` exits 0
+  # having downloaded nothing (measured in the Claude Code cloud sandbox with
+  # nuclei v3.11.1 - an empty ~/nuclei-templates and rc 0). In that case the
+  # same release is cloned with git, which those networks still allow.
   echo ">> downloading Nuclei community templates..."
-  if ! nuclei -update-templates -silent; then
-    echo "!! template download failed. The engine is installed but has no" >&2
-    echo "!! templates, so a scan would report zero findings on every target." >&2
-    echo "!! Re-run 'nuclei -update-templates' once the network allows it." >&2
-    exit 1
+  local tdir
+  tdir=$(nuclei_templates_dir)
+  if nuclei -update-templates -silent && nuclei_templates_present "$tdir"; then
+    return 0
   fi
+  echo ">> nuclei -update-templates left no templates in ${tdir} - trying git clone" >&2
+  if clone_nuclei_templates "$tdir" && nuclei_templates_present "$tdir"; then
+    echo ">> nuclei templates cloned to ${tdir}"
+    return 0
+  fi
+  echo "!! template download failed. The engine is installed but has no" >&2
+  echo "!! templates, so a scan would report zero findings on every target." >&2
+  echo "!! Re-run 'nuclei -update-templates' once the network allows it." >&2
+  exit 1
+}
+
+# Where nuclei keeps its community templates: the directory its own config
+# records, else its default ~/nuclei-templates.
+nuclei_templates_dir() {
+  local d=""
+  d=$(python3 -c 'import json, os
+p = os.path.expanduser("~/.config/nuclei/.templates-config.json")
+print(json.load(open(p)).get("nuclei-templates-directory", ""))' 2>/dev/null) || d=""
+  printf '%s\n' "${d:-$HOME/nuclei-templates}"
+}
+
+nuclei_templates_present() {
+  [[ -n "$(find "$1" -name '*.yaml' -print -quit 2>/dev/null)" ]]
+}
+
+# Clones the newest stable nuclei-templates release into $1. Only called when
+# $1 holds no templates at all, so replacing it loses nothing.
+clone_nuclei_templates() {
+  local tdir="$1" tag new
+  tag=$(resolve_latest_tag projectdiscovery/nuclei-templates "nuclei templates") || return 1
+  new="${tdir}.gizmoduck-clone"
+  rm -rf "$new"
+  git -c advice.detachedHead=false clone -q --depth 1 --branch "$tag" \
+    https://github.com/projectdiscovery/nuclei-templates.git "$new" || { rm -rf "$new"; return 1; }
+  rm -rf "$tdir"
+  mv "$new" "$tdir"
 }
 
 install_nmap() {
