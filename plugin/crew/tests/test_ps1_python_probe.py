@@ -481,8 +481,14 @@ def test_a_timed_out_probe_says_so_and_never_no_python(tmp_path):
     assert "no usable python" not in err
     summary, *rows = _trail(err)
     assert "timed-out" in summary
-    [row] = [r for r in rows if str(hang) in r]
-    assert "killed-at-bound" in row and _ms(row) >= 3000, row
+    here = [r for r in rows if str(hang) in r]
+    # On Windows `_stub` also writes the extensionless sh twin beside the
+    # .cmd (for Git Bash); the probe lists it as skipped-extension, never
+    # launched. Exactly one candidate here was launched, and it was killed.
+    [row] = [r for r in here if "skipped-extension" not in r]
+    assert "killed-at-bound" in row and _ms(row) >= 3000, here
+    skipped = [r for r in here if "skipped-extension" in r]
+    assert len(skipped) <= (1 if os.name == "nt" else 0), here
 
 
 @needs_pwsh

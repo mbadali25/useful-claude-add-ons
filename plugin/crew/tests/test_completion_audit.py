@@ -891,8 +891,16 @@ def test_a_guard_log_row_never_deadlocks_the_audit(tmp_path):
 # --- T-0068: --classify, the verify gate's .ps1 flavour's one classifier -----------
 
 def _classify(root, text):
-    return subprocess.run([sys.executable, _AUDIT, "--classify", "--root", str(root)],
-                          input=text, capture_output=True, text=True, check=False)
+    """`text` reaches the classifier byte for byte and its output comes back
+    the same way: a text-mode pipe on Windows would turn each `\n` written
+    into `\r\n` (so `\r\n` arrives as `\r\r\n`) and each `\r\n` read
+    back into `\n`, so the CRLF case would test the pipe, not the hook."""
+    done = subprocess.run([sys.executable, _AUDIT, "--classify", "--root", str(root)],
+                          input=text.encode("utf-8", "surrogateescape"), capture_output=True,
+                          check=False)
+    return subprocess.CompletedProcess(
+        done.args, done.returncode, done.stdout.decode("utf-8", "surrogateescape"),
+        done.stderr.decode("utf-8", "replace"))
 
 
 def test_classify_names_each_kind(repo):

@@ -50,7 +50,7 @@ def _review(repo, verdict="FINDINGS"):
 
 def _cli(repo, *args):
     return subprocess.run([sys.executable, _LEDGER, "--root", str(repo), "--ticket", T]
-                          + list(args), capture_output=True, text=True,
+                          + list(args), capture_output=True, text=True, encoding="utf-8",
                           stdin=subprocess.DEVNULL, check=False)
 
 
