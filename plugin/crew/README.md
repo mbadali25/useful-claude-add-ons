@@ -2887,9 +2887,11 @@ working map and, when that is dirty, the committed map alike (L-1503):
 
 - the command loses every CR and its trailing newlines; a command that is then
   empty or only whitespace deploys nothing and passes
-- a declared command matches when either one contains the other - a plain
+- a declared command matches when the command contains it - a plain
   substring test, ignoring case (on Windows `./Deploy.ps1` and `./deploy.ps1`
-  are one file). `*`, `?` and `[...]` are literal text, never wildcards
+  are one file). `*`, `?` and `[...]` are literal text, never wildcards. A
+  fragment of a declared command (`git push` of `git push prod main`) is no
+  deploy (L-0689)
 - every key the gates read - `environments`, `deploy`, `requires`,
   `rollback`, `rollbackReason`, `requireHuman` - is read ignoring case
   (`"RequireHuman": true` requires a human); a map with a key repeated in one
@@ -2907,8 +2909,9 @@ working map and, when that is dirty, the committed map alike (L-1503):
   requirements applies: every matched environment's `requires`, `rollback`
   and `requireHuman` must hold. They are named together - `staging,prod` - in
   the block message and in `.crew/.deploy-in-flight`, so the promotions row
-  that clears the Stop check names `staging,prod` too. So `git push`, inside
-  both `git push staging main` and `git push prod main`, needs prod's approval.
+  that clears the Stop check names `staging,prod` too. So `./deploy.sh
+  --prod`, which contains both `./deploy.sh` and `./deploy.sh --prod`, needs
+  every requirement of both environments.
   That combined row is not a row for `staging` or for `prod`: after such a
   deploy, an environment that `requires` one of them still needs an
   unambiguous deploy record for it first - deploy with a command that matches
