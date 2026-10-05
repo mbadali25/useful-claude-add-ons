@@ -361,6 +361,23 @@ whose `verify-gate: <N>s total across` line does not come after its last per-rul
 `log_complete: false`; when the gate also exited non-zero, the job summary says the list is
 partial. The list is informative only: what the receipt accepts did not change.
 
+## A diagram check fails in CI with no reason, or "Running as root without --no-sandbox"
+
+Headless Chromium, which `mmdc` drives, refuses to start as root unless puppeteer passes
+`--no-sandbox`, and CI containers run as root. A hand-written `_verify` case that calls `mmdc` bare
+fails there, and an older `_verify/run-all.sh` or `smoke.sh` threw the check's output away, so all the
+log said was `FAIL <name>`.
+
+- **Use the ready case.** Copy `templates/cases/diagrams-render.sh` from crew-setup into
+  `_verify/cases/` (crew-setup does this itself in a repo that has `.mmd` files). It passes the same
+  `--no-sandbox` puppeteer config as crew's `render.sh` every time, renders to a temp directory,
+  prints mmdc's own last lines under a failed source's `FAIL` line, and exits 77 (SKIP) where `mmdc`
+  is not installed. `DIAGRAMS_DIR` points it at a directory other than `docs/diagrams`.
+- **See why a check failed.** The current template runners print the last 5 lines of a failing
+  check's output under its `FAIL` line and report exit 77 as `SKIP`, not a failure. A repo set up
+  earlier keeps its old runners: copy `check()` from the template `smoke.sh` and `run()` from the
+  template `run-all.sh` by hand.
+
 ## Autopilot in a worktree, and the refresh check
 
 - **Symptom: autopilot stops with `cannot tell whether <id>'s direction is approved` in a

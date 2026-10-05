@@ -27,10 +27,16 @@ if [ "$ENV" = "prod" ] || [ "$ENV" = "production" ]; then
   fi
 fi
 
+# A failing check prints its last 5 output lines under its FAIL line, so the
+# cause is in the log. Exit 77 is SKIP (a missing tool or environment), not a
+# failure - the same convention crew's verify gate uses.
 PASS=0; FAIL=0; SKIP=0
-run() { local n="$1"; shift
-  if "$@" >/dev/null 2>&1; then echo "PASS $n"; PASS=$((PASS+1))
-  else echo "FAIL $n: $*"; FAIL=$((FAIL+1)); fi; }
+run() { local n="$1" out rc; shift
+  out="$("$@" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ]; then echo "PASS $n"; PASS=$((PASS+1))
+  elif [ "$rc" -eq 77 ]; then echo "SKIP $n (exit 77: tool or environment absent)"; SKIP=$((SKIP+1))
+  else echo "FAIL $n: $*"; [ -z "$out" ] || printf '%s\n' "$out" | tail -n 5 | sed 's/^/    /'
+    FAIL=$((FAIL+1)); fi; }
 skip() { echo "SKIP $1 ($2)"; SKIP=$((SKIP+1)); }
 
 # The language's own runner belongs here, not replaced by it.

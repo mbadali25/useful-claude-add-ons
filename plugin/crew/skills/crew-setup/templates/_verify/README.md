@@ -36,13 +36,19 @@ worse than a missing one.
    reported as skipped, so the omission is visible rather than silent.
 4. **Says what it checked**, one line per check, `PASS`/`FAIL` prefixed, and a
    final count. Silence on success is not acceptable - it is indistinguishable
-   from a suite that ran nothing.
+   from a suite that ran nothing. Both runners print the last 5 lines of a
+   failing check's output under its `FAIL` line, so the cause is in the log.
+   Exit 77 means a tool or environment the check needs is absent: the runners
+   print `SKIP` and count it, and it is not a failure.
 5. **Cleans up after itself**, via `trap`, including on failure.
 
 ## Adding a check
 
 1. Write it in `cases/` as one file, one concern, named for what it proves:
-   `write-roundtrip.sh`, not `test3.sh`.
+   `write-roundtrip.sh`, not `test3.sh`. Mermaid diagrams have a ready case:
+   copy crew-setup's `templates/cases/diagrams-render.sh`. Never call `mmdc`
+   bare in a case - it fails as root (CI containers) without the `--no-sandbox`
+   puppeteer config that case passes.
 2. Call it from `smoke.sh` (if it is fast and shallow) or `run-all.sh`.
 3. Add or extend the rule in `.crew/verify.json` so a change to the code it
    covers actually triggers it. **This step is the one that gets skipped**, and

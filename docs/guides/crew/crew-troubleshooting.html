@@ -518,6 +518,22 @@ gate named failed, skipped or could-not-tell but never finished (a gate killed m
 whose <code>verify-gate: &lt;N&gt;s total across</code> line does not come after its last per-rule line records
 <code>log_complete: false</code>; when the gate also exited non-zero, the job summary says the list is
 partial. The list is informative only: what the receipt accepts did not change.</p>
+<h2 id="a-diagram-check-fails-in-ci-with-no-reason-or-running-as-root-without-no-sandbox">A Diagram Check Fails in CI with No Reason, or "Running as Root Without --No-Sandbox"</h2>
+<p>Headless Chromium, which <code>mmdc</code> drives, refuses to start as root unless puppeteer passes
+<code>--no-sandbox</code>, and CI containers run as root. A hand-written <code>_verify</code> case that calls <code>mmdc</code> bare
+fails there, and an older <code>_verify/run-all.sh</code> or <code>smoke.sh</code> threw the check's output away, so all the
+log said was <code>FAIL &lt;name&gt;</code>.</p>
+<ul>
+<li><strong>Use the ready case.</strong> Copy <code>templates/cases/diagrams-render.sh</code> from crew-setup into
+  <code>_verify/cases/</code> (crew-setup does this itself in a repo that has <code>.mmd</code> files). It passes the same
+  <code>--no-sandbox</code> puppeteer config as crew's <code>render.sh</code> every time, renders to a temp directory,
+  prints mmdc's own last lines under a failed source's <code>FAIL</code> line, and exits 77 (SKIP) where <code>mmdc</code>
+  is not installed. <code>DIAGRAMS_DIR</code> points it at a directory other than <code>docs/diagrams</code>.</li>
+<li><strong>See why a check failed.</strong> The current template runners print the last 5 lines of a failing
+  check's output under its <code>FAIL</code> line and report exit 77 as <code>SKIP</code>, not a failure. A repo set up
+  earlier keeps its old runners: copy <code>check()</code> from the template <code>smoke.sh</code> and <code>run()</code> from the
+  template <code>run-all.sh</code> by hand.</li>
+</ul>
 <h2 id="autopilot-in-a-worktree-and-the-refresh-check">Autopilot in a Worktree, and the Refresh Check</h2>
 <ul>
 <li><strong>Symptom: autopilot stops with <code>cannot tell whether &lt;id&gt;'s direction is approved</code> in a

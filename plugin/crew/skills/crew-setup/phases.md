@@ -309,6 +309,15 @@ If none exists, create `_verify/` from `templates/_verify/`: `README.md`,
 session. Nothing else happens in this repo until
 `bash _verify/smoke.sh` runs green from a clean checkout.
 
+If the repo has Mermaid sources (`.mmd` files, usually `docs/diagrams/`), copy
+`templates/cases/diagrams-render.sh` into `_verify/cases/` (set `DIAGRAMS_DIR`
+when they live elsewhere). Never write a case that calls `mmdc` bare: headless
+Chromium refuses to start as root, which is how CI containers run, and fails
+with "Running as root without --no-sandbox is not supported". The ready case
+passes the `--no-sandbox` config every time, prints mmdc's own last lines when a
+render fails, and exits 77 (SKIP) where mmdc is not installed. A repo with no
+diagrams does not get it.
+
 `_verify/README.md` is part of the deliverable, not an afterthought. Its layout
 table lists what each script covers and its status table records when each check
 was last sabotage-tested. Update both as checks are added; a check with no row is

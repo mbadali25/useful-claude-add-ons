@@ -406,6 +406,8 @@ _verify/
 
 A repo that already has a working `scripts/smoke.sh` keeps it. The gate checks `_verify/smoke.sh` first and falls back, so there is no reason to migrate a harness that works.
 
+Both template runners print the last 5 lines of a failing check's output under its `FAIL` line, and report exit 77 (a tool or environment the check needs is absent) as `SKIP`, not a failure (T-0502). A repo with Mermaid sources also gets the ready case `_verify/cases/diagrams-render.sh` (from `skills/crew-setup/templates/cases/`): it renders every `.mmd` with the `--no-sandbox` puppeteer config, so it works as root in CI containers, prints mmdc's own error lines on a failed render, and exits 77 without `mmdc`. A bare `mmdc` call in a case fails as root with "Running as root without --no-sandbox is not supported". Repos set up before this keep their runners and cases; to pick it up, copy the case and the two runners' `check()` / `run()` from the templates by hand.
+
 At this point `_verify/smoke.sh` exists but contains no checks, so the gate passes vacuously. The crew has no safety net.
 
 ```
@@ -3376,7 +3378,7 @@ The **commands** are the other half, and they do require it: 14 of the files und
 | Warning fires far too early on a 1M model | `.crew/config.json` still carries `"budgetTokens": 200000` from an older `/crew:init`. Set it to `null`; the warning's `Budget source:` line says `configured` when this is the cause. |
 | Old handoff keeps reappearing | It was never deleted. Remove `.work/HANDOFF.md` when the work is done, rather than waiting on the staleness check — it only fires on clear/compact/resume/fork, and only once age or reality drift gives it a reason to distrust the note. |
 | Handoff vanished but the ticket isn't done | Check `.crew/handoffs/` — a note the staleness check judged stale is archived there, timestamped, never deleted. If the judgment was wrong (age or commit thresholds too tight for this repo's pace), move it back and loosen `context.staleHandoff` in `.crew/config.json`. |
-| `mmdc` fails in a container | Headless Chromium needs `--no-sandbox`. The render script passes it; a direct `mmdc` call will not. |
+| `mmdc` fails in a container | Headless Chromium needs `--no-sandbox`. The render script passes it; a direct `mmdc` call will not, and as root it fails with "Running as root without --no-sandbox is not supported". In `_verify/`, use crew-setup's ready case `templates/cases/diagrams-render.sh`, which passes it (T-0502). |
 | Rendered PNG unreadable in Teams | Transparent background on dark mode. Render with `-b white` for chat and print. |
 | Azure MCP tools fail oddly | You are not authenticated. `az login` before starting the server. |
 | MCP snippet copied from VS Code does nothing | VS Code uses the `servers` key; Claude Code uses `mcpServers`. |

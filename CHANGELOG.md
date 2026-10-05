@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.5: crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root (T-0502)
+
+- **Summary.** A repo set up by crew now sees a failing check's own error lines in its `_verify`
+  output, and gets a ready diagram check that works as root in CI containers instead of failing with
+  no reason.
+- **Runners.** `templates/_verify/smoke.sh`'s `check()` and `run-all.sh`'s `run()` capture the
+  check's output: a failure prints `FAIL <name>: <command>` and the last 5 lines, indented; exit 77
+  prints `SKIP <name> (exit 77: tool or environment absent)` and is not a failure. `smoke.sh`'s last
+  line adds the skip count and still starts `SMOKE: `.
+- **`templates/cases/diagrams-render.sh`** (new; setup copies it into `_verify/cases/` only in a
+  repo with `.mmd` files). Renders every source in `$DIAGRAMS_DIR` (default `docs/diagrams`) to a
+  temp directory with the same `--no-sandbox` puppeteer config as `render.sh`, prints mmdc's last 5
+  lines under a failed source's `FAIL` line, treats an empty render as a failure, exits 77 without
+  `mmdc`, and cleans up. `# readonly: yes`; calls nothing in the plugin.
+- **Docs.** crew-setup `phases.md` Phase 3, the template README, the crew-diagrams skill, crew's
+  README (section 6 and the `mmdc` troubleshooting row) and the troubleshooting guide. Repos set up
+  earlier keep their runners; the docs say what to copy by hand.
+- **Tests.** `plugin/crew/tests/test_setup_verify_templates.py` (fake `mmdc`; real `mmdc` as root is
+  not exercised), mapped by a new `.crew/verify.json` rule.
+
 ### Added — repository: CI fails a stale built crew guide (L-0657)
 
 - **Summary.** A pull request whose committed crew guide HTML, or generated configuration reference,
