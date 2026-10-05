@@ -47,6 +47,49 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Version.** 0.5.7 was set on this branch and never released; this lands as 0.5.8 so the commit
   that sets the version stays the last change to `plugin/gizmoduck/`.
 
+### Changed — repository: PRs run only the heavy CI suites their changes reach (C-0001)
+
+- **Summary.** A pull request that changes only plain documentation, or only one plugin or skill,
+  now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite
+  still runs on push to main, on workflow_dispatch and on any schedule.
+- **The rule, in one place.** `scripts/ci-select.py` reads `git diff --name-only --no-renames
+  HEAD^1 HEAD` on the PR merge commit and prints what to run; `pytest-crew.yml`, `pylint.yml`,
+  `shell-suites.yml` and `mcp-servers.yml` all gate on it. A path inside a component (crew,
+  gizmoduck, obsidian-vault, mcp-servers, and the skills with suites) selects that component; a
+  path any other suite was found reading selects that suite too; a plain `.md` outside `plugin/`,
+  `skills/`, `mcp-servers/`, `.claude/`, `.crew/` and `.github/` (and not a README, CHANGELOG,
+  CLAUDE, AGENTS or UPDATE.md) selects only the two crew tests that scan every document. Anything
+  else (`scripts/`, `.github/`, `.crew/`, root files), a non-PR event, an empty diff, a diff error
+  or an exception selects everything.
+- **The combined pytest run stays one session.** It has no `__init__.py`, so two suites holding the
+  same module basename collide only when both are collected, and gizmoduck's `pytest.ini` is the
+  configuration pytest resolves for the whole list. A change to any `.py` in a combined test
+  directory, a test module, a `conftest.py` or a pytest config inside a combined component selects
+  every combined suite; the run pins `-c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck`
+  (identical collection for the full list), and the suite fails if two combined test directories
+  share a module basename, or if a module or package name is importable from two directories on
+  the sys.path a real collection of the combined run measures (the first import of a bare name
+  wins for every suite in the run). Lint configuration (`ruff.toml`, `.ruff.toml`, `pyproject.toml`,
+  `.pylintrc`, `pylintrc`) inside a plugin or skill selects pylint and ruff.
+- **Required checks unchanged.** No `on: pull_request: paths:` filter and no job-level skip: every
+  job still reports its check, its suite steps are gated, and a skip prints a `::notice::` saying
+  SKIPPED, not passed. A failed selector step is red, never a silent skip; in `mcp-servers.yml`
+  (which has a Windows leg) a failed select job leaves the output empty, and empty runs the suite.
+  The crew Windows jobs keep their own rule (`crew-windows-decide`).
+- **How the map was found.** Every skippable suite ran under `strace -f`, and crew's reads were
+  attributed to test files with a per-test audit hook. Crew's suite reads well outside
+  `plugin/crew/`: one test scans every tracked file, one every `.md`/`.html`, one every
+  `plugin/**`/`skills/**` `.py`, one every test file; five read `docs/guides/crew/**`; others run
+  doc-builder's, bitbucket's and github's scripts. doc-builder's suites read any
+  `*/assets/brand.json` and solomon-doc-builder's assets; obsidian-vault's reads crew's
+  `role-write-guard.ps1`. Each is a row in `READERS`.
+- **Tests.** `scripts/_test/ci-select.py` (in `marketplace.yml`, `scripts/gate-runner.py` and
+  `.crew/verify.json`): must-skip, must-select-one, must-select-all and fail-closed cases, real
+  merge-commit diffs, a rename out of a component, the combined-session rules, and the workflows'
+  gates (each whole `if:` expression's shape, and `!cancelled()` on every job that needs the
+  select job, and no read of the selection outside an `if:`). Twenty-seven sabotages of the
+  selector, a workflow or the tree each turned it red.
+
 ### Changed — repository: one cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners (C-0009)
 
 - **Summary.** `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session:
