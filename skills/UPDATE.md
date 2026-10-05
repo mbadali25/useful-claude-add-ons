@@ -15,6 +15,13 @@ shipped in crew 0.15.1 and is recorded there.
 
 ## Unreleased
 
+**`windows-ssm`** (1.0.0) — running Linux-style tools on a Windows machine
+(which shell a command lands in, `python3` and `pwsh` resolution, MSYS path
+conversion, CRLF, WSL) and what AWS Systems Manager will carry, every limit
+cited to its AWS or Microsoft page. Its offline checker reads a
+`get-command-invocation` result and exits non-zero when the output is, or may
+be, cut, so a truncated result is never parsed as complete.
+
 Two skills renamed, same content. `claude plugin validate --strict` reserves
 the `claude-` prefix for Anthropic's own plugins, so `claude-code-defaults` is
 now **`session-defaults`** (1.1.0) and `claude-code-tuneup` is now

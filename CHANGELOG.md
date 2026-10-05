@@ -9,6 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `windows-ssm` 1.0.0: Linux tools on Windows, and what SSM will carry (T-0102)
+
+- **Summary.** A new skill for running Linux-style tools on Windows and driving nodes through
+  AWS Systems Manager, with a checker that fails when a Run Command result is or may be cut.
+- **`references/windows-tools.md`.** Which shell a command lands in, resolving
+  `python3`/`python`/`py` and naming `pwsh` by full path, MSYS path conversion
+  (`MSYS_NO_PATHCONV=1`, `cygpath -w`), CRLF and how to measure it, WSL's `/mnt/c` and
+  credential boundary, and one pointer to crew's `shellRoute` for crew users.
+- **`references/ssm-limits.md`.** Each limit with its AWS or Microsoft source on the same row:
+  Run Command's 24,000-character stdout and 8,000-character stderr, document size, Parameter
+  Store tiers, the Session Manager idle timeout, the Windows command-line lengths; the S3 and
+  CloudWatch routes to complete output; staging large payloads in S3 with a hash check.
+- **`scripts/ssm_output.py`.** Reads a `get-command-invocation` result offline and prints
+  `complete` (exit 0), `truncated` (exit 3, naming the S3 URL when there is one) or
+  `could not tell` (exit 4: not finished, stopped early, or not a result). Output exactly at a
+  limit counts as cut. It never prints the output it inspects.
+
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 
 - **Summary.** Chat notifications now go through when the bot token was saved with a trailing space

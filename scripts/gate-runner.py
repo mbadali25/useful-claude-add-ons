@@ -131,7 +131,8 @@ class Step:
 PY = "{python}"
 COMBINED_DIRS = ("plugin/crew/tests/", "plugin/gizmoduck/scripts/_test/",
                  "skills/mermaid-svg-bitbucket/tests/", "skills/notify/tests/",
-                 "skills/doc-builder/scripts/_test/", "skills/intune-graph/scripts/_test/")
+                 "skills/doc-builder/scripts/_test/", "skills/intune-graph/scripts/_test/",
+                 "skills/windows-ssm/tests/")
 NO_CACHE = ("-p", "no:cacheprovider")
 # What pytest resolves on its own for the whole COMBINED_DIRS list, pinned so
 # a subset run (C-0001) is the same session: gizmoduck's ini sets the rootdir,

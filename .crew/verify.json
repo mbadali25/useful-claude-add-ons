@@ -323,11 +323,11 @@
       "why": "1s. reach: local - checklist.sh checks doc-builder's own output files already in this checkout." },
 
     { "paths": ["skills/mermaid-svg-bitbucket/**", "skills/notify/**",
-                "skills/cisco-meraki/**"],
-      "seconds": 12,
-      "run": ["python3 -m pytest skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/cisco-meraki/tests/ -q"],
+                "skills/cisco-meraki/**", "skills/windows-ssm/**"],
+      "seconds": 13,
+      "run": ["python3 -m pytest skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/cisco-meraki/tests/ skills/windows-ssm/tests/ -q"],
       "reach": "local",
-      "why": "6s. The three skill suites CI runs as separate pytest invocations. reach: local - three skill test suites against their own fixtures, no network call." },
+      "why": "7s. Four skill suites in one local pytest invocation. reach: local - four skill test suites against their own fixtures, no network call." },
 
     { "paths": ["_verify/**"],
       "seconds": 5,

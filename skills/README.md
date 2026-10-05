@@ -12,6 +12,13 @@ Generated from [`UPDATE.md`](UPDATE.md) by `scripts/sync-updates.py`. Edit that 
 
 ### Unreleased
 
+**`windows-ssm`** (1.0.0) — running Linux-style tools on a Windows machine
+(which shell a command lands in, `python3` and `pwsh` resolution, MSYS path
+conversion, CRLF, WSL) and what AWS Systems Manager will carry, every limit
+cited to its AWS or Microsoft page. Its offline checker reads a
+`get-command-invocation` result and exits non-zero when the output is, or may
+be, cut, so a truncated result is never parsed as complete.
+
 Two skills renamed, same content. `claude plugin validate --strict` reserves
 the `claude-` prefix for Anthropic's own plugins, so `claude-code-defaults` is
 now **`session-defaults`** (1.1.0) and `claude-code-tuneup` is now
@@ -119,6 +126,7 @@ Nine new skills, taking the marketplace from 25 to 34.
 | [`wazuh-onprem`](wazuh-onprem) | Security / SIEM | Self-hosted Wazuh across all four surfaces — Server API, Indexer API, Dashboard saved-objects API, and `ossec.conf` over SSH. | Searching `wazuh-alerts` to build an incident timeline; wiring Slack/PagerDuty alerting into `ossec.conf`; onboarding an O365 or Cloudflare log feed; backing up or migrating dashboards. | Automatic |
 | [`web-research`](web-research) | Research | Live-web research through the Perplexity MCP server — registered by hand or by menu row 25 of the install scripts, and routes each question to `perplexity_search`, `_ask`, `_research` or `_reason`, applies recency and domain filters, and hands library/API reference to Context7 instead. | "What's the latest on X?"; current pricing or a CVE for a product; "is this still true"; comparing vendors; anything where training data would be stale. | Automatic |
 | [`web-testing-playwright`](web-testing-playwright) | Testing / QA | Drives a real browser with Playwright — screenshots at multiple viewports, console errors, failed network requests, form and login flows — plus browser setup for Windows and Linux. | "Is my site up?"; a page rendering blank with a JS error; verifying a login or checkout flow end to end; a layout that breaks at mobile viewport. | Automatic |
+| [`windows-ssm`](windows-ssm) | Cloud / Infra | Linux-style tools on a Windows machine — which shell a command lands in, `python3`/`pwsh` resolution, MSYS path conversion and `cygpath`, CRLF, WSL's boundary — and what AWS Systems Manager will carry, with every limit cited and an offline checker that exits non-zero when a Run Command result is or may be cut. | "command not found: python3" in Git Bash; a path that turned into `C:/Program Files/Git/...`; `$'\r': command not found`; SSM output that stops halfway; pushing a large script to a node through SSM. | Automatic |
 | [`work-log-reporter`](work-log-reporter) | Productivity | Keeps a committed per-session `work-log/` of what was done and what was touched, then generates a formatted email report with a PDF attachment and sends it over SMTP. | End-of-day or standup writeup; "email my manager what I worked on"; a billable record of which systems, databases, and tables were touched. | Automatic |
 
 "Automatic" means Claude decides to invoke the skill on its own when the conversation matches the skill's `description` trigger — no slash command needed. "Manual" means the skill sets `disable-model-invocation: true` and must be invoked explicitly (e.g. `/i-have-adhd`).
