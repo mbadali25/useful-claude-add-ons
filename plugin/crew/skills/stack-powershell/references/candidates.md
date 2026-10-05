@@ -3,8 +3,10 @@
 The gated PowerShell set is `crew-standards/references/powershell.md`, set `PWSH`. It holds
 PWSH-16, the command-resolution half of that research rule. Nothing in this file is loaded by
 `crew_standards.py` or asked in the self-check. There are three ways forward. An ordinary
-candidate (PWSH-P1, -P2, -P3, -04) is promoted into the set, keeping its id, once three
-distinct reviewed change sets earn it. The StrictMode half joins the shipped PWSH-16 as an
+candidate is promoted into the set once three distinct reviewed change sets earn it. PWSH-04
+keeps its id. PWSH-P1, -P2 and -P3 are public-pass labels that the loader cannot read
+(`[A-Z]{2,6}-\d{2}`), so on promotion each takes its research id once the owner's file maps
+it, or else the next unused `PWSH-NN`. The StrictMode half joins the shipped PWSH-16 as an
 amendment if three change sets earn that half. PWSH-20 never enters the plugin set: it is
 overlay material and needs the owner's approval of a proposal. `PWSH-NN` is the owner's research
 `POWERSHELL-NN`. The set name is `PWSH` because the loader takes 2-6 capitals.
@@ -66,7 +68,7 @@ Source: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell
 "-like and -notlike behave similarly to -eq and -ne, but the right-hand side could be a string
 containing wildcards."
 
-### PWSH-P3 Force a collection where a collection is meant (`@()`, `-NoEnumerate`)
+### PWSH-P3 Force a collection where a collection is meant (`@()`, or `-NoEnumerate` on 7)
 
 Counted: unknown. crew 1.0.153's review round 1 includes a 5.1 `ConvertFrom-Json`
 array-unrolling fix, but whether the review itself found that defect could not be determined.
@@ -74,7 +76,8 @@ array-unrolling fix, but whether the review itself found that defect could not b
 
 Wrap any value whose `.Count`, indexing or emptiness matters in `@(...)`, after assignment on
 5.1. Expect 5.1's `ConvertFrom-Json` to emit an array as one object, and an empty JSON array
-to unroll to `$null`.
+to unroll to `$null`. Windows PowerShell 5.1's `ConvertFrom-Json` has no `-NoEnumerate`
+(it is a PowerShell 7 parameter), so on 5.1 assign the result first and then wrap it in `@()`.
 
 Source: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_pipelines?view=powershell-7.5:
 "When executing a pipeline, PowerShell automatically enumerates any type that implements the

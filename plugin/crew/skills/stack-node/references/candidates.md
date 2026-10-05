@@ -62,15 +62,16 @@ function. Any input containing shell metacharacters may be used to trigger arbit
 execution." "The child_process.execFile() function is similar to child_process.exec() except
 that it does not spawn a shell by default."
 
-### NODE-P2 Check the HTTP status before using the body; a failed read is an error, never empty data
+### NODE-P2 Check the HTTP status before treating the body as data; a failed read is an error, never empty data
 
 Counted toward the bar: unknown (its research id could not be determined). This repository's
 commit `c80c68c8` records it ("status-first parsing", from Codex QA findings). 3 public change
 sets, which do not count.
 
 After `fetch`, or any HTTP client that does not throw on 4xx/5xx, branch on `res.ok` or
-`res.status` before parsing. Parse JSON only when the body is JSON. Throw an error that carries
-the status. An error response is never mapped to `[]`, `0`, "none found" or "no positions",
+`res.status` before treating the body as successful data. An error body may still be read
+safely (as text, and parsed only if it is JSON) to carry its detail into the error, as
+`c80c68c8` does. Throw an error that carries the status. An error response is never mapped to `[]`, `0`, "none found" or "no positions",
 and a write whose response is not `ok` is reported as failed.
 
 Public leads: BDortant/ToDo@51eeef65 (CodeRabbit review: `JSON.parse` ran before the `res.ok`
@@ -89,10 +90,13 @@ Counted toward the bar: unknown. This repository's mcp-servers 0.2.1 (T-0090) fi
 Graph token goes only to the configured Graph origin"), but the entry does not say how the
 defect was found. The Angular analogue is NG-P2.
 
-A client that attaches a bearer token checks every request URL against the configured origin
-before it attaches the token. That covers absolute caller URLs, `@odata.nextLink`,
-`Link: rel=next` and redirects, and the check compares scheme, host and port, with no
-userinfo.
+A client that attaches a bearer token checks every request URL it builds or follows against
+the configured origin before it attaches the token: absolute caller URLs, paths joined to the
+base, and next-page links such as `@odata.nextLink` or `Link: rel=next`. The check compares
+scheme, host and port, and refuses userinfo. Redirects are a separate question. The T-0090
+entry records that Node 22's `fetch` already strips `Authorization` on a cross-origin
+redirect, measured on Node 22.22.1, so that fix left redirects unchanged. A client on another
+HTTP stack checks its own redirect behaviour.
 
 ## Research rules not written here
 
