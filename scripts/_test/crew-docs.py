@@ -281,6 +281,28 @@ def pass_trailer_with_unreadable_event(tmp):
                         "GITHUB_EVENT_PATH": os.path.join(tmp, "nope.json")}
 
 
+def unknown_git_cannot_start(tmp):
+    root = repo(tmp)
+    commit(root, [HOOK], "hook")
+    empty = os.path.join(tmp, "empty-path")
+    os.makedirs(empty)
+    return root, None, {"PATH": empty}
+
+
+def unknown_event_body_not_text(tmp):
+    root = repo(tmp)
+    commit(root, [HOOK], "hook")
+    path = event_file(tmp, {"pull_request": {"body": 42}})
+    return root, None, {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": path}
+
+
+def fail_event_body_null(tmp):
+    root = repo(tmp)
+    commit(root, [HOOK], "hook")
+    path = event_file(tmp, {"pull_request": {"body": None}})
+    return root, None, {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": path}
+
+
 CASES = [
     (fail_hook_only, 1), (fail_hook_plus_mechanical, 1), (fail_hook_untracked, 1),
     (fail_skill_script_plus_reference, 1), (fail_trailer_without_reason, 1),
@@ -293,14 +315,24 @@ CASES = [
     (pass_main_merged_in, 0), (pass_docs_with_unreadable_event, 0),
     (pass_trailer_with_unreadable_event, 0),
     (unknown_no_origin, 77), (unknown_event_missing, 77), (unknown_event_not_json, 77),
-    (unknown_body_file_missing, 77),
+    (unknown_body_file_missing, 77), (unknown_git_cannot_start, 77),
+    (unknown_event_body_not_text, 77), (fail_event_body_null, 1),
 ]
 
 
 def run_case(checker, case):
     with tempfile.TemporaryDirectory() as tmp:
         root, body, environ = case(tmp)
-        return checker.check(root, body, environ)
+        # A case's PATH is applied to the process for the check alone (git is
+        # started through it), after its fixture repo was built.
+        saved = os.environ.get("PATH")
+        if "PATH" in environ:
+            os.environ["PATH"] = environ["PATH"]
+        try:
+            return checker.check(root, body, environ)
+        finally:
+            if saved is not None:
+                os.environ["PATH"] = saved
 
 
 def output_checks(checker) -> list[str]:

@@ -289,7 +289,7 @@
       "seconds": 15,
       "run": ["python3 scripts/_test/crew-docs.py"],
       "reach": "local",
-      "why": "T-0055: a PR that changes crew code touches a narrative crew doc or declares `Docs: none - <reason>`. This rule runs the checker's suite only (must-fail, must-pass and could-not-tell cases in throwaway git repos, plus seven mutation cases that must each flip a named case); it never runs check-crew-docs.py itself, which would block every Stop before the docs step is reached. The check runs in CI (marketplace.yml) and gate-runner. Timed 2026-10-05 on the 4-CPU Linux container under the shared lock, three runs: 12.2s, 12.6s, 11.9s (35 cases), rounded up to 15. reach: local - every case is a throwaway git repo under a temp directory; no network." },
+      "why": "T-0055: a PR that changes crew code touches a narrative crew doc or declares `Docs: none - <reason>`. This rule runs the checker's suite only (must-fail, must-pass and could-not-tell cases in throwaway git repos, plus seven mutation cases that must each flip a named case); it never runs check-crew-docs.py itself, which would block every Stop before the docs step is reached. The check runs in CI (marketplace.yml) and gate-runner. Timed 2026-10-05 on the 4-CPU Linux container under the shared lock, three runs: 12.2s, 12.6s, 11.9s (35 checks then; 38 after review round 1 added three cases), rounded up to 15. reach: local - every case is a throwaway git repo under a temp directory; no network." },
 
     { "paths": ["**/*.ps1", "**/*.psm1"],
       "seconds": 5,

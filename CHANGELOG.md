@@ -38,7 +38,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Wiring.** Two `marketplace.yml` steps (the suite, then the check), the matching `gate-runner.py`
   table entries, and a `.crew/verify.json` rule that runs the suite. `CLAUDE.md` "Scope discipline"
   gains the crew-docs paragraph; `.crew/standards.md` and `docs/claude-md-evidence.md` follow.
-- **Tests.** `scripts/_test/crew-docs.py`: 9 must-fail, 15 must-pass and 4 could-not-tell cases in
+- **Tests.** `scripts/_test/crew-docs.py`: 10 must-fail, 15 must-pass and 6 could-not-tell cases in
   throwaway git repos, output checks, and 7 mutation cases that must each flip a named case.
 
 ### Changed — repository: the repo's own pwsh launches run on a private startup-profile cache (T-0506)

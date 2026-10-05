@@ -87,8 +87,11 @@ class CouldNotTell(Exception):
 
 
 def _git(root: str, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
-                          stdin=subprocess.DEVNULL, check=False)
+    try:
+        return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, check=False)
+    except OSError as exc:  # git missing or not startable: could not tell, never exit 1
+        raise CouldNotTell(f"git could not start ({exc})") from exc
 
 
 def changed_paths(root: str) -> list[str]:
@@ -153,7 +156,11 @@ def pr_body(pr_body_file: str | None, environ) -> str | None:
     if not isinstance(pull, dict):
         raise CouldNotTell("the pull_request event has no pull_request object")
     body = pull.get("body")
-    return body if isinstance(body, str) else ""
+    if body is None:  # GitHub sends null for an empty description
+        return ""
+    if not isinstance(body, str):
+        raise CouldNotTell(f"the pull_request event's body is a {type(body).__name__}, not text")
+    return body
 
 
 def declaration(value: str) -> tuple[bool, str]:
@@ -188,10 +195,10 @@ def _matches(path: str, globs) -> bool:
 def check(root: str, pr_body_file: str | None = None, environ=None) -> tuple[int, list[str]]:
     """(exit code, output lines) for the branch checked out at `root`."""
     environ = os.environ if environ is None else environ
-    if _git(root, "rev-parse", "--verify", "-q", "origin/main").returncode != 0:
-        return EXIT_MISSING, ["TOOL MISSING: origin/main is not a ref here, so the crew-docs "
-                              "check DID NOT RUN. This is a missing ref, not a pass."]
     try:
+        if _git(root, "rev-parse", "--verify", "-q", "origin/main").returncode != 0:
+            return EXIT_MISSING, ["TOOL MISSING: origin/main is not a ref here, so the crew-docs "
+                                  "check DID NOT RUN. This is a missing ref, not a pass."]
         paths = changed_paths(root)
         code = [p for p in paths if _matches(p, (CREW,)) and not _matches(p, NOT_CODE)]
         if not code:
