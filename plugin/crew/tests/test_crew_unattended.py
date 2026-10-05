@@ -1316,3 +1316,15 @@ def test_stripped_env_drops_config_dir_pointers():
     CLI's stored token away from the denied default path."""
     assert cu.stripped_env({"GH_CONFIG_DIR": "/x", "XDG_CONFIG_HOME": "/y",
                             "PATH": "/b"}) == {"PATH": "/b"}
+
+
+def test_relative_claude_config_dir_is_unknown(tmp_path, monkeypatch):
+    """T-0044 port review r7 BLOCK: a relative CLAUDE_CONFIG_DIR resolves
+    against Claude's working directory, not the launcher's: could not tell
+    which user settings load, so the settings check is `unknown`."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", ".claude")
+    (tmp_path / ".git").mkdir()
+
+    got, why = cu.run_settings(str(tmp_path), [], [str(tmp_path)])
+
+    assert (got, "CLAUDE_CONFIG_DIR is relative" in why) == ("unknown", True), why

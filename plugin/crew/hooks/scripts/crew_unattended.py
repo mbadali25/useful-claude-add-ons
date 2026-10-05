@@ -536,7 +536,13 @@ def sealed_settings(store_paths, protected=()):
 
 
 def _user_settings_path():
-    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(
+    """The user settings file Claude Code loads, or None when it cannot be
+    told: a relative `CLAUDE_CONFIG_DIR` resolves against whichever directory
+    Claude starts in, which is not where this launcher was started."""
+    given = os.environ.get("CLAUDE_CONFIG_DIR")
+    if given and not os.path.isabs(os.path.expanduser(given)):
+        return None
+    base = os.path.expanduser(given) if given else os.path.join(
         os.path.expanduser("~"), ".claude")
     return os.path.join(base, "settings.json")
 
@@ -749,6 +755,10 @@ def run_settings(root, store_paths, homes):
         obj, why = _load_settings(path)
         repo.append((path, obj, why))
     user = _user_settings_path()
+    if user is None:
+        return UNKNOWN, ("settings: CLAUDE_CONFIG_DIR is relative, so which user settings "
+                         "file Claude loads depends on its working directory - set it to an "
+                         "absolute path")
     obj, why = _load_settings(user)
     return judge_settings(repo, (user, obj, why), homes, store_paths)
 
@@ -903,7 +913,7 @@ def _make_sealed(region, store_paths):
     config = os.path.join(sealed, "aws-config")
     settings = os.path.join(sealed, "settings.json")
     _write_new(config, f"[default]\nregion = {region}\n")
-    protected = [sealed, _user_settings_path()]
+    protected = [sealed] + [p for p in (_user_settings_path(),) if p]
     _write_new(settings, json.dumps(sealed_settings(store_paths, protected),
                                     indent=2) + "\n")
     return sealed, settings
