@@ -61,17 +61,23 @@ origin/main `a555ff37`:
   marked "only if a set ships".
 - **Terraform 1.7 for `for_each` in `import`.** Resolved at implement from the raw 1.7 changelog
   (`https://github.com/hashicorp/terraform/blob/v1.7/CHANGELOG.md`); unverified means the candidate line says so.
+- **The 120-line cap.** Every stack skill is at most 120 lines (`plugin/crew/tests/test_stack_skills.py:73`, `:142`);
+  `stack-terraform` is 84 now, and nineteen candidate lines plus the settled questions do not fit. Default taken:
+  the candidates and the three settled questions go to `plugin/crew/skills/stack-terraform/references/candidates.md`;
+  SKILL.md keeps `## Standards` (no gated set yet, or the pointer) and a one-line link to it.
 - **Private repositories.** Accepted as risk, as for PYTHON and DOTNET: each count names the repo and PR.
 - Merge train with L-0532..L-0535, L-0537, L-0538 (shared doc lines). Next free crew patch set at land.
 
 ## Size and split
-Expected: about 50 lines in `stack-terraform/SKILL.md`, a few doc lines, no tests beyond the existing ones, no
+Expected: about 10 lines in `stack-terraform/SKILL.md` and about 50 in its new `references/candidates.md`, a few doc lines, no tests beyond the existing ones, no
 production code, no harness path. If a set ships: about 60-120 more lines of set file and about 40 lines of tests.
 No further split.
 
 ## Touch
 - `plugin/crew/skills/stack-terraform/SKILL.md` - `## Standards` (no gated set yet, or the pointer if one ships),
-  `## Candidate standards (not gated)`, the three settled questions, pointers from pitfalls `:22-43`
+  a link to the candidates, pointers from pitfalls `:22-43`; stays within 120 lines
+- `plugin/crew/skills/stack-terraform/references/candidates.md` - new: `## Candidate standards (not gated)` and the
+  three settled questions
 - `plugin/crew/README.md` - `:795` says Terraform has candidates only (or names the set)
 - `plugin/PLUGINS.md` - `stack-terraform` row; version
 - `CHANGELOG.md`
@@ -92,11 +98,11 @@ Commands from the repo root; pytest through the heavy-run wrapper on a memory-bo
 - [ ] `.work/tickets/L-0536/changesets-terraform.txt` lists every cited commit with its PR, the review evidence (or
   "none recorded") and the per-rule count; the counts in `stack-terraform/SKILL.md` match it.
   `grep -c "^TERRAFORM-" .work/tickets/L-0536/changesets-terraform.txt`
-- [ ] `stack-terraform/SKILL.md` has `## Standards` and `## Candidate standards (not gated)`; every research id
-  TERRAFORM-01 to -19 is either a candidate line with `(<N>` count or, if shipped, listed under Standards; none is
-  in both. `python3 -c "import re;t=open('plugin/crew/skills/stack-terraform/SKILL.md',encoding='utf-8').read();ids=re.findall(r'TERRAFORM-\d\d',t);print(sorted(set(ids))==[f'TERRAFORM-{n:02d}' for n in range(1,20)])"` prints `True`
+- [ ] `stack-terraform/SKILL.md` has `## Standards` and links `references/candidates.md`, which has `## Candidate
+  standards (not gated)`; every research id TERRAFORM-01 to -19 is either a candidate line with `(<N>` count or, if
+  shipped, listed under Standards; none is in both. `python3 -c "import re;t=''.join(open(p,encoding='utf-8').read() for p in ('plugin/crew/skills/stack-terraform/SKILL.md','plugin/crew/skills/stack-terraform/references/candidates.md'));ids=re.findall(r'TERRAFORM-\d\d',t);print(sorted(set(ids))==[f'TERRAFORM-{n:02d}' for n in range(1,20)])"` prints `True`
 - [ ] The three questions are stated with their settled position and, where uncited, flagged as such.
-  `grep -n "1.7\|CMK\|literal ARN" plugin/crew/skills/stack-terraform/SKILL.md`
+  `grep -n "1.7\|CMK\|literal ARN" plugin/crew/skills/stack-terraform/references/candidates.md`
 - [ ] If no set ships: `test ! -e plugin/crew/skills/crew-standards/references/terraform.md`, and README `:795`
   says Terraform has candidates only. If a set ships: `python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_standards.py -q`
   passes with `[terraform.md]` cases, and `-k test_terraform_set_applies_to_terraform_files_only` shows `.tf` and

@@ -8,7 +8,7 @@ Handed to a cloud session on 2026-10-05 by owner instruction. Do not pick up loc
 - **INDEX status:** spec (direction and spec approved for hand-off 2026-10-05; plan to be written by the implementing session)
 - **Branch:** `L-0536-build`, new from origin/main `a555ff37`; docs only, no implementation yet
 - **Files here:** `docs/tickets/L-0536/direction.md`, `docs/tickets/L-0536/spec.md`
-- **Size:** 0 production lines. Expected about 50 lines in `stack-terraform/SKILL.md` plus doc rows. If the review-thread check lifts a rule to three change sets, add a set file (about 60-120 lines) and about 40 test lines.
+- **Size:** 0 production lines. Expected about 10 lines in `stack-terraform/SKILL.md` and a new `stack-terraform/references/candidates.md` (about 50 lines; stack skills are capped at 120 lines), plus doc rows. If the review-thread check lifts a rule to three change sets, add a set file (about 60-120 lines) and about 40 test lines.
 - **Harness:** no. Sabotage entries (only if a set ships) go in a tooling-only follow-up, or ride along if L-0539 has merged.
 
 ## The finding that shapes this ticket
