@@ -1575,9 +1575,9 @@ Obsidian vault). A CLI the commands call, not a hook.
   "could not tell", naming the directory. `_pinned_check` gains it through its re-walk;
   its own held comparison is kept as defence in depth.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
-  `repo-id:` (`_NOTE_REPO_ID` `:1402`, trailing `\r` excluded so a CRLF note
+  `repo-id:` (`_NOTE_REPO_ID` `:1403`, trailing `\r` excluded so a CRLF note
   reads as written, a quote stripped only as a matched pair, T-0071 #4;
-  `_card_owner` `:1406` -> ours / foreign / unknown). The id
+  `_card_owner` `:1407` -> ours / foreign / unknown). The id
   is `repo_id` (`:643`): the origin URL through `normal_url` (`:570`,
   scheme and host with port case-folded, user and path kept as written
   (T-0071 #1), `.git` stripped; an ssh origin - scp-style or a scheme in
@@ -1590,7 +1590,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   realpath, and for a relative one - `../origin/app.git` names a different
   repository from each checkout - the git common dir's realpath, as with no
   origin; `None` (git could not say) refuses via `_no_identity` (`:1312`).
-  `_foreign` (`:1425`) refuses create, move and read, and names the
+  `_foreign` (`:1426`) refuses create, move and read, and names the
   `repo-id:` line to write when the note's id is this repo's case-folded
   (an older crew's lowercased id, never accepted); unknown refuses create
   and move with the `repo-id:` fix (`_unclaimed` `:1307`) and is a caveat on
