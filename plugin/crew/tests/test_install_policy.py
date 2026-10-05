@@ -253,6 +253,15 @@ def test_the_migration_is_behaviour_neutral():
     assert out["schema"] == crew_state.SCHEMA_CURRENT
 
 
+def test_the_shipped_install_default_is_the_floor():
+    """What a fresh config and the migration's defaults table carry. The test
+    above no longer reads this value - the migration prunes `install` from a
+    repo that never named it - so a default raised to `auto` went unnoticed
+    by it on every host (L-0608)."""
+    assert crew_state.INSTALL_DEFAULTS == {"policy": "manual"}
+    assert crew_config.default_config()["install"] == {"policy": "manual"}
+
+
 def test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file(
         tmp_path, capsys):
     """The one upgrade note a user would most want unprompted was the one they

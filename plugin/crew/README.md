@@ -3217,7 +3217,7 @@ entry's pytest starts in its own process group under a data-segment cap
 cap) that every process the test spawns inherits, and a wall-clock limit
 (default 600 s per entry, `CREW_SABOTAGE_TIMEOUT_S`). Over the cap the test
 fails on its own assertion, so the entry is `RED (good)` for real; a timeout
-stops the whole group and reads `RED BUT UNPROVEN -- timed out`, failing the
+stops the whole group and reads `COULD-NOT-TELL -- timed out`, failing the
 suite. An unreadable value refuses the run rather than meaning the default.
 The cap is enforced on Linux only: elsewhere the `bound:` line the run prints
 first says `memory cap absent`, and only the timeout applies; the same below Linux
@@ -3227,6 +3227,20 @@ returns, on every path, its whole process group is KILLed, so a test that
 backgrounds a process leaves nothing running; a process that calls `setsid`
 leaves the group and is out of reach. The standalone runners `tests/sabotage_event_claim.py`,
 `sabotage_autocycle.py` and `sabotage_resume.py` run under the same bound.
+
+A verdict is read from each run's junit report, not its exit code
+(`tests/sabotage_platform.py`). pytest exits 0 when every test *skipped*, and
+that once read as `STILL GREEN` for thirteen entries on Linux whose tests never
+ran there. Now `RED (good)` needs exit 1 and a complete report: every collected
+case reported, at least one failed, none skipped or errored. Anything less is
+`RED BUT UNPROVEN`, an all-skipped run is `COULD-NOT-TELL`, and all of them fail
+the suite. An entry only some platforms can exercise (the PowerShell gate's,
+which are Windows-only) is declared in `PLATFORM_ONLY`. On any other host it is
+not applied, and it reads `PLATFORM-ONLY, NOT EXERCISED (win)`, counted on the
+last line, as in `SABOTAGE SUITE: PASS (N platform-only, not exercised on linux)`.
+On its own platform a skip fails like any other. Each entry runs in its own
+session (a job object on Windows) under the bound above; an overrun's whole
+process tree is killed, as is anything the entry leaves running.
 
 `run-tests.sh` printed `RESULT: 177 passed, 0 failed` at `61af85cb`. It covers
 what the guard must block and must allow, the promotion gate, the emergency lane
