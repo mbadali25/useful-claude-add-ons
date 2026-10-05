@@ -89,11 +89,15 @@ from crew_guards import (
     PROD_LEVELS,  # noqa: F401
     PROD_LEVEL_DEFAULT,  # noqa: F401
     RATCHETED_KEYS,  # noqa: F401
+    PERSONAL_KEYS,  # noqa: F401
+    REPO_ONLY_AUTOPILOT,  # noqa: F401
     ROLE_WRITE_DEFAULT,  # noqa: F401
     ROLE_WRITE_GUARD_NAMES,  # noqa: F401
     ROLE_WRITE_POLICIES,  # noqa: F401
     effective_install_policy,  # noqa: F401
     effective_ratcheted,  # noqa: F401
+    effective_personal,  # noqa: F401
+    personal_rank,  # noqa: F401
     guard_policy_rank,  # noqa: F401
     install_plan,  # noqa: F401
     install_policy_rank,  # noqa: F401

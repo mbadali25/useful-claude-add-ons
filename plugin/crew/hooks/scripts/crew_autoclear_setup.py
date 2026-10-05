@@ -49,6 +49,7 @@ import json
 import os
 import sys
 
+import crew_backup
 import crew_config
 
 FORBIDDEN_WORDS = ("cleared", "compacted")
@@ -454,6 +455,7 @@ def _atomic_write_json(path, obj):
     place."""
     tmp = _stage_json(path, obj)
     try:
+        crew_backup.backup(path)          # T-0050: no backup, no write
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -649,6 +651,11 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
         # calls; this only stops the LEFTOVER TEMP FILE from being the
         # thing a crash leaves behind too.
         try:
+            # T-0050: back up `config.json` before the FIRST replace, so a
+            # failed backup refuses the whole batch with nothing written.
+            for _tmp, path in staged:
+                if os.path.basename(path) == "config.json":
+                    crew_backup.backup(path)
             for tmp, path in staged:
                 os.replace(tmp, path)
         finally:
@@ -741,7 +748,8 @@ def main(argv=None):
         try:
             _, changes = write_autoclear_method(
                 args.method, consent=args.yes, path=args.global_path)
-        except (PermissionError, GlobalConfigUnreadable) as exc:
+        except (PermissionError, GlobalConfigUnreadable,
+                crew_config.WriteBackupRefused) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         print(json.dumps(changes, indent=2))
@@ -751,7 +759,8 @@ def main(argv=None):
         try:
             _, changes = write_autoclear_enabled(
                 args.value == "true", consent=args.yes, path=args.global_path)
-        except (PermissionError, GlobalConfigUnreadable) as exc:
+        except (PermissionError, GlobalConfigUnreadable,
+                crew_config.WriteBackupRefused) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         print(json.dumps(changes, indent=2))
@@ -770,7 +779,8 @@ def main(argv=None):
         try:
             plan = apply_migrate_to_repo(
                 args.root, args.global_path, args.repo_label, args.yes_widen)
-        except (GlobalConfigUnreadable, OSError, ValueError) as exc:
+        except (GlobalConfigUnreadable, OSError, ValueError,
+                crew_backup.BackupError, crew_config.WriteBackupRefused) as exc:
             print(str(exc), file=sys.stderr)
             return 1
         print(json.dumps(plan, indent=2))

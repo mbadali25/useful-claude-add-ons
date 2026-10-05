@@ -131,6 +131,63 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   paths, left for a separate tooling PR (TODO.md, L-0582 follow-ups).
   Docs: guides none - no guide describes where `metrics.md` is read from.
 
+### Added — `crew`: global defaults for the personal autopilot keys, a backup before every config write, and a rebuild from the owner's profile (T-0050)
+
+- **Behaviour change: a global value can hold a repo value down.** `autopilot.mode`, `maxPhases`,
+  `deploy`, `approval` and `questions` are personal (`crew_guards.PERSONAL_KEYS`): settable in
+  `~/.claude/crew/config.json` as the owner's default for every repo, combined per key by
+  `effective_personal` -- the stricter of the layers that set a key wins (`off` < `plan`,
+  `human` < `risk` < `self`, `none` < `nonprod` < `all`, the smaller `maxPhases`), and a silent
+  layer (absent or `null`) imposes nothing. `resolve_config` applies it, so `crew_autopilot.settings`
+  reads it with no change. A repo `self` under a global `human` reads `human`.
+- **Behaviour change: new repos no longer spell the personal keys.** `template_config()` and
+  `global_template_config()` are what the committed templates, crew-setup's inline copy and
+  `heal_config` write. Existing repos keep their explicit values (every repo `/crew:init` set up
+  before this says `"mode": "off"`): `crew_config.py --explain --all` names each `shadow:` and
+  `--unset <key> --repo --apply` removes it on the owner's yes; nothing removes one automatically.
+- **Behaviour change: `/crew:config` writes `.crew/config.json` by more routes, all `--apply`
+  only:** `--set`/`--unset --repo`, `--rebuild --repo`, `--restore <stamp> --repo` and the menu's
+  Save.
+- `crew_backup.py`: every crew writer of either config file (`write_global_config`,
+  `write_repo_config`, rebuild, restore, the menu's restore, `heal_config`, `apply_changes`, the
+  autoclear setup's repo writes, `crew_upgrade`) saves the pre-write bytes, corrupt ones included,
+  under `~/.claude/crew/backups/` (0600 files, 0700 for the directories it creates, each copy
+  read back and compared, newest 20 kept) and refuses the write when the backup fails (exit 4).
+  `--backups` lists them; `--restore <stamp>` backs up the current file, then writes the stamped
+  bytes, and refuses (exit 2) a stamp that is not valid JSON unless `--force-invalid`.
+- The profile: `~/.claude/crew/profile.json`, plus `<memory.vaultPath>/crew/profile.json` when a
+  vault is set, holds each layer's non-template values (repos keyed by normalised `origin`).
+  Refreshed by `--set`/`--unset --apply` and Save, captured by `--save-profile`; never by heal,
+  platform-sync, upgrade, the autoclear setup, a rebuild or a restore. `--rebuild --repo|--global`
+  writes the template plus the profile, a dry run until `--apply`; an unreadable profile copy
+  with no readable other is exit 3 (could not tell), none at all needs `--no-profile`.
+- `--explain --all` prints every key with its layer, marks `repo-only`, `held down by <layer>`,
+  and the `shadow:` and `profile drift:` findings. CONFIG.md §2 re-measured (81 global of 138,
+  57 repo-only, on the batch 6 tree), new §20a and §20b; README, `commands/config.md` and `global-config.md` updated.
+- The generated settings reference: `crew_keys.layer_of` names the personal keys
+  `both, stricter wins` (from `crew_guards.PERSONAL_KEYS`), so CONFIG.md §10/§11 and
+  `docs/guides/crew/src/configuration-reference.md` move them to the machine-settable table; the
+  reference's hand-written part and the crew guide describe personal defaults, backups and the
+  rebuild as shipped. `crew_keys.COMING` keeps T-0050's `scope.allowCliApproval` row (the harness
+  follow-up below).
+- **A corrupt machine file is could-not-tell for the personal keys** (review r1 of the land
+  merge): `read_global_config` collapses it to `{}`, which would have turned a global
+  `approval: human` into the default `risk` with no warning. `crew_autopilot.settings` now reads
+  the machine file raw first (`_unreadable_machine_autopilot`), and unreadable JSON, a
+  non-object file or a non-object `autopilot` block reads every policy as `unknown`, autopilot
+  as off, with a warning naming the file, the same as the repo side. The generated reference
+  lists a personal key's values strictest first and says so.
+- `autopilot.maxAutoReplans` (T-0074) and the `autopilot.sleep` block (T-0053), which reached
+  main after this change was written, stay repo-only (`crew_guards.REPO_ONLY_AUTOPILOT`): the
+  machine file's copy is pruned and new repos' templates still spell them.
+- Tests: `test_crew_config_personal.py` (60), `test_crew_config_rebuild.py` (42),
+  `test_crew_backup.py` (28), must-block and must-allow; 25 hand sabotages, each red.
+- **Harness follow-ups (left out under the T-0087 rule):** `scope.allowCliApproval` as a personal
+  key needs `crew_ticket.cli_approval_allowed` to read the global layer (review harness), with
+  its must-block tests in `test_crew_ticket.py` / `test_scope_guard.py`; and registering the 21
+  sabotages as `sabotage_config_layers.py` in `sabotage.py` (harness paths). Until then a global
+  `approval: self` still needs the repo's own `scope.allowCliApproval: true`.
+
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched

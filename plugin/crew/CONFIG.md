@@ -187,10 +187,14 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **76**
-leaves. `leaf_paths(default_config())` yields **138**, so **62** are repo-only.
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **81**
+leaves. `leaf_paths(default_config())` yields **138**, so **57** are repo-only.
 For all 138, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on batch-6-build after merging T-0050: T-0050 made the five personal
+`autopilot` keys global, moving 76 / 138 / 62 to 81 / 138 / 57; on T-0050's own
+branch after merging main ce235468 it measured 79 / 132 / 53, and 77 / 129 / 52
+before that merge. 76 / 138 / 62 was measured
 on T-0074's branch after merging main 8c0843ca; the repo-only
 `autopilot.maxAutoReplans` is the one T-0074 added, and the generated tables in
 §10 and §11 state the same 76 / 138 / 62. This paragraph said 75 / 136 / 61
@@ -723,7 +727,8 @@ two layers wins instead** (§15, §16, §17). For the first eight "narrower"
 means a smaller capability, with one of the eight (`guards.roleWrites`)
 narrower meaning something slightly different again — see §18; for
 `change.requireForProduction` the narrower value is `true`, so a repo may
-turn that one **on** and never off — §17.
+turn that one **on** and never off — §17. The five personal `autopilot` keys
+combine per key by their own rule — §20a.
 `production.databases` and `production.hosts` are deliberately **not** here:
 they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
 `default_global_config()` except where the generated table prints two.
@@ -732,7 +737,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-76 of 138 keys are settable in the machine-global file (generated; 62 are repo-only, section 11).
+81 of 138 keys are settable in the machine-global file (generated; 57 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -814,6 +819,11 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `change.jiraIssueType` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change"` |
 | `change.category` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
 | `git.forbiddenTrailers` | both | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `hooks/scripts/crew_trailers.py`) | `[]` |
+| `autopilot.mode` | both, stricter wins | `off` \| `plan` (checked in `hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | `"off"` |
+| `autopilot.maxPhases` | both, stricter wins | positive integer (checked in `hooks/scripts/crew_autopilot.py`); personal: the smaller wins | `12` |
+| `autopilot.deploy` | both, stricter wins | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | `"none"` |
+| `autopilot.approval` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
+| `autopilot.questions` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
 | `route.enabled` | both | `false` \| `true` (checked in `hooks/scripts/crew_route.py`) | `false` |
 <!-- generated:config-keys-global end -->
 
@@ -849,7 +859,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-62 of 138 keys are repo-only (generated; 76 are global-settable, section 10).
+57 of 138 keys are repo-only (generated; 81 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -908,11 +918,6 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `environments.nonProd` | repo | not validated - read by `hooks/scripts/crew_config.py` (expects list of globs) | `[]` |
 | `scope.mode` | repo | `off` \| `report` \| `block` \| `auto` | `"off"` |
 | `scope.allowCliApproval` | repo | `false` \| `true` (checked in `hooks/scripts/crew_ticket.py`) | `false` |
-| `autopilot.mode` | repo | `off` \| `plan` (checked in `hooks/scripts/crew_autopilot.py`) | `"off"` |
-| `autopilot.maxPhases` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `12` |
-| `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
-| `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
-| `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
 | `autopilot.maxAutoReplans` | repo | non-negative integer (checked in `hooks/scripts/crew_autopilot.py`) | `0` |
 | `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
@@ -2852,16 +2857,18 @@ lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
-that ticket is approved under `autopilot.approval` like any other. Its block is **repo only**: absent from `default_global_config()`, so
-`filter_global` prunes it from the machine file. Whether one checkout may be
-driven is a fact about that checkout.
+that ticket is approved under `autopilot.approval` like any other.
+Since T-0050 every key in its block is **personal**: settable in the machine
+file as the owner's default for every repo, combined per key with the repo's
+value by the rule in §20a (the stricter of the layers that set it wins). The
+`/crew:init` template no longer spells the block.
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
-| `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
-| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
+| `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. A machine value is the default where the repo is silent (§20a). |
+| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` or machine-global file that exists but is not a readable JSON object, or an `autopilot` value in either that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. Since T-0050 the machine file counts too: `read_global_config` collapses a corrupt one to `{}`, which would turn a global `human` into the default `risk`, so `crew_autopilot._unreadable_machine_autopilot` reads it raw first. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
 | `autopilot.maxAutoReplans` | `0` | `crew_autopilot.auto_replan_policy` (T-0074): how many successor plans one ticket may have before an out-of-rounds BLOCK round stops for the owner again; `0` is off | Anything but a non-negative integer (`true`, `"2"`, `2.5`, `-1`, `null`) reads as `0`, with a warning naming the value; an unreadable config or non-object block reads as `0`. The limit is `5`: a larger value reads as `5`, with a warning. |
 | `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an override that is not a policy or cannot be read, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
@@ -3099,6 +3106,82 @@ promote-gate (`requireHuman`, the post-deploy proof) and every other gate
 still decide.
 
 ---
+
+## 20a. Personal keys and the per-key ratchet (T-0050)
+
+`crew_guards.PERSONAL_KEYS` (re-exported by `crew_state`) names the keys the
+owner sets once, in `~/.claude/crew/config.json`, as a default for every repo:
+
+| Key | Kind | Order, strictest first |
+|---|---|---|
+| `autopilot.mode` | tiers | `off`, `plan` |
+| `autopilot.maxPhases` | int-min | a smaller positive int is stricter |
+| `autopilot.deploy` | tiers | `none`, `nonprod`, `all` |
+| `autopilot.approval` | tiers | `human`, `risk`, `self` |
+| `autopilot.questions` | tiers | `human`, `risk`, `self` |
+
+The rule, `crew_guards.effective_personal`, applied by `resolve_config` after
+its merge (so every reader, `crew_autopilot.settings` included, sees it):
+
+- A layer **sets** a key when its value is neither absent nor `null`. A silent
+  layer imposes nothing: a global `self` over a repo that says nothing is
+  `self`. This is where it differs from the ratchet (§16), whose absent value
+  is the floor and could never carry a personal default.
+- Both set it: the **stricter** wins, the repo's value on a tie, and
+  `--explain` names the layer `held down by`. An unrecognised value ranks
+  below the floor, wins, and is returned raw; the reader reads it as its floor
+  with a warning. int-min ignores an invalid layer when the other is valid.
+- No key is in both `PERSONAL_KEYS` and `RATCHETED_KEYS`. Every
+  `crew_state.AUTOPILOT_DEFAULTS` key is a row or is listed in
+  `REPO_ONLY_AUTOPILOT`, and a test fails until a new key picks one.
+  `autopilot.maxAutoReplans` (T-0074) and the `autopilot.sleep` block (T-0053)
+  are `REPO_ONLY_AUTOPILOT`: they read from `.crew/config.json` alone, and the
+  machine file's copy is pruned.
+- `scope.allowCliApproval` is **not** personal yet: its reader,
+  `crew_ticket.cli_approval_allowed`, reads the repo file only and is review
+  harness, so its row lands in a harness-only change. So a global
+  `approval: self` still needs the repo's own `allowCliApproval: true`.
+
+Neither template spells a personal key (`template_config()`,
+`global_template_config()`), and `heal_config` writes the template, so a
+default never shadows the owner's choice. A repo file written before T-0050
+spells `autopilot.mode: "off"`, the strictest tier: `--explain --all` reports
+each such key as a `shadow:` and `--unset <path> --repo --apply` removes it.
+Nothing removes one automatically, because a deliberate repo value looks the
+same.
+
+## 20b. Backups, the profile and rebuild (T-0050)
+
+**Backups.** Every crew writer of either config file calls
+`crew_backup.backup(path)` immediately before it replaces the file:
+`write_global_config`, `write_repo_config` (so every `--set`/`--unset` and the
+menu's Save), the rebuild and restore below, the menu's restore,
+`heal_config`, platform-sync's `apply_changes`, the autoclear setup's repo
+writes and `crew_upgrade`. The raw bytes, corrupt ones included, go to
+`~/.claude/crew/backups/global/<stamp>.json` or
+`backups/repo/<dir>-<sha256(realpath)[:10]>/<stamp>.json` (a `source` file
+names the path), 0600 files in 0700 directories, the newest 20 per file kept.
+A stamp is UTC `YYYYMMDDTHHMMSSZ`, `-2`, `-3` on a same-second collision. **A
+failed backup refuses the write and leaves the file untouched** (exit 4 from
+the CLI). `CREW_BACKUP_DIR` overrides the root; the test suite sets it. A hand
+edit is not backed up.
+
+**The profile.** `~/.claude/crew/profile.json`, and a copy at
+`<memory.vaultPath>/crew/profile.json` when the global `memory.vaultPath`
+names an existing directory. It holds, per layer, every leaf that differs from
+that layer's template (never `schema` or `platform.*`; unknown keys kept),
+repos keyed by normalised `origin` URL or `path:<main worktree>`. Refreshed by
+`--set`/`--unset --apply` and the menu's Save, captured by
+`--save-profile --apply`; never written by heal, platform-sync, upgrade, the
+autoclear setup, a rebuild or a restore.
+
+**Rebuild and restore.** `--rebuild --repo|--global` writes the template plus
+the profile's values (a readable repo file's `platform` block is kept). Both
+copies readable and different: the newer `saved_at`, named in the dry run. One
+unreadable: the other, said so. Present but unreadable with no readable
+other: exit 3, could not tell. None: refused without `--no-profile`.
+`--restore <stamp>` backs up the current file, then writes the stamped bytes;
+an unknown stamp exits 2. Both are dry runs until `--apply`.
 
 ## 21. `route` — plain-text command routing, off until `true`
 

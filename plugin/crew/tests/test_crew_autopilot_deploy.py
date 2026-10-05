@@ -649,7 +649,7 @@ def test_deploy_none_asks(tmp_path, monkeypatch, env_class):
     assert (got["verdict"], got["reason"]) == ("ask", "autopilot.deploy is none")
 
 
-@pytest.mark.parametrize("value", ["All", "all ", "prod", "production", "NONPROD", True, 1, None])
+@pytest.mark.parametrize("value", ["All", "all ", "prod", "production", "NONPROD", True, 1])
 def test_deploy_value_typo_reads_none(tmp_path, monkeypatch, value):
     root = _armed(tmp_path, monkeypatch, repo={"autopilot": {"deploy": value}})
 
@@ -659,8 +659,30 @@ def test_deploy_value_typo_reads_none(tmp_path, monkeypatch, value):
     assert (got["verdict"], got["deploy"], len(warned)) == ("ask", "none", 1)
 
 
-def test_deploy_only_in_machine_layer_reads_none(tmp_path, monkeypatch):
+def test_deploy_null_in_the_repo_is_silent_and_reads_the_default(tmp_path, monkeypatch):
+    """T-0050: a repo `null` is a silent layer, not a typo: the default `none`,
+    with no warning to read."""
+    root = _armed(tmp_path, monkeypatch, repo={"autopilot": {"deploy": None}})
+
+    got = _verdict(root, NONPROD, env="dev")
+    warned = [w for w in crew_autopilot.settings(root)["warnings"] if "deploy is None" in w]
+
+    assert (got["verdict"], got["deploy"], warned) == ("ask", "none", [])
+
+
+def test_deploy_only_in_machine_layer_is_the_default_since_t0050(tmp_path, monkeypatch):
+    """T-0050 made `autopilot.deploy` personal: a machine value is the default
+    for a repo that says nothing, and a repo value narrows it."""
     root = _armed(tmp_path, monkeypatch, repo={"autopilot": {"deploy": DROP}},
+                  machine={"autopilot": {"deploy": "nonprod"}})
+
+    got = _verdict(root, NONPROD, env="dev")
+
+    assert (got["verdict"], got["deploy"]) == ("allow", "nonprod")
+
+
+def test_repo_deploy_none_holds_a_machine_all_down(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch, repo={"autopilot": {"deploy": "none"}},
                   machine={"autopilot": {"deploy": "all"}})
 
     got = _verdict(root, NONPROD, env="dev")

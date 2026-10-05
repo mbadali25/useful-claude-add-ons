@@ -113,11 +113,27 @@ class Model:  # pylint: disable=too-few-public-methods
 
     def values(self, key, prefix=""):
         """The allowed-values cell. `prefix` turns a plugin-relative source
-        into a repo-relative one for the docs copy."""
+        into a repo-relative one for the docs copy. A personal key
+        (`crew_guards.PERSONAL_KEYS`, T-0050) lists its values strictest
+        first, the order its stricter-wins rule ranks them in, and says so."""
+        text = self._values(key, prefix)
+        personal = self.guards.PERSONAL_KEYS.get(key)
+        if personal is None:
+            return text
+        if personal[0] == "int-min":
+            return f"{text}; personal: the smaller wins"
+        return f"{text}; personal: listed strictest first, the stricter wins"
+
+    def _values(self, key, prefix):
         row = self.keys.KEY_META[key]
         kind = row["kind"]
         src = f"`{prefix}{row['source']}`" if row["source"] else ""
         vals = self.keys.values_of(key)
+        personal = self.guards.PERSONAL_KEYS.get(key)
+        if vals is not None and personal is not None and personal[0] == "tiers":
+            # The reader's tuple, in rank order (`test_crew_keys` holds the
+            # two to the same values).
+            vals = sorted(vals, key=personal[1].index)
         listed = " | ".join(_code(v) for v in vals) if vals is not None else ""
         if kind == "ratchet":
             return f"{listed} (ratchet: narrower layer wins; listed narrowest first)"
@@ -154,6 +170,10 @@ LAYER_TERMS = (
      "never loosen it."),
     ("both, widening warned", "either file may set it and the repo wins, but a "
      "write that widens it is flagged (`crew_config._RATCHETED`)."),
+    ("both, stricter wins", "a personal key (`crew_guards.PERSONAL_KEYS`): either "
+     "file may set it, and where both do the STRICTER value wins; a layer that is "
+     "silent (absent or `null`) imposes nothing, so a machine value is your default "
+     "for every repo and a repo may only narrow it."),
     ("machine-arms", "only the global file can turn it on (exactly `true`); a "
      "repo may only veto it with `false` (`crew_config.REPO_VETO_ONLY`)."),
     ("machine-only", "read from the global file alone; a repo's own value is "
@@ -173,11 +193,11 @@ crew reads two JSON files:
 
 - `~/.claude/crew/config.json` - the **machine-global** file. Your personal
   defaults for every repo on this machine: providers and models, notifications,
-  auto-clear, the guards.
+  auto-clear, the guards, how far autopilot may go.
 - `.crew/config.json` - the **repo** file. Facts about one checkout: the
-  tracker, the board, scope enforcement, autopilot, production declarations.
+  tracker, the board, scope enforcement, production declarations.
 
-The repo file wins over the machine file, which wins over crew's defaults. Three
+The repo file wins over the machine file, which wins over crew's defaults. Four
 exceptions, each named in the Layer column below:
 
 - A **repo-only** key in the machine file takes effect nowhere. It is pruned on
@@ -188,10 +208,16 @@ exceptions, each named in the Layer column below:
   machine allows.
 - A **machine-armed** key (`resume.auto`, `context.autoClear.enabled`) can be
   turned on only in the machine file. A repo can only switch it off.
+- A **personal** key (the five `autopilot.*` keys) resolves per key to the
+  stricter of the layers that set it; a layer that says nothing imposes
+  nothing. A machine value is your default for every repo, which a repo may
+  narrow and never widen.
 
 A `null` in the repo file over a machine value inherits the machine value. The
-`/crew:init` template writes every key, which would otherwise shadow your
-machine defaults.
+`/crew:init` template writes every key except the personal ones, so it does not
+shadow your machine defaults for those; a repo `/crew:init` set up before that
+still spells `autopilot.mode: "off"`, which holds a machine `plan` down until
+you remove it (`--explain --all` names it as a `shadow:`).
 
 ## Seeing what is in force
 
@@ -202,17 +228,31 @@ machine defaults.
   out-of-range values, and marks a widening with `!`.
 - From a shell:
   `python3 plugin/crew/hooks/scripts/crew_config.py --explain` is the same
-  table, and `--models` is the per-role provider table.
+  table, `--explain --all` adds every repo-only key and names each shadowing
+  repo value, and `--models` is the per-role provider table.
+
+## Backups and rebuilding a lost config
+
+Every write a crew script makes to either file first copies the old bytes to
+`~/.claude/crew/backups/` (the newest 20 per file kept) and is refused when
+that copy fails; a hand edit is not backed up. `crew_config.py --backups`
+lists the machine file's (add `--repo` for the repo file's) and
+`--restore <stamp> --apply` puts one back. Your non-default values are kept in
+`~/.claude/crew/profile.json` (and in your vault when `memory.vaultPath` is
+set), so `--rebuild --repo` or `--rebuild --global` regenerates a lost or
+corrupt file from the template plus that profile, as a dry run until
+`--apply`.
 
 ## Common setups
 
 - **Personal defaults once, for every repo.** Put providers, models,
-  `notify.*` and the guards in `~/.claude/crew/config.json`. Leave repo files
-  to repo facts.
-- **Self-approval under autopilot.** In the repo file, set
-  `scope.allowCliApproval: true` and `autopilot.mode: "plan"`, then choose
-  `autopilot.approval` (`human`, `self` or `risk`). Review acceptance and
-  production deploys still stop for you.
+  `notify.*`, the guards and the `autopilot.*` keys in
+  `~/.claude/crew/config.json`. Leave repo files to repo facts.
+- **Self-approval under autopilot.** Set `autopilot.mode: "plan"` and choose
+  `autopilot.approval` (`human`, `self` or `risk`) in either file, and set
+  `scope.allowCliApproval: true` in the repo file, which is the only file
+  that key is read from. Review acceptance and production deploys still stop
+  for you.
 - **Notifications.** In the machine file, set `notify.provider` and the
   environment variable names in `notify.urlEnv` / `notify.tokenEnv`. The
   secret stays in your environment, never in the file.
