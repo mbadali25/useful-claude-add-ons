@@ -2370,9 +2370,14 @@ not moved because the rest of this map was not re-checked against main's later c
   fresh subshell + temp file (see above) rather than a direct pipe.
 - `role-write-guard.sh`/`.ps1` -> `role_write_guard.py`, piped the raw hook
   JSON on stdin, judged, and exited 0 or 2 only.
-- `crew_migrate.py` -> both `.crew/config.json` (read) and `.crew/crew.json`
-  (write, `--apply` only), with `--rollback` restoring a backup
-  byte-identical (module docstring, **not read further**).
+- `crew_migrate.py` -> both `.crew/config.json` (read; rewritten in place
+  only for a pre-0.20 config - no `schema`, or 1-6 - by the upgrade stage,
+  `plugin/crew/hooks/scripts/crew_migrate.py` `_load_legacy`/`_plan_upgrade`,
+  which calls `crew_upgrade.upgrade_config`) and `.crew/crew.json` (write,
+  `--apply` only), with `--rollback` removing what apply created and
+  restoring `config.json` byte-identical from the backup
+  (`plugin/crew/hooks/scripts/crew_migrate.py` `rollback`/`_backed_up_originals`).
+  DERIVED (T-0038).
 
 ## Unverified at this anchor
 

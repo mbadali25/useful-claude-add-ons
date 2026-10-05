@@ -324,7 +324,7 @@ next authority."** For `reportTheme` that authority is `docs.theme`; for `docs.t
 doc-builder's own five-step resolution. Set `reportTheme` only when reports need a different
 brand from the rest of the docs, which is the client-deliverable case.
 
-`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:upgrade` rewrites that one
+`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:migrate` (upgrade stage) rewrites that one
 value to null — the only value the upgrade rewrites rather than preserving. Say so if the
 user asks why their config changed, and say why it was safe: **through 0.17.1 the key had no
 consumer at all**, so no value sitting in it could be a preference anyone formed by watching

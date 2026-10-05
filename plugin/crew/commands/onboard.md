@@ -211,7 +211,7 @@ Re-map one area after big changes, without re-running the whole thing on a
 schedule — that is the cost onboarding was avoiding.
 
 This follows `${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/reconcile.md` — the
-same path `/crew:upgrade` uses, not a second implementation. Rebuild the graph
+same `crew_upgrade.py` path `/crew:migrate` uses for config, not a second one. Rebuild the graph
 if it is stale (step 1), derive that one subsystem's `DERIVE` facts (step 3),
 write them as a one-entry JSON file, then:
 
@@ -234,7 +234,7 @@ consequences before running it, not after:
   that was already current, since `--force` runs the whole thing anyway.
   (This line used to quote the header as the literal `from schema: 1 -> 2`.
   It is interpolated from `notes["schemaFrom"]` and `crew_state.SCHEMA_CURRENT`,
-  so the numbers move; do not restate them.) If a previous `/crew:upgrade` left contradictions there that
+  so the numbers move; do not restate them.) If an earlier upgrade run left contradictions there that
   nobody has verified yet, this run erases that list. Read the existing
   `UPGRADE.md` before running `--refresh` if one is present, and fold its
   unresolved contradictions into what you report afterward.
@@ -250,5 +250,5 @@ consequences before running it, not after:
   stale anchors) instead of repeating that status verbatim.
 
 Report any conflicts and any anchor left stale on purpose exactly as
-`/crew:upgrade` does — surfaced, not resolved. Then run step 6, and item 6 above (`crew_gitignore.py apply`):
+the upgrade report does — surfaced, not resolved. Then run step 6, and item 6 above (`crew_gitignore.py apply`):
 a ticket that added a language or manifest is when its ignore patterns go missing.

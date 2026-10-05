@@ -235,10 +235,10 @@ the key and says so.
 
 ## Refreshing an existing codemap
 
-`/crew:upgrade` and `/crew:onboard --refresh` both fold graph facts into
-`.crew/codemap/*.md`. Read `reconcile.md` before running either — it's the
-one place the KEEP/DERIVE split, the conflict rule, and the anchor rule are
-defined, so the two commands can't drift from each other.
+`/crew:onboard --refresh` is the one caller that folds graph facts into
+`.crew/codemap/*.md` (`/crew:upgrade` was removed in T-0038). Read
+`reconcile.md` before running it — it's the one place the KEEP/DERIVE split,
+the conflict rule, and the anchor rule are defined.
 
 ## The community field
 

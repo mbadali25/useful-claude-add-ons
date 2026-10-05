@@ -9,6 +9,32 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
+
+- **What migrate now does for a pre-0.20 config.** A `.crew/config.json` with no `schema` key, or
+  an integer 1-6, is brought to the current schema by `crew_upgrade.upgrade_config` (the code
+  `/crew:upgrade` ran) and migrated to `.crew/crew.json` in the same run. The preview prints both
+  stages (`upgrade  .crew/config.json` plus the `## Config` report lines); one apply backs up and
+  writes both. A block the upgrade cannot migrate is a `CONFLICT` and nothing is written. A
+  `schema` of 0 or less is refused; a non-integer or one above 7 is refused as before. A schema-7
+  config is never rewritten.
+- **`config.json` is the one file migrate overwrites, and rollback restores it.** The original is
+  copied into the backup first; the manifest marks it `existed` with its `originalSha256`. The
+  in-process undo and `--rollback` write the original bytes back - never remove it - and rollback
+  refuses when the file was edited since apply, when the backed-up original does not match the
+  manifest, or when the manifest's config entry lacks `existed`/`originalSha256`.
+- **The codemap half moved to `/crew:onboard --refresh`.** Migrate does no graph build, reconcile,
+  `UPGRADE.md` or `codemap.v1.bak`. The per-hop report text, the QA-audit re-run (old step 5c) and
+  the "did not do" list moved to `skills/crew-setup/upgrade-report.md`, which migrate reads.
+- **The stub stays for now.** `commands/upgrade.md` is a 10-line removal stub (the command count is
+  unchanged); removing it is a later ticket. Docs: README, CONFIG.md §4, PLUGINS.md, INSTALLATION.md,
+  onboard.md, migrate.md, the crew-graph, crew-providers, crew-setup and crew-qa-standards skills,
+  the quickstart guide (rebuilt), the two-files diagram and the crew codemap.
+- **Harness follow-up (tooling PR, T-0087 rule).** Left out of this change: eight new
+  `MIGRATE_FIX_MUTATIONS` entries in `sabotage_migrate.py` for the upgrade stage (each measured red
+  before it was set aside). `sabotage.py`'s "current migration loses its entry" mutation already
+  follows `upgrade-report.md` when it ships (#389).
+
 ### Added — crew: a graph build never reads a secrets-denylisted file (T-0064)
 
 - graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore`

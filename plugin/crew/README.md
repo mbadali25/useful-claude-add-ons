@@ -1044,7 +1044,7 @@ layers, lowest precedence first:
 | Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3); the `/crew:config` menu (`crew_config.py --set ... --repo`, `crew_config_menu.py save`) |
 
 Repo overrides global overrides built-in defaults, merged recursively with
-`crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
+`crew_state.merge_defaults` — the same policy `crew_upgrade.upgrade_config` (run by `/crew:migrate` for a pre-0.20 config) uses to bring a
 v1 config's `pm` and `graph` blocks forward: a nested override wins, a scalar
 where a dict belongs is discarded rather than corrupting the block under it.
 `crew_config.resolve_config(root)` is the one place that computes this; every
@@ -1133,8 +1133,8 @@ the layer that decided it. That column is the point. The reason this command
 exists is a machine where the global file carried `tier`, `roles`, `qa` and
 `sdp` but **no `pm` block**, so every repo on it resolved to
 `pm.authority: report-only` while the user believed the 0.20 PM was autonomous.
-Every file was valid; nothing surfaced the discrepancy. `/crew:upgrade` now
-runs `--check-global` and reports the same findings.
+Every file was valid; nothing surfaced the discrepancy. `/crew:config` runs
+`--check-global` and reports the same findings.
 
 Four rules the script enforces rather than documents:
 
@@ -1608,7 +1608,7 @@ instead of quietly waving it through. CONFIG.md §17.
 refuses `gh pr merge --admin`, which no crew guard refused before — measured
 against the previous release, both flavours exited 0 — and
 `guards.terraformApply` now covers `tofu` as well as `terraform`. Both were
-bypasses rather than features. The `/crew:upgrade` report says so out loud,
+bypasses rather than features. The migrate report's upgrade lines say so out loud,
 because a user told only "the default is `block`, so nothing changed" will meet
 a command that ran yesterday being refused today and go looking for a bug in
 their tooling.
@@ -3092,11 +3092,11 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
-| `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
+| `/crew:upgrade` | Removed - `/crew:migrate` upgrades a pre-0.20 config itself |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, codemap, gitignore, handoff; `--memory` adds the context hook's stats |
-| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
+| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
