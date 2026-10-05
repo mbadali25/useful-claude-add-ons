@@ -2244,6 +2244,22 @@ def test_a_repo_null_that_widens_is_described_by_the_value_in_force(tmp_path, ca
     assert notes["report-only"] not in out
 
 
+def test_a_repo_removal_that_widens_is_described_by_the_value_in_force(capsys):
+    """A whole-file restore that removes a repo `pm.authority` under a wider
+    machine value: the `!` line names and describes the inherited value."""
+    changes = crew_config._diff_changes(  # pylint: disable=protected-access
+        {"pm": {"authority": "report-only"}}, {}, "repo",
+        {"pm": {"authority": "autonomous"}})
+
+    crew_config.print_changes(changes)
+
+    out = capsys.readouterr().out
+    notes = crew_config._RATCHETED["pm.authority"][2]  # pylint: disable=protected-access
+    assert [c["widens"] for c in changes] == [True]
+    assert "! pm.authority widens to `autonomous`: " + notes["autonomous"] in out
+    assert notes["report-only"] not in out
+
+
 def test_a_repo_null_under_a_narrower_machine_value_does_not_widen(tmp_path, capsys):
     root, gpath = _repo_with_global(
         tmp_path, {"pm.authority": "act"}, {"pm": {"authority": "report-only"}})

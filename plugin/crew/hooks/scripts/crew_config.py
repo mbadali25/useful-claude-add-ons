@@ -3566,7 +3566,8 @@ def print_changes(changes):
         print(f"  {change['path']}: {json.dumps(change['before'])} -> {after}"
               + (f"  (null {change['null']})" if change.get("null") else ""))
         if change["widens"] and (change.get("unset") or "widensTo" in change):
-            granted = change.get("widensTo")
+            # A repo removal on a `_RATCHETED` key carries `inForce` (T-0103).
+            granted = change.get("widensTo", change.get("inForce"))
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(granted).strip(chr(34))}`: "
                   + widening_note(change["path"], granted))
