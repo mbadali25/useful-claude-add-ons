@@ -43,7 +43,9 @@ function Resolve-CrewPython {
   $crewPythonLaunched = $false
   $crewPythonSpent = $false
   $crewPythonFound = ''
-  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # ONE probe, byte for byte in the four review/gate harness .ps1 hooks, with
+  # its outcome and trail (L-0690); the other carriers keep the pre-L-0690
+  # copy until a follow-up rejoins them. Both groups are asserted by
   # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
   # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
   # function is invisible to scripts/check-powershell.ps1's static check.
