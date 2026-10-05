@@ -1816,21 +1816,21 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   present, **not run and not read** by this note.
 
 **The secrets-denylist gate on the graph (T-0064, crew 1.0.237).** DERIVED at `687759ce`
-(T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167). `_graph`
-(`plugin/crew/hooks/scripts/crew_refresh_check.py:1252`) calls `_graph_ignore_refusal` (`:1230`,
-called at `:1260`) after its "no code changed" return and before the graphify-missing check.
+(T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167); line citations re-measured at the 1.2.0 port. `_graph`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1388`) calls `_graph_ignore_refusal` (`:1366`,
+called at `:1396`) after its "no code changed" return and before the graphify-missing check.
 While `crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore`
 does not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
 graphify command is run and autopilot's `_settles` stops on it unchanged. The checker is
-`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:139`), `translate_rule`
-for `Read(...)` deny rules (`:201`), `denylist` (`:266`), `candidates` (`:293`, `git ls-files
---cached --others`, no `--exclude-standard`), `_judge` (`:337`; an unexcluded `sub/` is
-unknown, a symlink is judged by its target too), `_ignored` (`:359`, git's own `check-ignore
+`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:145`), `translate_rule`
+for `Read(...)` deny rules (`:207`), `denylist` (`:272`), `candidates` (`:299`, `git ls-files
+--cached --others`, no `--exclude-standard`), `_judge` (`:343`; an unexcluded `sub/` is
+unknown, a symlink is judged by its target too), `_ignored` (`:365`, git's own `check-ignore
 --no-index` in a scratch repository with the user's global excludes disabled), `coverage`
-(`:408`), `write` (`:490`, temp file then `os.replace`; a literal only for a `_plain`
-(`:439`) path, never over a `!` line `_reincluded` (`:459`) finds) and `main` (`:567`). `crew_status.py`
+(`:418`), `write` (`:517`, temp file then `os.replace`; a literal only for a `_plain`
+(`:449`) path, never over a `!` line `_reincluded` (`:469`) finds) and `main` (`:606`). `crew_status.py`
 prints the same answer as its `graph-ignore` line (`_graph_ignore_line`,
-`plugin/crew/hooks/scripts/crew_status.py:185`, appended at `:252`). Tests:
+`plugin/crew/hooks/scripts/crew_status.py:237`, appended at `:324`). Tests:
 `plugin/crew/tests/test_graph_ignore.py`, `plugin/crew/tests/test_graph_ignore_graphify.py` (real
 graphify; skips without it), and new cases in `test_refresh_check.py` and `test_status.py`. The
 last `.crew/verify.json` rule maps them. Its mutations were run by hand; they join
@@ -2252,7 +2252,7 @@ not moved because the rest of this map was not re-checked against main's later c
   `_forbidden` (`plugin/crew/hooks/scripts/crew_gitignore.py:211`) drops a `.crew`/`.work` pattern; `_write_atomic` (`plugin/crew/hooks/scripts/crew_gitignore.py:669`) writes a temp
   file and `os.replace`s it; `read_gitignore` (`plugin/crew/hooks/scripts/crew_gitignore.py:355`) keeps CRLF and a BOM.
 - DERIVED: `/crew:status` prints `gitignore <summary>` after the codemap line
-  (`plugin/crew/hooks/scripts/crew_status.py:220`, appended at `:303`); an import failure still prints
+  (`plugin/crew/hooks/scripts/crew_status.py:226`, appended at `:323`); an import failure still prints
   the line as unknown. Callers in prose: crew-setup `phases.md` Phase 1, `onboard.md` item 6 and
   `--refresh`, `plugin/crew/commands/implement.md:105-106` (`check`). Tests:
   `plugin/crew/tests/test_crew_gitignore.py` and `test_status_gitignore_line_*` in
