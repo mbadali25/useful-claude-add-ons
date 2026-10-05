@@ -29,7 +29,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   directory, a test module, a `conftest.py` or a pytest config inside a combined component selects
   every combined suite; the run pins `-c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck`
   (identical collection for the full list), and the suite fails if two combined test directories
-  share a module basename. Lint configuration (`ruff.toml`, `.ruff.toml`, `pyproject.toml`,
+  share a module basename, or if a module or package name is importable from two directories on
+  the sys.path a real collection of the combined run measures (the first import of a bare name
+  wins for every suite in the run). Lint configuration (`ruff.toml`, `.ruff.toml`, `pyproject.toml`,
   `.pylintrc`, `pylintrc`) inside a plugin or skill selects pylint and ruff.
 - **Required checks unchanged.** No `on: pull_request: paths:` filter and no job-level skip: every
   job still reports its check, its suite steps are gated, and a skip prints a `::notice::` saying
@@ -47,7 +49,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `.crew/verify.json`): must-skip, must-select-one, must-select-all and fail-closed cases, real
   merge-commit diffs, a rename out of a component, the combined-session rules, and the workflows'
   gates (each whole `if:` expression's shape, and `!cancelled()` on every job that needs the
-  select job). Twenty-two sabotages of the selector or a workflow each turned it red.
+  select job, and no read of the selection outside an `if:`). Twenty-seven sabotages of the
+  selector, a workflow or the tree each turned it red.
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that

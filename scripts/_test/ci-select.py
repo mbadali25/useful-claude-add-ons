@@ -19,6 +19,7 @@ Run: python3 scripts/_test/ci-select.py
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import pathlib
 import re
@@ -191,6 +192,98 @@ def case_combined_test_dirs_share_no_module_basename():
                     owners.setdefault(name, set()).add(test_dir)
     dupes = {name: sorted(dirs) for name, dirs in owners.items() if len(dirs) > 1}
     expect(not dupes, f"module basenames shared across combined test dirs: {dupes}")
+
+
+SYSPATH_PLUGIN = r"""
+import json, os, sys
+
+def pytest_collection_finish(session):
+    with open(os.environ["CI_SELECT_SYSPATH_OUT"], "w", encoding="utf-8") as fh:
+        json.dump({"path": list(sys.path), "errors": session.testsfailed}, fh)
+"""
+
+
+def combined_syspath():
+    """Every directory under the checkout that the full combined run has on
+    sys.path once it has collected, measured by running that collection (the
+    same paths and pinned config as pytest-crew.yml), not listed by hand.
+    Returns (dirs, problem)."""
+    runner = load(os.path.join(REPO, "scripts", "gate-runner.py"), "gate_runner")
+    with tempfile.TemporaryDirectory() as tmp:
+        pathlib.Path(tmp, "ci_select_syspath.py").write_text(SYSPATH_PLUGIN, encoding="utf-8")
+        out = os.path.join(tmp, "syspath.json")
+        env = dict(os.environ, PYTHONPATH=tmp, CI_SELECT_SYSPATH_OUT=out, PYTHONDONTWRITEBYTECODE="1")
+        done = subprocess.run(
+            [sys.executable, "-m", "pytest", *SEL.COMBINED, *runner.COMBINED_CONFIG, "--collect-only",
+             "-q", "-p", "no:cacheprovider", "-p", "ci_select_syspath"],
+            cwd=REPO, env=env, capture_output=True, text=True, timeout=600, check=False,
+            stdin=subprocess.DEVNULL)
+        if not os.path.exists(out):
+            return None, (f"the collection never finished (rc {done.returncode}):\n"
+                          f"{done.stdout[-2000:]}{done.stderr[-2000:]}")
+        with open(out, encoding="utf-8") as fh:
+            data = json.load(fh)
+    if done.returncode != 0 or data["errors"]:
+        # A module that failed to import may not have made its sys.path
+        # insert, so the measurement would be incomplete: fail, do not guess.
+        return None, (f"the combined collection had errors (rc {done.returncode}), so its sys.path "
+                      f"is not complete:\n{done.stdout[-3000:]}")
+    root = os.path.realpath(REPO)
+    dirs = []
+    for entry in data["path"]:
+        real = os.path.realpath(entry or os.getcwd())
+        if real != root and real.startswith(root + os.sep) and os.path.isdir(real) and real not in dirs:
+            dirs.append(real)
+    return dirs, None
+
+
+def importable_names(directory):
+    """{name: kind} for the top-level names `directory` provides on sys.path:
+    "module" (x.py), "package" (x/__init__.py), or "namespace" (a directory
+    holding Python but no __init__.py)."""
+    names, rank = {}, {"package": 2, "module": 1, "namespace": 0}
+
+    def put(name, kind):
+        # Within one directory a regular package beats a module, and both
+        # beat a namespace directory: that is what `import name` finds.
+        if rank[kind] >= rank.get(names.get(name), -1):
+            names[name] = kind
+
+    for entry in os.scandir(directory):
+        if entry.name.startswith((".", "__pycache__")):
+            continue
+        if entry.is_file() and entry.name.endswith(".py") and entry.name != "conftest.py":
+            put(entry.name[:-3], "module")
+        elif entry.is_dir() and os.path.isfile(os.path.join(entry.path, "__init__.py")):
+            put(entry.name, "package")
+        elif entry.is_dir() and any(n.endswith(".py") for n in os.listdir(entry.path)):
+            put(entry.name, "namespace")
+    return names
+
+
+def case_no_name_is_importable_from_two_combined_syspath_dirs():
+    # One shared sys.path, no __init__.py and a sys.modules cache: the first
+    # import of a bare name wins for every suite in the run. A PR whose subset
+    # run misses the other suite passes; main's full run fails. So this case,
+    # which runs on every PR, fails on the collision itself.
+    dirs, problem = combined_syspath()
+    if problem:
+        expect(False, problem)
+        return
+    expect(any(d.endswith(os.path.join("intune-graph", "scripts")) for d in dirs)
+           and any(d.endswith(os.path.join("crew", "hooks", "scripts")) for d in dirs),
+           f"the measured sys.path lacks suites it must have: {dirs}")
+    owners = {}
+    for directory in dirs:
+        for name, kind in importable_names(directory).items():
+            owners.setdefault(name, []).append((os.path.relpath(directory, REPO), kind))
+    # A module or regular package shadows every later directory's name. Two
+    # namespace directories merge into one package (PEP 420), so only those
+    # may share a name -- and not with a module or regular package.
+    dupes = {name: where for name, where in owners.items()
+             if len(where) > 1 and any(kind != "namespace" for _d, kind in where)}
+    expect(not dupes, f"names importable from two directories on the combined run's sys.path "
+                      f"(the first import wins for every suite): {dupes}")
 
 
 def case_the_combined_run_pins_its_session_and_falls_back_to_the_whole_list():
@@ -444,8 +537,39 @@ def _gate_problems(wf, doc):
             for key in keys:
                 if key not in KNOWN_OUTPUTS:
                     problems.append(f"{where}: gates on unknown output {key!r} (always empty)")
+    problems += _reads_outside_if(wf, doc)
     if not gates:
         problems.append(f"{wf}: no step is gated on the selection")
+    return problems
+
+
+def _walk(node, path):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from _walk(value, path + (str(key),))
+    elif isinstance(node, list):
+        for i, value in enumerate(node):
+            yield from _walk(value, path + (str(i),))
+    else:
+        yield path, node
+
+
+def _reads_outside_if(wf, doc):
+    """A selection read anywhere but an `if:` escapes the gate-shape check
+    (a `run:` could test it any way it likes). Allowed besides `if:`: the
+    combined run's PYTEST_COMBINED env, and a select job's `outputs:`
+    forwarding its own step's value."""
+    problems = []
+    for path, value in _walk(doc.get("jobs", {}), ("jobs",)):
+        if "select.outputs" not in str(value) or path[-1] == "if":
+            continue
+        if path[-2:] == ("env", "PYTEST_COMBINED") and \
+                _expr(value) == "steps.select.outputs.pytest_combined":
+            continue
+        if len(path) == 4 and path[1] == "select" and path[2] == "outputs" and \
+                _expr(value) == f"steps.select.outputs.{path[3]}":
+            continue
+        problems.append(f"{wf} {'.'.join(path)}: reads the selection outside an if: ({value!r})")
     return problems
 
 
