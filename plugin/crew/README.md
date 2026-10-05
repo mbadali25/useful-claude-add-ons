@@ -2715,11 +2715,11 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   `log.jsonl`, a blank line in it, and a log line that is not a whole entry (every key
   `crew_coord.py` writes) are all `unknown`, never `no pending doorbells`:
   an incomplete line is never read as a peer moving the record. So is a log
-  a later commit rewrote: for every ring commit (subject `crew-coord: rang
-  <label>`), the whole log as that commit left it, ending in its `rang` line,
-  must still be the start of the current log byte for byte — so a ring
-  dropped, edited, or followed by a peer's older line moved after it is
-  `unknown`, never answered. `/crew:autopilot`
+  a later commit rewrote: from the oldest ring commit (subject `crew-coord:
+  rang <label>`) to the tip, along the first-parent chain, each commit's log
+  must start with its parent's byte for byte — so a ring dropped or edited, an
+  older line moved after it, or a later line's holder changed is `unknown`,
+  never answered. `/crew:autopilot`
   prints it in `status` and in its resume step and reports the lines to you;
   a pending ring is not a stop. **Limit:** any later log line by a holder
   other than the ringer and this session clears the ring — a third session on

@@ -212,7 +212,12 @@ def lane_state(top):
                 return "unknown", (f"lane file {crew_coord.safe(slug, 64)}/{crew_coord.safe(name, 80)} is "
                                    f"{lane['state']} with no readable worktree: whether it names this "
                                    "worktree cannot be told")
-            if os.path.normcase(os.path.realpath(named)) == here:
+            try:
+                resolved = os.path.normcase(os.path.realpath(named))
+            except (OSError, ValueError):  # an embedded NUL, a path the OS refuses
+                return "unknown", (f"lane file {crew_coord.safe(slug, 64)}/{crew_coord.safe(name, 80)} names a "
+                                   "worktree that cannot be resolved: whether it is this one cannot be told")
+            if resolved == here:
                 return "lane", ""
     return "not-lane", ""
 
@@ -325,26 +330,41 @@ def read_log(blob):
 
 
 def lost_ring(chan, tip, log):
-    """Why a ring the channel's history recorded is no longer where it was in
-    the current log, or None. The log is append-only, but a later commit can
-    still rewrite it -- drop a ring, edit it, or move a peer's older line after
-    it. So the whole log as each ring commit (`RANG_SUBJECT`) left it, ending
-    in its `rang` line, must still be the start of the log at `tip`, byte for
-    byte; otherwise nothing pending can be told. A history or blob that cannot
-    be read is a reason too."""
-    listed = crew_coord.run_git(chan.root, ["log", "--format=%H %s", tip])
+    """Why the log cannot be trusted to show what followed a ring, or None.
+    The log is append-only, but a later commit can still rewrite it -- drop a
+    ring, edit it, move an older line after it, or change who wrote a line
+    after it. So from the oldest ring commit (`RANG_SUBJECT`) to `tip`, along
+    the first-parent chain, each commit's log must start with its parent's
+    log byte for byte, and the log at `tip` must be the one read. A history
+    or a blob that cannot be read is a reason too."""
+    listed = crew_coord.run_git(chan.root, ["log", "--first-parent", "--format=%H %s", tip])
     if listed.code != 0:
         return "the channel's history could not be listed"
-    for row in listed.out.decode("utf-8", "replace").splitlines():
-        sha, _, subject = row.partition(" ")
-        if not subject.startswith(RANG_SUBJECT):
-            continue
-        blob = crew_coord.run_git(chan.root, ["cat-file", "blob", f"{sha}:{crew_coord.LOG}"])
-        if blob.code != 0:
-            return f"the ring commit {sha[:12]}'s {crew_coord.LOG} could not be read"
-        if not log.startswith(blob.out):
-            return (f"the log as the ring commit {sha[:12]} left it is no longer the start of "
-                    f"{crew_coord.LOG} (a later commit rewrote the log)")
+    rows = [row.partition(" ") for row in listed.out.decode("utf-8", "replace").splitlines()]
+    rings = [index for index, (_, _, subject) in enumerate(rows) if subject.startswith(RANG_SUBJECT)]
+    if not rings:
+        return None
+    chain = [sha for sha, _, _ in reversed(rows[:rings[-1] + 1])]  # oldest ring commit .. tip
+    request = "".join(f"{sha}:{crew_coord.LOG}\n" for sha in chain).encode("utf-8")
+    batch = crew_coord.run_git(chan.root, ["cat-file", "--batch"], input_bytes=request)
+    if batch.code != 0:
+        return "the channel's log history could not be read"
+    data, at, previous = batch.out, 0, None
+    for sha in chain:
+        newline = data.find(b"\n", at)
+        header = data[at:newline].split() if newline >= 0 else []
+        if len(header) != 3 or header[1] != b"blob" or not header[2].isdigit():
+            return f"{crew_coord.LOG} at {sha[:12]} could not be read"
+        size = int(header[2])
+        blob = data[newline + 1:newline + 1 + size]
+        at = newline + 1 + size + 1
+        if len(blob) != size:
+            return f"{crew_coord.LOG} at {sha[:12]} could not be read"
+        if previous is not None and not blob.startswith(previous):
+            return f"commit {sha[:12]} rewrote {crew_coord.LOG} instead of appending to it"
+        previous = blob
+    if previous != log:
+        return f"the {crew_coord.LOG} read is not the one at {tip[:12]}"
     return None
 
 

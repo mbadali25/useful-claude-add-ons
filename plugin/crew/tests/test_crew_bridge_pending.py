@@ -280,7 +280,7 @@ def test_a_log_rewritten_without_the_ring_is_unknown(world, capsys):
     assert ring_to(work, capsys)[0] == 0
     _replace_log(seed, bare, before)  # a well-formed log, the ring line gone
     code, lines = pending(work, capsys)
-    assert code == 3 and lines[0].startswith("unknown") and "rewrote the log" in lines[0]
+    assert code == 3 and lines[0].startswith("unknown") and "rewrote" in lines[0]
 
 
 def test_a_ring_line_edited_in_place_is_unknown(world, capsys):
@@ -299,7 +299,20 @@ def test_a_peer_line_moved_after_the_ring_is_unknown_not_an_answer(world, capsys
     seed_line, peer, rang = lines
     _replace_log(seed, bare, "\n".join([seed_line, rang, peer]) + "\n")  # reordered: peer now after
     code, out = pending(work, capsys)
-    assert code == 3 and out[0].startswith("unknown") and "rewrote the log" in out[0]
+    assert code == 3 and out[0].startswith("unknown") and "rewrote" in out[0]
+
+
+def test_a_later_line_rewritten_to_another_holder_is_unknown_not_an_answer(world, capsys):
+    bare, work, seed, _ = world
+    assert ring_to(work, capsys)[0] == 0
+    peer_line(seed, bare, holder="me", event="heartbeat")  # the ringer's own line: still pending
+    assert pending(work, capsys)[0] == 3
+    log = channel_log(bare)
+    rewritten = log[:log.rindex('"holder": "me"')] + '"holder": "peer"' + log[log.rindex('"holder": "me"') + 14:]
+    assert rewritten != log
+    _replace_log(seed, bare, rewritten + "\n")
+    code, lines = pending(work, capsys)
+    assert code == 3 and lines[0].startswith("unknown") and "rewrote" in lines[0]
 
 
 def test_a_resumed_session_in_this_worktree_still_sees_its_ring(world, capsys, monkeypatch):
