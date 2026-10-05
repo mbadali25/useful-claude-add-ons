@@ -107,6 +107,7 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True
 
 import crew_ticket  # noqa: E402  pylint: disable=wrong-import-position
+import crew_common  # noqa: E402  pylint: disable=wrong-import-position
 
 SCHEMA = 1
 TTL_SECONDS = 1800
@@ -216,7 +217,10 @@ def _posix_process(pid):
         return "missing", None, None, ""
     except PermissionError:
         pass  # it exists; another user owns it
-    done = subprocess.run(["ps", "-o", "stat=,ppid=,lstart=,comm=", "-p", str(pid)],
+    # require_tool: a ps that does not resolve raises ToolNotFound, an OSError,
+    # which is this function's "cannot tell" (L-1508: never a bare name).
+    done = subprocess.run([crew_common.require_tool("ps"), "-o", "stat=,ppid=,lstart=,comm=",
+                           "-p", str(pid)],
                           capture_output=True, text=True, check=False, timeout=10,
                           stdin=subprocess.DEVNULL, env=dict(os.environ, LC_ALL="C", LANG="C"))
     parts = done.stdout.split()
@@ -381,7 +385,8 @@ def _pid_start(pid):
 
 def _git(root, *args):
     try:
-        done = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True,
+        done = subprocess.run([crew_common.require_tool("git"), "-C", root, *args],
+                              capture_output=True, text=True,
                               check=False, timeout=30, stdin=subprocess.DEVNULL,
                               env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
     except (OSError, subprocess.SubprocessError):
