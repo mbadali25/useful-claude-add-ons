@@ -1168,19 +1168,19 @@ registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json
 DERIVED at `b32e9fc9` (T-0025-build); line citations re-read on rush/g1b-ports after the port's
 review fixes (an unreadable command dir or command file raises to `main`'s `help: cannot tell`, and
 a ticket id resolves through `crew_common.locate_ticket`, so an archived one counts).
-`plugin/crew/hooks/scripts/crew_help.py` (404 lines) is read-only and
+`plugin/crew/hooks/scripts/crew_help.py` (414 lines) is read-only and
 exits 0. `where` (`:213`) prints at most `MAX_LINES` (`:44`, 8) lines from
 `crew_autopilot.status` alone - no INDEX, receipt or ledger parsing of its own: `where:`,
 `waiting on:` (T-0018's `_waiting`), one `next:` from `_next_line` (`:170`; a stop is "you
 type <command>", the rest from `STOP_NEXT` `:101`), and 2-3 `also:` lines from `RELATED`
 (`:53`, keyed by `crew_autopilot.WAITING`'s phases, which a test holds it to). No single
 ticket goes through `_no_ticket` (`:188`), which lists `crew_autopilot.open_index_tickets`
-and never picks one. `about` (`:356`): a command file name gives `describe` (`:271`,
+and never picks one. `about` (`:362`): a command file name gives `describe` (`:271`,
 frontmatter `description`/`argument-hint` plus `HELP` `:115`), `commands` gives
 `groups_text` (`:286`, the advisory `GROUPS` `:140`), a ticket id (live or under `Complete/`,
-`_is_ticket` `:313`) gives `where` for it, and
-a question goes through `crew_route.match` (`_from_route` `:335`) and then a command-name
-word lookup (`_by_word` `:325`); `crew_help.py` imports no pattern module (asserted by
+`_ticket_place` `:313`; an id whose place cannot be told is `help: cannot tell`) gives `where` for it, and
+a question goes through `crew_route.match` (`_from_route` `:341`) and then a command-name
+word lookup (`_by_word` `:331`); `crew_help.py` imports no pattern module (asserted by
 `test_help_has_no_phrase_table_of_its_own`). `plugin/crew/commands/help.md` runs it and
 prints the output verbatim. `plugin/crew/commands/implement.md` step 0 now runs
 `crew_ticket.py status` and names `/crew:plan $1` or "the user types `/crew:approve $1`".

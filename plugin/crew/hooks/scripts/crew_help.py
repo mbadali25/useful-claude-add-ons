@@ -310,11 +310,17 @@ def _strip(text):
     return word
 
 
-def _is_ticket(top, word):
-    """A live ticket folder or one archived under Complete/ (L-0509's
-    resolver); an id whose place cannot be told is not taken for one."""
-    _path, where, _why = crew_common.locate_ticket(top, word)
-    return where in (crew_common.LIVE, crew_common.COMPLETE)
+def _ticket_place(top, word):
+    """`(is_ticket, why)`: a live ticket folder or one archived under
+    Complete/ (L-0509's resolver) is a ticket. A plain id whose place cannot
+    be told (both folders, a failed probe) is `(None, why)`, never "not a
+    ticket"; a word that is no plain id is simply not one."""
+    if not crew_common.PLAIN_ID.match(word) or crew_common.reserved_id(word):
+        return False, None
+    _path, where, why = crew_common.locate_ticket(top, word)
+    if where == crew_common.COULD_NOT_TELL:
+        return None, why
+    return where in (crew_common.LIVE, crew_common.COMPLETE), None
 
 
 def _named(word, names):
@@ -367,7 +373,11 @@ def about(text, root="."):
     if name:
         return describe(name)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    if _is_ticket(top, word):
+    is_ticket, why = _ticket_place(top, word)
+    if is_ticket is None:
+        return [_one(f"help: cannot tell where {word} lives - {why}"),
+                "next: /crew:status - the full read-only report"]
+    if is_ticket:
         return where(top, word)
     routed = _from_route(word, top, names, word)
     if routed is None and not word.casefold().startswith("how do i"):

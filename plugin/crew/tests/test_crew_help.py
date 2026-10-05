@@ -319,6 +319,16 @@ def test_an_archived_ticket_id_is_where_for_that_ticket(tmp_path):
     assert lines[0].startswith("where: T-3 (from argument)"), lines
 
 
+def test_a_ticket_in_both_places_is_cannot_tell_not_no_command(tmp_path):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    root = _two_tickets(tmp_path)
+    both_places(root, "T-1")
+
+    lines = crew_help.about("T-1", str(root))
+
+    assert lines[0].startswith("help: cannot tell where T-1 lives"), lines
+
+
 def test_an_unreadable_command_file_is_cannot_tell_not_no_description(monkeypatch, capsys):
     real = crew_help.read_text
     monkeypatch.setattr(crew_help, "read_text",
