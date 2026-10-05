@@ -69,10 +69,8 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback 
 
 The policy (T-0010; `next`'s reason names it; `human` always stops) is one writer here (the other policy writer is `auto-replan`'s `auto-reject`, T-0074, which writes only the ledger's REVIEWED -> NEEDS_REPLAN):
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>`
-prints `self-approved ...` (report it by name, go round again) or `refused:` (stop; the
-human types `/crew:approve <ticket>`). For a question, research it (crew:explorer, crew:researcher)
-into `questions.md`: `## Q<n>: <question>`, a `Research:` line, then 2-4 `### Option <id>`
-blocks, the first marked `(recommended)`, each with a `Cost:` line. Then run
+prints `self-approved ...` (report it by name, go round again) or `refused:` (stop; the human types `/crew:approve <ticket>`). For a question, research it (crew:explorer, crew:researcher)
+into `questions.md`: `## Q<n>: <question>`, a `Research:` line, then 2-4 `### Option <id>` blocks, the first marked `(recommended)`, each with a `Cost:` line. Then run
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py questions-check --root . --ticket <ticket>`:
 `valid=1 action=take` - add `taken: Option <id> by autopilot (<policy>)`, answer the item
 `none - <option> (autopilot)`, recheck, report each `taken:`; anything else stops.
