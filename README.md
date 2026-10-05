@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew, gizmoduck, localgpu**: Six changes in one update: `/crew:migrate` carries your `autopilot` settings over instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one, the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to ping only for deploy results and questions that stopped Claude, each led by a subject.
-- **repository**: One cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners. `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session: besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists every tool as ok or MISSING at the end.
+- **repository**: PRs run only the heavy CI suites their changes reach. A pull request that changes only plain documentation, or only one plugin or skill, now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite still runs on push to main, on workflow_dispatch and on any schedule.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
