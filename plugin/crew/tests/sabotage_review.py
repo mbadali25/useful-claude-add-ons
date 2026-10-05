@@ -655,6 +655,14 @@ REVIEW_FIX_MUTATIONS = (
         "tests/test_review_refund.py::test_no_retry_when_the_gate_changed",
     ),
     (
+        # L-0514 review: a source edit during the backoff is not seen.
+        "the retry does not rebuild the bundle from the tree",
+        REVIEW_RUN,
+        "    if fresh != manifest.get(\"bundle_sha256\"):\n",
+        "    if False:\n",
+        "tests/test_review_refund.py::test_no_retry_when_a_source_file_changed",
+    ),
+    (
         # L-0514: a bundle that moved since the failed round is relaunched.
         'the bundle is not re-hashed before the retry',
         REVIEW_RUN,

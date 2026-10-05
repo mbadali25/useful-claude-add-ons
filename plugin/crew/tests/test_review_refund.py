@@ -572,3 +572,37 @@ def test_no_retry_when_the_gate_changed(repo, tmp_path, monkeypatch, capsys):
             "review: retry: not retried - the gate or the review receipt changed" in captured.out,
             "gate UNVERIFIED: the tree moved" in captured.err) == (3, 1, 1, True, True), (
         captured.out + captured.err)
+
+
+def test_no_retry_when_a_source_file_changed(repo, tmp_path, monkeypatch, capsys):
+    """L-0514 review: the saved parts still match their manifest when a SOURCE
+    file moves during the backoff; the bundle is rebuilt from the tree, so the
+    retry never reviews the old patch."""
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean",
+                               lambda _: (repo / "change.txt").write_text(
+                                   "changed during the backoff\n", encoding="utf-8"))
+
+    out = capsys.readouterr().out
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the tree changed: it now builds bundle" in out) == (
+        3, 1, 1, True), out
+
+
+def test_a_refused_retry_keeps_review_json_canonical(repo, tmp_path, monkeypatch, capsys):
+    """L-0514 review: the failed round's review.json is moved aside only once
+    the retry holds a round; a refused reservation leaves it in place."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    real = review_run.review_ledger.reserve
+    calls = []
+
+    def refuse_the_second(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs) if len(calls) == 1 else (False, None, "refused")
+
+    monkeypatch.setattr(review_run.review_ledger, "reserve", refuse_the_second)
+    code, _ = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean", lambda _: None)
+
+    out = capsys.readouterr().out
+    review = json.loads((tmp_path / "work" / "review.json").read_text(encoding="utf-8"))
+    assert (code, review["round"], (tmp_path / "work" / "review.json.round1").exists(),
+            "the ledger refused the retry's reservation" in out) == (3, 1, False, True), out

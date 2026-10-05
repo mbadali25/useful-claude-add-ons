@@ -1590,8 +1590,6 @@ def run(args):
             _out(f"review: retry: not retried - {why}")
             _out(RETRY_OPTIONS)
             return status
-        _keep_round_files(args, number)
-        _out(f"review: retry: round {number} was a tool failure; retrying once")
         ok, retry_number, message = review_ledger.reserve(args.root, args.ticket,
                                                           args.provider, args.model)
         _err(f"review-run: {message}\n")
@@ -1599,6 +1597,10 @@ def run(args):
             _out("review: retry: not retried - the ledger refused the retry's reservation")
             _out(RETRY_OPTIONS)
             return status
+        # Only once the retry holds a round: a refused one leaves round
+        # `number`'s review.json the canonical artifact.
+        _keep_round_files(args, number)
+        _out(f"review: retry: round {number} was a tool failure; retrying once")
         _carry_record(args, number, retry_number)
         number, retries = retry_number, retries + 1
         _keep_reserved_std(args, number)
@@ -1675,6 +1677,15 @@ def _retry_blocked(args):
         problems = [f"the manifest could not be read ({exc})"]
     if problems:
         return f"the tree changed: {problems[0]}"
+    # The saved parts can still match their manifest while a source file
+    # moved under them: rebuild the bundle from the tree as it is now.
+    try:
+        fresh = review_patch.compute(args.root, manifest["base"])[0].get("bundle_sha256")
+    except (RuntimeError, OSError, KeyError, TypeError) as exc:
+        return f"could not tell whether the tree changed: {exc}"
+    if fresh != manifest.get("bundle_sha256"):
+        return (f"the tree changed: it now builds bundle {str(fresh)[:12]}, not the "
+                f"{str(manifest.get('bundle_sha256'))[:12]} the failed round read")
     return None
 
 
