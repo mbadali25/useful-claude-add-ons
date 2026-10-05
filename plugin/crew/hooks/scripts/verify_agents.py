@@ -30,13 +30,14 @@ command line. Both are listed in the output's `notChecked`.
 AN UNKNOWN IS NEVER A PASS (root CLAUDE.md, Lessons). A source that will not
 parse makes every name it could have supplied `unknown`, never `installed`
 and never `missing`: an unparseable registry, an unparseable settings scope
-read before a decision for a plugin's key, an unreadable agent file. A name
+read before a decision for a plugin's key, an unreadable agent file, a
+registry entry that is not a list of installs. A name
 is `missing` only when every source it could come from was read cleanly.
 Crew's own roles never depend on those files, so they still resolve.
 
 Exit 0: every named agent resolves (or none is named). Exit 1: at least one
 is missing. Exit 2: none missing, at least one unknown, or verify.json
-itself will not parse.
+itself will not parse or is not shaped as a map (`rules` not a list).
 """
 
 import sys
@@ -89,8 +90,16 @@ def named(root):
     if problem:
         return {}, problem
     out = {}
-    rules = data.get("rules") if isinstance(data, dict) else None
-    for rule in rules if isinstance(rules, list) else []:
+    if data is None:
+        return out, None
+    # A map that parses but is not shaped as one cannot say which agents it
+    # names: that is unknown, never "no agents named".
+    if not isinstance(data, dict):
+        return {}, f"{path} is not a JSON object"
+    rules = data.get("rules", [])
+    if not isinstance(rules, list):
+        return {}, f"{path}: `rules` is not a list"
+    for rule in rules:
         if not isinstance(rule, dict) or not isinstance(rule.get("agents"), list):
             continue
         paths = [str(p) for p in rule.get("paths") or [] if isinstance(p, str)]
@@ -205,8 +214,12 @@ def installed(root):
         state = plugin_enabled(root, key, scopes)
         if state is False:
             continue
+        if not isinstance(installs, list):
+            # Its agents cannot be listed, so no name is missing on its account.
+            everywhere.append(f"plugin registry entry {key} is not a list of installs")
+            continue
         spelled = set()
-        for install in installs if isinstance(installs, list) else []:
+        for install in installs:
             path = install.get("installPath") if isinstance(install, dict) else None
             if not path:
                 continue

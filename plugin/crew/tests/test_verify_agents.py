@@ -134,6 +134,30 @@ def test_unknowns_never_read_as_installed(tmp_path, home, capsys, source):
     assert "unknown" in out.lower()
 
 
+@pytest.mark.parametrize("data", ['{"rules": {"r": {"agents": ["php-developer"]}}}',
+                                  '["php-developer"]', '{"rules": "php-developer"}'])
+def test_a_verify_map_whose_shape_cannot_be_read_is_unknown(tmp_path, home, capsys, data):
+    _home(home)
+    root = _repo(tmp_path, ["php-developer"])
+    _write(root / ".crew" / "verify.json", data)
+
+    code, out = _main(root, capsys)
+
+    assert code == 2, out
+    assert "unknown" in out.lower() and "no agents named" not in out
+
+
+def test_a_registry_entry_that_is_not_a_list_is_unknown_not_missing(tmp_path, home, capsys):
+    _home(home, enabled={"voltagent@mkt": True})
+    _write(home / "plugins" / "installed_plugins.json",
+           json.dumps({"version": 2, "plugins": {"voltagent@mkt": {"installPath": "/x"}}}))
+
+    code, out = _main(_repo(tmp_path, ["voltagent:security-auditor"]), capsys)
+
+    assert code == 2, out
+    assert "not a list of installs" in out
+
+
 def test_crew_roles_resolve_even_when_registry_unreadable(tmp_path, home, capsys):
     _home(home)
     _write(home / "plugins" / "installed_plugins.json", "{not json")
