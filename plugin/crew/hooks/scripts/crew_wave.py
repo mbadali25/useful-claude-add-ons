@@ -721,9 +721,10 @@ def lane_init(root, main, slug, ticket):
 
 POLICY_TEXT = {
     "stop": ("autopilot.reviewPolicy stop: the lane ends at the first recorded verdict. "
-             "FINDINGS or INCOMPLETE: step 8 with --state findings. CLEAN: step 8 with --state "
-             "question and the reason `review CLEAN; reviewPolicy stop leaves /crew:done to the "
-             "owner`."),
+             "FINDINGS or INCOMPLETE: step 8 with --state findings. CLEAN: write the question "
+             "`Run /crew:done?` (below; recommended: yes, the review is CLEAN) and go to step 8 "
+             "with --state question and the reason `review CLEAN; reviewPolicy stop leaves "
+             "/crew:done to the owner`."),
     "clean-only": ("autopilot.reviewPolicy clean-only: CLEAN goes on to step 7. FINDINGS or "
                    "INCOMPLETE: step 8 with --state findings."),
     "fix-and-rereview": ("autopilot.reviewPolicy fix-and-rereview: CLEAN goes on to step 7. On "
@@ -757,8 +758,10 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         bump = ("3. version: this ticket touches no plugin/crew/ path; leave "
                 f"{VERSION_FILES} alone.")
     elif version == UNKNOWN:
-        bump = ("3. version: the wave could not tell this lane's version, so leave "
-                f"{VERSION_FILES} alone and say so in step 8's reason.")
+        bump = ("3. version: the wave could not tell this lane's version. If the ticket changed "
+                "any plugin/crew/ path, write a question (the version to set; below) and go to "
+                f"step 8 with --state question: never reach clean unbumped. Otherwise leave {VERSION_FILES} "
+                "alone.")
     else:
         bump = (f"3. version: set crew's version to {version} in {VERSION_FILES}, "
                 "all in one commit.")

@@ -771,6 +771,23 @@ def test_lane_prompt_bumps_every_version_place_and_reviews_once(tmp_path):
     assert ("plugin/PLUGINS.md" in step3, "not including" in step2) == (True, True)
 
 
+def test_lane_prompt_unknown_version_stops_a_crew_change_as_a_question(tmp_path):
+    # Codex review round 4 (rush g0): an unknown version let a crew change reach clean unbumped.
+    root = _started(tmp_path)
+    _set_lane(root, "T-1", version=crew_wave.UNKNOWN)
+
+    step3 = next(line for line in _prompt(root).splitlines() if line.startswith("3."))
+
+    assert ("--state question" in step3, "never reach clean unbumped" in step3) == (True, True)
+
+
+def test_lane_prompt_stop_policy_clean_writes_the_question_it_reports(tmp_path):
+    # Codex review round 4 (rush g0): `question` was reported with no questions.md item.
+    text = _prompt(_started(tmp_path, autopilot={"reviewPolicy": "stop"}))
+
+    assert "write the question `Run /crew:done?`" in text
+
+
 def test_lane_prompt_starts_with_lane_init(tmp_path):
     steps = [line for line in _prompt(_started(tmp_path)).splitlines() if line[:2] == "1."]
 
