@@ -707,3 +707,23 @@ def test_ps1_template_clone_replaces_only_empty_dirs(stubs):
     assert (tdir / "http" / "cves" / "stub.yaml").is_file()
     assert "git-env 1000 30" in log
     assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+def test_a_failed_move_onto_a_dangling_symlink_leaks_no_temp_clone(stubs):
+    tdir = stubs["tmp"] / "nuclei-templates"
+    tdir.symlink_to(stubs["tmp"] / "gone")   # dangling: not -e, mv cannot replace it
+    _fake_nuclei_rc(stubs, 0)
+    proc, _ = _run(stubs, "update_nuclei_templates; echo after", git="ok", tags=["v10.4.9"])
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert tdir.is_symlink()
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+@posix_only
+def test_the_sqlmap_wrapper_quotes_its_path(stubs):
+    opt = stubs["tmp"] / "opt with space"
+    opt.mkdir()
+    script = 'install_sqlmap; cat "$GIZMODUCK_BIN_DIR/sqlmap"'
+    proc, _ = _run(stubs, script, git="ok",
+                   extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1", "GIZMODUCK_OPT_DIR": str(opt)})
+    assert f'exec python3 "{opt}/sqlmap/sqlmap.py" "$@"' in proc.stdout, proc.stdout + proc.stderr

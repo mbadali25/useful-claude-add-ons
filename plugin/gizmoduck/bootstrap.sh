@@ -299,7 +299,11 @@ clone_nuclei_templates() {
       return 1
     fi
   fi
-  mv "$tmp/t" "$tdir" && rmdir "$tmp"
+  # mv can still fail (a dangling symlink at $tdir is not -e, so it got past
+  # the check above): clean up the temp clone - only $tmp, which this
+  # function created - rather than leak one on every run.
+  mv "$tmp/t" "$tdir" || { rm -rf "$tmp"; return 1; }
+  rmdir "$tmp"
 }
 
 install_nmap() {
@@ -421,7 +425,7 @@ install_sqlmap() {
   fi
   sudo tee "${BIN_DIR}/sqlmap" >/dev/null <<EOS
 #!/usr/bin/env bash
-exec python3 ${dir}/sqlmap.py "\$@"
+exec python3 "${dir}/sqlmap.py" "\$@"
 EOS
   sudo chmod +x "${BIN_DIR}/sqlmap"
 }
