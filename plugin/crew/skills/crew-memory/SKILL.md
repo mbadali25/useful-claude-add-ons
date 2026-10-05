@@ -157,3 +157,29 @@ Claude Code later rewrites a pointer memory with full text, `check` shows it as
 `full-text` again; run `save` again. On Windows Git Bash there may be no
 `python3`: run the same command with `py -3` or `python`, and if none resolves, say so
 rather than skipping the save silently.
+
+### Converting existing memories
+
+To turn a whole memory folder's full-text memories into pointers, preview first:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_memory.py" migrate --memory-dir <memory dir> --tag <tag> [--tag ...] [--only <file name> ...] [--type <type>] [--project <p>] [--note-dir <vault folder>]
+```
+
+It writes nothing and prints one row per memory file (never `MEMORY.md`), in name
+order: `convert` or `append` (a note with this `memory_id` exists) with the note it
+would write, `skip: already a pointer`, `skip: <state>` for a pointer that does not
+resolve or is `malformed`, or `refuse: <reason>` for anything `save` would refuse,
+including `title is not a portable file name` (`: ? * < > | " \`, a trailing dot or
+space, a device name such as `CON`) and `duplicate note path` (two files, one note).
+Show the user that table. Run it again with `--apply` only on their yes: each
+`convert` and `append` row goes through `save` one file at a time; a `failed` row
+prints `save`'s `kept-full-text` reason and the rest go on. Exit 0 only when no row is
+pending, refused or failed; no vault configured is `nothing to migrate` (exit 0). One
+tag set covers the run; use `--only` for batches with different tags, and `save
+--title` for a refused title. A re-run is a no-op. Nothing runs it automatically.
+
+To undo one, `restore --file <memory file>` (dry run: the body's first line and line
+count; `--apply` writes) puts the note's text back as the body, frontmatter kept. The
+note is not edited or deleted. A pointer that does not resolve is reported, exit 1,
+nothing written; a full-text file is nothing to do, exit 0.

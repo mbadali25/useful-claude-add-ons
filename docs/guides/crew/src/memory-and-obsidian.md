@@ -403,8 +403,45 @@ appended. A new note gets mode 0644 less your umask.
 Claude Code 2.1.289 was seen to keep a one-line pointer body across new
 sessions (it rewrites the frontmatter when it updates the memory, and kept
 the pointer). If a later version rewrites the body with full text, `check`
-shows it as `full-text` again; run `save` again. Converting existing
-memories in bulk arrives in a later version.
+shows it as `full-text` again; run `save` again.
+
+### Converting existing memories
+
+`migrate` runs `save` over every memory in one folder. It never runs by
+itself, and without `--apply` it writes nothing:
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py migrate --memory-dir <memory dir> --tag <tag>
+python3 plugin/crew/hooks/scripts/crew_memory.py migrate --memory-dir <memory dir> --tag <tag> --apply
+```
+
+The preview has one row per memory file, in name order; `MEMORY.md` is never
+a row and never edited:
+
+| action | meaning |
+|---|---|
+| `convert` | `save` would create the note shown |
+| `append` | a note with this `memory_id` already exists; `save` would add to it |
+| `skip: already a pointer` | nothing to do |
+| `skip: <state>` | a pointer that does not resolve, or a `malformed` one |
+| `refuse: <reason>` | anything `save` refuses, a title that is not a portable file name (`: ? * < > \| " \`, a trailing dot or space, a device name such as `CON`), or two files that would write one note (`duplicate note path`) |
+
+With `--apply`, each `convert` and `append` row is saved one file at a time.
+A file whose save fails is shown as `failed` with `save`'s `kept-full-text`
+reason, and the others still go ahead. One `--tag` set covers the run; use
+`--only <file name>` to run batches with different tags. `--note-dir`,
+`--type` and `--project` work as they do for `save`. Nothing is recorded
+between runs, so running it again converts nothing twice.
+
+`restore` is the way back for one memory:
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py restore --file <memory file> --apply
+```
+
+It puts the note's text back as the memory's body (frontmatter kept) and
+leaves the note alone. Without `--apply` it shows the first line and the line
+count. A pointer that does not resolve is reported and nothing is written.
 
 ## Confirming recall reaches your sessions
 
