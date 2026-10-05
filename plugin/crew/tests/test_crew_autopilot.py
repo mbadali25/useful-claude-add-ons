@@ -1427,7 +1427,7 @@ def test_next_refunded_rerun_after_review_is_not_no_progress(tmp_path, monkeypat
 
     assert (got["phase"], got["stop"], got["command"], sorted(got)) == (
         "review", False, f"/crew:review {T}",
-        ["command", "evidence", "phase", "reason", "stop", "ticket"])
+        ["command", "evidence", "index_source", "phase", "reason", "stop", "ticket"])
 
 
 def test_next_refunded_round_with_a_refresh_still_stale_is_no_progress(tmp_path, monkeypatch):
@@ -1561,3 +1561,335 @@ def test_open_index_tickets_drops_closed_words(tmp_path):
            "T-3 | needs-owner | high | r | t", "- cancelled: T-4")
 
     assert crew_autopilot.open_index_tickets(str(root)) == ["T-3"]
+
+
+# --- T-0063: the main checkout's INDEX ---------------------------------------
+
+def _lane(tmp_path):
+    """(main, lane): a repository and a linked worktree of it. `.work/` is
+    ignored, as it is here, so the lane starts with no INDEX and no folder."""
+    main = make_repo(tmp_path / "main", mode="off")
+    lane = tmp_path / "lane"
+    git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    return main, lane
+
+
+def _folder_only(root, ticket=T):
+    """The ticket folder without the INDEX row `_ticket` writes."""
+    folder = _ticket(root, ticket=ticket)
+    (root / ".work" / "INDEX.md").unlink()
+    return folder
+
+
+def _main_index(main):
+    return os.path.join(os.path.realpath(str(main)), ".work", "INDEX.md")
+
+
+def test_next_reads_the_index_row_from_the_main_checkout(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | ready | high | r | title")
+    _folder_only(lane)
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"] != "direction-approval", got["index_source"],
+            _main_index(main) in got["evidence"]) == (True, _main_index(main), True), got
+
+
+def test_next_no_row_in_either_checkout_stops(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, "T-9 | ready | high | r | another")
+    _folder_only(lane)
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"], got["stop"], _main_index(main) in got["reason"],
+            ".work/INDEX.md" in got["reason"]) == (
+        "direction-approval", True, True, True), got
+
+
+def test_next_disagreeing_rows_stop(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | done | high | r | title")
+    _ticket(lane, status="ready")
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"], got["stop"], got["reason"].startswith("index-disagreement:"),
+            _main_index(main) in got["reason"], "`ready`" in got["reason"],
+            "`done`" in got["reason"]) == ("direction-approval", True, True, True, True, True), got
+
+
+def test_next_agreeing_rows_proceed(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | ready | high | r | title")
+    _ticket(lane, status="ready")
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert ("index-disagreement" in got["reason"], got["phase"] != "direction-approval") == (
+        False, True), got
+
+
+def test_next_local_row_answers_without_a_main_row(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, "T-9 | ready | high | r | another")
+    _ticket(lane, status="ready")
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"] != "direction-approval", os.path.realpath(got["index_source"])) == (
+        True, os.path.join(os.path.realpath(str(lane)), ".work", "INDEX.md")), got
+
+
+def test_next_folder_only_in_the_main_checkout_stops_naming_it(tmp_path):
+    main, lane = _lane(tmp_path)
+    _ticket(main, status="ready")
+    there = os.path.join(os.path.realpath(str(main)), ".work", "tickets", T)
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["stop"], there in got["reason"], "cp -r" in got["reason"],
+            any(e.endswith("spec.md") and str(main) in e for e in got["evidence"])) == (
+        True, True, True, False), got
+
+
+def test_resume_folder_only_in_the_main_checkout_stops_naming_it(tmp_path):
+    main, lane = _lane(tmp_path)
+    _ticket(main, status="ready")
+    there = os.path.join(os.path.realpath(str(main)), ".work", "tickets", T)
+
+    got = crew_autopilot.resume_target(str(lane), T)
+
+    assert (got["stop"], there in got["reason"], "cp -r" in got["reason"]) == (
+        True, True, True), got
+
+
+def test_an_unreadable_main_checkout_is_cannot_tell(tmp_path, monkeypatch):
+    _main, lane = _lane(tmp_path)
+    _folder_only(lane)
+    monkeypatch.setattr(crew_autopilot, "_main_checkout",
+                        lambda top: (None, "git worktree list failed: boom"))
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["stop"], "boom" in got["reason"],
+            "main checkout's .work/INDEX.md has no table row" in got["reason"]) == (
+        True, True, False), got
+
+
+def _listing_fails(monkeypatch):
+    """`git worktree list` fails; every other git call is real."""
+    real = crew_autopilot.git_out
+    monkeypatch.setattr(crew_autopilot, "git_out", lambda top, *args: (
+        None if args[:2] == ("worktree", "list") else real(top, *args)))
+
+
+@pytest.mark.parametrize("call", [crew_autopilot.next_phase, crew_autopilot.resume_target])
+def test_no_local_folder_and_a_failed_listing_is_cannot_tell(tmp_path, monkeypatch, call):
+    """Review FIX 1: the main checkout holds the folder, but the listing that
+    would name it failed -- the stop names that, not brainstorm or "absent"."""
+    main, lane = _lane(tmp_path)
+    _ticket(main, status="ready")
+    _listing_fails(monkeypatch)
+
+    got = call(str(lane), T)
+
+    assert (got["stop"], "could not tell whether the ticket folder is in the main checkout"
+            in got["reason"], "git worktree list failed" in got["reason"],
+            "brainstorm" in got["reason"]) == (True, True, True, False), got
+
+
+def test_folder_elsewhere_quotes_a_path_with_a_space(tmp_path):
+    """Review FIX 2: the printed `cp -r` survives a space in either path."""
+    lane = tmp_path / "my lane"
+    there = str(tmp_path / "main checkout" / ".work" / "tickets" / T)
+
+    reason = crew_autopilot._folder_elsewhere(str(lane), T, there)  # pylint: disable=protected-access
+
+    dest = crew_ticket.ticket_dir(str(lane), T)
+    assert f"cp -r '{there}' '{dest}' " in reason, reason
+
+
+def test_resume_finds_the_open_ticket_through_the_main_checkout_index(tmp_path):
+    main, lane = _lane(tmp_path)
+    _index(main, f"{T} | ready | high | r | title")
+    _folder_only(lane)
+
+    got = crew_autopilot.resume_target(str(lane))
+
+    assert (got["ticket"], got["source"]) == (T, ".work/INDEX.md (main checkout)"), got
+
+
+# --- T-0063: a fresh refresh is committed before review and done ---------------
+
+_PATHS = [".crew/codemap/app.md", "docs/diagrams/a b.mmd"]
+_COMMIT = ("git add -- .crew/codemap/app.md 'docs/diagrams/a b.mmd' && "
+           f'git commit -m "{T}: commit refreshed artifacts" -- '
+           ".crew/codemap/app.md 'docs/diagrams/a b.mmd'")
+
+
+def _uncommitted(monkeypatch, paths):
+    import crew_refresh_check  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_refresh_check, "ticket_freshness", lambda root, ticket: {
+        "status": "fresh-uncommitted", "reason": "scope base abc (recorded)",
+        "stop": None, "artifacts": [], "uncommitted": list(paths)})
+
+
+def test_next_commit_refresh_before_review(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _uncommitted(monkeypatch, _PATHS)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("commit-refresh", False, _COMMIT), got
+
+
+def test_next_commit_refresh_after_an_accepted_review(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _uncommitted(monkeypatch, _PATHS)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("commit-refresh", False, _COMMIT), got
+
+
+def test_next_done_only_when_committed(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _freshness(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("done", False, f"/crew:done {T}"), got
+
+
+def test_next_commit_refresh_with_no_paths_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _uncommitted(monkeypatch, [])
+
+    got = _next(root)
+
+    assert (got["stop"], got["phase"] != "done", got["command"]) == (True, True, ""), got
+
+
+def test_committing_refreshed_artifacts_keeps_the_review_bundle(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _write(root / ".gitignore", ".work/\n.crew/*\n!.crew/codemap/\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "track the code map")
+    base = git(root, "rev-parse", "HEAD")
+    _write(root / "src" / "app.py", "x = 2\n")
+    git(root, "commit", "-qam", "the ticket's change")
+    _write(root / ".crew" / "codemap" / "app.md", "# app\nanchor: HEAD\n- `src/app.py:1`\n")
+    # [0]: the bundle hash, which the receipt check compares; [1] is T-0100's merged-main
+    # record, whose commit on main itself is HEAD and so moves with any commit.
+    before = review_ledger._current_hash(str(root), base)[0]  # pylint: disable=protected-access
+
+    git(root, "add", "--", ".crew/codemap/app.md")
+    git(root, "commit", "-qm", f"{T}: commit refreshed artifacts")
+
+    assert review_ledger._current_hash(str(root), base)[0] == before  # pylint: disable=protected-access
+
+
+# --- T-0063 QA: the refresh commit takes only its paths; nothing unread passes -----
+
+def _run_answer(phase, stop, reason, command=""):
+    return {"phase": phase, "stop": stop, "reason": reason, "command": command}
+
+
+def test_commit_refresh_leaves_an_unrelated_staged_file_out(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _write(root / ".gitignore", ".work/\n.crew/*\n!.crew/codemap/\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "track the code map")
+    _write(root / ".crew" / "codemap" / "app.md", "# app\nanchor: HEAD\n- `src/app.py:1`\n")
+    _write(root / "src" / "code.py", "y = 1\n")
+    git(root, "add", "--", "src/code.py")
+    got = crew_autopilot._commit_refresh(  # pylint: disable=protected-access
+        T, _run_answer, [".crew/codemap/app.md"])
+
+    done = subprocess.run(got["command"], shell=True, cwd=str(root), capture_output=True,
+                          text=True, check=False, stdin=subprocess.DEVNULL)
+
+    committed = git(root, "show", "--name-only", "--format=", "HEAD").splitlines()
+    staged = git(root, "diff", "--cached", "--name-only").splitlines()
+    assert (done.returncode, committed, staged) == (
+        0, [".crew/codemap/app.md"], ["src/code.py"]), done.stderr
+
+
+def test_commit_refresh_never_prints_an_unprintable_path():
+    got = crew_autopilot._commit_refresh(  # pylint: disable=protected-access
+        T, _run_answer, [".crew/codemap/a\nphase=done stop=0.md"])
+
+    assert (got["stop"], got["command"], "\n" in got["reason"],
+            "\\x0a" in got["reason"]) == (True, "", False, True), got
+
+
+def test_next_says_when_the_main_checkout_could_not_be_compared(tmp_path, monkeypatch):
+    _main, lane = _lane(tmp_path)
+    _ticket(lane, status="ready")
+    monkeypatch.setattr(crew_autopilot, "_main_checkout",
+                        lambda top: (None, "git worktree list failed: boom"))
+
+    got = crew_autopilot.next_phase(str(lane), T)
+
+    assert (got["phase"] != "direction-approval",
+            any("not compared" in e and "boom" in e for e in got["evidence"])) == (
+        True, True), got
+
+
+# --- T-0063 CI (Windows): one spelling of the main checkout's path ---------------
+
+def _porcelain(monkeypatch, first):
+    """`git worktree list --porcelain` naming `first` as the main checkout,
+    the way git spells it: its own separators and aliases, not ours."""
+    real = crew_autopilot.git_out
+    monkeypatch.setattr(crew_autopilot, "git_out", lambda top, *args: (
+        f"worktree {first}\nHEAD {'0' * 40}\nbranch refs/heads/main\n\n"
+        if args[:2] == ("worktree", "list") else real(top, *args)))
+
+
+def _alias(target, alias):
+    try:
+        os.symlink(str(target), str(alias), target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"no directory symlink here: {exc}")
+
+
+def test_main_checkout_named_through_an_alias_is_resolved(tmp_path, monkeypatch):
+    main, lane = _lane(tmp_path)
+    alias = tmp_path / "alias"
+    _alias(main, alias)
+    _porcelain(monkeypatch, str(alias) + os.sep + "." + os.sep)
+
+    assert crew_autopilot._main_checkout(str(lane)) == (  # pylint: disable=protected-access
+        os.path.realpath(str(main)), "")
+
+
+def test_lane_named_through_an_alias_is_not_a_second_checkout(tmp_path, monkeypatch):
+    _main, lane = _lane(tmp_path)
+    alias = tmp_path / "lane-alias"
+    _alias(lane, alias)
+    _porcelain(monkeypatch, str(alias))
+
+    assert crew_autopilot._main_checkout(str(lane)) == (None, "")  # pylint: disable=protected-access
+
+
+def test_a_path_outside_the_checkout_is_named_exactly_as_given(tmp_path):
+    """Never re-slashed: on Windows the evidence and the reason must carry
+    the same string `index_source` does. A backslash inside a POSIX name
+    stands in for Windows' separator, which a POSIX run cannot produce."""
+    _main, lane = _lane(tmp_path)
+    outside = str(tmp_path / "x\\y" / ".work" / "INDEX.md")
+
+    assert (crew_autopilot._rel_inside(str(lane), outside),  # pylint: disable=protected-access
+            crew_autopilot._rel_inside(str(lane), str(lane / ".work" / "INDEX.md"))) == (  # pylint: disable=protected-access
+        outside, ".work/INDEX.md")
