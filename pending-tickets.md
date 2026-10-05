@@ -93,6 +93,8 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0022 | `plugin/crew/docs/external-tool-formats.md:65` cites `review_run.py:1106` for the verdict parser; it is at `:1112` (wrong on main already; the named-citation test skips bare `:N` cites) | H3 report | none | needs ticket |
 | C-0023 | `crew_autopilot._header_status` / `_successor` share L-0639/L-0640's fixed weaknesses: a `status:` in the title read as the field; `split-into: TBD` counted as a successor | G3 report | none (L-0550 may supersede) | needs ticket |
 | C-0024 | `review_ledger.summary` reports `EMPTY` for a `state: null` ledger that records rounds; other readers may treat it as clean (harness: tooling-only PR) | G3 report | none | needs ticket |
+| C-0025 | Sabotage entries for G1's ports: T-0039 (`sabotage_gitignore.py`, 19 hand-run mutations), T-0064 (`sabotage_refresh.py`, 15+), T-0038 (8 `MIGRATE_FIX_MUTATIONS`), T-0071 tracker mutations (L-0669) — harness | G1 report | G1 on main | H2 lane |
+| C-0026 | Remove the `/crew:upgrade` stub (T-0038's spec defers it) | G1 report | T-0038 on main | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
