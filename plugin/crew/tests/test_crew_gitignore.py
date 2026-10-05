@@ -661,6 +661,23 @@ def test_unexpected_exception_is_unknown_exit_4(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out.count("unknown ") == 3
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a control character in a file name")
+def test_a_tracked_name_with_control_characters_is_escaped(tmp_path):
+    """Group review r4 (g1-ports): a tracked secret-shaped name carrying an
+    escape sequence and a line break reaches neither the `/crew:status` line
+    nor the check report raw."""
+    name = "x\x1b[2J\ngitignore: current.pem"
+    root = _repo(tmp_path, files={name: "s3cret", "a.py": ""}, tracked=[name])
+
+    line = cg.summary(str(root))
+    done = _run(root, "check")
+
+    assert ("\x1b" in line + done.stdout, "\n" in line, done.returncode,
+            [x for x in done.stdout.splitlines() if x.startswith("gitignore: current")]) == (
+        False, False, 3, [])
+    assert ascii(name) in line and f"needs-owner {ascii(name)} is tracked" in done.stdout
+
+
 @pytest.mark.parametrize("encoding", ["utf-8", "cp1252"])
 def test_undecodable_tracked_name_still_reports_owner_exit_3(tmp_path, encoding):
     root = _repo(tmp_path, files={"a.py": ""})
@@ -673,7 +690,8 @@ def test_undecodable_tracked_name_still_reports_owner_exit_3(tmp_path, encoding)
                           check=False, env=dict(os.environ, PYTHONIOENCODING=encoding))
 
     assert done.returncode == 3, done.stdout + done.stderr
-    assert b"needs-owner k" in done.stdout and b"Traceback" not in done.stderr
+    # Printed escaped (group review r4): a surrogate-escaped byte is not printable.
+    assert b"needs-owner 'k\\udcff.pem'" in done.stdout and b"Traceback" not in done.stderr
 
 
 @pytest.mark.parametrize("template", [".env.example", ".env.sample", ".env.template", ".env.dist",

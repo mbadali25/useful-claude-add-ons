@@ -54,8 +54,8 @@ What apply does, in order:
    `.crew/backups/migrate-<UTC timestamp>/` and writes a manifest naming every
    file it is about to create, with the sha256 of what it will write.
 2. Stages every new file as a temp beside its target, then moves each into
-   place with `os.replace`. If anything raises, whatever landed is removed and
-   the tree is the old one. A hard kill leaves the manifest unfinished; every
+   place with `os.replace`. If anything raises, whatever landed is undone (a file edited since it
+   landed is left and named). A hard kill leaves the manifest unfinished; every
    later run reports it until you roll back.
 3. Never deletes, and overwrites exactly one file: a pre-0.20 `.crew/config.json`, whose original
    is in the backup and which rollback restores byte-identical. Any other existing target with

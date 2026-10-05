@@ -97,7 +97,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   adds what is missing inside one `# crew:gitignore:managed` block at the TOP of the root
   `.gitignore`, so every human rule below wins, atomically (temp file and `os.replace`), keeping
   CRLF and a BOM. `/crew:init` Phase 1, `/crew:onboard` and `/crew:onboard --refresh` run `apply`;
-  `/crew:implement` step 6 runs `check`; `/crew:status` gains a `gitignore` line.
+  `/crew:implement` step 6 runs `check`; `/crew:status` gains a `gitignore` line. A tracked name
+  or `.gitignore` line holding a character that does not print is shown in its `ascii()` form.
 - **Owner decision (2026-09-26, "appy automatically").** Every additive pattern - build output,
   caches, OS/editor noise and secrets patterns - is applied without asking. Never automatic, because
   not additive: untracking (`git rm --cached`) and anything about an already-committed secret.

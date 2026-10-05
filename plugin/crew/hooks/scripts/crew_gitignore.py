@@ -569,11 +569,11 @@ def _missing(result):
 def report(result, applied=False):
     """The `check` lines; after `apply` wrote, a missing row reads `added`."""
     if result["state"] == "unknown":
-        return [f"unknown {result['reason']}", f"gitignore: {summarize(result)}"]
+        return [f"unknown {_shown(result['reason'])}", f"gitignore: {summarize(result)}"]
     lines = []
     for lang, evidence in result["detected"].items():
         more = f", +{len(evidence) - 2} more" if len(evidence) > 2 else ""
-        lines.append(f"detected {lang} ({', '.join(evidence[:2])}{more})")
+        lines.append(f"detected {lang} ({', '.join(map(_shown, evidence[:2]))}{more})")
     if result["off"]:
         lines.append(f"off .gitignore carries '{OFF}' - report only, apply never writes")
     if not result["regular"]:
@@ -589,27 +589,35 @@ def report(result, applied=False):
             lines.append(f"overridden {pattern} - already in the managed block, re-included by a rule "
                          "below it (your decision; not re-added)")
         else:
-            lines.append(f"conflict {pattern} would override {cand['negation']} at {cand['where']} "
+            lines.append(f"conflict {pattern} would override {_shown(cand['negation'])} at "
+                         f"{_shown(cand['where'])} "
                          "- not added")
         tracked = cand.get("tracked") or []
         if tracked and not _secret(cand):
             lines.append(f"tracked {pattern} matches {len(tracked)} tracked file(s): "
-                         f"{', '.join(tracked[:4])} - ignoring does not untrack them")
+                         f"{', '.join(map(_shown, tracked[:4]))} - ignoring does not untrack them")
     for path in result["needs_owner"]:
-        lines.append(f"needs-owner {path} is tracked and secret-shaped - rotate and decide on history")
+        lines.append(f"needs-owner {_shown(path)} is tracked and secret-shaped - rotate and decide on history")
     if not applied:
         lines.append(f"gitignore: {summarize(result)}")
     return lines
+
+
+def _shown(text):
+    """`text` as it is when every character prints, else its `ascii()` form:
+    a repository-supplied name (a tracked path, a `.gitignore` line) never
+    reaches the terminal with a control character or a line break in it."""
+    return text if text.isprintable() else ascii(text)
 
 
 def summarize(result):
     """The one line `/crew:status` prints."""
     state = result["state"]
     if state == "unknown":
-        return f"unknown ({result['reason']})"
+        return f"unknown ({_shown(result['reason'])})"
     if state == "owner":
         owner = result["needs_owner"]
-        return f"owner: {len(owner)} tracked secret-shaped file(s) - {owner[0]}"
+        return f"owner: {len(owner)} tracked secret-shaped file(s) - {_shown(owner[0])}"
     if state == "pending":
         missing = _missing(result)
         langs = []
@@ -623,7 +631,7 @@ def summarize(result):
         # Not added on purpose (a human `!` line decides), so not "missing" and
         # not exit 1, but never a bare "current" while a wanted row is left out.
         return (f"current except {len(conflicts)} conflict(s) - {conflicts[0]['pattern']} would override "
-                f"{conflicts[0]['negation']}; your negation decides")
+                f"{_shown(conflicts[0]['negation'])}; your negation decides")
     return "current"
 
 
