@@ -379,9 +379,9 @@ def test_the_templates_carry_the_block_at_the_current_schema():
     """`templates/config.template.json` is what `/crew:init` copies down, and
     a template that lagged the module would hand every new repo a config the
     session brief immediately reports as needing an upgrade."""
-    for name, builder in (("config.template.json", crew_config.default_config),
+    for name, builder in (("config.template.json", crew_config.template_config),
                           ("global.template.json",
-                           crew_config.default_global_config)):
+                           crew_config.global_template_config)):
         path = os.path.join(_PLUGIN, "templates", name)
         with open(path, encoding="utf-8") as handle:
             written = json.load(handle)

@@ -91,11 +91,11 @@ second is generated from the code and lists every key.</p>
 <ul>
 <li><code>~/.claude/crew/config.json</code> - the <strong>machine-global</strong> file. Your personal
   defaults for every repo on this machine: providers and models, notifications,
-  auto-clear, the guards.</li>
+  auto-clear, the guards, how far autopilot may go.</li>
 <li><code>.crew/config.json</code> - the <strong>repo</strong> file. Facts about one checkout: the
-  tracker, the board, scope enforcement, autopilot, production declarations.</li>
+  tracker, the board, scope enforcement, production declarations.</li>
 </ul>
-<p>The repo file wins over the machine file, which wins over crew's defaults. Three
+<p>The repo file wins over the machine file, which wins over crew's defaults. Four
 exceptions, each named in the Layer column below:</p>
 <ul>
 <li>A <strong>repo-only</strong> key in the machine file takes effect nowhere. It is pruned on
@@ -106,10 +106,16 @@ exceptions, each named in the Layer column below:</p>
   machine allows.</li>
 <li>A <strong>machine-armed</strong> key (<code>resume.auto</code>, <code>context.autoClear.enabled</code>) can be
   turned on only in the machine file. A repo can only switch it off.</li>
+<li>A <strong>personal</strong> key (the five <code>autopilot.*</code> keys) resolves per key to the
+  stricter of the layers that set it; a layer that says nothing imposes
+  nothing. A machine value is your default for every repo, which a repo may
+  narrow and never widen.</li>
 </ul>
 <p>A <code>null</code> in the repo file over a machine value inherits the machine value. The
-<code>/crew:init</code> template writes every key, which would otherwise shadow your
-machine defaults.</p>
+<code>/crew:init</code> template writes every key except the personal ones, so it does not
+shadow your machine defaults for those; a repo <code>/crew:init</code> set up before that
+still spells <code>autopilot.mode: "off"</code>, which holds a machine <code>plan</code> down until
+you remove it (<code>--explain --all</code> names it as a <code>shadow:</code>).</p>
 <h2 id="seeing-what-is-in-force">Seeing What Is in Force</h2>
 <ul>
 <li><code>/crew:config --show</code> prints every machine-settable key, its value and the
@@ -119,17 +125,29 @@ machine defaults.</p>
   out-of-range values, and marks a widening with <code>!</code>.</li>
 <li>From a shell:
   <code>python3 plugin/crew/hooks/scripts/crew_config.py --explain</code> is the same
-  table, and <code>--models</code> is the per-role provider table.</li>
+  table, <code>--explain --all</code> adds every repo-only key and names each shadowing
+  repo value, and <code>--models</code> is the per-role provider table.</li>
 </ul>
+<h2 id="backups-and-rebuilding-a-lost-config">Backups and Rebuilding a Lost Config</h2>
+<p>Every write a crew script makes to either file first copies the old bytes to
+<code>~/.claude/crew/backups/</code> (the newest 20 per file kept) and is refused when
+that copy fails; a hand edit is not backed up. <code>crew_config.py --backups</code>
+lists the machine file's (add <code>--repo</code> for the repo file's) and
+<code>--restore &lt;stamp&gt; --apply</code> puts one back. Your non-default values are kept in
+<code>~/.claude/crew/profile.json</code> (and in your vault when <code>memory.vaultPath</code> is
+set), so <code>--rebuild --repo</code> or <code>--rebuild --global</code> regenerates a lost or
+corrupt file from the template plus that profile, as a dry run until
+<code>--apply</code>.</p>
 <h2 id="common-setups">Common Setups</h2>
 <ul>
 <li><strong>Personal defaults once, for every repo.</strong> Put providers, models,
-  <code>notify.*</code> and the guards in <code>~/.claude/crew/config.json</code>. Leave repo files
-  to repo facts.</li>
-<li><strong>Self-approval under autopilot.</strong> In the repo file, set
-  <code>scope.allowCliApproval: true</code> and <code>autopilot.mode: "plan"</code>, then choose
-  <code>autopilot.approval</code> (<code>human</code>, <code>self</code> or <code>risk</code>). Review acceptance and
-  production deploys still stop for you.</li>
+  <code>notify.*</code>, the guards and the <code>autopilot.*</code> keys in
+  <code>~/.claude/crew/config.json</code>. Leave repo files to repo facts.</li>
+<li><strong>Self-approval under autopilot.</strong> Set <code>autopilot.mode: "plan"</code> and choose
+  <code>autopilot.approval</code> (<code>human</code>, <code>self</code> or <code>risk</code>) in either file, and set
+  <code>scope.allowCliApproval: true</code> in the repo file, which is the only file
+  that key is read from. Review acceptance and production deploys still stop
+  for you.</li>
 <li><strong>Notifications.</strong> In the machine file, set <code>notify.provider</code> and the
   environment variable names in <code>notify.urlEnv</code> / <code>notify.tokenEnv</code>. The
   secret stays in your environment, never in the file.</li>
@@ -139,7 +157,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>138 keys</strong>: 76 settable in the machine-global file, 62 repo-only.</p>
+<p><strong>138 keys</strong>: 81 settable in the machine-global file, 57 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -153,6 +171,7 @@ the plugin.</p>
 <li><strong>both</strong>: either file may set it; the repo value wins over the machine one.</li>
 <li><strong>both, ratchet</strong>: either file may set it, and the NARROWER of the two wins (<code>crew_guards.RATCHETED_KEYS</code>). A repo can tighten what the machine allows, never loosen it.</li>
 <li><strong>both, widening warned</strong>: either file may set it and the repo wins, but a write that widens it is flagged (<code>crew_config._RATCHETED</code>).</li>
+<li><strong>both, stricter wins</strong>: a personal key (<code>crew_guards.PERSONAL_KEYS</code>): either file may set it, and where both do the STRICTER value wins; a layer that is silent (absent or <code>null</code>) imposes nothing, so a machine value is your default for every repo and a repo may only narrow it.</li>
 <li><strong>machine-arms</strong>: only the global file can turn it on (exactly <code>true</code>); a repo may only veto it with <code>false</code> (<code>crew_config.REPO_VETO_ONLY</code>).</li>
 <li><strong>machine-only</strong>: read from the global file alone; a repo's own value is never consulted.</li>
 </ul>
@@ -1607,41 +1626,41 @@ the plugin.</p>
 <tbody>
 <tr>
 <td><code>autopilot.mode</code></td>
-<td>repo</td>
+<td>both, stricter wins</td>
 <td><code>"off"</code></td>
-<td><code>off</code> | <code>plan</code> (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td><code>off</code> | <code>plan</code> (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>); personal: listed strictest first, the stricter wins</td>
 <td>1.0.41</td>
 <td>Only the exact string <code>plan</code> arms <code>/crew:autopilot</code>; anything else reads as off, with a warning.</td>
 </tr>
 <tr>
 <td><code>autopilot.maxPhases</code></td>
-<td>repo</td>
+<td>both, stricter wins</td>
 <td><code>12</code></td>
-<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>); personal: the smaller wins</td>
 <td>1.0.41</td>
 <td>Phases one run may take; anything but a positive integer reads as 12, with a warning.</td>
 </tr>
 <tr>
 <td><code>autopilot.deploy</code></td>
-<td>repo</td>
+<td>both, stricter wins</td>
 <td><code>"none"</code></td>
-<td><code>none</code> | <code>nonprod</code> | <code>all</code></td>
+<td><code>none</code> | <code>nonprod</code> | <code>all</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
 <td>Where a deploy may run without asking; anything else reads as <code>none</code>.</td>
 </tr>
 <tr>
 <td><code>autopilot.approval</code></td>
-<td>repo</td>
+<td>both, stricter wins</td>
 <td><code>"risk"</code></td>
-<td><code>human</code> | <code>self</code> | <code>risk</code></td>
+<td><code>human</code> | <code>risk</code> | <code>self</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
 <td>Who approves a ticket under autopilot; anything else reads as <code>human</code>.</td>
 </tr>
 <tr>
 <td><code>autopilot.questions</code></td>
-<td>repo</td>
+<td>both, stricter wins</td>
 <td><code>"risk"</code></td>
-<td><code>human</code> | <code>self</code> | <code>risk</code></td>
+<td><code>human</code> | <code>risk</code> | <code>self</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
 <td>Who answers a ticket's open questions under autopilot; anything else reads as <code>human</code>.</td>
 </tr>
@@ -1912,20 +1931,12 @@ the plugin.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>autopilot.mode</code></td>
-<td>changes layer</td>
-<td>both, stricter wins</td>
-<td>off</td>
-<td></td>
-<td>The personal autopilot keys become settable in the global file; the stricter layer wins.</td>
-</tr>
-<tr>
 <td><code>scope.allowCliApproval</code></td>
 <td>changes layer</td>
 <td>both, stricter wins</td>
 <td>false</td>
 <td></td>
-<td>Becomes settable in the global file; the stricter layer wins.</td>
+<td>Becomes settable in the global file, the stricter layer winning, once its reader (<code>crew_ticket.cli_approval_allowed</code>) reads the global layer in a harness-only follow-up to T-0050.</td>
 </tr>
 </tbody>
 </table>

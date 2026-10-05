@@ -117,6 +117,14 @@ def test_values_agree_with_the_writers_enum_values():
         if allowed is None:
             continue
         covered += 1
+        if key in crew_guards.PERSONAL_KEYS:
+            # T-0050: a personal key's writer lists its tiers strictest first
+            # (rank order, `crew_guards.PERSONAL_KEYS`), while the reference
+            # prints the reader's own tuple (`crew_autopilot.POLICIES`, ...).
+            # Same values, so neither side refuses what the other accepts.
+            assert sorted(crew_keys.values_of(key)) == sorted(allowed), key
+            assert allowed == crew_guards.PERSONAL_KEYS[key][1], key
+            continue
         assert tuple(crew_keys.values_of(key)) == allowed, key
     assert covered >= 15
 
@@ -158,6 +166,9 @@ def test_layer_follows_is_global_path():
     assert crew_keys.layer_of("pm.authority") == "both, widening warned"
     assert crew_keys.layer_of("install.policy") == "both, ratchet"
     assert crew_keys.layer_of("qa.provider") == "both"
+    # T-0050: the personal keys combine per key, the stricter layer winning.
+    for key in crew_guards.PERSONAL_KEYS:
+        assert crew_keys.layer_of(key) == "both, stricter wins", key
 
 
 # --- Step 2: arrival versions, code branches, prose, COMING -------------------

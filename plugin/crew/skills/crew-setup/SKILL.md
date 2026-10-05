@@ -157,11 +157,14 @@ To install it:
 `config.json` — this JSON is a COPY, kept here for a human reading the skill.
 It is not the source of truth: `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json`
 is, and that file is generated from `hooks/scripts/crew_config.py`'s
-`default_config()`, which in turn pulls the `pm` and `graph` blocks straight
-from `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` rather than
-duplicating them a third time. A committed test asserts the template equals
-`default_config()`'s output byte-for-byte, so this file drifting from either
-one fails CI instead of shipping quietly. Copy the template, not this prose,
+`template_config()`: `default_config()`, which in turn pulls the `pm` and
+`graph` blocks straight from `crew_state.PM_DEFAULTS` and
+`crew_upgrade.GRAPH_BLOCK` rather than duplicating them a third time, minus the
+personal `autopilot` keys. Those are the owner's to set once in
+`~/.claude/crew/config.json` (`/crew:config`); a new repo that spelled them
+would hold the owner's choice down. A committed test asserts the template
+equals `template_config()`'s output byte-for-byte, so this file drifting from
+either one fails CI instead of shipping quietly. Copy the template, not this prose,
 when actually creating `config.json`.
 
 `/crew:init` writes this file; it never writes the optional machine-global
@@ -230,8 +233,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
   "git": { "forbiddenTrailers": [] },
   "scope": { "mode": "off", "allowCliApproval": false },
-  "autopilot": { "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
-                 "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null } },
+  "autopilot": { "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null } },
   "tickets": { "baseBranch": null },
   "route": { "enabled": false }
 }

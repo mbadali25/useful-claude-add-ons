@@ -89,6 +89,7 @@ from crew_guards import (
     PROD_LEVELS,  # noqa: F401
     PROD_LEVEL_DEFAULT,  # noqa: F401
     RATCHETED_KEYS,  # noqa: F401
+    PERSONAL_KEYS, REPO_ONLY_AUTOPILOT, effective_personal, personal_rank,  # noqa: F401  (T-0050)
     ROLE_WRITE_DEFAULT,  # noqa: F401
     ROLE_WRITE_GUARD_NAMES,  # noqa: F401
     ROLE_WRITE_POLICIES,  # noqa: F401
@@ -295,25 +296,24 @@ def _verdict(rate):
 def read_metrics(root, window=METRICS_WINDOW):
     """BLOCK+FIX per ticket over the last `window` distinct tickets.
 
-    Rows are appended by /crew:review as
-    `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`. Leading and
-    trailing pipes are tolerated, and any row whose BLOCK/FIX cells are not
-    numeric is skipped -- which is how the header and separator rows are
-    filtered without hard-coding their text.
+    Rows (`<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`) come from
+    the main checkout's file, also from a linked worktree (metrics_md_path);
+    when git cannot name it the verdict is `could not tell: <why>`, rate None,
+    never `no data` (L-0582). Leading/trailing pipes are tolerated; a row whose
+    BLOCK/FIX cells are not numeric is skipped, filtering header and separator.
 
-    A ticket reviewed more than once writes one row per round -- `cells[1]`
-    repeats. Grouping by it is load-bearing: ungrouped, the extra row is a
-    DIVISOR, so the rate reads too LOW (9 findings, 3 rows, 2 tickets: 3.0
-    where the truth is 4.5). `rate` stays findings-per-ticket.
+    A ticket reviewed more than once writes one row per round; grouping by
+    `cells[1]` is load-bearing: ungrouped, the extra row is a DIVISOR and the
+    rate reads too LOW (9 findings, 3 rows, 2 tickets: 3.0, truth 4.5).
 
-    `window` bounds distinct tickets, not rows, and "last" means last
-    REVIEWED: a ticket moves to the end of `by_ticket` on every row for it,
-    so interleaved rounds (T-1, T-2, T-1) window by the most recent row.
+    `window` bounds distinct tickets, not rows; "last" means last REVIEWED: a ticket moves to the
+    end of `by_ticket` on every row for it, so rounds T-1, T-2, T-1 window by the most recent row.
     """
     empty = {"tickets": 0, "findings": 0, "rate": None, "verdict": "no data"}
-    text = read_text(os.path.join(root, ".crew", "metrics.md"))
+    path, problem = crew_common.metrics_md_path(root)
+    text = None if problem else read_text(path)
     if not text:
-        return empty
+        return dict(empty, verdict=f"could not tell: {problem}") if problem else empty
 
     by_ticket = {}
     for line in text.splitlines():
