@@ -13,27 +13,32 @@ Last updated: 2026-10-05 (feature rush 1.2.0 section). Previously 2026-10-03. Tr
 
 Owner instruction 2026-10-05. Every PR in #324-#508 is grouped by dependency and files touched, built
 or ported into a group branch `rush/<group>` that targets `release/1.2.0` (cut from main `e84a8bfe`).
-`release/1.2.0` lands on main as one PR after the other session's 1.1.0 (#512). The harness lane
-lands alone afterwards (owner rule T-0087) and is the merge that sets crew **1.2.0**. Each group PR
+`release/1.2.0` lands on main as one PR after the other session's 1.1.0 (#512). The two harness
+lanes land alone (owner rule T-0087); the last one sets crew **1.2.0**. Each group PR
 merges only on a Codex review (`gpt-6-sol`, high reasoning) with 0 BLOCK and 0 FIX, plus green CI.
 New tickets minted by this rush start at **C-0020**; the owner's local session creates them from the
 "New tickets" table below and writes the real ID back.
 
-### Groups
+### Groups (10, owner 2026-10-05)
 
-| Group | Branch | PRs | Placeholder crew | Status |
-|---|---|---|---|---|
-| G1 ports | `rush/g1-ports` | #478, #464, #376, #346, #367, #370, #345, #349, #359, #341, #324 | 1.1.1 | building |
-| G2 autopilot ports | `rush/g2-autopilot` | #354, #395, #342, #358, #369, #363, #365, #366 | 1.1.2 | building |
-| G3 contracts / ticket state / bridge | `rush/g3-contracts` | #408, #412, #410, #409, #411, #434, #437, #442, #425, #414, #447, #455 | 1.1.3 | building |
-| G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.4 | building |
-| G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
-| G6 autopilot builds + sleep | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435 | next free | after G2 lands |
-| H harness (to main, alone) | `rush/h-harness` | #331, #333, #340, #343, #418, #461, #422, #402, #406, #490, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
-| Last | | #479 (T-0507 code-map refresh) | | regenerated at the end |
+| # | Group | Branch | PRs | Placeholder crew | Status |
+|---|---|---|---|---|---|
+| 1 | G1 ports: tracker, gitignore, graph, migrate | `rush/g1-ports` | #478, #464, #376, #346, #367, #370 | 1.1.1 | building |
+| 2 | G1b ports: reference, hygiene, help, archive, CI | `rush/g1b-ports` | #345, #349, #359, #341, #324 | 1.1.6 | building |
+| 3 | G2 autopilot ports | `rush/g2-autopilot` | #354, #395, #342, #358, #369, #363, #365, #366 | 1.1.2 | building |
+| 4 | G3 contracts / ticket state | `rush/g3-contracts` | #408, #412, #410, #409, #411 | 1.1.3 | building |
+| 5 | G3b bridge / recall / config / graph | `rush/g3b-bridge` | #434, #437, #442, #425, #414, #447, #455 | 1.1.7 | building |
+| 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.4 | building |
+| 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
+| 8 | G6 autopilot builds + sleep | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435 | next free | after G2 lands |
+| 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
+| 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
+| - | Last | | #479 (T-0507 code-map refresh) | | regenerated at the end |
+
+Groups 1-8 target `release/1.2.0`; 9 and 10 target `main`, each alone.
 
 Versions: no bump when a source PR folds into its group; each merge into `release/1.2.0` takes the
-next free 1.1.x in landing order; `release/1.2.0` -> main takes the next 1.1.x; the harness lane
+next free 1.1.x in landing order; `release/1.2.0` -> main takes the next 1.1.x; H2, the last merge,
 sets 1.2.0. The drift check dates a version from its first commit, so every re-merge re-bumps.
 
 ### Blocked inside the rush
