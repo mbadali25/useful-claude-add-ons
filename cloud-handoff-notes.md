@@ -50,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 05:15 UTC
+Last updated: 2026-10-05 05:24 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 09:25: #451 T-0108 fixes pushed 64712986 (profiles refused, -rld 1s, ambient config refusal incl. short/long keys + fail-closed, argv validation); 8 sabotages red; CI green but bump. Live re-check started.
 - 09:15: #478 T-0081 review 1 BLOCK 2 FIX: surviving tracker mutation reddens gate-runner (fix in-PR via isolated test, no harness edit), merge conflicts with batch 7 (generated files), lstat inode-0 could-not-tell branch untested + misreported. No fail-open. Sent to builder.
 - 09:05: #507 C-0009 review 0 BLOCK 4 FIX: pwsh checksum unchecked; set -u VERSION_ID can kill setup; pytest pin in wrong (CORE) step, no self-heal; wrong comment about bootstrap failure scope. Sent to builder. #506 C-0008 green at 5523be10; waiting for apt-sandbox commit before review.
 - 08:55: C-0009 #507 built (24051da0; real run: 28/28 tools ok, idempotent; CI green). /tmp now 1777 (was 755 at 06:20; changed by something in-session). Told C-0008 to add apt sandbox opts to bootstrap.sh. #507 review started (pwsh checksum, CORE pytest assert, sandbox scope).
