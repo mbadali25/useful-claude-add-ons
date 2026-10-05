@@ -50,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 05:55 UTC
+Last updated: 2026-10-05 05:56 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:55: #501 C-0001 fixes pushed fa387f47 (module/package-name uniqueness via real collect-only sys.path dump; namespace pkgs may repeat; select.outputs outside if: refused), main merged, CI green 28/28. 27 sabotages red. Final re-check started.
 - 10:45: C-0008 #506 green at 885e5f7b (git-tag lookup, trivy sha256 fallback, templates-on-disk + clone, apt sandbox helper, skip-if-present, doctor; ps1 twins). Gizmoduck 0.5.8 (skipped 0.5.7). Review started (supply-chain checksums, version = main+1).
 - 10:35: #401 L-0673 re-check 0 BLOCK 0 FIX at 5e4dc6f7 -> batch 8 (ready: #433, #451, #462, #401). NITs folded into C-0010.
 - 10:30: #478 T-0081 fixes pushed 46e5ee76 (isolated held-check test, tracker sabotage 87/87 PASS; main merged; inode-0 could-not-tell test; NITs), all Windows green. Re-check started.
