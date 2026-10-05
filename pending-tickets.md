@@ -35,11 +35,13 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 8 | G6 autopilot builds, sleep, goals | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435, then L-0541 (no PR yet), #459, #463, #469 | next free | after G2 lands (T-0012) |
 | 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511, L-0530 | next free | waiting on PRs |
 | 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
-| 9b | H3 review-harness tickets (to main, alone) | `rush/h3-review` | L-0527, L-0528, L-0518, L-0514, T-0033 | next free | waiting on PRs |
+| 9b | H3 review-harness tickets (to main, alone) | `rush/h3-review` | L-0528, L-0514, T-0033, L-0518 (tooling half), L-0522 PR 2 of 3 (#538, never reviewed), L-0527 | next free | waiting on PRs |
 | 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
 | - | Last | | #479 (T-0507 code-map refresh) | | regenerated at the end |
 
-Groups 1-8 target `release/1.2.0`; 9 and 10 target `main`, each alone.
+Groups 0-8 target `release/1.2.0`; the H lanes target `main`, each alone.
+
+**Landing order (revised 2026-10-05):** H1 -> H3 -> main first (review-harness only, no feature depends on them landing later), then `release/1.2.0` merges main and lands, then H2 (sabotage entries for the release features) lands last and sets 1.2.0. Reason: L-0511 PR 2 (G8) needs L-0522 PR 2 (harness, H3) on main, and T-0029 may need its `scope_guard.py` half on main before the wave runs.
 
 Versions: no bump when a source PR folds into its group; each merge into `release/1.2.0` takes the
 next free 1.1.x in landing order; `release/1.2.0` -> main takes the next 1.1.x; H2, the last merge,
@@ -58,6 +60,7 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | T-0033 (#527) | version-only re-bump does not stale a review receipt | H3 | review receipt hash |
 | L-0525 (#522) | sabotage suite: 13 vacuous entries, 1 unproven, cloud-guard r1 OOM | H2 | sabotage suite |
 | L-0519 (#525) | reconcile crew-standards with crew-qa-standards | G7 | lands first in G7: the language sets below build on one reconciled source |
+| L-0522 (#538) | delta gate, PR 2 of 3 (`L-0522-tooling`) | H3 | harness (`review_delta.py`, ledger, run, sabotage); ~2,100 lines never reviewed; PRs 1 and 3 of 3 not seen |
 | L-0532 (#535) | SQL standards set (MySQL/MariaDB, MSSQL, PostgreSQL), T-0086 slice | G7 | `crew-standards/references/` + index |
 | L-0533 (#536) | PHP standards set, T-0086 slice | G7 | same files |
 | L-0534 (#537) | PowerShell standards set, T-0086 slice | G7 | same files |
@@ -67,7 +70,7 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | L-0538 (#534) | Angular 2+ standards set (AngularJS 1.x out of scope, owner 2026-09-28), T-0086 slice | G7 | same files |
 | L-0530 (#521) | crew_tracker maps merged/approved/new/land-blocked to lanes | G8 | `crew_tracker.py`, with #464 T-0071 |
 | L-0517 (#518) | heavy-run logs each lane's slot wait | G8 | gate-runner / heavy-run tooling |
-| L-0511 (#528) | version bump and artifact refresh happen once at land | G8 | release bookkeeping; H1 if it touches HARNESS |
+| L-0511 (#528) | version bump and artifact refresh happen once at land | G8 | PR 1 in G8; PR 2 waits for L-0522 PR 2 (H3) to reach main, then joins the release branch |
 | L-0515 | dependency-aware lane scheduling (folded into L-0520) | none | no PR: folded into L-0520, which is on main; owner to confirm nothing is left |
 
 ### Blocked inside the rush
