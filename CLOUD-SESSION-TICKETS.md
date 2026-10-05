@@ -235,6 +235,7 @@ Held for your go: L-0674 (#404).
 - Notes: write after every action, but PUSH every ~30 min and at each merge (note.sh commits locally; `note.sh --push`; auto-push if last push >30 min).
 - Windows-red review-clean PRs (#341 #342 #344 #346 #362 #363 #395): merge main into each and re-run Windows AFTER batch 7.
 - crew 1.1.0 at the END of this push, plus a guide-rename PR (ticket C-0006).
+- Owner 2026-10-05 05:10: crew 1.1.0 (C-0006) CLOSES this rush. The NEXT rush starts after it, on the remaining new draft PRs (the spec-draft waves in docs/handoff/cloud/WAVES-2026-10-04.md).
 - C-0002..C-0005 (and C-0007) after batch 7.
 - C-0001 (per-component CI skip) is TOP PRIORITY.
 - #499 README: show 2 newest updates + changelog link (shipped).

@@ -17,7 +17,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - **Version: ONE bump per batch via a single BATCH PR** (owner 2026-10-04 23:1x): merge the batch's PR branches into `batch-<n>-build`, reset versions to main's, one version commit last, merge only the batch PR. See `procedures/LANDPREP.md` "Batch PR". Harness PRs still alone. #394 (628f1360, 1.0.344) lands alone as already prepped.
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
 - Notes WRITTEN after every action, PUSHED every ~30 min and at each merge (owner 2026-10-05; `note.sh` commits, `note.sh --push` pushes). Present decisions with a recommendation and tables (owner has ADHD: concise).
-- Plan after batch 7: Windows re-run sweep of the 7 red PRs; C-0002..C-0005, C-0007; then crew 1.1.0 + guide rename (C-0006) last.
+- Plan after batch 7: Windows re-run sweep of the 7 red PRs; C-0002..C-0005, C-0007; then crew 1.1.0 + guide rename (C-0006) last. C-0006 ENDS this rush; the next rush (owner 2026-10-05) takes the remaining new draft PRs / spec-draft waves.
 
 ### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
 main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
@@ -48,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 03:48 UTC
+Last updated: 2026-10-05 04:00 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 05:10: owner: crew 1.1.0 (C-0006) closes this rush; next rush = remaining new draft PRs (spec-draft waves).
 - 05:00: #357 857188a6 CI done: all Windows green, only red = expected bump. Fully ready for batch 7; unsubscribed (batch PR is the gate now).
 - 04:55: #501 fixes pushed c39dc4e6 (combined-session rule, basename uniqueness, lint configs, pinned !cancelled, whole-expr gates, explicit combined key; unrequested: -c gizmoduck pytest.ini for combined run). CI green. Re-check started.
 - 04:50: CORRECTION: the 04:00 owner-decision edits (C-0006 row, decision lines, RESUME rule line) never applied (a failed stamp write short-circuited the && chain). Re-applied and verified now; C-0007 added; next free C-0008.
