@@ -100,6 +100,14 @@ When the verify gate has not passed the tree, the prompt's test receipts keep th
 `--allow-unverified`, recorded as `gate.overridden` in `review.json`, that `/crew:done` still needs
 a clean gate, and that the missing pass alone is that recorded override, not a defect (T-0101).
 
+Once the clone's merge train is armed (`crew_train.py arm`), the gate round takes it before any of
+that linting (L-0526): after the CLEAN receipt and the verify gate, `review_run.py` calls
+`crew_train.acquire`, and a ticket that is waiting behind an overlapping one, must merge its base
+first, or meets a train it cannot read is refused with exit 6, nothing spent and Codex not
+launched. An unarmed clone never asks. The prompt also carries a `== Catch-up merges (rerere) ==`
+block listing every file a catch-up merge replayed from an earlier rerere resolution, so Codex
+reviews each as a change; a merge log it cannot read is written there as `UNREADABLE`.
+
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits

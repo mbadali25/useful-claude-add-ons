@@ -358,8 +358,10 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   name already recorded, and an empty or multi-line <code>--by</code> or <code>--reason</code>. A wrong correction is
   fixed by another one; rows are never removed.</p>
 <ul>
-<li><strong>Symptom: <code>crew_train.py acquire</code> exits 1, <code>waiting behind &lt;ticket&gt;</code>.</strong> The clone's merge train
-  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+<li><strong>Symptom: <code>crew_train.py acquire</code> exits 1, or <code>/crew:review</code> stops with exit 6 and
+  <code>review-run: train: waiting behind &lt;ticket&gt;</code>.</strong> The clone's merge train is armed (L-0520; the
+  gate round takes it since L-0526, and no round was spent) and an overlapping ticket holds it,
+  or queued first on the same base.
   <strong>Check:</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_train.py&quot; --root . status
@@ -367,7 +369,7 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 <p>Each waiting entry lists the ticket it is behind and every colliding pair (<code>&lt;mine&gt; x &lt;theirs&gt;</code>);
   <code>touch: undeclared: &lt;why&gt;</code> means that ticket's spec has no usable <code>## Touch</code>, which overlaps
   everything.
-  <strong>Fix:</strong> wait for the holder to land and release, then acquire again before reviewing; fix an
+  <strong>Fix:</strong> wait for the holder to land and release, then review again; fix an
   undeclared Touch in the spec. <code>merge &lt;base&gt; first</code> means the base moved in this ticket's Touch:
   run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (resolve any conflict), bump the version one past
   the base's, refresh the artifacts, commit, gate the merged head, review it again if

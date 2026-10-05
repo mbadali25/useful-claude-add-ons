@@ -21,6 +21,14 @@ script writes the part of it that is about the ticket rather than the diff:
     `--allow-unverified`, recorded as `gate.overridden` when the gate still
     does not accept the tree as the round is recorded, so a reviewer can
     tell a recorded override from a gap nobody noticed.
+  - the catch-up merges (L-0526): every file the merge train's `catch-up`
+    left rerere-replayed, from the ticket's merge log (`crew_train.
+    read_merge_log`), as `== Catch-up merges (rerere) ==`, each to be
+    reviewed as a change in this diff -- a recorded resolution nobody
+    re-resolved by hand this time. No log, or a log with nothing replayed,
+    writes no block; a log that cannot be read, a row whose replayed list is
+    not a list of paths, or a read that raises is `UNREADABLE: ...`, never
+    silence. Every path is escaped to one line (`review_checks.one_line`).
 
   - the development standards checklist (T-0085): the effective standards
     set's ids, rules and self-check questions from `crew_standards.
@@ -59,6 +67,7 @@ import sys
 import ci_receipt
 import crew_common
 import crew_standards
+import crew_train
 import merged_main
 import recurring_findings
 import review_checks
@@ -389,10 +398,42 @@ def _webtest_block(root, ticket, manifest, out_dir=None):
     return out
 
 
+CATCH_UP_TITLE = "== Catch-up merges (rerere) =="
+
+
+def _catch_up_block(root, ticket):
+    """Rerere-replayed files from the ticket's catch-up merges, or None when
+    there were none. Could not tell is said, never dropped."""
+    try:
+        rows, where, why = crew_train.read_merge_log(root, ticket)
+    except Exception as exc:  # noqa: BLE001 - boundary  pylint: disable=broad-exception-caught
+        rows, where, why = [], "could not tell", f"{type(exc).__name__}: {exc}"
+    unknown = (" whether rerere replayed a resolution into this diff is UNKNOWN - review "
+               "every merge resolution as a change.")
+    if where == "could not tell":
+        return [CATCH_UP_TITLE, f"UNREADABLE: {review_checks.one_line(str(why))};" + unknown]
+    out, bad = [], []
+    for number, row in enumerate(rows, 1):
+        replayed = row.get("rerere_replayed") or []
+        if not isinstance(replayed, list) or not all(isinstance(p, str) for p in replayed):
+            bad.append(f"UNREADABLE: merge log row {number}: rerere_replayed is not a list of "
+                       "paths;" + unknown)
+            continue
+        base = review_checks.one_line(f"{row.get('base')}@{str(row.get('base_sha'))[:12]}")
+        out += [f"  {review_checks.one_line(path)} ({base}): replayed by rerere from an "
+                "earlier resolution - review it as a change in this diff" for path in replayed]
+    if not out and not bad:
+        return None
+    head = ["A catch-up merge (crew_train.py catch-up) replayed these recorded conflict "
+            "resolutions; nobody re-resolved them by hand this time:"] if out else []
+    return [CATCH_UP_TITLE] + bad + head + out
+
+
 def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
+                  _catch_up_block(root, ticket),
                   crew_standards.checklist_block(root, manifest),
                   recurring_findings.review_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):

@@ -90,6 +90,41 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `sabotage_review.py`, each red on its named test through `sabotage.py`'s runner. Harness only
   (T-0087): no feature path rides along.
 
+### Changed — `crew` 1.1.8: the gate round takes the merge train (exit 6) and the reviewer sees rerere replays (L-0526)
+
+- **What changed.** Once a clone's merge train is armed (`crew_train.py arm`), `review_run.py`
+  calls `crew_train.acquire` after the CLEAN-receipt short-circuit and the verify gate and before
+  the pre-review checks, the standards self-check and `review_ledger.reserve`. Holding goes on;
+  waiting behind an overlapping ticket, `merge <base> first`, a train that cannot be read, or any
+  exception in the step is the new **exit 6**, the reason on stderr and no round reserved. A
+  ticket whose budget is already spent (NEEDS_REPLAN, no rounds left) is refused with exit 4
+  without taking the train, so it can never hold it with every overlapping lane waiting. An
+  unarmed clone (state.json proven absent) reviews exactly as before and prints nothing about the
+  train. `--probe` keeps its own 5/6/7 and never reaches the train.
+- **The reviewer's brief.** `review_prompt.py` adds `== Catch-up merges (rerere) ==` listing every
+  file a `crew_train.py catch-up` left rerere-replayed (from the ticket's merge log), each to be
+  reviewed as a change. No log writes no block; an unreadable log, a malformed replayed list or a
+  read that raises is `UNREADABLE: ...`, never silence; every path is escaped to one line.
+- **`/crew:review`** names exit 6 at `$REVIEW_STATUS`, explains it, puts it in the refusal order
+  (gate 5, train 6, pre-review 5, self-check 2) and among the reasons the Claude fallback gets no
+  `ROUND`. README, working-with-codex, daily-workflow and troubleshooting say the same; the three
+  guides are rebuilt.
+- **Why.** L-0520 shipped the train as advisory: a lane that forgot `acquire` could still spend a
+  gate round on a tree another lane was landing over. This is its harness half, split out because
+  tooling PRs carry no feature work (owner 2026-09-30, T-0087).
+- **Tests.** `test_review_run_train.py` (11; the first 5: unarmed unchanged, overlapping round refused with the
+  ledger byte-identical then reserved after release, unreadable train, crash refuses, receipt and
+  verify gate answer first), six new `test_review_prompt.py` cases, `test_lifecycle_commands.py::
+  test_review_names_the_train_exit`, and `test_crew_train.py`'s import test back to equality.
+  `sabotage_train.py` (registered in `sabotage.py`): S1-S15 for `crew_train.py`, R1-R6 for the gate
+  round (R4 budget first, R5/R6 the train before the pre-review checks and the self-check) and
+  P1-P5 for the brief, all 26 RED. Six more `test_review_run_train.py` cases: a spent budget
+  never acquires (real ledger and patched), the train answers before the pre-review checks and
+  the self-check, the Claude second call and `--probe` never ask it.
+- **Not here.** S16-S19 (L-0520's PYTHON-set rows) and S20-S33 (L-0558's) were drafted
+  machine-local and did not reach this branch; `crew_train.py`'s docstring still says neither
+  caller imports it (a feature path, so not edited in a tooling PR). Both are in `TODO.md`.
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file

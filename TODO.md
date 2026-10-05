@@ -52,6 +52,12 @@ be wrong can be closed on evidence.
   test. `plugin/crew/tests/sabotage*.py` is HARNESS (`scripts/check-tooling-pr.py`), so PR #364
   ran its 27 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
   body) and could not commit them.
+- **L-0526 follow-ups (the gate round takes the train).** (a) `crew_train.py`'s module docstring
+  still says neither caller imports it "in this release"
+  (`plugin/crew/hooks/scripts/crew_train.py:9-12`); since L-0526 both do. A feature path, so not
+  edited in L-0526's tooling PR. (b) Sabotage rows S16-S19 (L-0520's PYTHON-set fixes) and
+  S20-S33 (L-0558's round-2 fixes, CHANGELOG 1.0.102) were drafted machine-local and never reached
+  the repo; `plugin/crew/tests/sabotage_train.py` holds S1-S15, R1-R3 and P1-P5 only.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
