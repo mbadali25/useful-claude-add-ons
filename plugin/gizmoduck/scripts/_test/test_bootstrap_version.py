@@ -779,3 +779,81 @@ def test_ps1_nikto_check_reads_the_version_not_the_exit_code(stubs, body, expect
     ps = f"Write-Output \"RUNS=$(Test-NiktoRuns -PerlExe '{perl}' -NiktoPl 'nikto.pl')\""
     proc, _ = _run_ps(stubs, body=ps)
     assert expect in proc.stdout, proc.stdout + proc.stderr
+
+
+# --- C-0015.1: a link inside the templates dir is refused, never followed ----
+#
+# The clone fallback may delete only EMPTY directories that are really inside
+# the templates dir. A symlink or junction there points somewhere else, so
+# deleting it, or recursing through it (PS 5.1's Get-ChildItem -Recurse
+# follows junctions), could remove the user's directories outside it. Both
+# scripts must refuse and leave everything as it was.
+
+def _linked_layout(stubs, case):
+    """A templates dir holding (or being) a link to an `outside` tree."""
+    tdir = stubs["tmp"] / "nuclei-templates"
+    outside = stubs["tmp"] / "outside"
+    (outside / "empty-sub").mkdir(parents=True)
+    (stubs["tmp"] / "outside-file").write_text("mine\n")
+    if case == "self":
+        tdir.symlink_to(outside, target_is_directory=True)
+        return tdir, tdir
+    (tdir / "github" / "empty").mkdir(parents=True)
+    link = tdir / "github" / "link"
+    if case == "dir-link":
+        link.symlink_to(outside, target_is_directory=True)
+    elif case == "file-link":
+        link.symlink_to(stubs["tmp"] / "outside-file")
+    else:   # dangling
+        link.symlink_to(stubs["tmp"] / "gone")
+    return tdir, link
+
+
+def _assert_untouched(stubs, link):
+    assert link.is_symlink(), "the link was deleted"
+    assert (stubs["tmp"] / "outside" / "empty-sub").is_dir(), "an outside dir was deleted"
+    assert (stubs["tmp"] / "outside-file").read_text() == "mine\n"
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+_LINK_CASES = ["dir-link", "file-link", "dangling", "self"]
+
+
+@ps_only
+@pytest.mark.parametrize("case", _LINK_CASES)
+def test_ps1_template_clone_refuses_a_link(stubs, case):
+    # Must-block.
+    tdir, link = _linked_layout(stubs, case)
+    proc, _ = _run_ps(stubs, git="ok", tags=["v10.4.9"],
+                      body=f"Install-NucleiTemplatesClone -Dir '{tdir}'; Write-Output DONE")
+    assert "symlink or junction" in proc.stdout, proc.stdout + proc.stderr
+    assert "DONE" not in proc.stdout
+    _assert_untouched(stubs, link)
+    assert not list(stubs["tmp"].rglob("stub.yaml"))
+
+
+@pytest.mark.parametrize("case", _LINK_CASES)
+def test_template_clone_refuses_a_link(stubs, case):
+    # bootstrap.sh's half: `find -depth -type d -empty -delete` never follows
+    # a link, and the link left behind makes the directory non-empty.
+    tdir, link = _linked_layout(stubs, case)
+    _fake_nuclei_rc(stubs, 0)
+    proc, _ = _run(stubs, "update_nuclei_templates; echo after", git="ok", tags=["v10.4.9"])
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "after" not in proc.stdout
+    _assert_untouched(stubs, link)
+    assert not (tdir / "http").exists()
+
+
+def test_ps1_template_clone_never_recurses_through_a_link():
+    # PS 5.1's Get-ChildItem -Recurse follows junctions, which no POSIX test
+    # can reproduce; so the function must not use -Recurse at all.
+    text = _PS1.read_text()
+    start = text.index("function Install-NucleiTemplatesClone")
+    body = text[start:text.index("\n}\n", start)]
+    helper_start = text.index("function Get-EmptyDirsDeepestFirst")
+    helper = text[helper_start:text.index("\n}\n", helper_start)]
+    for name, src in (("Install-NucleiTemplatesClone", body), ("Get-EmptyDirsDeepestFirst", helper)):
+        code = [ln.split("#", 1)[0] for ln in src.splitlines()]
+        bad = [ln for ln in code if "-Recurse" in ln and ("Get-ChildItem" in ln or "gci" in ln)]
+        assert not bad, f"{name} walks the user's directory with Get-ChildItem -Recurse: {bad}"
