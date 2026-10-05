@@ -103,6 +103,9 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0032 | gizmoduck system-mode audit after L-0685 made `try_install` really apply `set -e`: steps may now stop on benign unguarded failures | G5 report | none | needs ticket |
 | C-0033 | `crew_ticket.py status` reports `accepted()`, so `/crew:implement` step 0 refuses a receipt the guard would refuse (T-0025 round-1 BLOCK; harness; TODO.md item d) | G1b report | none | H lane |
 | C-0034 | Split `crew_autopilot.py` (3,457 lines, above pylint's 3,400; silenced with a disable) | G1b report | none | needs ticket |
+| C-0035 | review_ledger per-slice budget: `open_slice`, `_spent` and summary counting slices. **Without it a T-0059 sliced ticket stops after slice 1** (`next-slice` refuses, writes nothing) | G2 report | harness-alone (T-0087) | H lane, priority |
+| C-0036 | `crew_ticket.validate` reports `PR slices:` problems (autopilot checks them today, validate does not) | G2 report | harness-alone | H lane |
+| C-0037 | Unattended launcher: a git ssh key named by `core.sshCommand -i <path>` outside `~/.ssh` is not denied (README lists it as an accepted risk) | G2 report | none | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
