@@ -371,6 +371,60 @@ CORE_PROBE_PARSE = [
 ]
 
 
+CORE_PROBE_PARSE += [
+    # T-0044 port review BLOCK: a tool result flagged is_error never vouches,
+    # whatever markers it holds.
+    ("probe-sealed-but-is-error", _stream(SEALED, is_error=True), "unknown",
+     "reported an error"),
+    # ...but an OPEN in it still refuses.
+    ("probe-open-and-is-error", _stream(SEALED.replace("SHUT 1", "OPEN 1"), is_error=True),
+     "refuse", "OPEN"),
+]
+
+
+def test_core_probe_nonzero_exit_is_unknown():
+    """T-0044 port review BLOCK: the probe process exiting nonzero never reads
+    as ready, even with every marker present."""
+    got, why = cu.judge_probe(_stream(SEALED), "n0nce", TARGETS, returncode=1)
+    assert (got, "exited 1" in why) == ("unknown", True), why
+    got, _why = cu.judge_probe(_stream(SEALED.replace("SHUT 1", "OPEN 1")), "n0nce",
+                               TARGETS, returncode=1)
+    assert got == "refuse"
+
+
+def test_run_probe_passes_the_exit_code(monkeypatch):
+    """run_probe judges the process's exit code, not stdout alone."""
+    class Proc:  # pylint: disable=too-few-public-methods
+        returncode = 3
+        stdout = ""
+    seen = {}
+
+    def fake_run(argv, env, timeout, cwd=None):
+        prompt = argv[argv.index("-p") + 1]
+        nonce = prompt.split("echo NONCE ", 1)[1].split()[0]
+        Proc.stdout = "\n".join(_stream(SEALED.replace("n0nce", nonce)))
+        seen["cwd"] = cwd
+        return Proc, ""
+    monkeypatch.setattr(cu, "_run", fake_run)
+
+    got, why = cu.run_probe("claude", "/r", "/s.json", {}, TARGETS)
+
+    assert (got, "exited 3" in why, seen["cwd"]) == ("unknown", True, "/r"), why
+
+
+def test_module_imports_without_pwd(monkeypatch):
+    """T-0044 port review BLOCK: native Windows has no `pwd`; the module must
+    import (so the suite collects) and the home lookup must not raise."""
+    import importlib  # pylint: disable=import-outside-toplevel
+    monkeypatch.setitem(sys.modules, "pwd", None)
+    fresh = importlib.reload(cu)
+    try:
+        assert (fresh.pwd, fresh._pwd_home()) == (None, "")  # pylint: disable=protected-access
+    finally:
+        monkeypatch.delitem(sys.modules, "pwd")
+        importlib.reload(cu)
+
+
 @pytest.mark.parametrize("name,lines,state,text", CORE_PROBE_PARSE,
                          ids=[r[0] for r in CORE_PROBE_PARSE])
 def test_core_probe_parse(name, lines, state, text):

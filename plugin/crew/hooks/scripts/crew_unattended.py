@@ -64,7 +64,6 @@ import argparse
 import datetime
 import json
 import os
-import pwd
 import re
 import secrets
 import shlex
@@ -73,6 +72,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+
+try:
+    import pwd  # Unix only; native Windows refuses before it is needed.
+except ImportError:  # pragma: no cover - exercised by Windows CI collection
+    pwd = None
 
 import cloud_guard
 import crew_config
@@ -162,6 +166,8 @@ def _homes():
 
 
 def _pwd_home():
+    if pwd is None:
+        return ""
     try:
         return pwd.getpwuid(os.getuid()).pw_dir
     except (KeyError, OSError):
@@ -241,8 +247,10 @@ def probe_script(targets, nonce):
     return "\n".join(lines)
 
 
-def _tool_results(stream_lines):
-    """The text of every `tool_result` block in stream-json output."""
+def _tool_results(stream_lines, errors=None):
+    """The text of every `tool_result` block in stream-json output. When
+    `errors` is a list, each block's `is_error` flag (True when set) is
+    appended to it, one per text."""
     out = []
     for line in stream_lines:
         try:
@@ -256,6 +264,8 @@ def _tool_results(stream_lines):
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "tool_result":
                 continue
+            if errors is not None:
+                errors.append(block.get("is_error") is True)
             body = block.get("content")
             if isinstance(body, str):
                 out.append(body)
@@ -268,9 +278,13 @@ def _tool_results(stream_lines):
     return out
 
 
-def judge_probe(stream_lines, nonce, targets):
-    """`(state, why)` for the sandbox probe's stream-json output."""
-    results = _tool_results(stream_lines)
+def judge_probe(stream_lines, nonce, targets, returncode=0):
+    """`(state, why)` for the sandbox probe's stream-json output. A store
+    reported OPEN refuses whatever else happened; otherwise a tool result
+    flagged `is_error` or a probe process that exited nonzero is `unknown`,
+    never `ready`, whatever markers its output holds."""
+    errors = []
+    results = _tool_results(stream_lines, errors)
     if not results:
         return UNKNOWN, "probe made no tool call, so nothing was measured"
     seen = {}
@@ -292,6 +306,10 @@ def judge_probe(stream_lines, nonce, targets):
     if f"END {nonce}" not in lines:
         return UNKNOWN, ("sandbox: the probe output has no end marker, so it "
                          "ran short or was cut off")
+    if any(errors):
+        return UNKNOWN, "sandbox: the probe's tool call reported an error, so nothing is proven"
+    if returncode != 0:
+        return UNKNOWN, f"sandbox: the probe session exited {returncode}, so nothing is proven"
     for index, target in enumerate(targets):
         if index not in seen:
             return UNKNOWN, f"sandbox: store not reported by the probe: {target}"
@@ -760,7 +778,7 @@ def run_probe(exe, root, settings_path, env, targets):
                      env, PROBE_TIMEOUT, cwd=root)
     if proc is None:
         return UNKNOWN, f"sandbox: probe {why}"
-    return judge_probe(proc.stdout.splitlines(), nonce, targets)
+    return judge_probe(proc.stdout.splitlines(), nonce, targets, proc.returncode)
 
 
 # --- the chain ----------------------------------------------------------------

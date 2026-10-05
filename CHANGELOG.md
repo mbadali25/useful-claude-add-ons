@@ -57,6 +57,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `.git` file whose main checkout cannot be found is `unknown`. The stale-directory sweep's owner
   check and its refusal to follow a symlink now have tests. README residuals add that the sweep
   cannot see processes in another PID namespace sharing `/tmp`.
+- Port review fixes (release/1.2.0): `pwd` is imported only where it exists, so native Windows
+  collects the suite and reaches its refusal; the sandbox probe is `unknown`, never `ready`, when
+  its Claude process exits nonzero or a tool result carries `is_error`, whatever markers it printed
+  (an `OPEN` store still refuses).
 - Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.
@@ -88,6 +92,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `crew_tracker.py move` retry on could not update, and "T-0021 not landed" without the module.
   `test_tracker_move_after_receipt_keeps_bundle_hash` shows a move leaves `review_patch`'s bundle hash
   unchanged for the files kind, an Obsidian vault outside the worktree and an ignored one inside it.
+- Port review fixes (release/1.2.0): a CHANGELOG line naming `1.1.0.1` no longer counts as naming
+  `1.1.0`; a `docs.json` deferral needs non-empty `key`, `why` and `unblock` or the check is
+  `unknown`; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
+  earlier plan do not stop a successor plan's first docs run.
 - Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
   its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
 
@@ -129,6 +137,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   layer with `PERSONAL_KEYS` and decides `autopilot.deploy` differently; only
   the reporting half landed here. The `pending_approvals` reader lives in
   `crew_status.py`, not `crew_ticket.py`, to keep this branch off the harness.
+- **Port review fix (release/1.2.0).** In a linked worktree `--approvals` checks
+  this checkout's INDEX and the main checkout's, as the walk reads both: an
+  unreadable or non-UTF-8 main INDEX, or a main checkout git cannot name, is
+  `could not tell`, even when the local INDEX reads cleanly.
 - **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
   ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
   and `approval_hook.py`), the bare `/crew:approve` listing what is pending,
