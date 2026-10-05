@@ -111,7 +111,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - Carries review round 2's six findings on the branch (4 BLOCK, 2 FIX): the field count, HEAD taken
   after the push, one ledger for the families and the receipt, the pre-merge HEAD re-read, the dirty
   tree, and the dequeue.
-### Changed — `crew` 1.0.361: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
+### Changed — `crew`: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
 
 - `crew_autopilot.py next` and `resume` read a ticket's `.work/INDEX.md` row from the main checkout
   (the first record of `git worktree list --porcelain`) when the lane worktree's INDEX has none.
