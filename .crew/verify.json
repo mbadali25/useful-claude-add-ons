@@ -98,7 +98,7 @@
                 "docs/**", "MARKETPLACE.md", "SECURITY.md",
                 "Skill-Authoring-Standard.md", "Skill-Pipeline.md", "VERIFYING.md"],
       "seconds": 12,
-      "run": ["python3 scripts/check-marketplace.py",
+      "run": ["python3 scripts/check-marketplace.py --pending-bump",
               "python3 scripts/_test/self-claims.py",
               "python3 scripts/sync-updates.py --check"],
       "reach": "local",
@@ -106,7 +106,7 @@
 
     { "paths": ["scripts/**"],
       "seconds": 81,
-      "run": ["python3 scripts/check-marketplace.py",
+      "run": ["python3 scripts/check-marketplace.py --pending-bump",
               "python3 scripts/_test/self-claims.py",
               "python3 scripts/_test/version-drift.py",
               "python3 scripts/_test/verifying-doc.py",

@@ -35,8 +35,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   branch `main` the flag is ignored and a `note:` line says so; a detached HEAD (a CI merge ref) is not `main`.
 - **Where it runs.** The Marketplace workflow passes it only when `github.event.pull_request.draft` is true and
   now also runs on `ready_for_review`, so marking a PR ready re-runs the full check on the same head (`main`
-  requires `check`, strict, no merge queue). Verify rule 0 runs it at Stop. REPO-03 in `.crew/standards.md`
-  says so. `scripts/gate-runner.py` pins both CI strings and still runs the full check locally.
+  requires `check`, strict, no merge queue). Verify rules 0, 2 and 3 (every rule that runs
+  `check-marketplace.py`) run it at Stop, so a branch that also touches the root docs or `scripts/` gets the
+  same pending verdict. REPO-03 in `.crew/standards.md` says so. `scripts/gate-runner.py` pins both CI
+  strings and still runs the full check locally.
 - **Tests.** Five new `scripts/_test/version-drift.py` cases run the real `main()`; each was sabotaged by hand
   and went red.
 
