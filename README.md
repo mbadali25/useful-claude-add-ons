@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.2**: In-flight markers, one runner drives a ticket at a time. Only one runner drives a ticket at a time: autopilot claims an in-flight marker before it drives a ticket, stops when another live, stale or unreadable holder has it, and `/crew:status` shows who holds each marker.
 - **crew 1.1.2**: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval. `/crew:autopilot goal "<goal>"` researches a goal once, writes a goal file with its proposed tickets, prints the `/goal` line for you to paste, and asks for the split approval under `autopilot.approval`; it mints nothing yet.
-- **crew 1.0.351, notify 1.1.2**: Notifications that failed, repeated, or said only "missing". Chat notifications now go through when the bot token was saved with a trailing space or newline, a missing setting is named along with where to set it, a refused send says Telegram's reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
