@@ -896,6 +896,8 @@ def collect(root, slug):
             continue
         try:
             crew_ticket.check_ticket(entry if isinstance(entry, str) else "")
+            if "\n" in entry:  # check_ticket's `$` lets one trailing newline through
+                raise crew_ticket.TicketError(entry)
         except crew_ticket.TicketError:
             problems.append(f"start.json lists {entry!r}, which is not a ticket id; not read")
             continue

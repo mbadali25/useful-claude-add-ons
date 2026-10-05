@@ -710,7 +710,7 @@ def test_collect_reports_an_invalid_started_lane_id_and_keeps_the_valid_lanes(tm
     path = crew_wave.start_path(str(root), "s")
     with open(path, encoding="utf-8") as fh:
         record = json.load(fh)
-    record["lanes"].append("../oops")
+    record["lanes"] += ["../oops", "T-9\n"]  # a trailing newline passes check_ticket's `$`
     text = json.dumps(record)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
@@ -719,7 +719,9 @@ def test_collect_reports_an_invalid_started_lane_id_and_keeps_the_valid_lanes(tm
 
     assert ({row["ticket"] for row in report["lanes"]},
             any("../oops" in problem for problem in report["problems"]),
-            any("../oops" in line for line in report["approvals"])) == ({"T-1", "T-2"}, True, False)
+            any("../oops" in line for line in report["approvals"]),
+            any("T-9" in problem for problem in report["problems"]),
+            any("T-9" in line for line in report["approvals"])) == ({"T-1", "T-2"}, True, False, True, False)
 
 
 def test_relaunch_skips_terminal_lanes(tmp_path):
