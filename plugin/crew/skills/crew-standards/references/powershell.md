@@ -31,8 +31,11 @@ self-check's grep is an example starting grep, not the definition.
 an external program (`python`, `bash`, `git`, `pwsh`), take candidates only from
 `Get-Command <name> -All -CommandType Application`. Never use a bare
 `(Get-Command <name>).Source`: a profile `function` or `alias` of the same name comes earlier
-in PowerShell's command precedence, wins the lookup, and has no `.Source`. Where a candidate
-lives never decides whether it is believed. Every candidate is executed before it is trusted,
+in PowerShell's command precedence, wins the lookup, and has no `.Source`. Location alone
+never makes a candidate believed. A documented exclusion of a launcher that runs in the wrong
+environment is allowed, for example Windows' `System32\bash.exe`, the WSL launcher, which
+proves it is bash but runs outside the Windows tool environment a hook needs. Every remaining
+candidate is executed before it is trusted,
 under a bound (a per-candidate timeout that kills the whole process tree, and an overall
 deadline the caller sets; in a hook, that deadline sits inside the hook's timeout). It is accepted only on proof the real program alone can
 give: its process exit code plus a structured answer, for example a JSON object carrying its
@@ -66,8 +69,9 @@ that runs an external program by a bare name from a hook or other unattended pat
 1. Does every lookup of an external program filter on `-CommandType Application`? Pass: yes,
    with no bare `(Get-Command x).Source` left in the diff.
 2. Is every candidate executed and proven (exit code plus a structured answer) before it is
-   trusted, rather than accepted or rejected by where it lives? Pass: yes, with a test that
-   puts a broken candidate ahead of a working same-named one.
+   trusted? Is any exclusion by location a documented wrong-environment launcher, not a guess?
+   Pass: yes to both, with a test that puts a broken candidate ahead of a working same-named
+   one.
 3. Is each probe bounded (a timeout that kills the process tree, and an overall deadline the
    caller sets, inside the hook's timeout when the caller is a hook)? Pass: yes, with a test
    using a candidate that hangs.

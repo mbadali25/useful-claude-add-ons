@@ -109,6 +109,15 @@ that PowerShell uses when piping data into native applications." about_Character
 Counted: 0. The research's PWSH-16 also asks for `Set-StrictMode`, but no change set earned
 that half, so no gated rule requires it. The command-resolution half is in the set.
 
+Guidance (the direction's wording): `Set-StrictMode -Version 3.0` in new scripts. It turns
+uninitialized variables, non-existent properties and out-of-bounds indexes into errors
+instead of `$null`. An existing script gains it only together with a test run, because it
+changes what the script tolerates.
+
+Source: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/set-strictmode?view=powershell-7.5:
+"The Set-StrictMode cmdlet configures strict mode for the current scope and all child scopes,
+and turns it on and off." "Prohibits references to non-existent properties of an object."
+
 ### PWSH-20 Code that reads PowerShell uses PowerShell's parser (overlay material)
 
 Not a plugin candidate. Its code is `.py`, which a `.ps1` glob never applies to, and the

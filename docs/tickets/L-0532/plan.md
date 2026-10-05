@@ -26,7 +26,7 @@ Written by the implementing session, 2026-10-05, on `rush/g7-standards` (release
    `grep -c '^SQL-'` counts only real rows. That acceptance check cannot pass honestly,
    and it is reported as a spec deviation.
 2. Raw-fetch every Source page and string-match each quote into
-   `.work/tickets/L-0532/quote-check-sql.txt` (7 of 7 found). The MySQL docs site failed
+   `.work/tickets/L-0532/quote-check-sql.txt` (17 of 17 found after the review rounds added sentences). The MySQL docs site failed
    during the research, so no MySQL quote is used.
 3. Write `stack-sql/references/candidates.md`: SQL-P1 (PostgreSQL SECURITY DEFINER, 6
    public), SQL-P2 (PostgreSQL CONCURRENTLY, 2 public in `.sql` plus 1 Alembic), SQL-17
