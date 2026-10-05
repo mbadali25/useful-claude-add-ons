@@ -27,6 +27,11 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py scan <target|targets.txt> \
        --severity critical,high,medium --out findings.jsonl
    ```
+   The scan is safe by default: it excludes templates tagged `dos,intrusive,fuzz`
+   and sends at most 50 requests per second. Add `--intrusive` only after the
+   target's owner has authorised intrusive testing (in a routine manifest:
+   `nuclei_intrusive: true`); `--rate-limit N` (manifest `nuclei_rate_limit`)
+   replaces the 50.
    This writes JSONL and reports how many findings it captured. If `nuclei` isn't
    installed it will say so — run `bootstrap.sh` (Linux/WSL) or `bootstrap.ps1`
    (Windows) first.

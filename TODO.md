@@ -5232,6 +5232,7 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
   (else `main`), not with the repo's configured base branch. It is a superset, the safe direction, and
   answers "what has not been verified" rather than "what did this ticket change", so T-0061 left it.
   Follow-up: read the key (both flavours) or call `scope_base.base_branch`, a harness change on its own.
+- **`docs/guides/gizmoduck/*` do not describe Nuclei's safe defaults** (T-0108): `-etags dos,intrusive,fuzz`, `-rl 50`, `scan --intrusive` / `--rate-limit N`, the manifest options `nuclei_intrusive` / `nuclei_rate_limit` and the `ran(safe)` / `ran(safe+intrusive)` statuses. Same no-source problem as the bullet above; rebuild together.
 
 ## crew 1.0.214: follow-ups filed by T-0013 (auto-resume typing, 2026-10-03)
 

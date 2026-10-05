@@ -1227,3 +1227,83 @@ def test_report_unreadable_run_manifest_is_a_usage_error(gz, monkeypatch, fixtur
     assert code == 2
     assert "--run-manifest:" in capsys.readouterr().err
     assert not md_out.exists()
+
+
+# ---------------------------------------------------------------------------
+# T-0108: Nuclei's safe defaults in a routine manifest
+# ---------------------------------------------------------------------------
+
+def _nuclei_registry():
+    """The `web` default with a fake nuclei carrying the REAL adapter's
+    ACTIVE_OPTS, so `nuclei_intrusive` is a gate key exactly as it is in the
+    shipped registry."""
+    from scanners import nuclei as real_nuclei
+    return _registry(nuclei=FakeAdapter("nuclei", ["web", "host"],
+                                        active_opts=list(real_nuclei.ACTIVE_OPTS),
+                                        run_fn=_ok("nuclei-raw")))
+
+
+def _bad_nuclei_manifest(gz, tmp_path, capsys, options):
+    manifest = tmp_path / "m.yaml"
+    manifest.write_text("authorized_by: t\ntargets:\n"
+                        "  - {name: a, kind: web, url: 'https://a.invalid/', "
+                        f"options: {options}}}\n", encoding="utf-8")
+    reg = _nuclei_registry()
+    rc = gz.cmd_routine(str(manifest), str(tmp_path / "out"), registry=reg, date=_DATE)
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "routine: manifest refused" in err
+    assert not (tmp_path / "out").exists()
+    assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
+    return err
+
+
+def test_manifest_nuclei_intrusive_must_be_a_boolean(gz, tmp_path, capsys):
+    err = _bad_nuclei_manifest(gz, tmp_path, capsys, "{nuclei_intrusive: 'false'}")
+    assert "option 'nuclei_intrusive' must be true or false" in err
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "'50'", "true", "1.5"])
+def test_manifest_nuclei_rate_limit_must_be_a_positive_integer(gz, tmp_path, capsys, value):
+    err = _bad_nuclei_manifest(gz, tmp_path, capsys, f"{{nuclei_rate_limit: {value}}}")
+    assert "option 'nuclei_rate_limit' must be an integer of 1 or more" in err
+
+
+@pytest.mark.parametrize("extra", ["-itags dos", "--rl=500", "-exclude-tags x", "-dast",
+                                   "-config c.yaml", "--tp=p.yaml", "-profile p"])
+def test_manifest_refuses_nuclei_safety_flags_in_extra(gz, tmp_path, capsys, extra):
+    err = _bad_nuclei_manifest(gz, tmp_path, capsys, f"{{extra: '{extra}'}}")
+    assert "nuclei_intrusive" in err and "nuclei_rate_limit" in err
+
+
+def test_manifest_allows_other_nuclei_extra_flags(gz, tmp_path):
+    manifest = tmp_path / "m.yaml"
+    manifest.write_text("authorized_by: t\ntargets:\n"
+                        "  - {name: a, kind: web, url: 'https://a.invalid/', "
+                        "options: {extra: '-tags cve -timeout 5', nuclei_rate_limit: 5}}\n",
+                        encoding="utf-8")
+    rc = gz.cmd_routine(str(manifest), str(tmp_path / "out"), registry=_nuclei_registry(),
+                        date=_DATE)
+    assert rc == 0
+
+
+def test_routine_records_nuclei_mode(gz, fixture, tmp_path):
+    reg = _nuclei_registry()
+    rc = gz.cmd_routine(str(fixture("manifest-nuclei-options.yaml")), str(tmp_path / "out"),
+                        registry=reg, date=_DATE)
+
+    assert rc == 0
+    cells = _cells(tmp_path / "out")
+    assert cells[("site-safe", "nuclei")]["status"] == "ran(safe)"
+    assert cells[("site-intrusive", "nuclei")]["status"] == "ran(safe+intrusive)"
+    opts = {t: o for t, _d, o in reg.ADAPTERS["nuclei"].run_calls}
+    assert opts["https://nuclei-intrusive.invalid/"]["nuclei_rate_limit"] == 10
+    coverage = _meta(tmp_path / "out")["coverage"]
+    assert coverage["by_status"] == {"ran": 6}
+    assert coverage["complete"] is True
+
+
+@pytest.mark.parametrize("extra", ["['-rl', '500']", "5", "{rl: 5}"])
+def test_manifest_refuses_a_nuclei_extra_that_is_not_a_string(gz, tmp_path, capsys, extra):
+    err = _bad_nuclei_manifest(gz, tmp_path, capsys, f"{{extra: {extra}}}")
+    assert "'extra' must be a string" in err

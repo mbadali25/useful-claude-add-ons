@@ -15,10 +15,17 @@ and load()'s list plus the marker for a missing/unrecognized one.
 """
 import importlib.util
 import os
+import sys
 
 import pytest
 
 from scanners import nuclei
+
+
+@pytest.fixture(autouse=True)
+def _scratch_home(scratch_nuclei_home):
+    """No test here may read the operator's own Nuclei config."""
+    return scratch_nuclei_home
 
 
 @pytest.fixture(scope="module")
@@ -173,8 +180,49 @@ def test_run_reuses_cmd_scans_argv_shape(monkeypatch, tmp_path):
     assert "-jsonl" in argv and "-silent" in argv and "-nc" in argv
     assert "-u" in argv and "https://example.com" in argv
     assert "-severity" in argv and "critical,high" in argv
+    # T-0108: the safe defaults come from the shared builder.
+    assert argv[argv.index("-etags") + 1] == "dos,intrusive,fuzz"
+    assert argv[argv.index("-rl") + 1] == "50"
     assert result.returncode == 0
     assert raw_path.endswith("nuclei.jsonl")
+
+
+def test_run_honours_nuclei_intrusive_and_rate_limit_options(monkeypatch, tmp_path):
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["argv"] = argv
+        from scanners.base import ToolResult
+        return ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+    nuclei.run("https://example.com", str(tmp_path),
+               {"nuclei_intrusive": True, "nuclei_rate_limit": 8})
+
+    assert "-etags" not in captured["argv"]
+    assert captured["argv"][captured["argv"].index("-rl") + 1] == "8"
+    assert nuclei.ACTIVE_OPTS == ["nuclei_intrusive"]
+
+
+@pytest.mark.parametrize("extra", ["-itags dos", "-rl 500", "--exclude-tags=", "-dast",
+                                   "-config c.yaml", "--tp=p.yaml", "-profile=p"])
+def test_adapter_refuses_safety_flags_in_extra_without_running_nuclei(monkeypatch, tmp_path,
+                                                                      extra):
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+    calls = []
+    monkeypatch.setattr(nuclei.base, "run_tool", lambda *a, **kw: calls.append(a))
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path / "out"),
+                                  {"extra": extra})
+
+    assert calls == []
+    assert raw_path is None
+    assert result.returncode == -1
+    assert "nuclei_intrusive" in result.stderr
+    assert not (tmp_path / "out").exists()
 
 
 def test_run_uses_l_flag_for_a_targets_file(monkeypatch, tmp_path):
@@ -343,3 +391,131 @@ def test_run_returns_none_path_on_a_timeout(monkeypatch, tmp_path):
 
     assert raw_path is None
     assert result.timed_out is True
+
+
+# ---------------------------------------------------------------------------
+# T-0108 review FIX 2/3: the operator's Nuclei config, and hand-built options
+# ---------------------------------------------------------------------------
+
+def _counting_run_tool(monkeypatch):
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+    calls = []
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        calls.append(argv)
+        from scanners.base import ToolResult
+        return ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+    return calls
+
+
+def _write_config(text, path=None):
+    path = path or nuclei.nuclei_config_files()[0]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    return path
+
+
+@pytest.mark.parametrize("text,key", [
+    ("include-tags:\n  - intrusive\n", "include-tags"),
+    ("itags: [dos]\n", "itags"),
+    ("include-templates: [dast/]\n", "include-templates"),
+    ("rate-limit: 500\n", "rate-limit"),
+    ("rl: 0\n", "rl"),
+    ("rate-limit-minute: 60000\n", "rate-limit-minute"),
+    ("rate-limit-duration: 10ms\n", "rate-limit-duration"),
+    ("per-host-rate-limit: true\n", "per-host-rate-limit"),
+    ("dast: true\n", "dast"),
+    ("fuzz: true\n", "fuzz"),
+    ("profile: aggressive.yaml\n", "profile"),
+])
+def test_routine_refuses_a_nuclei_config_that_loosens_the_defaults(monkeypatch, tmp_path,
+                                                                    text, key):
+    calls = _counting_run_tool(monkeypatch)
+    path = _write_config("# mine\ntimeout: 5\n" + text)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path / "out"), {})
+
+    assert calls == []
+    assert raw_path is None and result.returncode == -1
+    assert path in result.stderr and key in result.stderr
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("text", [
+    None,                                     # no file at all
+    "",                                       # empty
+    "# nuclei config file\n#rate-limit: 150\n",  # nuclei's own generated, comment-only
+    "timeout: 5\nexclude-tags: [cve]\ndast: false\ninclude-tags: []\nrate-limit:\n",
+])
+def test_routine_runs_with_a_harmless_or_missing_nuclei_config(monkeypatch, tmp_path, text):
+    calls = _counting_run_tool(monkeypatch)
+    if text is not None:
+        _write_config(text)
+
+    _raw, result = nuclei.run("https://example.com", str(tmp_path / "out"), {})
+
+    assert result.returncode == 0
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("shape", ["unparseable", "not-a-mapping", "a-directory"])
+def test_routine_refuses_a_nuclei_config_it_could_not_read(monkeypatch, tmp_path, shape):
+    calls = _counting_run_tool(monkeypatch)
+    path = nuclei.nuclei_config_files()[0]
+    if shape == "unparseable":
+        _write_config("rate-limit: [500\n  : :\n")
+    elif shape == "not-a-mapping":
+        _write_config("- rate-limit\n- 500\n")
+    else:
+        os.makedirs(path)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path / "out"), {})
+
+    assert calls == []
+    assert raw_path is None and result.returncode == -1
+    assert path in result.stderr
+
+
+def test_nuclei_config_dir_env_is_checked_too(monkeypatch, tmp_path):
+    calls = _counting_run_tool(monkeypatch)
+    custom = tmp_path / "custom-cfg"
+    monkeypatch.setenv("NUCLEI_CONFIG_DIR", str(custom))
+    path = _write_config("include-tags: [intrusive]\n", str(custom / "config.yaml"))
+
+    _raw, result = nuclei.run("https://example.com", str(tmp_path / "out"), {})
+
+    assert calls == [] and path in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt" or sys.platform == "darwin",
+                    reason="XDG_CONFIG_HOME is Go's UserConfigDir on Linux/BSD only")
+def test_xdg_config_home_is_where_go_looks(monkeypatch, tmp_path):
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    assert nuclei.nuclei_config_files()[0] == str(xdg / "nuclei" / "config.yaml")
+
+
+@pytest.mark.parametrize("opts", [
+    {"nuclei_rate_limit": 0}, {"nuclei_rate_limit": -1}, {"nuclei_rate_limit": True},
+    {"nuclei_rate_limit": "50"}, {"nuclei_intrusive": "false"}, {"nuclei_intrusive": 1},
+    {"extra": ["-rl", "5"]},
+])
+def test_adapter_refuses_bad_hand_built_options_without_running(monkeypatch, tmp_path, opts):
+    calls = _counting_run_tool(monkeypatch)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path / "out"), opts)
+
+    assert calls == []
+    assert raw_path is None and result.returncode == -1
+
+
+def test_adapter_pins_rld_beside_its_rate_limit(monkeypatch, tmp_path):
+    calls = _counting_run_tool(monkeypatch)
+    nuclei.run("https://example.com", str(tmp_path / "out"), {"nuclei_rate_limit": 9})
+    argv = calls[0]
+    i = argv.index("-rl")
+    assert argv[i:i + 4] == ["-rl", "9", "-rld", "1s"]
