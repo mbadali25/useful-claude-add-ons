@@ -608,7 +608,8 @@ def effective_ratcheted(dotted, repo_value, global_value):
 # reader change in a harness-only PR. A global value the guard does not read
 # would be a report that contradicts the run.
 PERSONAL_KEYS = {
-    "autopilot.mode": ("tiers", ("off", "plan")),
+    # L-0541: `backlog` works a goal's tickets past the first, so it ranks above `plan`.
+    "autopilot.mode": ("tiers", ("off", "plan", "backlog")),
     "autopilot.maxPhases": ("int-min", None),
     "autopilot.deploy": ("tiers", ("none", "nonprod", "all")),
     "autopilot.approval": ("tiers", ("human", "risk", "self")),
@@ -626,7 +627,9 @@ PERSONAL_KEYS = {
 # whether a checkout's PRs merge unattended, and which of its checks may fail,
 # are facts about that checkout.
 REPO_ONLY_AUTOPILOT = frozenset({"autopilot.maxAutoReplans", "autopilot.sleep", "autopilot.ship",
-                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes"})
+                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes",
+                                 # L-0541's caps: the spec's layer is `repo`.
+                                 "autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"})
 
 
 def personal_rank(dotted, value):

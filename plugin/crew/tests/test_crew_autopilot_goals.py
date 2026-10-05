@@ -8,10 +8,12 @@ file `.work/autopilot/<slug>.json` (schema 1) and prints the `/goal <condition>`
 line for the owner to paste: autopilot never runs `/goal`, and reports its
 state as `printed`, never `set`. `goal-approve` answers the split approval: the
 owner's `/crew:approve goal:<slug>` receipt bound to the proposal's hash, or
-`autopilot.approval` re-asked on every read. Minting, `--goal` resume, backlog
-and caps are L-0541's; the hook that records the owner's receipt is a separate
-harness change, so here the receipt is only read. Every repository is built
-under tmp_path; nothing touches the real one or ~/.claude.
+`autopilot.approval` re-asked on every read. L-0541 (the last section): an
+approved split is minted, the goal's tickets are picked in dependency order,
+each through its own approval, inside the run's caps, and `--goal <slug>`
+resumes. The hook that records the owner's receipt is a separate harness
+change, so here the receipt is only read. Every repository is built under
+tmp_path; nothing touches the real one or ~/.claude.
 """
 import json
 import os
@@ -21,11 +23,12 @@ import sys
 
 import context  # pylint: disable=unused-import
 import crew_autopilot
+import crew_autopilot_backlog
 import crew_autopilot_goal
 import crew_resume
 import crew_ticket
 import pytest
-from scope_fixtures import make_repo
+from scope_fixtures import PLAN, SPEC, make_repo
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_autopilot.py")
@@ -54,15 +57,18 @@ def _read(path):
         return handle.read()
 
 
-def _repo(tmp_path, approval="risk", allow=True, armed=True):
+def _repo(tmp_path, approval="risk", allow=True, armed=True, tracker=None, **caps):
     root = make_repo(tmp_path, mode="off")
     scope = {"mode": "off"}
     if allow is not MISSING:
         scope["allowCliApproval"] = allow
-    block = {"mode": "plan" if armed is True else (armed or "off")}
+    block = {"mode": "plan" if armed is True else (armed or "off"), **caps}
     if approval is not MISSING:
         block["approval"] = approval
-    _write(root / ".crew" / "config.json", json.dumps({"scope": scope, "autopilot": block}))
+    config = {"scope": scope, "autopilot": block}
+    if tracker:
+        config["tracker"] = tracker  # L-0541: mint writes only under a files tracker
+    _write(root / ".crew" / "config.json", json.dumps(config))
     return root
 
 
@@ -339,7 +345,7 @@ def test_split_policy_refuses_without_allow_cli_approval(tmp_path, allow, approv
     assert (got["allow"], "allowCliApproval" in got["reason"]) == (False, True)
 
 
-@pytest.mark.parametrize("armed", [False, "Plan", "backlog", "on"])
+@pytest.mark.parametrize("armed", [False, "Plan", "Backlog", "on"])
 def test_split_policy_refuses_when_unarmed(tmp_path, armed):
     _root, _slug, got = _policy(tmp_path, approval="self", armed=armed)
 
@@ -625,6 +631,8 @@ def test_split_refusal_names_the_owner_line_for_this_goal_only(tmp_path):
 
 
 def test_split_approval_writes_only_the_goal_file(tmp_path, monkeypatch):
+    """Without a tracker `crew_ticket.mint` refuses before it claims anything,
+    so the approval note is the one write (L-0541: the mint stop exits 2)."""
     monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
     root, slug, _got = _policy(tmp_path, approval="self")
     before = _files(root)
@@ -633,7 +641,7 @@ def test_split_approval_writes_only_the_goal_file(tmp_path, monkeypatch):
 
     after = _files(root)
     changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
-    assert (code, changed) == (0, [str(root / ".work" / "autopilot" / f"{slug}.json")])
+    assert (code, changed) == (2, [str(root / ".work" / "autopilot" / f"{slug}.json")])
 
 
 def test_split_refused_writes_nothing(tmp_path, monkeypatch):
@@ -667,17 +675,31 @@ def test_route_args_goal_with_text_refuses(tmp_path, text):
             got["reason"]) == ("goal", True, "", True)
 
 
-@pytest.mark.parametrize("how", ["first", "args", "run-args"])
-def test_goal_flag_resume_still_stops_naming_l0541(tmp_path, how):
+@pytest.mark.parametrize("how", ["args", "run-args"])
+def test_goal_flag_routes_to_run_with_the_slug(tmp_path, how):
     root = make_repo(tmp_path, mode="off")
 
-    if how == "first":
-        got = crew_autopilot.route(str(root), "--goal")
-    else:
-        got = crew_autopilot.route_args(str(root), "--goal x" if how == "args" else "run --goal x")
+    got = crew_autopilot.route_args(str(root), "--goal x" if how == "args" else "run --goal x")
 
-    assert (got["sub"], got["stop"], "arrives with L-0541" in got["reason"]) == (
-        "run", True, True)
+    assert (got["sub"], got["stop"], got["goal"], got["ticket"]) == ("run", False, "x", "")
+
+
+@pytest.mark.parametrize("text", ["--goal", "--goal Bad", "--goal a b", "run --goal",
+                                  "run --goal ../x", "--goal T-1 x"])
+def test_goal_flag_without_one_slug_stops(tmp_path, text):
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.route_args(str(root), text)
+
+    assert (got["sub"], got["stop"], "goal slug" in got["reason"]) == ("run", True, True)
+
+
+def test_goal_flag_alone_on_first_stops(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.route(str(root), "--goal")
+
+    assert (got["sub"], got["stop"], "goal slug" in got["reason"]) == ("run", True, True)
 
 
 def test_propose_cli_prints_the_line_and_says_printed(tmp_path):
@@ -866,14 +888,15 @@ def test_goal_approve_cli_lines(tmp_path):
             lines[-1] == f"owner: the human types /crew:approve goal:{slug}") == (2, True, True)
 
 
-def test_goal_approve_cli_says_minting_is_l0541s(tmp_path):
-    root = _repo(tmp_path, approval="self")
+def test_goal_approve_cli_mints_after_the_approval(tmp_path):
+    root = _repo(tmp_path, approval="self", tracker="files")
     slug = _goal(root)["slug"]
 
     out = _cli(root, "goal-approve", "--goal", slug)
 
-    assert (out.returncode, out.stdout.startswith(f"split-approved {slug} via=autopilot:self"),
-            "L-0541" in out.stdout, "crew_ticket.py mint" in out.stdout) == (0, True, True, True)
+    lines = out.stdout.splitlines()
+    assert (out.returncode, lines[0].startswith(f"split-approved {slug} via=autopilot:self"),
+            [line.split()[3] for line in lines[1:]]) == (0, True, ["T-0001", "T-0002", "T-0003"])
 
 
 @pytest.mark.parametrize("slug", ["../x", "Goal", "a b"])
@@ -886,7 +909,7 @@ def test_goal_approve_cli_refuses_a_bad_slug(tmp_path, slug):
 
 
 def _all_goal_output(tmp_path, approval):
-    root = _repo(tmp_path, approval=approval)
+    root = _repo(tmp_path, approval=approval, tracker="files")
     _stage(root)
     outs = [_cli(root, "goal-propose", "--proposal-file", ".work/autopilot/g.proposal.json")]
     slug = re.search(r"slug=(\S+)", outs[0].stdout).group(1)
@@ -936,17 +959,475 @@ def test_goal_section_never_puts_arguments_on_a_shell_line():
         True, False, True, False, False, True)
 
 
-def test_goal_section_runs_propose_then_approve_and_mints_nothing():
+def test_goal_section_runs_propose_then_approve_which_mints_then_the_goal_run():
     section = " ".join(_goal_section().split())
 
     assert ("crew_autopilot.py goal-propose --root . --proposal-file" in section,
             "crew_autopilot.py goal-approve --root . --goal <slug>" in section,
             section.index("goal-propose") < section.index("goal-approve"),
-            "crew_ticket.py mint" in section, "L-0541" in section,
-            "goal_status=printed" in section) == (True, True, True, False, True, True)
+            "crew_ticket.py mint" in section, "`minted:`" in section,
+            "`--goal <slug>`" in section, "arrives with" in section,
+            "goal_status=printed" in section) == (True, True, True, False, True, True, False, True)
 
 
 def test_goal_section_never_claims_the_goal_is_set():
     section = _goal_section().lower()
 
     assert [w for w in SET_WORDS if w in section] == []
+
+
+# --- L-0541: mint, the picker, the run and its caps, `--goal` resume -----------
+
+SESSION = "11111111-2222-3333-4444-555555555555"
+
+
+def _minted(tmp_path, mode="backlog", approval="self", tickets=None, **caps):
+    """A repo under a files tracker with an approved, minted goal: (root, slug, ids)."""
+    root = _repo(tmp_path, approval=approval, armed=mode, tracker="files", **caps)
+    slug = _goal(root, tickets=tickets)["slug"]
+    assert _main(root, "goal-approve", "--goal", slug) == 0
+    ids = [t["id"] for t in crew_autopilot_goal.read_goal(str(root), slug)["tickets"]]
+    return root, slug, ids
+
+
+def _set_status(root, ticket, status):
+    index = root / ".work" / "INDEX.md"
+    text = _read(index)
+    new, count = re.subn(rf"^({re.escape(ticket)} \| )[^|]*( \|)", rf"\g<1>{status}\g<2>",
+                         text, flags=re.MULTILINE)
+    assert count == 1, text
+    _write(index, new)
+
+
+def _transcript(tmp_path, monkeypatch, *usages, session=SESSION, raw=None):
+    """A Claude Code transcript for `session` under a temporary CLAUDE_CONFIG_DIR."""
+    base = tmp_path / "claude-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(base))
+    path = base / "projects" / "-repo" / f"{session}.jsonl"
+    lines = [json.dumps({"type": "assistant", "timestamp": f"2026-10-05T00:00:0{n}Z",
+                         "message": {"usage": usage}}) for n, usage in enumerate(usages)]
+    _write(path, "\n".join(lines + ([raw] if raw else [])) + "\n")
+    return path
+
+
+def _run(root, slug, session=SESSION):
+    return crew_autopilot_backlog.goal_run(str(root), slug, session)
+
+
+def test_mint_after_split_approval(tmp_path):
+    root, slug, ids = _minted(tmp_path)
+
+    texts = [_read(root / ".work" / "tickets" / t / "direction.md") for t in ids]
+    assert (ids, [f".work/autopilot/{slug}.json" in t for t in texts],
+            [f"goal-ticket: {slug} {n}/3" in t.splitlines() for n, t in enumerate(texts, 1)],
+            ["risk: low" in t.splitlines() for t in texts]) == (
+        ["T-0001", "T-0002", "T-0003"], [True] * 3, [True] * 3, [True] * 3)
+
+
+def test_minted_ticket_status_ready(tmp_path):
+    root, _slug, ids = _minted(tmp_path)
+
+    assert [crew_autopilot._index_status(str(root), t) for t in ids] == ["ready"] * 3  # pylint: disable=protected-access
+
+
+def test_mint_failure_midway_names_minted_and_unminted(tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, approval="self", tracker="files")
+    slug = _goal(root)["slug"]
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args[1])
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("the tracker said no")
+        return real(*args, **kwargs)
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+
+    code = _main(root, "goal-approve", "--goal", slug)
+    out = capsys.readouterr().out
+    first = [t["id"] for t in crew_autopilot_goal.read_goal(str(root), slug)["tickets"]]
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    again = _main(root, "goal-approve", "--goal", slug)
+    ids = [t["id"] for t in crew_autopilot_goal.read_goal(str(root), slug)["tickets"]]
+
+    assert (code, "minted: ticket 1 T-0001 - add the export endpoint" in out,
+            "unminted: ticket 2 - wire the export button" in out,
+            "unminted: ticket 3 - document the export" in out, "the tracker said no" in out,
+            out.rstrip().splitlines()[-1], first, again, ids,
+            sorted(os.listdir(root / ".work" / "tickets"))) == (
+        2, True, True, True, True, f"resume: /crew:autopilot --goal {slug}",
+        ["T-0001", None, None], 0, ["T-0001", "T-0002", "T-0003"],
+        ["T-0001", "T-0002", "T-0003"])
+
+
+def test_mint_adopts_a_ticket_whose_id_never_reached_the_goal_file(tmp_path):
+    root, slug, _ids = _minted(tmp_path)
+    goal = crew_autopilot_goal.read_goal(str(root), slug)
+    goal["tickets"][1]["id"] = None
+    _write(root / ".work" / "autopilot" / f"{slug}.json", json.dumps(goal))
+
+    code = _main(root, "goal-approve", "--goal", slug)
+
+    assert (code, [t["id"] for t in crew_autopilot_goal.read_goal(str(root), slug)["tickets"]],
+            sorted(os.listdir(root / ".work" / "tickets"))) == (
+        0, ["T-0001", "T-0002", "T-0003"], ["T-0001", "T-0002", "T-0003"])
+
+
+def test_mint_refused_while_the_goal_file_is_locked(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(crew_autopilot_backlog, "LOCK_WAIT", 0.2)
+    root = _repo(tmp_path, approval="self", tracker="files")
+    slug = _goal(root)["slug"]
+    _write(root / ".work" / "autopilot" / f"{slug}.lock", "")
+
+    code = _main(root, "goal-approve", "--goal", slug)
+
+    assert (code, f".work/autopilot/{slug}.lock" in capsys.readouterr().out,
+            os.path.isdir(root / ".work" / "tickets")) == (2, True, False)
+
+
+@pytest.mark.parametrize("mode", ["plan", "backlog"])
+def test_backlog_arms_like_plan(tmp_path, mode):
+    root = _repo(tmp_path, armed=mode)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["armed"], got["mode"], [w for w in got["warnings"] if "mode" in w]) == (
+        True, mode, [])
+
+
+@pytest.mark.parametrize("mode", ["Backlog", "backlog ", "auto", "PLAN", 1, ["backlog"]])
+def test_mode_typo_still_reads_off(tmp_path, mode):
+    root = _repo(tmp_path, armed=mode)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["armed"], got["mode"],
+            any("only the exact strings 'plan' and 'backlog'" in w for w in got["warnings"])) == (
+        False, "off", True)
+
+
+@pytest.mark.parametrize("repo,machine,want", [("backlog", "plan", "plan"),
+                                               ("plan", "backlog", "plan"),
+                                               ("backlog", "backlog", "backlog"),
+                                               ("backlog", "off", "off")])
+def test_the_stricter_layer_wins_for_backlog(tmp_path, monkeypatch, repo, machine, want):
+    import crew_config  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, armed=repo)
+    machine_file = tmp_path / "machine.json"
+    _write(machine_file, json.dumps({"autopilot": {"mode": machine}}))
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(machine_file))
+
+    assert crew_autopilot.settings(str(root))["mode"] == want
+
+
+@pytest.mark.parametrize("value,want", [(None, 3), (5, 5), (0, 3), (True, 3), ("4", 3)])
+def test_ticket_cap_setting(tmp_path, value, want):
+    caps = {} if value is None else {"maxTicketsPerRun": value}
+    root = _repo(tmp_path, **caps)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["maxTicketsPerRun"], got["maxTokensPerSession"],
+            any("maxTicketsPerRun" in w for w in got["warnings"])) == (
+        want, 2000000, value is not None and want != value)
+
+
+def test_backlog_respects_dependencies(tmp_path):
+    root, slug, ids = _minted(tmp_path)
+    picks = [crew_autopilot_backlog.next_goal_ticket(str(root), slug)["ticket"]]
+    for ticket in ids:
+        _set_status(root, ticket, "done")
+        picks.append(crew_autopilot_backlog.next_goal_ticket(str(root), slug))
+
+    last = picks.pop()
+    assert ([picks[0]] + [p["ticket"] for p in picks[1:]], last["done"], last["stop"]) == (
+        ["T-0001", "T-0002", "T-0003"], True, True)
+
+
+@pytest.mark.parametrize("status", ["cancelled", "superseded", "needs-owner"])
+def test_stopped_dependency_blocks(tmp_path, status):
+    root, slug, _ids = _minted(tmp_path)
+    _set_status(root, "T-0001", status)
+
+    got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+
+    assert (got["ticket"], got["stop"], got["done"], "T-0001" in got["reason"]) == (
+        None, True, False, True)
+
+
+def test_a_settled_ticket_nothing_depends_on_is_passed(tmp_path):
+    tickets = [dict(t, depends_on=[]) for t in TICKETS]
+    root, slug, _ids = _minted(tmp_path, tickets=tickets)
+    _set_status(root, "T-0001", "cancelled")
+
+    got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+
+    assert (got["ticket"], got["stop"]) == ("T-0002", False)
+
+
+@pytest.mark.parametrize("how", ["no-row", "unminted", "no-goal"])
+def test_a_ticket_state_that_cannot_be_told_stops(tmp_path, how):
+    root, slug, _ids = _minted(tmp_path)
+    if how == "no-row":
+        _write(root / ".work" / "INDEX.md", "")
+    elif how == "unminted":
+        goal = crew_autopilot_goal.read_goal(str(root), slug)
+        goal["tickets"][0]["id"] = None
+        _write(root / ".work" / "autopilot" / f"{slug}.json", json.dumps(goal))
+    else:
+        os.remove(root / ".work" / "autopilot" / f"{slug}.json")
+
+    got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+
+    assert (got["ticket"], got["stop"], got["done"]) == (None, True, False)
+
+
+def _plan_ticket(root, ticket, risk="low"):
+    folder = root / ".work" / "tickets" / ticket
+    body = SPEC.format(ticket=ticket, touch="- `src/**`")
+    first, rest = body.split("\n", 1)
+    _write(folder / "spec.md", f"{first} title          status: spec   risk: {risk}\n{rest}")
+    _write(folder / "plan.md", PLAN.format(files="src/app.py"))
+
+
+def test_minted_ticket_self_approved_one_at_a_time(tmp_path, monkeypatch):
+    root, slug, ids = _minted(tmp_path)
+    for ticket in ids:
+        _plan_ticket(root, ticket)
+    asked = []
+    real = crew_autopilot.approve
+    monkeypatch.setattr(crew_autopilot, "approve",
+                        lambda top, ticket: asked.append(ticket) or real(top, ticket))
+
+    code, text = crew_autopilot_backlog.ticket_approve(str(root), slug, "T-0001")
+
+    assert (code, text.splitlines(), asked,
+            [os.path.exists(crew_ticket.approval_path(str(root), t)) for t in ids]) == (
+        0, ["self-approved T-0001 under approval=self, risk=low"], ["T-0001"],
+        [True, False, False])
+
+
+@pytest.mark.parametrize("approval", ["human", "risk"])
+def test_minted_ticket_refusal_stops_with_one_id(tmp_path, approval):
+    root, slug, _ids = _minted(tmp_path, approval="self")
+    _plan_ticket(root, "T-0001", risk="high")
+    config = json.loads(_read(root / ".crew" / "config.json"))
+    config["autopilot"]["approval"] = approval
+    _write(root / ".crew" / "config.json", json.dumps(config))
+
+    code, out = _cli_inproc(root, "goal-approve", "--goal", slug, "--ticket", "T-0001")
+
+    lines = out.splitlines()
+    named = re.findall(r"/crew:approve (\S+)", out)
+    assert (code, lines[-2:], set(named), "--confirm" in out) == (
+        2, ["/crew:approve T-0001", f"resume: /crew:autopilot --goal {slug}"], {"T-0001"},
+        False)
+
+
+def test_goal_approve_refuses_a_ticket_outside_the_goal(tmp_path):
+    root, slug, _ids = _minted(tmp_path)
+
+    code, out = _cli_inproc(root, "goal-approve", "--goal", slug, "--ticket", "T-9999")
+
+    assert (code, out.startswith("refused: T-9999 is not a minted ticket"),
+            "/crew:approve" in out) == (2, True, False)
+
+
+def _cli_inproc(root, *argv):
+    out = _cli(root, *argv)
+    return out.returncode, out.stdout
+
+
+def test_goal_run_picks_records_and_reports(tmp_path, monkeypatch):
+    root, slug, _ids = _minted(tmp_path)
+    _transcript(tmp_path, monkeypatch, {"input_tokens": 10, "output_tokens": 5})
+
+    got = _run(root, slug)
+
+    runs = crew_autopilot_goal.read_goal(str(root), slug)["runs"]
+    assert (got["ticket"], got["stop"], got["activate"], got["goal"], got["run"]["tickets"],
+            got["run"]["tokens"], [(r["session"], r["tickets"]) for r in runs]) == (
+        "T-0001", False, True, slug, ["T-0001"], 15, [(SESSION, ["T-0001"])])
+
+
+def test_plan_mode_stops_after_one(tmp_path, monkeypatch):
+    root, slug, _ids = _minted(tmp_path, mode="plan")
+    _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1})
+    first = _run(root, slug)
+    again = _run(root, slug)
+    _set_status(root, "T-0001", "done")
+    crew_ticket.activate(str(root), "T-0001")
+
+    second = _run(root, slug)
+    config = json.loads(_read(root / ".crew" / "config.json"))
+    config["autopilot"]["mode"] = "backlog"
+    _write(root / ".crew" / "config.json", json.dumps(config))
+    backlog = _run(root, slug)
+
+    assert (first["ticket"], again["ticket"], second["stop"], "mode is plan" in second["reason"],
+            backlog["ticket"], backlog["activate"]) == (
+        "T-0001", "T-0001", True, True, "T-0002", True)
+
+
+def test_ticket_cap_stops(tmp_path, monkeypatch):
+    tickets = [{"title": f"ticket {n}", "risk": "low", "depends_on": []} for n in range(4)]
+    root, slug, ids = _minted(tmp_path, tickets=tickets)
+    _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1})
+    picks = []
+    for ticket in ids:
+        got = _run(root, slug)
+        picks.append(got["ticket"] or got["reason"])
+        _set_status(root, ticket, "done")
+
+    text = crew_autopilot_backlog.goal_run_text(got)
+    assert (picks[:3], "maxTicketsPerRun is 3" in picks[3],
+            text.splitlines()[-1]) == (
+        ["T-0001", "T-0002", "T-0003"], True, f"resume: /crew:autopilot --goal {slug}")
+
+
+def test_a_new_session_is_a_new_run(tmp_path, monkeypatch):
+    root, slug, _ids = _minted(tmp_path, maxTicketsPerRun=1)
+    _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1})
+    _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1}, session="other")
+    _run(root, slug)
+    _set_status(root, "T-0001", "done")
+
+    same, other = _run(root, slug), _run(root, slug, session="other")
+
+    assert (same["stop"], other["ticket"]) == (True, "T-0002")
+
+
+@pytest.mark.parametrize("usage,stops", [({"input_tokens": 1_500_000, "output_tokens": 600_000}, True),
+                                         ({"input_tokens": 1_000_000, "output_tokens": 1_000_000}, False),
+                                         ({"input_tokens": 1, "output_tokens": 1,
+                                           "cache_read_input_tokens": 9_000_000,
+                                           "cache_creation_input_tokens": 9_000_000}, False)])
+def test_token_cap_stops(tmp_path, monkeypatch, usage, stops):
+    root, slug, _ids = _minted(tmp_path)
+    _transcript(tmp_path, monkeypatch, usage)
+
+    got = _run(root, slug)
+
+    assert (got["stop"], "maxTokensPerSession" in got["reason"],
+            crew_autopilot_goal.read_goal(str(root), slug)["runs"] == []) == (stops, stops, stops)
+
+
+@pytest.mark.parametrize("how", ["no-session", "bad-session", "no-file", "two-files",
+                                 "corrupt-line", "no-usage"])
+def test_unreadable_transcript_stops(tmp_path, monkeypatch, how):
+    root, slug, _ids = _minted(tmp_path)
+    session = SESSION
+    if how == "no-session":
+        session = ""
+    elif how == "bad-session":
+        session = "../x"
+    elif how == "no-file":
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "empty"))
+    elif how == "two-files":
+        path = _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1})
+        _write(path.parent.parent / "-other" / path.name, _read(path))
+    elif how == "corrupt-line":
+        _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1}, raw="{cut")
+    else:
+        _transcript(tmp_path, monkeypatch, {"cache_read_input_tokens": 5})
+
+    got = _run(root, slug, session=session)
+
+    assert (got["ticket"], got["stop"], "could not tell" in got["reason"],
+            crew_autopilot_goal.read_goal(str(root), slug)["runs"]) == (None, True, True, [])
+
+
+def test_goal_run_refuses_unarmed(tmp_path, monkeypatch):
+    root, slug, _ids = _minted(tmp_path)
+    _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1})
+    config = json.loads(_read(root / ".crew" / "config.json"))
+    config["autopilot"]["mode"] = "off"
+    _write(root / ".crew" / "config.json", json.dumps(config))
+
+    got = _run(root, slug)
+
+    assert (got["stop"], "plan or backlog" in got["reason"]) == (True, True)
+
+
+def test_goal_done_prints_no_resume_line(tmp_path, monkeypatch):
+    root, slug, ids = _minted(tmp_path)
+    _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1})
+    for ticket in ids:
+        _set_status(root, ticket, "done")
+
+    got = _run(root, slug)
+
+    assert (got["stop"], got["done"], "resume:" in crew_autopilot_backlog.goal_run_text(got)) == (
+        True, True, False)
+
+
+def test_goal_run_cli_line(tmp_path, monkeypatch):
+    root, slug, _ids = _minted(tmp_path)
+    path = _transcript(tmp_path, monkeypatch, {"input_tokens": 1, "output_tokens": 1})
+
+    out = _cli(root, "goal-run", "--goal", slug, "--transcript", str(path))
+
+    assert (out.returncode, out.stdout.splitlines()[0].split(" reason=")[0]) == (
+        0, f"ticket=T-0001 source=goal:{slug} stop=0 activate=1 goal={slug}")
+
+
+def test_goal_resume_from_argument(tmp_path):
+    root, slug, _ids = _minted(tmp_path)
+
+    got = crew_autopilot.resume_target(str(root), goal=slug)
+
+    assert (got["ticket"], got["stop"], got["goal"], got["activate"]) == (
+        "T-0001", False, slug, True)
+
+
+def _goal_handoff(root, slug):
+    branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(root),
+                            capture_output=True, text=True, check=True).stdout.strip()
+    head = subprocess.run(["git", "rev-parse", "--short=10", "HEAD"], cwd=str(root),
+                          capture_output=True, text=True, check=True).stdout.strip()
+    _write(root / ".work" / "HANDOFF.md", f"# Handoff\nbranch: {branch}\nhead: {head}\n"
+                                          f"resume: /crew:autopilot --goal {slug}\n")
+
+
+def test_goal_resume_from_handoff(tmp_path):
+    root, slug, _ids = _minted(tmp_path)
+    _set_status(root, "T-0001", "done")
+    crew_ticket.activate(str(root), "T-0001")
+    _goal_handoff(root, slug)
+
+    got = crew_autopilot.resume_target(str(root))
+    shown = crew_autopilot.status(str(root))
+
+    assert (got["ticket"], got["source"], got["stop"], got["goal"], got["activate"],
+            any(f"--goal {slug} (usable)" in str(v) for v in shown.values())) == (
+        "T-0002", "handoff", False, slug, True, True)
+
+
+def test_goal_resume_keeps_a_pointer_outside_the_goal(tmp_path):
+    root, slug, _ids = _minted(tmp_path)
+    folder = root / ".work" / "tickets" / "T-0050"
+    _write(folder / "direction.md", "go\n")
+    crew_ticket.activate(str(root), "T-0050")
+
+    got = crew_autopilot.resume_target(str(root), goal=slug)
+
+    assert (got["ticket"], got["stop"], "T-0050" in got["reason"]) == (None, True, True)
+
+
+def test_goal_resume_with_an_unknown_slug_names_the_file(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.resume_target(str(root), goal="nope")
+
+    assert (got["stop"], ".work/autopilot/nope.json" in got["reason"]) == (True, True)
+
+
+def test_no_arrives_with_l0541_text_remains():
+    found = []
+    for base, _dirs, names in os.walk(_ROOT):
+        for name in names:
+            if name.endswith((".py", ".md")) and name != os.path.basename(__file__):
+                path = os.path.join(base, name)
+                text = _read(path)
+                if "arrives with L-0541" in text or "goal resume arrives with T-0012" in text:
+                    found.append(path)
+    assert found == []

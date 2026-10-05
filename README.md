@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.23**: Autopilot goal runs - the approved split is minted, the goal's tickets are worked in dependency order with `mode: backlog`, each through its own approval, inside per-run caps, resumable with `--goal`. Once a goal's split is approved, autopilot mints its tickets and works them one at a time with `/crew:autopilot --goal <slug>`, stopping at each ticket the policy will not approve and at its ticket and token caps.
 - **crew 1.1.2**: Plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship`. `crew_split.parse_slices(plan_text)` reads a plan's `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`, `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices (`SLICES_MIN`/`SLICES_MAX`, the children's ...
-- **crew 1.1.2**: Autopilot's size check after spec and after plan, and `/crew:autopilot split`. `crew_autopilot.next_phase` runs T-0052's split rulebook (`crew_split.measure` and `triggers`) once the spec validates and once the plan validates.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

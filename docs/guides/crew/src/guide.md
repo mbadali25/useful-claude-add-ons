@@ -252,7 +252,12 @@ Source: `plugin/crew/commands/autopilot.md` and
 `/crew:autopilot <id>` drives one ticket through spec, plan, approval,
 implement, refresh, review and done. Each turn it asks
 `crew_autopilot.py next` which phase comes next, read from files on disk, so a
-skipped phase is visible. It is off until `autopilot.mode` is exactly `plan`.
+skipped phase is visible. It is off until `autopilot.mode` is exactly `plan`
+(one ticket per run) or `backlog`. `/crew:autopilot --goal <slug>` works a goal's
+minted tickets one at a time in dependency order, each through its own
+approval; `backlog` goes on to the next ticket while `autopilot.maxTicketsPerRun`
+(3) and `autopilot.maxTokensPerSession` (2,000,000) allow, and every stop prints
+`resume: /crew:autopilot --goal <slug>` (L-0541).
 
 The five `autopilot.*` settings are personal: set them in the repo's
 `.crew/config.json`, or once in the machine-global file as your default for

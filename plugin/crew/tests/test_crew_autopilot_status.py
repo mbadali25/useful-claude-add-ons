@@ -55,7 +55,8 @@ def test_route_goal_flag_is_run(tmp_path):
 
     got = crew_autopilot.route(str(root), "--goal")
 
-    assert (got["sub"], got["stop"], "L-0541" in got["reason"]) == ("run", True, True)
+    # L-0541: the flag needs its slug, which only route_args sees.
+    assert (got["sub"], got["stop"], "goal slug" in got["reason"]) == ("run", True, True)
 
 
 @pytest.mark.parametrize("token", ["T-1", "T-0018", "ABC-42"])
@@ -177,8 +178,8 @@ def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
 
     got = crew_autopilot.route_args(str(root), "run --goal ship")
 
-    assert (got["sub"], got["stop"], got["ticket"], "arrives with L-0541" in got["reason"]) == (
-        "run", True, "", True)
+    # L-0541: `run --goal <slug>` is a goal run, never a ticket id.
+    assert (got["sub"], got["stop"], got["ticket"], got["goal"]) == ("run", False, "", "ship")
 
 
 @pytest.mark.parametrize("argv,line", [
@@ -186,16 +187,17 @@ def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
     (["--first", "run"], "sub=run stop=0 reason="),
     (["--first", ""], "sub=run stop=0 reason="),
     (["--first", "T-0018"], "sub=run stop=0 reason="),
-    (["--first", "--goal"], "sub=run stop=1 reason=run --goal <slug> arrives with L-0541"),
+    (["--first", "--goal"], "sub=run stop=1 reason=/crew:autopilot --goal takes one goal slug"),
     (["--first", "stauts"], "sub= stop=1 reason=unknown subcommand; one of "
                             "status|run|assign|goal|focus"),
     (["--first", "assign"], "sub=assign stop=1 reason=/crew:autopilot assign arrives with "
                             "T-0019"),
-    (["--args", "--goal"], "sub=run stop=1 ticket= reason=run --goal <slug> arrives with "
-                           "L-0541"),
+    (["--args", "--goal"], "sub=run stop=1 ticket= reason=/crew:autopilot --goal takes one "
+                           "goal slug ([a-z0-9][a-z0-9-]{0,63})"),
+    (["--args", "--goal ship"], "sub=run stop=0 ticket= goal=ship reason="),
     (["--args", "-h"], "sub= stop=1 ticket= reason=unknown subcommand"),
 ], ids=["first-status", "first-run", "first-empty", "first-id", "first-goal", "first-typo",
-        "first-assign", "args-goal", "args-dash"])
+        "first-assign", "args-goal", "args-goal-slug", "args-dash"])
 def test_route_cli_takes_a_token_that_starts_with_a_dash(tmp_path, capsys, argv, line):
     root = make_repo(tmp_path, mode="off")
 
@@ -451,7 +453,7 @@ def test_status_resume_line_usable(tmp_path):
     (f"resume: /crew:autopilot {T}", "0123456789", "head: does not match this checkout"),
     (f"resume: /crew:approve {T}", None, "/crew:approve is excluded from auto-resume"),
     ("resume: rm -rf ~ EVIL", None, "not an allowlisted /crew: command"),
-    ("resume: /crew:autopilot --goal ship-it", None, "goal resume arrives with L-0541"),
+    ("resume: /crew:autopilot --goal ship-it", None, "ship-it.json is not there"),
 ], ids=["head", "excluded", "not-allowlisted", "goal"])
 def test_status_resume_line_mismatch_reason(tmp_path, line, head, reason):
     root = _approved(tmp_path)

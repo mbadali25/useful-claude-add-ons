@@ -1080,7 +1080,9 @@ def test_resume_goal_line_stops_until_t0012(tmp_path, stub_resume):  # pylint: d
 
     got = crew_autopilot.resume_target(str(root))
 
-    assert (got["ticket"], got["stop"], "L-0541" in got["reason"]) == (None, True, True)
+    # L-0541: a goal line resumes the goal; with no goal file it stops naming it.
+    assert (got["ticket"], got["stop"], "goal ship-it" in got["reason"] or "ship-it.json" in got["reason"]) == (
+        None, True, True)
 
 
 def test_resume_active_ticket(tmp_path):
@@ -1261,7 +1263,8 @@ def test_autopilot_defaults_are_the_config_block():
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
         "sleep": {"schedule": None, "approval": None, "questions": None},
-        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
+        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+        "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}  # L-0541's caps
 
 
 # --- step 6: the command -----------------------------------------------------
@@ -1760,8 +1763,8 @@ def test_settings_backlog_mode_names_its_ticket(tmp_path):
 
     got = crew_autopilot.settings(str(root))
 
-    assert "'backlog'" in got["warnings"][0]
-    assert [w.split(" - ")[0] for w in _inert(got)] == ["inert: autopilot.mode=backlog (L-0541)"]
+    # L-0541 landed: `backlog` arms, with no warning and no inert line.
+    assert (got["armed"], got["mode"], got["warnings"], _inert(got)) == (True, "backlog", [], [])
 # --- T-0037: cancelled and superseded close; needs-owner waits on the owner ------
 
 def _with_line2(root, line, ticket=T, header=HEADER):

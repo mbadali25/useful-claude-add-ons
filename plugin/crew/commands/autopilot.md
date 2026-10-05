@@ -23,9 +23,9 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
 a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
-never a ticket; `assign` comes with T-0019, `--goal` resume with L-0541). `sub=status`: section 1; `sub=focus`: section 6 only; `sub=goal`: section 7 only;
+never a ticket; `assign` comes with T-0019). `sub=status`: section 1; `sub=focus`: section 6 only; `sub=goal`: section 7 only;
 `sub=sleep`, `sub=wake`: run (as route ran) `crew_autopilot.py sleep --root .` or
-`crew_autopilot.py wake --root .`, print its line, stop. `sub=split` (`split`): section 3's `split-check` for `<ticket>`, then stop. `sub=run`: sections 2 to 5; `<ticket>` is route's
+`crew_autopilot.py wake --root .`, print its line, stop. `sub=split` (`split`): section 3's `split-check` for `<ticket>`, then stop. `sub=run`: sections 2 to 5 (with `goal=<slug>`, from `--goal <slug>`, a goal run: section 2); `<ticket>` is route's
 `ticket=`, never re-read from the arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 Unattended cloud work is started by `crew_unattended.py launch -- claude ...` (README), never from a running session.
 
@@ -43,10 +43,11 @@ Print its lines as they are, then stop: read-only, armed or not (`-B`: not even 
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .  # ticket= empty
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root . --ticket <ticket>
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py goal-run --root . --goal <slug> --session ${CLAUDE_SESSION_ID}
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py claim --root . --ticket <ticket> --runner autopilot
 ```
 
-`settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say `autopilot.mode: plan` in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; nothing here deploys), `maxAutoReplans` (0: off), `approval`, `questions`, `sleep=`; print each `warning: inert:` line (a key this crew ignores) - it never stops a run. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:` and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).
+`settings`: anything but `mode=plan` or `mode=backlog` - stop, print its `warning:` lines, and say `autopilot.mode: plan` in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; nothing here deploys), `maxAutoReplans` (0: off), `approval`, `questions`, `sleep=`; print each `warning: inert:` line (a key this crew ignores) - it never stops a run. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:` and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins). A goal run (route's `goal=`, or resume printing `goal=<slug>`) runs `goal-run` in place of `resume` (L-0541): the same fields, picked in the goal's dependency order inside its caps (`plan` works one ticket per run, `backlog` goes on: `maxTicketsPerRun`, `maxTokensPerSession`); after `phase=closed` go back to it; every `stop=1` prints its `resume:` line.
 `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's active one. `activate=1` (no pointer is set): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>` so the scope guard judges edits by it; it also records the scope base (print its stderr). Never pick from `## Next action`.
 Then `claim` (T-0049): `claimed` or `refreshed` goes on; `refused:` (held by another, stale, unreadable) stops, as phase `in-flight` for section 5's ping.
@@ -71,7 +72,7 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback 
 - any other `stop=1` - print the phase, the reason and the command the human types (may be empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
 
 The policy (T-0010; `next`'s reason names it; `human` always stops) is one writer here (the other policy writer is `auto-replan`'s `auto-reject`, T-0074, which writes only the ledger's REVIEWED -> NEEDS_REPLAN):
-`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>`
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>` (a goal run: `goal-approve --root . --goal <slug> --ticket <ticket>`, the same approve; a refusal prints exactly `/crew:approve <ticket>`, for the human to type, and the `resume:` line)
 prints `self-approved ...` (report it by name, go round again) or `refused:` (stop; the human types `/crew:approve <ticket>`). For a question, research it (crew:explorer, crew:researcher)
 into `questions.md`: `## Q<n>: <question>`, a `Research:` line, then 2-4 `### Option <id>` blocks, the first marked `(recommended)`, each with a `Cost:` line. Then run
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py questions-check --root . --ticket <ticket>`:
@@ -99,7 +100,7 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 
 ## 5. Context runs low, and the report
 
-When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with `resume: /crew:autopilot <ticket>` as its resume line, then stop. At every stop after the claim, first run section 2's `crew_inflight.py release --root . --ticket <ticket>`. Then, at every stop, `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py run-stop --root . --ticket <ticket> --phase <p> --reason "<r>"` (it decides what pings). Report the ticket and its source, each phase run with its command, the PR, every `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.
+When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with `resume: /crew:autopilot <ticket>` (a goal run: `resume: /crew:autopilot --goal <slug>`) as its resume line, then stop. At every stop after the claim, first run section 2's `crew_inflight.py release --root . --ticket <ticket>`. Then, at every stop, `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py run-stop --root . --ticket <ticket> --phase <p> --reason "<r>"` (it decides what pings). Report the ticket and its source, each phase run with its command, the PR, every `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.
 
 ## 6. focus - a scope lock on one ticket (T-0020)
 
@@ -112,4 +113,4 @@ Research the goal once (crew:explorer, crew:researcher) and write `.work/autopil
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py goal-propose --root . --proposal-file <file>`
 Show its lines as printed: the proposal, and its `goal_line:` for the owner to paste (`goal_status=printed` - autopilot cannot see Claude Code's /goal state). `refused:` stops. Then
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py goal-approve --root . --goal <slug>`
-and print its lines; `refused:` stops - the human types its `owner:` line. Either way mint nothing and stop: minting, `--goal` resume and backlog arrive with L-0541.
+and print its lines; `refused:` stops - the human types its `owner:` line. Approved, it mints each ticket (`minted:` lines); a `stop:` names the `unminted:` ones and stops. Then run it as `--goal <slug>` (section 2's goal run).

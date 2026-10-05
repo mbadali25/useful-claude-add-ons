@@ -39,7 +39,8 @@ T-0072's `deploy-allowed` and T-0011's `ship` write no file. T-0058's `split
 `crew_split.apply` writes, only under `crew_split.ticket_split_policy`
 (crew_autopilot_split.py's docstring). T-0059's `ship` on a sliced plan,
 `slice-done` and `next-slice` write `<git-common-dir>/crew/tickets/<id>/slices.json`
-(crew_autopilot_slices.py's docstring), and `next-slice` the next slice's branch. `ship` is the one
+(crew_autopilot_slices.py's docstring), and `next-slice` the next slice's branch; the goal
+actions write the goal file and mint (crew_autopilot_backlog.py's docstring). `ship` is the one
 action outside the checkout: it pushes the ticket's branch, opens its PR and
 may run `gh pr merge <n> --merge --match-head-commit <HEAD>` (below). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
@@ -207,7 +208,8 @@ it commits exactly the paths the check lists, which leaves the working state
 0. `--ticket <id>` (the command's `$1`), when given.
 1. `.work/HANDOFF.md`'s `resume:` line, parsed by T-0006's
    `crew_resume.parse_resume` (never re-parsed here), naming a ticket, with
-   `branch:` and `head:` equal to this checkout. `--goal` stops until L-0541.
+   `branch:` and `head:` equal to this checkout; a `--goal <slug>` line (L-0541)
+   answers that goal's next ticket, or its stop.
 2. This worktree's active-ticket pointer (`crew_ticket.resolve_active`).
 3. `.work/INDEX.md`, only when exactly one open ticket has a folder.
 
@@ -215,7 +217,7 @@ A handoff that cannot be used falls through with its reason recorded; the
 `## Next action` prose is never guessed from. When the handoff's command
 disagrees with the phase on disk, disk wins and the disagreement is reported.
 A ticket that differs from this worktree's active-ticket pointer stops, naming
-both: the scope guard and the completion audit judge edits by the pointer.
+both: the scope guard and the completion audit judge edits by the pointer (a goal re-points its own closed one).
 With no pointer, `activate` tells the command to set it to the ticket it drives.
 
 Exit 0 always (`ship` included), but for `approve` and `questions-check` (above); the answer is
@@ -242,6 +244,7 @@ not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
 import argparse
 import datetime
+import functools
 import hashlib
 import importlib
 import json
@@ -366,6 +369,8 @@ AVAILABLE = frozenset({"status", "run", "goal", "focus", "sleep", "wake", "split
 NO_TICKET = frozenset({"sleep", "wake"})
 ARRIVES = {"assign": "T-0019"}
 GOAL_FLAG = "--goal"
+BACKLOG, BACKLOG_CAPS = "backlog", ("maxTicketsPerRun", "maxTokensPerSession")  # L-0541
+_backlog = functools.partial(importlib.import_module, "crew_autopilot_backlog")  # L-0541's goal run
 GOAL_SUB = "goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
@@ -1588,10 +1593,8 @@ def _handoff_ticket(top):
         reason = parsed.get("reason") if isinstance(parsed, dict) else "no answer"
         return None, "", None, f"the handoff's resume: line is not usable ({reason})"
     command, arg, kind = parsed.get("command"), parsed.get("arg"), parsed.get("kind")
-    if command == AUTOPILOT and kind == "goal":
-        return None, "", f"the handoff resumes {AUTOPILOT} --goal {arg}: goal resume " \
-                         f"arrives with {GOAL_RESUME_ARRIVES}", ""
-    if kind != "ticket" or not arg:
+    goal = arg if command == AUTOPILOT and kind == "goal" else None
+    if not goal and (kind != "ticket" or not arg):
         return None, "", None, f"the handoff's resume: {command} names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
     head = crew_state._HANDOFF_HEAD_RE.search(text)  # pylint: disable=protected-access
@@ -1605,27 +1608,34 @@ def _handoff_ticket(top):
         return None, "", None, (f"the handoff's head: "
                                 f"{head.group(1) if head else '(missing)'} is not this "
                                 f"checkout's {here_head[:12] or '(unknown)'}")
+    if goal:  # L-0541: the goal's next ticket, or its stop
+        return _backlog().handoff_pick(top, goal)
     if not os.path.isdir(crew_ticket.ticket_dir(top, arg)):
         return None, "", None, f"the handoff names {arg}, which has no .work/tickets/ folder"
     render = getattr(resume, "render", None)
     return arg, (render(parsed) if callable(render) else f"{command} {arg}"), None, ""
 
 
-def resume_target(root, ticket=None, policy=True):
+def resume_target(root, ticket=None, policy=True, goal=None):
     """`{"ticket", "source", "stop", "hint", "disagreement", "reason",
-    "fallthrough", "next", "activate"}` -- see the module docstring's order.
-    `ticket` is the command's `$1`; it is still held to the active pointer.
-    `policy=False` is `status`'s: see `_phase`."""
+    "fallthrough", "next", "activate", "goal"}` -- see the module docstring's order.
+    `ticket` is the command's `$1`; it is still held to the active pointer; `goal`
+    is L-0541's `--goal <slug>`. `policy=False` is `status`'s: see `_phase`."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     fallthrough = []
 
     def stopped(source, reason):
         return {"ticket": None, "source": source, "stop": True, "hint": "",
                 "disagreement": "", "reason": reason, "fallthrough": fallthrough,
-                "next": None, "activate": False}
+                "next": None, "activate": False, "goal": goal, "done": False}
 
     hint, source, why = "", "argument", ""
-    if ticket:
+    if goal:
+        source, pick = f"goal:{goal}", _backlog().next_goal_ticket(top, goal)
+        if pick["stop"]:
+            return dict(stopped(source, pick["reason"]), done=pick["done"])
+        ticket = pick["ticket"]
+    elif ticket:
         crew_ticket.check_ticket(ticket)
         there, missing_why = _main_folder(top, ticket)
         if there or missing_why:
@@ -1635,6 +1645,7 @@ def resume_target(root, ticket=None, policy=True):
     else:
         ticket, hint, stop_reason, why = _handoff_ticket(top)
         source = "handoff"
+        goal = hint.split()[-1] if hint.startswith(f"{AUTOPILOT} {GOAL_FLAG} ") else None
         if stop_reason:
             return stopped(source, stop_reason)
     if not ticket:
@@ -1662,6 +1673,8 @@ def resume_target(root, ticket=None, policy=True):
     if broken:
         return stopped("active-ticket", f"{where}; a broken pointer is not guessed past - "
                        "fix it with crew_ticket.py activate")
+    if goal and where == "active-ticket" and _backlog().closed_in_goal(top, goal, active):
+        where = "goal"  # L-0541: the pointer names this goal's closed ticket; re-point it
     if where == "active-ticket" and active != ticket:
         return stopped(source, f"{source} names {ticket}, but this worktree's active ticket "
                        f"is {active}, and the scope guard and completion audit judge edits "
@@ -1674,7 +1687,7 @@ def resume_target(root, ticket=None, policy=True):
         disagreement = (f"the handoff says {hint}, the disk says "
                         f"{disk['command'] or disk['phase']}; disk wins")
     return {"ticket": ticket, "source": source, "stop": False, "hint": hint,
-            "disagreement": disagreement, "reason": f"{ticket} from {source}",
+            "disagreement": disagreement, "reason": f"{ticket} from {source}", "goal": goal,
             "fallthrough": fallthrough, "next": disk, "activate": where != "active-ticket"}
 
 
@@ -1771,6 +1784,7 @@ def settings(root):
                           "applied": []},
                 "ship": "pr", "knownFailures": [],
                 "ciTimeoutMinutes": crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"],
+                **{key: crew_state.AUTOPILOT_DEFAULTS[key] for key in BACKLOG_CAPS},
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
                               "approves or takes an answer) and autopilot reads as off")]}
@@ -1787,9 +1801,10 @@ def _settings_at(top):
     warnings = []
     mode = block.get("mode")
     armed = mode == "plan"
+    armed = armed or mode == BACKLOG  # L-0541; the line above is a sabotage anchor
     if not armed and mode != "off":
-        warnings.append(f"autopilot.mode is {mode!r}: only the exact string 'plan' arms "
-                        "autopilot, so it reads as off")
+        warnings.append(f"autopilot.mode is {mode!r}: only the exact strings 'plan' and "
+                        "'backlog' arm autopilot, so it reads as off")
     limit = block.get("maxPhases")
     default = crew_state.AUTOPILOT_DEFAULTS["maxPhases"]
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
@@ -1842,7 +1857,7 @@ def _settings_at(top):
     sleep = _sleep_at(top, block)
     warnings += sleep.pop("warnings")
     policies, sleep["applied"] = _overlay(day, sleep)
-    return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
+    return {"mode": mode if armed else "off", "armed": armed, "maxPhases": limit, **_backlog().caps(block, warnings),
             "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
             "maxAutoReplans": replans,
@@ -2429,9 +2444,9 @@ def questions_text(result):
 
 
 GOAL_ROUTE_FIRST = "goal takes free text, never on a shell line: the command runs route --root . --first goal"
-GOAL_RESUME_ARRIVES = "L-0541"  # `--goal` resume; the goal file itself: crew_autopilot_goal.py
 # Script actions whose code (parsers, usage and `main`) lives in a sibling module.
 EXTRA_ACTIONS = {"goal-propose": "crew_autopilot_goal", "goal-approve": "crew_autopilot_goal",
+                 "goal-run": "crew_autopilot_goal",
                  "tracker": "crew_autopilot_docs", "sleep": "crew_autopilot_sleep",
                  "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split",
                  "slice": "crew_autopilot_slices", "slice-done": "crew_autopilot_slices",
@@ -2473,7 +2488,7 @@ def route(root, first, ticket=""):
     elif token == GOAL_FLAG:
         refusal = focus_guard(top, "goal")
         return {"sub": "run", "stop": True,
-                "reason": refusal or f"run {GOAL_FLAG} <slug> arrives with {GOAL_RESUME_ARRIVES}"}
+                "reason": refusal or f"{AUTOPILOT} {GOAL_FLAG} takes one goal slug"}
     elif _INDEX_ID.fullmatch(token) or _existing_ticket(top, token):
         sub, ticket = "run", token
     else:
@@ -2502,6 +2517,8 @@ def route_args(root, text):
     say so. A ticket is held to `focus_guard` once it is known."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     words = (text or "").split()
+    if words[:1] == [GOAL_FLAG]:  # L-0541: `--goal <slug>`
+        return _backlog().route_goal(top, words[1:])
     rest = words[1:] if words and words[0] in SUBCOMMANDS else words
     off = words[:1] == ["focus"] and rest == [FOCUS_OFF]
     got = dict(route(top, words[0] if words else "", FOCUS_OFF if off else ""), ticket="")
@@ -2514,7 +2531,7 @@ def route_args(root, text):
     if words[:1] and words[0] in NO_TICKET and rest:
         return dict(got, stop=True, reason=f"{AUTOPILOT} {words[0]} takes no other word")
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
-        return dict(route(top, GOAL_FLAG), ticket="")
+        return _backlog().route_goal(top, rest[1:])
     if off:
         return got
     if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
@@ -3035,13 +3052,13 @@ def _resume_line(top, bare):
     if bare is None:
         return f"{rendered} (unknown: resume_target raised, so whether it is usable " \
                "could not be told)"
-    if parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal":
-        return f"not usable: {rendered} - goal resume arrives with {GOAL_RESUME_ARRIVES}"
+    goal = parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal"  # L-0541
     # `_handoff_ticket`'s checks in its order, in fixed text, on THIS read's
     # text: `bare` came from an earlier read the file may have been rewritten
     # since, so it vouches for the ticket only after these pass.
     if parsed.get("kind") != "ticket" or not parsed.get("arg"):
-        return f"not usable: {rendered} - it names no ticket"
+        if not goal:
+            return f"not usable: {rendered} - it names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
     head = crew_state._HANDOFF_HEAD_RE.search(text)  # pylint: disable=protected-access
     here_head = (git_out(top, "rev-parse", "HEAD") or "").lower()
@@ -3049,6 +3066,9 @@ def _resume_line(top, bare):
         return f"not usable: {rendered} - its branch: does not match this checkout"
     if not head or not here_head or not here_head.startswith(head.group(1).lower()):
         return f"not usable: {rendered} - its head: does not match this checkout"
+    if goal:
+        took = not bare.get("stop") and bare.get("goal") == parsed["arg"]
+        return f"{rendered} (usable)" if took else f"not usable: {rendered} - {bare.get('reason')}"
     if not _existing_ticket(top, parsed["arg"]):
         return f"not usable: {rendered} - its ticket has no .work/tickets/ folder"
     if _takes(bare, parsed.get("arg"), "handoff"):
@@ -3323,6 +3343,7 @@ def main(argv):
         fields = {"sub": result["sub"], "stop": int(result["stop"]), "ticket": result["ticket"]}
         if "off" in result:
             fields["off"] = int(result["off"])
+        fields.update({"goal": result["goal"]} if result.get("goal") else {})
         text = _line(**fields, reason=result["reason"])
     elif args.action == "stops":
         result = stops()
@@ -3335,6 +3356,7 @@ def main(argv):
                                 maxAutoReplans=result["maxAutoReplans"])]
                          + [_line(approval=result["approval"], questions=result["questions"])]
                          + [_sleep_line(result["sleep"])]
+                         + [_line(**{key: result[key] for key in BACKLOG_CAPS})]
                          + [f"warning: {w}" for w in result["warnings"]])
     elif args.action == "deploy-allowed":
         text, json_text, report = _cli_deploy(args)
@@ -3352,7 +3374,8 @@ def main(argv):
                       "next": None, "activate": False}
         text = _line(ticket=result["ticket"] or "", source=result["source"],
                      stop=int(result["stop"]), activate=int(result["activate"]),
-                     hint=result["hint"], reason=result["reason"])
+                     hint=result["hint"], reason=result["reason"],
+                     **({"goal": result["goal"]} if result.get("goal") else {}))
         text += "".join(f"\nfell through: {w}" for w in result["fallthrough"])
         text += f"\ndisagreement: {result['disagreement']}" if result["disagreement"] else ""
     else:

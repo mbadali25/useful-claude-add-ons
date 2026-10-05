@@ -433,16 +433,19 @@ def active_time_seconds(transcript, idle_threshold=DEFAULT_IDLE_SECONDS):
     return total
 
 
-def transcript_tokens(transcript):
-    """Sum of every main-chain assistant message's usage fields. UNKNOWN when
-    no assistant message carries a `usage` object with at least one
-    recognized token field, or when any line in the transcript failed to
-    parse."""
+TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+                "cache_creation_input_tokens")
+
+
+def transcript_tokens(transcript, fields=TOKEN_FIELDS):
+    """Sum of every main-chain assistant message's usage `fields` (all four
+    by default; L-0541's goal cap passes input and output only). UNKNOWN when
+    no assistant message carries a `usage` object with at least one of
+    `fields`, or when any line in the transcript failed to parse."""
     events, had_unparseable = _transcript_events(transcript)
     if had_unparseable:
         return UNKNOWN
-    token_fields = ("input_tokens", "output_tokens", "cache_read_input_tokens",
-                    "cache_creation_input_tokens")
+    token_fields = tuple(fields)
     found = False
     total = 0
     for _, rec in events:

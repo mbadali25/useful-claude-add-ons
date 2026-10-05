@@ -754,7 +754,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-87 of 147 keys are settable in the machine-global file (generated; 60 are repo-only, section 11).
+87 of 149 keys are settable in the machine-global file (generated; 62 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -838,7 +838,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `change.jiraIssueType` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change"` |
 | `change.category` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
 | `git.forbiddenTrailers` | both | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `hooks/scripts/crew_trailers.py`) | `[]` |
-| `autopilot.mode` | both, stricter wins | `off` \| `plan` (checked in `hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | `"off"` |
+| `autopilot.mode` | both, stricter wins | `off` \| `plan` \| `backlog` (checked in `hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | `"off"` |
 | `autopilot.maxPhases` | both, stricter wins | positive integer (checked in `hooks/scripts/crew_autopilot.py`); personal: the smaller wins | `12` |
 | `autopilot.deploy` | both, stricter wins | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | `"none"` |
 | `autopilot.approval` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
@@ -882,7 +882,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-60 of 147 keys are repo-only (generated; 87 are global-settable, section 10).
+62 of 149 keys are repo-only (generated; 87 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -948,6 +948,8 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
 | `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
 | `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
+| `autopilot.maxTicketsPerRun` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `3` |
+| `autopilot.maxTokensPerSession` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `2000000` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -2951,7 +2953,7 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|
-| `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
+| `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact strings `"plan"` and `"backlog"` (L-0541: a goal run goes on to the goal's next ticket; it ranks above `plan` between layers) arm it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. A machine value is the default where the repo is silent (§20a). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` or machine-global file that exists but is not a readable JSON object, or an `autopilot` value in either that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. Since T-0050 the machine file counts too: `read_global_config` collapses a corrupt one to `{}`, which would turn a global `human` into the default `risk`, so `crew_autopilot._unreadable_machine_autopilot` reads it raw first. An absent file or block reads the default. |
@@ -2963,6 +2965,8 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.349) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
 | `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
+| `autopilot.maxTicketsPerRun` | `3` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Tickets one goal run (one session, recorded in the goal file's `runs`) may start; the next stops the run with its `resume: /crew:autopilot --goal <slug>` line. Anything but a positive integer reads as `3`, with a warning. Repo only. |
+| `autopilot.maxTokensPerSession` | `2000000` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Input + output tokens this session's transcript may hold before a goal run stops (cache tokens are not counted). A transcript that is not found, or a line that does not parse, stops as could-not-tell. Anything but a positive integer reads as `2000000`, with a warning. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2977,7 +2981,8 @@ the stricter value wins (§20a).
 on its first text line, the effective `approval` and `questions` on its second, and
 `sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
 questions=<override|-> source=<schedule|manual>` on its third (L-0652 adds
-`until=<HH:MM>` for a manual state); `--json` adds `day` (the two day values)
+`until=<HH:MM>` for a manual state), and `maxTicketsPerRun` and
+`maxTokensPerSession` on its fourth (L-0541); `--json` adds `day` (the two day values)
 and `sleep`.
 
 **Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
@@ -3245,7 +3250,6 @@ that brings each known-but-unbuilt key, and the values that do nothing yet:
 | Key or value | Brought by |
 |---|---|
 | `reviewPolicy`, `maxLanes` under `autopilot` | T-0029 |
-| `maxTicketsPerRun` under `autopilot`, and `mode: "backlog"` | L-0541 (T-0012 landed `goal`; backlog and the caps follow) |
 | `deploy: "nonprod"` or `"all"` (the key is read; nothing dispatches a deploy yet) | T-0045 |
 
 Any other unknown key is named `(unknown key)`: a typo, or a key from another

@@ -704,6 +704,11 @@ GOAL_WRITERS += ("split",)
 # plan) write slices.json; test_crew_autopilot_slices.py pins each. The usage
 # names the three on one line.
 GOAL_WRITERS += ("slice|slice-done|next-slice",)
+# L-0541: `goal-approve` also mints the approved split (crew_ticket.mint's writes)
+# and `goal-run` records the run in the goal file; test_crew_autopilot_goals.py
+# pins both. Neither is in the usage block (their usage is
+# crew_autopilot_backlog.py's), so this entry only documents them.
+GOAL_WRITERS += ("goal-run",)
 
 
 def _usage_subcommands():
@@ -1009,3 +1014,32 @@ def test_settings_cli_json_prints_both_policies(tmp_path, approval, questions):
     got = json.loads(_cli(root, "settings", "--json").stdout)
 
     assert (got["approval"], got["questions"]) == (approval, questions)
+
+
+# --- L-0541: `backlog` arms exactly as `plan` does, and grants nothing more ------
+
+REFUSALS = [("human", "low", True), ("risk", "med", True), ("risk", "high", True),
+            ("risk", None, True), ("self", "low", MISSING), ("self", "low", False),
+            ("self", "low", "true"), ("risk", "low", False), ("Self", "low", True),
+            ("auto", "high", True)]
+
+
+def _mode(root, mode):
+    config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    config["autopilot"]["mode"] = mode
+    _write(root / ".crew" / "config.json", json.dumps(config))
+
+
+@pytest.mark.parametrize("approval,risk,allow", REFUSALS)
+def test_backlog_grants_nothing_plan_does_not(tmp_path, approval, risk, allow):
+    answers = {}
+    for mode in ("plan", "backlog"):
+        root = _repo(tmp_path / mode, approval=approval, risk=risk, allow=allow)
+        _mode(root, mode)
+        policy = crew_autopilot.approval_policy(str(root), T)
+        code, text = crew_autopilot.approve(str(root), T)
+        answers[mode] = (policy["allow"], policy["reason"], code, text,
+                         os.path.exists(crew_ticket.approval_path(str(root), T)))
+
+    assert (answers["backlog"], answers["plan"][0], answers["plan"][2]) == (
+        answers["plan"], False, 2)

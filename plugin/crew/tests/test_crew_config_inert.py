@@ -27,8 +27,7 @@ from test_crew_config import _TEMPLATE_PATH, _global
 
 _INERT_CASES = [
     ("autopilot.reviewPolicy", "fix-and-rereview", "T-0029"),
-    ("autopilot.maxLanes", 3, "T-0029"), ("autopilot.maxTicketsPerRun", 50, "L-0541"),
-    ("autopilot.mode", "backlog", "L-0541"), ("autopilot.deploy", "nonprod", "T-0045"),
+    ("autopilot.maxLanes", 3, "T-0029"), ("autopilot.deploy", "nonprod", "T-0045"),
     ("autopilot.deploy", "all", "T-0045")]
 
 
@@ -255,16 +254,17 @@ def test_the_inert_cli_escapes_control_characters(tmp_path, capsys):
 
 def test_a_personal_key_is_judged_by_the_value_in_force(tmp_path, monkeypatch):
     """T-0070 port review FIX: a personal key resolves by T-0050's ratchet, not
-    repo precedence, so a global `autopilot.mode: backlog` that holds a repo
-    `plan` down is the value in force and is named, from the global layer."""
-    _global(tmp_path, monkeypatch, contents={"autopilot": {"mode": "backlog"}})
-    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"mode": "plan"}}, git=False)
-    assert crew_config.resolve_config(str(root))["autopilot"]["mode"] == "backlog"
+    repo precedence, so a global `autopilot.deploy: nonprod` that holds a repo
+    `all` down is the value in force and is named, from the global layer.
+    (L-0541 made `mode: backlog`, this test's first example, a live value.)"""
+    _global(tmp_path, monkeypatch, contents={"autopilot": {"deploy": "nonprod"}})
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"deploy": "all"}}, git=False)
+    assert crew_config.resolve_config(str(root))["autopilot"]["deploy"] == "nonprod"
 
-    hits = [e for e in crew_config.inert_settings(str(root)) if e["key"] == "autopilot.mode"]
+    hits = [e for e in crew_config.inert_settings(str(root)) if e["key"] == "autopilot.deploy"]
 
     assert [(e["value"], e["ticket"], e["layer"]) for e in hits] == [
-        ("backlog", "L-0541", "global")], hits
+        ("nonprod", "T-0045", "global")], hits
 
 
 def test_a_machine_only_block_in_the_machine_file_is_not_inert(tmp_path, monkeypatch):

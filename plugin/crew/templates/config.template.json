@@ -227,7 +227,9 @@
     },
     "ship": "merge",
     "knownFailures": [],
-    "ciTimeoutMinutes": 60
+    "ciTimeoutMinutes": 60,
+    "maxTicketsPerRun": 3,
+    "maxTokensPerSession": 2000000
   },
   "tickets": {
     "baseBranch": null

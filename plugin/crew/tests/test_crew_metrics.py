@@ -192,6 +192,20 @@ def test_tokens_unknown_when_no_assistant_usage(tmp_path):
     assert cm.transcript_tokens(transcript) == cm.UNKNOWN
 
 
+def test_transcript_tokens_fields_sums_only_those(tmp_path):
+    """L-0541: the goal cap counts input + output; the default stays all four."""
+    usage = {"input_tokens": 1, "output_tokens": 2, "cache_read_input_tokens": 40,
+             "cache_creation_input_tokens": 300}
+    transcript = _transcript(tmp_path, [
+        {"type": "assistant", "timestamp": "2026-01-01T00:00:00Z", "message": {"usage": usage}},
+        {"type": "assistant", "timestamp": "2026-01-01T00:00:01Z",
+         "message": {"usage": {"cache_read_input_tokens": 5000}}}])
+
+    assert (cm.transcript_tokens(transcript),
+            cm.transcript_tokens(transcript, fields=("input_tokens", "output_tokens"))) == (
+        5343, 3)
+
+
 # --------------------------------------------------------------------------
 # append-only
 

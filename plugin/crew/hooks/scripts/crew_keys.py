@@ -467,8 +467,10 @@ KEY_META = {
                                    "exactly `true` allows it.", "branch", (False, True),
                                    "1.0.25", _S + "crew_ticket.py"),
     # --- autopilot
-    "autopilot.mode": _row("Only the exact string `plan` arms `/crew:autopilot`; anything "
-                           "else reads as off, with a warning.", "branch", ("off", "plan"),
+    "autopilot.mode": _row("Only the exact strings `plan` (one ticket per run) and `backlog` "
+                           "(L-0541: a goal's tickets in dependency order, inside the caps) "
+                           "arm `/crew:autopilot`; anything else reads as off, with a "
+                           "warning.", "branch", ("off", "plan", "backlog"),
                            "1.0.41", _S + "crew_autopilot.py"),
     "autopilot.maxPhases": _row("Phases one run may take; anything but a positive integer "
                                 "reads as 12, with a warning.", "branch", None, "1.0.41",
@@ -514,6 +516,18 @@ KEY_META = {
                                        "with a warning.", "branch", None, "1.0.349",
                                        _S + "crew_autopilot.py",
                                        type_="positive integer"),
+    "autopilot.maxTicketsPerRun": _row("Tickets one goal run (one session) may start; the "
+                                       "next one stops the run. Anything but a positive "
+                                       "integer reads as 3, with a warning.", "branch", None,
+                                       "1.1.23", _S + "crew_autopilot_backlog.py",
+                                       type_="positive integer"),
+    "autopilot.maxTokensPerSession": _row("Input plus output tokens one goal session may "
+                                          "spend before the run stops; a transcript that "
+                                          "cannot be read stops too. Anything but a "
+                                          "positive integer reads as 2000000, with a "
+                                          "warning.", "branch", None, "1.1.23",
+                                          _S + "crew_autopilot_backlog.py",
+                                          type_="positive integer"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
@@ -537,13 +551,6 @@ def _coming(key, ticket, change, summary, default, layer, values=None):
 # spec on 2026-10-03. `change` is `new key`, or `changes <what>` for a key
 # already in KEY_META. Defaults and layers are the spec's words, not a guess.
 COMING = (
-    _coming("autopilot.maxTicketsPerRun", "T-0012", "new key",
-            "Tickets one goal run may work before it stops.", "3", "repo"),
-    _coming("autopilot.maxTokensPerSession", "T-0012", "new key",
-            "Token cap for one goal session.", "2000000", "repo"),
-    _coming("autopilot.mode", "T-0012", "changes values",
-            "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
-            ("off", "plan", "backlog")),
     _coming("guards.deployWorkflow", "T-0009", "new key",
             "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
     _coming("environments.workflows", "T-0009", "new key",

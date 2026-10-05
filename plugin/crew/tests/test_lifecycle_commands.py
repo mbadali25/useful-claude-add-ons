@@ -94,6 +94,7 @@ EXPECTED_CLI = {
                      "crew_autopilot.py status --root .",
                      "crew_autopilot.py goal-propose --root .",
                      "crew_autopilot.py goal-approve --root .",
+                     "crew_autopilot.py goal-run --root . --goal <slug> --session",
                      "route --root . --first goal",
                      "crew_inflight.py claim --root .",
                      "crew_inflight.py release --root .",

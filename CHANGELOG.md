@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.23: autopilot goal runs - the approved split is minted, the goal's tickets are worked in dependency order with `mode: backlog`, each through its own approval, inside per-run caps, resumable with `--goal` (L-0541)
+
+- **Summary.** Once a goal's split is approved, autopilot mints its tickets and works them one at a time with `/crew:autopilot --goal <slug>`, stopping at each ticket the policy will not approve and at its ticket and token caps.
+- **Mint.** `crew_autopilot.py goal-approve --goal <slug>` mints every proposed ticket without an id after the split approval, in list order, through T-0019's unchanged `crew_ticket.mint` (`ready`; the direction names the goal file, `goal-ticket: <slug> <n>/<m>`, the risk and the dependencies). A failure stops naming the minted and the unminted tickets; a re-run mints only what is missing and adopts a folder whose id never reached the goal file. Goal-file writes hold `.work/autopilot/<slug>.lock`.
+- **The run.** `crew_autopilot.py goal-run --goal <slug> --session <id>` answers in place of `resume`: the first ticket in list order that is not closed (a `cancelled`/`superseded` one is passed unless a later ticket depends on it; `needs-owner`, an unknown state or an unminted ticket stops), the active pointer re-pointed only from a closed ticket of the same goal. `autopilot.mode: backlog` arms like `plan` (and ranks above it between the two config layers) and goes on after a ticket closes; `plan` works one ticket per run. New repo-only keys `autopilot.maxTicketsPerRun` (3) and `autopilot.maxTokensPerSession` (2000000, input + output from the session transcript via `crew_metrics.transcript_tokens(fields=)`); a transcript that cannot be read stops. Every stop but "done" prints `resume: /crew:autopilot --goal <slug>`.
+- **Per-ticket approval.** `goal-approve --goal <slug> --ticket <id>` is T-0010's `approve` for one minted ticket; a refusal stops with exactly `/crew:approve <id>` and the resume line.
+- **Resume.** `route` takes `--goal <slug>` and `run --goal <slug>`; `resume_target(goal=)` and a handoff's `resume: /crew:autopilot --goal <slug>` line answer the goal's next ticket; `status` shows that line as usable. The "arrives with L-0541" stops are gone.
+- **Not in this change (harness follow-up, T-0087).** Sabotage entries for the picker, the caps and the per-ticket approval (`plugin/crew/tests/sabotage*.py`); the `armed = mode == "plan"` line stays because a shipped mutation anchors on it.
+- **Tests.** `test_crew_autopilot_goals.py` (mint, picker, caps, transcript could-not-tell, resume), `test_crew_autopilot_policy.py::test_backlog_grants_nothing_plan_does_not`, `test_crew_metrics.py::test_transcript_tokens_fields_sums_only_those`; leaf count 145.
+
 ### Added — crew 1.1.2: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
 
 Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main.

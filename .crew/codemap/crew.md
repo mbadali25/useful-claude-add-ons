@@ -4764,3 +4764,24 @@ The coordinator re-allocated T-0063's crew version to 1.0.201 after the merge. T
 The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carries the main-checkout could-not-tell into the stop; `_folder_elsewhere` shell-quotes its `cp -r`). The version sentence above, the T-0063 autopilot paragraph and the `fresh` means committed bullet now name 1.0.213, with the manifests, `plugin/PLUGINS.md`, the CHANGELOG heading, four mentions in `plugin/crew/README.md` and the troubleshooting guide's source and HTML. JUDGEMENT: the fix commit moved lines in `plugin/crew/hooks/scripts/crew_autopilot.py` below `:352`, so its citations there (e.g. `_folder_elsewhere` `:362`) are not re-derived by this note; the anchor stays `5bd4fae2`, and a refresh re-checks them.
 
 **Re-anchored `5bd4fae2` -> `309575c2` on 2026-10-03 (T-0063 review fixes, crew 1.0.213).** `git diff --name-only 5bd4fae2 309575c2 -- plugin/crew/hooks/scripts/` returns only `crew_autopilot.py`; its 56 body citations into code the fix moved were re-mapped by a `difflib` line map from `6c6517a8` to `309575c2` (every mapped line text-identical at both ends) and, where the cited line itself changed, re-read with `grep -n` per symbol (`_main_folder`'s callers `:544`/`:852`, `_folder_elsewhere` `:365`). Two were wrong before this pass and were re-derived by symbol: `sys.dont_write_bytecode` under `__main__` is `:166-168` (was `:149-151`) and `main` registers `deploy-allowed` at `:1856` (was `:1683`). The `folder-elsewhere` sentence gains the could-not-tell stop and the quoted `cp -r`. Provenance sections were left as written.
+
+## Goal runs: mint, picker, caps, `--goal` resume (L-0541, rush/g6b-goals-sleep)
+
+- DERIVED. The goal run lives in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`
+  (pylint's module length keeps it out of `crew_autopilot.py`). `goal-approve`
+  (`plugin/crew/hooks/scripts/crew_autopilot_goal.py`, `main`) mints after `split_approved`
+  through `mint_goal` (`crew_autopilot_backlog.py:260`), which adopts a folder carrying
+  `MARK` (`:71`, `_adopt` `:245`) before calling `crew_ticket.mint`, and writes each id under
+  `goal_lock` (`:100`). `next_goal_ticket` (`:152`) reads `ticket_state` (`:124`; `CLOSED`
+  `:65`); `goal_run` (`:342`) asks `resume_target(goal=)` and holds `maxTicketsPerRun` and
+  `maxTokensPerSession` (`caps` `:84`, `transcript_for` `:310`, `session_tokens` `:325`,
+  `crew_metrics.transcript_tokens(fields=)` `plugin/crew/hooks/scripts/crew_metrics.py:440`);
+  `ticket_approve` (`:418`) wraps T-0010's `approve` for one minted ticket.
+- DERIVED. Call sites in `plugin/crew/hooks/scripts/crew_autopilot.py`: `backlog` arms in
+  `_settings_at` (`:1814`); `resume_target(goal=)` (`:1624`) and the handoff's goal branch
+  (`:1615`); a pointer at a closed ticket of the same goal re-points (`:1687`);
+  `route_args`' `--goal <slug>` (`:2531`). `autopilot.mode` ranks `backlog` above `plan`
+  (`plugin/crew/hooks/scripts/crew_guards.py:612`).
+- JUDGEMENT. The sabotage entries for the picker, the caps and the per-ticket approval are a
+  harness-only follow-up (`plugin/crew/tests/sabotage*.py`, T-0087); the line
+  `armed = mode == "plan"` stays as written because a shipped mutation anchors on it.

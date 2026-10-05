@@ -1127,7 +1127,7 @@ AUTONOMOUS_STOPS = (
 )
 
 # `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases `crew_autopilot.py next` names from disk.
-# `mode` is armed only by the exact string `plan`, a typo is `off`; `maxPhases` bounds the phases one run takes.
+# `mode` is armed only by the exact strings `plan` and `backlog` (L-0541), a typo is `off`; `maxPhases` bounds the phases one run takes.
 # `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is read by crew_autopilot.deploy_allowed.
 # Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names each, a test iterates the tuple.
 # `approval`/`questions` (T-0010, plan approval and open questions) are `human|self|risk`: `risk` acts only on a spec
@@ -1137,7 +1137,9 @@ AUTONOMOUS_STOPS = (
 # only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
                       "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None},
-                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
+                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+                      # L-0541: a goal run's caps (crew_autopilot_backlog.py).
+                      "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work

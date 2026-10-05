@@ -410,7 +410,11 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # top of those 141, both layers, measured by running this test on
     # T-0051-build after merging main abddc302.
     assert {"notify.realertHours", "notify.questionTypes"} <= declared
-    assert len(declared) == 143
+    # 145 with L-0541's repo-only goal caps, `autopilot.maxTicketsPerRun` and
+    # `autopilot.maxTokensPerSession`, on top of those 143, measured by running
+    # this test on rush/g6b-goals-sleep.
+    assert {"autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"} <= declared
+    assert len(declared) == 145
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():

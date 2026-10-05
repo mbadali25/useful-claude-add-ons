@@ -2214,10 +2214,6 @@ INERT_PENDING = {
     "autopilot.reviewPolicy": ("would choose what autopilot does with review findings",
                                "T-0029"),
     "autopilot.maxLanes": ("would cap how many tickets autopilot runs at once", "T-0029"),
-    "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
-                                   "L-0541"),
-    ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
-                                    "only `plan` arms it today", "L-0541"),
     ("autopilot.deploy", "nonprod"): ("would let autopilot deploy; nothing in this crew "
                                       "dispatches a deploy yet", "T-0045"),
     ("autopilot.deploy", "all"): ("would let autopilot deploy; nothing in this crew "

@@ -158,7 +158,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>143 keys</strong>: 83 settable in the machine-global file, 60 repo-only.</p>
+<p><strong>149 keys</strong>: 87 settable in the machine-global file, 62 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1645,9 +1645,9 @@ the plugin.</p>
 <td><code>autopilot.mode</code></td>
 <td>both, stricter wins</td>
 <td><code>"off"</code></td>
-<td><code>off</code> | <code>plan</code> (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>); personal: listed strictest first, the stricter wins</td>
+<td><code>off</code> | <code>plan</code> | <code>backlog</code> (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>); personal: listed strictest first, the stricter wins</td>
 <td>1.0.41</td>
-<td>Only the exact string <code>plan</code> arms <code>/crew:autopilot</code>; anything else reads as off, with a warning.</td>
+<td>Only the exact strings <code>plan</code> (one ticket per run) and <code>backlog</code> (L-0541: a goal's tickets in dependency order, inside the caps) arm <code>/crew:autopilot</code>; anything else reads as off, with a warning.</td>
 </tr>
 <tr>
 <td><code>autopilot.maxPhases</code></td>
@@ -1737,6 +1737,22 @@ the plugin.</p>
 <td>1.0.349</td>
 <td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
 </tr>
+<tr>
+<td><code>autopilot.maxTicketsPerRun</code></td>
+<td>repo</td>
+<td><code>3</code></td>
+<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot_backlog.py</code>)</td>
+<td>1.1.23</td>
+<td>Tickets one goal run (one session) may start; the next one stops the run. Anything but a positive integer reads as 3, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.maxTokensPerSession</code></td>
+<td>repo</td>
+<td><code>2000000</code></td>
+<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot_backlog.py</code>)</td>
+<td>1.1.23</td>
+<td>Input plus output tokens one goal session may spend before the run stops; a transcript that cannot be read stops too. Anything but a positive integer reads as 2000000, with a warning.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="tickets"><code>Tickets</code></h3>
@@ -1785,6 +1801,53 @@ the plugin.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="unattendedcloud"><code>unattendedCloud</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>unattendedCloud.aws.readOnly.profile</code></td>
+<td>machine-only</td>
+<td><code>null</code></td>
+<td>profile name, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.2</td>
+<td>The AWS profile an unattended run exports credentials from (<code>aws configure export-credentials</code>); it must yield temporary credentials. Machine file only.</td>
+</tr>
+<tr>
+<td><code>unattendedCloud.aws.readOnly.identity</code></td>
+<td>machine-only</td>
+<td><code>null</code></td>
+<td>ARN prefix ending in <code>/</code>, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.2</td>
+<td>The assumed-role ARN prefix STS must report for that profile, ending in <code>/</code>; null refuses every launch. Machine file only.</td>
+</tr>
+<tr>
+<td><code>unattendedCloud.aws.readOnly.region</code></td>
+<td>machine-only</td>
+<td><code>null</code></td>
+<td>region, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.2</td>
+<td>The AWS region the unattended run gets; null is <code>us-east-1</code>. Machine file only.</td>
+</tr>
+<tr>
+<td><code>unattendedCloud.aws.nonProd</code></td>
+<td>machine-only</td>
+<td><code>{}</code></td>
+<td>None (checked in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.2</td>
+<td>Environment name -&gt; <code>{profile, identity, region}</code> for <code>launch --environment NAME</code>; usable only where the repo's <code>environments.nonProd</code> agrees. Machine file only.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="coming-not-in-code-yet">Coming (Not in Code Yet)</h2>
 <p>Keys from approved tickets that have not landed. Each moves into the table above when its ticket lands, because it is then in the code; a test fails until it does (<code>test_no_coming_key_is_in_code</code>).</p>
 <h3 id="t-0009">T-0009</h3>
@@ -1815,45 +1878,6 @@ the plugin.</p>
 <td>{}</td>
 <td></td>
 <td>Deploy workflows per environment.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="t-0012">T-0012</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>autopilot.maxTicketsPerRun</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>3</td>
-<td></td>
-<td>Tickets one goal run may work before it stops.</td>
-</tr>
-<tr>
-<td><code>autopilot.maxTokensPerSession</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>2000000</td>
-<td></td>
-<td>Token cap for one goal session.</td>
-</tr>
-<tr>
-<td><code>autopilot.mode</code></td>
-<td>changes values</td>
-<td>repo</td>
-<td>off</td>
-<td><code>off</code> | <code>plan</code> | <code>backlog</code></td>
-<td>Adds <code>backlog</code>: work a goal's tickets one at a time.</td>
 </tr>
 </tbody>
 </table>
