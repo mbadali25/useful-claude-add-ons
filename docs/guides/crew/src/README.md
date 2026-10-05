@@ -56,5 +56,6 @@ than shipped as separate linked files:
 `build.py --check` rebuilds every guide's HTML in memory and exits 1 naming any
 committed HTML that differs (2 when it cannot run). DOCX and PDF are not
 compared, because LibreOffice's output is not byte-stable. `.crew/verify.json`
-runs it, and so does CI's verify-gate.yml (its venv installs `markdown`); the
-other workflows do not.
+runs it, and so does CI: `marketplace.yml` on every push and pull request,
+with `markdown` pinned to the version the committed HTML was built with
+(L-0657), and the opt-in verify-gate.yml (its venv installs `markdown`).
