@@ -260,10 +260,33 @@ What always stops for a person, at any setting:
 Plan approval and open questions stop too, unless `autopilot.approval` and
 `autopilot.questions` allow otherwise. Plan approval also needs
 `scope.allowCliApproval: true` in the repo file, even under a machine-wide
-`autopilot.approval: self`; an open question does not. Autopilot never
-merges, pushes, opens a pull request or deploys today. Shipping arrives with
-T-0011, goals and backlogs with T-0012, and deploy dispatch with T-0045.
+`autopilot.approval: self`; an open question does not.
+
+After done, autopilot ships the ticket (since crew 1.0.349). `autopilot.ship`
+set to `pr` pushes the branch and opens a pull request, then stops for a
+person to merge. Set to `merge`, the default, it also merges once every
+required check passes, or fails under a name listed exactly in
+`autopilot.knownFailures`, waiting up to `autopilot.ciTimeoutMinutes`. It
+always merges with a merge commit, never a squash, a rebase or `--admin`, and
+never through a merge queue. A `high`-risk ticket, or one whose spec names no
+risk, never merges unattended when every review was same-family (Claude
+reviewing Claude); it stops with its pull request open. Autopilot never
+deploys today. Goals and backlogs arrive with T-0012, and deploy dispatch
+with T-0045.
 `/crew:autopilot status` prints where a ticket stands, read-only.
+
+`/crew:autopilot focus <id>` locks autopilot onto one ticket. Focus is on
+only after you type it: an active ticket on its own is not a focus. It writes
+a focus marker for this worktree (and points the active ticket at `<id>` if it
+named another, printing the scope-base line). While focused, autopilot refuses
+to run another ticket, `assign` and `goal`; `status`, `sleep` and `wake` still
+run. Once the plan is approved, `next` stops as `drift` on a changed path
+outside the plan's Touch list, or when that check could not run. A focus marker
+that cannot be read counts as "could not tell", and autopilot refuses new work
+until you repair or remove it. `focus --findings --ticket <id>` names where an
+out-of-scope finding goes. `/crew:autopilot focus` shows the lock and
+`/crew:autopilot focus off` releases it. Claude Code's built-in `/focus` is
+unrelated: it only toggles the display.
 
 A separate autopilot guide with worked examples is planned as T-0054.
 
@@ -297,7 +320,8 @@ worktree:
   sees the same review budget.
 - **The merge train** (`crew_train.py`, armed per clone) serialises the
   gate-and-land stage for tickets whose Touch lists overlap. Catch-up is
-  always a merge, never a rebase. crew never merges, pushes or opens the PR.
+  always a merge, never a rebase. The train never merges, pushes or opens the
+  PR; only autopilot's ship step does, under `autopilot.ship`.
 - **Check before assuming a diff is yours.** Another session may have
   changed the tree, a branch or the stash (root `CLAUDE.md`, "Lessons").
 
@@ -388,10 +412,8 @@ guide describes them as present.
 | Ticket | What it brings |
 |---|---|
 | T-0009 | A ratcheted guard for deploy workflows, and per-environment deploy workflows |
-| T-0011 | Autopilot ships: opens a PR, or merges once required checks are green |
 | T-0012 | Autopilot goals and backlogs, with per-run caps |
 | T-0019 | `/crew:autopilot assign` |
-| T-0020 | `/crew:autopilot focus` |
 | T-0029 | Parallel autopilot lanes and a review policy |
 | T-0030 | Cross-session coordination claims |
 | T-0044 | A credentials boundary for what the cloud guard cannot see |

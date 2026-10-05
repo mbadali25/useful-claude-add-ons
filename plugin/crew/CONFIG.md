@@ -188,16 +188,19 @@ both directions:
 descending at a template **leaf**.
 
 **Measured, not argued.** `leaf_paths(default_global_config())` yields **81**
-leaves. `leaf_paths(default_config())` yields **138**, so **57** are repo-only.
-For all 138, `filter_global` and `is_global_path` (which `plan_global_write`
+leaves. `leaf_paths(default_config())` yields **141**, so **60** are repo-only.
+For all 141, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on batch-7-build after merging T-0011: its three repo-only `autopilot.ship`,
+`autopilot.knownFailures` and `autopilot.ciTimeoutMinutes` move 81 / 138 / 57
+to 81 / 141 / 60. 81 / 138 / 57 was measured
 on batch-6-build after merging T-0050: T-0050 made the five personal
 `autopilot` keys global, moving 76 / 138 / 62 to 81 / 138 / 57; on T-0050's own
 branch after merging main ce235468 it measured 79 / 132 / 53, and 77 / 129 / 52
 before that merge. 76 / 138 / 62 was measured
 on T-0074's branch after merging main 8c0843ca; the repo-only
 `autopilot.maxAutoReplans` is the one T-0074 added. The generated tables in
-§10 and §11 state the current 81 / 138 / 57. This paragraph said 75 / 136 / 61
+§10 and §11 state the current 81 / 141 / 60. This paragraph said 75 / 136 / 61
 until then, behind main's 76 / 137 / 61 after T-0017 added
 `context.autoClear.wrapUp` to both layers. 75 / 136 / 61 was measured
 on T-0053's branch after merging main 86d96fa1; the repo-only
@@ -738,7 +741,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-81 of 138 keys are settable in the machine-global file (generated; 57 are repo-only, section 11).
+81 of 141 keys are settable in the machine-global file (generated; 60 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -860,7 +863,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-57 of 138 keys are repo-only (generated; 81 are global-settable, section 10).
+60 of 141 keys are repo-only (generated; 81 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -923,6 +926,9 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
+| `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
+| `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -2875,6 +2881,9 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an override that is not a policy or cannot be read, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
 | `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` (`"Human"` included) counts as `human`, the strictest, with a warning: it applies asleep and, under could not tell, is the stricter value; it never reads as permission. |
 | `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
+| `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.349) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
+| `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
+| `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -3039,13 +3048,44 @@ when you turn it on is `2`.
 is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
 `auto-reject` writes only the review ledger, REVIEWED -> NEEDS_REPLAN.
-`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
-T-0072's `deploy-allowed` write nothing, and T-0018's `route` and `status` read no policy of their own:
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
+T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside
+the checkout instead: a push, a PR and at most one merge commit), and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
 same under every setting, and at the approve phase it names
 `/crew:approve <id>`; `next` is what names the policy's route. The one policy
 effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
+
+**When `ship: merge` merges.** Every required check (`gh pr checks <n>
+--required`) reads `pass`, or `fail` with its name exactly in `knownFailures`.
+Pending, or no required check reported yet, waits until `ciTimeoutMinutes` and
+then stops; `skipping`, an unknown state, an unlisted failure or checks that
+could not be read stop at once. A `high`-risk ticket - or one whose spec header
+names no risk, which reads as `high` - never merges when every completed review
+round's `model_family` is `claude` or absent: an unrecorded family counts as the
+author's. **Codex, the only cross-family reviewer here, was out until
+2026-10-01; while it is unavailable every review is same-family, so every
+`high`-risk ticket stops at `ship: merge` with its PR open for a person to
+merge.** `ship` refuses a working tree that differs from HEAD (tracked or
+untracked, ignored files aside) before the push and again before the merge: a
+receipt can cover edits a push does not carry. It takes HEAD once, right after
+the push; the PR's head and this checkout's HEAD must still be that commit
+before and after every poll and right before the merge. A merge also needs the
+review receipt to still stand after the wait, on the same ledger bytes the
+review families came from (a ledger replaced after the last poll stops), and a
+base branch with no merge queue (a queue picks its own merge method, which may squash, and keeps
+merging after `ship` stops; a queue state that cannot be read stops too). The
+merge is bound with `--match-head-commit <HEAD>`, so a push after the last read
+is refused by GitHub, not merged; if gh queues the PR anyway, `ship` dequeues
+it once (GraphQL `dequeuePullRequest`, the only mutation it sends) and stops.
+Check names and states are read verbatim - `knownFailures` never matches a
+trimmed or re-cased name - and a `gh pr checks` row that is not exactly five
+tab-separated fields is unreadable: gh prints a check's name and description
+unescaped, so one holding a tab never ships unattended. The settings, the
+risk and the review families are re-read on every poll, and a green that lands
+after `ciTimeoutMinutes` stops like a pending one. Unarmed, a ticket
+`/crew:done` closed reads `closed` and nothing is pushed.
 
 **What arming it does not change.** Review acceptance and brainstorm always
 stop for a person, at every setting — accepting review FINDINGS with any
@@ -3135,9 +3175,10 @@ its merge (so every reader, `crew_autopilot.settings` included, sees it):
 - No key is in both `PERSONAL_KEYS` and `RATCHETED_KEYS`. Every
   `crew_state.AUTOPILOT_DEFAULTS` key is a row or is listed in
   `REPO_ONLY_AUTOPILOT`, and a test fails until a new key picks one.
-  `autopilot.maxAutoReplans` (T-0074) and the `autopilot.sleep` block (T-0053)
-  are `REPO_ONLY_AUTOPILOT`: they read from `.crew/config.json` alone, and the
-  machine file's copy is pruned.
+  `autopilot.maxAutoReplans` (T-0074), the `autopilot.sleep` block (T-0053)
+  and T-0011's `autopilot.ship`, `autopilot.knownFailures` and
+  `autopilot.ciTimeoutMinutes` are `REPO_ONLY_AUTOPILOT`: they read from
+  `.crew/config.json` alone, and the machine file's copy is pruned.
 - `scope.allowCliApproval` is **not** personal yet: its reader,
   `crew_ticket.cli_approval_allowed`, reads the repo file only and is review
   harness, so its row lands in a harness-only change. So a global
