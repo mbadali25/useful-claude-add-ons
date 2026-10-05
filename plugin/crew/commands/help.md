@@ -18,7 +18,7 @@ python3 -B "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_help.py" where --root .
 
 With an argument (a command name with or without `/crew:`, a question such as
 "how do i write the spec", `commands` for every command by group, or a ticket id).
-Leave out any quote, `$`, backtick or backslash in the arguments first:
+Inside the single quotes only `'` needs care: write each as `'\''`, change nothing else:
 
 ```bash
 python3 -B "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_help.py" about --root . -- '$ARGUMENTS'

@@ -236,6 +236,25 @@ def test_a_new_command_without_a_group_is_caught(tmp_path, monkeypatch):
     assert crew_help.groups_text()[-1] == "ungrouped: newthing"
 
 
+def test_an_unreadable_command_dir_is_cannot_tell_not_empty_groups(tmp_path, monkeypatch,
+                                                                   capsys):
+    monkeypatch.setattr(crew_help, "COMMANDS_DIR", str(tmp_path / "missing"))
+
+    crew_help.main(["about", "commands"])
+    out = capsys.readouterr().out
+
+    assert (out.startswith("help: cannot tell"), "core:" in out) == (True, False), out
+
+
+def test_help_md_keeps_an_apostrophe_in_the_question():
+    """T-0025 review: dropping quotes turned `what's next` into `whats next`,
+    which matches nothing; only `'` needs escaping inside single quotes."""
+    with open(os.path.join(_COMMANDS, "help.md"), encoding="utf-8") as handle:
+        text = handle.read()
+
+    assert ("Leave out any quote" not in text, "`'\\''`" in text) == (True, True)
+
+
 def test_removal_stubs_are_in_removed():
     assert dict(crew_help.GROUPS)["removed"] == ("ticket", "work")
 

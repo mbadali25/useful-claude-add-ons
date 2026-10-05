@@ -248,11 +248,10 @@ def frontmatter(name):
 
 
 def command_names():
-    """Every command file's name, sorted."""
-    try:
-        return sorted(f[:-3] for f in os.listdir(COMMANDS_DIR) if f.endswith(".md"))
-    except OSError:
-        return []
+    """Every command file's name, sorted. An unreadable command dir raises
+    (`main` prints `help: cannot tell`): an empty list would print every
+    group heading with nothing under it, as if crew had no commands."""
+    return sorted(f[:-3] for f in os.listdir(COMMANDS_DIR) if f.endswith(".md"))
 
 
 def _group_of(name):
