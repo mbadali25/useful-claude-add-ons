@@ -288,6 +288,35 @@ def test_wildcard_negation_under_candidate_is_conflict(tmp_path):
     assert by["/src/App/bin/"]["where"] == "src/App/.gitignore:1"
 
 
+@pytest.mark.parametrize("negation", ["!src/*/bin/keep.txt", "!src/**", "!*/App/bin/k?ep.txt",
+                                      "!src/[A]pp/bin/keep.txt"])
+def test_a_wildcard_before_the_directory_is_still_a_conflict(tmp_path, negation):
+    """Review round 3: a glob in a segment above the candidate directory is
+    compared segment by segment, not truncated."""
+    root = _repo(tmp_path, files={"src/App/App.csproj": ""}, gitignore=negation + "\n")
+
+    by = {c["pattern"]: c["status"] for c in cg.measure(str(root))["candidates"]}
+
+    assert by["/src/App/bin/"] == "conflict"
+
+
+@pytest.mark.parametrize("negation", ["!lib/*/bin/keep.txt", "!src/App/keep.txt", "!src/Other/bin/x"])
+def test_a_negation_elsewhere_is_no_conflict(tmp_path, negation):
+    root = _repo(tmp_path, files={"src/App/App.csproj": ""}, gitignore=negation + "\n")
+
+    by = {c["pattern"]: c["status"] for c in cg.measure(str(root))["candidates"]}
+
+    assert by["/src/App/bin/"] == "missing"
+
+
+def test_unanchored_directory_conflicts_with_a_negation_under_a_wildcard(tmp_path):
+    root = _repo(tmp_path, files={"a.py": ""}, gitignore="!*/__pycache__/keep.pyc\n")
+
+    by = {c["pattern"]: c["status"] for c in cg.measure(str(root))["candidates"]}
+
+    assert by["__pycache__/"] == "conflict"
+
+
 def test_unanchored_directory_conflicts_with_a_negation_inside_it(tmp_path):
     root = _repo(tmp_path, files={"a.py": ""}, gitignore="!pkg/__pycache__/keep.pyc\n")
 

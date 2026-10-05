@@ -450,16 +450,32 @@ def _conflict(candidate, negations):
     anchored = pattern.startswith("/")
     name = pattern.strip("/")
     for path, line, where in negations:
-        wild = next((i for i, c in enumerate(path) if c in "*?["), None)
-        literal = path if wild is None else path[:wild]
+        segs = path.split("/")
         if anchored:
-            if literal.startswith(name + "/"):
-                return line, where
+            hit = _under(segs, name.split("/"))
         else:
-            dirs = literal.split("/")[:-1]
-            if name in dirs or ("*" not in name and any(_glob_seg(name, d) for d in dirs)):
-                return line, where
+            hit = any(seg == "**" or _overlap(name, seg) for seg in segs[:-1])
+        if hit:
+            return line, where
     return None
+
+
+def _overlap(one, other):
+    """Two path segments, either of which may be a glob, that can name the
+    same directory. Erring towards True only withholds a pattern."""
+    return one == other or _glob_seg(one, other) or _glob_seg(other, one)
+
+
+def _under(segs, want):
+    """True when a negation's segments can name a path strictly below the
+    directory `want`: `src/*/bin/keep.txt` is under `src/App/bin`, and so is
+    `src/**`. Each segment is compared as a glob, never truncated at one."""
+    for i, part in enumerate(want):
+        if i < len(segs) and segs[i] == "**":
+            return True
+        if i >= len(segs) - 1 or not _overlap(part, segs[i]):
+            return False
+    return True
 
 
 def _glob_seg(pattern, segment):

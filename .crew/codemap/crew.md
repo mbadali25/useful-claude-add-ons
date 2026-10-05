@@ -2223,8 +2223,8 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
 Derived at `13a019e7` (T-0039 review round 1), citations re-measured after the port's review rounds, not at this map's `anchor:`; the anchor above was
 not moved because the rest of this map was not re-checked against main's later changes.
 
-- DERIVED: `plugin/crew/hooks/scripts/crew_gitignore.py` is standard library only, three subcommands (`main`, `plugin/crew/hooks/scripts/crew_gitignore.py:724`; `_run`
-  `:750`): `check` (read-only report), `apply` (the only writer) and `summary` (one line). Exit codes
+- DERIVED: `plugin/crew/hooks/scripts/crew_gitignore.py` is standard library only, three subcommands (`main`, `plugin/crew/hooks/scripts/crew_gitignore.py:740`; `_run`
+  `:766`): `check` (read-only report), `apply` (the only writer) and `summary` (one line). Exit codes
   0/1/2/3/4/5 = current / pending / usage / owner / unknown / refused (`plugin/crew/hooks/scripts/crew_gitignore.py:93`). `main` turns any
   unexpected exception into `unknown ...` exit 4, never 1, and sets stdout/stderr to
   `errors="replace"` so an unencodable tracked path cannot crash the report.
@@ -2237,19 +2237,19 @@ not moved because the rest of this map was not re-checked against main's later c
   `.defaults`) are always candidates. The github/gitignore sha is `PROVENANCE` (`plugin/crew/hooks/scripts/crew_gitignore.py:95`), also
   in `plugin/crew/NOTICE.md`.
 - DERIVED: "covered" is `git check-ignore --no-index --stdin` under a throwaway bare GIT_DIR with
-  `core.excludesFile` at the null device (`_covered`, `plugin/crew/hooks/scripts/crew_gitignore.py:472-480`): only the working tree's
+  `core.excludesFile` at the null device (`_covered`, `plugin/crew/hooks/scripts/crew_gitignore.py:488-496`): only the working tree's
   ignore files count. Status 0/1 only; anything else raises `Unknown` (`_git`, `plugin/crew/hooks/scripts/crew_gitignore.py:227`), and an
   OSError reading any ignore file is `Unknown` too (`_read_bytes`, `plugin/crew/hooks/scripts/crew_gitignore.py:348`). Tracked matches are
-  `ls-files --cached --ignored --exclude-from=<row>` (`_tracked`, `plugin/crew/hooks/scripts/crew_gitignore.py:483`); a SECRETS match is
+  `ls-files --cached --ignored --exclude-from=<row>` (`_tracked`, `plugin/crew/hooks/scripts/crew_gitignore.py:499`); a SECRETS match is
   `needs-owner`.
-- DERIVED: `measure` (`plugin/crew/hooks/scripts/crew_gitignore.py:494`) classes each candidate `covered`, `overridden` (`plugin/crew/hooks/scripts/crew_gitignore.py:516`),
+- DERIVED: `measure` (`plugin/crew/hooks/scripts/crew_gitignore.py:510`) classes each candidate `covered`, `overridden` (`plugin/crew/hooks/scripts/crew_gitignore.py:532`),
   `conflict` (`_negations` `plugin/crew/hooks/scripts/crew_gitignore.py:408`, `_conflict` `plugin/crew/hooks/scripts/crew_gitignore.py:446`) or `missing`. Lines are split on LF
   only, as git does (`_keep_lines` `plugin/crew/hooks/scripts/crew_gitignore.py:337`, `_lines` `plugin/crew/hooks/scripts/crew_gitignore.py:343`), so `block_span` (`plugin/crew/hooks/scripts/crew_gitignore.py:380`) and
   the `where` a finding names agree with git.
-- DERIVED: `apply` (`plugin/crew/hooks/scripts/crew_gitignore.py:666`) refuses (exit 5) a non-regular `.gitignore`, the opt-out line, and an
-  active ticket whose Touch lacks `.gitignore` or a broken pointer (`_ticket_refusal`, `plugin/crew/hooks/scripts/crew_gitignore.py:638`).
-  `render` (`_render_impl`, `plugin/crew/hooks/scripts/crew_gitignore.py:612`) is pure and puts the block at the top on first write;
-  `_forbidden` (`plugin/crew/hooks/scripts/crew_gitignore.py:211`) drops a `.crew`/`.work` pattern; `_write_atomic` (`plugin/crew/hooks/scripts/crew_gitignore.py:653`) writes a temp
+- DERIVED: `apply` (`plugin/crew/hooks/scripts/crew_gitignore.py:682`) refuses (exit 5) a non-regular `.gitignore`, the opt-out line, and an
+  active ticket whose Touch lacks `.gitignore` or a broken pointer (`_ticket_refusal`, `plugin/crew/hooks/scripts/crew_gitignore.py:654`).
+  `render` (`_render_impl`, `plugin/crew/hooks/scripts/crew_gitignore.py:628`) is pure and puts the block at the top on first write;
+  `_forbidden` (`plugin/crew/hooks/scripts/crew_gitignore.py:211`) drops a `.crew`/`.work` pattern; `_write_atomic` (`plugin/crew/hooks/scripts/crew_gitignore.py:669`) writes a temp
   file and `os.replace`s it; `read_gitignore` (`plugin/crew/hooks/scripts/crew_gitignore.py:355`) keeps CRLF and a BOM.
 - DERIVED: `/crew:status` prints `gitignore <summary>` after the codemap line
   (`plugin/crew/hooks/scripts/crew_status.py:220`, appended at `:303`); an import failure still prints
