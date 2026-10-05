@@ -1586,10 +1586,12 @@ def test_identify_bounds_each_poll_by_the_exact_time_left(tmp_path, monkeypatch)
 
     def slow(_args, _root, timeout=None):
         timeouts.append(round(timeout, 3))
-        clock["now"] += 110.1 if len(timeouts) == 1 else timeout
+        clock["now"] += 110.1 if len(timeouts) == 1 else 3.0
         return _ok(_OLD)
     code, lines = _run(monkeypatch, slow, "identify", "--root", str(root), "--env", "staging")
     assert code == 3, lines
+    # 113.1 -> sleep -> 118.1 (4.9 left) -> 121.1 -> sleep -> 126.1: past the
+    # deadline, so no third poll starts.
     assert timeouts == [120.0, 4.9]
 
 
