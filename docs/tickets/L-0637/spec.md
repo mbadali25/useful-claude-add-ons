@@ -21,6 +21,7 @@ Checked at origin/main 155fe6d8 unless a branch is named.
 ## Touch
 - `plugin/crew/hooks/scripts/crew_bridge.py`
 - `plugin/crew/hooks/scripts/_test/validate-prompts.py`
+- `plugin/crew/hooks/scripts/crew_wave.py` - amended at plan (2026-10-05): T-0029 landed the lane prompt here (`lane_prompt`), not in `autopilot.md`
 - `plugin/crew/tests/test_crew_bridge_hub.py`
 - `plugin/crew/commands/autopilot.md`
 - `plugin/crew/README.md`

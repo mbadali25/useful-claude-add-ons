@@ -2663,10 +2663,29 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   if any line of the message equals it — a line equal to the terminator would
   end the heredoc early and run the rest as shell. Nothing checks that the session did so; a test checks only that
   `commands/autopilot.md` says it.
-- Neither command writes: no ref, working tree, index, `FETCH_HEAD`, `.work/`
-  or `<git-common-dir>/crew/` moves. Neither calls `SendMessage` or
-  `ListAgents` (they are Claude Code tools), and neither reads, prints or
-  passes on `CLAUDE_CODE_MESSAGING_TOKEN`.
+- **The main session is the hub; lanes never ring a peer** (L-0637). A
+  subagent's `SendMessage` goes out under its parent session's address and
+  the reply lands in the parent's conversation, so a lane that messaged a
+  peer would speak for the main session without it knowing, and never see
+  the answer. `ring` (with or without `--to`) therefore refuses in a wave
+  lane — exit 1, `refused - a lane does not message a peer; report the
+  question to the main session` — judged by T-0029's lane marker: a lane file
+  `.work/autopilot/<slug>/lanes/<id>.json` in the main checkout whose
+  `worktree` is this worktree. A marker that cannot be read (a lanes
+  directory or lane file that is unreadable or corrupt) refuses as `unknown`,
+  exit 3, never as "not a lane". The main checkout, and a linked worktree no
+  lane file names, ring as usual: being a linked worktree alone proves
+  nothing. `receive` and `pending` are not restricted. The wave's lane prompt
+  tells a lane to return a question for another session in its report, for
+  the main session to file and ring, and `validate-prompts.py` fails any
+  crew agent granted `SendMessage` or `ListAgents` and a lane prompt naming
+  either. **Limit:** this is a refusal in crew's own script and a prompt
+  rule, not a block on the tool: a lane that Claude Code offers `SendMessage`
+  regardless of its prompt can still call it directly. No hook blocks it.
+- Apart from `ring --to`, no command here writes: no ref, working tree,
+  index, `FETCH_HEAD`, `.work/` or `<git-common-dir>/crew/` moves. None
+  calls `SendMessage` or `ListAgents` (they are Claude Code tools), and none
+  reads, prints or passes on `CLAUDE_CODE_MESSAGING_TOKEN`.
 - **An unanswered doorbell reads `could not tell`** (L-0636). A held or
   undelivered message cannot be told apart from a delivered one — the bridge
   gives no delivery receipt — so the record moving is the only

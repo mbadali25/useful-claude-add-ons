@@ -61,6 +61,18 @@ fetch, an absent channel, a channel with no log, and a log line that is not
 a whole entry of what T-0030 or this script writes are `unknown`, never `no
 pending doorbells` and never skipped.
 
+The hub rule (L-0637). The main session is the hub: a wave lane never rings
+a peer. `ring` (with or without `--to`) first reads T-0029's lane marker --
+a lane file `.work/autopilot/<slug>/lanes/<id>.json` in the main checkout
+whose `worktree` is this worktree (`crew_wave.lane_init` writes it) -- and in
+a lane refuses with exit 1, `refused - a lane does not message a peer; report
+the question to the main session`. A marker that cannot be read (worktrees
+that cannot be listed, a lanes directory that cannot be listed, a lane file
+that is unreadable or corrupt) refuses as `unknown`, exit 3, never as "not a
+lane". The main checkout is never a lane, and a linked worktree no lane file
+names is not one either: being a linked worktree alone proves nothing.
+`receive` and `pending` are not restricted.
+
 Apart from `ring --to`, nothing here writes: no ref, working tree, index,
 FETCH_HEAD, `.work/` or `<git-common-dir>/crew/` moves (the fetch only adds
 objects; `ring --to` moves only the remote's channel branch). It never calls
@@ -127,6 +139,51 @@ def parse(data):
         return None, body
     found = DOORBELL_RE.fullmatch(body)
     return (found.groupdict() if found else None), body
+
+
+HUB_REFUSAL = "refused - a lane does not message a peer; report the question to the main session"
+
+
+def lane_state(top):
+    """('main' | 'lane' | 'not-lane' | 'unknown', why): whether `top` is a wave
+    lane by T-0029's marker. Anything that cannot be read is 'unknown'."""
+    import crew_wave  # pylint: disable=import-outside-toplevel
+    trees = crew_wave.worktrees(top)
+    if not trees:
+        return "unknown", "git could not list this repository's worktrees"
+    main = next(iter(trees))
+    here = os.path.normcase(os.path.realpath(top))
+    if here == os.path.normcase(main):
+        return "main", ""
+    autopilot = os.path.join(main, ".work", "autopilot")
+    if not os.path.lexists(autopilot):
+        return "not-lane", ""
+    try:
+        slugs = sorted(os.listdir(autopilot))
+    except OSError as exc:
+        return "unknown", f"{autopilot} could not be listed ({type(exc).__name__})"
+    for slug in slugs:
+        lanes = os.path.join(autopilot, slug, "lanes")
+        if not crew_wave.SLUG_RE.match(slug) or not os.path.lexists(lanes):
+            continue
+        try:
+            names = sorted(os.listdir(lanes))
+        except OSError as exc:
+            return "unknown", f"{lanes} could not be listed ({type(exc).__name__})"
+        for name in names:
+            if not name.endswith(".json"):
+                continue
+            try:
+                lane, state = crew_wave.read_lane(main, slug, name[:-len(".json")])
+            except (crew_wave.WaveError, crew_ticket.TicketError):
+                lane, state = None, "unreadable"
+            if state != "ok":
+                return "unknown", (f"lane file {crew_coord.safe(slug, 64)}/{crew_coord.safe(name, 80)} is {state}: "
+                                   "whether it names this worktree cannot be told")
+            named = lane.get("worktree")
+            if isinstance(named, str) and os.path.normcase(os.path.realpath(named)) == here:
+                return "lane", ""
+    return "not-lane", ""
 
 
 def next_step(chan):
@@ -401,6 +458,13 @@ def main(argv=None, stdin=None):
         print(f"usage: {exc}")
         return crew_coord.EXIT_USAGE
     if args.command == "ring":
+        where, why = lane_state(top)
+        if where == "lane":
+            print(HUB_REFUSAL)
+            return crew_coord.EXIT_REFUSED
+        if where == "unknown":
+            print(f"unknown - whether this worktree is a wave lane cannot be told: {why}; nothing was rung")
+            return crew_coord.EXIT_UNKNOWN
         if args.to is not None:
             return cmd_ring_to(chan, top, args.kind, args.ref, args.to)
         return cmd_ring(chan, args.kind, args.ref)

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.21**: The main session is the hub, lanes never ring a peer. A wave lane can no longer ring another session; it hands a question for another session back to the main session, which files it in the record and rings.
 - **crew 1.1.21**: An unanswered doorbell reads `could not tell`. A session that rang a peer now sees, after a `/clear` too, every ring the peer has not answered by moving the record, as `could not tell`, and never as agreement.
-- **crew 1.1.21**: Cross-session messages are a doorbell, never an instruction. Sessions sharing a coordination channel can now ring each other over Claude Code's messaging bridge, and an inbound message is classified as a doorbell or untrusted data before anything acts on it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

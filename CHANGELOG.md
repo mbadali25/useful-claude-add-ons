@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.21: the main session is the hub, lanes never ring a peer (L-0637)
+
+- **Summary.** A wave lane can no longer ring another session; it hands a question for another
+  session back to the main session, which files it in the record and rings.
+- **Added.** `crew_bridge.py ring` reads T-0029's lane marker (a lane file under
+  `.work/autopilot/<slug>/lanes/` naming this worktree) before anything else and, in a lane, refuses
+  with exit 1; a marker it cannot read is `unknown` (exit 3), never "not a lane". The main checkout
+  and a linked worktree no lane file names ring as before; `receive` and `pending` are not restricted.
+  `validate-prompts.py` fails a crew agent granted `SendMessage` or `ListAgents`, and a lane-prompt
+  source naming either.
+- **Changed.** The wave's lane prompt (`crew_wave.lane_prompt`) says a question for another session
+  goes back in the lane's report for the main session to file and ring; `/crew:autopilot` section 8
+  states the hub rule. Limit, in the README: a lane offered `SendMessage` by Claude Code can still
+  call it; no hook blocks the tool.
+
 ### Added — crew 1.1.21: an unanswered doorbell reads `could not tell` (L-0636)
 
 - **Summary.** A session that rang a peer now sees, after a `/clear` too, every ring the peer has
