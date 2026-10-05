@@ -108,6 +108,13 @@ question at a time</strong>:</p>
 uses <code>crew:explorer</code> to pin down <code>path:line</code> evidence, and writes
 <code>spec.md</code> with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
 <code>.work/INDEX.md</code> gets a row.</p>
+<p>If the ticket cannot start before others close, the spec carries an optional
+<code>depends-on: [T-0088, T-0090]</code> line under its header. <code>blocked</code> is then derived
+from it, never typed: any dependency that is open, <code>cancelled</code>, <code>superseded</code> or
+cannot be read blocks, and <code>done</code> or <code>merged</code> unblocks
+(<code>hooks/scripts/crew_ticket_state.py</code>). The line is hashed with the spec, so
+changing it needs <code>/crew:approve</code> again. <code>needs-replan</code> is derived the same way,
+from the review ledger.</p>
 <p><strong>3. Plan.</strong> You type <code>/crew:plan T-0091</code>. The session reads <code>spec.md</code>, writes
 one step per unit of work in <code>plan.md</code> (Files/Test/Risk/Standards each), checks every
 Files: entry against the spec's Touch globs, and enters <strong>plan mode</strong> to show
@@ -130,7 +137,10 @@ list, a few probes each, kept open while the plan is worked and handed to
 whichever developer types.</p>
 <p><strong>5–6. Tests and docs.</strong> Coverage lands as part of implementing the plan's
 steps. <code>/crew:docs</code> runs next and usually says "none" — most tickets touch no
-document that needs updating.</p>
+document that needs updating. Then <code>crew_gitignore.py check</code> asks whether the
+ticket brought a language or manifest whose ignore patterns are missing: it adds
+them only if the spec's Touch covers <code>.gitignore</code>, and otherwise the PR body lists
+them and the next <code>/crew:onboard</code> adds them.</p>
 <p><strong>6b. The standards self-check.</strong> Before the review, the session answers every
 development standard in the effective set (crew's generic GEN standards, any
 per-language set a changed file matches, and this repository's
@@ -319,6 +329,11 @@ work.</p>
 <ul>
 <li><code>plan.md</code> is a list of steps. Each step has a <code>Files:</code> line, a <code>Test:</code> line and a <code>Risk:</code> line.
   Every <code>Files:</code> entry must fall inside Touch. A plan cannot add a path the spec does not list.</li>
+<li><code>next.md</code> is optional, and nothing in crew writes it: you do, by hand. One <code>key: value</code> per line
+  says who the ticket waits on and what happens next: <code>waiting-on:</code> (<code>owner</code>, <code>agent</code>, <code>external</code>
+  or a ticket id), <code>next:</code>, <code>reason:</code>, <code>revisit:</code> (a <code>YYYY-MM-DD</code> date) and <code>superseded-by:</code> (a
+  ticket id). It is not part of the contract: approval does not hash it and <code>validate</code> never reads
+  it, so you can edit it at any step without approving again.</li>
 </ul>
 <p>Check the contract at any time:</p>
 <pre><code class="language-bash">python3 &lt;crew&gt;/hooks/scripts/crew_ticket.py validate --ticket T-0042

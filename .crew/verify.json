@@ -280,6 +280,16 @@
       "reach": "local",
       "why": "15s. The schema migration path: a key added to the schema and announced nowhere is how install.policy reached UPGRADE.md and never the terminal. reach: local - pytest against this repo's own upgrade/sabotage-harness test modules. T-0080 (2026-10-04): sabotage_bound.py (the per-entry memory cap and wall-clock limit) and its suite joined; 7s for all three files, 128 passed, 4-CPU Linux container." },
 
+    { "paths": ["plugin/crew/hooks/scripts/crew_migrate.py",
+                "plugin/crew/tests/test_migrate.py",
+                "plugin/crew/tests/sabotage_migrate.py",
+                "plugin/crew/commands/migrate.md"],
+      "seconds": 12,
+      "coveredBy": "crew-suite",
+      "run": ["python3 -m pytest plugin/crew/tests/test_migrate.py -q"],
+      "reach": "local",
+      "why": "12s (11.86s wall, one serial run) on a 4-CPU Linux cloud container, 2026-10-04, load average 3.65 at start; 67 passed. The one-time 0.20 and pre-0.20 migration, including the in-place config.json upgrade (T-0038) and its byte-identical rollback. reach: local - fixtures under tmp_path." },
+
     { "paths": ["plugin/crew/hooks/scripts/crew_ticket.py",
                 "plugin/crew/tests/test_approval_digest.py",
                 "plugin/crew/tests/test_scope_base_branch.py"],
@@ -760,6 +770,11 @@
       "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_python_probe_signals.py -q"],
       "reach": "local",
       "why": "L-1512: the python probe (crew_py_strict, its byte copy in role-write-guard.sh, crew_py) makes no kill call when its candidate answers or fails at once, and still kills a hung one, also where read -t times out with status 1 as on bash 3.2; the strict copies read one line of the answer through a process substitution, so a child left holding the candidate's stdout cannot hold the probe. 8.7s wall with the rule runner (12 passed, plus the 2 wallclock cases run serially; the POSIX-only cases skip on Windows), measured 2026-10-05 on the 4-CPU Linux cloud container at load 0.8 (review round 2); the hung-candidate cases wait out the 3s probe bound by design. reach: local - stub candidates under tmp_path and a python-free PATH of /usr/bin symlinks; nothing is installed or fetched." },
+    { "paths": ["plugin/crew/hooks/scripts/crew_ticket_state.py", "plugin/crew/tests/test_ticket_state.py"],
+      "seconds": 5,
+      "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_ticket_state.py -q"],
+      "reach": "local",
+      "why": "L-0639: crew_ticket_state.py derives blocked (the spec's depends-on: line and each dependency's INDEX cell, then spec header) and needs-replan (the review ledger), read-only. Must-block: an open, unknown, cancelled or superseded dependency blocks; a row with no status cell, an unreadable INDEX or spec, or a bad depends-on entry is unknown and never unblocked; an unreadable ledger is needs_replan None, never False; a typed blocked/needs-replan INDEX cell is reported, not obeyed. Must-allow: done/merged dependencies, a spec header closing a dependency with no row, no depends-on line, the gate read from INDEX first then header; a missing spec is blocked None and an unreadable INDEX a gate of unknown (review round 1); an open row contradicted by a prose closing line, and an unrecognised ledger state, cannot tell (round 2); a prose `- Cancelled:` or `superseded:` line blocks and is named (round 3); view changes no file. Group review (g3-contracts): a row any prose line or a second row contradicts, a [x]/~~ closing word, a non-id or unmatched-bracket depends-on/successor entry, and a ticket naming itself as dependency or successor cannot tell. 99 passed, 4.6s wall with the rule runner, 2026-10-05, 4-CPU container at load 5. Mutations hand-run on a scratch copy (sabotage*.py is a HARNESS path, L-0641). reach: local - tmp_path repos only." },
     { "paths": ["plugin/crew/hooks/scripts/crew_split.py", "plugin/crew/tests/test_crew_split.py",
                 "plugin/crew/tests/split_fixtures/**", "plugin/crew/commands/split.md"],
       "seconds": 12,
@@ -770,7 +785,28 @@
       "seconds": 4,
       "run": ["python3 -m pytest plugin/crew/tests/test_verify_before_stating.py -q"],
       "reach": "local",
-      "why": "T-0041: crew verifies before it states. The rule text, the **Not verified** report sections and the recorded-decision lookups are present, and validate-prompts.py's check_verification_rule fails a COPY of the prompt tree (tmp_path) that drops any of them, including an unlisted new agent. 18 passed in 2.83s, 2026-10-04, 4-CPU container shared with other builders. Five mutations (call removed from main, fixed list for the glob, commands skipped, explorer line removed, every agent exempt) sabotage-tested by hand, each red. reviewer.md and review.md are review harness (T-0087): their half is a follow-up. reach: local - reads tracked prompts and writes only under tmp_path." }
+      "why": "T-0041: crew verifies before it states. The rule text, the **Not verified** report sections and the recorded-decision lookups are present, and validate-prompts.py's check_verification_rule fails a COPY of the prompt tree (tmp_path) that drops any of them, including an unlisted new agent. 18 passed in 2.83s, 2026-10-04, 4-CPU container shared with other builders. Five mutations (call removed from main, fixed list for the glob, commands skipped, explorer line removed, every agent exempt) sabotage-tested by hand, each red. reviewer.md and review.md are review harness (T-0087): their half is a follow-up. reach: local - reads tracked prompts and writes only under tmp_path." },
+    {
+      "paths": [
+        "plugin/crew/hooks/scripts/crew_gitignore.py",
+        "plugin/crew/hooks/scripts/crew_status.py",
+        "plugin/crew/tests/test_crew_gitignore.py",
+        "plugin/crew/tests/test_status.py"
+      ],
+      "seconds": 8,
+      "run": [
+        "python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_gitignore.py plugin/crew/tests/test_status.py -q"
+      ],
+      "reach": "local",
+      "why": "T-0039: crew_gitignore.py is the only crew code that writes a repo's .gitignore, and /crew:status prints its summary. The suite holds the contract: detection from git-listed files only, covered measured by git check-ignore with the global excludes file, local config and info/exclude disabled, tracked matches named, a tracked secret exit 3, a human negation a directory pattern would defeat reported as conflict, the managed block at the top with every human line byte-identical, idempotence, CRLF/BOM, the atomic write, malformed markers and every git failure as unknown exit 4, the opt-out and Touch refusals exit 5, and the status line in all four states. 4.9s wall (74 passed) measured 2026-10-04 on a 4-CPU Linux container with the run line verbatim; after review round 1 (OSError and any unexpected error exit 4, output that cannot fail on an unencodable path, the .env template negations, LF-only line numbers, the rev-parse reason) 7.3s wall (86 passed), same container and day; 8 is that rounded up. Sabotage-proven by hand the same day: 16 mutations (covered always true, global excludes honoured two ways, a human line rewritten, the block at the bottom, a tracked secret downgraded to exit 0, check-ignore 128 read as not-ignored, a git timeout read as an empty listing, the Touch refusal removed, the .crew filter removed, a .crew row added, a truncating open, both conflict checks removed, the overridden guard removed, the status line omitted on import failure), each red on its named test and the file restored sha256-identical. Review round 1 added three more, run the same way: the stdout reconfigure removed (test_undecodable_tracked_name_still_reports_owner_exit_3), the OSError-to-Unknown conversion removed (test_unreadable_gitignore_is_unknown_exit_4), a .env template negation misspelt (test_tracked_env_template_is_not_a_secret); and every new test was red on the pre-fix module. They are not yet in sabotage.py: plugin/crew/tests/sabotage*.py is harness (scripts/check-tooling-pr.py HARNESS), so registering them is a tooling-alone follow-up (TODO.md). reach: local - every case builds a throwaway git repository under tmp_path; no network call."
+    },
+    {
+      "paths": ["plugin/crew/hooks/scripts/crew_graph_ignore.py", "plugin/crew/tests/test_graph_ignore*.py"],
+      "seconds": 22,
+      "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_graph_ignore.py plugin/crew/tests/test_graph_ignore_graphify.py plugin/crew/tests/test_status.py plugin/crew/tests/test_refresh_check.py -q"],
+      "reach": "local",
+      "why": "T-0064: crew_graph_ignore.py decides whether a graph build would read a secrets-denylisted file, and crew_refresh_check.py and crew_status.py both call it, so their suites run with it. A false 'covered' is the defect the module exists to close, so the suite carries must-refuse cases (an uncovered file, .gitignore alone, a negation, untracked and ignored candidates, the user's global excludes, every unknown) and must-allow ones (the same file once covered, .env.example, an out-of-repo Read rule, a negation under an excluded parent). test_graph_ignore_graphify.py runs the real graphify on a fixture and skips, saying so, when graphify is not on PATH. Appended last so no earlier rule's index moves. The fifteen T-0064 mutations were applied by hand, one at a time, and each went red on its named test, 2026-10-03; they join sabotage_refresh.py in a harness-only PR, because sabotage*.py is in scripts/check-tooling-pr.py's HARNESS. 163 passed, 2 skipped in 17s wall through pytest_rule.py on a 4-CPU Linux container (load average 5.7), graphify 0.9.74 on PATH, measured 2026-10-03; 22 rounds that up. reach: local - every case builds a throwaway git repository under tmp_path; the graphify case sets HOME to a temporary directory."
+    }
   ],
 
   "default": ["bash _verify/smoke.sh"],

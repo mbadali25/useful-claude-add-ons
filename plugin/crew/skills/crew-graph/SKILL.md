@@ -40,6 +40,18 @@ below. Confirm with `graphify --version`.
 
 ## Build
 
+Check the secrets denylist first, every time:
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph_ignore.py --root . --check
+```
+
+Exit 0 means graphify will read no secrets-denylisted file. On exit 1, stop:
+name the paths it printed and offer `--write`, which adds the missing
+patterns to `.graphifyignore`. On exit 2, stop and report its reason. Never
+build around either, and never build first and check after — a graph built
+over a secret already holds it (**Tainted graph** below). Then:
+
 ```
 graphify . --no-viz --code-only
 ```
@@ -69,6 +81,48 @@ before offering to run graphify without `--code-only`, tell the user which
 API key env var graphify needs and confirm it's set — don't let them discover
 the key requirement from an error after the fact.
 
+## Secrets denylist
+
+graphify reads every file its ignore rules do not exclude, and puts the
+symbols it finds into `graph.json`. `crew_graph_ignore.py` builds the repo's
+denylist from three sources, in this order:
+
+- **built-in**: `.env`, `.env.*` (but not `.env.example`), `*.pem`, `*.key`,
+  `*.p12`, `*.pfx`, `id_rsa*`, `id_ed25519*`;
+- **`.claude/secrets-denylist`**: optional, tracked, gitignore syntax. This
+  is where repo-specific paths go (`config/`, `/init.php`). A repo's own
+  secrets guard can read the same file;
+- **`Read(...)` deny rules** in `.claude/settings.json` and
+  `.claude/settings.local.json`, translated to root-anchored patterns. A rule
+  outside the repo (`~/…`, `//…`) is skipped by name, and a deny-all `Read`
+  is `unknown`.
+
+**`.gitignore` never protects a tracked file from graphify.** graphify 0.9.65
+(`detect.py`, `_is_scan_ignored`) skips `.gitignore` rules for any path in
+`git ls-files --cached`. Only `.graphifyignore` and `--exclude` can exclude
+a tracked file. So the check is on the root `.graphifyignore` only. A nested
+`.graphifyignore` could re-include a path with `!`, so its presence makes
+the answer `unknown`, never covered. The matching is git's own
+(`check-ignore --no-index`). Where git and graphify parse an edge pattern
+differently, that disagreement is an accepted risk, and the real-graphify
+fixture test (`test_graph_ignore_graphify.py`) covers the directory,
+anchored, extension and nested forms.
+
+The same check runs in `crew_refresh_check.py`, which will not name a graph
+refresh while it fails, and on `/crew:status`'s `graph-ignore` line.
+
+## Tainted graph
+
+A graph built before the denylist was covered may already hold text from a
+secret file. Treat it as holding secret-derived text until it is rebuilt:
+
+1. Delete the `graph.out` directory (`graphify-out/` by default).
+2. Run `crew_graph_ignore.py --root . --write`, then `--check`, which must
+   exit 0.
+3. Rebuild (**Build** above). If the output is tracked, commit the rebuild.
+   A secret already in git history stays there: rotating it is the owner's
+   call, not this skill's.
+
 ## Query
 
 Prefer the CLI over reading `graph.json` directly — the file is large and the
@@ -90,7 +144,9 @@ graphify hook install
 ```
 
 installs a Git hook that rebuilds the graph on every commit, plus a union
-merge driver for `graph.json`. That merge driver is the reason `graph.json`
+merge driver for `graph.json`. That hook runs graphify directly and bypasses
+crew, so it never runs the denylist check. `/crew:status`'s `graph-ignore`
+line is the warning that the next hook build would read a denylisted file. That merge driver is the reason `graph.json`
 is committed to the repo rather than gitignored — a union driver only has
 something to merge if both sides are tracked. `.gitignore` covers the HTML
 output and the wiki; never `graph.json` itself.
@@ -179,10 +235,10 @@ the key and says so.
 
 ## Refreshing an existing codemap
 
-`/crew:upgrade` and `/crew:onboard --refresh` both fold graph facts into
-`.crew/codemap/*.md`. Read `reconcile.md` before running either — it's the
-one place the KEEP/DERIVE split, the conflict rule, and the anchor rule are
-defined, so the two commands can't drift from each other.
+`/crew:onboard --refresh` is the one caller that folds graph facts into
+`.crew/codemap/*.md` (`/crew:upgrade` was removed in T-0038). Read
+`reconcile.md` before running it — it's the one place the KEEP/DERIVE split,
+the conflict rule, and the anchor rule are defined.
 
 ## The community field
 

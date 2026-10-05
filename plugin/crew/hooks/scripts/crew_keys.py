@@ -95,7 +95,7 @@ _S = "hooks/scripts/"
 # crew version whose committed template declared the key, backfilled once from
 # git history (T-0048); a later key sets it in its land commit.
 KEY_META = {
-    "schema": _unv("Config schema version; `/crew:upgrade` migrates an older one.",
+    "schema": _unv("Config schema version; `/crew:migrate` upgrades an older one.",
                    FIRST, _S + "crew_state.py", "integer"),
     "tier": _unv("Setup tier recorded by `/crew:init`.", FIRST, _S + "crew_state.py",
                  "integer"),
