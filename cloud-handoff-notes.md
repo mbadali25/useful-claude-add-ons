@@ -111,6 +111,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 07:50: T-0108 #451 built (1d7c1e65); Nuclei premise VERIFIED for real (v3.11.1, -etags beats -tags: intrusive 622 -> 0). Open owner question: -config/-tp profile can set tags/rates. Review started (fail-open hunt + -config recommendation).
 - 07:45: #462 L-0678 review 0 BLOCK 3 FIX: cross-project migrate merges into first project's note (refuse on project/source mismatch), restore under-lock recheck untested, failed-file bytes unasserted. Sent to builder. #506 C-0008 test(3.12) red, builder watching.
 - 07:35: main moved to 95bc71bb (#503 owner's other session: scripts/cloud-env-setup.sh). Owner: merge my setup additions into the repo script (C-0009, stacked on #504). T-0105 #433 review 0 BLOCK 1 FIX (note wording ignores T-0050 personal keys) -> builder fixing.
 - 07:20: L-0673 #401 built (5b5bba68, Windows green, only red = bump). Review started (incl. SEAM question for ci_receipt.py).
