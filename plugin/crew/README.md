@@ -950,6 +950,8 @@ One vocabulary, owned by `crew_tracker.py` (`STATUS_ORDER`, `OWNER_STATUSES`, `C
 | `done` | closed | INDEX, tracker, spec header | keeps the approval | `done`, checked | pushed |
 | `cancelled`, `superseded` | closed | INDEX, tracker, spec header | stales the approval on purpose | `done`, checked | nothing pushed; the owner closes the item by hand |
 
+Any other INDEX word maps to no lane: `move` refuses it with nothing written, and `crew_tracker.py read` reports it as `could not tell` (`INDEX status <s> is not a status crew knows (...)`), never as a disagreement. The words the owner retired on 2026-10-05 get a text-only hint naming their replacement (`RETIRED_STATUSES`: `approved` -> `spec`, `merged` -> `done`, `closed` -> `done`, `new` -> `direction`, `parked` -> `needs-owner`) — never a lane, a write or an exit code (L-0530).
+
 `approved` and `merged` are spec-header words only (they keep the approval; a header `merged` does not close a ticket for autopilot). `crew_ticket.STATUS_VALUES` is unchanged by T-0037: it is the approval-keeping subset, so a blocking hook accepts nothing new.
 
 - **Closed** means closed in every reader: the session brief and `crew_ticket.resolve_active`'s INDEX fallback skip the row (a prose `- Cancelled: T-1` line too, in any case), `/crew:approve`'s precheck refuses it as "closed in .work/INDEX.md", autopilot stops it as `closed` (waiting on nobody), and `/crew:status` lists it on no line.
