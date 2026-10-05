@@ -240,6 +240,12 @@ def _win_process(pid):  # pragma: no cover - exercised on Windows only
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.restype = wintypes.HANDLE
     kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel.GetProcessTimes.restype = wintypes.BOOL
+    kernel.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
+    kernel.CloseHandle.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
     handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
         error = ctypes.get_last_error()
@@ -298,7 +304,15 @@ def _win_ancestors():  # pragma: no cover - exercised on Windows only
                     ("szExeFile", ctypes.c_wchar * 260)]
     try:
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Every argument typed: an untyped HANDLE is passed as a C int, which
+        # truncates a 64-bit handle value (review NIT carry).
         kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        kernel.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+        for walk in (kernel.Process32FirstW, kernel.Process32NextW):
+            walk.restype = wintypes.BOOL
+            walk.argtypes = (wintypes.HANDLE, ctypes.POINTER(Entry))
+        kernel.CloseHandle.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
         snap = kernel.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
         if not snap or snap == wintypes.HANDLE(-1).value:
             return None
@@ -313,13 +327,21 @@ def _win_ancestors():  # pragma: no cover - exercised on Windows only
             kernel.CloseHandle(snap)
     except (OSError, AttributeError, ValueError):
         return None
-    chain, pid = [], os.getppid()
+    # th32ParentProcessID is the pid the parent HAD: once it exits, that pid can
+    # be reused by a later process, which then reads as the parent. A real
+    # parent started no later than its child, so the walk stops at a link whose
+    # process started after the one below it, or whose start cannot be read
+    # (could not tell is not "same process") (review NIT carry).
+    chain, pid, below = [], os.getppid(), _pid_start(os.getpid())
     for _ in range(64):
         if pid not in parents or pid in (p for p, _ in chain):
             break
+        start = _pid_start(pid)
+        if start is None or below is None or start > below:
+            break
         ppid, name = parents[pid]
         chain.append((pid, name))
-        pid = ppid
+        pid, below = ppid, start
     return chain or None
 
 

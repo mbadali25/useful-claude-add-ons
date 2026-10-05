@@ -1003,6 +1003,14 @@ def _windows(monkeypatch, chain, starts, session="sess-w"):
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="the Toolhelp snapshot walk is Windows-only")
+def test_windows_walk_keeps_the_real_parent():
+    """Must-allow for the reused-parent stop: a real parent started no later
+    than its child, so the walk still starts at this process's parent."""
+    chain = crew_inflight._win_ancestors()  # pylint: disable=protected-access
+    assert chain and chain[0][0] == os.getppid(), chain
+
+
 def test_windows_claude_pid_ancestor_is_the_holder(monkeypatch):
     _windows(monkeypatch, [(os.getppid(), "bash.exe"), (4242, "claude.exe")],
              {4242: 100, os.getpid(): 900})
