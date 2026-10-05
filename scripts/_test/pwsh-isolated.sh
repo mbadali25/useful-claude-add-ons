@@ -20,8 +20,17 @@ ok()   { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  FAIL  %s\n        %s\n' "$1" "$2"; FAIL=$((FAIL+1)); }
 skip() { printf '  SKIPPED: %s\n' "$1"; SKIP=$((SKIP+1)); }
 
-TMP="$(mktemp -d)"
+# No temp directory means no suite: an empty TMP would put the stub at /bin/pwsh.
+TMP="$(mktemp -d)" && [ -n "$TMP" ] && [ -d "$TMP" ] || {
+  echo "pwsh-isolated: FAIL - mktemp -d failed, nothing was run" >&2; exit 1; }
 trap 'rm -rf "$TMP"' EXIT
+
+# Git Bash may have python or py but no python3 (CLAUDE.md "Landmines").
+PY=()
+for c in python3 python; do
+  if command -v "$c" >/dev/null 2>&1; then PY=("$c"); break; fi
+done
+if [ ${#PY[@]} = 0 ] && command -v py >/dev/null 2>&1; then PY=(py -3); fi
 # L-0557's guard: anything this suite starts that is named pwsh runs on a
 # cache under TMP, never the shared one, even before the launcher assigns its own.
 export XDG_CACHE_HOME="$TMP/ambient-cache"
@@ -162,7 +171,9 @@ if [ $n = 3 ]; then ok stdin_is_not_consumed; else bad stdin_is_not_consumed "it
 # no_gate_site_launches_pwsh_directly (static)
 # shellcheck disable=SC2016  # a literal "$PWSH" is the pattern
 direct=$(grep -nE '^[^#]*"\$PWSH"[[:space:]]+-' "$REPO/_verify/smoke.sh" "$REPO/_verify/run-all.sh" || true)
-rules=$(python3 - "$REPO/.crew/verify.json" <<'PY'
+# No interpreter is exit 127, a failed scan, never an empty (passing) result.
+[ ${#PY[@]} = 0 ] && PY=(false-no-python-found)
+rules=$("${PY[@]}" - "$REPO/.crew/verify.json" <<'PY'
 import json, re, sys
 doc = json.load(open(sys.argv[1], encoding="utf-8"))
 bad, ps1 = [], None
@@ -180,7 +191,10 @@ if ps1 != want:
 print("\n".join(bad))
 PY
 )
-if [ -z "$direct" ] && [ -z "$rules" ]; then ok no_gate_site_launches_pwsh_directly
+py_rc=$?
+if [ $py_rc != 0 ]; then
+  bad no_gate_site_launches_pwsh_directly "the verify.json scan did not run (python: ${PY[*]:-none found}, exit $py_rc)"
+elif [ -z "$direct" ] && [ -z "$rules" ]; then ok no_gate_site_launches_pwsh_directly
 else bad no_gate_site_launches_pwsh_directly "direct: ${direct:-none}; rules: ${rules:-none}"; fi
 
 # real_pwsh_sees_the_private_cache
