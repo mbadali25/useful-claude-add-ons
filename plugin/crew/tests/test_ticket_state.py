@@ -325,6 +325,14 @@ def test_superseded_without_successor_is_reported(tmp_path):
     assert any(p.startswith("superseded: cannot tell what replaced it") for p in got["problems"])
 
 
+@pytest.mark.parametrize("line", ["split-into: TBD", "superseded-by: later", "split-into: T-0002, ?"])
+def test_superseded_with_a_spec_line_naming_no_ticket_is_reported(tmp_path, line):
+    """Round 1: a successor line must name ticket ids to count."""
+    root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")
+    _spec(root, T, header="status: superseded   risk: low", line2=line)
+    assert crew_ticket_state.SUPERSEDED_NO_SUCCESSOR in _next_view(root)["problems"]
+
+
 def test_bad_waiting_on_is_reported(tmp_path):
     root = _repo(tmp_path)
     _next(_spec(root, T), "waiting-on: someone\n")
@@ -440,7 +448,8 @@ def test_needs_owner_with_next_has_no_problem(tmp_path):
     assert _next_view(root)["problems"] == []
 
 
-@pytest.mark.parametrize("line", ["split-into: T-0002, T-0003", "superseded-by: T-0009"])
+@pytest.mark.parametrize("line", ["split-into: T-0002, T-0003", "superseded-by: T-0009",
+                                  "split-into: [L-0640, L-0641]"])
 def test_superseded_with_a_spec_successor_line_is_not_reported(tmp_path, line):
     """T-0037/T-0052's successor line under the spec header still names it."""
     root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")

@@ -84,7 +84,7 @@ SUPERSEDED_NO_SUCCESSOR = ("superseded: cannot tell what replaced it (no superse
 _NEXT_LINE_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*?)\s*$")
 _REVISIT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # The successor line under a spec header (T-0037, T-0052; crew_autopilot._SUCCESSOR).
-_SPEC_SUCCESSOR_RE = re.compile(r"^(?:split-into|superseded-by)\s*:\s*\S", re.IGNORECASE)
+_SPEC_SUCCESSOR_RE = re.compile(r"^(?:split-into|superseded-by)\s*:\s*(.*?)\s*$", re.IGNORECASE)
 # The header's field block: the `key: value` pairs that end line 1, set off
 # from the title by the template's column gap (two or more spaces, or a tab).
 _FIELD_BLOCK_RE = re.compile(r"(?:\s{2,}|\t)((?:[A-Za-z][\w-]*:[ \t]*\S+[ \t]*)+)$")
@@ -231,7 +231,9 @@ def dependency_state(top, dep):
 
 
 def _is_ticket_id(value):
-    """A plain ticket id with a letter and a digit (`owner` is not one)."""
+    """A plain ticket id (`crew_ticket.check_ticket`) with a letter and a digit,
+    the INDEX id shape (`crew_ticket._cell_id`): check_ticket alone accepts any
+    word, so `waiting-on: someone` would read as a ticket id."""
     try:
         crew_ticket.check_ticket(value)
     except crew_ticket.TicketError:
@@ -314,12 +316,17 @@ def read_next(folder):
 
 
 def _spec_names_successor(spec_text):
-    """True when a `split-into:`/`superseded-by:` line sits above the first `##`."""
+    """True when a `split-into:`/`superseded-by:` line above the first `##`
+    names only ticket ids (`[T-2, T-3]` or `T-2, T-3`); `TBD` names none."""
     for line in (spec_text or "").splitlines()[1:]:
         if line.startswith("##"):
             break
-        if _SPEC_SUCCESSOR_RE.match(line.strip()):
-            return True
+        match = _SPEC_SUCCESSOR_RE.match(line.strip())
+        if match:
+            value = match.group(1).strip().strip("[]")
+            ids = [part.strip().strip("`") for part in value.split(",")]
+            if ids and all(_is_ticket_id(item) for item in ids):
+                return True
     return False
 
 
