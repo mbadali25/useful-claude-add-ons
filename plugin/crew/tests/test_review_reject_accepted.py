@@ -344,6 +344,13 @@ REFUSALS = {
     "auto_receipt_no_follow_up": (_auto(lambda data: data["receipt"].pop("follow_up")), None),
     "auto_receipt_blank_follow_up": (
         _auto(lambda data: data["receipt"].__setitem__("follow_up", " ")), None),
+    # Review of dc538c79, FIX2: the witness count --auto-accept records as 0.
+    "auto_receipt_no_ignored_lines": (
+        _auto(lambda data: data["receipt"].pop("ignored_lines")), None),
+    "auto_receipt_ignored_lines_bool": (
+        _auto(lambda data: data["receipt"].__setitem__("ignored_lines", False)), None),
+    "auto_receipt_ignored_lines_one": (
+        _auto(lambda data: data["receipt"].__setitem__("ignored_lines", 1)), None),
     "auto_receipt_no_provider": (_auto(lambda data: data["receipt"].pop("provider")), None),
     "auto_receipt_other_family": (
         _auto(lambda data: data["receipt"].__setitem__("model_family", "claude")), None),

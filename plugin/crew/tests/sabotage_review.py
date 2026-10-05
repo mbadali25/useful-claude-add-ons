@@ -1422,6 +1422,24 @@ REVIEW_FIX_MUTATIONS = (
         "tests/test_review_correct_acceptance.py::test_correction_refused",
     ),
     (
+        # Review of dc538c79, FIX1: a correction takes a receipt naming no bundle.
+        "--correct-acceptance takes a receipt naming no bundle",
+        REVIEW_LEDGER,
+        "        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):\n",
+        "        if False:\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # Review of dc538c79, FIX2: an auto receipt with no witness count.
+        "--supersede-accepted takes an auto receipt with no witness count",
+        REVIEW_LEDGER,
+        "            and type(ignored) is int and ignored == 0"
+        "  # pylint: disable=unidiomatic-typecheck\n",
+        "            and True\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
         # Review of 1b9ce429, FIX1: --correct-acceptance on a ticket that is
         # no longer ACCEPTED.
         "--correct-acceptance ignores the state",

@@ -814,7 +814,9 @@ def _auto_receipt_readable(receipt, latest):
     follow-up ticket (reviews of 55135844 FIX2 and d6522b1e FIX). Whether it
     still stands on today's files is receipt_stands' question, not this one."""
     digest, follow_up = receipt.get("review_json_sha256"), receipt.get("follow_up")
+    ignored = receipt.get("ignored_lines")  # review of dc538c79, FIX2: exactly int 0
     return (receipt.get("accepted_by") == AUTO_BY and isinstance(digest, str)
+            and type(ignored) is int and ignored == 0  # pylint: disable=unidiomatic-typecheck
             and _SHA256_RE.fullmatch(digest) is not None
             and isinstance(receipt.get("findings"), list)
             and isinstance(follow_up, str) and bool(follow_up.strip())
@@ -1021,6 +1023,11 @@ def correct_acceptance(root, ticket, by, reason):
             raise LedgerError(not_that_round)
         # Review of 55135844, FIX1: the receipt must be bound to that round's
         # own bundle and base, or it is not the round's acceptance.
+        # Review of dc538c79, FIX1: equal nulls bind nothing; the id is a sha256.
+        digest = receipt.get("bundle_sha256")
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+            raise LedgerError(f"{ticket}'s receipt names no bundle sha256: no acceptance "
+                              "stands to correct")
         if (receipt.get("bundle_sha256") != latest.get("bundle_sha256")
                 or not isinstance(receipt.get("base"), str) or not receipt["base"]
                 or receipt["base"] != latest.get("base")):

@@ -271,6 +271,17 @@ def _accepted_then_reserved(repo):
     assert ok, message
 
 
+def _set_both_bundles(value):
+    def build(repo):
+        _accepted(repo)
+
+        def change(data):
+            data["receipt"]["bundle_sha256"] = value
+            data["rounds"][-1]["bundle_sha256"] = value
+        _edit(repo, change)
+    return build
+
+
 REFUSALS = {
     "no_ledger": (lambda repo: None, {}),
     "corrupt_ledger": (_corrupt, {}),
@@ -322,6 +333,8 @@ REFUSALS = {
     "accepted_by_line_separator": (_set_receipt("accepted_by", "a peer\u2028x"), {}),
     # Review of 55135844, FIX1: a receipt bound to another bundle or base.
     "receipt_bundle_other": (_set_receipt("bundle_sha256", "a" * 64), {}),
+    # Review of dc538c79, FIX1: equal nulls on the receipt and the round.
+    "receipt_and_round_bundle_null": (_set_both_bundles(None), {}),
     "receipt_base_missing": (_set_receipt("base", None), {}),
     "receipt_base_other": (_set_receipt("base", "0" * 40), {}),
     "by_fullwidth_auto": (_accepted, {"by": "\uff41\uff55\uff54\uff4f: x"}),
