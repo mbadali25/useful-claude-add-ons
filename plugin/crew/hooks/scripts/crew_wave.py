@@ -355,10 +355,10 @@ def touch_overlaps(one, two):
     return any(_entries_overlap(a, b) for a in one for b in two)
 
 
-def _main_version(top):
-    """origin/main's crew version as (major, minor, patch), or None."""
+def _version_at(top, ref):
+    """crew's version in `ref`'s plugin.json as (major, minor, patch), or None."""
     try:
-        done = subprocess.run(["git", "-C", top, "show", f"origin/main:{PLUGIN_JSON}"],
+        done = subprocess.run([crew_common.require_tool("git"), "-C", top, "show", f"{ref}:{PLUGIN_JSON}"],
                               capture_output=True, text=True, check=False, timeout=30,
                               stdin=subprocess.DEVNULL)
         version = json.loads(done.stdout).get("version") if done.returncode == 0 else None
@@ -366,6 +366,19 @@ def _main_version(top):
         return None
     found = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version or "")
     return tuple(int(n) for n in found.groups()) if found else None
+
+
+def _main_version(top):
+    """The crew version lanes bump from, as (major, minor, patch), or None.
+
+    origin/main's, unless the checkout the lanes are cut from (HEAD) already
+    declares a higher one -- a release branch ahead of main -- when it is
+    HEAD's: a lane must never be told to lower the declared version (group
+    review, rush g0). Either one unreadable is None, never a guess."""
+    main, head = _version_at(top, "origin/main"), _version_at(top, "HEAD")
+    if main is None or head is None:
+        return None
+    return max(main, head)
 
 
 def _entries(root, slug, tickets):
@@ -494,8 +507,9 @@ def branch_for(ticket):
 def _git(top, *args):
     """(returncode, stdout) of one git call; (None, '') when it could not run."""
     try:
-        done = subprocess.run(["git", "-C", top] + list(args), capture_output=True, text=True,
-                              check=False, timeout=60, stdin=subprocess.DEVNULL)
+        done = subprocess.run([crew_common.require_tool("git"), "-C", top] + list(args),
+                              capture_output=True, text=True, check=False, timeout=60,
+                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
         return None, ""
     return done.returncode, done.stdout.strip()

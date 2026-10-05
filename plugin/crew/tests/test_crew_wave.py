@@ -412,6 +412,48 @@ def test_plan_orders_landing_by_provisional_version(tmp_path):
     assert got["land"] == [["T-1", "1.0.51"], ["T-2", "-"], ["T-3", "1.0.52"]]
 
 
+def _head_version(root, version):
+    """Commit crew's plugin.json at `version` on HEAD only; origin/main stays."""
+    _write(root / "plugin" / "crew" / ".claude-plugin" / "plugin.json",
+           json.dumps({"name": "crew", "version": version}))
+    git(root, "commit", "-qam", "head version")
+
+
+def test_plan_never_lowers_the_checkouts_own_version(tmp_path):
+    # Group review (rush g0): run from a release branch whose HEAD declares more than
+    # origin/main, the lanes were told to set main's next patch - a downgrade.
+    root = _repo(tmp_path)
+    _origin_version(root, "1.1.3")
+    _head_version(root, "1.1.6")
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("plugin/crew/a/**",)), ("T-2", ("plugin/crew/b/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", "1.1.7"], ["T-2", "1.1.8"]]
+
+
+def test_plan_bumps_from_origin_main_when_it_is_ahead(tmp_path):
+    root = _repo(tmp_path)
+    _origin_version(root, "1.0.50")
+    _head_version(root, "1.0.70")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(root, "reset", "-q", "--hard", "HEAD~1")
+    _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
+    _set(root, "s", ["T-1"])
+
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", "1.0.71"]]
+
+
+def test_plan_landing_version_unknown_when_head_has_none(tmp_path):
+    root = _repo(tmp_path)
+    _origin_version(root, "1.0.50")
+    git(root, "rm", "-q", "plugin/crew/.claude-plugin/plugin.json")
+    git(root, "commit", "-qm", "no plugin.json on HEAD")
+    _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
+    _set(root, "s", ["T-1"])
+
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", "unknown"]]
+
+
 def test_plan_landing_version_unknown_without_origin(tmp_path):
     root = _repo(tmp_path)
     _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])

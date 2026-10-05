@@ -477,7 +477,7 @@ def _git_env_spy(monkeypatch):
     real_run = subprocess.run
 
     def spy(argv, *args, **kwargs):
-        if list(argv[:2]) == ["git", "-C"]:
+        if len(argv) > 1 and argv[1] == "-C":
             envs.append(dict(kwargs.get("env") or os.environ))
         return real_run(argv, *args, **kwargs)  # pylint: disable=subprocess-run-check
     monkeypatch.setattr(crew_coord.subprocess, "run", spy)
