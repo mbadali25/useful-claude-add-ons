@@ -318,3 +318,17 @@ def test_two_dispatches_to_two_environments_each_carry_head(flavour, ghrepo):
     assert "'development' has no all-pass row" in err, err
     assert "fits no declared environment" not in err and "the sha input" not in err, err
     assert "carries no" not in err, err
+
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_an_echoed_declared_dispatch_with_no_real_one_blocks(flavour, ghrepo):
+    """L-0648 r4: the declared text only in an `echo`, the real dispatch of
+    another workflow: no dispatch fits the picked entry, so its sha cannot
+    be checked and the command blocks."""
+    sep = " && " if flavour == "sh" else "; "
+    command = "echo " + _prefix("dev") + sep + f"gh workflow run ci.yml -f sha={ghrepo.main_full}"
+    code, err = tree.run_gate(flavour, ghrepo, command)
+    assert code == 2, err
+    assert "cannot read a dispatch of `deploy.yml`" in err, err
+    assert ghrepo.in_flight() is None

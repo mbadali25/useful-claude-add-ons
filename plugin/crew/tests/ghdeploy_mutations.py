@@ -673,6 +673,10 @@ GHDEPLOY_MUTATIONS = (
      "        if not fit:\n",
      "        if False:\n",
      _G + "test_an_echoed_declared_dispatch_does_not_vouch_for_another[sh]"),
+    ("promote-gate: an entry no dispatch fits goes unchecked", GHRULE,
+     "    if missing:\n",
+     "    if False:\n",
+     _G + "test_an_echoed_declared_dispatch_with_no_real_one_blocks[sh]"),
     # --- L-0648 must-allow non-vacuity ---------------------------------------
     ("promote-gate: the sha rule compares against the project dir's HEAD", SH,
      '--shell bash --full "$FULL" \\\n',
