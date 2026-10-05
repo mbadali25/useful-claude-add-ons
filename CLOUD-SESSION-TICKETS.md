@@ -109,6 +109,7 @@ Next free untracked ID: **C-0015** (owner rule 2026-10-05: cloud-session tickets
 | T-0045, T-0041, L-0582, T-0050 (batch 6) | #502 (lands #500, #348, #338, #361) | 47f71e93 | 1.0.348 |
 | T-0020, T-0011, T-0063 (batch 7) | #505 (lands #357, #353, #368) | abddc302 | 1.0.349 |
 | C-0009 (one cloud setup script) | #507 | c89d488e | (repo script, no bump) |
+| C-0001 (per-component CI skip, TOP PRIORITY) | #501 | d38e2d73 | (CI/scripts, no bump) |
 
 ## Closed without merging (your instruction)
 
