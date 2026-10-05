@@ -77,10 +77,11 @@ array-unrolling fix, but whether the review itself found that defect could not b
 Wrap any value whose `.Count`, indexing or emptiness matters in `@(...)`, after assignment on
 5.1. Decide failure from the operation itself, not from the result being `$null`. For example,
 run `ConvertFrom-Json -ErrorAction Stop` inside `try`/`catch` and check the raw text for
-emptiness, because a valid `[]` also comes back as `$null`. Then wrap: `@($result).Count` is
-0 for that empty array. A `$null` that means "missing" is caught before the wrap, because
-`@($null).Count` is 1. Expect 5.1's `ConvertFrom-Json` to emit an array as one object, and an empty JSON array
-to unroll to `$null`. Windows PowerShell 5.1's `ConvertFrom-Json` has no `-NoEnumerate`
+emptiness, because in PowerShell 7 a valid `[]` comes back as `$null` (measured on pwsh).
+Then wrap: `@($result).Count` is 0 for that empty array. A `$null` that means "missing" is
+caught before the wrap, because `@($null).Count` is 1. Expect 5.1's `ConvertFrom-Json` to
+emit a non-empty array as one object. What 5.1 returns for `[]` was not measured here (no
+5.1 host); the try/catch check works either way. Windows PowerShell 5.1's `ConvertFrom-Json` has no `-NoEnumerate`
 (it is a PowerShell 7 parameter), so on 5.1 assign the result first and then wrap it in `@()`.
 
 Source: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_pipelines?view=powershell-7.5:
