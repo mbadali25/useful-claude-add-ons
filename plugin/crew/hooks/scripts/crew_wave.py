@@ -496,12 +496,15 @@ def read_lane(root, slug, ticket):
     data, state = _read_json(lane_path(_top(root), slug, ticket))
     if state != "ok":
         return None, state
-    if (not isinstance(data, dict) or data.get("state") not in LIVE + STATES
-            or data.get("set") != slug or data.get("ticket") != ticket
-            or not isinstance(data.get("version"), str)
-            or not (data.get("worktree") is None or isinstance(data.get("worktree"), str))):
-        return None, "corrupt"
-    return data, "ok"
+    return (data, "ok") if _lane_shape_ok(data, slug, ticket) else (None, "corrupt")
+
+
+def _lane_shape_ok(data, slug, ticket):
+    if not isinstance(data, dict) or data.get("state") not in LIVE + STATES:
+        return False
+    if data.get("set") != slug or data.get("ticket") != ticket:
+        return False
+    return isinstance(data.get("version"), str) and isinstance(data.get("worktree"), (str, type(None)))
 
 
 def write_lane(root, slug, ticket, lane):
