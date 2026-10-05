@@ -288,3 +288,17 @@ def test_the_helper_alone_refuses_a_null_github(tmp_path):
                           capture_output=True, cwd=tmp_path, check=False, timeout=60)
     assert proc.returncode == 4, proc.stdout + proc.stderr
     assert "`github`" in proc.stderr
+
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_an_echoed_declared_dispatch_does_not_vouch_for_another(flavour, ghrepo):
+    """L-0648 r2: the declared text sits in an `echo`; the real dispatch has
+    other inputs and the right sha. It fits no entry, so it blocks."""
+    sep = " && " if flavour == "sh" else "; "
+    command = ("echo " + _prefix("dev") + sep
+               + f"gh workflow run deploy.yml -f target=nope -f sha={ghrepo.main_full}")
+    code, err = tree.run_gate(flavour, ghrepo, command)
+    assert code == 2, err
+    assert "fits no declared environment" in err, err
+    assert ghrepo.in_flight() is None

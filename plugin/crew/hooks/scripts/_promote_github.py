@@ -128,10 +128,27 @@ def sha_problem(entry, command, shell, full):
         return (f"the gate cannot read a dispatch of `{entry.get('workflow')}` in the command, "
                 f"so its {flag} cannot be checked")
     for scope in mine:
+        # Bound to the entry: every dispatch of its workflow must carry the
+        # entry's own inputs. The declared text matching elsewhere on the line
+        # (an `echo`) never vouches for a dispatch that fits no entry.
+        if not _fits(scope, entry):
+            return (f"a dispatch of `{entry.get('workflow')}` in the command does not give the "
+                    "entry's declared inputs, so it fits no declared environment and which "
+                    "environment's preconditions apply cannot be told")
         problem = _scope_problem(scope, name, flag, full)
         if problem:
             return problem
     return None
+
+
+def _fits(scope, entry):
+    """Whether the dispatch gives every one of the entry's declared inputs,
+    with the same value."""
+    given = {}
+    for got, value, _why in scope.get("inputs", []):
+        if isinstance(got, str):
+            given.setdefault(got.lower(), []).append(value)
+    return all(given.get(str(k).lower()) == [v] for k, v in entry.get("inputs", {}).items())
 
 
 def _scope_problem(scope, name, flag, full):

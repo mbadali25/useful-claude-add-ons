@@ -664,6 +664,10 @@ GHDEPLOY_MUTATIONS = (
      "    if not isinstance(name, str) or not name:\n        return None\n        return (f\"the"
      " `github` entry's `shaInput`",
      _G + "test_a_sha_input_that_names_no_input_blocks[number-sh]"),
+    ("promote-gate: a dispatch that fits no entry is sha-checked anyway", GHRULE,
+     "        if not _fits(scope, entry):\n",
+     "        if False:\n",
+     _G + "test_an_echoed_declared_dispatch_does_not_vouch_for_another[sh]"),
     # --- L-0648 must-allow non-vacuity ---------------------------------------
     ("promote-gate: the sha rule compares against the project dir's HEAD", SH,
      '--shell bash --full "$FULL" \\\n',
