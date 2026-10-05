@@ -306,6 +306,10 @@ REFUSALS = {
     "owner_receipt_on_clean": (_owner_kind_on_clean, None),
     "receipt_bundle_missing": (_with(lambda data: data["receipt"].pop("bundle_sha256")), None),
     "receipt_bundle_empty": (_receipt("bundle_sha256", ""), None),
+    # Review of 2743f0d2: a bundle id that is not a sha256 (here a lone
+    # surrogate the success line could not print) is unreadable.
+    "receipt_bundle_surrogate": (_receipt("bundle_sha256", "\udc80"), None),
+    "receipt_bundle_not_hex": (_receipt("bundle_sha256", "x" * 64), None),
     "superseded_dict": (_with(lambda data: data.__setitem__("superseded", {})), None),
     "superseded_string": (_with(lambda data: data.__setitem__("superseded", "x")), None),
     "round_one_receipt_round_bool": (

@@ -901,9 +901,10 @@ def _supersede(data, ticket, by):
         raise LedgerError(f"{ticket}'s {receipt.get('kind')} receipt does not match round "
                           f"{number}'s verdict {latest.get('verdict')!r}: could not tell what "
                           "would be superseded")
-    if not isinstance(receipt.get("bundle_sha256"), str) or not receipt["bundle_sha256"]:
-        raise LedgerError(f"{ticket}'s receipt names no bundle: could not tell what would be "
-                          "superseded")
+    if not isinstance(receipt.get("bundle_sha256"), str) or not _SHA256_RE.match(
+            receipt["bundle_sha256"]):
+        raise LedgerError(f"{ticket}'s receipt names no bundle sha256: could not tell what "
+                          "would be superseded")
     history = data.get("superseded", [])
     if not _is_dict_list(history):
         raise LedgerError(f"{ticket}'s `superseded` is not a list of objects: could not tell "
