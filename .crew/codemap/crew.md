@@ -835,39 +835,40 @@ the forge-local-state threat README's "Scope and approval" already states.
 
 **In-flight markers (T-0049, crew 1.0.375).** DERIVED at `3e6ff1e9`. `next_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:1349`) takes `runner`; when set, and only after `_phase`
-returned no stop, `_inflight` (`:1316`, called at `:1370`) lazy-imports `crew_inflight` and asks its
-`next_stop` (`crew_inflight.py:567`), which reads `holds(root, ticket, runner=runner)`: `free`/`mine` return None (the plain result), `elsewhere` is
+returned no stop, `_inflight` (`:1316`, called at `:1368`) lazy-imports `crew_inflight` and asks its
+`next_stop` (`crew_inflight.py:574`), which reads `holds(root, ticket, runner=runner)`: `free`/`mine` return None (the plain result), `elsewhere` is
 phase `handover-elsewhere`, everything else - `live`, `stale`, `unknown`, an unexpected state, an
 import error or a raise - is phase `in-flight`, with the owner's clear command as `command` for stale
-and unknown. `FIXED_STOPS` (`:307`) gains both (`:321`; fourteen with main's since); the CLI's `--runner` (`:3292`) is
+and unknown. `FIXED_STOPS` (`:307`) gains both (`:321`; fourteen with main's since); the CLI's `--runner` (`:3290`, checked at `:3313`) is
 checked lazily by `_runner_ok` (`:3236`: an unknown runner exits 2, an import failure is the stop).
 `plugin/crew/hooks/scripts/crew_inflight.py` owns the marker,
 `<git-common-dir>/crew/inflight/<ticket>.json`: `TTL_SECONDS` 1800 and `HEARTBEAT_SECONDS`
 `min(600, TTL/3)` (`:113-114`), `STATES` and `RUNNERS` (`:118-119`), `CLEAR_COMMAND` (`:121`).
-The holder is `_holder_pid` (`:381`): `CLAUDE_PID` only when `_ancestors` (`:354`) finds it among the
-CLI's ancestors and `_born_before_me` (`:374`) says it started first - the chain comes from /proc, `ps`,
-or a Windows process snapshot (`_win_ancestors` `:290`), and a hint that cannot be checked is never
-trusted - else the nearest ancestor named `claude` (`HOLDER_NAMES` `:120`, compared by `_name` `:348`,
+The holder is `_holder_pid` (`:388`): `CLAUDE_PID` only when `_ancestors` (`:361`) finds it among the
+CLI's ancestors and `_born_before_me` (`:381`) says it started first - the chain comes from /proc, `ps`,
+or a Windows process snapshot (`_win_ancestors` `:290`, whose walk is the pure `walk_parents` `:333`: it stops at a
+link that started after the one below it, or whose start cannot be read), and a hint that cannot be checked is never
+trusted - else the nearest ancestor named `claude` (`HOLDER_NAMES` `:120`, compared by `_name` `:355`,
 so `Claude.exe` counts), else None in a Claude Code session, else the CLI's parent. `_process` (`:270`)
 is the one OS seam: `/proc` (`_proc_stat` `:199`) on Linux, `os.kill` plus
 `ps -o stat=,ppid=,lstart=,comm=` (`_posix_process` `:210`) elsewhere on POSIX,
-OpenProcess/GetExitCodeProcess/GetProcessTimes (`_win_process` `:234`) on Windows; `probe` (`:440`)
+OpenProcess/GetExitCodeProcess/GetProcessTimes (`_win_process` `:234`) on Windows; `probe` (`:447`)
 measures only when host, boot_id and pidns are equal, and any probe error (overflow included) is
-unmeasured. `holds` (`:555`) wraps `_assess` (`:589`: git, the directory, the lock wait,
-`load_marker` `:477` with lstat-first, duplicate-key and shape checks `_shape` `:508`, a pid outside
-1..2^32 included) and `_judge` (`:612`: the reader's own worktree unnameable is unknown; a future
-heartbeat unknown; older than the TTL or probed gone stale; `_is_mine` (`:632`, where only when both
+unmeasured. `holds` (`:562`) wraps `_assess` (`:596`: git, the directory, the lock wait,
+`load_marker` `:484` with lstat-first, duplicate-key and shape checks `_shape` `:515`, a pid outside
+1..2^32 included) and `_judge` (`:619`: the reader's own worktree unnameable is unknown; a future
+heartbeat unknown; older than the TTL or probed gone stale; `_is_mine` (`:639`, where only when both
 pids are None does a non-empty session decide alone) mine; another worktree elsewhere; else live); any
-raise is unknown. Writers, each under `_Lock` (`:672`), log first (`_log` `:738`, whose failure is
-`LogError` naming the file to fix or move aside; `_unlog` `:762` takes an event back when the effect
-fails): `claim` (`:822`, `_publish` `:860` with `os.link` or a refresh by replace), `release` (`:881`),
-`clear` (`:904`, stale or unknown only - unknown included - via `_remove_logged` `:872`). The
-heartbeat: `beat_once` (`:954`) checks marker, token and holder before the lock (`_beat_check` `:939`)
-and again under it, and skips a beat on a busy lock or any OSError; `beat_loop` (`:977`) stops once
+raise is unknown. Writers, each under `_Lock` (`:679`), log first (`_log` `:745`, whose failure is
+`LogError` naming the file to fix or move aside; `_unlog` `:769` takes an event back when the effect
+fails): `claim` (`:829`, `_publish` `:867` with `os.link` or a refresh by replace), `release` (`:888`),
+`clear` (`:911`, stale or unknown only - unknown included - via `_remove_logged` `:879`). The
+heartbeat: `beat_once` (`:961`) checks marker, token and holder before the lock (`_beat_check` `:946`)
+and again under it, and skips a beat on a busy lock or any OSError; `beat_loop` (`:984`) stops once
 its holder has gone more than the TTL without a confirmed-alive beat, so an unprobeable dead holder
-reads stale within 2 x TTL + one heartbeat (4200 s); `spawn_beat` (`:794`) starts it detached.
+reads stale within 2 x TTL + one heartbeat (4200 s); `spawn_beat` (`:801`) starts it detached.
 `crew_status._inflight_lines` (`plugin/crew/hooks/scripts/crew_status.py:170`, called at `:282`)
-prints `survey` (`crew_inflight.py:598`). `AUTONOMOUS_STOPS` gains `clear-inflight`
+prints `survey` (`crew_inflight.py:654`). `AUTONOMOUS_STOPS` gains `clear-inflight`
 (`plugin/crew/hooks/scripts/crew_state.py:1121`). JUDGEMENT: the heartbeat surviving a Bash tool call
 was measured on Linux only (cloud container, no pid namespace); the Windows snapshot, probe and
 creation-time paths are tested only through mocked seams, and macOS only by hiding /proc on Linux.
