@@ -131,7 +131,7 @@ force says `take`. Exit 0 valid, 1 not.
   ... working tree differs from HEAD     ship                stop
   ... receipt no longer stands           ship                stop
   ... no PR, or open under `merge`       ship                crew_autopilot.py ship
-  `## Open questions` with an item       open-questions      stop
+  `## Open questions` with an item       open-questions      stop (fences: L-0642)
   no spec.md                             spec                /crew:spec <id>
   spec fails crew_ticket.validate        spec                stop
   size check after spec (T-0058)         split-*             crew_autopilot_split.py
@@ -261,6 +261,7 @@ if __name__ == "__main__":
 import completion_audit
 import crew_common
 import crew_autopilot_docs
+import crew_autopilot_fences
 import crew_autopilot_sleep
 import crew_autopilot_slices
 import crew_autopilot_split
@@ -866,9 +867,19 @@ _ANSWERED = re.compile(r"^(?:(?:none|n/a)(?:$|\s*[-:,(\u2013\u2014])|\[x\]|~~|-$
 
 
 def _open_items(text):
-    """Unanswered items under any `Open questions` heading, at any level, down
-    to the next heading of the same or a higher level -- a sub-heading inside
-    the section stays inside it. See `_ANSWERED` for what counts as answered."""
+    """L-0642: main's parser (the floor) plus a column-0 fence view; any other fence shape is
+    could-not-tell and stops. Put fences at column 0 and close each (crew_autopilot_fences)."""
+    return crew_autopilot_fences.open_items(text, _legacy_open_items, _HEADING)
+
+
+UNCLEAR_FENCE, UNEXPLAINED_FENCE = (crew_autopilot_fences.UNCLEAR_FENCE,
+                                    crew_autopilot_fences.UNEXPLAINED_FENCE)
+
+
+def _legacy_open_items(text):
+    """Main's parser, unchanged (L-0642's floor): unanswered items under any
+    `Open questions` heading, at any level, down to the next heading of the same or a
+    higher level -- a sub-heading inside the section stays inside it. See `_ANSWERED`."""
     items, depth = [], 0
     for line in (text or "").splitlines():
         heading = _HEADING.match(line)

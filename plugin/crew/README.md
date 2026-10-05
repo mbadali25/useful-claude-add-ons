@@ -906,7 +906,7 @@ An assigned ticket is approved under `autopilot.approval` like any other ticket 
 | … armed: the branch's PR is merged but HEAD has moved past its merged head, or either head cannot be read | `ship` | stop — ship the later commits on a new branch and PR; autopilot never opens a second PR on a merged branch |
 | … armed: detached HEAD, `gh pr view` failed or answered something that is not a PR state, the PR closed unmerged, a working tree that differs from HEAD, or the review receipt no longer stands | `ship` | stop |
 | … armed: no PR yet, or one open under `autopilot.ship: merge` | `ship` | runs `crew_autopilot.py ship --ticket <id>` |
-| an item under an `Open questions` heading (any level, sub-headings included) in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]`; `None of us has decided` is still open |
+| an item under an `Open questions` heading (any level, sub-headings included) in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]`; `None of us has decided` is still open. Code fences (L-0642): main's reading is the floor; a fence at column 0, closed at column 0 by the same marker, hides nothing (its lines are neither headings nor items); any other fence shape, or a fence left open, in a file that names an Open-questions section is `could not tell` and stops, so put fences at column 0 and close each one |
 | no `spec.md` / no `plan.md` | `spec` / `plan` | runs `/crew:spec` / `/crew:plan` |
 | `crew_ticket.validate` refuses | `spec` / `plan` | stop, with the problems |
 | the plan's `## PR slices` breaks a rule (T-0059) | `plan` | stop, `PR slices: <problems>` |

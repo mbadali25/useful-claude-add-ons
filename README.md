@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.22**: Autopilot's open-questions stop sees through code fences, and stops when it cannot tell. A code block under a ticket's `## Open questions` heading no longer hides the questions after it from autopilot; a fence autopilot cannot read for certain now stops the run instead of reading as "no questions".
 - **crew 1.1.22**: Autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE. After a FINDINGS review the autopilot stop now tells you to refresh before the next round, and a review you accepted that a later edit staled goes back through refresh and review instead of being reported as unfinished.
-- **crew 1.1.2**: Plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship`. `crew_split.parse_slices(plan_text)` reads a plan's `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`, `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices (`SLICES_MIN`/`SLICES_MAX`, the children's ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

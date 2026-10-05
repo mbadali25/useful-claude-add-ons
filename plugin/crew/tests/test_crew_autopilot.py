@@ -701,6 +701,56 @@ def test_next_open_questions_section_ends_at_the_next_peer_heading(tmp_path):
     assert _next(root)["phase"] == "implement"
 
 
+# --- L-0642: the open-questions stop sees through code fences --------------------------------
+
+FENCED_HASH = "go\n## Open questions\n- none - settled\n{f}\n# how to check\n{f}\n- which DB?\n"
+
+
+@pytest.mark.parametrize("fence", ["```", "~~~"], ids=["backticks", "tildes"])
+def test_open_questions_after_a_fence_with_a_hash_line_stop(tmp_path, fence):
+    """Main read the `#` line inside the fence as a heading that closed the
+    section, so `which DB?` was never seen and autopilot drove past it."""
+    text = FENCED_HASH.format(f=fence)
+    root = _approved(tmp_path)
+    _write(root / ".work" / "tickets" / T / "direction.md", text)
+
+    got = _next(root)
+
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+    assert (got["phase"], got["stop"], "which DB?" in got["reason"]) == (
+        "open-questions", True, True)
+
+
+def test_open_questions_tilde_fence_is_a_fence():
+    assert crew_autopilot._open_items(  # pylint: disable=protected-access
+        FENCED_HASH.format(f="~~~")) == ["which DB?"]
+
+
+ROUND2_INDENTED_CLOSER = ("go\n```text\n    ```\n```\n\n## Open questions\n- which DB?\n"
+                          "```sql\nselect 1;\n```\n")
+ROUND2_LIST_NESTED = ("go\n- example\n  ```text\n  foo\n\n## Open questions\n- which DB?\n"
+                      "```sql\nselect 1;\n```\n")
+
+
+def _next_on_direction(tmp_path, text):
+    root = _approved(tmp_path)
+    _write(root / ".work" / "tickets" / T / "direction.md", text)
+    got = _next(root)
+    return got["phase"], got["stop"], "which DB?" in got["reason"]
+
+
+def test_open_questions_round2_indented_closer_repro_stops(tmp_path):
+    """T-0043 round 2: a 4-space closer inside a column-0 fence was read as its
+    closer, and the real closer then opened a fence over the section."""
+    assert _next_on_direction(tmp_path, ROUND2_INDENTED_CLOSER) == ("open-questions", True, True)
+
+
+def test_open_questions_round2_list_nested_fence_repro_stops(tmp_path):
+    """T-0043 round 2: a never-closed fence nested in a list item swallowed the
+    section that follows the list."""
+    assert _next_on_direction(tmp_path, ROUND2_LIST_NESTED) == ("open-questions", True, True)
+
+
 @pytest.mark.parametrize("status", ["", "brainstorm", "parked", "rejected", "**ready**"])
 def test_next_index_status_that_does_not_say_approved_stops(tmp_path, status):
     root = make_repo(tmp_path, mode="off")

@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.1.22: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
+
+- **Summary.** A code block under a ticket's `## Open questions` heading no longer hides the
+  questions after it from autopilot; a fence autopilot cannot read for certain now stops the run
+  instead of reading as "no questions".
+- **What changed.** `crew_autopilot._open_items` is now the union of main's parser (kept byte for
+  byte as `_legacy_open_items`, the floor), a strict fence view, and a could-not-tell item. The
+  view (new `hooks/scripts/crew_autopilot_fences.py`) tracks only a fence opened at column 0 and
+  closed at column 0 by the same marker, at least as long, with nothing after it; its lines are
+  neither headings nor items, so a `# how to check` line inside it no longer ends the section. A
+  tracked fence that opens the section before any item is itself an item. Any other fence shape
+  (indented, a backtick in a backtick info string, a shorter run inside a fence) or a fence left
+  open adds one `could not tell` item naming the line, when the file names an Open-questions
+  section anywhere. No CommonMark emulation: put fences at column 0 and close each one.
+- **Measured.** 17 new parser tests (a generated corpus of 17,282 texts against a verbatim copy of
+  main's parser at 155fe6d8: nothing below main, every unclean text with a section stops) and 3 new
+  `next` tests. Over the 29 ticket files this clone holds, 10 stop under main and the same 10 under
+  the new parser; none newly stops.
+- **Not in this entry.** The sabotage mutations for the parser are harness (T-0087): L-0643.
+
 ### Fixed — crew 1.1.22: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
 
 - **Summary.** After a FINDINGS review the autopilot stop now tells you to refresh before the next
