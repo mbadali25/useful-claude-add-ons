@@ -75,7 +75,7 @@ SECRET_PATTERNS = (
     ("github-pat", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}")),
     ("slack-token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
     ("slack-webhook", re.compile(
-        r"https://hooks\.slack\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]+")),
+        r"(?i)https://hooks\.slack\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]+")),
     ("api-key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}")),
     ("stripe-key", re.compile(r"\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}")),
     ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}")),
@@ -87,7 +87,11 @@ SECRET_PATTERNS = (
     ("url-credentials", re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s/:@<>{}$]+:[^\s/@<>{}$]+@")),
     ("authorization-header", re.compile(
         r"(?i)\bauthorization[\"']?\s*[:=]\s*[\"']?(?:bearer|basic|token|digest)\s+"
-        r"(?![<$%{])[A-Za-z0-9._~+/=-]{8,}")),
+        r"(?![<$%{])(?![*xX.]+(?:\s|$|[\"'`,;)]))"
+        # 8+ characters anywhere; any length when the value ends the line or
+        # a quoted string (`Basic YTpi` is `a:b`), so prose after the scheme
+        # word (`Bearer token from env`) still passes.
+        r"(?:[A-Za-z0-9._~+/=-]{8,}|[A-Za-z0-9._~+/=-]+(?=\s*(?:$|[\"'`,;)])))")),
     # A quoted literal assigned to a credential-named key, spaces and all (a
     # passphrase is still a password). A value starting `$`, `<`, `{` or `%`
     # is a placeholder, and backticks are not quotes, so
