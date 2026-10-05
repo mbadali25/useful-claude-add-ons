@@ -256,6 +256,23 @@ review bundle and staled the accepted receipt with no round left.
   `test_no_hook_script_names_the_own_config_path`, are in `test_worktree_config_shell.py`;
   `sabotage_limit_worktree.py` holds the mutations for the whole T-0096 family.
 
+### Fixed — `crew` 1.1.8: a timed-out python probe says so, and a failed probe shows what it tried (L-0690)
+
+- **Summary.** On a loaded Windows machine the PowerShell completion audit, scope guard, approval
+  hook and verify gate no longer report "no usable python" when the python probe simply ran out of
+  time; they say the probe timed out and list which interpreters they tried and how long each took.
+- **What changed.** `Resolve-CrewPython` in the four review/gate harness `.ps1` hooks records how
+  it ended (`found`, `not-found`, `rejected`, `timed-out`) and a trail: one `python probe:`
+  summary line and one line per candidate (path, milliseconds, verdict such as `killed-at-bound`,
+  `exit-nonzero`, `not-python-proof` or `not-tried-budget-spent`, at most 8 lines). The function
+  still prints nothing; each hook prints its sentence, then the trail, once. Exit codes, the block-
+  once marker, the 8 s / 3 s bounds and `-PrintPython`'s stdout are unchanged; `-PrintPython`
+  writes the trail to stderr when it finds nothing.
+- **Not yet changed.** The other PowerShell carriers (role-write-guard, cloud-guard,
+  crew-context, platform-sync, handoff-read, handoff-write, notify, context-watch and auto-clear)
+  and the bash twins keep the old probe; the parity tests pin the two groups
+  until a follow-up rejoins them.
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file

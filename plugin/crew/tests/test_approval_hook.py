@@ -216,9 +216,11 @@ def _resolver(path):
     return src[start:src.index("\n}\n", start) + 3]
 
 
-def test_the_powershell_resolver_is_byte_for_byte_role_write_guards():
+def test_the_powershell_resolver_is_byte_for_byte_the_harness_carriers():
+    """L-0690: the four harness carriers share one probe (with its trail);
+    tests/test_ps1_python_probe.py pins both groups."""
     assert _resolver(os.path.join(SCRIPTS, "approval-hook.ps1")) == \
-        _resolver(os.path.join(SCRIPTS, "role-write-guard.ps1"))
+        _resolver(os.path.join(SCRIPTS, "completion-audit.ps1"))
 
 
 def test_the_flavour_guard_is_the_first_executable_statement():

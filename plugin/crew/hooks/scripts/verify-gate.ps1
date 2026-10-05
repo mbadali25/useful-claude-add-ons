@@ -176,6 +176,20 @@ function Resolve-CrewPython {
   if ($script:CrewPythonMemoDone) {
     return $script:CrewPythonMemoResult
   }
+  # L-0690: how the probe ended, for the caller to print. Set on every return
+  # with the result and memoized with it; this function writes nothing.
+  #   $script:CrewPythonOutcome  found | not-found | rejected | timed-out
+  #   $script:CrewPythonTrail    a summary line, then one line per candidate
+  # timed-out is "could not tell": a candidate was killed at its bound, its
+  # stdout was not read in time, or the 8s budget ran out with a candidate
+  # untried. rejected: every candidate launched (or failed to launch) and
+  # answered inside its bound, and none was a python. not-found: nothing on
+  # PATH reached a launch.
+  $crewPythonRows = New-Object System.Collections.Generic.List[string]
+  $crewPythonTimedOut = $false
+  $crewPythonLaunched = $false
+  $crewPythonSpent = $false
+  $crewPythonFound = ''
   # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
   # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
   # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
@@ -239,13 +253,16 @@ function Resolve-CrewPython {
   $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
   $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
   foreach ($name in @('python3', 'python', 'py')) {
+    if ($crewPythonFound -or $crewPythonSpent) { break }
     $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
     foreach ($cmd in $candidates) {
       if (-not $cmd.Source) { continue }
+      $crewPythonBegan = [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
       if ($crewPythonRealWindows) {
         $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
         if ($crewPythonNativeExts -notcontains $crewPythonExt) {
           Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          $crewPythonRows.Add("$name $($cmd.Source) 0 ms skipped-extension")
           continue
         }
       }
@@ -257,12 +274,16 @@ function Resolve-CrewPython {
       # and the 10s hook timeout it exists to stay inside.
       $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
       if ($crewPythonRemainingMs -le 0) {
-        $script:CrewPythonMemoDone = $true
-        $script:CrewPythonMemoResult = ''
-        return ''
+        # The walk stops here; later candidates are not enumerated.
+        $crewPythonRows.Add("$name $($cmd.Source) 0 ms not-tried-budget-spent")
+        $crewPythonTimedOut = $true
+        $crewPythonSpent = $true
+        break
       }
       $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
       $real = $null
+      $crewPythonVerdict = 'start-failed'
+      $crewPythonLaunched = $true
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
@@ -304,7 +325,15 @@ function Resolve-CrewPython {
           # Reap the killed tree with its own bound, rather than leaving it
           # torn down but never waited on for however long that takes.
           try { $null = $proc.WaitForExit(2000) } catch { }
-        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $crewPythonVerdict = "killed-at-bound $crewPythonWaitMs ms"
+          $crewPythonTimedOut = $true
+        } elseif ($proc.ExitCode -ne 0) {
+          $crewPythonVerdict = "exit-nonzero $($proc.ExitCode)"
+        } elseif (-not $outTask.Wait(1000)) {
+          $crewPythonVerdict = 'output-read-timeout'
+          $crewPythonTimedOut = $true
+        } else {
+          $crewPythonVerdict = 'not-python-proof'
           $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
           # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
           # NON-terminating binding error this try never catches: it reached stderr as a red
@@ -323,16 +352,40 @@ function Resolve-CrewPython {
         $real = $null
       }
       if ($real) { $real = $real.ToString().Trim() }
+      if ($real -and -not (Test-Path -LiteralPath $real -PathType Leaf)) {
+        $crewPythonVerdict = 'exe-missing'
+        $real = $null
+      }
+      if ($real) { $crewPythonVerdict = 'accepted' }
+      $crewPythonTook = [int]$crewPythonDeadline.Elapsed.TotalMilliseconds - $crewPythonBegan
+      $crewPythonRows.Add("$name $($cmd.Source) $crewPythonTook ms $crewPythonVerdict")
       if (-not $real) { continue }
-      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
-      $script:CrewPythonMemoDone = $true
-      $script:CrewPythonMemoResult = $real
-      return $real
+      $crewPythonFound = $real
+      break
     }
   }
+  $crewPythonOutcome = if ($crewPythonFound) { 'found' } elseif ($crewPythonTimedOut) { 'timed-out' } elseif ($crewPythonLaunched) { 'rejected' } else { 'not-found' }
+  $crewPythonTrail = New-Object System.Collections.Generic.List[string]
+  $crewPythonTrail.Add("python probe: $crewPythonOutcome after $([int]$crewPythonDeadline.Elapsed.TotalMilliseconds) ms (budget 8000 ms, 3000 ms per candidate)")
+  for ($i = 0; $i -lt [Math]::Min(8, $crewPythonRows.Count); $i++) {
+    $crewPythonTrail.Add('python probe:   ' + $crewPythonRows[$i])
+  }
+  if ($crewPythonRows.Count -gt 8) { $crewPythonTrail.Add("python probe:   (+$($crewPythonRows.Count - 8) more)") }
+  $script:CrewPythonOutcome = $crewPythonOutcome
+  $script:CrewPythonTrail = $crewPythonTrail.ToArray()
   $script:CrewPythonMemoDone = $true
-  $script:CrewPythonMemoResult = ''
-  return ''
+  $script:CrewPythonMemoResult = $crewPythonFound
+  return $crewPythonFound
+}
+
+function Write-CrewPythonTrail {
+  # L-0690: the probe's trail (Resolve-CrewPython's $script:CrewPythonTrail) on
+  # stderr, once per process, after the message about the probe's outcome.
+  if ($script:CrewPythonTrailShown) { return }
+  $script:CrewPythonTrailShown = $true
+  foreach ($crewTrailLine in @($script:CrewPythonTrail)) {
+    if ($crewTrailLine) { [Console]::Error.WriteLine($crewTrailLine) }
+  }
 }
 
 # Arguments are checked strictly, the twin of verify-gate.sh's check. This
@@ -361,7 +414,12 @@ if ($Price) {
   Set-Location $root0
   $py0 = Resolve-CrewPython
   if (-not $py0) {
-    [Console]::Error.WriteLine("verify-gate -Price: no python available")
+    if ($script:CrewPythonOutcome -eq 'timed-out') {
+      [Console]::Error.WriteLine("verify-gate -Price: the python probe timed out")
+    } else {
+      [Console]::Error.WriteLine("verify-gate -Price: no python available")
+    }
+    Write-CrewPythonTrail
     exit 1
   }
   $script0 = Join-Path $PSScriptRoot 'verify_price.py'
@@ -377,7 +435,11 @@ if ($PrintBash) {
 }
 
 if ($PrintPython) {
-  Write-Output (Resolve-CrewPython)
+  $crewPrinted = Resolve-CrewPython
+  Write-Output $crewPrinted
+  # L-0690: stdout is the path or an empty line, as before; the trail of a
+  # probe that found nothing goes to stderr.
+  if (-not $crewPrinted) { Write-CrewPythonTrail }
   exit 0
 }
 
@@ -969,7 +1031,12 @@ try {
   # one sentence -- and neither may be silent.
   $scopeScript = Join-Path $PSScriptRoot 'scope_report.py'
   if (-not $scopePy) {
-    [Console]::Error.WriteLine('outside-scope: (no python; scope not checked)')
+    if ($script:CrewPythonOutcome -eq 'timed-out') {
+      [Console]::Error.WriteLine('outside-scope: (python probe timed out; scope not checked)')
+    } else {
+      [Console]::Error.WriteLine('outside-scope: (no python; scope not checked)')
+    }
+    Write-CrewPythonTrail
   } elseif (-not (Test-Path $scopeScript)) {
     [Console]::Error.WriteLine("outside-scope: (scope_report.py not found at $scopeScript; scope not checked)")
   } else {
@@ -1824,7 +1891,12 @@ if ($bashExe) {
   if (-not $python3Already) {
     $shimPy = Resolve-CrewPython
     if (-not $shimPy) {
-      [Console]::Error.WriteLine("verify-gate: no python - python3, python and py all fail to resolve to a PROVED working interpreter; a rule hardcoding python3 will fail with 'command not found'")
+      if ($script:CrewPythonOutcome -eq 'timed-out') {
+        [Console]::Error.WriteLine("verify-gate: the python probe timed out before python3, python or py was proved; no python3 shim, so a rule hardcoding python3 may fail with 'command not found'")
+      } else {
+        [Console]::Error.WriteLine("verify-gate: no python - python3, python and py all fail to resolve to a PROVED working interpreter; a rule hardcoding python3 will fail with 'command not found'")
+      }
+      Write-CrewPythonTrail
     } elseif ($shimPy -notmatch '^([A-Za-z]:[\\/]|[\\/][\\/]?)') {
       # Defensive: Resolve-CrewPython is documented to return an absolute
       # path (sys.executable); refuse to shim from anything else rather
