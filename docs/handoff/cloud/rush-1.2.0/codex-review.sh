@@ -14,15 +14,19 @@ Classify each finding:
 Do not report pre-existing problems the diff did not introduce or touch. Verify each finding against the code before reporting it; no speculation.
 verdict = BLOCK if any BLOCK, else FIX if any FIX, else CLEAN.
 $( [ -n "$EXTRA" ] && cat "$EXTRA" )"
-# Retry on "model is at capacity" (a service limit, not a verdict): up to 6 tries, backoff 1,2,4,8,16 min.
-rc=1
+# Retry on "model is at capacity" (a service limit, not a verdict): gpt-6-sol up to 3 tries
+# (backoff 1, 2 min), then the owner-approved fallback gpt-5.6-sol up to 3 tries (backoff 2, 4 min).
+rc=1; MODEL=gpt-6-sol
 for try in 1 2 3 4 5 6; do
+  [ "$try" -ge 4 ] && MODEL=gpt-5.6-sol
   rm -f "$OUT"
-  (cd "$WT" && timeout 3000 codex exec -m gpt-6-sol -c model_reasoning_effort=high -s read-only --skip-git-repo-check \
+  (cd "$WT" && timeout 3000 codex exec -m "$MODEL" -c model_reasoning_effort=high -s read-only --skip-git-repo-check \
     --output-schema $S/review-schema.json -o "$OUT" "$PROMPT" </dev/null) > "$S/reviews/$LABEL-$SHA.log" 2>&1
   rc=$?
   [ -s "$OUT" ] && break
   grep -q "at capacity" "$S/reviews/$LABEL-$SHA.log" || break
-  echo "try $try: model at capacity, backing off"; timeout $((60 * 2 ** (try - 1))) tail -f /dev/null
+  echo "try $try ($MODEL): model at capacity, backing off"
+  [ "$try" -ne 3 ] && timeout $((60 * 2 ** ((try - 1) % 3))) tail -f /dev/null
 done
-echo "rc=$rc out=$OUT"; [ -s "$OUT" ] && jq -r '"verdict=\(.verdict)  block=\([.findings[]|select(.severity=="BLOCK")]|length) fix=\([.findings[]|select(.severity=="FIX")]|length) nit=\([.findings[]|select(.severity=="NIT")]|length)"' "$OUT"
+echo "model=$MODEL" >> "$S/reviews/$LABEL-$SHA.log"
+echo "rc=$rc model=$MODEL out=$OUT"; [ -s "$OUT" ] && jq -r '"verdict=\(.verdict)  block=\([.findings[]|select(.severity=="BLOCK")]|length) fix=\([.findings[]|select(.severity=="FIX")]|length) nit=\([.findings[]|select(.severity=="NIT")]|length)"' "$OUT"
