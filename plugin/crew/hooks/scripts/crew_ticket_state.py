@@ -90,6 +90,25 @@ def _index_cell(top, ticket):
     return False, None, None
 
 
+def _prose_closing(top, ticket):
+    """The closing word (`cancelled`/`superseded`) of a prose INDEX.md line
+    that closes `ticket` by `crew_state._DONE_RE` -- the lines
+    `crew_ticket._index_closed` reads as closed -- or None. A dependency closed
+    that way never closed as done, so it must not read `closed`."""
+    text = crew_common.read_text(os.path.join(top, ".work", "INDEX.md")) or ""
+    key = ticket.casefold()
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if line.count("|") >= 2 or (line.count("|") == 1 and crew_ticket._cell_id(cells[0])):  # pylint: disable=protected-access
+            continue
+        marker = crew_state._DONE_RE.search(line)  # pylint: disable=protected-access
+        if marker and crew_ticket._prose_names(line, key):  # pylint: disable=protected-access
+            for word in CLOSING_STATUSES:
+                if word in marker.group(0).lower():
+                    return word
+    return None
+
+
 def _header_status(spec_text):
     """The word after `status:` on the spec's header line, lower-cased, or None."""
     header = crew_ticket.header_line(spec_text)
@@ -158,6 +177,9 @@ def dependency_state(top, dep):
     closed, why = crew_ticket._index_closed(top, dep)  # pylint: disable=protected-access
     if closed is None:
         return "unknown", f"{CANNOT_TELL} whether {dep} is closed: {why}"
+    word = _prose_closing(top, dep) if closed else None
+    if word:
+        return word, f"a prose line in {_rel_index()} marks {dep} {word}: it will never close as done"
     if closed and found and cell not in crew_state._TABLE_DONE_WORDS:  # pylint: disable=protected-access
         return "unknown", (f"{CANNOT_TELL} whether {dep} is closed: its {_rel_index()} row says "
                            f"`{cell}` and a prose line there marks it closed")

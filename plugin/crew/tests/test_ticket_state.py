@@ -164,6 +164,21 @@ def test_unrecognised_ledger_state_is_not_read_as_no_replan(tmp_path):
     assert any("UNRECOGNIZED" in p for p in got["problems"])
 
 
+@pytest.mark.parametrize("line,word", [("- Cancelled: T-0002", "cancelled"),
+                                       ("1. superseded: T-0002", "superseded"),
+                                       ("* SUPERSEDED : T-0002 by T-0003", "superseded")])
+def test_prose_closing_line_blocks_and_names_it(tmp_path, line, word):
+    root = _repo(tmp_path, f"# Work\n\n{line}\n")
+    _spec(root, T, line2="depends-on: T-0002")
+    got = _view(root)
+    assert (got["blocked"], got["dependencies"][0]["state"]) == (True, word)
+
+
+def test_prose_done_line_closes(tmp_path):
+    root = _repo(tmp_path, "# Work\n\n- Done: T-0002\n")
+    assert crew_ticket_state.dependency_state(str(root), "T-0002")[0] == "closed"
+
+
 def test_missing_spec_is_unknown_not_unblocked(tmp_path):
     root = _repo(tmp_path)
     got = _view(root)
