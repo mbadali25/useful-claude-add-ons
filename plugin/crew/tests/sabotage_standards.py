@@ -398,9 +398,10 @@ STANDARDS_MUTATIONS = (
     (
         "the self-check gate answers before a spent budget",
         REVIEW_RUN,
-        "    if not (ledger.get(\"state\") == review_ledger.NEEDS_REPLAN\n"
-        "            or ledger.get(\"rounds_left\") == 0):\n",
-        "    if True:\n",
+        "    if not _budget_spent(args):\n"
+        "        refused = prereview_gate(args)\n",
+        "    if True:\n"
+        "        refused = prereview_gate(args)\n",
         ("tests/test_review_run_standards.py::"
          "test_run_reports_a_spent_budget_before_the_selfcheck"),
     ),

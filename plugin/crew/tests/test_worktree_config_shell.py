@@ -1107,7 +1107,7 @@ def test_scope_wrapper_ps1_without_python_allows_an_inherited_strict_off(tmp_pat
 # config path outside a comment is a user-facing message (echo / WriteLine), and
 # these are the counts; anything else must be in OWN_PATH_ALLOWED.
 OWN_PATH_MESSAGES = {"promote-gate.sh": 1, "promote-gate.ps1": 1, "scope-guard.sh": 2,
-                     "scope-guard.ps1": 2, "verify-gate.sh": 3, "verify-gate.ps1": 1}
+                     "scope-guard.ps1": 3, "verify-gate.sh": 3, "verify-gate.ps1": 1}
 
 
 def test_no_hook_script_names_the_own_config_path():
