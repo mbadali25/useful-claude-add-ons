@@ -79,6 +79,14 @@ file. The template leaves out the five personal `autopilot.*` settings, so your
 machine-wide defaults for them apply. For a new config it sets `scope.mode` to `auto`: the scope guard reports
 for the first ten approved tickets, then blocks.
 
+Init also keeps `.gitignore` right for the languages it finds (T-0039):
+`crew_gitignore.py apply` adds the missing patterns, without asking, inside
+one `# crew:gitignore:managed` block at the top of `.gitignore`, and never
+edits your own lines or untracks a file. A committed secret-shaped file is
+reported to you instead (exit 3). `/crew:onboard` and `/crew:onboard
+--refresh` run the same step, `/crew:implement` checks it, and
+`/crew:status` shows it as one `gitignore` line.
+
 `/crew:migrate` moves a crew 0.20 repository to the 1.0 layout, once per
 repository: `--preview` first, then `--apply`, which takes a backup that
 `--rollback` restores. Every historical metric it cannot recover is written

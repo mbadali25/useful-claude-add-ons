@@ -217,6 +217,19 @@ def _codemap_line(root, cfg):
     return line
 
 
+def _gitignore_line(root):
+    # T-0039. Imported here, not at the top: a missing or broken module must
+    # still print the line - an omitted line reads as "nothing to say".
+    try:
+        import crew_gitignore  # pylint: disable=import-outside-toplevel
+    except Exception:  # pylint: disable=broad-except
+        return "gitignore unknown (crew_gitignore.py not importable)"
+    try:
+        return "gitignore " + crew_gitignore.summary(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"gitignore unknown ({type(exc).__name__}: {exc})"[:120]
+
+
 def _metrics_line(root):
     """One line: the metrics file in the main checkout's `.crew/` from a linked
     worktree (L-0582), `could not tell` when git cannot name it, and this
@@ -287,6 +300,7 @@ def collect(root, memory=False):
     if shell:
         lines.append(shell)
     lines.append(_codemap_line(root, cfg))
+    lines.append(_gitignore_line(root))
     lines.append(_metrics_line(root))
     handoff = os.path.isfile(os.path.join(root, ".work", "HANDOFF.md"))
     lines.append("handoff  " + ("pending (.work/HANDOFF.md)" if handoff else "none"))

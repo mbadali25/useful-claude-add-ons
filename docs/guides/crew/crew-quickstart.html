@@ -164,7 +164,10 @@ then <code>claude --version</code>.</p>
 <p>Init is phased and resumable: it detects the platform, writes the config, and
 asks before each change. Stop after the config phase if you are short on time;
 <code>/crew:init</code> picks up where it left off.</p>
-<p>Check: <code>/crew:status</code> now shows a <code>config</code> line naming a schema.</p>
+<p>Check: <code>/crew:status</code> now shows a <code>config</code> line naming a schema, and a
+<code>gitignore current</code> line: init added the ignore patterns for the languages it
+found, inside one <code># crew:gitignore:managed</code> block at the top of <code>.gitignore</code>,
+without touching your own lines.</p>
 <p>Today <code>/crew:init</code> still writes the 0.20 <code>.crew/config.json</code>. Run step 4
 straight after it until init writes <code>.crew/crew.json</code> itself.</p>
 <h2 id="4-existing-repositories-migrate-once">4. Existing Repositories: Migrate Once</h2>

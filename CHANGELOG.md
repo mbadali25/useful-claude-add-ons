@@ -9,6 +9,39 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: `.gitignore` kept right for the languages in the repo (T-0039)
+
+- **What changed.** A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`,
+  `summary`) detects the languages and build tools from the files git lists (python, node, dotnet,
+  terraform, rust, maven, gradle, composer, go), recommends patterns from a table vendored from
+  github/gitignore (CC0-1.0, commit `0e5d6901`, `plugin/crew/NOTICE.md`) plus OS/editor noise and
+  secret-file patterns, and measures each with git: `check-ignore` against the working tree's
+  ignore files only (a machine-global excludes file, local config and `.git/info/exclude` never
+  count as covered - they do not travel with a clone), `ls-files -ci` for tracked matches. `apply`
+  adds what is missing inside one `# crew:gitignore:managed` block at the TOP of the root
+  `.gitignore`, so every human rule below wins, atomically (temp file and `os.replace`), keeping
+  CRLF and a BOM. `/crew:init` Phase 1, `/crew:onboard` and `/crew:onboard --refresh` run `apply`;
+  `/crew:implement` step 6 runs `check`; `/crew:status` gains a `gitignore` line.
+- **Owner decision (2026-09-26, "appy automatically").** Every additive pattern - build output,
+  caches, OS/editor noise and secrets patterns - is applied without asking. Never automatic, because
+  not additive: untracking (`git rm --cached`) and anything about an already-committed secret.
+- **Never untracks, never edits a human line.** A tracked file a new pattern matches is named
+  (`tracked ...`); a tracked secret-shaped file is `needs-owner`, exit 3. Crew never edits a line
+  outside its block, never touches the `.crew` policy block, and never drops an entry from its own
+  block. The `.env.*` row re-includes `.env.example`, `.sample`, `.template`, `.dist` and `.defaults`;
+  a committed test-fixture `*.pem`/`*.key` is still `needs-owner` (known limit, no acknowledgement
+  mechanism). A directory pattern that would defeat a human `!` re-include is a `conflict`, not added; a
+  block pattern a rule below re-includes is `overridden`, not re-added.
+- **Exit codes.** 0 current, 1 pending, 2 usage, 3 owner decision, 4 unknown (git missing, failed or
+  timed out, an unreadable or undecodable `.gitignore`, a malformed block, or any unexpected error -
+  never "current" and never 1; output never fails on a path the console cannot encode), 5 refused (a
+  `# crew:gitignore:off` line, a non-regular `.gitignore`, or an active ticket whose Touch does not
+  cover `.gitignore`: an ignore line written inside a ticket could hide its own files from the
+  completion audit, so `.gitignore` is deliberately not a refresh artifact).
+- **Tests.** `plugin/crew/tests/test_crew_gitignore.py` (new) and four `test_status.py` cases, mapped
+  by a new `.crew/verify.json` rule; 19 hand-run sabotage mutations each turned their named test red.
+  Registering them in `sabotage.py` is a harness change and lands alone (TODO.md).
+
 ### Changed — crew: the shortfall rule says its wording list cannot be complete (L-0604)
 
 - crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and

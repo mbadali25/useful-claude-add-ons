@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: `.gitignore` kept right for the languages in the repo. A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`, `summary`) detects the languages and build tools from the files git lists (python, node, dotnet, terraform, rust, maven, gradle, composer, go), recommends patterns from ...
 - **crew**: The shortfall rule says its wording list cannot be complete. crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and recovery paragraph, and the troubleshooting guide (HTML rebuilt) no longer say any admission that the review fell short is INCOMPLETE.
-- **crew**: Tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP. On a shared Obsidian board, two repositories whose origins differ only in the case of the user or path are now two owners, and one repository reached through `file://`, `file://localhost` or a bare path is one. Two overlapping moves leave INDEX and the board agreeing, a glued checkbox (`- [ ]T-0042`) is repaired, a stray quote in a note's `repo-id:` is no longer stripped, and `/crew:fix` creates its ticket through MCP under Jira or ServiceDesk Plus.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

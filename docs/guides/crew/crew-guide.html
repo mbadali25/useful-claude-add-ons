@@ -167,6 +167,13 @@ and a <code>null</code> it writes never shadows a value you set in your machine-
 file. The template leaves out the five personal <code>autopilot.*</code> settings, so your
 machine-wide defaults for them apply. For a new config it sets <code>scope.mode</code> to <code>auto</code>: the scope guard reports
 for the first ten approved tickets, then blocks.</p>
+<p>Init also keeps <code>.gitignore</code> right for the languages it finds (T-0039):
+<code>crew_gitignore.py apply</code> adds the missing patterns, without asking, inside
+one <code># crew:gitignore:managed</code> block at the top of <code>.gitignore</code>, and never
+edits your own lines or untracks a file. A committed secret-shaped file is
+reported to you instead (exit 3). <code>/crew:onboard</code> and <code>/crew:onboard
+--refresh</code> run the same step, <code>/crew:implement</code> checks it, and
+<code>/crew:status</code> shows it as one <code>gitignore</code> line.</p>
 <p><code>/crew:migrate</code> moves a crew 0.20 repository to the 1.0 layout, once per
 repository: <code>--preview</code> first, then <code>--apply</code>, which takes a backup that
 <code>--rollback</code> restores. Every historical metric it cannot recover is written
