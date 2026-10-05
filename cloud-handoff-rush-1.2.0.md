@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T13:30Z
+Last updated: 2026-10-05T13:35Z
 
 ## >>> RESUME HERE
 
@@ -85,6 +85,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T13:35Z G1 built (T-0071, L-0604, T-0039, T-0064, T-0038; T-0081 superseded by #513). LANDING.md procedure written; lander agent landing G1 into release as crew 1.1.2. C-0025 (G1 sabotage -> H2), C-0026 (/crew:upgrade stub).
 - 2026-10-05T13:30Z #540 H3 CI red: generated rules stale (Linux check 3.12); Windows test_review_delta (.Crew case, git-failure kept receipt) and test_review_run_kimi inline prompt; shards 4/5 unknown. All sent to H3 builder with the group-review findings.
 - 2026-10-05T13:29Z MERGED #539 (G8) into release/1.2.0 at c510b764, crew 1.1.1 (Codex group r2 CLEAN, 30/30 CI green). Next free 1.1.2. H3 PR #540 opened; group review BLOCK x2 + FIX (L-0527 Kimi) sent back to builder. G3 done (L-0640 CLEAN; L-0639 r7 review running). Owner: T-0033 superseded. C-0023, C-0024 minted.
 - 2026-10-05T12:42Z H3 built (L-0528, L-0514, L-0518 tooling, L-0522 PR2, L-0527 all CLEAN; head ddb96134, crew 1.1.12). T-0033 held: owner question. C-0022 minted. codex-review.sh now </dev/null (a round hung on stdin). H3 waits for H1 to land first.
