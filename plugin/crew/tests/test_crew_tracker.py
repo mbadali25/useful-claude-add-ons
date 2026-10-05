@@ -1465,7 +1465,10 @@ def test_board_dir_swapped_for_a_link_after_the_checks_writes_nothing_outside(tm
 
     got = crew_tracker.move(str(root), "T-0060", "spec")
 
-    assert (crew_tracker.exit_code(got), _snapshot(outside) == before) == (1, True)
+    # Refused at the link itself, not only by T-0081's identity match behind
+    # it: a walk that followed the link must stay red.
+    assert (crew_tracker.exit_code(got), _snapshot(outside) == before,
+            "is not the directory the vault checks found" in got["results"][-1]["reason"]) == (1, True, False)
 
 
 def test_board_dir_swap_repro_with_a_noteless_card(tmp_path, monkeypatch):
@@ -1503,8 +1506,10 @@ def test_vault_replaced_after_the_checks_writes_nothing(tmp_path, monkeypatch):
 
     got = crew_tracker.move(str(root), "T-0060", "spec")
 
+    # Refused at the vault, not only by T-0081's component match below it.
     assert (crew_tracker.exit_code(got), _snapshot(vault) == {k.replace(str(impostor), str(vault)): v
-                                                              for k, v in before.items()}) == (1, True)
+                                                              for k, v in before.items()},
+            "the vault is not the directory" in got["results"][-1]["reason"]) == (1, True, True)
 
 
 def test_board_dir_that_is_a_link_inside_the_vault_is_allowed(tmp_path):
@@ -1634,7 +1639,7 @@ def _move_out_when_pinned(monkeypatch, real_dir, outside, label, when="pinned"):
     return refused
 
 
-@pytest.mark.parametrize("when", ["pinned", "replaced", "temp"])
+@pytest.mark.parametrize("when", ["pinned", "replaced", "replaced-full", "temp"])
 def test_board_dir_moved_out_of_the_vault_after_pinning_writes_nothing_there(tmp_path, monkeypatch, when):
     """Round 3 BLOCK (:973): the reviewer's repro -- an owned card's board, its
     directory renamed out of the vault once the fd is held. On Windows the held
@@ -1645,7 +1650,12 @@ def test_board_dir_moved_out_of_the_vault_after_pinning_writes_nothing_there(tmp
     assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
     before = (vault / "B" / "Board.md").read_bytes()
     outside = tmp_path / "out"
-    refused = _move_out_when_pinned(monkeypatch, vault / "B", outside, "board", when)
+    refused = _move_out_when_pinned(monkeypatch, vault / "B", outside, "board", when.replace("-full", ""))
+    if when == "replaced" and not _HELD_BY_HANDLE:
+        # The re-walk's component match (T-0081) refuses the fresh directory
+        # first; with it off, `_pinned_check`'s held comparison -- kept as
+        # defence in depth -- is the only guard, and this case is its test.
+        monkeypatch.setattr(crew_tracker, "_match_component", lambda *_: None)
 
     got = crew_tracker.move(str(root), "T-0060", "spec")
 
@@ -1655,7 +1665,9 @@ def test_board_dir_moved_out_of_the_vault_after_pinning_writes_nothing_there(tmp
                     ["B"], 0, False, True, [])
     else:
         assert (crew_tracker.exit_code(got), (outside / "Board.md").read_bytes() == before,
-                _no_temp_anywhere(outside)) == (1, True, [])
+                _no_temp_anywhere(outside),
+                when != "replaced" or "left the vault after the checks" in got["results"][-1]["reason"]) == (
+                    1, True, [], True)
 
 
 def _note_result(got):
@@ -1771,7 +1783,8 @@ def test_the_handle_pin_refuses_a_zero_file_id_as_could_not_tell(tmp_path, monke
 
     got = crew_tracker.move(str(root), "T-0060", "spec")
 
-    assert (crew_tracker.exit_code(got), "could not tell" in got["results"][-1]["reason"],
+    # "reports no file id" is the handle's own check, not T-0081's match behind it.
+    assert (crew_tracker.exit_code(got), "reports no file id" in got["results"][-1]["reason"],
             (vault / "B" / "Board.md").read_bytes() == before) == (1, True, True)
 
 
@@ -1828,8 +1841,10 @@ def test_a_platform_with_no_pin_refuses_as_could_not_tell(tmp_path, monkeypatch)
 def test_the_windows_pin_blocks_renames_while_held_and_frees_them_after(tmp_path):
     vault = _make_vault(tmp_path / "vault", board_dir="B")
     seen = os.stat(vault)
+    held_b = os.lstat(vault / "B")
     paths = {"vault": str(vault), "vaultId": (seen.st_dev, seen.st_ino),
-             "board": str(vault / "B" / "Board.md"), "boardShown": "B/Board.md"}
+             "board": str(vault / "B" / "Board.md"), "boardShown": "B/Board.md",
+             "boardDirIds": [(held_b.st_dev, held_b.st_ino)]}
     refused = []
 
     held = crew_tracker._open_pinned(paths, "board")  # pylint: disable=protected-access
@@ -1841,6 +1856,221 @@ def test_the_windows_pin_blocks_renames_while_held_and_frees_them_after(tmp_path
     freed = _rename_or_refused(vault / "B", tmp_path / "B.moved", refused)
 
     assert (refused, freed) == (["B", "vault"], True)
+
+
+# --- T-0081: every directory from the vault down is the one checked ------------
+
+def _swap_for_copy(monkeypatch, real_dir):
+    """After the board is loaded -- past every check -- `real_dir` is renamed
+    away and a byte-identical real copy takes its place: no link anywhere, so
+    only identity tells the two apart. Returns where the original went."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    real = crew_tracker._load_board  # pylint: disable=protected-access
+    moved = pathlib.Path(str(real_dir) + ".moved")
+
+    def swapping(paths, columns):
+        got = real(paths, columns)
+        if not moved.exists():
+            os.rename(real_dir, moved)
+            shutil.copytree(moved, real_dir)
+        return got
+
+    monkeypatch.setattr(crew_tracker, "_load_board", swapping)
+    return moved
+
+
+def _temps(*dirs):
+    return sorted(name for top in dirs for name in os.listdir(top) if ".tmp" in name)
+
+
+def test_board_dir_replaced_by_a_real_directory_after_the_checks_writes_nothing(tmp_path, monkeypatch):
+    """T-0081: the reviewer's repro with a real directory, not a link. Natively
+    on both platforms: the fd walk on POSIX, the handle walk on Windows."""
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    before = (vault / "B" / "Board.md").read_bytes()
+    moved = _swap_for_copy(monkeypatch, vault / "B")
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), "changed after the vault checks" in got["results"][-1]["reason"],
+            (vault / "B" / "Board.md").read_bytes() == before, (moved / "Board.md").read_bytes() == before,
+            _temps(vault / "B", moved)) == (1, True, True, True, [])
+
+
+def test_a_middle_directory_replaced_after_the_checks_writes_nothing(tmp_path, monkeypatch):
+    vault = _make_vault(tmp_path / "vault", board_dir="A/B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="A/B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    before = (vault / "A" / "B" / "Board.md").read_bytes()
+    moved = _swap_for_copy(monkeypatch, vault / "A")
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), (vault / "A" / "B" / "Board.md").read_bytes() == before,
+            (moved / "B" / "Board.md").read_bytes() == before, _temps(vault / "A" / "B", moved / "B")) == (
+                1, True, True, [])
+
+
+def test_note_dir_replaced_by_a_real_directory_after_the_checks_leaves_no_note_there(tmp_path, monkeypatch):
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    moved = _swap_for_copy(monkeypatch, vault / "B")
+
+    got = crew_tracker.create(str(root), "T-0060", "new work")
+
+    note = _note_result(got)
+    assert (note["state"], "changed after the vault checks" in note["reason"],
+            (vault / "B" / "T-0060.md").exists(), (moved / "T-0060.md").exists(), _index(root)) == (
+                "could not update", True, False, False, ROW)
+
+
+def test_the_handle_pin_refuses_a_different_component(tmp_path, monkeypatch):
+    """The Windows branch on any OS: a component's handle names another directory."""
+    vault, root, before = _held_repo(tmp_path, monkeypatch, _fake_held(identity=(1, 1), at="B"))
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), "changed after the vault checks" in got["results"][-1]["reason"],
+            (vault / "B" / "Board.md").read_bytes() == before) == (1, True, True)
+
+
+@pytest.mark.skipif(not crew_tracker._DIR_FD, reason="the fd walk is POSIX-only")  # pylint: disable=protected-access
+@pytest.mark.parametrize("at", ["vault", "B"])
+def test_the_fd_walk_refuses_a_zero_inode_as_could_not_tell(tmp_path, monkeypatch, at):
+    """No inode is no evidence, on the vault or a component: never 'the same'."""
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    before = (vault / "B" / "Board.md").read_bytes()
+    target = os.stat(vault if at == "vault" else vault / "B")
+    real = os.fstat
+
+    def no_inode(fd):
+        got = real(fd)
+        if (got.st_dev, got.st_ino) != (target.st_dev, target.st_ino):
+            return got
+        fields = list(got[:10])
+        fields[1] = 0
+        return os.stat_result(fields)
+
+    monkeypatch.setattr(os, "fstat", no_inode)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), "could not tell" in got["results"][-1]["reason"],
+            (vault / "B" / "Board.md").read_bytes() == before) == (1, True, True)
+
+
+@pytest.mark.parametrize("walk", ["fd", "handle"])
+@pytest.mark.parametrize("defect", ["none", "short"])
+def test_a_component_with_no_recorded_identity_is_could_not_tell(tmp_path, monkeypatch, walk, defect):
+    """A recorded None, or a list that does not line up with the walk, is no
+    evidence about any component: refused, never read as 'the same'."""
+    if walk == "fd" and not crew_tracker._DIR_FD:  # pylint: disable=protected-access
+        pytest.skip("the fd walk is POSIX-only")
+    if walk == "handle":
+        vault, root, before = _held_repo(tmp_path, monkeypatch, _fake_held())
+    else:
+        vault = _make_vault(tmp_path / "vault", board_dir="B")
+        root = _obsidian_repo(tmp_path, vault, boardDir="B")
+        assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+        before = (vault / "B" / "Board.md").read_bytes()
+    real = crew_tracker._vault_paths  # pylint: disable=protected-access
+
+    def unrecorded(*args):
+        found, problem = real(*args)
+        found["boardDirIds"] = [None] if defect == "none" else []
+        return found, problem
+
+    monkeypatch.setattr(crew_tracker, "_vault_paths", unrecorded)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), "could not tell" in got["results"][-1]["reason"],
+            (vault / "B" / "Board.md").read_bytes() == before) == (1, True, True)
+
+
+@pytest.mark.parametrize("walk", ["fd", "handle"])
+def test_a_recorded_inode_of_zero_is_could_not_tell(tmp_path, monkeypatch, walk):
+    """The check-time side: `os.lstat` reporting inode 0 for a middle folder
+    is no evidence, and must read "could not tell", not "changed"."""
+    if walk == "fd" and not crew_tracker._DIR_FD:  # pylint: disable=protected-access
+        pytest.skip("the fd walk is POSIX-only")
+    vault = _make_vault(tmp_path / "vault", board_dir="A/B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="A/B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    before = (vault / "A" / "B" / "Board.md").read_bytes()
+    if walk == "handle":
+        monkeypatch.setattr(crew_tracker, "_DIR_FD", False)
+        monkeypatch.setattr(crew_tracker, "_WIN_PIN", True)
+        monkeypatch.setattr(crew_tracker, "_win_open_dir", _fake_held())
+    middle = os.path.realpath(vault / "A")
+    real_lstat, real_paths = os.lstat, crew_tracker._vault_paths  # pylint: disable=protected-access
+
+    def zero_for_middle(path, *args, **kwargs):
+        got = real_lstat(path, *args, **kwargs)
+        if os.path.abspath(path) != middle:  # realpath would recurse into this lstat
+            return got
+        fields = list(got[:10])
+        fields[1] = 0
+        return os.stat_result(fields)
+
+    def recording(*args):
+        monkeypatch.setattr(os, "lstat", zero_for_middle)
+        try:
+            return real_paths(*args)
+        finally:
+            monkeypatch.setattr(os, "lstat", real_lstat)
+
+    monkeypatch.setattr(crew_tracker, "_vault_paths", recording)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    reason = got["results"][-1]["reason"]
+    assert (crew_tracker.exit_code(got), "could not tell whether A is" in reason, "inode 0" in reason,
+            (vault / "A" / "B" / "Board.md").read_bytes() == before) == (1, True, True, True)
+
+
+def test_vault_paths_records_every_component_identity(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir="A/B")
+    root = make_repo(tmp_path)
+    names = [("board", "Board.md"), ("note", "T-0060.md")]
+
+    def ident(path):
+        got = os.lstat(path)
+        return (got.st_dev, got.st_ino)
+
+    found, problem = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), {"vaultPath": str(vault), "boardDir": "A/B"}, names)
+    absent, absent_problem = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), {"vaultPath": str(vault), "boardDir": "A/Missing"}, names)
+    top, _ = crew_tracker._vault_paths(str(root), {"vaultPath": str(vault)}, names)  # pylint: disable=protected-access
+    gone = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), {"vaultPath": str(tmp_path / "nowhere"), "boardDir": "A/B"}, names)
+
+    want = [ident(vault / "A"), ident(vault / "A" / "B")]
+    assert (problem, found["boardDirIds"], found["noteDirIds"], absent_problem, absent["boardDirIds"],
+            top["boardDirIds"], top["noteDirIds"], gone) == (
+                None, want, want, None, [want[0], None], [], [], (None, f"vault missing: {tmp_path / 'nowhere'}"))
+
+
+@pytest.mark.parametrize("walk", ["native", "handle"])
+def test_a_board_at_the_vault_root_still_writes(tmp_path, monkeypatch, walk):
+    """Must-allow: boardDir unset is an empty component list, and nothing to match."""
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    root = _obsidian_repo(tmp_path, vault, own=False, boardDir="")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    before = (vault / "Board.md").read_bytes()
+    if walk == "handle":
+        monkeypatch.setattr(crew_tracker, "_DIR_FD", False)
+        monkeypatch.setattr(crew_tracker, "_WIN_PIN", True)
+        monkeypatch.setattr(crew_tracker, "_win_open_dir", _fake_held())
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), (vault / "Board.md").read_bytes() != before) == (0, True)
 
 
 def test_relative_local_origins_are_not_one_repo(tmp_path):
