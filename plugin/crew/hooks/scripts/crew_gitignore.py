@@ -89,7 +89,6 @@ OFF = "# crew:gitignore:off"
 HEADER = (START + " - maintained by crew_gitignore.py; crew only ever adds here.",
           "# Put your own rules below this block; a rule below wins over one in it.")
 FORBIDDEN = (".crew", ".work")
-MAX_PROBE_DIRS = 200
 
 EXIT_CURRENT, EXIT_PENDING, EXIT_USAGE, EXIT_OWNER, EXIT_UNKNOWN, EXIT_REFUSED = 0, 1, 2, 3, 4, 5
 
@@ -295,8 +294,10 @@ NESTED_PROBE_DIR = "crew-probe/"
 
 
 def _probe_dirs(paths):
-    dirs = sorted({_dir_of(p) for p in paths}, key=lambda d: (d.count("/"), d))
-    return dirs[:MAX_PROBE_DIRS]
+    # Every directory, uncapped: a cap would silently drop the anchored rows
+    # of every project past it (and leave their dirs unprobed), so the 201st
+    # `.csproj` would never get its `bin/` and the check would read current.
+    return sorted({_dir_of(p) for p in paths}, key=lambda d: (d.count("/"), d))
 
 
 def candidates(langs):

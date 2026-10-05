@@ -107,6 +107,16 @@ def _all_patterns():
             yield pattern.replace("{dir}", "")
 
 
+def test_every_manifest_dir_gets_its_anchored_rows_however_many():
+    """Review round 2: no cap drops the projects past the 200th."""
+    dirs = [f"p{i:03d}/" for i in range(205)]
+    langs = {"dotnet": [d + "App.csproj" for d in dirs]}
+
+    pats = {c["pattern"] for c in cg.candidates(langs)}
+
+    assert all(f"/{d}bin/" in pats for d in dirs)
+
+
 def test_never_emits_crew_or_work_patterns(tmp_path):
     for pattern in _all_patterns():
         bare = pattern.lstrip("!").lstrip("/")
