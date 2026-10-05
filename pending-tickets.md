@@ -95,6 +95,8 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0024 | `review_ledger.summary` reports `EMPTY` for a `state: null` ledger that records rounds; other readers may treat it as clean (harness: tooling-only PR) | G3 report | none | needs ticket |
 | C-0025 | Sabotage entries for G1's ports: T-0039 (`sabotage_gitignore.py`, 19 hand-run mutations), T-0064 (`sabotage_refresh.py`, 15+), T-0038 (8 `MIGRATE_FIX_MUTATIONS`), T-0071 tracker mutations (L-0669) — harness | G1 report | G1 on main | H2 lane |
 | C-0026 | Remove the `/crew:upgrade` stub (T-0038's spec defers it) | G1 report | T-0038 on main | needs ticket |
+| C-0027 | `apply_delete`: a failed open of the moved backup reads as "changed since the preview" (`crew_config_files.read_restorable` maps an `os.open` error to `Unreadable('notregular')`); exits 2, nothing lost | G3b report | none | needs ticket |
+| C-0028 | Sabotage entries for T-0103's identity checks and T-0106's scan refusals (harness) | G3b report | G3b on main | H2 lane (or L-0682) |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
