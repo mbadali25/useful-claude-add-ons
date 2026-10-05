@@ -298,8 +298,12 @@ def test_user_mode_cached_nikto_is_kept_only_when_it_runs(env, tmp_path, works):
         assert proc.stdout.splitlines()[-1] == "rc=0"
         assert "git" not in calls, calls
     else:
+        # Not a git clone: kept, and the step fails naming the way out.
         assert "fails its check - updating it" in proc.stdout, proc.stdout + proc.stderr
-        assert "git" in calls and "clone" in calls, calls
+        assert "not a git clone" in proc.stderr, proc.stderr
+        assert proc.stdout.splitlines()[-1] == "rc=1", proc.stdout
+        assert "git" not in calls, calls
+        assert (opt / "nikto" / "program" / "nikto.pl").is_file(), "the cached directory was deleted"
 
 
 @pytest.mark.parametrize("works", [True, False])
@@ -350,3 +354,16 @@ def test_user_dry_run_needs_no_home_with_an_explicit_tool_home(env, tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "unbound variable" not in proc.stderr, proc.stderr
     assert log.read_text() == ""
+
+
+def test_user_mode_force_replaces_a_cached_non_clone_nikto(env, tmp_path):
+    e, fakes, log = env
+    e["GIZMODUCK_BOOTSTRAP_FORCE"] = "1"
+    _fake(fakes, "perl", f'#!{_BASH}\necho "Nikto 2.5.0"\n')
+    opt = tmp_path / "opt"
+    (opt / "nikto" / "program").mkdir(parents=True)
+    (opt / "nikto" / "program" / "nikto.pl").write_text("#!/usr/bin/perl\n", newline="\n")
+    script = f'source "$0"; USER_MODE=1; OPT_DIR={opt}; install_nikto_user; echo "rc=$?"'
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    assert "clone" in log.read_text(), proc.stdout + proc.stderr

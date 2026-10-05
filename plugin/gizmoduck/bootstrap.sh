@@ -502,8 +502,13 @@ install_nikto_user() {
   fi
   if [[ -d "$dir/.git" ]]; then
     git_net 600 -C "$dir" pull --ff-only
+  elif [[ -e "$dir" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    # Not a clone this script made: never delete it without being told to.
+    echo "!! nikto: ${dir} exists and is not a git clone - move it aside, or set GIZMODUCK_BOOTSTRAP_FORCE=1 to replace it" >&2
+    return 1
   else
     rm -rf "$dir"
+    mkdir -p "$OPT_DIR"
     git_net 600 clone --depth 1 https://github.com/sullo/nikto.git "$dir"
   fi
   [[ -f "$dir/program/nikto.pl" ]] || return 1
