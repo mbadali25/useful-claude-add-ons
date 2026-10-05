@@ -99,6 +99,10 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0028 | Sabotage entries for T-0103's identity checks and T-0106's scan refusals (harness) | G3b report | G3b on main | H2 lane (or L-0682) |
 | C-0029 | wave: a fix-and-rereview lane changes crew content after its version-bump commit, so the version-drift gate fails | G0 report | none | needs ticket |
 | C-0030 | coord: holder identity on platforms without a process start time (measure on macOS and Windows) | G0 report | none | needs ticket |
+| C-0031 | crew-setup `run-all.sh` always prints "(read-only)": `${READONLY:+ (read-only)}` fires when READONLY=0 (template bug) | G5 report | none | needs ticket |
+| C-0032 | gizmoduck system-mode audit after L-0685 made `try_install` really apply `set -e`: steps may now stop on benign unguarded failures | G5 report | none | needs ticket |
+| C-0033 | `crew_ticket.py status` reports `accepted()`, so `/crew:implement` step 0 refuses a receipt the guard would refuse (T-0025 round-1 BLOCK; harness; TODO.md item d) | G1b report | none | H lane |
+| C-0034 | Split `crew_autopilot.py` (3,457 lines, above pylint's 3,400; silenced with a disable) | G1b report | none | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
