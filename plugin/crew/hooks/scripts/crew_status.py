@@ -313,30 +313,36 @@ def pending_approvals(root):
 
 
 def _index_unreadable(root):
-    """Why `.work/INDEX.md` cannot be read as UTF-8, or None when it can. The
-    approvals walk reads INDEX through a reader that turns every failure into
-    "no tickets", so an unknown would print as "nothing needs approval"."""
+    """Why an INDEX.md the approvals walk reads cannot be read as UTF-8, or
+    None when every one can. The walk reads this checkout's `.work/INDEX.md`
+    and, in a linked worktree, the main checkout's too (T-0063), through a
+    reader that turns every failure into "no tickets", so an unknown in
+    EITHER would print as "nothing needs approval"."""
     # pylint: disable=import-outside-toplevel
     import crew_autopilot
     import crew_ticket
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    path = os.path.join(top, ".work", "INDEX.md")
-    if not os.path.lexists(path):
-        # A linked worktree starts with no INDEX of its own: the walk reads the
-        # main checkout's rows for tickets whose folders are here (T-0063).
-        main, _why = crew_autopilot._main_checkout(top)  # pylint: disable=protected-access
-        if main and os.path.abspath(main) != os.path.abspath(top):
-            path = os.path.join(main, ".work", "INDEX.md")
-    try:
-        with open(path, "rb") as fh:
-            fh.read().decode("utf-8")
-    except FileNotFoundError:
-        return "no .work/INDEX.md"
-    except UnicodeDecodeError:
-        return ".work/INDEX.md is not UTF-8"
-    except (OSError, ValueError) as exc:
-        return f".work/INDEX.md could not be read: {exc.__class__.__name__}"
-    return None
+    here = os.path.join(top, ".work", "INDEX.md")
+    main, why = crew_autopilot._main_checkout(top)  # pylint: disable=protected-access
+    if why:
+        return f"the main checkout's .work/INDEX.md could not be read: {why}"
+    there = os.path.join(main, ".work", "INDEX.md") \
+        if main and os.path.abspath(main) != os.path.abspath(top) else None
+    found = 0
+    for path, label in ((here, ".work/INDEX.md"), (there, f"{there}")):
+        if path is None:
+            continue
+        try:
+            with open(path, "rb") as fh:
+                fh.read().decode("utf-8")
+            found += 1
+        except FileNotFoundError:
+            continue
+        except UnicodeDecodeError:
+            return f"{label} is not UTF-8"
+        except (OSError, ValueError) as exc:
+            return f"{label} could not be read: {exc.__class__.__name__}"
+    return None if found else "no .work/INDEX.md"
 
 
 def approvals_lines(root):

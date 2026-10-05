@@ -509,6 +509,25 @@ def test_status_approvals_reads_the_main_index_from_a_linked_worktree(tmp_path):
     assert lines[:2] == ["/crew:approve T-1", "  why: no approval"], lines
 
 
+def test_status_approvals_cannot_tell_when_the_main_index_is_unreadable(tmp_path):
+    """T-0070 port review r2 BLOCK: a linked worktree WITH a local INDEX still
+    reads the main checkout's rows, so an unreadable main INDEX is could not
+    tell, never `nothing needs approval`."""
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    (wt / ".work").mkdir(exist_ok=True)
+    (wt / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
+                                           encoding="utf-8")
+    (root / ".work" / "INDEX.md").write_bytes(b"| T-1 | open | \xff\xfe |\n")
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert len(lines) == 1 and lines[0].startswith("could not tell ("), lines
+    assert "is not UTF-8" in lines[0], lines
+
+
 def test_status_approvals_says_nothing_needs_approval(tmp_path):
     root = make_repo(tmp_path, config={})
     (root / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
