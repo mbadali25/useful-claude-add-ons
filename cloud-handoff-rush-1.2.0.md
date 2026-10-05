@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T17:13Z
+Last updated: 2026-10-05T17:14Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T17:14Z G1b fixes done: T-0036 (a9de262b) and L-0509 (308078ba) reviews CLEAN. G1b ready to land (head 308078ba). Release landing queue: G3 (lander running) -> G3b -> G5 -> G7 -> G1b -> G2/G0 when cleared.
 - 2026-10-05T17:13Z MERGED #540 (H3) into main at 97dda0bd, crew 1.1.3 (30/30 CI, Codex CLEAN). Closed source PRs #526 #529 #531 #538 and #527 (superseded). H1 lander told to merge main and set 1.1.4. #533 L-0518 stays open until G7's feature half reaches main.
 - 2026-10-05T17:12Z G2 slices: coordinator review of 46409268 found 2 more fail-open paths (unshipped predecessor hides unreadable chain; recorded merge_sha overrides live PR state). 8 paths over 5 rounds -> switched to exhaustive oracle enumeration test + single total function. If it can't be made fail-closed, T-0059 deferral goes to owner.
 - 2026-10-05T17:10Z G7 built (9 tickets CLEAN; head 6020263c, placeholder 1.1.11). L-0534 ships enforced PWSH-16; six language slices candidates only; stack-php and stack-node skills added (crew skill count 33). Budget fix on L-0519 found on resume. C-0041..C-0044. Release landing queue: G3 (running) -> G3b -> G5 -> G7 -> G1b/G2/G0 when their fixes clear.
