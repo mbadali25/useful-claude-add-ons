@@ -69,7 +69,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0013 | From #462 re-check (NITs, crew_memory): (1) migrate with a --memory-dir that is not `<slug>/memory` and no --project should exit 2 requiring --project (closes the only default route to a cross-folder append; reviewer advised against a `source:` frontmatter key). (2) align `save`'s default project with migrate's `_default_project` (slug), so the vault layout isn't split. | none yet | batch 9 |
 
-Next free untracked ID: **C-0014** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0014 | From #501 final re-check (NITs, ci-select): (1) count extension modules (.so/.pyd/importlib.machinery.EXTENSION_SUFFIXES) in the module-name uniqueness scan; (2) deny combined-run top-level names that shadow sys.stdlib_module_names or installed top-level packages; (3) a test inserting a new checkout dir only inside a function is invisible to the collect-only dump (document or detect). | none yet | after #501 |
+
+Next free untracked ID: **C-0015** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
