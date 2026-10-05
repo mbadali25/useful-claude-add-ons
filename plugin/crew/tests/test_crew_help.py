@@ -306,6 +306,30 @@ def test_a_ticket_id_is_where_for_that_ticket(tmp_path):
     assert lines[0] == "where: T-2 (from argument) - phase approve"
 
 
+def test_an_archived_ticket_id_is_where_for_that_ticket(tmp_path):
+    """T-0025 review: an id under Complete/ (L-0509) is a ticket, not
+    `no command matched`."""
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = _two_tickets(tmp_path)
+    _ticket(root, ticket="T-3", status="done")
+    archive_ticket(root, "T-3")
+
+    lines = crew_help.about("T-3", str(root))
+
+    assert lines[0].startswith("where: T-3 (from argument)"), lines
+
+
+def test_an_unreadable_command_file_is_cannot_tell_not_no_description(monkeypatch, capsys):
+    real = crew_help.read_text
+    monkeypatch.setattr(crew_help, "read_text",
+                        lambda p: None if p.endswith("implement.md") else real(p))
+
+    crew_help.main(["about", "implement"])
+    out = capsys.readouterr().out
+
+    assert (out.startswith("help: cannot tell"), "no description" in out) == (True, False), out
+
+
 def test_help_has_no_phrase_table_of_its_own():
     """One phrase table (T-0023's `crew_route.PHRASES`): crew_help.py imports
     no pattern module and compiles nothing."""

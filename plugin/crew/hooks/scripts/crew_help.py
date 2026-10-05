@@ -38,6 +38,7 @@ if __name__ == "__main__":
 import crew_autopilot  # noqa: E402
 import crew_route  # noqa: E402
 import crew_ticket  # noqa: E402
+import crew_common  # noqa: E402
 from crew_common import read_text  # noqa: E402
 
 MAX_LINES = 8
@@ -233,9 +234,15 @@ def where(root, ticket=None):
 # --- about ---------------------------------------------------------------------
 
 def frontmatter(name):
-    """`{"description", "argument-hint"}` from commands/<name>.md, or None."""
-    text = read_text(os.path.join(COMMANDS_DIR, f"{name}.md"))
-    if text is None or not text.startswith("---"):
+    """`{"description", "argument-hint"}` from commands/<name>.md, or None
+    when it has no frontmatter. A file that cannot be read raises OSError
+    (`main` prints `help: cannot tell`): read as absent, its description and
+    arguments would print as "no description" and "none"."""
+    path = os.path.join(COMMANDS_DIR, f"{name}.md")
+    text = read_text(path)
+    if text is None:
+        raise OSError(f"{path} could not be read")
+    if not text.startswith("---"):
         return None
     fields = {}
     for line in text.splitlines()[1:]:
@@ -304,10 +311,10 @@ def _strip(text):
 
 
 def _is_ticket(top, word):
-    try:
-        return os.path.isdir(crew_ticket.ticket_dir(top, word))
-    except crew_ticket.TicketError:
-        return False
+    """A live ticket folder or one archived under Complete/ (L-0509's
+    resolver); an id whose place cannot be told is not taken for one."""
+    _path, where, _why = crew_common.locate_ticket(top, word)
+    return where in (crew_common.LIVE, crew_common.COMPLETE)
 
 
 def _named(word, names):

@@ -1165,22 +1165,28 @@ registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json
 
 ## Contextual help: /crew:help (T-0025, crew 1.1.6)
 
-DERIVED at `b32e9fc9` (T-0025-build), ported onto release/1.2.0 unchanged in `crew_help.py`. `plugin/crew/hooks/scripts/crew_help.py` (385 lines) is read-only and
-exits 0. `where` (`:199`) prints at most `MAX_LINES` (`:43`, 8) lines from
+DERIVED at `b32e9fc9` (T-0025-build); line citations re-read on rush/g1b-ports after the port's
+review fixes (an unreadable command dir or command file raises to `main`'s `help: cannot tell`, and
+a ticket id resolves through `crew_common.locate_ticket`, so an archived one counts).
+`plugin/crew/hooks/scripts/crew_help.py` (404 lines) is read-only and
+exits 0. `where` (`:213`) prints at most `MAX_LINES` (`:44`, 8) lines from
 `crew_autopilot.status` alone - no INDEX, receipt or ledger parsing of its own: `where:`,
-`waiting on:` (T-0018's `_waiting`), one `next:` from `_next_line` (`:156`; a stop is "you
-type <command>", the rest from `STOP_NEXT` `:89`), and 2-3 `also:` lines from `RELATED`
-(`:52`, keyed by `crew_autopilot.WAITING`'s phases, which a test holds it to). No single
-ticket goes through `_no_ticket` (`:174`), which lists `crew_autopilot.open_index_tickets`
-and never picks one. `about` (`:337`): a command file name gives `describe` (`:252`,
-frontmatter `description`/`argument-hint` plus `HELP` `:101`), `commands` gives
-`groups_text` (`:267`, the advisory `GROUPS` `:126`), a ticket id gives `where` for it, and
-a question goes through `crew_route.match` (`_from_route` `:316`) and then a command-name
-word lookup (`_by_word` `:306`); `crew_help.py` imports no pattern module (asserted by
+`waiting on:` (T-0018's `_waiting`), one `next:` from `_next_line` (`:170`; a stop is "you
+type <command>", the rest from `STOP_NEXT` `:101`), and 2-3 `also:` lines from `RELATED`
+(`:53`, keyed by `crew_autopilot.WAITING`'s phases, which a test holds it to). No single
+ticket goes through `_no_ticket` (`:188`), which lists `crew_autopilot.open_index_tickets`
+and never picks one. `about` (`:356`): a command file name gives `describe` (`:271`,
+frontmatter `description`/`argument-hint` plus `HELP` `:115`), `commands` gives
+`groups_text` (`:286`, the advisory `GROUPS` `:140`), a ticket id (live or under `Complete/`,
+`_is_ticket` `:313`) gives `where` for it, and
+a question goes through `crew_route.match` (`_from_route` `:335`) and then a command-name
+word lookup (`_by_word` `:325`); `crew_help.py` imports no pattern module (asserted by
 `test_help_has_no_phrase_table_of_its_own`). `plugin/crew/commands/help.md` runs it and
 prints the output verbatim. `plugin/crew/commands/implement.md` step 0 now runs
 `crew_ticket.py status` and names `/crew:plan $1` or "the user types `/crew:approve $1`".
-Tests: `plugin/crew/tests/test_crew_help.py`; `.crew/verify.json`'s last rule (`:780`). The
+JUDGEMENT: `status` reports the raw receipt, not `crew_ticket.accepted`'s demotion of a `cli`
+receipt; reporting accepted() needs `crew_ticket.py`, a harness path (TODO.md).
+Tests: `plugin/crew/tests/test_crew_help.py`; `.crew/verify.json`'s last rule (`:796`). The
 scope-guard deny text, `review.md`'s no-ticket stop and `sabotage_help.py` are review-harness
 paths and wait for a harness-only PR (TODO.md).
 

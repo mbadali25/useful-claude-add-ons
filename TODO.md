@@ -113,7 +113,12 @@ be wrong can be closed on evidence.
   (`test_review_no_ticket_stop_names_a_command`); (c) `plugin/crew/tests/sabotage_help.py`
   registered in `plugin/crew/tests/sabotage.py` with HELP_MUTATIONS: a 9th `where` line, picking
   the first of several open tickets, a local `re.compile` table in `crew_help.py`, implement.md
-  back to `/crew:plan $1 --approve`, and the scope-guard `none` text back to "To widen scope".
+  back to `/crew:plan $1 --approve`, and the scope-guard `none` text back to "To widen scope";
+  (d) `plugin/crew/hooks/scripts/crew_ticket.py status` reports `accepted()`'s status (a `cli`
+  receipt without `scope.allowCliApproval`, or an autopilot one its policy no longer allows, is
+  `unaccepted` with its why), so `/crew:implement` step 0 refuses what the scope guard and the
+  completion audit refuse even with `scope.mode` off or report (port review of T-0025, BLOCK);
+  test it in `test_crew_ticket.py` and keep `test_lifecycle_commands.py`'s exact CLI pin.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
