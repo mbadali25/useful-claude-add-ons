@@ -88,6 +88,7 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 
 | ID | Title | From | Blocked by | Status |
 |---|---|---|---|---|
+| C-0020 | Re-check the SQL (L-0532) and PHP (L-0533) standards sets against the owner's private repos; admit or drop rules the public-evidence pass could not settle | owner decision 2026-10-05: ship thin from public evidence | L-0532, L-0533 landed | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
