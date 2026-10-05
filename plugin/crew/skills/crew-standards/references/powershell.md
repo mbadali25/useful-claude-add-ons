@@ -61,9 +61,11 @@ for proof, not location (`plugin/crew/tests/test_ps1_python_probe.py`).
 
 **Change sets.** 3: crew-0.19.69, crew-0.19.92, crew-1.0.23
 
-**Applies when.** Any `Get-Command`, `.Source`, `.Path`, `& $exe` or `Process.Start`, or a
-resolver function (`Resolve-*`) that chooses an interpreter or tool to launch, and any `.ps1`
-that runs an external program by a bare name from a hook or other unattended path.
+**Applies when.** The diff adds or changes code that chooses an external program to launch: a
+`Get-Command`, `.Source`, `.Path`, `& $exe` or `Process.Start`, a resolver function
+(`Resolve-*`), or a bare-name launch from a hook or other unattended path. The questions
+cover the resolution code the change touches. A resolver the diff leaves alone is not
+re-answered for, and a change that touches no resolution code answers `n/a`.
 
 **Self-check.**
 1. Does every lookup of an external program filter on `-CommandType Application`? Pass: yes,

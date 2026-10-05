@@ -43,8 +43,8 @@ Playwright work is `stack-angular`'s and `stack-web`'s; `stack-web` also owns th
 - **`process.exit()` can cut off buffered output** to a pipe; set `process.exitCode` and let
   the event loop drain instead.
 - **Install from the lockfile without rewriting it**, with the repository's own package
-  manager: `npm ci` (needs `package-lock.json`), `pnpm install --frozen-lockfile`, or
-  `yarn install --immutable`. A lockfile change in a feature change is a dependency change -
+  manager: `npm ci` (needs `package-lock.json`), `pnpm install --frozen-lockfile`,
+  `yarn install --frozen-lockfile` (Yarn 1) or `yarn install --immutable` (Yarn 2+). A lockfile change in a feature change is a dependency change -
   say which packages moved.
 
 ## Standards
@@ -77,7 +77,8 @@ summary line. A change to a child-process or HTTP path needs a test that drives 
 ```
 
 Use the repository's package manager in place of `npm` (`pnpm test`, `yarn test`), and drop
-the `tsc` command in a plain-JavaScript repo. Nothing in this repo writes rules into
+the `tsc` command in a plain-JavaScript repo. Yarn Plug'n'Play creates no `node_modules/.bin`,
+so there the second command is `yarn tsc --noEmit`. Nothing in this repo writes rules into
 `verify.json` on a skill's behalf (see `crew-verification`) - add by hand.
 
 ## LSP
