@@ -994,10 +994,10 @@ def run(args):
     # A spent budget is a precondition already known to fail (GEN-03): the
     # self-check cannot change it, so the budget refusal below answers first
     # rather than sending the author to answer and restamp for nothing.
-    # `reserve` re-reads the ledger under its lock and is what refuses.
-    ledger = review_ledger.status(args.root, args.ticket)
-    if not (ledger.get("state") == review_ledger.NEEDS_REPLAN
-            or ledger.get("rounds_left") == 0):
+    # `reserve` re-reads the ledger under its lock and is what refuses. One
+    # predicate with the train's (review of 6ec829c9): an unreadable ledger
+    # is refused by `reserve` too, so no later check answers first.
+    if not _budget_spent(args):
         refused = prereview_gate(args)
         if refused is None:
             refused = standards_gate(args)

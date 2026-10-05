@@ -110,6 +110,11 @@ TRAIN_MUTATIONS = (
      "    return (ledger.get(\"state\") in (review_ledger.NEEDS_REPLAN, review_ledger.UNKNOWN)\n",
      "    return (ledger.get(\"state\") in (review_ledger.NEEDS_REPLAN,)\n",
      _R + "test_an_unreadable_ledger_is_refused_without_taking_the_train"),
+    ("R8 an unreadable ledger is answered by a later check", RUN,
+     "    if not _budget_spent(args):\n",
+     "    if review_ledger.status(args.root, args.ticket).get(\"state\") != "
+     "review_ledger.NEEDS_REPLAN:\n",
+     _R + "test_an_unreadable_ledger_is_answered_before_the_later_checks"),
     ("R5 the train is taken after the pre-review checks", RUN,
      "    return train_gate(args)\n",
      "    return prereview_gate(args) or train_gate(args)\n",

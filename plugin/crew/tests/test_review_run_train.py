@@ -205,6 +205,28 @@ def test_an_unreadable_ledger_is_refused_without_taking_the_train(lanes, tmp_pat
     assert ("T-1", "holding") not in _entries(lanes["repo"])
 
 
+def test_an_unreadable_ledger_is_answered_before_the_later_checks(lanes, tmp_path, monkeypatch,
+                                                                 capsys):
+    """Review of 6ec829c9: the pre-review checks and the standards self-check
+    are skipped for an unreadable ledger as for a spent one, so the ledger
+    refusal (exit 4) is what the author sees, not an unrelated check."""
+    assert _train(lanes["repo"], "arm") == 0
+    later = []
+    monkeypatch.setattr(review_ledger, "status",
+                        lambda root, ticket: {"state": review_ledger.UNKNOWN})
+    monkeypatch.setattr(review_run, "prereview_gate", lambda a: later.append("pre") or 5)
+    monkeypatch.setattr(review_run, "standards_gate", lambda a: later.append("std") or 2)
+    monkeypatch.setattr(review_ledger, "reserve",
+                        lambda *a, **k: (False, None, "refused: ledger is corrupt"))
+    scratch = tmp_path / "s-unknown"
+    scratch.mkdir()
+    code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
+                            str(scratch), "--provider", "claude", "--reserve-only"])
+
+    assert (code, later) == (4, [])
+    assert "train" not in capsys.readouterr().err
+
+
 def test_a_needs_replan_ticket_never_calls_acquire(lanes, tmp_path, monkeypatch, capsys):
     assert _train(lanes["repo"], "arm") == 0
     called = []
