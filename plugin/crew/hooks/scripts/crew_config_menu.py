@@ -880,15 +880,24 @@ def _identity(path):
         return None
 
 
+def _same(path, ident):
+    """Whether `path` is still the inode `ident` (True/False), or None when
+    either side cannot be read."""
+    if ident is None:
+        return None
+    now = _identity(path)
+    return None if now is None else os.path.samestat(now, ident)
+
+
 def _delete_os_error(exc, stage, path, backup, ident=None):
     """The message and exit code for an OSError inside `apply_delete`.
     Before the move: the file is in place (exit 2). From the move on: the
-    two names are probed, and "left in place" is said only when the backup
-    is absent and the file is present. A present backup is called the
-    original only when it IS the config's inode (`ident`, taken before the
-    move): a name another writer took after `_free_backup` chose it is not
-    (exit 2 when the config is still in place). Anything it cannot tell
-    says so and names both (exit 1)."""
+    two names are probed, and each is trusted only when it IS the config's
+    inode (`ident`, taken before the move): another writer can take the
+    backup name or replace the config path. "Left in place" / "back in
+    place" (exit 2) needs the path to be that inode and the backup not; the
+    backup is called the original (exit 1) only when it is that inode.
+    Anything else says it could not tell and names both (exit 1)."""
     why = crew_config_files.os_error_text(exc)
     if stage == "before":
         print(f"refused: {why}; {path} left in place", file=sys.stderr)
@@ -897,34 +906,22 @@ def _delete_os_error(exc, stage, path, backup, ident=None):
         moved, there = os.path.lexists(backup), os.path.lexists(path)
     except Exception:  # pylint: disable=broad-except
         moved = there = None
-    ours = None
-    if moved is True and ident is not None:
-        backup_ident = _identity(backup)
-        ours = (None if backup_ident is None
-                else os.path.samestat(backup_ident, ident))
-    if ours is False and stage == "moving" and there is True:
-        # The move refuses an existing destination with the source untouched
-        # (`move_no_clobber`): another writer's file at the backup name is
-        # NOT the original. Never name it so.
-        print(f"refused: {backup} appeared before the move ({why}); it is "
-              f"not this config, nothing moved: {path} left in place",
-              file=sys.stderr)
+    at_backup = _same(backup, ident) if moved else (None if moved is None else False)
+    here = _same(path, ident) if there else (None if there is None else False)
+    if here is True and at_backup is False:
+        if stage == "moving-back":
+            print(f"refused: {path} changed since the preview; it is back in "
+                  f"place ({why} after the move back) and nothing was deleted. "
+                  "Re-run the preview.", file=sys.stderr)
+        elif moved:
+            print(f"refused: {backup} appeared before the move ({why}); it is "
+                  f"not this config, nothing moved: {path} left in place",
+                  file=sys.stderr)
+        else:
+            print(f"refused: {path} could not be moved to a backup ({why}); "
+                  "left in place", file=sys.stderr)
         return 2
-    if moved is True and ours is not True:
-        print(f"refused: {why}; could not tell where the file is ({backup} "
-              f"is {'not' if ours is False else 'not known to be'} this "
-              f"config): check {path} and {backup}", file=sys.stderr)
-        return 1
-    if moved is False and there is True and stage == "moving-back":
-        print(f"refused: {path} changed since the preview; it is back in place "
-              f"({why} after the move back) and nothing was deleted. Re-run "
-              "the preview.", file=sys.stderr)
-        return 2
-    if moved is False and there is True:
-        print(f"refused: {path} could not be moved to a backup ({why}); left "
-              "in place", file=sys.stderr)
-        return 2
-    if moved is True:
+    if at_backup is True:
         check = f"; check {path}" if there else ""
         if stage == "moving-back":
             print(f"refused: {path} changed since the preview and could not be "
@@ -1000,11 +997,7 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
             # T-0103: the move back linked the changed file at `path` before
             # the foreign one turned up at the backup name; never say "the
             # original is at" a name that now holds someone else's file.
-            try:
-                back = os.path.lexists(path)
-            except Exception:  # pylint: disable=broad-except
-                back = False
-            where = ("was moved back there" if back else
+            where = ("was moved back there" if _same(path, ident) else
                      f"could not be confirmed back there (it may be at {exc.parked})")
             print(f"refused: {exc}; nothing is lost: {path} changed since the "
                   f"preview and {where}; check {path} and {exc.parked}",

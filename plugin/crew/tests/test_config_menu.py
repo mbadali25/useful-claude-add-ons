@@ -1931,6 +1931,63 @@ def test_delete_error_after_a_completed_move_back_says_back_in_place(
     assert not os.path.lexists(_backup_path(root))
 
 
+def test_delete_replaced_config_and_taken_backup_name_is_not_left_in_place(
+        tmp_path, capsys, monkeypatch):
+    """Another writer replaces the config and takes the backup name before
+    the move: the file at the path is not the original, so it is not
+    'left in place'."""
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    real_aside = crew_config_files.move_aside
+
+    def _aside(src, dest):
+        with open(dest, "wb") as handle:
+            handle.write(b"foreign backup\n")
+        sibling = src + ".foreign.tmp"
+        with open(sibling, "wb") as handle:
+            handle.write(b"foreign config\n")
+        os.replace(sibling, src)
+        return real_aside(src, dest)
+    monkeypatch.setattr(crew_config_files, "move_aside", _aside)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "left in place" not in err and "the original is at" not in err
+    assert "could not tell" in err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_delete_move_back_displaced_by_a_replaced_path_does_not_say_moved_back(
+        tmp_path, capsys, monkeypatch):
+    """The move back is displaced and the path now holds another writer's
+    file: never say the changed file was moved back there."""
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    _write_config(root, b'{"tracker": "sdp"}\n')
+    parked = _backup_path(root) + ".moving"
+
+    def _displaced(src, dest):
+        os.rename(src, parked)
+        with open(dest, "wb") as handle:
+            handle.write(b"foreign config\n")
+        raise crew_config_files.Displaced(f"{src} was displaced", parked)
+    real_aside = crew_config_files.move_aside
+
+    def _aside(src, dest):
+        got = real_aside(src, dest)
+        monkeypatch.setattr(crew_config_files, "move_no_clobber", _displaced)
+        return got
+    monkeypatch.setattr(crew_config_files, "move_aside", _aside)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "was moved back there" not in err and f"may be at {parked}" in err
+
+
 def test_delete_lock_failure_is_not_reported_as_a_backup_failure(tmp_path, capsys,
                                                                  monkeypatch):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
