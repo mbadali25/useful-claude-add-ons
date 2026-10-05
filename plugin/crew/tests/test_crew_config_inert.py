@@ -265,3 +265,49 @@ def test_a_personal_key_is_judged_by_the_value_in_force(tmp_path, monkeypatch):
 
     assert [(e["value"], e["ticket"], e["layer"]) for e in hits] == [
         ("backlog", "L-0541", "global")], hits
+
+
+def test_a_machine_only_block_in_the_machine_file_is_not_inert(tmp_path, monkeypatch):
+    """T-0070 port review r4 FIX: `unattendedCloud` is read from the machine
+    file by crew_unattended.py; set there it is live, not an unknown key."""
+    _global(tmp_path, monkeypatch, contents={"unattendedCloud": {"aws": {"readOnly": {
+        "profile": "ro", "identity": "arn:aws:sts::1:assumed-role/ro"}}}})
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+
+    assert [e["key"] for e in crew_config.inert_settings(str(root))
+            if e["key"].startswith("unattendedCloud")] == []
+
+
+@pytest.mark.parametrize("leaf", ["onlyRepos", "onlySessions"])
+def test_a_repo_auto_clear_scope_is_named_inert(tmp_path, leaf):
+    """T-0070 port review r4 FIX: the hooks read these from the machine file
+    only, so a repo value narrows nothing and is named, never silent."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"context": {"autoClear": {leaf: ["x"]}}}, git=False)
+
+    entries = crew_config.inert_settings(str(root))
+    hits = [e for e in entries if e["key"] == f"context.autoClear.{leaf}"]
+
+    assert [(e["kind"], e["layer"]) for e in hits] == [("repo-ignored", "repo")], entries
+    assert "(repo, not read)" in crew_config.format_inert(entries, "1.0.0")
+
+
+@pytest.mark.parametrize("where", ["repo", "global"])
+def test_an_unreadable_config_is_could_not_tell_never_none(tmp_path, monkeypatch, where):
+    """T-0070 port review r4 FIX: a config file that is there and cannot be
+    read is could-not-tell, never an empty inert list."""
+    if where == "global":
+        _global(tmp_path, monkeypatch, contents=None)
+        target = tmp_path / "global-config.json"
+        monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(target))
+        target.write_text("{not json", encoding="utf-8")
+        root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    else:
+        root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+        (root / ".crew").mkdir(exist_ok=True)
+        (root / ".crew" / "config.json").write_text("{not json", encoding="utf-8")
+
+    entries = crew_config.inert_settings(str(root))
+
+    assert [e["kind"] for e in entries if e["key"] == where] == ["unreadable"], entries
+    assert "could not tell (" in crew_config.format_inert(entries, "1.0.0")

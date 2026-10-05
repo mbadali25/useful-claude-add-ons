@@ -53,8 +53,8 @@ Prints only the open tickets whose spec and plan exist and validate and whose
 approval is missing, stale or unaccepted, one ready-to-paste
 `/crew:approve <id>` line each with `  why: <why>` under it, then a count of any whose spec and
 plan do not validate. Merged, current and spec-only tickets are left out;
-none pending prints `nothing needs approval`; a missing or unreadable `.work/INDEX.md`
-(or a linked worktree's main-checkout one) prints `could not tell (<reason>)`. Read-only.
+none pending prints `nothing needs approval`; no readable `.work/INDEX.md`, or an unreadable main-checkout one in a linked
+worktree, prints `could not tell (<reason>)`; a main checkout with no INDEX adds a `note:` line. Read-only.
 
 ## What to do with it
 

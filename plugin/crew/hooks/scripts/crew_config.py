@@ -2260,6 +2260,16 @@ def inert_settings(root, path=None):
     or `global-ignored` (the global filter drops it); `layer` is the raw
     layer that supplies the value, `repo` winning over `global`."""
     real_path = GLOBAL_CONFIG_PATH if path is None else path
+    entries = {}
+    # A file that is there and cannot be read is could-not-tell, never "no
+    # inert settings": the readers below collapse it to absent.
+    for label, file_path in (("repo", crew_common.repo_config_file(root, "config.json")),
+                             ("global", real_path)):
+        why = _unreadable_config(file_path)
+        if why:
+            entries[(label, "unreadable")] = {
+                "key": label, "value": why, "effect": "could not tell which settings are "
+                f"inert: {why}", "ticket": None, "kind": "unreadable", "layer": label}
     repo_raw = crew_state.load_config(root)
     repo_raw = repo_raw if isinstance(repo_raw, dict) else {}
     global_raw = read_global_config(real_path)
@@ -2279,7 +2289,9 @@ def inert_settings(root, path=None):
             personal[dotted] = ("global" if row["heldDownBy"] == "global"
                                 or row["repo"] is None else "repo")
     known = set(leaf_paths(default_config()))
-    entries = {}
+    # A machine-only block (T-0044's `unattendedCloud`) is known from the
+    # machine file, which its own reader reads; a repo copy stays unknown.
+    known_global = known | set(leaf_paths(default_global_config()))
 
     def layer(parts):
         dotted = ".".join(parts)
@@ -2293,7 +2305,16 @@ def inert_settings(root, path=None):
         parts = tuple(dotted.split("."))
         value = _dig(merged, parts)
         pending = INERT_PENDING.get(dotted)
-        if not _known_leaf(dotted, known):
+        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS and _dig(repo_cfg, parts) not in (
+                None, _MISSING, [], ""):
+            # Read from the machine file only (crew_autocycle.settings): a
+            # repo value narrows nothing.
+            entries[(dotted, "inert")] = {
+                "key": dotted, "value": _dig(repo_cfg, parts), "effect": _REPO_IGNORED_EFFECT,
+                "ticket": None,
+                "kind": "repo-ignored", "layer": "repo"}
+            continue
+        if not _known_leaf(dotted, known_global if layer(parts) == "global" else known):
             effect, ticket = pending or (_UNKNOWN_EFFECT, None)
             kind = "pending" if pending else "unknown"
         elif isinstance(value, (str, int, float, bool)) \
@@ -2323,10 +2344,31 @@ def _escaped(text):
     return shown(text)
 
 
+_REPO_IGNORED_EFFECT = ("read from the machine file only (~/.claude/crew/config.json): "
+                        "a repo value narrows nothing")
+
+
+def _unreadable_config(path):
+    """Why the config file at `path` is there and cannot be read as a JSON
+    object, or None (absent, or readable)."""
+    if not path or not os.path.lexists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        return f"{os.path.basename(path)} could not be read ({type(exc).__name__})"
+    return None if isinstance(data, dict) else f"{os.path.basename(path)} is not a JSON object"
+
+
 def _inert_item(entry):
     value = entry["value"]
     shown = _escaped(value if isinstance(value, str) else json.dumps(value))
-    if entry["kind"] == "global-ignored":
+    if entry["kind"] == "unreadable":
+        return f"could not tell ({_escaped(entry['key'])} config: {shown})"
+    if entry["kind"] == "repo-ignored":
+        why = "repo, not read"
+    elif entry["kind"] == "global-ignored":
         why = "global, not read"
     elif entry["ticket"]:
         why = entry["ticket"] + (", global" if entry["layer"] == "global" else "")
