@@ -3433,10 +3433,10 @@ def repo_widens(dotted, before, after, global_value):
         # T-0103: a repo `null` inherits the machine value (`null_means`), so
         # what takes effect is that value. `inForce` carries it for the `!`
         # line's note; the printed token stays the written `null`.
-        now = after if after is not None else global_value
-        out["widens"] = rank(now) > rank(was)
+        in_force = after if after is not None else global_value
+        out["widens"] = rank(in_force) > rank(was)
         if after is None:
-            out["inForce"] = now
+            out["inForce"] = in_force
         return out
     out["widens"] = _consent_widening(dotted, after) and before != after
     return out
@@ -3570,10 +3570,15 @@ def print_changes(changes):
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(granted).strip(chr(34))}`: "
                   + widening_note(change["path"], granted))
+        elif change["widens"] and "inForce" in change:
+            # T-0103: a repo `null` is described by the value it inherits;
+            # the token stays the written `null`.
+            print(f"  ! {change['path']} widens to `null`: "
+                  + widening_note(change["path"], change["inForce"]))
         elif change["widens"]:
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(change['after']).strip(chr(34))}`: "
-                  + widening_note(change["path"], change.get("inForce", change["after"])))
+                  + widening_note(change["path"], change["after"]))
         if change.get("heldDownBy"):
             unset = (" (unset there, and unset is the floor)"
                      if change.get("globalValue") is None else "")

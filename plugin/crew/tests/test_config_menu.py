@@ -1933,6 +1933,36 @@ def test_delete_reports_both_paths_when_it_cannot_tell(tmp_path, capsys, monkeyp
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_delete_move_back_displaced_with_the_path_gone_does_not_say_moved_back(
+        tmp_path, capsys, monkeypatch):
+    """A Displaced from the move back after another writer removed the
+    config path: the changed file is parked, not back at the path."""
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    changed = b'{"tracker": "sdp"}\n'
+    _write_config(root, changed)
+    parked = _backup_path(root) + ".moving"
+
+    def _displaced(src, _dest):
+        os.rename(src, parked)
+        raise crew_config_files.Displaced(f"{src} was displaced", parked)
+    real_aside = crew_config_files.move_aside
+
+    def _aside(src, dest):
+        got = real_aside(src, dest)
+        monkeypatch.setattr(crew_config_files, "move_no_clobber", _displaced)
+        return got
+    monkeypatch.setattr(crew_config_files, "move_aside", _aside)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "was moved back there" not in err
+    assert f"may be at {parked}" in err
+    assert _bytes(parked) == changed and not os.path.lexists(_config(root))
+
+
 def test_delete_move_back_displaced_names_where_the_original_is(
         tmp_path, capsys, monkeypatch):
     """The move back (backup -> path) finds a foreign file at the backup name

@@ -978,9 +978,15 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
             # T-0103: the move back linked the changed file at `path` before
             # the foreign one turned up at the backup name; never say "the
             # original is at" a name that now holds someone else's file.
+            try:
+                back = os.path.lexists(path)
+            except Exception:  # pylint: disable=broad-except
+                back = False
+            where = ("was moved back there" if back else
+                     f"could not be confirmed back there (it may be at {exc.parked})")
             print(f"refused: {exc}; nothing is lost: {path} changed since the "
-                  f"preview and was moved back there; check {path} and "
-                  f"{exc.parked}", file=sys.stderr)
+                  f"preview and {where}; check {path} and {exc.parked}",
+                  file=sys.stderr)
             return 1
         print(f"refused: {exc}; nothing is lost: the original is at {backup}, "
               f"check {path}", file=sys.stderr)
