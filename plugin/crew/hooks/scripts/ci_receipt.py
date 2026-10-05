@@ -118,6 +118,10 @@ _REMOTE_RE = re.compile(
 _ELAPSED_RE = re.compile(r"^verify-gate: (\d+)s  (.+)$")
 _SKIP_RE = re.compile(r"^verify-gate: SKIP \(rc 77[^)]*\): (.+)$")
 _FAILED_RE = re.compile(r"^VERIFY FAILED: (.+)$")
+# T-0082's "could not tell" line. The reason may hold "): " itself, so the
+# command is the one its VERIFY FAILED line just named when the line ends in it.
+_TELL_RE = re.compile(r"^verify-gate: COULD NOT TELL \((.*)\): (.+)$")
+_TOTAL_RE = re.compile(r"^verify-gate: \d+s total across \d+ (?:rule )?command\(s\)$")
 
 
 class Unreadable(Exception):
@@ -185,21 +189,48 @@ def _gate_switch(root):
 
 def parse_log(text):
     """Per-command outcomes from verify-gate's stderr, in order: `{cmd, seconds,
-    state}` with state PASS, FAIL or SKIP. Informative only."""
-    out, pending = [], {}
+    state}` with state PASS, FAIL, SKIP or UNKNOWN. Informative only.
+
+    UNKNOWN (L-0673) is a `COULD NOT TELL` line, and a command named failed,
+    skipped or could-not-tell with no elapsed line after it (the gate died
+    mid-rule: `seconds` is None). PASS still means an elapsed line with no
+    such line before it; `log_complete` says whether the gate finished."""
+    out, pending, last_failed = [], {}, None
     for raw in (text or "").splitlines():
         line = raw.rstrip("\r")
-        skip, failed, elapsed = _SKIP_RE.match(line), _FAILED_RE.match(line), \
-            _ELAPSED_RE.match(line)
+        skip, failed, elapsed, tell = _SKIP_RE.match(line), _FAILED_RE.match(line), \
+            _ELAPSED_RE.match(line), _TELL_RE.match(line)
         if skip:
             pending[skip.group(1)] = "SKIP"
         elif failed:
-            pending[failed.group(1)] = "FAIL"
+            last_failed = failed.group(1)
+            pending[last_failed] = "FAIL"
+        elif tell:
+            cmd = last_failed if last_failed and line.endswith("): " + last_failed) \
+                else tell.group(2)
+            pending[cmd] = "UNKNOWN"
         elif elapsed:
             cmd = elapsed.group(2)
             out.append({"cmd": cmd, "seconds": int(elapsed.group(1)),
                         "state": pending.pop(cmd, "PASS")})
+    out += [{"cmd": cmd, "seconds": None, "state": "UNKNOWN"} for cmd in pending]
     return out
+
+
+def log_complete(text):
+    """True when `verify-gate: <N>s total across ...` comes AFTER the last
+    per-rule line (VERIFY FAILED, COULD NOT TELL, SKIP or elapsed). A failing
+    rule's echoed output can hold a total line of its own, so one that a later
+    per-rule line follows proves nothing. A log that is not complete is from a
+    gate that died, and its list is partial."""
+    complete = False
+    for raw in (text or "").splitlines():
+        line = raw.rstrip("\r")
+        if _TOTAL_RE.match(line):
+            complete = True
+        elif any(rx.match(line) for rx in (_SKIP_RE, _FAILED_RE, _TELL_RE, _ELAPSED_RE)):
+            complete = False
+    return complete
 
 
 def _outstanding(root):
@@ -280,6 +311,7 @@ def build(root, gate_rc, gate_log, env=None, since=None):
         "outstanding": outstanding,
         "clean": not material,
         "commands": parse_log(gate_log),
+        "log_complete": log_complete(gate_log),
         "run": {"id": str(env.get("GITHUB_RUN_ID", "")),
                 "attempt": str(env.get("GITHUB_RUN_ATTEMPT", "")),
                 "repository": env.get("GITHUB_REPOSITORY", ""),
@@ -321,10 +353,13 @@ def _summary(receipt):
              f"verify.json `{receipt.get('verify_json', '-')}`", ""]
     lines += [f"- {r}" for r in receipt.get("reasons", [])]
     cmds = receipt.get("commands") or []
+    if receipt.get("log_complete") is False and (receipt.get("gate") or {}).get("rc") != 0:
+        lines += ["", "The gate log ends before its total line: the gate did not finish, "
+                  "so this list is partial and a command it does not show was not judged."]
     if cmds:
         lines += ["", "| state | s | command |", "|---|---|---|"]
-        lines += [f"| {c['state']} | {c['seconds']} | `{c['cmd'][:120].replace('|', '/')}` |"
-                  for c in cmds]
+        lines += [f"| {c['state']} | {'-' if c['seconds'] is None else c['seconds']} | "
+                  f"`{c['cmd'][:120].replace('|', '/')}` |" for c in cmds]
     return "\n".join(lines) + "\n"
 
 

@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.349<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.350<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -205,7 +205,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-diagrams` | Architecture and data-flow diagrams, with a Visio path |
 | `crew-house-style` | House style for a document handed to a human — palette, headings, capitalization, and PDF vs DOCX vs HTML vs plain markdown. Routes generation to `anthropic-office-skills`, `ppt-master` and `visio-diagrams`; falls back to markdown and says so when none is installed |
 | `crew-providers` | Codex as reviewer, Gemini as design partner, and verifying either |
-| `crew-memory` | Obsidian-backed memory; resolves native-memory vault pointers and saves a memory as one, note first (`crew_memory.py`) |
+| `crew-memory` | Obsidian-backed memory; resolves native-memory vault pointers and saves a memory as one, note first; migrates a memory folder and restores a pointer (`crew_memory.py`) |
 | `crew-notify` | Teams and Telegram payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
 | `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |
@@ -446,7 +446,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.7<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.5.8<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
@@ -501,7 +501,7 @@ Nothing keeps running afterwards — there were no hooks. The Nuclei binary and 
 | | |
 |---|---|
 | **Source** | [`localgpu/`](localgpu) |
-| **Version** | 0.1.20<!-- claim: plugin-version:localgpu --> |
+| **Version** | 0.1.21<!-- claim: plugin-version:localgpu --> |
 | **Install** | `claude plugin install localgpu@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command. `/localgpu:setup` additionally writes one stdio MCP server into the repository's own `.mcp.json`, which you approve through `/mcp`. The bootstrap separately installs a `localgpu` console script into `$LOCALGPU_HOME/venv`, which Claude Code neither registers nor runs |
 | **Upstream guide** | [`localgpu/README.md`](localgpu/README.md) |

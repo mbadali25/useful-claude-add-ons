@@ -3,7 +3,9 @@ description: Run a Nuclei scan on a target, then report + confirm-then-open SDP 
 argument-hint: <url-host-or-targets-file> [min-severity]
 ---
 Scan `$1` with the `gizmoduck` skill: run the scan (default `--severity critical,high,medium`,
-writing `findings.jsonl`), show the summary, produce a report at severity `$2` (default: high) as
+writing `findings.jsonl`; safe by default - `dos,intrusive,fuzz` templates excluded and at most
+50 requests per second; pass `--intrusive` only after the target's owner has authorised
+intrusive testing), show the summary, produce a report at severity `$2` (default: high) as
 inline Markdown plus HTML and PDF, then run `gizmoduck.py tickets findings.jsonl --min-severity
 ${2:-high}` (no `--yes`) to get the candidate list. Without `--yes`, the command prints the
 candidate list, a digest over that exact batch, and the rerun command carrying it — search

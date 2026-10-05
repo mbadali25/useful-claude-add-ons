@@ -42,8 +42,11 @@ needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 needs_pwsh = pytest.mark.skipif(
     _PWSH is None, reason="pwsh is not installed here; the .ps1 cases are written and skipped")
 
+# notify.ps1 left this list with T-0051: it is a thin wrapper around crew_notify.py,
+# which reads the resolved repo config through crew_config.resolve_config (no
+# PowerShell resolver; test_crew_notify_hooks.py pins that it reads no config).
 PS_COPIES = ("cloud-guard", "promote-gate", "auto-clear",
-             "notify", "handoff-read", "handoff-write", "context-watch")  # L-0680: the last four
+             "handoff-read", "handoff-write", "context-watch")  # L-0680: the last three
 HANDOFF_PATH_COPIES = ("handoff-read", "handoff-write", "context-watch")  # L-0680 review B1
 SHELL_SOURCE = {crew_common.SOURCE_OWN: "own", crew_common.SOURCE_MAIN: "main",
                 crew_common.SOURCE_UNKNOWN: "unknown"}
@@ -532,10 +535,19 @@ def stub():
     server.close()
 
 
-NOTIFY_CFG = {"notify": {"provider": "teams", "urlEnv": _URL_ENV, "events": ["waiting"]}}
+# T-0051: the provider and events come from the repo layer (here the main
+# checkout's, inherited by the lane), but `urlEnv` is honoured from the
+# machine-global file only (crew_notify.GLOBAL_ONLY_KEYS), so it is written there;
+# the global file names no provider, so a lane with its own config sends nothing.
+# `waiting` is the legacy name crew_notify.py reads as `question`.
+NOTIFY_CFG = {"notify": {"provider": "teams", "events": ["question"]}}
 
 
 def _notify(tmp_path, flavour, root, stub_server):
+    machine = tmp_path / "home" / ".claude" / "crew"
+    machine.mkdir(parents=True, exist_ok=True)
+    (machine / "config.json").write_text(json.dumps({"notify": {"urlEnv": _URL_ENV}}),
+                                         encoding="utf-8")
     return _run_session_hook(tmp_path, "notify", flavour, root, args=("waiting", "suite ping"),
                              extra={_URL_ENV: stub_server.url})
 

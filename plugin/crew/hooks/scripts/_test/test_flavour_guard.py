@@ -280,7 +280,7 @@ def build_fixture(root):
     crew.mkdir(parents=True)
     (crew / "config.json").write_text(json.dumps({
         "context": {"enabled": True, "warnAt": 0.5, "keepTranscripts": 5},
-        "notify": {"provider": "none", "events": "waiting"},
+        "notify": {"provider": "none", "events": "question"},
         "guards": {"roleWrites": "off"},
     }), encoding="utf-8")
     (crew / "verify.json").write_text(json.dumps({

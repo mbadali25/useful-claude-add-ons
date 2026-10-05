@@ -1715,6 +1715,38 @@ def check_verifying_doc(fail):
             fail(f"{VERIFYING_DOC}:{line}: names `{rel}`, which does not exist")
 
 
+def load_crew_diagrams():
+    """crew's crew_diagrams module, from THIS checkout's plugin/crew (never
+    ROOT's: a fixture root has no plugin to import from), loaded once."""
+    scripts = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "plugin", "crew", "hooks", "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import crew_diagrams  # pylint: disable=import-outside-toplevel,import-error
+    return crew_diagrams
+
+
+def check_diagram_embeds(fail):
+    """Every generated diagram section in a README matches its `.mmd` (T-0035).
+
+    crew_diagrams.py writes each diagram between `crew-diagrams` markers in the
+    README nearest its anchors. A section that differs from what `embed`
+    writes now -- a hand edit, a source changed and not re-embedded -- shows
+    readers a diagram the source no longer says. Malformed markers and an
+    unreadable source fail too: could-not-tell is never a pass. A README not
+    embedded yet is not a failure (adoption is one `embed` run).
+    """
+    result = load_crew_diagrams().check(ROOT)
+    fix = "run `python3 plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`"
+    for why in result["unknown"]:
+        fail(f"diagram embeds: cannot be judged - {why}")
+    for why in result["problems"]:
+        fail(f"diagram embeds: {why} - fix the markers by hand; embed refuses them")
+    for item in result["drift"]:
+        named = f" ({', '.join(item['diagrams'])})" if item["diagrams"] else ""
+        fail(f"{item['readme']}: generated diagram section {item['reason']}{named} - {fix}")
+
+
 def check_hook_commands(entries, fail):
     r"""Every shell-form hook command survives the shell that will actually run it.
 
@@ -1788,6 +1820,7 @@ def main() -> int:
     check_catalog_claims(entries, fail)
     check_crew_ignore_policy(fail)
     check_verifying_doc(fail)
+    check_diagram_embeds(fail)
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))
     plugins = len(entries) - skills

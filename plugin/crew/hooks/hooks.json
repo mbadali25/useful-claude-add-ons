@@ -51,8 +51,8 @@
       { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/handoff-write.ps1\"; exit $LASTEXITCODE", "timeout": 30 }] }
     ],
     "Notification": [
-      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh\" waiting 'Claude is waiting on you'", "timeout": 15 }] },
-      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.ps1\" waiting 'Claude is waiting on you'; exit $LASTEXITCODE", "timeout": 15 }] }
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh\" hook", "timeout": 15 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.ps1\" hook; exit $LASTEXITCODE", "timeout": 15 }] }
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh\"", "timeout": 600 }] },

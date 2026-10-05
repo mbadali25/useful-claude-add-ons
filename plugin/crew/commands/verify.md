@@ -113,47 +113,41 @@ unverified for THIS commit, not permanently unverifiable.
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --price [path] [--force]
     pwsh ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]
 
-Times every rule in a verify.json-shaped map with no budget and writes
-`seconds` (ceil, min 1) for the ones that have none. Defaults to
-`.crew/verify.json`; pass a path to price a different file. Never overwrites
-an existing `seconds` unless `--force`/`-PriceForce` is given, and never
-writes 0 — a rule that ran in under a second still costs 1.
+Times every rule in a verify.json-shaped map with no budget and writes `seconds` (ceil, min 1) for
+the ones that have none. Defaults to `.crew/verify.json`; pass a path to price a different file.
+Never overwrites an existing `seconds` unless `--force`/`-PriceForce` is given, and never writes 0 —
+a rule that ran in under a second still costs 1.
 
-**`.crew/verify.json` in this repo is TRACKED**, so `--price` against it
-dirties a committed file. It is never reachable from the Stop hook and is
-never invoked automatically by this command either — run it by hand, review
-the diff, and commit the pricing separately.
+**`.crew/verify.json` in this repo is TRACKED**, so `--price` against it dirties a committed file.
+It is never reachable from the Stop hook and is never invoked automatically by this command either —
+run it by hand, review the diff, and commit the pricing separately.
 
 ## `--stamp-reach` (operator only, L-0562)
 
     python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify_reach.py --root . [--apply] [--set N=local|network|host]
 
-Declares `reach` on every rule that has none (absent or `null`), from the gate's
-own classifier (below), run from `--root` as the gate runs from the project root:
-a rule the gate already runs gets `local`, one it defers for a remote verb gets
-`network`. `reach` is part of `rule_key`, so it then moves each stamped rule's
-measured timing and record entry to the new key: in this checkout `--apply` changes
-neither what Stop runs nor what it costs (another checkout re-measures: `--all` once
-there). Syntax-/wrapper-deferred rules: `--set N=...` only. Dry run; edits the map's text in
-place, refusing unless it parses back to the original plus exactly the new keys.
-Show the table, ask, then commit the diff on its own, as with `--price`.
+Declares `reach` on every rule that has none (absent or `null`), from the gate's own classifier
+(below), run from `--root` as the gate runs from the project root: a rule the gate already runs gets
+`local`, one it defers for a remote verb gets `network`. `reach` is part of `rule_key`, so it then
+moves each stamped rule's measured timing and record entry to the new key: in this checkout
+`--apply` changes neither what Stop runs nor what it costs (another checkout re-measures: `--all`
+once there). Syntax-/wrapper-deferred rules: `--set N=...` only. Dry run; edits the map's text in
+place, refusing unless it parses back to the original plus exactly the new keys. Show the table,
+ask, then commit the diff on its own, as with `--price`.
 
 ## reach: `local` | `network` | `host`
 
-The Stop gate runs ONLY `local` rules. `network`/`host` rules run under
-`--all` and the merge gate, never unattended on Stop. Declaring
-`"reach": "local"` runs the rule on Stop with NO inspection at all — that is
-the human saying so, and the gate takes the word for it.
+The Stop gate runs ONLY `local` rules. `network`/`host` rules run under `--all` and the merge gate,
+never unattended on Stop. Declaring `"reach": "local"` runs the rule on Stop with NO inspection at
+all — that is the human saying so, and the gate takes the word for it.
 
-**An UNDECLARED rule is not quietly assumed local, and the bar for "assumed
-local" is narrower than it looks.** The scanner (`verify_record.scan_reach`)
-STOPS MODELLING SHELL (Codex round 6) — five rounds of "read one layer
-deeper into the shell syntax" each found a new shape that defeated the last
-one, so it no longer tries to parse shell at all:
-- **any shell metacharacter present, anywhere, defers unconditionally** — the
-  set below, plus a newline or a tab. No exception, not even a `2>&1` or a
-  trailing comment. Notice: `shell syntax in an undeclared rule: declare
-  "reach": "local" (or network/host)`.
+**An UNDECLARED rule is not quietly assumed local, and the bar for "assumed local" is narrower than
+it looks.** The scanner (`verify_record.scan_reach`) STOPS MODELLING SHELL (Codex round 6) — five
+rounds of "read one layer deeper into the shell syntax" each found a new shape that defeated the
+last one, so it no longer tries to parse shell at all:
+- **any shell metacharacter present, anywhere, defers unconditionally** — the set below, plus a
+  newline or a tab. No exception, not even a `2>&1` or a trailing comment. Notice:
+  `shell syntax in an undeclared rule: declare "reach": "local" (or network/host)`.
 
   ```text
   ( ) $ ; & | < > " ' \ { } * ? [ ] ~ # !
@@ -161,66 +155,69 @@ one, so it no longer tries to parse shell at all:
 
   ...and U+0060, the backtick, which is deliberately NOT printed above.
 
-  **Never write a literal backtick anywhere in this file.** Claude Code pairs
-  SINGLE backticks when it scans a command file — it does not honour the
-  double-backtick form, and it does not exempt fenced blocks. So one unpaired
-  backtick leaves the whole file's spans off by one, and the prose between two
-  of them is handed to bash before the command runs.
+  **Never write a literal backtick anywhere in this file.** Claude Code pairs SINGLE backticks when
+  it scans a command file — it does not honour the double-backtick form, and it does not exempt
+  fenced blocks. So one unpaired backtick leaves the whole file's spans off by one, and the prose
+  between two of them is handed to bash before the command runs.
 
-  This line did exactly that, twice. First as an inline span, where the
-  fragment beginning `, a newline, or a tab` became a command and
-  `/crew:verify` died with `/bin/bash: line 1: ,: command not found`. Then
-  again after the list was moved into this fenced block, which looked like the
-  fix and was not: a fence is three backticks, the literal one inside the list
-  paired with one of them, and the file was left with an odd count — 251 — and
-  an unterminated span. The rule that actually holds is parity, not container.
+  This line did exactly that, twice. First as an inline span, where the fragment beginning
+  `, a newline, or a tab` became a command and `/crew:verify` died with
+  `/bin/bash: line 1: ,: command not found`. Then again after the list was moved into this fenced
+  block, which looked like the fix and was not: a fence is three backticks, the literal one inside
+  the list paired with one of them, and the file was left with an odd count — 251 — and an
+  unterminated span. The rule that actually holds is parity, not container.
   `check_command_backtick_spans` enforces it.
-- only once nothing on that list is present does whitespace-only splitting
-  become safe. A reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
-  `psql`, `mysql`) anywhere — notice: `remote verb <v>`.
-- otherwise, if the first token is a recognised interpreter (`bash`/`sh`/
-  `dash`/`zsh`/`pwsh`/`powershell`/`python`/`python3`/`py`/`node`/`ruby`/
-  `perl`): `-n` is parse-only ONLY as the exact second token with EXACTLY
-  one token after it (`bash -n a.sh` local; `bash a.sh -n` and
-  `bash -n a.sh b.sh` are NOT); `-m` as the second token is always local
-  (a module name, never a file — `python3 -m pytest x -q` is local);
-  `-c`/`-Command`/`-File` as the second token always defer; any other
-  token from the second position on that resolves to an existing repo
-  file defers too.
+- only once nothing on that list is present does whitespace-only splitting become safe. A reach verb
+  (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`, `psql`, `mysql`) anywhere — notice: `remote verb <v>`.
+- otherwise, if the first token is a recognised interpreter
+  (`bash`/`sh`/`dash`/`zsh`/`pwsh`/`powershell`/`python`/`python3`/`py`/`node`/`ruby`/`perl`): `-n`
+  is parse-only ONLY as the exact second token with EXACTLY one token after it (`bash -n a.sh`
+  local; `bash a.sh -n` and `bash -n a.sh b.sh` are NOT); `-m` as the second token is always local
+  (a module name, never a file — `python3 -m pytest x -q` is local); `-c`/`-Command`/`-File` as the
+  second token always defer; any other token from the second position on that resolves to an
+  existing repo file defers too.
 - otherwise: any token at all resolving to an existing repo file defers.
 - none of the above: runs undeclared.
 
-This is deliberately conservative and, on purpose, no longer tries to be
-precise about WHY a command might be safe — `verify_record.py`'s module
-docstring has the full history of why "model shell more completely" turned
-out not to be a fixable bug. Declare `"reach": "local"` on the rule; that is
-the fix, not a smarter scanner.
+This is deliberately conservative and, on purpose, no longer tries to be precise about WHY a command
+might be safe — `verify_record.py`'s module docstring has the full history of why "model shell more
+completely" turned out not to be a fixable bug. Declare `"reach": "local"` on the rule; that is the
+fix, not a smarter scanner.
 
-`default`/`always` entries in `.crew/verify.json` get the SAME
-classification on Stop — they have no `"reach"` field of their own, so a
-deferred command named there is excluded from the fallback exactly like an
-undeclared rule would be, never silently reintroduced through it.
+`default`/`always` entries in `.crew/verify.json` get the SAME classification on Stop — they have no
+`"reach"` field of their own, so a deferred command named there is excluded from the fallback
+exactly like an undeclared rule would be, never silently reintroduced through it.
 
-`--price` refuses to time a verb-, syntax-, or wrapper-classified rule
-outright, in both directions, same as the gate. The
-`verifyReachUndeclared` trigger in `crew_state.py` separately flags any rule
-with no `reach` at all — see `CONFIG.md` §19 for the full classification,
-and `--stamp-reach` above to declare them.
+`--price` refuses to time a verb-, syntax-, or wrapper-classified rule outright, in both directions,
+same as the gate. The `verifyReachUndeclared` trigger in `crew_state.py` separately flags any rule
+with no `reach` at all — see `CONFIG.md` §19 for the full classification, and `--stamp-reach` above
+to declare them.
 
 ## Environment pinning
 
 Every rule the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`, `AWS_DEFAULT_REGION`,
-`AWS_REGION`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID`, `KUBECONFIG`,
-`TF_WORKSPACE` and `TF_VAR_environment` unset, unless the rule declares
-`"env": {"VAR": "value"}` — in which case exactly those values are set
-instead. The gate prints what it pinned for every command. A rule whose
-target is chosen by whatever the calling shell happened to have set cannot be
-reasoned about.
+`AWS_REGION`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID`, `KUBECONFIG`, `TF_WORKSPACE` and
+`TF_VAR_environment` unset, unless the rule declares `"env": {"VAR": "value"}` — in which case
+exactly those values are set instead. The gate prints what it pinned for every command. A rule whose
+target is chosen by whatever the calling shell happened to have set cannot be reasoned about.
 
 ## Exit 77 is SKIP
 
-Following `_verify/smoke.sh` and GNU automake's convention, a command exiting
-77 means "skipped, environment absent" — not a pass, not a fail. The gate
-reports it (`SKIP (rc 77, environment absent)`), never fails the turn on it,
-and never records it as verified: it is listed with the deferred/chronic
-rules until it actually runs and exits 0.
+Following `_verify/smoke.sh` and GNU automake's convention, a command exiting 77 means "skipped,
+environment absent" — not a pass, not a fail. The gate reports it
+(`SKIP (rc 77, environment absent)`), never fails the turn on it, and never records it as verified:
+it is listed with the deferred/chronic rules until it actually runs and exits 0.
+
+## A rule passes only on a completion record
+
+Each command runs in a wrapper that writes its exit status to a completion record when it ends, and
+only a record holding 0 is a pass. When the gate cannot tell, it prints `VERIFY FAILED` and then
+`verify-gate: COULD NOT TELL (<reason>): <cmd>`. The reasons: the wrapper ended before writing the
+record; the record is missing or unreadable; the status is above 128 (a signal, or the rule's own
+status); no output-capture or completion-record file could be created; and, from the bash gate
+only, the gate itself was signalled while the command ran (a killed PowerShell gate prints nothing).
+The PowerShell gate adds two of its own: no usable bash resolved, and the rule's shell could not be
+started. Could not tell fails the turn like a failure and never advances the marker or the rule's
+record entry. The CI receipt lists such a command as UNKNOWN, as it does a command the log named
+but never finished, and calls its list partial when a gate that exited non-zero left no total line
+after its last rule.

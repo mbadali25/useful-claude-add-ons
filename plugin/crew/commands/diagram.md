@@ -23,13 +23,14 @@ Diagram: $ARGUMENTS
    nothing was measured: say NOT VERIFIED and give me the install line.
 6. Page: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_doc.py --dir docs/diagrams --write`
    writes `docs/diagrams/README.md` and `index.html` with every diagram embedded.
-   A render whose `.src` hash is not the `.mmd`'s shows "render out of date";
-   one with no `.src` is judged by file times and says "(freshness by mtime only)".
+   A stale `.src` hash shows "render out of date"; no `.src` says "(freshness by mtime only)".
+   Then `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_diagrams.py embed --root .` writes
+   each diagram into the README nearest its `%% Anchors:` (`%% Embed: <README> | none` overrides).
 7. Show me the source and the check table.
 
 With `refresh`: for each existing `.mmd`, diff its anchor files against HEAD.
-Re-verify and update only the ones whose anchors moved. Report which diagrams you
-left alone and which you could not verify.
+Re-verify and update only the ones whose anchors moved, then re-run `embed`. Report which
+diagrams you left alone and which you could not verify.
 
 If I ask for Visio, follow the Visio section of `crew-diagrams` — detect first,
 and if it is absent offer the three alternatives rather than producing something

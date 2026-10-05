@@ -28,7 +28,7 @@ no sha answers that, which is why these stay manual.
 | `SECURITY.md` | Reporting process, supported versions, or a disclosed issue changed | Routine security fixes |
 | `TODO.md` | Something deliberately deferred, with a reason | As a substitute for tickets |
 | `docs/adr/` | A decision was made with a rejected alternative | Implementation detail |
-| `docs/diagrams/` | The structure a diagram shows moved (see `crew-diagrams`) | Cosmetic changes |
+| `docs/diagrams/` | The structure a diagram shows moved (see `crew-diagrams`); then `crew_diagrams.py embed` rewrites the README embeds | Cosmetic changes; never hand-edit a `crew-diagrams` section |
 | `docs/runbooks/` | An operational procedure changed, or a new one was needed | Anything `make deploy` already does |
 
 `/crew:implement` asks this question once per ticket. The honest answer is

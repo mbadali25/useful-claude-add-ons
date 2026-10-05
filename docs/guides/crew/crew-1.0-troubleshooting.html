@@ -205,10 +205,10 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
 </tr>
 <tr>
 <td><code>Notification</code></td>
-<td><code>notify.sh</code></td>
-<td>pings an external channel</td>
-<td><code>notify.provider</code> (<code>none</code> disables it), <code>notify.events</code></td>
-<td><code>none</code></td>
+<td><code>notify.sh</code> (<code>crew_notify.py hook</code>)</td>
+<td>a <code>Question</code> / <code>Needs permission</code> ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never <code>idle_prompt</code>; once per waiting episode</td>
+<td><code>notify.provider</code> (<code>none</code> or null disables it), <code>notify.events</code>, <code>notify.questionTypes</code></td>
+<td>off</td>
 </tr>
 <tr>
 <td><code>Stop</code></td>
@@ -513,6 +513,11 @@ adds <code>verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILE
 <p>The command log carries status <code>unknown</code> for such a rule; the record sync leaves that rule's entry as
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
 rule is not ended by the gate.</p>
+<p>The CI receipt (<code>ci_receipt.py</code>, L-0673) lists such a command as <code>UNKNOWN</code>, and so a command the
+gate named failed, skipped or could-not-tell but never finished (a gate killed mid-rule). A log
+whose <code>verify-gate: &lt;N&gt;s total across</code> line does not come after its last per-rule line records
+<code>log_complete: false</code>; when the gate also exited non-zero, the job summary says the list is
+partial. The list is informative only: what the receipt accepts did not change.</p>
 <h2 id="autopilot-in-a-worktree-and-the-refresh-check">Autopilot in a Worktree, and the Refresh Check</h2>
 <ul>
 <li><strong>Symptom: autopilot stops with <code>cannot tell whether &lt;id&gt;'s direction is approved</code> in a
@@ -804,9 +809,9 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 </tr>
 <tr>
 <td><code>notify.provider</code></td>
-<td>both layers</td>
-<td>provider name / <code>none</code></td>
-<td><code>none</code>: the <code>Notification</code> hook sends nothing</td>
+<td>both layers (a repo null inherits the global one)</td>
+<td><code>telegram</code>/<code>teams</code>/<code>none</code></td>
+<td>a repo <code>none</code> opts out even when the global file names a provider: no <code>question</code> ping, no <code>deploy</code> result (<code>crew_notify.py config --root .</code> says so)</td>
 </tr>
 <tr>
 <td><code>change.requireForProduction</code></td>

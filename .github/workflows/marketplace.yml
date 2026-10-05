@@ -68,6 +68,11 @@ jobs:
       # include a misspelt top-level directory and a path inside a fenced block.
       - name: VERIFYING.md path suite
         run: python3 scripts/_test/verifying-doc.py
+      # check_diagram_embeds (T-0035): a README's generated crew-diagrams section
+      # matches its .mmd. Must-fail cases: a hand edit, a source not re-embedded,
+      # a deleted marker, an unreadable source; must-pass: a never-embedded README.
+      - name: Diagram embed suite
+        run: python3 scripts/_test/check-diagram-embeds.py
       # The version-drift check resolves "when was this version set" by walking
       # marketplace.json's history, and that walk is only monotonic on a linear
       # one. Across a merge it can stop at the merge commit, which then diffs

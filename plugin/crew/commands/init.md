@@ -18,9 +18,6 @@ Arguments: $ARGUMENTS
 - `--audit --all-repos DIR` — `qa_audit.py --all-repos DIR`: one line per crew checkout
 - no argument — resume at the first phase not marked `done`
 
-After each phase, if `notify.provider` is configured, send one line:
-`bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh phase "Phase N <state>"`
-
 ## Web phase (inside Phase 6, Browser tests)
 
 When the repo has a `playwright.config.*`, an `angular.json`, or a

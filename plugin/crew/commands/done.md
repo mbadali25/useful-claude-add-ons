@@ -59,7 +59,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --tic
 ```
 
 Read-only. Any `stale`, `unknown` or `fresh-uncommitted` line refuses done: name the artifact and what the line says — `refresh
-with <command>`, or `stop` with its reason (a missing tool, or a scope base that hides the change). **Do not run the refresh here
+with <command>` (a drifted README diagram embed included), or `stop` with its reason (a missing tool, a scope base that hides the change, broken embed markers). **Do not run the refresh here
 — a write now stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh, commit, then `/crew:review $1` again,
 then rerun this command. On `fresh-uncommitted` the artifacts are current but the files its `uncommitted:` line lists are not
 committed: commit them in `/crew:implement $1` step 6 (no byte of the review bundle's working state changes, so check 1's receipt
@@ -91,9 +91,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 
 3. Delete `.work/HANDOFF.md` if present — a stale handoff reads as current to
    the next session, the same rule `/crew:work`'s old step 14 states. <!-- deliberate -->
-4. If `notify.provider` is not `none`:
-   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
-5. Report: each of the four checks and its result, then **Not verified:** every verify rule that exited 77 (a
+4. Report: each of the four checks and its result, then **Not verified:** every verify rule that exited 77 (a
    missing tool, not a pass), any suite that did not run on this OS, `drift-detection.sh` (skipped by
    default), and anything checked only by reading. Write "Nothing" only when that is true.
 
@@ -115,6 +113,3 @@ commit, gate the merged head, review it again if `review_ledger.py --check-recei
 this command. After the review, a re-anchor changes only the sha on the `anchor:` line (or a diagram's header)
 and regenerates the rules; its provenance sentence goes in the ticket's `notes.md`, since any other byte in a
 code map, rules file or diagram is read as unreviewed.
-
-Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing" is the reason nobody
-trusts a notification channel — the same line `/crew:work` opened with. <!-- deliberate -->
