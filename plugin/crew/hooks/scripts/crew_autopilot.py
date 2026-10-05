@@ -54,9 +54,13 @@ Focus is explicit (owner decision, 2026-10-05): it is on only once `focus
 `focus off` is the only thing that drops it. The active-ticket pointer alone is
 never a focus, so with no marker entry `route` answers exactly as without
 T-0020. No new hook. `focus_state` reads the marker; one that does not parse,
-cannot be read, or holds a non-id entry is `unknown` -- could-not-tell, its
-own value, never "no focus" -- and `focus_guard` then refuses everything but
-`status`, `sleep`, `wake` and `focus off`, and `next` stops as `drift`. While
+cannot be read, is not a file, or holds an entry that is not a ticket is
+`unknown` -- could-not-tell, its own value, never "no focus" -- and
+`focus_guard` then refuses everything but `status`, `sleep` and `wake`, `next`
+stops as `drift`, and `focus off` refuses rather than delete it; each such
+message ends with the removal command for the marker's path
+(`_focus_remedy`). `focus` and `focus off` hold `_focus_lock` around the
+marker's read-modify-write, so two worktrees cannot drop each other's entry. While
 focused, `focus_guard` refuses `run` of any other ticket (named, or from the
 handoff in `resume`), `assign`, `goal` and any other subcommand, and all but
 `focus <id>` while the pointer disagrees with the focus; `sleep` and `wake`
@@ -912,8 +916,8 @@ def _drift(root, ticket, result):
     state = focus_state(top)
     if state["unknown"]:
         return dict(result, phase="drift", stop=True, command="", reason=(
-            f"drift: whether {ticket} is focused could not be told ({state['unknown']}), "
-            "so whether its tree must stay inside Touch cannot be told"))
+            f"drift: whether {ticket} is focused, and so whether its tree must stay inside "
+            f"Touch, could not be told: {state['unknown']}"))
     if state["focus"] != ticket:
         return None
     try:
@@ -2021,25 +2025,73 @@ def focus_path(root):
     return os.path.join(state, FOCUS_FILE) if state else None
 
 
+FOCUS_LOCK_WAIT = 5.0
+
+
+def _quoted(path, quote_escape):
+    return "'" + path.replace("'", quote_escape) + "'"
+
+
+def _focus_remedy(path):
+    """The way out of an unknown marker, naming its exact path: `focus off`
+    refuses to touch a file it cannot read, so the human removes it."""
+    return (f"removing it drops EVERY worktree's focus, not only this one's: "
+            f"rm -- {_quoted(path, chr(39) + chr(92) + chr(39) + chr(39))} (POSIX shell) or "
+            f"Remove-Item -LiteralPath {_quoted(path, chr(39) * 2)} (PowerShell)")
+
+
 def _focus_marker(top):
     """(path, mapping, unknown). `unknown` is "" or why the marker could not be
-    read: a file that does not parse (or cannot be read), one that is not an
-    object, or this worktree's entry not a ticket id. An unknown is never read
-    as "no focus"."""
+    read -- not a file, a file that does not parse (or cannot be read), one
+    that is not an object, or this worktree's entry not a ticket (an
+    INDEX-shaped id, or one with a `.work/tickets/` folder) -- ending with
+    `_focus_remedy`. An unknown is never read as "no focus"."""
     path = focus_path(top)
     if not path:
         return None, {}, ""
+    if os.path.lexists(path) and not os.path.isfile(path):
+        return path, None, f"the focus marker {path} is not a file; {_focus_remedy(path)}"
     data, state = crew_ticket._read_json(path)  # pylint: disable=protected-access
     if state == "corrupt" or (state == "ok" and not isinstance(data, dict)):
-        return path, None, f"the focus marker {path} does not parse"
+        return path, None, f"the focus marker {path} does not parse; {_focus_remedy(path)}"
     mapping = data if state == "ok" else {}
     entry = mapping.get(top)
-    if entry is not None:
-        try:
-            crew_ticket.check_ticket(entry)
-        except Exception:  # pylint: disable=broad-except
-            return path, None, f"the focus marker {path} names {entry!r}, not a ticket id"
+    if entry is not None and not (isinstance(entry, str) and (
+            _INDEX_ID.fullmatch(entry) or _existing_ticket(top, entry))):
+        return path, None, (f"the focus marker {path} names {entry!r}, not a ticket; "
+                            f"{_focus_remedy(path)}")
     return path, mapping, ""
+
+
+class _FocusLockError(Exception):
+    """The marker's lock could not be taken; nothing was written."""
+
+
+class _focus_lock:  # pylint: disable=invalid-name,too-few-public-methods
+    """`<marker>.lock`, crew_config_files.Lock's exclusive create with a
+    bounded wait, around every read-modify-write of the marker: two worktrees
+    running `focus` at once would otherwise both read the old mapping and the
+    later write would drop the other's entry while both report success. A
+    lock that cannot be taken raises _FocusLockError; nothing writes
+    unlocked."""
+
+    def __init__(self, path):
+        import crew_config_files  # pylint: disable=import-outside-toplevel
+        self.path, self.files = path, crew_config_files
+        self.lock = crew_config_files.Lock(path, FOCUS_LOCK_WAIT)
+
+    def __enter__(self):
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            self.lock.__enter__()
+        except (self.files.Busy, OSError) as exc:
+            raise _FocusLockError(
+                f"refused: the focus marker's lock {self.path}.lock could not be taken "
+                f"({exc}); nothing written") from exc
+        return self
+
+    def __exit__(self, *exc):
+        self.lock.__exit__(*exc)
 
 
 def focus_state(root):
@@ -2077,8 +2129,8 @@ def focus_guard(root, sub, ticket=""):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     state = focus_state(top)
     if state["unknown"]:
-        return (f"whether focus is on could not be told ({state['unknown']}): only status, "
-                f"sleep, wake and {FOCUS_RELEASE} run until the human repairs or removes it")
+        return ("whether focus is on could not be told, so only status, sleep and wake run "
+                f"until the human repairs or removes the marker: {state['unknown']}")
     focus = state["focus"]
     if focus is None:
         return None
@@ -2112,13 +2164,19 @@ def _write_marker(path, mapping):
         os.remove(path)
 
 
+def _unknown_refusal(head, unknown):
+    return f"{head}: {unknown}"
+
+
 def focus_set(root, ticket):
     """(ok, line). Writes this worktree's entry in the focus marker, then, only
     when the active-ticket pointer names another ticket or none, points it at
     `ticket` through `crew_ticket.activate` -- marker first, so a failed
     activate leaves a focus the guard refuses on (pointer mismatch), never a
-    switch without one. `activate` checks the id's shape only, so the folder
-    is checked here. Refuses, writing nothing, an unreadable marker, a broken
+    switch without one. The marker's read-modify-write holds `_focus_lock`,
+    and the focus-on-another-ticket check is made again inside it. `activate`
+    checks the id's shape only, so the folder is checked here. Refuses,
+    writing nothing, an unreadable marker, a lock it cannot take, a broken
     pointer and a focus on another ticket; the same ticket again, already
     pointed at, writes nothing. On a re-point `line` also carries activate's
     scope-base line, an unknown or a fallback included, never dropped."""
@@ -2126,12 +2184,14 @@ def focus_set(root, ticket):
     top = crew_ticket.toplevel(root)
     if not top:
         return False, f"refused: {root} is not a git repository"
+    path = focus_path(top)
+    if not path:
+        return False, "refused: there is no git common dir to keep the focus marker in"
     state = focus_state(top)
-    path, mapping, unknown = _focus_marker(top)
-    if unknown or not path:
-        why = unknown or "there is no git common dir to keep it in"
-        return False, (f"refused: whether focus is on could not be told ({why}); the human "
-                       "repairs or removes it")
+    if state["unknown"]:
+        return False, _unknown_refusal(
+            "refused: whether focus is on could not be told, so nothing is written",
+            state["unknown"])
     if state["broken"]:
         return False, (f"refused: the active-ticket pointer is broken ({state['why']}); "
                        "the human repairs it (crew_ticket.py activate --ticket <id>)")
@@ -2143,8 +2203,20 @@ def focus_set(root, ticket):
                        "first")
     if state["focus"] == ticket and state["pointer"] == ticket:
         return True, f"focus={ticket} (already; nothing written)"
-    if state["focus"] != ticket:
-        _write_marker(path, dict(mapping, **{top: ticket}))
+    try:
+        with _focus_lock(path):
+            _path, mapping, unknown = _focus_marker(top)
+            if unknown:
+                return False, _unknown_refusal(
+                    "refused: whether focus is on could not be told, so nothing is written",
+                    unknown)
+            if mapping.get(top) not in (None, ticket):
+                return False, (f"refused: focus is on {mapping[top]}; type "
+                               f"{FOCUS_RELEASE} first")
+            if mapping.get(top) != ticket:
+                _write_marker(path, dict(mapping, **{top: ticket}))
+    except _FocusLockError as exc:
+        return False, str(exc)
     line = f"focus={ticket} (this worktree only: {top})"
     if state["pointer"] == ticket:
         return True, line
@@ -2156,23 +2228,36 @@ def focus_set(root, ticket):
 
 
 def focus_off(root):
-    """(ok, line). Drops this worktree's focus marker entry and no other, and
-    leaves the active-ticket pointer as it is: the pointer was never the
-    focus. A marker that could not be read is said, never read as released."""
+    """(ok, line). Drops this worktree's focus marker entry and no other,
+    under `_focus_lock`, and leaves the active-ticket pointer as it is: the
+    pointer was never the focus. A marker that could not be read is refused,
+    never deleted and never read as released (fail-closed): its line ends
+    with the removal command for the human."""
     top = crew_ticket.toplevel(root)
     if not top:
         return False, f"refused: {root} is not a git repository"
-    path, mapping, unknown = _focus_marker(top)
-    if unknown:
-        return False, (f"focus=unknown {unknown} - focus off could not clear it; the "
-                       "human repairs or removes the file")
-    was = mapping.get(top)
-    if was is not None:
-        _write_marker(path, {key: value for key, value in mapping.items() if key != top})
+    path = focus_path(top)
+    if not path:
+        return True, "focus=none (nothing was set)"
+    try:
+        with _focus_lock(path):
+            _path, mapping, unknown = _focus_marker(top)
+            if unknown:
+                return False, _unknown_refusal(
+                    "focus=unknown - focus off does not clear a marker it cannot read",
+                    unknown)
+            was = mapping.get(top)
+            if was is not None:
+                _write_marker(path, {key: value for key, value in mapping.items()
+                                     if key != top})
+    except _FocusLockError as exc:
+        return False, str(exc)
     after = focus_state(top)
-    if after["unknown"] or after["focus"] is not None:
-        return False, (f"focus={after['focus'] or 'unknown'} {after['unknown']} - focus off "
-                       "could not clear it; the human repairs the file").rstrip()
+    if after["unknown"]:
+        return False, _unknown_refusal("focus=unknown - focus off could not clear it",
+                                       after["unknown"])
+    if after["focus"] is not None:
+        return False, f"focus={after['focus']} - focus off could not clear it"
     return True, f"focus=none (released {was})" if was else "focus=none (nothing was set)"
 
 

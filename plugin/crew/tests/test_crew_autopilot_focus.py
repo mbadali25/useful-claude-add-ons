@@ -18,6 +18,9 @@ import ast
 import json
 import os
 import re
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -75,6 +78,14 @@ def _marker(root):
 
 def _corrupt_marker(root, text="{not json"):
     _write(crew_autopilot.focus_path(str(root)), text)
+
+
+def _remedy_tail(root):
+    """What every unknown-marker message ends with: the removal commands for
+    the exact path, POSIX and PowerShell."""
+    path = crew_autopilot.focus_path(str(root))
+    return (f"removing it drops EVERY worktree's focus, not only this one's: rm -- '{path}' "
+            f"(POSIX shell) or Remove-Item -LiteralPath '{path}' (PowerShell)")
 
 
 def _crew_state(root):
@@ -173,8 +184,9 @@ def test_focus_off_of_an_unparseable_marker_is_not_read_as_released(tmp_path):
 
     ok, line = crew_autopilot.focus_off(str(root))
 
-    assert (ok, line.startswith("focus=unknown"), "could not clear" in line) == (
-        False, True, True)
+    assert (ok, line.startswith("focus=unknown"), "does not clear" in line,
+            line.endswith(_remedy_tail(root)), os.path.isfile(crew_autopilot.focus_path(
+                str(root)))) == (False, True, True, True, True)
 
 
 def test_focus_off_removes_the_marker_and_keeps_the_pointer(tmp_path):
@@ -676,8 +688,8 @@ def test_unknown_marker_refuses_start_and_switch(tmp_path, text):
 
     got = crew_autopilot.route_args(str(root), text)
 
-    assert (got["stop"], "could not be told" in got["reason"], RELEASE in got["reason"]) == (
-        True, True, True)
+    assert (got["stop"], "could not be told" in got["reason"], RELEASE in got["reason"],
+            got["reason"].endswith(_remedy_tail(root))) == (True, True, False, True)
 
 
 @pytest.mark.parametrize("text", ["status", "focus off", "sleep", "wake"])
@@ -696,6 +708,139 @@ def test_unknown_marker_entry_that_is_not_an_id_refuses(tmp_path):
     got = crew_autopilot.focus_guard(str(root), "run", OTHER)
 
     assert "could not be told" in (got or "")
+
+
+def test_unknown_marker_entry_bogus_is_unknown_not_a_focus(tmp_path):
+    """N1: `bogus` passes crew_ticket's id shape but is neither INDEX-shaped
+    nor a ticket folder, so it is unknown, never focus=bogus."""
+    root = _pointed(tmp_path)
+    _write(crew_autopilot.focus_path(str(root)),
+           json.dumps({crew_ticket.toplevel(str(root)): "bogus"}))
+
+    got = crew_autopilot.focus_state(str(root))
+
+    assert (got["focus"], "'bogus', not a ticket" in got["unknown"],
+            crew_autopilot.focus_show(str(root))[1].startswith("focus=unknown ")) == (
+        None, True, True)
+
+
+def test_marker_entry_naming_a_ticket_folder_is_a_focus(tmp_path):
+    """A non-INDEX-shaped id with a `.work/tickets/` folder is a ticket, as
+    `route` reads one."""
+    root = _two(tmp_path)
+    _ticket(root, ticket="hotfix")
+
+    ok, _line = crew_autopilot.focus_set(str(root), "hotfix")
+
+    assert (ok, crew_autopilot.focus_state(str(root))["focus"]) == (True, "hotfix")
+
+
+def test_a_directory_marker_is_not_a_file(tmp_path):
+    root = _pointed(tmp_path)
+    os.makedirs(crew_autopilot.focus_path(str(root)))
+
+    got = crew_autopilot.focus_state(str(root))
+    off_ok, off_line = crew_autopilot.focus_off(str(root))
+
+    assert ("is not a file" in got["unknown"], "does not parse" in got["unknown"],
+            got["unknown"].endswith(_remedy_tail(root)), off_ok,
+            off_line.endswith(_remedy_tail(root)),
+            os.path.isdir(crew_autopilot.focus_path(str(root)))) == (
+        True, False, True, False, True, True)
+
+
+@pytest.mark.parametrize("call", ["show", "set", "off", "guard", "drift"])
+def test_every_unknown_message_ends_with_the_removal_commands(tmp_path, call):
+    root = _approved(tmp_path) if call == "drift" else _pointed(tmp_path)
+    _corrupt_marker(root)
+
+    line = {"show": lambda: crew_autopilot.focus_show(str(root))[1],
+            "set": lambda: crew_autopilot.focus_set(str(root), OTHER)[1],
+            "off": lambda: crew_autopilot.focus_off(str(root))[1],
+            "guard": lambda: crew_autopilot.focus_guard(str(root), "run", OTHER),
+            "drift": lambda: crew_autopilot.next_phase(str(root), T)["reason"]}[call]()
+
+    assert (line.endswith(_remedy_tail(root)), RELEASE in line) == (True, False)
+
+
+def test_removal_commands_quote_an_apostrophe_in_the_path():
+    remedy = crew_autopilot._focus_remedy("/tmp/it's/autopilot-focus.json")  # pylint: disable=protected-access
+
+    assert ("rm -- '/tmp/it'\\''s/autopilot-focus.json'" in remedy,
+            "Remove-Item -LiteralPath '/tmp/it''s/autopilot-focus.json'" in remedy) == (True, True)
+
+
+_RACER = """
+import sys, time
+sys.path.insert(0, sys.argv[1])
+import crew_autopilot
+delay = float(sys.argv[4])
+if delay:
+    real = crew_autopilot._write_marker
+    def slow(path, mapping):
+        open(sys.argv[5], "w").close()  # read done, write not yet: the window is open
+        time.sleep(delay)
+        real(path, mapping)
+    crew_autopilot._write_marker = slow
+if sys.argv[3] == "off":
+    ok, line = crew_autopilot.focus_off(sys.argv[2])
+else:
+    ok, line = crew_autopilot.focus_set(sys.argv[2], sys.argv[3])
+print(line.splitlines()[0])
+sys.exit(0 if ok else 1)
+"""
+
+
+def _race(root, delay, sentinel, what=T):
+    return subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, "-B", "-c", _RACER, os.path.dirname(crew_autopilot.__file__),
+         str(root), what, str(delay), str(sentinel)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+@pytest.mark.parametrize("slow_does", [T, "off"])
+def test_two_worktrees_writing_the_marker_at_once_lose_nothing(tmp_path, slow_does):
+    """F2: worktree A reads the marker and stalls before writing (a `focus T-1`,
+    or a `focus off` of its earlier focus); B runs `focus T-1` meanwhile.
+    Without the lock A's write drops B's entry while B reports success. With
+    it, B waits, then writes on top of A's result."""
+    root = _two(tmp_path)
+    other = tmp_path / "wt2"
+    git(root, "worktree", "add", "-q", str(other), "-b", "second")
+    _ticket(other, ticket=T)
+    tops = crew_ticket.toplevel(str(root)), crew_ticket.toplevel(str(other))
+    if slow_does == "off":
+        assert crew_autopilot.focus_set(str(root), T)[0]
+
+    sentinel = tmp_path / "a-has-read"
+    slow = _race(root, 1.5, sentinel, slow_does)
+    deadline = time.monotonic() + 60
+    while not sentinel.exists() and slow.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert sentinel.exists(), slow.communicate()
+    fast = _race(other, 0, sentinel)
+    results = [(proc.wait(timeout=60), proc.communicate()) for proc in (slow, fast)]
+
+    for code, (out, err) in results:
+        assert (code, err) == (0, ""), out
+    assert _marker(root) == ({tops[1]: T} if slow_does == "off" else {tops[0]: T, tops[1]: T})
+
+
+def test_focus_refuses_when_the_marker_lock_is_held(tmp_path, monkeypatch):
+    root = _two(tmp_path)
+    monkeypatch.setattr(crew_autopilot, "FOCUS_LOCK_WAIT", 0.2)
+    path = crew_autopilot.focus_path(str(root))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write(path + ".lock", "99999")
+    before = _crew_state(root)
+
+    set_ok, set_line = crew_autopilot.focus_set(str(root), T)
+    off_ok, off_line = crew_autopilot.focus_off(str(root))
+
+    assert (set_ok, set_line.startswith("refused: the focus marker's lock"),
+            "nothing written" in set_line, off_ok, "could not be taken" in off_line,
+            _crew_state(root) == before, _marker(root)) == (
+        False, True, True, False, True, True, None)
 
 
 def test_unknown_marker_stops_next_as_drift(tmp_path):
