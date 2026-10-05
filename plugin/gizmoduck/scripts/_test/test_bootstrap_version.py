@@ -15,6 +15,7 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -279,11 +280,29 @@ ps_only = pytest.mark.skipif(_PWSH is None or os.name == "nt",
                              reason="needs pwsh and a POSIX shell for the git stub")
 
 
+def _pwsh_cache_dir(tmp):
+    """A fresh, empty startup-profile cache for one pwsh spawn (L-0557).
+
+    pwsh reads and rewrites `$XDG_CACHE_HOME/powershell/StartupProfileData-*`,
+    and concurrent pwsh sharing one copy can crash at start-up, so every spawn
+    here gets a new mkdtemp dir. It is made INSIDE the ambient cache root when
+    that is not the user's own ~/.cache: in CI this suite runs in the same
+    pytest process as plugin/crew/tests, whose conftest points the variable at
+    a session dir and audits that every pwsh cache sits under it. Otherwise
+    (no ambient value, or the user default) it goes under the test's tmp."""
+    ambient = os.environ.get("XDG_CACHE_HOME") or ""
+    user_default = os.path.join(os.path.expanduser("~"), ".cache")
+    usable = (ambient and os.path.isdir(ambient)
+              and os.path.realpath(ambient) != os.path.realpath(user_default))
+    return tempfile.mkdtemp(prefix="gizmoduck-pwsh-", dir=ambient if usable else str(tmp))
+
+
 def _run_ps(stubs, curl="fail", git="fail", tags=()):
     stubs["tags"].write_text(
         "".join(f"{_sha(i)}\trefs/tags/{t}\n" for i, t in enumerate(tags, 1)))
     driver = stubs["tmp"] / "driver.ps1"
     driver.write_text(_PS_DRIVER)
+    cache = _pwsh_cache_dir(stubs["tmp"])
     env = {
         "PATH": f"{stubs['bin']}{os.pathsep}{os.environ.get('PATH', '')}",
         "HOME": str(stubs["tmp"]),
@@ -292,9 +311,13 @@ def _run_ps(stubs, curl="fail", git="fail", tags=()):
         "STUB_GIT_TAGS": str(stubs["tags"]),
         "STUB_CURL_MODE": curl,
         "STUB_GIT_MODE": git,
+        "XDG_CACHE_HOME": cache,
     }
-    proc = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(driver)],
-                          capture_output=True, text=True, env=env, timeout=120, check=False)
+    try:
+        proc = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(driver)],
+                              capture_output=True, text=True, env=env, timeout=120, check=False)
+    finally:
+        shutil.rmtree(cache, ignore_errors=True)
     return proc, stubs["log"].read_text()
 
 
