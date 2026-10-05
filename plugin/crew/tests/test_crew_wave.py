@@ -805,6 +805,21 @@ def test_collect_keeps_a_started_lane_dropped_from_the_set_file(tmp_path):
     assert "T-2" in {row["ticket"] for row in _collect(root)["lanes"]}
 
 
+def test_relaunch_never_launches_a_ticket_the_wave_did_not_start(tmp_path):
+    # Group review r9 (rush g0): T-1 running, its approval gone stale, so the replan dropped
+    # it and launched T-2, whose Touch overlaps it, beside it.
+    root = _started(tmp_path, tickets=(("T-1", ("src/**",)), ("T-2", ("src/app.py",))))
+    assert [line.split(":")[0] for line in _cli("start", "--root", root, "--set", "s").stdout.splitlines()
+            if line.startswith("launch")] == ["launch T-1"]
+    spec = root / ".work" / "tickets" / "T-1" / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
+
+    out = _cli("start", "--root", root, "--set", "s").stdout
+
+    assert (any(line.startswith("launch T-2") for line in out.splitlines()),
+            "T-2 not started" in out) == (False, True)
+
+
 def test_set_refuses_to_rewrite_a_started_set(tmp_path):
     # Group review r8 (rush g0): a rewritten set started T-3 beside running T-1 with no
     # Touch or maxLanes check against it, and cleanup lost T-1.

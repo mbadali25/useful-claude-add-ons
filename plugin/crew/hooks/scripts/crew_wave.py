@@ -641,8 +641,15 @@ def start(root, slug):
     receipts = dict(record.get("receipts") or {})
     lanes = list(record.get("lanes") or [])
     versions = dict(result["land"])
+    started = list(lanes)
     lines = []
     for ticket in result["wave"]:
+        if started and ticket not in started:
+            # A relaunch replans from today's approvals, without the lanes already running:
+            # a newcomer could overlap one or pass maxLanes (group review r9, rush g0).
+            lines.append(f"{ticket} not started: this set's wave already started; a ticket it did "
+                         "not launch goes in a new set")
+            continue
         lane, state = read_lane(top, slug, ticket)
         if state == "corrupt":
             lines.append(f"{ticket} unknown: its lane file is unreadable; not relaunched")
