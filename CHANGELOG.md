@@ -23,7 +23,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (indented, a backtick in a backtick info string, a shorter run inside a fence) or a fence left
   open adds one `could not tell` item naming the line, when the file names an Open-questions
   section anywhere. No CommonMark emulation: put fences at column 0 and close each one.
-- **Measured.** 17 new parser tests (a generated corpus of 17,282 texts against a verbatim copy of
+- **Measured.** 18 new parser tests (a generated corpus of 17,282 texts against a verbatim copy of
   main's parser at 155fe6d8: nothing below main, every unclean text with a section stops) and 3 new
   `next` tests. Over the 29 ticket files this clone holds, 10 stop under main and the same 10 under
   the new parser; none newly stops.

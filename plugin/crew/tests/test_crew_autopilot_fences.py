@@ -84,8 +84,10 @@ def _unclear(items):
     "go\n```example```\n\n## Open questions\n- none\n",
     "go\n````markdown\n```\n````\n## Open questions\n- none\n",
     "go\n  ```\n  ## Open questions\n  - which DB?\n  ```\n",
+    "go\n```\n# example\n```   \n## Open questions\n- none\n",
 ], ids=["indented-closer-in-section", "list-nested-pair-before", "unclosed-after-section",
-        "tab-indented-opener", "inline-backticks", "shorter-run-inside", "section-only-indented"])
+        "tab-indented-opener", "inline-backticks", "shorter-run-inside", "section-only-indented",
+        "closer-with-trailing-spaces"])
 def test_open_questions_ambiguous_fence_could_not_tell(text):
     assert len(_unclear(_items(text))) == 1, _items(text)
 

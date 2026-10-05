@@ -15,7 +15,8 @@ when it cannot tell.
    fence that opens inside the section before any item line is itself an item
    (`UNEXPLAINED_FENCE`): nothing says what it asks;
 3. could not tell: any other fence-shaped line (indented, a backtick in a
-   backtick info string, a shorter or trailing-text run inside a fence) or a
+   backtick info string, a shorter run, or a run with anything after it -- a
+   trailing space included -- inside a fence) or a
    fence still open at the end of the text adds one `UNCLEAR_FENCE` item
    naming the first such line -- but only when the file names an
    Open-questions section somewhere (indented or fenced included). A file with
@@ -57,7 +58,7 @@ def fence_view(text, legacy, heading):
             masked[number - 1] = ""
             run, rest = shape or ("", "")
             if shape and line == line.lstrip() and run[0] == fence[0] \
-                    and len(run) >= fence[1] and not rest.strip(" \t"):
+                    and len(run) >= fence[1] and not rest:
                 fence = None
             elif shape and unclear is None:
                 unclear = number
