@@ -1105,12 +1105,16 @@ def _component_ids(paths, label):
     return ids
 
 
-def _could_not_tell(found, want):
-    """Raise unless both identities can be told: a recorded `want` that is None,
-    or no inode / file id on either side, is no evidence -- never "the same"."""
-    if want is None or not found.st_ino or not want[1]:
-        raise OSError(errno.EIO, "could not tell whether a directory on its path is the one the vault "
-                                 "checks found: there is no identity to compare; nothing written")
+def _could_not_tell(found, want, where):
+    """Raise unless both identities of `where` (a vault-relative directory, or
+    "the vault") can be told: a recorded `want` that is None, or an inode / file
+    id of 0 on either side, is no evidence -- never "the same"."""
+    if want is None:
+        raise OSError(errno.EIO, f"could not tell whether {where} is the directory the vault checks found: "
+                                 f"no identity was recorded for it; nothing written")
+    if not found.st_ino or not want[1]:
+        raise OSError(errno.EIO, f"could not tell whether {where} is the directory the vault checks found: "
+                                 f"the file system reports inode 0; nothing written")
 
 
 def _recorded_ids(paths, label, parts):
@@ -1123,13 +1127,15 @@ def _recorded_ids(paths, label, parts):
     return ids
 
 
-def _match_component(found, want):
-    """Raise unless `found` (the stat of a component the walk opened) is the
-    directory `_vault_paths` recorded there as `want`: EIO when either cannot
-    be told, ESTALE (`_moved`'s "changed after the vault checks") when they differ."""
-    _could_not_tell(found, want)
+def _match_component(found, want, where):
+    """Raise unless `found` (the stat of component `where` the walk opened) is
+    the directory `_vault_paths` recorded there as `want`: EIO when either
+    cannot be told, ESTALE (`_moved`'s "changed after the vault checks") when
+    they differ."""
+    _could_not_tell(found, want, where)
     if (found.st_dev, found.st_ino) != tuple(want):
-        raise OSError(errno.ESTALE, "a directory on its path is not the one the vault checks found")
+        raise OSError(errno.ESTALE, f"{where} is not the directory the vault checks found (or its file system "
+                                    f"does not keep inodes stable, as some FUSE and network mounts do not)")
 
 
 def _hold_dirs(paths, label):
@@ -1145,7 +1151,8 @@ def _hold_dirs(paths, label):
     """
     held = []
     try:
-        ids = _recorded_ids(paths, label, _components(paths, label))
+        parts = _components(paths, label)
+        ids = _recorded_ids(paths, label, parts)
         path = paths["vault"]
         for index, part in enumerate([None] + _components(paths, label)):
             if part is not None:
@@ -1162,7 +1169,7 @@ def _hold_dirs(paths, label):
             if index == 0 and (seen.st_dev, seen.st_ino) != paths["vaultId"]:
                 raise OSError(errno.ESTALE, "the vault is not the directory that was checked")
             if index:
-                _match_component(seen, ids[index - 1])
+                _match_component(seen, ids[index - 1], "/".join(parts[:index]))
     except BaseException:
         _release(held)
         raise
@@ -1192,14 +1199,14 @@ def _open_pinned(paths, label):
     fd = os.open(paths["vault"], _DIR_FLAGS)
     try:
         seen = os.fstat(fd)
-        _could_not_tell(seen, paths["vaultId"])
+        _could_not_tell(seen, paths["vaultId"], "the vault")
         if (seen.st_dev, seen.st_ino) != paths["vaultId"]:
             raise OSError(errno.ESTALE, "the vault is not the directory that was checked")
-        for part, want in zip(parts, ids):
+        for depth, (part, want) in enumerate(zip(parts, ids), 1):
             inner = os.open(part, _DIR_FLAGS, dir_fd=fd)
             os.close(fd)
             fd = inner
-            _match_component(os.fstat(fd), want)
+            _match_component(os.fstat(fd), want, "/".join(parts[:depth]))
     except BaseException:
         os.close(fd)
         raise

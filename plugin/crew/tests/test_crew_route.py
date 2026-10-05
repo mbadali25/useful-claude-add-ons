@@ -733,7 +733,9 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
 
 # --- T-0057: plain-text routing for the autopilot commands the router knows -----
 
-_RESERVED = ["take care of the login audit", "work toward zero flaky tests", "focus on T-1",
+# T-0020 added `focus` to AVAILABLE, so "focus on T-1" routes now
+# (test_crew_autopilot_focus.py::test_plain_text_focus_on_routes_now_that_focus_is_available).
+_RESERVED = ["take care of the login audit", "work toward zero flaky tests",
              "pick the goal back up"]
 _NEW_ROWS = ["autopilot status", "take care of the login audit",
              "work toward zero flaky tests", "focus on T-1", "pick the goal back up"]

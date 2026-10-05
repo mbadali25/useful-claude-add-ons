@@ -442,3 +442,18 @@ flowchart LR
 %% Re-anchored 452b30cc (main) -> 0620587f (L-0601 merges main f808e5f0): body citations into files main changed after 452b30cc moved by difflib; no node or edge re-derived. Node rv1 says the prompt carries the standards checklist, then the recurring-findings checklist, then any web tests.
 %% Re-anchored f808e5f0 (main, L-0600's redraw) -> 42effe14 (L-0601 merges main 34d9f267, rerere off): main's diagram taken whole, L-0600's verdict-edge relabels kept; L-0601's rv1 wording re-applied. Main changed no code after f808e5f0 and L-0601 moved no review.md line cited here. No other node or edge changed.
 %% Re-anchored 42effe14 -> 69de978c (T-0041): done.md gained step 5, the report with its Not verified list (:86-89); this overview cites no done.md line, so no node or edge changed. The done part is re-cited in process-crew-lifecycle-done.mmd.
+%% Re-drawn f808e5f0 -> 308ac2fa (T-0063, crew 1.0.164). Of the Anchors paths implement.md, done.md and
+%% crew_refresh_check.py changed. The refresh check now has `fresh-uncommitted` (current, not committed):
+%% implement.md:98 commits the listed paths and re-runs (new rf3 node and its two edges), and done.md
+%% check 4 (:55-71) refuses it (dn5's refusal edge relabelled). done.md gained five lines inside check 4,
+%% so the done subgraph's cites were re-read with grep -n on 308ac2fa (check 3 :40-53, all four :73-85,
+%% train status :92-95, check-land :97-102, merge :103-104, catch-up :105-106; the old :35-48 / :50-61 /
+%% :63-74 / :82-96 were already five behind main's done.md). implement.md's cites hold (one line edited
+%% in place, :98). crew_refresh_check.py is cited by name only. No other node or edge changed.
+%% Re-anchored 308ac2fa -> c9867c59 (T-0063, crew 1.0.182): no Anchors path changed
+%% (the fix is crew_autopilot.py, which this diagram does not anchor). No node or edge changed.
+%% Re-anchored c9867c59 -> 0e36a87d (T-0063 merges origin/main 4f6ef540, L-0601 #327): main's rv1 wording
+%% and T-0063's rf3/dn5 edits both kept; no Anchors path changed on both sides. No node or edge re-derived.
+%% T-0063 (#368) merges origin/main c9263465 (rerere off): main split this diagram into parts (#375), so main's overview is
+%% taken whole and T-0063's history above kept; its rf3 node and edges went into process-crew-lifecycle-implement.mmd
+%% and its dn5 relabel and done.md re-cites into process-crew-lifecycle-done.mmd, each re-read on the merged tree.
