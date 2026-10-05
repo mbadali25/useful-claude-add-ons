@@ -22,6 +22,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 _SCRIPT = Path(__file__).resolve().parent.parent / "gizmoduck.py"
 
 # Distinctive enough that an accidental substring match (e.g. against the
@@ -126,3 +128,51 @@ def test_doctor_names_a_broken_override_without_changing_exit_status(tmp_path):
     assert f"OK GIZMODUCK_NIKTO_PL: {good_pl}" in result.stdout
     assert "GIZMODUCK_TESTSSL_SH" not in result.stdout  # unset variables are not listed
     assert result.returncode == clean.returncode
+
+
+# --- C-0015.4: testssl needs hexdump, and `testssl --version` passes without it
+
+def _run_path(tmp_path, tools):
+    """doctor with PATH = one stub dir holding only `tools` (each a no-op)."""
+    stub = tmp_path / "stubbin"
+    stub.mkdir()
+    for tool in tools:
+        p = stub / tool
+        p.write_text("#!/bin/sh\nexit 0\n", newline="\n")
+        p.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(stub)
+    env["HOME"] = str(tmp_path)
+    for var in ("GIZMODUCK_MSYS2_BIN", "GIZMODUCK_TESTSSL_SH", "LOCALAPPDATA"):
+        env.pop(var, None)
+    return subprocess.run([sys.executable, str(_SCRIPT), "doctor"],
+                          capture_output=True, text=True, check=False, env=env)
+
+
+_posix = pytest.mark.skipif(os.name == "nt", reason="shell stubs on PATH")
+
+
+@_posix
+def test_testssl_without_hexdump_is_reported_missing(tmp_path):
+    # Must-block: testssl.sh on PATH but no hexdump anywhere.
+    result = _run_path(tmp_path, ["testssl.sh"])
+    lines = [ln for ln in result.stdout.splitlines() if "testssl" in ln and "[" in ln]
+    assert lines and lines[0].startswith("!! testssl"), result.stdout
+    assert "hexdump" in lines[0], result.stdout
+    assert "OK testssl" not in result.stdout
+    assert "unavailable:" in result.stdout and "testssl" in result.stdout.split("unavailable:")[1]
+
+
+@_posix
+def test_testssl_with_hexdump_is_ok(tmp_path):
+    # Must-allow: the same, with hexdump resolvable.
+    result = _run_path(tmp_path, ["testssl.sh", "hexdump"])
+    assert "OK testssl" in result.stdout, result.stdout
+    assert "hexdump" not in result.stdout
+
+
+@_posix
+def test_missing_testssl_says_not_installed_not_hexdump(tmp_path):
+    result = _run_path(tmp_path, [])
+    line = next(ln for ln in result.stdout.splitlines() if ln.startswith("!! testssl"))
+    assert "not installed" in line and "hexdump" not in line, line

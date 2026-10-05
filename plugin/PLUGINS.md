@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.351<!-- claim: plugin-version:crew --> |
+| **Version** | 1.1.0<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -446,7 +446,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.9<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.5.10<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |

@@ -5,7 +5,7 @@ can be re-verified rather than re-discovered — and so an item that turns out t
 be wrong can be closed on evidence.
 
 - **L-0684 follow-up (gizmoduck guides).** The built guides under `docs/guides/gizmoduck/` have no
-  source in the repo, so they were not rebuilt for gizmoduck 0.5.9's tool lookup order and do not
+  source in the repo, so they were not rebuilt for gizmoduck 0.5.10's tool lookup order and do not
   mention `GIZMODUCK_HOME` or that a broken override disables its tool. The plugin README's "Where
   gizmoduck looks for tools" is current; rebuild the guides from a source once one exists.
 - **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
@@ -4240,7 +4240,7 @@ Codex r1 on ed91114d..c3bd8dfd (modified files), 0 BLOCK:
 - `handoff-read.sh:44`/`.ps1:57` require legacy `.crew/config.json`; a crew.json-only 1.0 repo with inject=false gets no handoff.
 
 ### crew 1.0 guides: multi-line code blocks render with a blank line between every line (LibreOffice, quickstart p1) - OPEN, cosmetic (filed 2026-09-23)
-- Seen in `docs/guides/crew/crew-1.0-quickstart.pdf` page 1; likely `<pre>` newline handling in `docs/guides/crew/src/build.py` / LibreOffice Writer/Web.
+- Seen in `docs/guides/crew/crew-quickstart.pdf` (then `crew-1.0-quickstart.pdf`) page 1; likely `<pre>` newline handling in `docs/guides/crew/src/build.py` / LibreOffice Writer/Web.
 
 ### Post-1.0: superpowers' systematic-debugging vs crew-debugging - OPEN (filed 2026-09-23, owner request)
 Owner: "superpowers' systematic-debugging works great." After 1.0, compare it with crew's `crew-debugging` skill and

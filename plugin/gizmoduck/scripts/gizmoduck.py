@@ -1524,12 +1524,20 @@ def cmd_doctor():
             kinds = ",".join(getattr(mod, "KINDS", []) or [])
             try:
                 present = bool(mod.is_available())
+                # An adapter may name a prerequisite its own probe cannot
+                # see (testssl.sh runs `--version` fine without hexdump,
+                # then refuses every scan) - C-0015.
+                check = getattr(mod, "missing_prerequisite", None)
+                problem = check() if present and check else None
             except Exception as exc:                      # noqa: BLE001
                 safe_print(f"!! {name:<10} [{kinds}] check failed: "
                            f"{type(exc).__name__}: {exc}")
                 missing.append(name)
                 continue
-            if present:
+            if problem:
+                safe_print(f"!! {name:<10} [{kinds}] installed, but {problem}")
+                missing.append(name)
+            elif present:
                 safe_print(f"OK {name:<10} [{kinds}]")
             else:
                 safe_print(f"!! {name:<10} [{kinds}] not installed — "

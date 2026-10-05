@@ -28,8 +28,11 @@ Both fetch the latest prebuilt binary and community templates. PDF reports need
 `wkhtmltopdf` (installed by bootstrap.sh; `winget install wkhtmltopdf` on Windows).
 Where `api.github.com` is refused (a Claude Code cloud session, some corporate proxies) they
 fall back to git tags and git for the version lookup and the templates. `bootstrap.sh` skips
-any tool already on PATH, so it is safe to re-run; `GIZMODUCK_BOOTSTRAP_FORCE=1 ./bootstrap.sh`
-reinstalls everything.
+any tool already on PATH that passes a run check, so it is safe to re-run;
+`GIZMODUCK_BOOTSTRAP_FORCE=1 ./bootstrap.sh` reinstalls everything. The install locations are
+fixed (`/usr/local/bin`, `/opt`): `GIZMODUCK_BIN_DIR`, `GIZMODUCK_OPT_DIR` and
+`GIZMODUCK_APT_LISTS_DIR` are a test seam, honoured only with `GIZMODUCK_BOOTSTRAP_TEST=1` and
+otherwise ignored with a notice.
 
 If your antivirus/EDR quarantines or deletes nikto, sqlmap, ZAP, or a Nuclei
 template mid-install, see [`docs/antivirus-exclusions.md`](docs/antivirus-exclusions.md) - that's expected, not a broken install.
