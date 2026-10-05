@@ -53,6 +53,7 @@ import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STANDARDS = os.path.join(CREW, "hooks", "scripts", "crew_standards.py")
+REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
 GENERIC = os.path.join(CREW, "skills", "crew-standards", "references", "generic.md")
@@ -398,12 +399,42 @@ STANDARDS_MUTATIONS = (
     (
         "the self-check gate answers before a spent budget",
         REVIEW_RUN,
-        "    if not _budget_spent(args):\n"
-        "        refused = prereview_gate(args)\n",
-        "    if True:\n"
-        "        refused = prereview_gate(args)\n",
+        "    gated = not _budget_spent(args)\n",
+        "    gated = True\n",
         ("tests/test_review_run_standards.py::"
          "test_run_reports_a_spent_budget_before_the_selfcheck"),
+    ),
+    (
+        # L-0518 F2: the unlocked "budget spent" read is trusted under the
+        # lock again, so a ledger that moved reserves a round no gate asked.
+        "reserve ignores that the caller skipped the gates",
+        REVIEW_LEDGER,
+        "        if not gated:\n            return None, (False, None, GATE_CHANGED)\n",
+        "        if False:\n            return None, (False, None, GATE_CHANGED)\n",
+        ("tests/test_review_run_standards.py::"
+         "test_run_does_not_reserve_an_ungated_round_after_the_ledger_moved"),
+    ),
+    (
+        # L-0518 N4: an incident read that raises escapes, exit 1 = FINDINGS.
+        "a gate's failed incident read escapes again",
+        REVIEW_RUN,
+        "        return crew_incident.read_state(args.root, crew_state.load_config(args.root))\n"
+        "    except (OSError, ValueError) as exc:\n",
+        "        return crew_incident.read_state(args.root, crew_state.load_config(args.root))\n"
+        "    except ZeroDivisionError as exc:\n",
+        ("tests/test_review_run_standards.py::"
+         "test_a_self_check_gate_whose_incident_read_fails_exits_2_not_1"),
+    ),
+    (
+        # L-0518 N4: a skip log that cannot be written escapes, exit 1.
+        "a gate's failed incident skip log escapes again",
+        REVIEW_RUN,
+        "        crew_incident.log_skip(args.root, check, detail)\n"
+        "    except (OSError, ValueError) as exc:\n",
+        "        crew_incident.log_skip(args.root, check, detail)\n"
+        "    except ZeroDivisionError as exc:\n",
+        ("tests/test_review_run_standards.py::"
+         "test_a_self_check_gate_whose_skip_log_fails_exits_2_not_1"),
     ),
     (
         "GEN-07 cites two of its three change sets",

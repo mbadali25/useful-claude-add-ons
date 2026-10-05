@@ -440,14 +440,14 @@ def test_done_names_the_merge_train_landing():
 
 
 def test_review_names_the_train_exit():
-    """L-0526: `review_run.py` exit 6 (the merge train) is named where the
+    """L-0526: `review_run.py` exit 10 (the merge train) is named where the
     command reads `$REVIEW_STATUS`, explained with its order among the other
     refusals, and counted among the reasons the Claude fallback gets no ROUND."""
     text = " ".join(_read(os.path.join(COMMANDS, "review.md")).split())
 
-    assert "6 train wait" in text
-    assert "Exit 6 (`$REVIEW_STATUS`" in text and "crew_train.py status" in text
-    assert "then the merge train with exit 6" in text
-    assert "exit 6 above - the merge train" in text
+    assert "10 train wait" in text
+    assert "Exit 10 (`$REVIEW_STATUS`" in text and "crew_train.py status" in text
+    assert "then the merge train with exit 10" in text
+    assert "exit 10 above - the merge train" in text
     assert "A spent budget skips the train" in text
     assert 'keeps holding it' in text and 'crew_train.py release --ticket "$TICKET"' in text

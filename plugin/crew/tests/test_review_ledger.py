@@ -172,8 +172,9 @@ def _bundle(repo, scratch):
 
 def _run(repo, scratch, fakes, mode, *extra, **env_extra):
     return subprocess.run(
-        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
-         "--scratch", str(scratch), "--provider", "codex"] + list(extra),
+        review_fixtures.NO_BACKOFF + ["--root", str(repo), "--ticket", "T1",
+                                      "--scratch", str(scratch), "--provider", "codex"]
+        + list(extra),
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
         env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode, **env_extra), timeout=120)
 

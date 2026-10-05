@@ -25,6 +25,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import review_gate
 import review_ledger as rl
+import review_run
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
@@ -312,10 +313,10 @@ def _rounds(repo):
     return rl.status(str(repo), "T1")["rounds"]
 
 
-def test_an_unverified_tree_is_refused_with_exit_5_and_no_round_spent(tmp_path):
+def test_an_unverified_tree_is_refused_with_exit_unverified_and_no_round_spent(tmp_path):
     repo = _repo(tmp_path)
     result, review = _review(repo, tmp_path)
-    assert result.returncode == 5, result.stdout + result.stderr
+    assert result.returncode == review_run.EXIT_UNVERIFIED, result.stdout + result.stderr
     assert "gate UNVERIFIED" in result.stderr and "No round reserved" in result.stderr
     assert _rounds(repo) == [] and review is None
 
@@ -323,7 +324,7 @@ def test_an_unverified_tree_is_refused_with_exit_5_and_no_round_spent(tmp_path):
 def test_the_claude_reservation_is_refused_the_same_way(tmp_path):
     repo = _repo(tmp_path)
     result, _ = _review(repo, tmp_path, "--reserve-only", provider="claude")
-    assert result.returncode == 5
+    assert result.returncode == review_run.EXIT_UNVERIFIED
     assert "ROUND=" not in result.stdout
     assert _rounds(repo) == []
 
@@ -336,7 +337,7 @@ def test_an_unknown_gate_state_is_refused_like_an_unverified_one(tmp_path):
     assert _gate(repo).returncode == 0
     (repo / ".crew" / ".verify-gate.record.json").write_text("[]", encoding="utf-8")
     result, _ = _review(repo, tmp_path)
-    assert result.returncode == 5, result.stdout + result.stderr
+    assert result.returncode == review_run.EXIT_UNVERIFIED, result.stdout + result.stderr
     assert "gate UNKNOWN" in result.stderr
     assert _rounds(repo) == []
 

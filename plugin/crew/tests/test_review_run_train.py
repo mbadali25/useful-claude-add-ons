@@ -1,6 +1,6 @@
 """`review_run.py` takes the merge train (L-0520, wired by L-0526) before it reserves a gate
 round: once the clone is armed, an overlapping ticket's round is refused with
-exit 6 and NOTHING is reserved; an unarmed clone reviews exactly as before.
+exit 10 and NOTHING is reserved; an unarmed clone reviews exactly as before.
 
 Two linked worktrees of one throwaway repository stand in for two lanes. The
 tickets carry no approval receipt, so the standards self-check does not apply
@@ -100,7 +100,7 @@ def test_second_overlapping_gate_round_is_refused_unspent(lanes, tmp_path):
 
     second = _run(lanes["T-2"], "T-2", tmp_path)
 
-    assert second.returncode == review_run.EXIT_TRAIN == 6, second.stderr
+    assert second.returncode == review_run.EXIT_TRAIN == 10, second.stderr
     assert "train: waiting behind T-1" in second.stderr
     assert "no round reserved" in second.stderr
     assert _ledger_snapshot(lanes["repo"]) == before
@@ -117,7 +117,7 @@ def test_unreadable_train_refuses_the_round(lanes, tmp_path):
 
     done = _run(lanes["T-1"], "T-1", tmp_path)
 
-    assert done.returncode == 6, done.stderr
+    assert done.returncode == review_run.EXIT_TRAIN, done.stderr
     assert "train: could not tell" in done.stderr and "no round reserved" in done.stderr
     assert _ledger_snapshot(lanes["repo"]) == before
 
@@ -156,7 +156,7 @@ def test_train_crash_refuses_never_reserves(lanes, tmp_path, monkeypatch, capsys
     code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
                             str(scratch), "--provider", "claude", "--reserve-only"])
 
-    assert code == 6
+    assert code == review_run.EXIT_TRAIN
     assert "fixture crash" in capsys.readouterr().err
     assert _ledger_snapshot(lanes["repo"]) == before
 
@@ -194,7 +194,7 @@ def test_a_spent_budget_is_refused_without_taking_the_train(lanes, tmp_path):
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a POSIX FIFO")
 def test_a_train_state_that_is_a_fifo_refuses_and_never_blocks(lanes, tmp_path):
     """Review of 84c841e6: a FIFO state.json with no writer would block
-    crew_train's plain open forever; the gate round refuses (exit 6) instead."""
+    crew_train's plain open forever; the gate round refuses (exit 10) instead."""
     assert _train(lanes["repo"], "arm") == 0
     state = pathlib.Path(crew_train.train_dir(str(lanes["T-1"]))) / "state.json"
     state.unlink()
@@ -202,7 +202,7 @@ def test_a_train_state_that_is_a_fifo_refuses_and_never_blocks(lanes, tmp_path):
 
     refused = _run(lanes["T-1"], "T-1", tmp_path)
 
-    assert refused.returncode == review_run.EXIT_TRAIN == 6, refused.stderr
+    assert refused.returncode == review_run.EXIT_TRAIN == 10, refused.stderr
     assert "is not a regular file" in refused.stderr
 
 
@@ -266,7 +266,7 @@ def _approve(top, ticket):
 
 
 def test_the_train_answers_before_the_pre_review_checks(lanes, tmp_path):
-    """T-2 has no bundle, so the pre-review checks would refuse it (exit 5,
+    """T-2 has no bundle, so the pre-review checks would refuse it (exit 9,
     COULD NOT CHECK); waiting for the train is said first."""
     assert _train(lanes["repo"], "arm") == 0
     assert _run(lanes["T-1"], "T-1", tmp_path).returncode == 0
@@ -278,7 +278,7 @@ def test_the_train_answers_before_the_pre_review_checks(lanes, tmp_path):
          str(scratch), "--provider", "claude", "--reserve-only"],
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
 
-    assert done.returncode == 6, done.stderr
+    assert done.returncode == review_run.EXIT_TRAIN, done.stderr
     assert "waiting behind T-1" in done.stderr and "pre-review" not in done.stderr
 
 
@@ -291,7 +291,7 @@ def test_the_train_answers_before_the_standards_self_check(lanes, tmp_path):
 
     done = _run(lanes["T-2"], "T-2", tmp_path)
 
-    assert done.returncode == 6, done.stderr
+    assert done.returncode == review_run.EXIT_TRAIN, done.stderr
     assert "waiting behind T-1" in done.stderr and "self-check:" not in done.stderr
     assert _train(lanes["T-1"], "release", "--ticket", "T-1") == 0
     assert _run(lanes["T-2"], "T-2", tmp_path).returncode == review_run.EXIT_USAGE

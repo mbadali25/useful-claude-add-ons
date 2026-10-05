@@ -16,6 +16,10 @@ MERGED_MAIN = os.path.join(CREW, "hooks", "scripts", "merged_main.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
 REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
 CREW_TICKET = os.path.join(CREW, "hooks", "scripts", "crew_ticket.py")
+REVIEW_DELTA = os.path.join(CREW, "hooks", "scripts", "review_delta.py")
+CREW_AUTOPILOT = os.path.join(CREW, "hooks", "scripts", "crew_autopilot.py")
+_D = "tests/test_review_delta.py::"
+_AP = "tests/test_crew_autopilot.py::"
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -210,8 +214,8 @@ REVIEW_FIX_MUTATIONS = (
         # receipt binds the untouched tree hash.
         "the review round no longer checks the bundle parts",
         REVIEW_RUN,
-        "    extra_reasons = list(extra_reasons) + bundle_problems(manifest)\n",
-        "    extra_reasons = list(extra_reasons)\n",
+        "    extra_reasons = list(extra_reasons) + list(tree_reasons) + bundle_problems(manifest)\n",
+        "    extra_reasons = list(extra_reasons) + list(tree_reasons)\n",
         ("tests/test_review_receipt.py::"
          "test_truncated_bundle_parts_are_incomplete_and_mint_no_receipt"),
     ),
@@ -560,8 +564,8 @@ REVIEW_FIX_MUTATIONS = (
     (
         "a stale receipt hides a could-not-tell merge of main",
         REVIEW_LEDGER,
-        '                       f"{_merged_note(merged, stale=True)}")\n',
-        '                       "")\n',
+        '            return False, f"{stale}; delta gate: {why}{_merged_note(merged, stale=True)}"\n',
+        '            return False, f"{stale}; delta gate: {why}"\n',
         "tests/test_review_receipt.py::test_check_receipt_stale_message_says_could_not_tell",
     ),
     # T-0100 review round 1: every merged-main bundle and receipt check gets a
@@ -670,7 +674,89 @@ REVIEW_FIX_MUTATIONS = (
         "    short = preflight(args)\n    if short is not None:\n        return short\n",
         "    short = None\n",
         ("tests/test_review_gate.py::"
-         "test_an_unverified_tree_is_refused_with_exit_5_and_no_round_spent"),
+         "test_an_unverified_tree_is_refused_with_exit_unverified_and_no_round_spent"),
+    ),
+    (
+        # L-0528: the refusal's code collides with the probe's limited code
+        # again, so a caller that does not know the mode cannot tell "the
+        # gate has not passed" from "Codex hit a usage limit".
+        "review_run's unverified exit collides with the probe's limited exit again",
+        REVIEW_RUN,
+        "EXIT_UNVERIFIED = 9\n",
+        "EXIT_UNVERIFIED = 5\n",
+        "tests/test_review_run_launch.py::test_review_run_exit_codes_are_distinct",
+    ),
+    (
+        # L-0514: a reviewer that broke the contract is relaunched; the retry can paper over it.
+        'a reviewer-class INCOMPLETE is retried',
+        REVIEW_RUN,
+        '    if failure != review_verdict.TOOL:\n',
+        '    if failure not in (review_verdict.TOOL, review_verdict.REVIEWER):\n',
+        "tests/test_review_refund.py::test_no_retry_for_reviewer_class",
+    ),
+    (
+        # L-0514: a retry past REFUND_LIMIT spends a budget round nobody chose to spend.
+        'a round whose refund was refused is retried',
+        REVIEW_RUN,
+        '    if row.get("refunded") is not True:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_refund_refused",
+    ),
+    (
+        # L-0514: a usage limit is relaunched into the same limit instead of the Claude reviewer.
+        'a usage-limited round is retried',
+        REVIEW_RUN,
+        '    if limit:\n        return "a usage limit',
+        '    if False:\n        return "a usage limit',
+        "tests/test_review_refund.py::test_no_retry_on_usage_limit",
+    ),
+    (
+        # L-0514: a timeout is relaunched, doubling a --timeout wait.
+        'a timed-out round is retried',
+        REVIEW_RUN,
+        '    if timed_out:\n        return (f"round {number} timed out',
+        '    if False:\n        return (f"round {number} timed out',
+        "tests/test_review_refund.py::test_no_retry_on_timeout",
+    ),
+    (
+        # L-0514: tool failures relaunch until the refunds run out.
+        'the retry limit is not checked',
+        REVIEW_RUN,
+        '    if retries >= RETRY_LIMIT:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_retry_limit_is_one_per_invocation",
+    ),
+    (
+        # L-0514: a tree the gate no longer accepts is reviewed again.
+        'preflight is not asked again before the retry',
+        REVIEW_RUN,
+        '    if preflight(args) is not None:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_the_gate_changed",
+    ),
+    (
+        # Group review of #540: a self-check gone stale during the backoff.
+        'the standards self-check is not asked again before the retry',
+        REVIEW_RUN,
+        '    if gated and standards_gate(args) is not None:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_the_self_check_went_stale",
+    ),
+    (
+        # L-0514 review: a source edit during the backoff is not seen.
+        "the retry does not rebuild the bundle from the tree",
+        REVIEW_RUN,
+        "    if fresh != manifest.get(\"bundle_sha256\"):\n",
+        "    if False:\n",
+        "tests/test_review_refund.py::test_no_retry_when_a_source_file_changed",
+    ),
+    (
+        # L-0514: a bundle that moved since the failed round is relaunched.
+        'the bundle is not re-hashed before the retry',
+        REVIEW_RUN,
+        '    if problems:\n        return f"the tree changed',
+        '    if False:\n        return f"the tree changed',
+        "tests/test_review_refund.py::test_no_retry_when_tree_changed",
     ),
     (
         # "Could not tell" reviews as though it were "passed".
@@ -730,8 +816,8 @@ REVIEW_FIX_MUTATIONS = (
         # clean review of the tree.
         "an owner-accepted receipt short-circuits a review",
         REVIEW_RUN,
-        '    if ok and (data.get("receipt") or {}).get("kind") == "clean":\n',
-        "    if ok:\n",
+        '    clean = ok and (data.get("receipt") or {}).get("kind") == "clean"\n',
+        "    clean = ok\n",
         "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
     ),
     # L-0510: the auto-accept guard. Each was run by hand against the tracked
@@ -1572,4 +1658,153 @@ REVIEW_FIX_MUTATIONS = (
         "            pass\n",
         "tests/test_review_correct_acceptance.py::test_correction_refused",
     ),
+    # L-0522: the delta gate. Each mutation removes ONE check on a fixture
+    # where that check is the only one that can stale the receipt, so the
+    # mutant answers an unsafe KEEP (exit 0) and the named test goes red.
+    ("delta gate: identity ignores the old blob id", REVIEW_DELTA,
+     '    return (entry["status"], src, entry["old_mode"], entry["new_mode"], entry["old_id"],\n',
+     '    return (entry["status"], src, entry["old_mode"], entry["new_mode"], None,\n',
+     _D + "test_merge_resolved_to_the_reviewed_bytes_over_mains_edit_is_stale"),
+    ("delta gate: identity ignores the new blob id", REVIEW_DELTA,
+     '            entry["new_id"])\n',
+     '            None)\n',
+     _D + "test_ticket_file_edited_after_review_committed_is_stale"),
+    ("delta gate: a dirty review is not caught", REVIEW_DELTA,
+     '    if rebuilt != receipt.get("bundle_sha256"):\n',
+     '    if False:\n',
+     _D + "test_dirty_review_whose_edit_was_discarded_is_stale"),
+    ("delta gate: step 2 rebuilds the reviewed bundle as a plain diff again (pre-T-0100)",
+     REVIEW_DELTA,
+     "        tree = review_patch._ticket_base_tree(root, base, head_tree, tmp_dir,  "
+     "# pylint: disable=protected-access\n"
+     "                                              head=head)[0]\n",
+     "        tree = _tree(root, base)\n",
+     _D + "test_receipt_on_a_merged_main_bundle_survives_a_bump_and_anchor_refresh"),
+    ("delta gate: a rewritten history is not caught", REVIEW_DELTA,
+     '    if not _is_ancestor(root, head, "HEAD"):\n',
+     '    if False:\n',
+     _D + "test_review_head_missing_or_not_an_ancestor_is_stale"),
+    ("delta gate: a path only in the current delta is skipped", REVIEW_DELTA,
+     '        if er is None or ec is None:\n',
+     '        if er is None and ec is not None:\n            continue\n        if ec is None:\n',
+     _D + "test_new_non_exempt_file_after_review_is_stale"),
+    ("delta gate: a path only in the reviewed delta is skipped", REVIEW_DELTA,
+     '        if er is None or ec is None:\n',
+     '        if ec is None:\n            continue\n        if er is None:\n',
+     _D + "test_reviewed_change_reverted_is_stale"),
+    ("delta gate: version normalised at any depth", REVIEW_DELTA,
+     '            locations = [("version",)]\n',
+     '            locations = [k for k in _json_spans(new_raw) if k[-1:] == ("version",)]\n',
+     _D + "test_nested_version_key_change_is_stale"),
+    ("delta gate: marketplace versions not bound to the bumped plugin", REVIEW_DELTA,
+     '        if entry["name"] in bumped:\n'
+     '            if entry.get("version") != bumped[entry["name"]]:\n'
+     '                raise ValueError(f"marketplace {entry[\'name\']} version is not its plugin.json\'s")\n'
+     '            locations.append(("plugins", i, "version"))\n',
+     '        locations.append(("plugins", i, "version"))\n',
+     _D + "test_marketplace_other_plugin_version_change_is_stale"),
+    ("delta gate: the code-map glob widened to a prefix", REVIEW_DELTA,
+     '    "codemap": (".crew/codemap/**/*.md",),\n',
+     '    "codemap": (".crew/codemap*/**/*.md",),\n',
+     _D + "test_look_alike_dir_with_an_anchor_only_change_is_stale"),
+    ("delta gate: the code-map glob loses its file type", REVIEW_DELTA,
+     '    "codemap": (".crew/codemap/**/*.md",),\n',
+     '    "codemap": (".crew/codemap/**",),\n',
+     _D + "test_non_md_file_under_codemap_with_anchor_only_change_is_stale"),
+    ("delta gate: the matcher folds case like fnmatch", REVIEW_DELTA,
+     "fnmatch.fnmatchcase(names[j], pat[i])",
+     "fnmatch.fnmatch(names[j], pat[i])",
+     _D + "test_matcher_is_case_sensitive"),
+    ("delta gate: a code map is normalised whole, not by its anchor", REVIEW_DELTA,
+     '        return _replace_spans(text, [found[0].span(1)]) if len(found) == 1 else None\n',
+     '        return "" if len(found) == 1 else None\n',
+     _D + "test_code_map_body_edited_after_review_is_stale"),
+    ("delta gate: a rules file skips its source-map check", REVIEW_DELTA,
+     '        if judged.get(source) is not True or _exempt_class(source or "") != "codemap":\n',
+     '        if False:\n',
+     _D + "test_rules_whose_source_map_changed_beyond_its_anchor_is_stale"),
+    ("delta gate: an exempt path keeps no status, mode or binary rule", REVIEW_DELTA,
+     '    return (entry["status"] in _EXEMPT_STATUS and entry["old_mode"] in _EXEMPT_OLD_MODES\n',
+     '    return True or (entry["status"] in _EXEMPT_STATUS and entry["old_mode"] in _EXEMPT_OLD_MODES\n',
+     _D + "test_exempt_path_deleted_is_stale"),
+    ("check E: no range is diffed", REVIEW_DELTA,
+     '        for a, b, label in ranges:\n',
+     '        for a, b, label in ():\n',
+     _D + "test_excluded_file_added_before_review_is_stale"),
+    ("check E: every graphify-out/ path is excepted", REVIEW_DELTA,
+     '        if (path not in EXCLUDED_EXCEPTIONS or entry["status"] != "M"\n',
+     '        if (not path.startswith("graphify-out/") or entry["status"] != "M"\n',
+     _D + "test_non_excepted_graph_file_present_before_review_modified_after_is_stale"),
+    ("delta gate: skip-worktree and assume-unchanged pass", REVIEW_DELTA,
+     '        if rec and (rec[0] == "S" or rec[0].islower()):\n',
+     '        if False:\n',
+     _D + "test_skip_worktree_edit_is_stale"),
+    ("delta gate: a gitlink passes", REVIEW_DELTA,
+     '            if rec.startswith(review_patch.SUBMODULE_MODE + " "):\n',
+     '            if False:\n',
+     _D + "test_reviewed_gitlink_unchanged_since_is_still_stale"),
+    ("delta gate: no train entry falls back to the default ref", REVIEW_DELTA,
+     '    if where != "ok":\n        raise Stale(',
+     '    if where != "ok":\n        return "main"\n        raise Stale(',
+     _D + "test_no_train_state_is_stale"),
+    ("delta gate: an exception reads as kept", REVIEW_DELTA,
+     '        return False, f"{COULD_NOT_TELL}: {exc}", None\n',
+     '        return True, "kept", {"head": "0" * 40, "base": "0" * 40, "ref": "?", '
+     '"identical": [], "anchor_only": [], "exempt": []}\n',
+     _D + "test_git_failing_inside_the_gate_reads_could_not_tell"),
+    ("delta gate: several merge bases accepted", REVIEW_DELTA,
+     '    if len(merge_bases) != 1:\n',
+     '    if not merge_bases:\n',
+     _D + "test_criss_cross_merge_bases_are_stale"),
+    ("preflight: a delta-kept receipt short-circuits before the gate", REVIEW_RUN,
+     '    if clean and message.startswith("receipt kept by delta gate"):\n',
+     '    if False:\n',
+     _D + "test_preflight_delta_kept_on_an_unverified_tree_does_not_short_circuit"),
+    ("check_receipt: check E skipped", REVIEW_LEDGER,
+     '    if not ok_e:\n        return False, f"receipt is stale: {why_e}"\n',
+     '',
+     _D + "test_excluded_only_change_stales_the_fast_path"),
+    ("delta gate: a diagram header normalised whole", REVIEW_DELTA,
+     '        return _replace_spans(text, [found[0].span(1)])\n',
+     '        return _replace_spans(text, [(start, end if end >= 0 else len(text))])\n',
+     _D + "test_diagram_generated_from_date_change_is_stale"),
+    ("delta gate: a diagram header form not checked", REVIEW_DELTA,
+     '        if not any(form.fullmatch(line) for form in _DIAGRAM_HEADER_FORMS):\n'
+     '            return None\n',
+     '',
+     _D + "test_diagram_invalid_header_form_is_stale"),
+    ("delta gate: the working state judged, the clean check skipped", REVIEW_DELTA,
+     '    tree, problem = _clean_head_tree(root)\n',
+     '    tree, problem = working_tree(root), None\n',
+     _D + "test_committed_edit_restored_only_in_the_working_tree_is_stale"),
+    ("delta gate: git status not checked", REVIEW_DELTA,
+     '    if first:\n',
+     '    if False:\n',
+     _D + "test_untracked_file_after_a_catch_up_is_stale"),
+    ("autopilot: a refresh beyond an anchor routes to review", CREW_AUTOPILOT,
+     '    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message:\n',
+     '    if False:\n',
+     _AP + "test_autopilot_refresh_beyond_anchor_stops_for_a_human"),
+    ("autopilot: the beyond-anchor guard only with rounds left", CREW_AUTOPILOT,
+     '    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message:\n',
+     '    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message '
+     'and ledger.get("rounds_left", 0) >= 1:\n',
+     _AP + "test_autopilot_refresh_beyond_anchor_with_zero_rounds_left_names_the_refresh"),
+    ("check E: the before-review range dropped", REVIEW_DELTA,
+     '        ranges = ((_tree(root, base), head_tree, "receipt base -> reviewed head"),\n'
+     '                  (head_tree,',
+     '        ranges = ((head_tree,',
+     _D + "test_excluded_file_added_before_review_is_stale"),
+    ("check E: binary never detected", REVIEW_DELTA,
+     '        binary = (added, deleted) == ("-", "-")\n',
+     '        binary = False\n',
+     _D + "test_binary_graph_file_change_is_stale"),
+    ("delta gate: manifests compared as parsed values", REVIEW_DELTA,
+     '    return _strip_spans(raw, spans)\n',
+     '    return json.loads(_strip_spans(raw, spans))\n',
+     _D + "test_manifest_bool_to_int_is_stale"),
+    ("delta gate: a pinned base_sha ignored", REVIEW_DELTA,
+     '    R = base_sha or _resolve(root, ref)  # pylint: disable=invalid-name\n',
+     '    R = _resolve(root, ref)  # pylint: disable=invalid-name\n',
+     _D + "test_check_receipt_judges_the_passed_base_sha"),
 )

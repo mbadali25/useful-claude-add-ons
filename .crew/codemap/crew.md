@@ -952,6 +952,34 @@ autopilot suite pins `review_ledger._current_hash` equal across such a commit. T
 sabotage mutations are not in `sabotage_autopilot.py` yet: `plugin/crew/tests/sabotage*.py` is a
 harness path, so they land in their own lane.
 
+**The delta gate (L-0522).** DERIVED (re-found by content on rush/h3-review). `check_receipt`
+(`plugin/crew/hooks/scripts/review_ledger.py:869`, `base_sha=None`) runs check E
+(`review_delta.excluded_check`, `plugin/crew/hooks/scripts/review_delta.py:248`, called at
+`review_ledger.py:894`) before EITHER success return: `.work`, `graphify-out` and
+`.crew/metrics.md` diffed over receipt base -> reviewed head, reviewed head -> HEAD and reviewed
+head -> the index (`index_tree` `review_delta.py:179`), only `EXCLUDED_EXCEPTIONS` (`:77`, the two
+graph files, status M, mode 100644, not binary) allowed. On a hash mismatch `review_delta.judge`
+(`:684`, called at `review_ledger.py:910`) decides: the reviewed head rebuilds the reviewed
+bundle through T-0100's rule (`reviewed_bundle` `:189`, `review_patch._ticket_base_tree` with
+`head=` at `plugin/crew/hooks/scripts/review_patch.py:272`, `merged_main.resolve(..., head)`), is
+an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
+(`integration_ref` `:283`; never `_default_ref`), one merge base, a clean checkout
+(`_clean_head_tree` `:309`, `checkout_problem` `:320`), then the per-path interdiff of the
+reviewed bundle's base tree -> reviewed head against base -> `HEAD^{tree}`: byte identity outside
+the allowlist (`_match` `:357`, `fnmatchcase`); code maps, rules and diagrams compared with only
+their anchor sha normalised (`_anchor_normalised` `:396`; a failure there is `ANCHORED_BEYOND`
+`:64`); manifests compared as raw bytes outside the bumped plugin's version tokens
+(`_manifest_version_only` `:584`, `_json_spans` `:462`). `review_run.preflight` short-circuits a
+delta-kept CLEAN only when `review_gate.accepted_state` is VERIFIED or NO_GATE
+(`plugin/crew/hooks/scripts/review_run.py:702`); `crew_autopilot` stops for a human on
+`ANCHORED_BEYOND` before the budget refusal (`plugin/crew/hooks/scripts/crew_autopilot.py:1273`)
+and routes a stale artifact after review to its refresh, then stops (`:1312`); both answers'
+words are `review_delta.beyond_anchor_stop` (`:659`) and `after_review_refresh` (`:667`), since
+`crew_autopilot.py` sits at max-module-lines. JUDGEMENT: the gate binds its integration ref to the
+merge-train entry, so in a clone whose train is not armed it reads stale on every catch-up
+(fail-closed, owner decision 2026-10-03). Nothing passes `base_sha` yet (L-0522 PR 3 wires
+`check_land`).
+
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:708`) asks `review_ledger.receipt_stands`
 (`plugin/crew/hooks/scripts/review_ledger.py:709`) whether a FINDINGS receipt stands, the same
@@ -1849,12 +1877,12 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
 - **Gate.** `review_run.run` first calls main's `preflight`
   (`plugin/crew/hooks/scripts/review_run.py:672`, at `:846`; #264): a CLEAN receipt covering the
   bundle answers CLEAN with no round and no self-check, and a verify gate that has not passed
-  the tree is refused with exit 5 before the self-check is asked for (owner decision
+  the tree is refused with exit 9 before the self-check is asked for (owner decision
   2026-09-30, "Preflight first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`).
   Then (L-0574, DERIVED) `prereview_gate` (`:731`, called at `:857`) runs
   `plugin/crew/hooks/scripts/review_checks.py` over the bundle's changed files against their base
-  blobs, per `.crew/verify.json`'s `preReview`: a NEW linter finding is exit 5 and not
-  overridable; COULD NOT CHECK is exit 5 unless `--allow-unverified`; only an active incident
+  blobs, per `.crew/verify.json`'s `preReview`: a NEW linter finding is exit 9 and not
+  overridable; COULD NOT CHECK is exit 9 unless `--allow-unverified`; only an active incident
   stands it down. Only then does it call `standards_gate` (`:699`) at `:859`, before
   `review_ledger.reserve` (`:863`), for every provider, unless `review_ledger.status` already
   reads `NEEDS_REPLAN` or no rounds left: then the budget refusal answers first and neither the
@@ -1893,7 +1921,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
 
-## The Kimi Code provider (T-0028, feature half; the review launch is L-0527)
+## The Kimi Code provider (T-0028 feature half; the review launch, L-0527)
 
 - **DERIVED** at `c43a54c1`: `kimi` is in both provider tuples
   (`plugin/crew/hooks/scripts/crew_state.py:1487-1488`), second in the default `qa.order`
@@ -1923,16 +1951,23 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   provider outside it ("/crew:review cannot launch `kimi` yet") and None admits nothing. It is the
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
-- **DERIVED**: nothing launches Kimi for a review yet. `review_run.py`'s `--provider` choices are
-  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:941`), and
-  `commands/review.md` has no Kimi row; L-0527 (tooling only) adds the launch, and adding `kimi`
-  to `review_run.LAUNCHED` makes Kimi eligible with no crew_config change.
+- **DERIVED** (L-0527): the review launch. `review_run.LAUNCHED` and `PROVIDERS` include `kimi`
+  (`plugin/crew/hooks/scripts/review_run.py`), which is what makes the launch gate admit it.
+  `run` takes the "before" `tree_fingerprint` and resolves `graph_out` first, then `_probe_kimi`
+  (`kimi_probe.probe` with `_probe_runner`, which stops survivors), all before `preflight` and
+  `reserve`; a probe that changed the tree is `EXIT_PROBE_CHANGED` (8). `_run_kimi` launches with
+  `kimi_probe.read_only_flags` and `kimi_env`, `stop_survivors`, fingerprints again, and
+  `reviewer_changes` splits the changed paths from those set aside (graph.out, and ignored
+  IDE_DIRS / CREW_LOGS / CREW_MARKERS); the stream is read by `kimi_probe.final_message`, the one
+  parser. A Kimi round returns before L-0514's retry loop, so it is never retried in-process.
+  `commands/review.md` carries the Kimi probe row, step 2e and exits 2/8; `test_review_run_kimi.py`
+  and `sabotage_kimi.py` (registered in `sabotage.py`) hold the cases and mutations.
 
 ## The merge train (L-0520, crew 1.0.86; L-0558 fixes, crew 1.0.102)
 
 DERIVED at this anchor from `plugin/crew/hooks/scripts/crew_train.py` (read in full). This is PR 1
 of the owner's split (2026-09-30): the CLI only, plus L-0558's fixes for L-0520's review round 2
-and the owner's rerere rule. The gate round refusing on it (`review_run.py` exit 6), the
+and the owner's rerere rule. The gate round refusing on it (`review_run.py` exit 10), the
 reviewer's rerere block and the sabotage rows (S1-S19, and L-0558's S20-S33) are L-0526; until
 then the train is advisory.
 
@@ -2455,6 +2490,14 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   Only the review rerun: the marker is set when `_toward_review` answers `review`
   (`:756`), so a refresh named again with its artifact still stale stops as no
   progress (review round 4).
+- DERIVED (L-0514): outside autopilot, `review_run.run` retries a refunded `tool`
+  round once in-process (`RETRY_LIMIT`, `RETRY_BACKOFF_SECONDS` beside the probe
+  codes in `plugin/crew/hooks/scripts/review_run.py`); `_retry_reason` refuses a
+  usage limit, a timeout, a non-`tool` class, a refused refund and the limit;
+  `_retry_blocked` re-asks `preflight` and re-hashes the bundle after the backoff;
+  `_keep_round_files` keeps the failed round's files as `.round<N>` and
+  `_carry_record` binds its pre-review record to the retry. Autopilot's refunded
+  rerun above is unchanged and still bounded by `REFUND_LIMIT`.
 - DERIVED (T-0087): the shared definitions at each review seam are
   `review_patch.MANIFEST_KEYS` / `OPTIONAL_MANIFEST_KEYS` / `PART_KEYS`
   (`plugin/crew/hooks/scripts/review_patch.py:126`, `:123`, `:124`) and

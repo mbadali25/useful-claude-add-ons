@@ -82,6 +82,7 @@ from sabotage_tooling import TOOLING_MUTATIONS
 from sabotage_limit_worktree import LIMIT_WORKTREE_MUTATIONS
 from sabotage_qa import QA_AUDIT_MUTATIONS
 from sabotage_standards import STANDARDS_MUTATIONS
+from sabotage_kimi import KIMI_MUTATIONS
 from sabotage_shell import SHELL_MUTATIONS
 from sabotage_prereview import PREREVIEW_MUTATIONS
 from sabotage_recurring import RECURRING_MUTATIONS
@@ -3068,7 +3069,7 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
               + LIMIT_WORKTREE_MUTATIONS
               + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS
-              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS
+              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS
               + sabotage_platform.PLATFORM_MUTATIONS)
 

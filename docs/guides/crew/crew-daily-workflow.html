@@ -154,7 +154,7 @@ each proposed standard, and nothing is added to a standards file on its own.</p>
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
 The review round takes the train itself (L-0526; <code>crew_train.py acquire --ticket T-0091</code> does
 the same by hand): a ticket whose Touch overlaps one already holding it waits - <code>/crew:review</code>
-stops with exit 6, colliding paths named, no round spent - and gates next, in the order the lanes
+stops with exit 10, colliding paths named, no round spent - and gates next, in the order the lanes
 reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with <code>crew_train.py catch-up --ticket
 T-0091</code> - a <code>git merge</code> of the base, never a rebase, with git rerere on so a conflict resolved
 once replays next time. A replay is left unstaged and listed: inspect it and <code>git add</code> it; the

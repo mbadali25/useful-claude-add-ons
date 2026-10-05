@@ -4,11 +4,11 @@ here reads the real `~/.kimi-code` or calls the real CLI.
 
 Kept apart from review_fixtures.py on purpose: that module is part of the
 review harness (scripts/check-tooling-pr.py's HARNESS), and the provider tests
-are feature tests. The review launch (L-0527) imports these helpers."""
+are feature tests. The review launch's tests (L-0527) import these helpers."""
 import sys
 import textwrap
 
-# The fake `kimi`: kimi_probe.py calls it now; review_run.py will (L-0527).
+# The fake `kimi`: kimi_probe.py and review_run.py (since L-0527) call it.
 #
 # The stream it prints follows the shape PromptJsonWriter in the Kimi Code
 # 2.1.1 bundle writes -- one JSON object per line, `{"role": "assistant",

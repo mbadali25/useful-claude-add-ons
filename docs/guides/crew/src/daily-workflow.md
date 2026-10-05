@@ -91,7 +91,7 @@ With parallel lanes in one clone, arm its **merge train** once (`crew_train.py a
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
 The review round takes the train itself (L-0526; `crew_train.py acquire --ticket T-0091` does
 the same by hand): a ticket whose Touch overlaps one already holding it waits - `/crew:review`
-stops with exit 6, colliding paths named, no round spent - and gates next, in the order the lanes
+stops with exit 10, colliding paths named, no round spent - and gates next, in the order the lanes
 reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
 T-0091` - a `git merge` of the base, never a rebase, with git rerere on so a conflict resolved
 once replays next time. A replay is left unstaged and listed: inspect it and `git add` it; the

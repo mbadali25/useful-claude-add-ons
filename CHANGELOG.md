@@ -90,13 +90,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `sabotage_review.py`, each red on its named test through `sabotage.py`'s runner. Harness only
   (T-0087): no feature path rides along.
 
-### Changed — `crew` 1.1.8: the gate round takes the merge train (exit 6) and the reviewer sees rerere replays (L-0526)
+### Changed — `crew` 1.1.8: the gate round takes the merge train (exit 10) and the reviewer sees rerere replays (L-0526)
 
 - **What changed.** Once a clone's merge train is armed (`crew_train.py arm`), `review_run.py`
   calls `crew_train.acquire` after the CLEAN-receipt short-circuit and the verify gate and before
   the pre-review checks, the standards self-check and `review_ledger.reserve`. Holding goes on;
   waiting behind an overlapping ticket, `merge <base> first`, a train that cannot be read, or any
-  exception in the step is the new **exit 6**, the reason on stderr and no round reserved. A
+  exception in the step is the new **exit 10**, the reason on stderr and no round reserved (10,
+  not the 6 this lane first gave it: on main L-0528 made every `EXIT_*` distinct and left 5-7 to
+  `--probe`). A
   ticket whose budget is already spent (NEEDS_REPLAN, no rounds left) is refused with exit 4
   without taking the train, so it can never hold it with every overlapping lane waiting. An
   unarmed clone (state.json proven absent) reviews exactly as before and prints nothing about the
@@ -105,8 +107,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   file a `crew_train.py catch-up` left rerere-replayed (from the ticket's merge log), each to be
   reviewed as a change. No log writes no block; an unreadable log, a malformed replayed list or a
   read that raises is `UNREADABLE: ...`, never silence; every path is escaped to one line.
-- **`/crew:review`** names exit 6 at `$REVIEW_STATUS`, explains it, puts it in the refusal order
-  (gate 5, train 6, pre-review 5, self-check 2) and among the reasons the Claude fallback gets no
+- **`/crew:review`** names exit 10 at `$REVIEW_STATUS`, explains it, puts it in the refusal order
+  (gate 9, train 10, pre-review 9, self-check 2) and among the reasons the Claude fallback gets no
   `ROUND`. README, working-with-codex, daily-workflow and troubleshooting say the same; the three
   guides are rebuilt.
 - **Why.** L-0520 shipped the train as advisory: a lane that forgot `acquire` could still spend a
@@ -272,6 +274,99 @@ review bundle and staled the accepted receipt with no round left.
   crew-context, platform-sync, handoff-read, handoff-write, notify, context-watch and auto-clear)
   and the bash twins keep the old probe; the parity tests pin the two groups
   until a follow-up rejoins them.
+
+### crew 1.1.3 — L-0527: /crew:review launches Kimi Code (tooling half of T-0028)
+
+- **Summary.** `/crew:review` can now run Kimi Code as the independent reviewer: it probes Kimi
+  before spending a round, and since `kimi -p` cannot be made read-only, it fingerprints the working
+  tree and refuses a round in which Kimi wrote.
+- **What changed.** `review_run.py --provider kimi` (`kimi` in `LAUNCHED` and `PROVIDERS`, which is
+  what makes the launch gate admit it): when the ledger's status shows no round left it exits 4
+  before any probe; otherwise it fingerprints the tree and resolves `graph.out`, runs
+  `kimi_probe.probe` (only `ok` goes on; any other state exits 2, a probe that changed the tree exits
+  8, `EXIT_PROBE_CHANGED`, as does a tree that cannot be fingerprinted after the probe), all before
+  `preflight` and `reserve`; launches with the read-only agent file and flags and `kimi_env`; stops
+  any process it left running, after a timeout too (on Windows by ending its job object and waiting
+  for it to empty; no job is could-not-tell); fingerprints again; and a write
+  makes the round INCOMPLETE of class `tree` (never refunded), naming the paths (`graph.out`, and while gitignored IDE state and
+  crew's hook logs, are set aside). The stream is read by `kimi_probe.final_message`, the one parser.
+  A Kimi round is not retried in-process (L-0514). `commands/review.md`: the Kimi probe and strike
+  rows, step 2e, exits 2 and 8, and `$ELIGIBLE` keeps `kimi`. Tests: `test_review_run_kimi.py`, the
+  review.md checks in `test_kimi_docs.py`, `test_worktree_config.py`'s graph_out cases, and the
+  launch-gate tests rewritten (a provider review_run cannot launch is ineligible; kimi now is).
+  `sabotage_kimi.py`'s `KIMI_MUTATIONS` are registered, with eight owed from T-0028 rounds 6-7 and
+  the launch gate. Follow-up feature PR (outside this lane's paths): crew-providers `SKILL.md`,
+  `alternative-providers.md` and the `kimi_probe.py` / `crew_config.review_launchable` docstrings.
+
+### crew 1.1.3 — L-0522 PR 2: the delta gate (tooling only; keeps nothing until the merge train is armed)
+
+- **Summary.** A review receipt can now survive a catch-up merge, a version bump and an anchor-only
+  refresh that add none of the ticket's own code, so a lane need not spend a review round on them,
+  but only in a clone whose merge train is armed; elsewhere every catch-up still needs a re-review.
+- **What changed.** New `plugin/crew/hooks/scripts/review_delta.py`. When
+  `review_ledger.check_receipt`'s rebuilt bundle no longer matches the receipt, `review_delta.judge`
+  keeps it only when it proves the ticket's own delta byte-identical to the reviewed one: the
+  reviewed head rebuilds the reviewed bundle (through T-0100's merged-main rule:
+  `review_patch._ticket_base_tree` and `merged_main.resolve` take the reviewed head in place of
+  HEAD), is an ancestor of HEAD, the integration base is the one commit this ticket's merge-train
+  entry binds, there is one merge base, the checkout is clean, the excluded paths are unchanged
+  (check E, which guards the fast path too), and every path outside a fixed allowlist (code maps,
+  rules and diagrams by anchor sha only; CHANGELOG, TODO, PLUGINS.md, BUDGETS.md; manifests by
+  the bumped plugin's version tokens only) has equal status, modes and blob ids. Anything unproven
+  is stale, "could not tell" its own reason; with no train entry it is `no train entry binds the
+  integration ref` (owner decision 2026-10-03). A kept receipt prints `receipt kept by delta gate:
+  ...`; `review_run.preflight` short-circuits on one only when the verify gate is VERIFIED or
+  NO_GATE; `crew_autopilot` (a declared seam) stops for a human when a refresh moved more than an
+  anchor and routes a stale artifact after review to its refresh. `test_review_delta.py` and the
+  L-0522 entries in `sabotage_review.py`, plus one for the pre-T-0100 plain-diff rebuild.
+  `check_land` does not pass its fetched sha yet (PR 3).
+
+### crew 1.1.3 — L-0518 (tooling half): one locked read authorizes a gate skip; a gate that cannot run is exit 2
+
+- **Summary.** `/crew:review` can no longer spend a round with no self-check when a successor plan
+  is approved mid-run, and an error escaping the incident lookup or a skip log that cannot be
+  written makes a review "not run" instead of looking like FINDINGS.
+- **What changed.** F2: `review_run.run` skips the pre-review and standards gates only for a spent
+  budget, read without the lock; it now passes that decision to `review_ledger.reserve(...,
+  gated=False)`, which refuses under the lock with `GATE_CHANGED` (exit 2, nothing spent) when the
+  ledger has a round free after all. N4: an `OSError`/`ValueError` from the incident read or the skip
+  log in `standards_gate` or `prereview_gate` prints `review-run: <gate> gate could not run: ...`
+  and exits 2, where it escaped as exit 1 (read by `/crew:review` as FINDINGS). Six tests and three
+  `sabotage_standards.py` entries; the re-anchored "self-check gate answers before a spent budget"
+  and "an expired or stood-down incident stands the checks down" entries mutate the new code.
+  The feature half (F1, F3, F4, N1-N3, N5 in `crew_standards.py`) and its sabotage entries and the
+  `review.md` F1 wording are not here: that code is not on main yet.
+
+### crew 1.1.3 — L-0514: a refunded tool-failure review round retries once by itself
+
+- **Summary.** When Codex or Copilot loses a review round to a tool failure (a failed turn, a
+  crash, empty output), `/crew:review` now retries it once on its own instead of stopping, and says
+  why when it does not.
+- **What changed.** `review_run.run` relaunches a round the ledger refunded (`failure_class: tool`),
+  at most `RETRY_LIMIT = 1` time per invocation, after `RETRY_BACKOFF_SECONDS = 30`, with the same
+  provider, model and effort. Before the retry `preflight` and the standards self-check are asked
+  again and the bundle re-hashed;
+  the failed round's `out.txt`, `stderr.txt`, `codex-events.jsonl` and `review.json` are kept as
+  `<name>.round<N>`, and its pre-review record is bound to the retry. Not retried, each with a
+  `review: retry: not retried - <why>` line and a `review: options:` line: a usage limit (the Claude
+  reviewer takes the next round), a timeout, a refused refund, a `reviewer` or `tree` INCOMPLETE, a
+  gate, receipt or bundle that changed, and the second failure. Only a refunded round retries, so a
+  retry never spends budget. The exit code is the last round's. `review.md` step 2c re-dispatches
+  the Claude fallback once on a refunded `tool` round. Autopilot's own refunded rerun is unchanged.
+  Thirteen tests in `test_review_refund.py` and seven `sabotage_review.py` entries.
+
+### crew 1.1.3 — L-0528: review exit 5 means only a Codex limit
+
+- **Summary.** `/crew:review`'s "not run, verify gate not green or a pre-review check refused it" exit
+  moves from 5 to 9, so 5 is only ever the Codex probe's usage limit.
+- **Breaking.** An out-of-repo script that branches on `review_run.py` exit 5 for a red gate or a
+  pre-review refusal must read 9. The probe's codes (`--probe`: 5 limited, 6 failed, 7 unknown) and
+  the persisted `codex-probe=5` metrics note do not change.
+- **What changed.** `EXIT_UNVERIFIED` in `plugin/crew/hooks/scripts/review_run.py` is 9 (8 is left
+  for L-0527's `EXIT_PROBE_CHANGED`). `test_review_run_exit_codes_are_distinct` finds every `EXIT_*`
+  constant by introspection and fails on a shared value, and a `sabotage_review.py` entry that puts
+  the collision back goes RED on it. `commands/review.md`, the README, the working-with-codex guide,
+  the review diagrams and the code map say exit 9.
 
 ### crew 1.1.0 — C-0006: version-free guide file names
 

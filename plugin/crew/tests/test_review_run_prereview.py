@@ -143,7 +143,7 @@ def test_new_finding_refuses_before_reserve(tmp_path, fake, provider):
 
     assert (result.returncode, "NEW x1 m.py: BLE001 new" in result.stderr,
             _ledger_snapshot(repo) == before, _record(scratch)["result"]) == (
-        5, True, True, rc.FAIL), result.stderr
+        review_run.EXIT_UNVERIFIED, True, True, rc.FAIL), result.stderr
 
 
 @pytest.mark.parametrize("linters", ["new-alone", "new-and-could-not"])
@@ -155,7 +155,8 @@ def test_new_finding_is_not_overridable(tmp_path, fake, linters):
     result = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
 
     assert (result.returncode, _ledger_snapshot(repo) == before,
-            "does not override a new finding" in result.stderr) == (5, True, True), result.stderr
+            "does not override a new finding" in result.stderr) == (
+        review_run.EXIT_UNVERIFIED, True, True), result.stderr
 
 
 def test_could_not_check_refuses_unless_allow_unverified(tmp_path):
@@ -168,7 +169,7 @@ def test_could_not_check_refuses_unless_allow_unverified(tmp_path):
 
     assert (refused.returncode, refused_ledger_same, "COULD NOT CHECK" in refused.stderr,
             allowed.returncode, "ROUND=1" in allowed.stdout, _record(scratch)["overridden"]) == (
-        5, True, True, 0, True, True), refused.stderr + allowed.stderr
+        review_run.EXIT_UNVERIFIED, True, True, 0, True, True), refused.stderr + allowed.stderr
 
 
 def test_incident_stands_checks_down(tmp_path, fake):
@@ -192,7 +193,7 @@ def test_only_an_active_incident_stands_down(tmp_path, fake, case):
 
     result = _run(repo, scratch, tmp_path, "claude")
 
-    assert result.returncode == 5, result.stderr
+    assert result.returncode == review_run.EXIT_UNVERIFIED, result.stderr
 
 
 def test_order_gate_before_checks(tmp_path, fake):
@@ -201,7 +202,7 @@ def test_order_gate_before_checks(tmp_path, fake):
     result = _run(repo, scratch, tmp_path, "codex")
 
     assert (result.returncode, "gate UNVERIFIED" in result.stderr,
-            "pre-review checks" in result.stderr) == (5, True, False), result.stderr
+            "pre-review checks" in result.stderr) == (review_run.EXIT_UNVERIFIED, True, False), result.stderr
 
 
 def test_order_checks_before_selfcheck(tmp_path, fake):
@@ -211,7 +212,7 @@ def test_order_checks_before_selfcheck(tmp_path, fake):
     result = _run(repo, scratch, tmp_path, "codex")
 
     assert (result.returncode, "pre-review checks: ruff FAIL" in result.stderr,
-            "self-check" in result.stderr) == (5, True, False), result.stderr
+            "self-check" in result.stderr) == (review_run.EXIT_UNVERIFIED, True, False), result.stderr
 
 
 def test_spent_budget_skips_checks(tmp_path, fake):
@@ -292,7 +293,7 @@ def test_allow_unverified_never_passes_a_new_finding_beside_a_parse_failure(tmp_
     result = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
 
     assert (result.returncode, _ledger_snapshot(repo) == before,
-            _record(scratch)["result"]) == (5, True, rc.FAIL), result.stderr
+            _record(scratch)["result"]) == (review_run.EXIT_UNVERIFIED, True, rc.FAIL), result.stderr
 
 
 def test_the_record_is_bound_to_the_manifest_the_checks_read(tmp_path, fake, monkeypatch):
@@ -343,7 +344,7 @@ def test_two_runs_sharing_a_scratch_do_not_swap_records(tmp_path):
 
     assert ("ROUND=1" in allowed.stdout, refused.returncode, done.returncode,
             review["prereview"]["overridden"], review["prereview"]["round"]) == (
-        True, 5, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
+        True, review_run.EXIT_UNVERIFIED, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
@@ -593,3 +594,32 @@ def test_a_part_path_the_os_refuses_is_a_bundle_problem():
     problems = review_run.bundle_problems({"parts": [{"path": "a\0b", "name": "x"}]})
 
     assert len(problems) == 1 and "could not be read" in problems[0], problems
+
+
+@pytest.mark.parametrize("broken", ["read_state", "log_skip"])
+def test_a_pre_review_gate_that_cannot_read_or_log_the_incident_exits_2(
+        tmp_path, monkeypatch, capsys, broken):
+    """L-0518 N4: the incident read or the skip log raising is "not run" (2,
+    nothing reserved), never an escaped exception (exit 1 reads as FINDINGS)."""
+    import argparse  # pylint: disable=import-outside-toplevel
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    failing = [{"name": "ruff", "status": rc.FAIL, "files": 1, "detail": "",
+                "new": [{"path": "m.py", "rule": "BLE001", "message": "new", "count": 1}]}]
+    monkeypatch.setattr(review_run.review_checks, "run_checks_bound",
+                        lambda *_a: (failing, True, "b" * 64))
+    monkeypatch.setattr(crew_incident, "read_state", (
+        lambda *_a, **_k: {"active": True, "present": True, "id": "INC-1"}))
+
+    def boom(*_a, **_k):
+        raise PermissionError(13, "Permission denied", ".crew")
+
+    monkeypatch.setattr(crew_incident, broken, boom)
+    args = argparse.Namespace(root=str(tmp_path), manifest=str(scratch / "manifest.json"),
+                              scratch=str(scratch), allow_unverified=False, ticket=TICKET)
+
+    code = review_run.prereview_gate(args)
+
+    err = capsys.readouterr().err
+    assert (code, "review-run: pre-review gate could not run: PermissionError" in err,
+            "stand down" in err) == (review_run.EXIT_USAGE, True, False), err
