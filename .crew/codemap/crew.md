@@ -2298,6 +2298,19 @@ this map's `anchor:`; re-find each name by content.
   L-0634 compares the two (`read_bindings` is its reader). Tests: `plugin/crew/tests/test_crew_contract.py`,
   under the last rule of `.crew/verify.json`. Sabotage is L-0635, a harness PR.
 
+## Cross-session dependencies in the wave (L-0633)
+
+Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name by content.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py` `cross_dep` parses `<channel>:<id>` and
+  `<channel>:<repo>:<id>`; `_dep_id` lets `write_set`, `_valid_set` and `_parse_deps` accept one;
+  `_deps` takes whole `:`-tokens out of an INDEX row's `(depends on ...)` before the plain-id read.
+  `_dep_refusal` judges local dependencies first, then `_cross_refusal`, which reads the channel
+  through `_channel_files` (crew_coord's `Channel.fetch`/`read`, `coord.remote` default `origin`,
+  cached per `plan`) and closes a dependency only on exactly one `done` claim.
+- JUDGEMENT: a peer's `done` decides only whether this side may start. Tests:
+  `plugin/crew/tests/test_crew_wave_coord_deps.py`, under the wave rule of `.crew/verify.json`.
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:1034` — `TRIGGERS`, a 15-entry

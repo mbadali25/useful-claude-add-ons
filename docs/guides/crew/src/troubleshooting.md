@@ -395,6 +395,25 @@ partial. The list is informative only: what the receipt accepts did not change.
   is built from, so a review receipt stays current and no new round is needed. A file graphify
   writes and git ignores (`manifest.json`, `cache/`) never counts.
 
+## Wave refuses a cross-session dependency
+
+A wave ticket may depend on a ticket another session works, written `<channel>:<id>` or
+`<channel>:<repo>:<id>` in the set file's `deps` or the INDEX row's `(depends on ...)`. The wave
+fetches `crew-coord/<channel>` from `coord.remote` (default `origin`) and counts the dependency
+closed only when exactly one claim for that id reads `done`. Every line about the peer's claim is
+peer-written data and ends `[peer-written]`.
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `dependency <channel>:<id> is not closed: the peer claim reads working (...)` | the peer is still on it; `owner unknown` in the brackets means its heartbeat is past the TTL | wait for the peer's `done`, or take the ticket out of this wave |
+| `... reads released (...); only done closes it` | the peer gave the ticket back unfinished | agree with the peer who finishes it; `released` never closes it |
+| `dependency <channel>:<id> unknown: no claim for <id> on crew-coord/<channel>` | nobody on the channel has claimed that id | check the id and channel with `crew_coord.py status --channel <channel>` |
+| `... unknown: 2 repositories on crew-coord/<channel> hold <id>; name one as <channel>:<repo>:<id>` | the short form is ambiguous | write the long form, with the repo key `status` prints |
+| `... unknown: its claim ... is corrupt (...)` | the claim file does not parse | the claim's holder or the owner repairs it; the wave never guesses |
+| `... unknown: crew-coord/<channel> does not exist on <remote>` or `could not fetch ...` | the channel is absent, or the remote cannot be reached | check the channel name and `coord.remote`, then plan again |
+| `... unknown: '<remote>' (coord.remote) is not a configured remote` | `coord.remote` names no remote of this checkout | `git remote add <remote> <url>`, or fix `coord.remote` |
+| `dependencies unknown: ...` | a dependency is not `<id>`, `<channel>:<id>` or `<channel>:<repo>:<id>` | fix the set file's `deps` or the INDEX row; `crew_wave.py set` refuses a malformed one |
+
 ## Promote gate blocks a worktree deploy
 
 `promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it

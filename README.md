@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.20 — L-0633**: A wave ticket can depend on a ticket another session works. An autopilot wave can now wait on a ticket another session is working, written `<channel>:<id>`, and starts it only once that session's claim reads `done`.
 - **crew 1.1.20 — T-0031**: Versioned contracts between sessions, frozen once built against. Two sessions building against each other can now put the interface between them on the shared coordination channel as a numbered, hashed version that nobody can edit once a side has built against it.
-- **crew 1.1.9 — T-0029**: `/crew:autopilot wave` runs an approved ticket set as parallel lanes. A set of tickets the owner designed and approved together can now run at once, each in its own isolated worktree, with every lane's questions and results reported in one batch.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

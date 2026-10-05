@@ -551,6 +551,63 @@ partial. The list is informative only: what the receipt accepts did not change.<
   as its <code>commit-refresh</code> phase. The commit changes no byte of the working state the review bundle
   is built from, so a review receipt stays current and no new round is needed. A file graphify
   writes and git ignores (<code>manifest.json</code>, <code>cache/</code>) never counts.</p>
+<h2 id="wave-refuses-a-cross-session-dependency">Wave Refuses a Cross-Session Dependency</h2>
+<p>A wave ticket may depend on a ticket another session works, written <code>&lt;channel&gt;:&lt;id&gt;</code> or
+<code>&lt;channel&gt;:&lt;repo&gt;:&lt;id&gt;</code> in the set file's <code>deps</code> or the INDEX row's <code>(depends on ...)</code>. The wave
+fetches <code>crew-coord/&lt;channel&gt;</code> from <code>coord.remote</code> (default <code>origin</code>) and counts the dependency
+closed only when exactly one claim for that id reads <code>done</code>. Every line about the peer's claim is
+peer-written data and ends <code>[peer-written]</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>crew_wave.py plan</code> says</th>
+<th>Means</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dependency &lt;channel&gt;:&lt;id&gt; is not closed: the peer claim reads working (...)</code></td>
+<td>the peer is still on it; <code>owner unknown</code> in the brackets means its heartbeat is past the TTL</td>
+<td>wait for the peer's <code>done</code>, or take the ticket out of this wave</td>
+</tr>
+<tr>
+<td><code>... reads released (...); only done closes it</code></td>
+<td>the peer gave the ticket back unfinished</td>
+<td>agree with the peer who finishes it; <code>released</code> never closes it</td>
+</tr>
+<tr>
+<td><code>dependency &lt;channel&gt;:&lt;id&gt; unknown: no claim for &lt;id&gt; on crew-coord/&lt;channel&gt;</code></td>
+<td>nobody on the channel has claimed that id</td>
+<td>check the id and channel with <code>crew_coord.py status --channel &lt;channel&gt;</code></td>
+</tr>
+<tr>
+<td><code>... unknown: 2 repositories on crew-coord/&lt;channel&gt; hold &lt;id&gt;; name one as &lt;channel&gt;:&lt;repo&gt;:&lt;id&gt;</code></td>
+<td>the short form is ambiguous</td>
+<td>write the long form, with the repo key <code>status</code> prints</td>
+</tr>
+<tr>
+<td><code>... unknown: its claim ... is corrupt (...)</code></td>
+<td>the claim file does not parse</td>
+<td>the claim's holder or the owner repairs it; the wave never guesses</td>
+</tr>
+<tr>
+<td><code>... unknown: crew-coord/&lt;channel&gt; does not exist on &lt;remote&gt;</code> or <code>could not fetch ...</code></td>
+<td>the channel is absent, or the remote cannot be reached</td>
+<td>check the channel name and <code>coord.remote</code>, then plan again</td>
+</tr>
+<tr>
+<td><code>... unknown: '&lt;remote&gt;' (coord.remote) is not a configured remote</code></td>
+<td><code>coord.remote</code> names no remote of this checkout</td>
+<td><code>git remote add &lt;remote&gt; &lt;url&gt;</code>, or fix <code>coord.remote</code></td>
+</tr>
+<tr>
+<td><code>dependencies unknown: ...</code></td>
+<td>a dependency is not <code>&lt;id&gt;</code>, <code>&lt;channel&gt;:&lt;id&gt;</code> or <code>&lt;channel&gt;:&lt;repo&gt;:&lt;id&gt;</code></td>
+<td>fix the set file's <code>deps</code> or the INDEX row; <code>crew_wave.py set</code> refuses a malformed one</td>
+</tr>
+</tbody>
+</table>
 <h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
 <p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
 judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>

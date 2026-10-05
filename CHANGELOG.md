@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.20 — L-0633: a wave ticket can depend on a ticket another session works
+
+- **Summary.** An autopilot wave can now wait on a ticket another session is working, written
+  `<channel>:<id>`, and starts it only once that session's claim reads `done`.
+- **Added.** `crew_wave.py` accepts `<channel>:<id>` and `<channel>:<repo>:<id>` in a set file's
+  `deps`, in `--deps` and in an INDEX row's `(depends on ...)`. `plan` fetches `crew-coord/<channel>`
+  from `coord.remote` (default `origin`), once per channel and writing nothing but objects, and
+  counts the dependency closed only when exactly one claim for the id reads `done`. `working` (stale
+  or not) and `released` are `not closed`; no claim, an ambiguous short form, a corrupt claim, an
+  absent channel, a failed fetch or an unconfigured remote are `unknown`; each refuses the ticket.
+  Local dependencies are judged first, so a ticket with none cross fetches nothing. The README and
+  the troubleshooting guide list each refusal.
+- **Not in this entry.** Sabotage for this check is L-0635, a harness PR (T-0087).
+
 ### crew 1.1.20 — T-0031: versioned contracts between sessions, frozen once built against
 
 - **Summary.** Two sessions building against each other can now put the interface between them on
