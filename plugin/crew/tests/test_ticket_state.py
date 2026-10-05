@@ -414,6 +414,32 @@ def test_superseded_with_a_spec_line_naming_no_ticket_is_reported(tmp_path, line
     assert crew_ticket_state.SUPERSEDED_NO_SUCCESSOR in _next_view(root)["problems"]
 
 
+@pytest.mark.parametrize("line", [f"superseded-by: {T}", f"split-into: {T.lower()}",
+                                  f"split-into: [{T}, T-0002]"])
+def test_a_spec_successor_naming_the_ticket_itself_is_not_a_successor(tmp_path, line):
+    """Group review round 5: a ticket cannot replace itself."""
+    root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")
+    _spec(root, T, header="status: superseded   risk: low", line2=line)
+    assert crew_ticket_state.SUPERSEDED_NO_SUCCESSOR in _next_view(root)["problems"]
+
+
+def test_a_next_md_successor_naming_the_ticket_itself_is_a_problem(tmp_path):
+    root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")
+    _next(_spec(root, T), f"superseded-by: {T}\n")
+    got = _next_view(root)
+    assert got["next"]["superseded-by"] is None
+    assert any("superseded-by:" in p and "itself" in p for p in got["problems"])
+    assert crew_ticket_state.SUPERSEDED_NO_SUCCESSOR in got["problems"]
+
+
+def test_a_depends_on_naming_the_ticket_itself_is_a_problem(tmp_path):
+    root = _repo(tmp_path)
+    _spec(root, T, line2=f"depends-on: T-0002, {T}")
+    got = _view(root)
+    assert (got["blocked"], got["depends_on"]) == (None, None)
+    assert any("depends-on:" in p and "itself" in p for p in got["problems"])
+
+
 def test_bad_waiting_on_is_reported(tmp_path):
     root = _repo(tmp_path)
     _next(_spec(root, T), "waiting-on: someone\n")

@@ -44,8 +44,8 @@ named, anything else or no spec `unknown`).
 next.md (L-0640) is local state nothing in crew writes: one `key: value` per
 line, key case-insensitive, blank and `#` lines skipped, unknown keys ignored.
 `waiting-on` is owner | agent | external | a ticket id, `revisit` is
-YYYY-MM-DD, `superseded-by` a ticket id, `next` and `reason` free text clipped
-to NEXT_TEXT_MAX. A bad, empty or repeated value is a problem and that field
+YYYY-MM-DD, `superseded-by` a ticket id other than the ticket itself, `next`
+and `reason` free text clipped to NEXT_TEXT_MAX. A bad, empty or repeated value is a problem and that field
 is None; a next.md that cannot be read (or resolves outside the ticket folder)
 is a problem and every field is None -- cannot tell, never "nothing asked".
 `revisit_due` is True on or after the date, False before it, None without one.
@@ -345,9 +345,10 @@ def read_next(folder):
     return fields, problems
 
 
-def _spec_names_successor(spec_text):
+def _spec_names_successor(spec_text, ticket):
     """True when a `split-into:`/`superseded-by:` line above the first `##`
-    names only ticket ids (`[T-2, T-3]` or `T-2, T-3`); `TBD` names none."""
+    names only ticket ids (`[T-2, T-3]` or `T-2, T-3`), none of them `ticket`
+    itself (a ticket cannot replace itself); `TBD` names none."""
     for line in (spec_text or "").splitlines()[1:]:
         if line.startswith("##"):
             break
@@ -355,7 +356,8 @@ def _spec_names_successor(spec_text):
         if match:
             value = _unbracket(match.group(1).strip())
             ids = [part.strip().strip("`") for part in value.split(",")]
-            if ids and all(_is_ticket_id(item) for item in ids):
+            if ids and all(_is_ticket_id(item) and item.casefold() != ticket.casefold()
+                           for item in ids):
                 return True
     return False
 
@@ -409,6 +411,8 @@ def view(top, ticket, today=None):
         ids, problem = None, f"depends-on: {CANNOT_TELL}, " + (spec_why or f"{ticket} has no spec.md")
     else:
         ids, problem = parse_depends_on(text)
+    if ids and any(dep.casefold() == ticket.casefold() for dep in ids):
+        ids, problem = None, f"depends-on: names {ticket} itself, which can never close first"
     if problem:
         problems.append(problem)
     dependencies = [{"id": dep, "state": state, "reason": reason}
@@ -417,12 +421,15 @@ def view(top, ticket, today=None):
     needs_replan = _needs_replan(top, ticket, problems)
     fields, next_problems = read_next(crew_ticket.ticket_dir(top, ticket))
     problems.extend(next_problems)
+    if (fields["superseded-by"] or "").casefold() == ticket.casefold():
+        problems.append(f"next.md: superseded-by: names {ticket} itself, so it names no successor")
+        fields["superseded-by"] = None
     revisit_due = (None if fields["revisit"] is None
                    else datetime.date.fromisoformat(fields["revisit"]) <= today)
     if gate == "needs-owner" and fields["next"] is None:
         problems.append(NEEDS_OWNER_NO_NEXT)
     if gate == "superseded" and fields["superseded-by"] is None \
-            and not _spec_names_successor(text):
+            and not _spec_names_successor(text, ticket):
         problems.append(SUPERSEDED_NO_SUCCESSOR)
     derived = [name for name, on in (("blocked", blocked), ("needs-replan", needs_replan)) if on]
     return {"ticket": ticket, "gate": gate, "gate_source": source, "depends_on": ids,
