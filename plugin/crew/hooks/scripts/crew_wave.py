@@ -268,6 +268,11 @@ def _table_cell(line, ticket):
     return None
 
 
+# The INDEX statuses a lane may run from: crew_tracker.STATUS_ORDER's open rows past
+# `direction`, plus `approved`. `needs-owner` waits on the owner; anything else is unknown.
+OPEN_STATUSES = frozenset({"ready", "spec", "planned", "approved", "in-progress", "review"})
+
+
 def _status_refusal(top, ticket):
     line, state = _index_line(top, ticket)
     if state != "ok":
@@ -279,6 +284,9 @@ def _status_refusal(top, ticket):
         return line, f"{ticket} is closed in INDEX.md ({status})"
     if status == "direction":
         return line, f"{ticket} is INDEX status direction: its direction is not approved"
+    if status not in OPEN_STATUSES:  # an unrecognised word is could-not-tell, never "open"
+        return line, (f"{ticket}'s INDEX status {status!r} is not one a lane runs "
+                      f"({'|'.join(sorted(OPEN_STATUSES))}): its status cannot be told")
     return line, None
 
 
@@ -669,11 +677,16 @@ def lane_init(root, main, slug, ticket):
     if _git(top, *args)[0] != 0:
         return False, f"git {' '.join(args)} failed in {top}"
     rel_folder = os.path.join(".work", "tickets", ticket)
-    try:
-        names = sorted(n for n in os.listdir(os.path.join(main_top, rel_folder))
-                       if os.path.isfile(os.path.join(main_top, rel_folder, n)))
-    except OSError as exc:
-        return False, f"copy refused: {rel_folder} could not be listed ({exc})"
+    names, failed = [], []
+    source = os.path.join(main_top, rel_folder)
+    if not os.path.isdir(source):
+        return False, f"copy refused: {rel_folder} could not be listed (not a directory)"
+    for here, dirs, files in os.walk(source, onerror=failed.append):  # nested files too
+        dirs.sort()
+        names += [os.path.relpath(os.path.join(here, n), source) for n in sorted(files)
+                  if os.path.isfile(os.path.join(here, n))]
+    if failed:
+        return False, f"copy refused: {rel_folder} could not be listed ({failed[0]})"
     config = os.path.join(".crew", "config.json")
     if not os.path.isfile(os.path.join(main_top, config)):
         return False, (f"{SCOPE_STOP}: {main_top}/.crew/config.json does not exist, so the scope "

@@ -295,6 +295,18 @@ def test_plan_refuses_direction_status_ticket(tmp_path):
     assert (got["eligible"], "direction" in got["reason"]) == (False, True)
 
 
+@pytest.mark.parametrize("status", ["gibberish", "needs-owner", ""])
+def test_plan_refuses_a_status_it_does_not_recognise(tmp_path, status):
+    # Codex review round 2 (rush g0): any word but closed/direction read as open.
+    root = _repo(tmp_path)
+    _wave(root, [_row("T-1", status)], [("T-1", ("src/**",))])
+    _set(root, "s", ["T-1"])
+
+    got = _by_ticket(crew_wave.plan(str(root), slug="s"))["T-1"]
+
+    assert (got["eligible"], "cannot be told" in got["reason"]) == (False, True)
+
+
 @pytest.mark.parametrize("status", ["done", "merged", "closed"])
 def test_plan_refuses_closed_ticket(tmp_path, status):
     root = _repo(tmp_path)
@@ -558,6 +570,18 @@ def test_lane_init_copies_ticket_folder_and_config_byte_identical_and_activates(
     assert (ok, reason, same, crew_ticket.active_ticket(str(wt))[0], git(wt, "branch", "--show-current"),
             lane["state"], lane["worktree"]) == (
         True, "", [True] * 3, "T-1", "T-1-wave", "running", os.path.realpath(str(wt)))
+
+
+def test_lane_init_copies_nested_ticket_files(tmp_path):
+    # Codex review round 2 (rush g0): only the folder's top-level files were copied.
+    root = _started(tmp_path)
+    _write(root / ".work" / "tickets" / "T-1" / "notes" / "deep.md", "nested\n")
+    wt = _isolated(root)
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    rel = ".work/tickets/T-1/notes/deep.md"
+    assert (ok, reason, (wt / rel).read_bytes() == (root / rel).read_bytes()) == (True, "", True)
 
 
 def test_lane_init_checks_out_an_existing_branch(tmp_path):
