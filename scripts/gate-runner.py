@@ -133,6 +133,10 @@ COMBINED_DIRS = ("plugin/crew/tests/", "plugin/gizmoduck/scripts/_test/",
                  "skills/mermaid-svg-bitbucket/tests/", "skills/notify/tests/",
                  "skills/doc-builder/scripts/_test/", "skills/intune-graph/scripts/_test/")
 NO_CACHE = ("-p", "no:cacheprovider")
+# What pytest resolves on its own for the whole COMBINED_DIRS list, pinned so
+# a subset run (C-0001) is the same session: gizmoduck's ini sets the rootdir,
+# pythonpath and addopts for every suite in the run.
+COMBINED_CONFIG = ("-c", "plugin/gizmoduck/pytest.ini", "--rootdir", "plugin/gizmoduck")
 
 
 def _py_suite(name: str, path: str, workflow: str = "marketplace.yml") -> Step:
@@ -190,11 +194,13 @@ TABLE = (
     Step("check-tooling-pr", "cheap", (PY, "scripts/check-tooling-pr.py")),
 
     Step("pytest-combined", "heavy",
-         (PY, "-m", "pytest", *COMBINED_DIRS, "-n", "4", "-m", "not wallclock", *NO_CACHE),
+         (PY, "-m", "pytest", *COMBINED_DIRS, *COMBINED_CONFIG, "-n", "4", "-m", "not wallclock",
+          *NO_CACHE),
          group="A", timeout=1800, pytest=True,
-         # CI runs the subset scripts/ci-select.py picks (C-0001); its suite
-         # checks that the whole of that list is COMBINED_DIRS.
-         ci=(("pytest-crew.yml", 'pytest $PYTEST_COMBINED -n auto -m "not wallclock" -v'),)),
+         # CI runs the subset scripts/ci-select.py picks (C-0001), falling
+         # back to all of COMBINED_DIRS; its suite checks that list.
+         ci=(("pytest-crew.yml", "pytest ${PYTEST_COMBINED:-" + " ".join(COMBINED_DIRS) + "} "
+              + " ".join(COMBINED_CONFIG) + ' -n auto -m "not wallclock" -v'),)),
     # crew-shell-matrix's ubuntu leg: the full bash/pwsh hook matrix, which
     # plugin/crew/tests/conftest.py deselects from every run not naming `slow`.
     # 201.8s under heavy-run, 1690 passed / 22 skipped (2026-10-01).

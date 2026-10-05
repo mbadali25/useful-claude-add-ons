@@ -81,6 +81,7 @@ def selected(got):
 
 def is_all(got):
     return (got.get("all") == "true" and selected(got) == set(KEYS) and got.get("lint") == "true"
+            and got.get("combined") == "true"
             and got.get("pytest_combined", "").split() == list(SEL.COMBINED))
 
 
@@ -151,6 +152,66 @@ def case_python_in_a_component_selects_lint_and_markdown_does_not():
     expect(got["lint"] == "true", "a .py change did not select lint")
     got, _ = select_paths(["skills/notify/SKILL.md"])
     expect(got["lint"] == "false", "a SKILL.md change selected lint")
+
+
+# ---- the combined pytest run is one session ----------------------------------
+
+COMBINED_KEYS = {key for key, _root, d in SEL.COMPONENTS if d}
+
+
+def case_a_change_that_can_alter_the_combined_session_selects_all_of_it():
+    # Test modules have no __init__.py, so a basename in two combined dirs
+    # collides only when both are collected; a conftest or pytest config in
+    # one dir changes the whole session. A subset run cannot see either.
+    for path in ("skills/notify/tests/test_status_vocabulary.py", "skills/notify/tests/helpers.py",
+                 "plugin/gizmoduck/scripts/_test/conftest.py", "plugin/gizmoduck/pytest.ini",
+                 "skills/intune-graph/pyproject.toml", "skills/notify/setup.cfg",
+                 "skills/mermaid-svg-bitbucket/tox.ini", "skills/doc-builder/scripts/test_new.py",
+                 "plugin/crew/tests/context.py", "plugin/crew/tests/fixtures/x_test.py"):
+        got, _ = select_paths([path])
+        expect(COMBINED_KEYS <= selected(got) and got["combined"] == "true"
+               and got["pytest_combined"].split()[:len(SEL.COMBINED)] == list(SEL.COMBINED),
+               f"{path}: can change the combined session but selected {got['pytest_combined']!r}")
+    for path in ("skills/notify/scripts/notify.py", "skills/notify/SKILL.md",
+                 "skills/cisco-meraki/tests/conftest.py"):
+        got, _ = select_paths([path])
+        expect(not COMBINED_KEYS <= selected(got),
+               f"{path}: cannot change the combined session but selected all of it")
+
+
+def case_combined_test_dirs_share_no_module_basename():
+    # Fail fast on the collision itself: main's full run would stop with
+    # "import file mismatch" while a PR's subset run passed.
+    owners = {}
+    for test_dir in SEL.COMBINED:
+        for _base, dirs, files in os.walk(os.path.join(REPO, test_dir)):
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
+            for name in files:
+                if name.endswith(".py") and name != "conftest.py":
+                    owners.setdefault(name, set()).add(test_dir)
+    dupes = {name: sorted(dirs) for name, dirs in owners.items() if len(dirs) > 1}
+    expect(not dupes, f"module basenames shared across combined test dirs: {dupes}")
+
+
+def case_the_combined_run_pins_its_session_and_falls_back_to_the_whole_list():
+    doc = _load_workflow("pytest-crew.yml")
+    runs = [st for st in doc["jobs"]["test"]["steps"]
+            if "select.outputs.combined" in _expr(st.get("if", "")) and "PYTEST_COMBINED" in str(st.get("run"))]
+    expect(len(runs) == 1, f"pytest-crew.yml test: {len(runs)} combined-run steps, expected 1")
+    if runs:
+        run = " ".join(str(runs[0]["run"]).split())
+        expect("${PYTEST_COMBINED:-" + " ".join(SEL.COMBINED) + "}" in run,
+               f"the combined run does not fall back to the whole COMBINED list: {run}")
+        expect("-c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck" in run,
+               f"the combined run does not pin the session's config: {run}")
+
+
+def case_lint_config_in_a_plugin_or_skill_selects_lint():
+    for path in ("skills/notify/ruff.toml", "skills/notify/.ruff.toml", "plugin/localgpu/pyproject.toml",
+                 "skills/aws-opensearch/.pylintrc", "plugin/rule-of-two/pylintrc",
+                 "mcp-servers/pyproject.toml"):
+        got, _ = select_paths([path])
+        expect(got["lint"] == "true", f"{path}: lint configuration did not select lint")
 
 
 # ---- must select everything ----------------------------------------------------
@@ -320,25 +381,82 @@ def case_every_component_root_and_test_dir_exists():
             expect(target in KEYS, f"READERS names unknown component {target}")
 
 
-OUTPUT_REF = re.compile(r"(?:steps|needs)\.select\.outputs\.([A-Za-z0-9_-]+)\s*(==|!=)\s*'([^']*)'")
+KNOWN_OUTPUTS = set(KEYS) | {"combined", "lint", "all"}
+_TERM = r"(?:steps|needs)\.select\.outputs\.([a-z_]+) != 'false'"
+# The whole `if:` of a gated suite step must be one of these shapes, so that
+# a missing output (a failed or skipped select) runs the suite. Matching the
+# whole expression, not a token in it: `... != 'false' && false` fails.
+SUITE_IF = (
+    re.compile(rf"^{_TERM}$"),
+    re.compile(rf"^env\.RUN_LEG == 'true' && {_TERM}$"),
+    re.compile(rf"^env\.RUN_LEG == 'true' && \({_TERM}(?: \|\| {_TERM})+\)$"),
+)
+NOTICE_IF = re.compile(r"^(?:steps|needs)\.select\.outputs\.([a-z_]+) == 'false'$")
+JOB_IF_AFTER_SELECT = ("!cancelled()", "always()")
+
+
+def _expr(value):
+    text = " ".join(str(value).split())
+    if text.startswith("${{") and text.endswith("}}"):
+        text = text[3:-2].strip()
+    return text
+
+
+def _load_workflow(name):
+    import yaml  # pylint: disable=import-outside-toplevel
+    with open(os.path.join(REPO, ".github", "workflows", name), encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def _gate_problems(wf, doc):
+    """Every gate in one parsed workflow that could skip a suite when the
+    selection is missing, as one message each."""
+    problems, gates = [], 0
+    for job_id, job in doc["jobs"].items():
+        needs = job.get("needs", [])
+        needs = [needs] if isinstance(needs, str) else needs
+        if "select" in needs and _expr(job.get("if", "")) not in JOB_IF_AFTER_SELECT:
+            problems.append(f"{wf} jobs.{job_id}: needs select but its if is "
+                            f"{job.get('if')!r}; without !cancelled() or always() a failed "
+                            "select skips the required legs, and skipped reads as passed")
+        if "select.outputs" in _expr(job.get("if", "")):
+            problems.append(f"{wf} jobs.{job_id}: a job-level if on the selection skips a "
+                            "required check")
+        for i, step in enumerate(job.get("steps") or []):
+            cond = _expr(step.get("if", ""))
+            if "select.outputs" not in cond:
+                continue
+            gates += 1
+            where = f"{wf} jobs.{job_id}.steps[{i}] ({step.get('name', step.get('uses'))})"
+            notice = NOTICE_IF.match(cond)
+            if notice:
+                keys = [notice.group(1)]
+                run = " ".join(str(step.get("run", "")).split())
+                if not (run.startswith('echo "::notice::') and "SKIPPED, not passed" in run
+                        and "&&" not in run and ";" not in run):
+                    problems.append(f"{where}: an == 'false' gate may only print the SKIPPED notice")
+            else:
+                shape = next((m for m in (rx.match(cond) for rx in SUITE_IF) if m), None)
+                if not shape:
+                    problems.append(f"{where}: `if: {cond}` is not a fail-open gate shape")
+                    continue
+                keys = re.findall(r"select\.outputs\.([a-z_]+)", cond)
+            for key in keys:
+                if key not in KNOWN_OUTPUTS:
+                    problems.append(f"{where}: gates on unknown output {key!r} (always empty)")
+    if not gates:
+        problems.append(f"{wf}: no step is gated on the selection")
+    return problems
 
 
 def case_workflows_gate_on_real_keys_and_fail_open_to_running():
-    known = set(KEYS) | {"pytest_combined", "lint", "all"}
     for wf in WORKFLOWS:
         with open(os.path.join(REPO, ".github", "workflows", wf), encoding="utf-8") as fh:
             text = fh.read()
         expect("python3 scripts/ci-select.py --event \"${{ github.event_name }}\" --output "
                "\"$GITHUB_OUTPUT\"" in text, f"{wf}: does not run ci-select.py the standard way")
-        refs = OUTPUT_REF.findall(text)
-        expect(refs, f"{wf}: no step is gated on the selection")
-        for key, op, value in refs:
-            expect(key in known, f"{wf}: gates on unknown output {key!r} (always empty)")
-            # A suite step must RUN when the output is missing: `!= 'false'`.
-            # Only a notice step may test `== 'false'`; pytest_combined is a list.
-            ok = (op, value) in ((("!=", "false"), ("==", "false")) if key != "pytest_combined"
-                                 else (("!=", ""),))
-            expect(ok, f"{wf}: `{key} {op} '{value}'` does not fail open to running the suite")
+        for problem in _gate_problems(wf, _load_workflow(wf)):
+            expect(False, problem)
     for wf in NEVER_SELECTED:
         path = os.path.join(REPO, ".github", "workflows", wf)
         if os.path.exists(path):
@@ -357,7 +475,8 @@ def case_readers_select_the_crew_files_and_suites_that_read_the_path():
         # (path, the keys it must select exactly, crew files it must select)
         ("plugin/gizmoduck/scripts/routine.py", {"gizmoduck"},
          {CREW + "test_tool_resolution.py", CREW + "test_sendkeys_structural_gate.py"}),
-        ("skills/notify/tests/test_new.py", {"notify"}, {CREW + "test_pwsh_cache_isolation.py"}),
+        ("skills/cisco-meraki/tests/test_new.py", {"cisco_meraki"},
+         {CREW + "test_pwsh_cache_isolation.py"}),
         ("skills/aws-opensearch/scripts/x.py", set(), {CREW + "test_tool_resolution.py"}),
         ("skills/doc-builder/scripts/build_report.py", {"doc_builder"},
          {CREW + "test_docs_routing.py", CREW + "test_sabotage_harness.py"}),

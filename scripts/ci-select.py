@@ -24,10 +24,12 @@ is its old path AND its new path, so moving a file out of a component still
 runs that component). Each path then selects:
 
   * inside a COMPONENT (one row of COMPONENTS): that component's suites, plus
-    every READER whose glob it matches, plus `lint` when it is Python;
+    every READER whose glob it matches, plus every combined component when
+    it can change the combined pytest session (PYTEST_CONFIGS), plus `lint`
+    when it is Python or lint configuration;
   * inside any other `plugin/<name>/` or `skills/<name>/` (a marketplace entry
     no skippable suite tests): only the READERS whose glob it matches, plus
-    `lint` when it is Python;
+    `lint` when it is Python or lint configuration;
   * a PLAIN DOCUMENT (is_plain_doc): only the READERS whose glob it matches --
     for most documents the two crew files that scan every document;
   * anything else (scripts/, .github/, .crew/, .claude/, root files, a doc a
@@ -48,8 +50,10 @@ docs/ non-Markdown) need no row: those paths select everything anyway.
 scripts/_test/ci-select.py pins the rows.
 
 Outputs (one `key=value` line each, appended to --output; printed when none):
-  pytest_combined  space-separated pytest paths for pytest-crew.yml's combined
-                   run, in COMBINED order; empty = that step is skipped
+  combined         true|false: whether pytest-crew.yml's combined run runs
+  pytest_combined  space-separated pytest paths for that run (COMBINED order,
+                   then single crew files); the workflow falls back to the
+                   whole COMBINED list when this is missing
   crew             true|false: crew's whole suite (wallclock run, the slow
                    hook matrix in crew-shell-matrix)
   <component>      true|false for every other COMPONENTS key
@@ -89,6 +93,7 @@ COMPONENTS = (
     ("mcp_servers", "mcp-servers/", None),
 )
 KEYS = tuple(key for key, _root, _dir in COMPONENTS)
+COMBINED_KEYS = frozenset(key for key, _root, d in COMPONENTS if d)
 # pytest-crew.yml's combined run, in the order it has always listed them;
 # scripts/gate-runner.py's COMBINED_DIRS is the same list (the suite checks).
 COMBINED = tuple(d for _key, _root, d in COMPONENTS if d)
@@ -140,6 +145,25 @@ READERS = (
 )
 
 LINT_SUFFIXES = (".py", ".pyi", ".ipynb")
+# Lint configuration: ruff and pylint read the nearest one, so one inside a
+# plugin or skill changes what lint reports there (plugin/localgpu ships a
+# pyproject.toml today).
+LINT_CONFIGS = ("ruff.toml", ".ruff.toml", "pyproject.toml", ".pylintrc", "pylintrc")
+
+# The combined run is ONE pytest session, and a subset of it is not the same
+# session: test modules have no __init__.py, so two test dirs holding the same
+# module basename collide ("import file mismatch") only when both are
+# collected, and a conftest or pytest config in one dir can change the whole
+# session. So a change to any of these inside a combined component selects
+# every combined component (COMBINED_KEYS):
+#   * any .py under that component's combined test directory;
+#   * a test module anywhere in it (test_*.py, *_test.py);
+#   * a conftest.py or a pytest configuration file anywhere in it.
+# pytest-crew.yml also pins the session's configuration for every subset
+# (`-c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck`, what pytest
+# resolves on its own for the full list), and scripts/_test/ci-select.py
+# fails when two combined test dirs already share a module basename.
+PYTEST_CONFIGS = ("conftest.py", "pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 
 # Documents that are never "plain", wherever a suite stands: the repo's own
 # instructions, its release notes, and the catalog/mirror documents that the
@@ -172,6 +196,18 @@ def component_of(path: str):
     return None, False
 
 
+def touches_combined_session(key, path: str) -> bool:
+    """True when `path`, inside component `key`, can change the combined
+    pytest session as a whole (see PYTEST_CONFIGS)."""
+    if key not in COMBINED_KEYS:
+        return False
+    test_dir = next(d for k, _root, d in COMPONENTS if k == key)
+    name = path.rsplit("/", 1)[-1]
+    return ((path.startswith(test_dir) and path.endswith(".py"))
+            or fnmatch.fnmatchcase(name, "test_*.py") or fnmatch.fnmatchcase(name, "*_test.py")
+            or name in PYTEST_CONFIGS)
+
+
 def everything() -> dict:
     return {"keys": set(KEYS), "crew_files": set(), "lint": True, "all": True}
 
@@ -188,10 +224,12 @@ def select(paths) -> tuple[dict, list]:
         key, in_entry = component_of(path)
         if key:
             targets.add(key)
+            if touches_combined_session(key, path):
+                targets |= COMBINED_KEYS
         elif not in_entry and not is_plain_doc(path):
             why_all.append(path)
             continue
-        if in_entry and path.endswith(LINT_SUFFIXES):
+        if in_entry and (path.endswith(LINT_SUFFIXES) or path.rsplit("/", 1)[-1] in LINT_CONFIGS):
             lint = True
         for target in targets:
             (files if target.startswith("plugin/crew/tests/") else keys).add(target)
@@ -206,7 +244,7 @@ def select(paths) -> tuple[dict, list]:
 def outputs(sel: dict) -> list:
     combined = [d for key, _root, d in COMPONENTS if d and key in sel["keys"]]
     combined += sorted(sel["crew_files"])
-    lines = [f"pytest_combined={' '.join(combined)}"]
+    lines = [f"combined={'true' if combined else 'false'}", f"pytest_combined={' '.join(combined)}"]
     lines += [f"{key}={'true' if key in sel['keys'] else 'false'}" for key in KEYS]
     lines.append(f"lint={'true' if sel['lint'] else 'false'}")
     lines.append(f"all={'true' if sel['all'] else 'false'}")

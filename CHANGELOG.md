@@ -23,6 +23,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   CLAUDE, AGENTS or UPDATE.md) selects only the two crew tests that scan every document. Anything
   else (`scripts/`, `.github/`, `.crew/`, root files), a non-PR event, an empty diff, a diff error
   or an exception selects everything.
+- **The combined pytest run stays one session.** It has no `__init__.py`, so two suites holding the
+  same module basename collide only when both are collected, and gizmoduck's `pytest.ini` is the
+  configuration pytest resolves for the whole list. A change to any `.py` in a combined test
+  directory, a test module, a `conftest.py` or a pytest config inside a combined component selects
+  every combined suite; the run pins `-c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck`
+  (identical collection for the full list), and the suite fails if two combined test directories
+  share a module basename. Lint configuration (`ruff.toml`, `.ruff.toml`, `pyproject.toml`,
+  `.pylintrc`, `pylintrc`) inside a plugin or skill selects pylint and ruff.
 - **Required checks unchanged.** No `on: pull_request: paths:` filter and no job-level skip: every
   job still reports its check, its suite steps are gated, and a skip prints a `::notice::` saying
   SKIPPED, not passed. A failed selector step is red, never a silent skip; in `mcp-servers.yml`
@@ -37,8 +45,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `role-write-guard.ps1`. Each is a row in `READERS`.
 - **Tests.** `scripts/_test/ci-select.py` (in `marketplace.yml`, `scripts/gate-runner.py` and
   `.crew/verify.json`): must-skip, must-select-one, must-select-all and fail-closed cases, real
-  merge-commit diffs, a rename out of a component, and the workflows' gates. Twelve sabotages of
-  the selector or a workflow gate each turned it red.
+  merge-commit diffs, a rename out of a component, the combined-session rules, and the workflows'
+  gates (each whole `if:` expression's shape, and `!cancelled()` on every job that needs the
+  select job). Twenty-two sabotages of the selector or a workflow each turned it red.
 
 ### Fixed — `crew` 1.0.347: the review/gate harness runs the git `shutil.which` found (L-1508, PR B)
 

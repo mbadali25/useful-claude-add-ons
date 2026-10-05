@@ -67,7 +67,7 @@ jobs:
       # the script itself fails this step is red, never a silent skip.
       run: python3 scripts/ci-select.py --event "${{ github.event_name }}" --output "$GITHUB_OUTPUT"
     - name: Install pytest
-      if: env.RUN_LEG == 'true' && (steps.select.outputs.pytest_combined != '' || steps.select.outputs.cisco_meraki != 'false' || steps.select.outputs.wazuh_onprem != 'false')
+      if: env.RUN_LEG == 'true' && (steps.select.outputs.combined != 'false' || steps.select.outputs.cisco_meraki != 'false' || steps.select.outputs.wazuh_onprem != 'false')
       run: |
         python -m pip install --upgrade pip
         # python-docx is NOT optional either, for the same reason pyyaml is
@@ -99,8 +99,12 @@ jobs:
       # The selected subset of the combined run, in its usual order: each
       # component's test directory when that component changed, or single crew
       # test files that read a changed path elsewhere (ci-select's READERS).
-      # Empty when nothing in the combined run is selected.
-      if: env.RUN_LEG == 'true' && steps.select.outputs.pytest_combined != ''
+      # Runs unless `combined` is exactly 'false'; a missing path list runs
+      # the whole combined list. -c/--rootdir pin the session to the config
+      # pytest resolves on its own for the whole list (gizmoduck's
+      # pytest.ini: rootdir, pythonpath, addopts), so a subset is the same
+      # session as main's full run, not a different one.
+      if: env.RUN_LEG == 'true' && steps.select.outputs.combined != 'false'
       env:
         PYTEST_COMBINED: ${{ steps.select.outputs.pytest_combined }}
       # Scoped to named directories on purpose, and NOT because of
@@ -140,7 +144,7 @@ jobs:
       run: |
         # Unquoted on purpose: the output is a space-separated path list.
         # shellcheck disable=SC2086
-        pytest $PYTEST_COMBINED -n auto -m "not wallclock" -v
+        pytest ${PYTEST_COMBINED:-plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/} -c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck -n auto -m "not wallclock" -v
     - name: Run crew's wall-clock-bounded tests serially
       if: env.RUN_LEG == 'true' && steps.select.outputs.crew != 'false'
       run: pytest plugin/crew/tests/ -m wallclock -v
