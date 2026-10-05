@@ -3703,7 +3703,7 @@ flowchart TB
         direction TB
         CFGREAD["<b>crew_config.py</b> reads ONLY<br/>.crew/config.json (schema 7)"]
         CTXREAD["<b>crew_context.load_crew_config()</b><br/>.crew/crew.json FIRST,<br/>then .crew/config.json"]
-        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1)"]
+        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1).<br/>Rewrites config.json only<br/>for a pre-0.20 config (upgrade stage),<br/>backed up and restored by --rollback"]
         OPEN["<b>Net effect:</b> which file governs<br/>depends on which module asked.<br/>OPEN - not resolved here"]
         TRKREAD["<b>crew_tracker.resolve()</b><br/>reads BOTH files; answers<br/>'could not tell' on disagreement"]
         MIGRATE -.-> CTXREAD
