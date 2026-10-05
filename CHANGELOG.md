@@ -60,6 +60,34 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 
+### Added — `crew` 1.0.370: crew verifies before it states — the rule in its prompts, "Not verified" reports, enforced by validate-prompts (T-0041, feature half)
+
+- **The rule.** `explorer`, `researcher`, `security` and `crew-best-practices` carry "Verify
+  before you state": a claim about code, config, history or state is verified this session (a
+  `path:line`, a command and what it printed, or a ref) or labelled `not verified` / `inferred`;
+  "could not tell" is an answer; a prior decision is looked up in `CHANGELOG.md`, `docs/adr/` or a
+  ticket's `direction.md` before a change to it is proposed; quoted output moves by copying bytes.
+  `crew-best-practices`' description now also triggers before stating an unverified fact. The rule
+  is crew's own and is not written into repos crew sets up.
+- **Reports.** explorer, researcher and security end with a **Not verified** section (researcher's
+  **Unverified** is renamed); `/crew:done` gains step 5, a report whose **Not verified:** names
+  rules that exited 77, suites that did not run on this OS and `drift-detection.sh`;
+  `/crew:debug`'s report gains a **Not verified** bullet.
+- **Recorded decisions.** `crew-plan`'s self-review gains item 6, and `crew-brainstorm`'s
+  approaches step looks a decision up before an option that changes it.
+- **Enforced.** `validate-prompts.py` gains `check_verification_rule()`: every `agents/*.md` (by
+  default, so a new agent is checked) and `crew-best-practices` must carry the rule, and the
+  three free-form agents plus `done.md` and `debug.md` must carry **Not verified**. `reviewer`
+  is exempt by name until the harness half lands. New suite `test_verify_before_stating.py`
+  (18 tests, tmp_path copies of the prompt tree) and `.crew/verify.json`'s last rule.
+- **Harness follow-ups** (review harness, owner rule T-0087, landing separately): the verdict
+  parser splitting on ASCII line breaks only, so a U+2028 in a finding is content rather than a
+  break (`review_verdict.py` `parse` and `codex_final_message`); `output_sha256` /
+  `output_source` in `review.json` (`review_run.py`); the rule, the "claims without evidence"
+  FIX category and `not reproduced:` in `reviewer.md`; the same category and the copy-the-bytes
+  Claude fallback in `review.md`'s heredoc; their `validate-prompts.py` checks and
+  `sabotage_review.py` entries; the troubleshooting and working-with-codex guide rows.
+
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched
