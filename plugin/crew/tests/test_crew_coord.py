@@ -2988,3 +2988,12 @@ def test_a_malformed_authority_is_could_not_tell_never_a_crash(url):
     key, why = crew_coord.owner_name(url)
 
     assert (key, bool(why)) == (None, True)
+
+
+@pytest.mark.parametrize("url", ["https://example.test:22:443/team/repo", "https://example.test:443:443/team/repo"])
+def test_two_port_delimiters_are_could_not_tell_never_another_key(url):
+    # Codex review of the owner-decision fixes, round 6 (rush g0): stripping the trailing
+    # default port left `:22`, and the URL took https://example.test:22/team/repo's key.
+    key, why = crew_coord.owner_name(url)
+
+    assert (key, "not a TCP port" in why) == (None, True)
