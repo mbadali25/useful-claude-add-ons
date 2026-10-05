@@ -22,7 +22,8 @@ script can check:
     `approval_policy` checks it.
 
 It also runs `docs/guides/crew/src/build.py --check`: exit 0 on the tree, 1 for
-a temp copy whose guide changed by one character, and 2 when `markdown`
+a temp copy whose guide changed by one character (naming `crew-1.1-guide.html`,
+the full guide's name since C-0006, whose three built files it also pins), and 2 when `markdown`
 cannot be imported (never 0: a check that compared nothing is not current).
 
 Each rule has must-block and must-allow cases on temp copies of the guide.
@@ -237,6 +238,13 @@ def main():
 
     code, out = run_build_check(SRC)
     report(code == 0, "build.py --check exits 0 on the tree", f"exit {code}: {out}")
+    # C-0006: the full guide is named for the 1.1 line; the old name is gone.
+    guides_dir = os.path.dirname(SRC)
+    for ext in ("html", "docx", "pdf"):
+        report(os.path.isfile(os.path.join(guides_dir, f"crew-1.1-guide.{ext}")),
+               f"crew-1.1-guide.{ext} is committed")
+        report(not os.path.exists(os.path.join(guides_dir, f"crew-1.0-guide.{ext}")),
+               f"crew-1.0-guide.{ext} is gone (renamed in C-0006)")
     with tempfile.TemporaryDirectory() as tmp:
         src = copy_guides(tmp)
         path = os.path.join(src, "guide.md")
@@ -245,7 +253,7 @@ def main():
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text.replace("crew is a workflow", "crew is a workfloW", 1))
         code, out = run_build_check(src)
-        report(code == 1 and "crew-1.0-guide.html" in out,
+        report(code == 1 and "crew-1.1-guide.html" in out,
                "build.py --check exits 1 naming a changed guide", f"exit {code}: {out}")
     code, out = run_build_check(SRC, extra=_HIDE_MARKDOWN)
     report(code == 2 and "DID NOT RUN" in out,
