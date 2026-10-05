@@ -405,10 +405,11 @@ def _scan_candidate(directory):
 
 
 def _scan_children(directory):
-    """The subdirectories the walk may enter: not hidden, not
-    `node_modules`, not a symlink. Raises `OSError` when the directory
-    cannot be listed."""
-    children = []
+    """`(children, unchecked)`: the subdirectories the walk may enter (not
+    hidden, not `node_modules`, not a symlink), and `{path: reason}` for
+    entries whose type could not be read -- unknown, never skipped as "not
+    a directory". Raises `OSError` when the directory cannot be listed."""
+    children, unchecked = [], {}
     with os.scandir(directory) as entries:
         for entry in entries:
             if entry.name.startswith(".") or entry.name == "node_modules":
@@ -416,10 +417,11 @@ def _scan_children(directory):
             try:
                 if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
                     continue
-            except OSError:
+            except OSError as exc:
+                unchecked[entry.path] = f"could not tell whether it is a directory: {exc}"
                 continue
             children.append(entry.path)
-    return children
+    return children, unchecked
 
 
 def scan_opted_in_repos(roots, depth=SCAN_DEPTH_DEFAULT, *, current=None):
@@ -455,10 +457,11 @@ def scan_opted_in_repos(roots, depth=SCAN_DEPTH_DEFAULT, *, current=None):
             if level >= depth:
                 continue
             try:
-                children = _scan_children(directory)
+                children, unchecked = _scan_children(directory)
             except OSError as exc:
                 unreadable[directory] = f"could not list it: {exc}"
                 continue
+            unreadable.update(unchecked)
             stack.extend((child, level + 1) for child in children)
     return {
         "roots": real_roots,

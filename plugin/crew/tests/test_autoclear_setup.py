@@ -900,6 +900,45 @@ def test_a_crew_directory_that_cannot_be_listed_is_unreadable(tmp_path, monkeypa
     assert plan["widening"]["proposedOnlyRepos"] == [here]
 
 
+def test_an_entry_whose_type_cannot_be_read_is_unreadable(tmp_path, monkeypatch):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    os.makedirs(str(scan / "opaque"))
+    real_scandir = os.scandir
+
+    class _Entry:
+        def __init__(self, entry):
+            self._entry, self.name, self.path = entry, entry.name, entry.path
+
+        def is_symlink(self):
+            return self._entry.is_symlink()
+
+        def is_dir(self, follow_symlinks=True):
+            if self.name == "opaque":
+                raise PermissionError(13, "Permission denied", self.path)
+            return self._entry.is_dir(follow_symlinks=follow_symlinks)
+
+    class _Scan:
+        def __init__(self, path):
+            self._it = real_scandir(path)
+
+        def __enter__(self):
+            return (_Entry(e) for e in self._it)
+
+        def __exit__(self, *exc):
+            self._it.close()
+
+    monkeypatch.setattr(setup.os, "scandir", _Scan)
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    unreadable = plan["widening"]["scan"]["unreadable"]
+    assert [item["path"] for item in unreadable] == [os.path.join(os.path.realpath(scan),
+                                                                  "opaque")]
+    assert setup.widening_refusal(plan["widening"])
+
+
 def test_a_symlinked_crew_directory_is_not_followed(tmp_path):
     scan = tmp_path / "src"
     here = _repo(str(tmp_path / "here"))
