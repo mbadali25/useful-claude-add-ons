@@ -12,7 +12,8 @@ touches the network or the machine. Every stub logs its argv, which is how
 the tests prove a fallback was (or was not) taken.
 
 `sudo` really runs what it is given (except apt-get, which it only logs), and
-GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR point the install at tmp_path, so the
+GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR (honoured only with
+GIZMODUCK_BOOTSTRAP_TEST=1, which _run sets) point the install at tmp_path, so the
 real download -> verify -> unpack -> install steps run against fixtures. The
 `curl` stub serves `-o` downloads from a per-test assets directory.
 """
@@ -74,6 +75,15 @@ if [[ "$1" == apt-get ]]; then
   [[ " $* " == *" install "* && -n "${STUB_APT_FAIL_INSTALL:-}" ]] && exit 100
   exit 0
 fi
+# Safety net: this stub really runs what it is given, so a bootstrap.sh that
+# stopped honouring the test directories would install into the machine's
+# own. Refuse any real install location instead.
+for a in "$@"; do
+  case "$a" in
+    /usr/local/bin*|/opt|/opt/*|/var/lib/apt*)
+      echo "sudo-stub: refusing real path $a" >&2; exit 97 ;;
+  esac
+done
 exec "$@"
 """
 
@@ -119,6 +129,9 @@ def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
         "GIZMODUCK_BIN_DIR": str(stubs["inst_bin"]),
         "GIZMODUCK_OPT_DIR": str(stubs["inst_opt"]),
         "GIZMODUCK_APT_LISTS_DIR": str(stubs["apt_lists"]),
+        # C-0015.3: the three directory overrides above are honoured only
+        # with this flag, so an inherited one cannot redirect a real run.
+        "GIZMODUCK_BOOTSTRAP_TEST": "1",
     }
     env.update(extra_env or {})
     proc = subprocess.run(
@@ -727,3 +740,179 @@ def test_the_sqlmap_wrapper_quotes_its_path(stubs):
     proc, _ = _run(stubs, script, git="ok",
                    extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1", "GIZMODUCK_OPT_DIR": str(opt)})
     assert f'exec python3 "{opt}/sqlmap/sqlmap.py" "$@"' in proc.stdout, proc.stdout + proc.stderr
+
+
+# --- C-0015.2: nikto's skip-if-present must prove nikto runs ----------------
+#
+# Measured against sullo/nikto 2.6.1 (312645d8): `nikto --version` prints
+# "Unknown option: version" plus the usage text and exits 0; `nikto -Version`
+# prints "Nikto 2.6.1 (LW 2.5)" and exits 0. So an exit code proves nothing,
+# and the probe has to read a version string out of `-Version`.
+
+_NIKTO_UNKNOWN = "echo 'Unknown option: version'; echo; echo '   Options:'; exit 0"
+_NIKTO_OK = ('if [[ "$1" == -Version ]]; then echo "Nikto 2.6.1 (LW 2.5)"; exit 0; fi\n'
+             "echo 'Unknown option: version'; exit 0")
+
+
+def _fake_nikto(stubs, body):
+    p = stubs["bin"] / "nikto"
+    p.write_text("#!/usr/bin/env bash\n" + body + "\n", newline="\n")
+    p.chmod(0o755)
+
+
+def test_nikto_that_only_prints_unknown_option_is_reinstalled(stubs):
+    # Must-block: exit 0 with no version string is not "installed".
+    _fake_nikto(stubs, _NIKTO_UNKNOWN)
+    proc, log = _run(stubs, "install_nikto; echo rc=$?")
+    assert "fails its check - reinstalling" in proc.stdout, proc.stdout + proc.stderr
+    assert "already installed" not in proc.stdout
+    assert f"sudo {_APT_OPTS} install -y nikto" in log, log
+
+
+def test_nikto_that_prints_its_version_is_skipped(stubs):
+    # Must-allow.
+    _fake_nikto(stubs, _NIKTO_OK)
+    proc, log = _run(stubs, "install_nikto; echo rc=$?")
+    assert "nikto: already installed" in proc.stdout, proc.stdout + proc.stderr
+    assert "rc=0" in proc.stdout
+    assert log == "", log
+
+
+@ps_only
+@pytest.mark.parametrize("body,expect", [
+    (_NIKTO_UNKNOWN, "RUNS=False"),
+    (_NIKTO_OK, "RUNS=True"),
+    ("echo 'Nikto 2.6.1 (LW 2.5)'; exit 1", "RUNS=False"),
+], ids=["unknown-option-rc0", "version", "version-but-rc1"])
+def test_ps1_nikto_check_reads_the_version_not_the_exit_code(stubs, body, expect):
+    perl = stubs["tmp"] / "fakeperl"
+    # The fake "perl" drops its first argument (nikto.pl) and acts as nikto.
+    perl.write_text("#!/usr/bin/env bash\nshift\n" + body + "\n", newline="\n")
+    perl.chmod(0o755)
+    ps = f"Write-Output \"RUNS=$(Test-NiktoRuns -PerlExe '{perl}' -NiktoPl 'nikto.pl')\""
+    proc, _ = _run_ps(stubs, body=ps)
+    assert expect in proc.stdout, proc.stdout + proc.stderr
+
+
+# --- C-0015.1: a link inside the templates dir is refused, never followed ----
+#
+# The clone fallback may delete only EMPTY directories that are really inside
+# the templates dir. A symlink or junction there points somewhere else, so
+# deleting it, or recursing through it (PS 5.1's Get-ChildItem -Recurse
+# follows junctions), could remove the user's directories outside it. Both
+# scripts must refuse and leave everything as it was.
+
+def _linked_layout(stubs, case):
+    """A templates dir holding (or being) a link to an `outside` tree."""
+    tdir = stubs["tmp"] / "nuclei-templates"
+    outside = stubs["tmp"] / "outside"
+    (outside / "empty-sub").mkdir(parents=True)
+    (stubs["tmp"] / "outside-file").write_text("mine\n")
+    if case == "self":
+        tdir.symlink_to(outside, target_is_directory=True)
+        return tdir, tdir
+    (tdir / "github" / "empty").mkdir(parents=True)
+    link = tdir / "github" / "link"
+    if case == "dir-link":
+        link.symlink_to(outside, target_is_directory=True)
+    elif case == "file-link":
+        link.symlink_to(stubs["tmp"] / "outside-file")
+    else:   # dangling
+        link.symlink_to(stubs["tmp"] / "gone")
+    return tdir, link
+
+
+def _assert_untouched(stubs, link):
+    assert link.is_symlink(), "the link was deleted"
+    assert (stubs["tmp"] / "outside" / "empty-sub").is_dir(), "an outside dir was deleted"
+    assert (stubs["tmp"] / "outside-file").read_text() == "mine\n"
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+_LINK_CASES = ["dir-link", "file-link", "dangling", "self"]
+
+
+@ps_only
+@pytest.mark.parametrize("case", _LINK_CASES)
+def test_ps1_template_clone_refuses_a_link(stubs, case):
+    # Must-block.
+    tdir, link = _linked_layout(stubs, case)
+    proc, _ = _run_ps(stubs, git="ok", tags=["v10.4.9"],
+                      body=f"Install-NucleiTemplatesClone -Dir '{tdir}'; Write-Output DONE")
+    assert "symlink or junction" in proc.stdout, proc.stdout + proc.stderr
+    assert "DONE" not in proc.stdout
+    _assert_untouched(stubs, link)
+    assert not list(stubs["tmp"].rglob("stub.yaml"))
+
+
+@pytest.mark.parametrize("case", _LINK_CASES)
+def test_template_clone_refuses_a_link(stubs, case):
+    # bootstrap.sh's half: `find -depth -type d -empty -delete` never follows
+    # a link, and the link left behind makes the directory non-empty.
+    tdir, link = _linked_layout(stubs, case)
+    _fake_nuclei_rc(stubs, 0)
+    proc, _ = _run(stubs, "update_nuclei_templates; echo after", git="ok", tags=["v10.4.9"])
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "after" not in proc.stdout
+    _assert_untouched(stubs, link)
+    assert not (tdir / "http").exists()
+
+
+def test_ps1_template_clone_never_recurses_through_a_link():
+    # PS 5.1's Get-ChildItem -Recurse follows junctions, which no POSIX test
+    # can reproduce; so the function must not use -Recurse at all.
+    text = _PS1.read_text()
+    start = text.index("function Install-NucleiTemplatesClone")
+    body = text[start:text.index("\n}\n", start)]
+    helper_start = text.index("function Get-EmptyDirsDeepestFirst")
+    helper = text[helper_start:text.index("\n}\n", helper_start)]
+    for name, src in (("Install-NucleiTemplatesClone", body), ("Get-EmptyDirsDeepestFirst", helper)):
+        code = [ln.split("#", 1)[0] for ln in src.splitlines()]
+        bad = [ln for ln in code if "-Recurse" in ln and ("Get-ChildItem" in ln or "gci" in ln)]
+        assert not bad, f"{name} walks the user's directory with Get-ChildItem -Recurse: {bad}"
+
+
+# --- C-0015.3: the directory overrides are test-only -------------------------
+#
+# bootstrap.sh runs `sudo rm -rf` / `sudo mv` under these directories, so an
+# override inherited from a shell profile or a CI job must not move a real
+# run. They are honoured only with GIZMODUCK_BOOTSTRAP_TEST=1.
+
+_SHOW_DIRS = 'echo "BIN=$BIN_DIR"; echo "OPT=$OPT_DIR"; echo "APT=$APT_LISTS_DIR"'
+
+
+@pytest.mark.parametrize("flag", ["", "0", "yes"])
+def test_dir_overrides_are_ignored_without_the_test_flag(stubs, flag):
+    # Must-block.
+    proc, log = _run(stubs, _SHOW_DIRS, extra_env={"GIZMODUCK_BOOTSTRAP_TEST": flag})
+    assert "BIN=/usr/local/bin\n" in proc.stdout, proc.stdout + proc.stderr
+    assert "OPT=/opt\n" in proc.stdout
+    assert "APT=/var/lib/apt/lists\n" in proc.stdout
+    assert "GIZMODUCK_BIN_DIR" in proc.stderr and "ignored" in proc.stderr, proc.stderr
+    assert log == ""
+
+
+def test_dir_overrides_are_honoured_with_the_test_flag(stubs):
+    # Must-allow (and every install test above relies on it).
+    proc, _ = _run(stubs, _SHOW_DIRS)
+    assert f"BIN={stubs['inst_bin']}\n" in proc.stdout, proc.stdout + proc.stderr
+    assert f"OPT={stubs['inst_opt']}\n" in proc.stdout
+    assert f"APT={stubs['apt_lists']}\n" in proc.stdout
+    assert "ignored" not in proc.stderr
+
+
+def test_no_override_and_no_flag_is_silent(stubs):
+    env = {"GIZMODUCK_BOOTSTRAP_TEST": "", "GIZMODUCK_BIN_DIR": "",
+           "GIZMODUCK_OPT_DIR": "", "GIZMODUCK_APT_LISTS_DIR": ""}
+    proc, _ = _run(stubs, _SHOW_DIRS, extra_env=env)
+    assert "BIN=/usr/local/bin\n" in proc.stdout
+    assert proc.stderr == "", proc.stderr
+
+
+def test_the_sudo_stub_refuses_real_install_paths(stubs):
+    # The net under every install test: with the overrides ignored, nothing
+    # may reach /usr/local/bin or /opt.
+    proc, _ = _run(stubs, "sudo mkdir -p /opt/gizmoduck-should-not-exist; echo rc=$?")
+    assert "rc=97" in proc.stdout, proc.stdout + proc.stderr
+    assert not os.path.exists("/opt/gizmoduck-should-not-exist")
+    assert "refusing real path /opt/gizmoduck-should-not-exist" in proc.stderr

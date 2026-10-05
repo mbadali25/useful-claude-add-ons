@@ -182,8 +182,8 @@ function Update-NucleiTemplates {
 # Clones the newest stable nuclei-templates release and moves it to $Dir -
 # only if $Dir is missing or holds no files. Twin of bootstrap.sh's
 # clone_nuclei_templates: the clone goes to a sibling temp dir first, only
-# empty directories under $Dir are removed, and if any file remains the clone
-# is discarded and $Dir is left exactly as it was.
+# empty directories under $Dir are removed, and if any file, symlink or
+# junction is there the clone is discarded and $Dir is left exactly as it was.
 function Install-NucleiTemplatesClone {
   param([Parameter(Mandatory)][string]$Dir)
   $tag = Resolve-LatestTag -Repo "projectdiscovery/nuclei-templates" -Tool "nuclei templates"
@@ -199,19 +199,46 @@ function Install-NucleiTemplatesClone {
     }
     if ($LASTEXITCODE -ne 0) { throw "git clone of nuclei-templates $tag failed" }
     if (Test-Path -LiteralPath $Dir) {
-      if (Get-ChildItem -LiteralPath $Dir -Recurse -Force -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
-        throw "$Dir holds files but no templates - not replacing it. Move them aside and re-run."
-      }
-      # Only empty directories are left; remove them deepest first, never a file.
-      Get-ChildItem -LiteralPath $Dir -Recurse -Force -Directory | Sort-Object { $_.FullName.Length } -Descending |
-        ForEach-Object { [System.IO.Directory]::Delete($_.FullName, $false) }
-      [System.IO.Directory]::Delete($Dir, $false)
+      # Throws on a file, a symlink or a junction anywhere in $Dir (or $Dir
+      # itself being one), so only real, empty directories reach the delete
+      # below - non-recursive, deepest first, never a file and never a link.
+      foreach ($d in (Get-EmptyDirsDeepestFirst -Dir $Dir)) { [System.IO.Directory]::Delete($d, $false) }
     }
     Move-Item -LiteralPath $tmp -Destination $Dir
   } finally {
     # Our own temp clone, never the user's directory.
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force }
   }
+}
+
+# Returns every directory in $Dir, $Dir included, deepest first - provided all
+# of them are real, empty directories. Throws if $Dir holds a file, or if $Dir
+# or anything in it is a symlink or junction: deleting a link (or an empty
+# directory reached through one) would act on whatever it points at, outside
+# $Dir. Walks one level at a time with its own stack and never recurses on
+# Get-ChildItem's say-so: under Windows PowerShell 5.1, Get-ChildItem -Recurse
+# follows junctions. Twin of bootstrap.sh's `find -depth -type d -empty
+# -delete`, which never follows a link and so leaves one behind to refuse on.
+function Get-EmptyDirsDeepestFirst {
+  param([Parameter(Mandatory)][string]$Dir)
+  $link = [System.IO.FileAttributes]::ReparsePoint
+  $refuse = "$Dir holds a symlink or junction ({0}) - not replacing it. Remove the link (or point nuclei elsewhere) and re-run."
+  $root = Get-Item -LiteralPath $Dir -Force
+  if ($root.Attributes -band $link) { throw ($refuse -f $root.FullName) }
+  if (-not $root.PSIsContainer) { throw "$Dir holds files but no templates - not replacing it. Move them aside and re-run." }
+  $found = New-Object System.Collections.Generic.List[string]
+  $todo = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
+  $todo.Push($root)
+  while ($todo.Count -gt 0) {
+    $d = $todo.Pop()
+    $found.Add($d.FullName)
+    foreach ($e in $d.GetFileSystemInfos()) {   # this one level only
+      if ($e.Attributes -band $link) { throw ($refuse -f $e.FullName) }
+      if ($e -is [System.IO.DirectoryInfo]) { $todo.Push($e); continue }
+      throw "$Dir holds files but no templates - not replacing it. Move them aside and re-run."
+    }
+  }
+  return @($found | Sort-Object { $_.Length } -Descending)
 }
 
 # Checks $File against its line in $SumsFile (sha256sum format), matching the
@@ -364,7 +391,26 @@ function Install-Nikto {
     git clone --depth 1 https://github.com/sullo/nikto.git $dir
   }
   if ($LASTEXITCODE -ne 0) { throw "git clone/pull failed for nikto" }
-  Write-Host ">> nikto cloned to $dir - run via: perl `"$dir\program\nikto.pl`" -h <target>"
+  $niktoPl = Join-Path $dir "program\nikto.pl"
+  if (-not (Test-NiktoRuns -PerlExe "perl" -NiktoPl $niktoPl)) {
+    throw "nikto was cloned to $dir but 'perl $niktoPl -Version' printed no version - it cannot run yet (a Perl installed just now needs a new terminal: re-run bootstrap there)"
+  }
+  Write-Host ">> nikto cloned to $dir - run via: perl `"$niktoPl`" -h <target>"
+}
+
+# True only when nikto actually runs: `-Version` exits 0 AND prints a version
+# string ("Nikto 2.6.1 (LW 2.5)"). Exit 0 alone proves nothing - `--version`
+# is not a nikto option, yet it prints "Unknown option: version" and exits 0
+# (measured on nikto 2.6.1). Twin of bootstrap.sh's probe_nikto.
+function Test-NiktoRuns {
+  param([Parameter(Mandatory)][string]$PerlExe, [Parameter(Mandatory)][string]$NiktoPl)
+  if (-not (Get-Command $PerlExe -ErrorAction SilentlyContinue)) { return $false }
+  $out = & {
+    $ErrorActionPreference = "Continue"
+    & $PerlExe $NiktoPl -Version 2>&1 | ForEach-Object { "$_" }
+  }
+  if ($LASTEXITCODE -ne 0) { return $false }
+  return [bool]($out | Where-Object { $_ -match '(?i)nikto\D*\d+\.\d+' } | Select-Object -First 1)
 }
 
 function Install-Testssl {
