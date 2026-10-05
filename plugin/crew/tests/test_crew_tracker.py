@@ -2029,7 +2029,8 @@ def test_a_recorded_inode_of_zero_is_could_not_tell(tmp_path, monkeypatch, walk)
     got = crew_tracker.move(str(root), "T-0060", "spec")
 
     reason = got["results"][-1]["reason"]
-    assert (crew_tracker.exit_code(got), "could not tell whether A is" in reason, "inode 0" in reason,
+    zero = "inode 0" if walk == "fd" else "file id 0"  # the handle walk is Windows': no inodes there
+    assert (crew_tracker.exit_code(got), "could not tell whether A is" in reason, zero in reason,
             (vault / "A" / "B" / "Board.md").read_bytes() == before) == (1, True, True, True)
 
 

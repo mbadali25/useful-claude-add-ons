@@ -1113,8 +1113,9 @@ def _could_not_tell(found, want, where):
         raise OSError(errno.EIO, f"could not tell whether {where} is the directory the vault checks found: "
                                  f"no identity was recorded for it; nothing written")
     if not found.st_ino or not want[1]:
+        kind = "inode" if _DIR_FD else "file id"
         raise OSError(errno.EIO, f"could not tell whether {where} is the directory the vault checks found: "
-                                 f"the file system reports inode 0; nothing written")
+                                 f"the file system reports {kind} 0; nothing written")
 
 
 def _recorded_ids(paths, label, parts):
