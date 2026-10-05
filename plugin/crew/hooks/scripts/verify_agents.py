@@ -99,14 +99,19 @@ def named(root):
     rules = data.get("rules", [])
     if not isinstance(rules, list):
         return {}, f"{path}: `rules` is not a list"
-    for rule in rules:
-        if not isinstance(rule, dict) or not isinstance(rule.get("agents"), list):
+    for number, rule in enumerate(rules, 1):
+        if not isinstance(rule, dict):
+            return {}, f"{path}: rule {number} is not an object"
+        if "agents" not in rule:
             continue
+        agents = rule["agents"]
+        if not isinstance(agents, list) or not all(
+                isinstance(name, str) and name.strip() for name in agents):
+            return {}, f"{path}: rule {number}'s `agents` is not a list of names"
         paths = [str(p) for p in rule.get("paths") or [] if isinstance(p, str)]
-        for name in rule["agents"]:
-            if isinstance(name, str) and name.strip():
-                bucket = out.setdefault(name.strip(), [])
-                bucket.extend(p for p in paths if p not in bucket)
+        for name in agents:
+            bucket = out.setdefault(name.strip(), [])
+            bucket.extend(p for p in paths if p not in bucket)
     return out, None
 
 
@@ -221,7 +226,9 @@ def installed(root):
         spelled = set()
         for install in installs:
             path = install.get("installPath") if isinstance(install, dict) else None
-            if not path:
+            if not isinstance(path, str) or not path:
+                everywhere.append(f"plugin registry entry {key} has an install with no "
+                                  "installPath")
                 continue
             found, problems = _agents_in(os.path.join(str(path), "agents"))
             everywhere += problems

@@ -135,7 +135,10 @@ def test_unknowns_never_read_as_installed(tmp_path, home, capsys, source):
 
 
 @pytest.mark.parametrize("data", ['{"rules": {"r": {"agents": ["php-developer"]}}}',
-                                  '["php-developer"]', '{"rules": "php-developer"}'])
+                                  '["php-developer"]', '{"rules": "php-developer"}',
+                                  '{"rules": [{"agents": "php-developer"}]}',
+                                  '{"rules": [{"agents": ["php-developer", 7]}]}',
+                                  '{"rules": ["php-developer"]}'])
 def test_a_verify_map_whose_shape_cannot_be_read_is_unknown(tmp_path, home, capsys, data):
     _home(home)
     root = _repo(tmp_path, ["php-developer"])
@@ -156,6 +159,18 @@ def test_a_registry_entry_that_is_not_a_list_is_unknown_not_missing(tmp_path, ho
 
     assert code == 2, out
     assert "not a list of installs" in out
+
+
+@pytest.mark.parametrize("install", ['"/x"', '{"version": "1.0.0"}', '{"installPath": 7}'])
+def test_an_install_record_without_a_path_is_unknown_not_missing(tmp_path, home, capsys,
+                                                                 install):
+    _home(home, enabled={"voltagent@mkt": True})
+    _write(home / "plugins" / "installed_plugins.json",
+           '{"version": 2, "plugins": {"voltagent@mkt": [' + install + ']}}')
+
+    code, out = _main(_repo(tmp_path, ["voltagent:security-auditor"]), capsys)
+
+    assert (code, "no installPath" in out) == (2, True), out
 
 
 def test_crew_roles_resolve_even_when_registry_unreadable(tmp_path, home, capsys):
