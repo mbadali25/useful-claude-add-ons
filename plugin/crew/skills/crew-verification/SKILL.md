@@ -477,7 +477,8 @@ classifier cannot name one), `class-mismatch` (the dispatch classifies prod
 under a nonProd environment name, or the reverse), `actor-unreadable` (`gh
 api user`), `sha-not-on-remote`, `branch-tip-not-head` (no `shaInput` and the
 ref's tip is not HEAD) and `snapshot-unreadable` (`gh run list`); a classifier
-that raises is `classifier-failed`. Otherwise it writes
+that raises is `classifier-failed`, and an environment name that cannot name
+a file under `.crew/.ghdeploy/` is `env-name-path`. Otherwise it writes
 `.crew/.ghdeploy/<env>-<N>.json` atomically - the workflow, ref, sha, actor,
 `t0`, the ids of this actor's existing `workflow_dispatch` runs on that ref,
 the correlation id, the command, `identifySeconds`, `watchMinutes` and the

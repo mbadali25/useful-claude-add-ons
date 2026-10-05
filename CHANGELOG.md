@@ -18,7 +18,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Refusals** (exit 2, nothing written), in order: an entry problem or `github-none`,
   `deploy-prefix-mismatch`, `unmapped-workflow`, `unknown-environment`, `class-mismatch`,
   `actor-unreadable`, `sha-not-on-remote`, `branch-tip-not-head`, `snapshot-unreadable`; a classifier
-  that raises is `classifier-failed`.
+  that raises is `classifier-failed`, and an environment name that cannot name a state file is
+  `env-name-path`. A corrupt machine-global `environments` block is `unknown-environment`, as the
+  dispatch guard reads it.
 - **State.** `.crew/.ghdeploy/<env>-<N>.json`, written through a temp file and `os.replace`. Its only
   `gh` calls are `api user`, two GETs and `run list`; it never dispatches. `check` and `prepare` now
   share one entry validator (`validated`).

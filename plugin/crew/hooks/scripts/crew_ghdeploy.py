@@ -630,6 +630,12 @@ def _gh_json(args, root):
 
 
 def state_path(root, env, index):
+    """`.crew/.ghdeploy/<env>-<index>.json`. An environment name that is not
+    one plain file-name word (a `/`, a `\\`, a leading `.`) is refused, so the
+    path never leaves the state directory."""
+    if re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]*", env) is None:
+        raise Refused("env-name-path", f"environment name {env!r} cannot name a state file: "
+                                       "it must be [A-Za-z0-9._-], not starting with `.`")
     return os.path.join(root, STATE_DIR, f"{env}-{index}.json")
 
 
@@ -680,9 +686,11 @@ def classify(root, env, command):
         raise Refused("unmapped-workflow",
                       "environments.workflows in .crew/config.json lists no key "
                       "matching this workflow; an unlisted workflow is never nonProd")
-    if config.get("problem") or klass[0] == crew_dispatch.ENV_UNKNOWN:
+    # Either config layer's malformed block: the dispatch guard reads both.
+    problem = crew_dispatch._envs_problem(config)  # pylint: disable=protected-access
+    if problem or klass[0] == crew_dispatch.ENV_UNKNOWN:
         raise Refused("unknown-environment", "the classifier cannot name the "
-                      f"environment: {config.get('problem') or klass[2]}")
+                      f"environment: {problem or klass[2]}")
     if klass[0] != named:
         raise Refused("class-mismatch",
                       f"the dispatch classifies as {klass[0]} ({klass[1]!r}) but the "
@@ -701,6 +709,7 @@ def _actor(root):
 def prepare(root, env, index):
     """Lines to print for `prepare`; writes the state file last."""
     entry = _entry(root, env, index)
+    path = state_path(root, env, index)
     sha = _head(root)  # the dispatch deploys HEAD
     corr = (f"crew-{env}-{sha[:7]}-{secrets.token_hex(4)}"
             if entry.get("correlationInput") else None)
@@ -712,7 +721,8 @@ def prepare(root, env, index):
         raise Refused("sha-not-on-remote", f"{sha} is not on the remote; push it first")
     if not entry.get("shaInput"):
         tip = _gh_json(["api", f"repos/{{owner}}/{{repo}}/branches/{entry['ref']}"], root)
-        tip = tip.get("commit", {}).get("sha") if isinstance(tip, dict) else None
+        tip = tip.get("commit") if isinstance(tip, dict) else None
+        tip = tip.get("sha") if isinstance(tip, dict) else None
         if tip != sha:
             raise Refused("branch-tip-not-head",
                           f"with no `shaInput` the workflow deploys {entry['ref']!r}'s tip "
@@ -732,7 +742,7 @@ def prepare(root, env, index):
              "identifySeconds": entry.get("identifySeconds",
                                           RANGES["identifySeconds"][2]),
              "watchMinutes": watch, "deadline": t0 + watch * 60}
-    write_state(state_path(root, env, index), state)
+    write_state(path, state)
     return [f"state: {os.path.join(STATE_DIR, f'{env}-{index}.json')}",
             f"snapshot: {len(runs)} existing run(s)", command,
             f"result=ok class={klass} sha={sha}"]

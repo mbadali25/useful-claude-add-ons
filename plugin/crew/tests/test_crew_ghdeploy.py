@@ -1090,6 +1090,42 @@ def test_prepare_refuses_an_environment_without_a_github_entry(tmp_path, monkeyp
     assert not (root / ".crew" / ".ghdeploy").exists()
 
 
+def test_prepare_refuses_an_env_name_that_leaves_the_state_dir(tmp_path, monkeypatch):
+    """An environment named `../x` exists in the map, but its state file
+    would land outside `.crew/.ghdeploy/`: refused before any gh call."""
+    root = _seq_repo(tmp_path, monkeypatch, env="../escape", non_prod=("../escape",))
+    gh = FakeGh(_prepare_answers(_head(root)))
+    code, lines = _prepare(monkeypatch, root, gh, env="../escape")
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=env-name-path"
+    assert gh.calls == []
+    assert not (root / ".crew" / "escape-0.json").exists()
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+def test_prepare_refuses_a_corrupt_machine_environments_block(tmp_path, monkeypatch):
+    """The dispatch guard reads the machine layer's block too: a corrupt one
+    is unknown-environment, never the repo layer's nonProd answer."""
+    root = _seq_repo(tmp_path, monkeypatch)
+    (tmp_path / "global.json").write_text('{"environments": {"nonProd": "staging"}}',
+                                          encoding="utf-8")
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=unknown-environment"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+@pytest.mark.parametrize("answer", [{"commit": None}, {"commit": "abc"}, [], "x"])
+def test_prepare_a_malformed_branch_answer_is_not_head(tmp_path, monkeypatch, answer):
+    root = _seq_repo(tmp_path, monkeypatch, entry=_no_branch_entry())
+    answers = _prepare_answers(_head(root))
+    answers[("api", "repos/{owner}/{repo}/branches/main")] = _ok(answer)
+    code, lines = _prepare(monkeypatch, root, FakeGh(answers))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=branch-tip-not-head"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
 def test_prepare_classifier_crash_refuses(tmp_path, monkeypatch):
     import crew_dispatch  # pylint: disable=import-outside-toplevel
     root = _seq_repo(tmp_path, monkeypatch)
