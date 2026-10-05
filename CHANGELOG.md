@@ -30,7 +30,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   tools" section documents the order and all five variables. The test suite points
   `GIZMODUCK_HOME` at an empty directory so no test reads a real tool home.
 
-### Added — `windows-ssm` 1.0.0: Linux tools on Windows, and what SSM will carry (T-0102)
+### Added — `windows-ssm` 1.0.1: Linux tools on Windows, and what SSM will carry (T-0102)
 
 - **Summary.** A new skill for running Linux-style tools on Windows and driving nodes through
   AWS Systems Manager, with a checker that fails when a Run Command result is or may be cut.

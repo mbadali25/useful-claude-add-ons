@@ -215,7 +215,7 @@
       "name": "windows-ssm",
       "source": "./skills/windows-ssm",
       "description": "Linux tools on Windows (which shell runs a command, python3/pwsh resolution, MSYS path conversion, CRLF, WSL) and AWS Systems Manager's limits, with an offline checker that fails when Run Command output is cut.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "work-log-reporter",

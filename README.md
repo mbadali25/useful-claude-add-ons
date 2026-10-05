@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **windows-ssm 1.0.0**: Linux tools on Windows, and what SSM will carry. A new skill for running Linux-style tools on Windows and driving nodes through AWS Systems Manager, with a checker that fails when a Run Command result is or may be cut.
-- **crew 1.0.351, notify 1.1.2**: Notifications that failed, repeated, or said only "missing". Chat notifications now go through when the bot token was saved with a trailing space or newline, a missing setting is named along with where to set it, a refused send says Telegram's reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
+- **gizmoduck 0.5.9**: One tool lookup order, and an override you set now wins. Every scanner is found the same way — your override variable, then a tool home, then PATH, then the Windows install folder — and an override that points at nothing now disables that tool instead of quietly using another copy.
+- **windows-ssm 1.0.1**: Linux tools on Windows, and what SSM will carry. A new skill for running Linux-style tools on Windows and driving nodes through AWS Systems Manager, with a checker that fails when a Run Command result is or may be cut.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
