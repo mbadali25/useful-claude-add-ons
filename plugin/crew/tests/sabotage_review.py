@@ -655,6 +655,14 @@ REVIEW_FIX_MUTATIONS = (
         "tests/test_review_refund.py::test_no_retry_when_the_gate_changed",
     ),
     (
+        # Group review of #540: a self-check gone stale during the backoff.
+        'the standards self-check is not asked again before the retry',
+        REVIEW_RUN,
+        '    if gated and standards_gate(args) is not None:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_the_self_check_went_stale",
+    ),
+    (
         # L-0514 review: a source edit during the backoff is not seen.
         "the retry does not rebuild the bundle from the tree",
         REVIEW_RUN,

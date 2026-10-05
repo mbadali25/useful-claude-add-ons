@@ -522,7 +522,14 @@ def _in_process(repo, tmp_path, monkeypatch, mode, sleep):
         events.append("reserve")
         return real_reserve(*args, **kwargs)
 
+    real_sleep = review_run.time.sleep
+
     def fake_sleep(seconds):
+        # `time` is one module: only the backoff is the retry's; a poll loop's
+        # short waits (the standards gate's tools, asked again) really wait.
+        if seconds != review_run.RETRY_BACKOFF_SECONDS:
+            real_sleep(seconds)
+            return
         events.append(("sleep", seconds))
         sleep(scratch)
 
@@ -571,6 +578,27 @@ def test_no_retry_when_the_gate_changed(repo, tmp_path, monkeypatch, capsys):
     assert (code, events.count("reserve"), len(_rows(repo)),
             "review: retry: not retried - the gate or the review receipt changed" in captured.out,
             "gate UNVERIFIED: the tree moved" in captured.err) == (3, 1, 1, True, True), (
+        captured.out + captured.err)
+
+
+def test_no_retry_when_the_self_check_went_stale(repo, tmp_path, monkeypatch, capsys):
+    """Group review of #540: the standards self-check is asked again after
+    the backoff; one that went stale (it lives under .work/, outside the
+    bundle and the gate) stops the retry before anything is reserved."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    real = review_run.crew_standards.review_gate
+    moved = []
+    monkeypatch.setattr(review_run.crew_standards, "review_gate", lambda *a: (
+        (["the self-check is stale"], None) if moved else real(*a)))
+
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean",
+                               lambda _: moved.append(True))
+
+    captured = capsys.readouterr()
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the standards self-check no longer passes"
+            in captured.out,
+            "self-check: the self-check is stale" in captured.err) == (3, 1, 1, True, True), (
         captured.out + captured.err)
 
 

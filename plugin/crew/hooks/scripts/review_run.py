@@ -190,6 +190,7 @@ before exit 2 (self-check) is asked for. 5, 6 and 7 are `--probe`'s alone
 """
 import argparse
 import datetime
+import functools
 import hashlib
 import json
 import os
@@ -1246,15 +1247,18 @@ def _after_the_gates(args, before):
     return now if changed and set(changed) <= {crew_incident.SKIP_LOG_PATH} else before
 
 
-def _probe_runner(cmd, env, timeout, cwd):
+def _probe_runner(cmd, env, timeout, cwd, unstopped=None):  # pylint: disable=too-many-arguments,too-many-positional-arguments
     """`kimi_probe.probe`'s runner: `launch`, in a process group of its own,
     then `stop_survivors`, so the probe call cannot leave a writer running
     past the fingerprint taken after it. A survivor that could not be stopped
     answers as a call that never said PROBE_OK, which the probe reads as
-    `unknown`."""
+    `unknown`, and is appended to `unstopped`: `_probe_kimi` then stops the
+    review (exit 8), since that process may still write after any check."""
     started = []
     stdout, stderr, code, timed_out = launch(cmd, cwd, timeout, env=env, started=started)
     if not timed_out and stop_survivors(started)[1]:
+        if unstopped is not None:
+            unstopped.append(cmd[0])
         return "", KIMI_SURVIVOR_UNKNOWN, None, False
     return stdout, stderr, code, timed_out
 
@@ -1266,7 +1270,9 @@ def _probe_kimi(args, before):
     WHATEVER it answered (round 4 of T-0028: a failing probe that wrote
     returned EXIT_USAGE, and /crew:review walked on to the next provider
     against a tree the probe had changed): a change is EXIT_PROBE_CHANGED."""
-    probed = kimi_probe.probe(args.model or None, runner=_probe_runner)
+    unstopped = []
+    probed = kimi_probe.probe(args.model or None, runner=functools.partial(
+        _probe_runner, unstopped=unstopped))
     answer = f"kimi probe: {probed['state']} - {probed['reason']}"
     problems = []
     mid = tree_fingerprint(args.root, problems)
@@ -1288,6 +1294,13 @@ def _probe_kimi(args, before):
             return EXIT_PROBE_CHANGED, (f"{KIMI_PROBE_CHANGED}: {_named(changed)} (the probe "
                                         f"answered: {answer}); stop and report these paths, "
                                         "do not walk to the next provider")
+    if unstopped:
+        # Group review of #540: a probe process that could not be stopped can
+        # write after any fingerprint, so this is not "Kimi unavailable" (exit
+        # 2 walks on with the bundle already built): it stops as a change does.
+        return EXIT_PROBE_CHANGED, (f"{KIMI_SURVIVOR_UNKNOWN} (the kimi probe; it answered: "
+                                    f"{answer}); stop and check the tree, do not walk to "
+                                    "the next provider")
     if not kimi_probe.launchable(probed["state"]):
         return EXIT_USAGE, answer
     args.kimi_exe, args.launched_model = probed["exe"], probed["alias"]
@@ -1659,7 +1672,7 @@ def run(args):
         why = _retry_reason(args, number, timed_out, limit, retries)
         if why is None:
             time.sleep(RETRY_BACKOFF_SECONDS)
-            why = _retry_blocked(args)
+            why = _retry_blocked(args, gated)
         if why is not None:
             _out(f"review: retry: not retried - {why}")
             _out(RETRY_OPTIONS)
@@ -1738,12 +1751,17 @@ def _retry_reason(args, number, timed_out, limit, retries):
     return None
 
 
-def _retry_blocked(args):
+def _retry_blocked(args, gated=True):
     """After the backoff: None when the retry may reserve, else why not. The
     gate and receipt are asked again (`preflight`), and the bundle re-hashed:
-    a tree that moved since the failed round is not the bundle it lost."""
+    a tree that moved since the failed round is not the bundle it lost. A
+    gated round's standards self-check is asked again too (group review of
+    #540): it lives under `.work/`, which neither the bundle nor the gate
+    sees, so it can go stale or vanish during the backoff."""
     if preflight(args) is not None:
         return "the gate or the review receipt changed before the retry (above)"
+    if gated and standards_gate(args) is not None:
+        return "the standards self-check no longer passes (above)"
     try:
         manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
         problems = bundle_problems(manifest)

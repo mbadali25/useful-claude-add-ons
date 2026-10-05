@@ -78,7 +78,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   why when it does not.
 - **What changed.** `review_run.run` relaunches a round the ledger refunded (`failure_class: tool`),
   at most `RETRY_LIMIT = 1` time per invocation, after `RETRY_BACKOFF_SECONDS = 30`, with the same
-  provider, model and effort. Before the retry `preflight` is asked again and the bundle re-hashed;
+  provider, model and effort. Before the retry `preflight` and the standards self-check are asked
+  again and the bundle re-hashed;
   the failed round's `out.txt`, `stderr.txt`, `codex-events.jsonl` and `review.json` are kept as
   `<name>.round<N>`, and its pre-review record is bound to the retry. Not retried, each with a
   `review: retry: not retried - <why>` line and a `review: options:` line: a usage limit (the Claude

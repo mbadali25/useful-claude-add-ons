@@ -1099,8 +1099,12 @@ def test_run_kimi_a_probe_survivor_that_will_not_die_spends_no_round(repo, tmp_p
                             "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
     err = capsys.readouterr().err
 
-    assert (code, rl.status(str(repo), "T1")["rounds"]) == (2, [])
+    # Must-block (group review of #540): spends no round AND stops (exit 8),
+    # since the process may still write; exit 2 would walk on to the next
+    # provider with the bundle already built.
+    assert (code, rl.status(str(repo), "T1")["rounds"]) == (review_run.EXIT_PROBE_CHANGED, [])
     assert "kimi probe: unknown" in err
+    assert "do not walk to the next provider" in err
 
 
 # --- review round 4 (T-0028) ---------------------------------------------------------
@@ -1372,7 +1376,10 @@ def test_run_kimi_a_probe_kill_refused_is_unknown_and_spends_no_round(repo, tmp_
                                                                      monkeypatch, capsys):
     code, err, review = _main_with_a_refused_kill(repo, tmp_path, monkeypatch, capsys, 1)
 
-    assert (code, review, rl.status(str(repo), "T1")["rounds"]) == (2, None, [])
+    # Group review of #540: a probe process that could not be stopped stops
+    # the review (exit 8), never "Kimi unavailable" (2).
+    assert (code, review, rl.status(str(repo), "T1")["rounds"]) == (
+        review_run.EXIT_PROBE_CHANGED, None, [])
     assert "kimi probe: unknown" in err
 
 

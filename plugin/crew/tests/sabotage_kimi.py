@@ -379,7 +379,8 @@ KIMI_MUTATIONS = (
      _R + "test_run_kimi_a_process_left_running_cannot_write_after_the_check"),
     ("review_run: the probe runs without its own process group again",
      RUN,
-     "    probed = kimi_probe.probe(args.model or None, runner=_probe_runner)",
+     "    probed = kimi_probe.probe(args.model or None, runner=functools.partial(\n"
+     "        _probe_runner, unstopped=unstopped))",
      "    probed = kimi_probe.probe(args.model or None)",
      _R + "test_run_kimi_a_process_left_running_cannot_write_after_the_check"),
     ("review_run: a zombie reads as a live survivor",
@@ -777,6 +778,11 @@ KIMI_MUTATIONS = (
      "tests/test_provider_table.py::"
      "test_a_provider_review_run_cannot_launch_is_not_eligible"),
     # --- L-0527 review (the port onto main) ---
+    ("review_run: an unstoppable probe survivor walks on to the next provider again (group review)",
+     RUN,
+     "    if unstopped:\n",
+     "    if False:\n",
+     _R + "test_run_kimi_a_probe_survivor_that_will_not_die_spends_no_round"),
     ("review_run: a tree that cannot be fingerprinted after the probe walks on again (group review)",
      RUN,
      '        return EXIT_PROBE_CHANGED, (f"kimi probe: unknown - the tree could not be "\n',
