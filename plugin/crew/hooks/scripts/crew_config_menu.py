@@ -872,12 +872,23 @@ def _unbound(plan, expect):
     return None
 
 
-def _delete_os_error(exc, stage, path, backup):
+def _identity(path):
+    """`os.lstat(path)`, or None when it cannot be taken."""
+    try:
+        return os.lstat(path)
+    except OSError:
+        return None
+
+
+def _delete_os_error(exc, stage, path, backup, ident=None):
     """The message and exit code for an OSError inside `apply_delete`.
     Before the move: the file is in place (exit 2). From the move on: the
     two names are probed, and "left in place" is said only when the backup
-    is absent and the file is present; otherwise the backup is named (exit
-    1), and a probe that fails says it could not tell and names both."""
+    is absent and the file is present. A present backup is called the
+    original only when it IS the config's inode (`ident`, taken before the
+    move): a name another writer took after `_free_backup` chose it is not
+    (exit 2 when the config is still in place). Anything it cannot tell
+    says so and names both (exit 1)."""
     why = crew_config_files.os_error_text(exc)
     if stage == "before":
         print(f"refused: {why}; {path} left in place", file=sys.stderr)
@@ -886,14 +897,24 @@ def _delete_os_error(exc, stage, path, backup):
         moved, there = os.path.lexists(backup), os.path.lexists(path)
     except Exception:  # pylint: disable=broad-except
         moved = there = None
-    if stage == "moving" and isinstance(exc, FileExistsError) and there is True:
+    ours = None
+    if moved is True and ident is not None:
+        backup_ident = _identity(backup)
+        ours = (None if backup_ident is None
+                else os.path.samestat(backup_ident, ident))
+    if ours is False and stage == "moving" and there is True:
         # The move refuses an existing destination with the source untouched
-        # (`move_no_clobber`): a file another writer put at the backup name
-        # after `_free_backup` chose it is NOT the original. Never name it so.
+        # (`move_no_clobber`): another writer's file at the backup name is
+        # NOT the original. Never name it so.
         print(f"refused: {backup} appeared before the move ({why}); it is "
               f"not this config, nothing moved: {path} left in place",
               file=sys.stderr)
         return 2
+    if moved is True and ours is not True:
+        print(f"refused: {why}; could not tell where the file is ({backup} "
+              f"is {'not' if ours is False else 'not known to be'} this "
+              f"config): check {path} and {backup}", file=sys.stderr)
+        return 1
     if moved is False and there is True and stage == "moving-back":
         print(f"refused: {path} changed since the preview; it is back in place "
               f"({why} after the move back) and nothing was deleted. Re-run "
@@ -943,7 +964,7 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
         return 2
     # How far the apply got, for the OSError handler: "before" the move was
     # called, or "moving" once it was (the file may then be at the backup).
-    stage, backup = "before", None
+    stage, backup, ident = "before", None, None
     try:
         with crew_config_files.machine_lock(plan["machinePath"]), \
                 crew_config_files.Lock(path):
@@ -955,6 +976,7 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
                       "run the preview again", file=sys.stderr)
                 return 2
             backup = _free_backup(root, now)
+            ident = _identity(path)
             stage = "moving"
             got = crew_config_files.move_aside(path, backup)
             if got != plan["held"]:
@@ -992,7 +1014,7 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
               f"check {path}", file=sys.stderr)
         return 1
     except OSError as exc:
-        return _delete_os_error(exc, stage, path, backup)
+        return _delete_os_error(exc, stage, path, backup, ident)
     if os.path.lexists(path):
         print(f"note: a new {path} appeared after the move; the original is "
               f"at {backup}", file=sys.stderr)

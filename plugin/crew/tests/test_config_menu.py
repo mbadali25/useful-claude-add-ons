@@ -1879,6 +1879,31 @@ def test_delete_backup_name_taken_before_the_move_is_not_called_the_original(
     assert _bytes(_backup_path(root)) == foreign
 
 
+def test_delete_backup_name_taken_and_config_gone_is_not_called_the_original(
+        tmp_path, capsys, monkeypatch):
+    """Another writer takes the backup name and removes the config before the
+    move: the move fails, and the foreign backup is never called the original."""
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    foreign = b"another writer\n"
+    real_aside = crew_config_files.move_aside
+
+    def _aside(src, dest):
+        with open(dest, "wb") as handle:
+            handle.write(foreign)
+        os.remove(src)
+        return real_aside(src, dest)
+    monkeypatch.setattr(crew_config_files, "move_aside", _aside)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "the original is at" not in err and "left in place" not in err
+    assert _config(root) in err and _backup_path(root) in err
+    assert _bytes(_backup_path(root)) == foreign
+
+
 def test_delete_lock_failure_is_not_reported_as_a_backup_failure(tmp_path, capsys,
                                                                  monkeypatch):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
