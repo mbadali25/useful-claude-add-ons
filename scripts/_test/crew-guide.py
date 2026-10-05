@@ -22,7 +22,9 @@ script can check:
     `approval_policy` checks it.
 
 It also runs `docs/guides/crew/src/build.py --check`: exit 0 on the tree, 1 for
-a temp copy whose guide changed by one character, and 2 when `markdown`
+a temp copy whose guide changed by one character (naming `crew-guide.html`),
+and pins every guide's built files at their version-free `crew-<name>.*`
+names with no `crew-1.<n>-*` file left (C-0006), and 2 when `markdown`
 cannot be imported (never 0: a check that compared nothing is not current).
 
 Each rule has must-block and must-allow cases on temp copies of the guide.
@@ -168,6 +170,15 @@ _HIDE_MARKDOWN = (
 )
 
 
+def guide_names():
+    """The guide names build.py builds, read from its GUIDES table."""
+    with open(BUILD, encoding="utf-8") as fh:
+        text = fh.read()
+    block = text[text.index("GUIDES = {"):]
+    block = block[:block.index("}")]
+    return re.findall(r'^\s+"([a-z-]+)":', block, re.MULTILINE)
+
+
 def copy_guides(tmp):
     """docs/guides/crew (sources and built HTML) plus doc-builder, at the
     same relative paths, so the copy's build.py resolves its own tree."""
@@ -237,6 +248,18 @@ def main():
 
     code, out = run_build_check(SRC)
     report(code == 0, "build.py --check exits 0 on the tree", f"exit {code}: {out}")
+    # C-0006: built guides carry no version in their names, so no release
+    # ever renames them. Every guide's three files exist as crew-<name>.*,
+    # and no crew-1.<n>-* file remains beside them.
+    guides_dir = os.path.dirname(SRC)
+    for name in guide_names():
+        for ext in ("html", "docx", "pdf"):
+            report(os.path.isfile(os.path.join(guides_dir, f"crew-{name}.{ext}")),
+                   f"crew-{name}.{ext} is present")
+    versioned = sorted(f for f in os.listdir(guides_dir)
+                       if re.match(r"crew-\d+\.\d+-", f))
+    report(not versioned, "no versioned crew-<major>.<minor>-* guide file remains",
+           ", ".join(versioned))
     with tempfile.TemporaryDirectory() as tmp:
         src = copy_guides(tmp)
         path = os.path.join(src, "guide.md")
@@ -245,7 +268,7 @@ def main():
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text.replace("crew is a workflow", "crew is a workfloW", 1))
         code, out = run_build_check(src)
-        report(code == 1 and "crew-1.0-guide.html" in out,
+        report(code == 1 and "crew-guide.html" in out,
                "build.py --check exits 1 naming a changed guide", f"exit {code}: {out}")
     code, out = run_build_check(SRC, extra=_HIDE_MARKDOWN)
     report(code == 2 and "DID NOT RUN" in out,

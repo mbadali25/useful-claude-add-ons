@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.0 — C-0006: version-free guide file names
+
+- **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file
+  names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a
+  rename.
+- **What changed.** Every `docs/guides/crew/crew-1.0-<name>.{html,docx,pdf}` is renamed
+  `crew-<name>.{html,docx,pdf}` (guide, quickstart, daily-workflow, memory-and-obsidian,
+  working-with-codex, troubleshooting, configuration-reference) and rebuilt by
+  `docs/guides/crew/src/build.py`, whose `html_name` now returns `crew-<name>.html`; the HTML is
+  byte-identical, only the names moved. `guide.md`'s title and its two product-line mentions say
+  crew 1.1; its `crew 1.0.349` arrival and the "1.0 layout" `/crew:migrate` produces are unchanged.
+  `docs/guides/crew/src/README.md` lists the new names, and `scripts/_test/crew-guide.py` pins all
+  three built files of every guide at the version-free name and fails on any `crew-1.<n>-*` file
+  left beside them.
+
 ### crew 1.0.352, gizmoduck 0.5.9 — batch 9: T-0081, T-0049, C-0015, C-0017
 
 - **Summary.** Three changes in one update: a crew vault write refuses a directory on its path that
