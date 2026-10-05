@@ -227,6 +227,7 @@ Held for your go: L-0674 (#404).
 - #407 T-0045: rebuild on a FRESH branch from main (#500), not revert-the-revert.
 - T-0020 #357: **explicit focus only** — focus is on only after `/crew:autopilot focus <id>`; an active-ticket pointer is not focus. Main's plain-text routing wins. Rework for batch 7.
 - Batch 6 ships with 4 (#500, #348, #338, #361); T-0020 held out.
+- T-0020: plain-text "focus on T-1" turning focus on counts as EXPLICIT (owner confirmed 2026-10-05), same as "heading to bed" -> sleep. Keep the routing row.
 - C-0001 (per-component CI skip) is TOP PRIORITY.
 - #499 README: show 2 newest updates + changelog link (shipped).
 
