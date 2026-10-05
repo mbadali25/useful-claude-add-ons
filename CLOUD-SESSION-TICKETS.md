@@ -118,6 +118,7 @@ Next free untracked ID: **C-0020** (owner rule 2026-10-05: cloud-session tickets
 | C-0001 (per-component CI skip, TOP PRIORITY) | #501 | d38e2d73 | (CI/scripts, no bump) |
 | C-0008 (gizmoduck bootstrap works where the GitHub API is blocked) | #506 | 3d4b4b5d | gizmoduck 0.5.7 (crew unchanged 1.0.349) |
 | T-0105, L-0678, L-0673, T-0108, T-0035, T-0051 (batch 8) | #509 (lands #433, #462, #401, #451, #344, #362) | 23fb9d91 | 1.0.350 (gizmoduck 0.5.8, localgpu 0.1.21) |
+| T-0081, T-0049, C-0015, C-0017 (batch 9) | #513 (lands #478, #395, #510) | 5c40ffa7 | 1.0.352 (gizmoduck 0.5.9) |
 
 ## Closed without merging (your instruction)
 
