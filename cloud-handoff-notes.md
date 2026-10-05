@@ -51,7 +51,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 09:02 UTC
+Last updated: 2026-10-05 09:08 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -110,6 +110,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 09:55: main moved: #511 (other session, notify) merged as e84a8bfe and took crew 1.0.351. Merged main into batch-9-build (CHANGELOG both kept, README regen, BUDGETS 24,591), new version commit crew 1.0.352 / gizmoduck 0.5.9, head f2aef05a. Gate clean; 675 targeted tests passed. Reviewer extended to new head. #512 will now be 1.1.0 over 1.0.352.
 - 09:35: Builder's version commit was refused by the classifier (cherry-pick of its own unpushed commit = 'Untrusted Code Integration'); owner chose: coordinator writes it fresh. Done by hand: crew 1.0.351 / gizmoduck 0.5.9 (6 files), check-marketplace + sync/rules/tooling clean, gizmoduck 795 passed, md5 unchanged. Pushed batch-9-build 7381f066, opened #513 (Lands #478, #395, #510), subscribed. Merge-resolution review spawned.
 - 09:10: #510 re-review at 2e734044: 0 BLOCK / 0 FIX (all 3 FIX sabotage-verified, md5 unchanged). NITs -> C-0019 (next rush). Batch 9 builder released: version commit crew 1.0.351 / gizmoduck 0.5.9, push, open PR, watch CI. Next free C-0020.
 - 09:00: #510 fixes pushed, head 2e734044 (dfe316f6 broke CI: runner checkout under /opt made realpath turn 'rm' into /opt/... - fixed). CI green except check (bump). md5 /usr/local/bin+/opt unchanged throughout. Re-review spawned; batch 9 builder told to merge 2e734044 and hold version commit.
