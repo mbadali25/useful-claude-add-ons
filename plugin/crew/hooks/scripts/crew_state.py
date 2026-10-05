@@ -89,15 +89,12 @@ from crew_guards import (
     PROD_LEVELS,  # noqa: F401
     PROD_LEVEL_DEFAULT,  # noqa: F401
     RATCHETED_KEYS,  # noqa: F401
-    PERSONAL_KEYS,  # noqa: F401
-    REPO_ONLY_AUTOPILOT,  # noqa: F401
+    PERSONAL_KEYS, REPO_ONLY_AUTOPILOT, effective_personal, personal_rank,  # noqa: F401  (T-0050)
     ROLE_WRITE_DEFAULT,  # noqa: F401
     ROLE_WRITE_GUARD_NAMES,  # noqa: F401
     ROLE_WRITE_POLICIES,  # noqa: F401
     effective_install_policy,  # noqa: F401
     effective_ratcheted,  # noqa: F401
-    effective_personal,  # noqa: F401
-    personal_rank,  # noqa: F401
     guard_policy_rank,  # noqa: F401
     install_plan,  # noqa: F401
     install_policy_rank,  # noqa: F401
@@ -309,9 +306,8 @@ def read_metrics(root, window=METRICS_WINDOW):
     `cells[1]` is load-bearing: ungrouped, the extra row is a DIVISOR and the
     rate reads too LOW (9 findings, 3 rows, 2 tickets: 3.0, truth 4.5).
 
-    `window` bounds distinct tickets, not rows, and "last" means last
-    REVIEWED: a ticket moves to the end of `by_ticket` on every row for it,
-    so interleaved rounds (T-1, T-2, T-1) window by the most recent row.
+    `window` bounds distinct tickets, not rows; "last" means last REVIEWED: a ticket moves to the
+    end of `by_ticket` on every row for it, so rounds T-1, T-2, T-1 window by the most recent row.
     """
     empty = {"tickets": 0, "findings": 0, "rate": None, "verdict": "no data"}
     path, problem = crew_common.metrics_md_path(root)
