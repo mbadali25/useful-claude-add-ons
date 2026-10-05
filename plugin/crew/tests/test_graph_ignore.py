@@ -705,17 +705,21 @@ def test_write_uses_crlf_only_when_most_lines_do(tmp_path, capsys, before, eol):
     assert (b"\r" in block, block.count(eol)) == (eol == b"\r\n", block.count(b"\n")), block
 
 
+# ESC, BEL and LF cannot be in a Windows file name; U+202E (a format character)
+# and U+2028 (a line separator) can, do not print, and must be escaped the same way.
+_RAW = "\x1b\x07\u202e\u2028"
+
+
 def test_an_unknown_reason_names_a_symlink_escaped(tmp_path, capsys):
     """A name interpolated into the `unknown` reason is escaped: a raw ESC
     or BEL would reach the terminal (here, retitling it)."""
-    name = "evil\x1b]0;pwn\x07"
+    name = "evil\x1b]0;pwn\x07" if sys.platform != "win32" else "evil\u202e]0;pwn\u2028"
     root = _repo(tmp_path, {"app.py": "x = 1\n"})
     _symlink(root, "no-such-target.txt", name)
 
     code, out = _check(root, capsys)
 
-    assert (code, "\x1b" in out, "\x07" in out, ascii(name) in out) == (
-        2, False, False, True), out
+    assert (code, any(c in out for c in _RAW), ascii(name) in out) == (2, False, True), out
 
 
 def test_a_non_utf8_name_under_strict_utf8_stdout_is_unknown_not_a_crash(tmp_path):
@@ -771,11 +775,11 @@ def test_write_with_a_negation_and_unjudgeable_paths_writes_nothing(
 
 
 def test_an_unknown_reason_names_a_nested_repository_escaped(tmp_path, capsys):
-    name = "sub\x1b[2J"
+    name = "sub\x1b[2J" if sys.platform != "win32" else "sub\u202e[2J"
     root = _repo(tmp_path, {"app.py": "x = 1\n"})
     subprocess.run(["git", "init", "-q", name], cwd=str(root), check=True,
                    capture_output=True, stdin=subprocess.DEVNULL, timeout=30)
 
     code, out = _check(root, capsys)
 
-    assert (code, "\x1b" in out, ascii(name + "/") in out) == (2, False, True), out
+    assert (code, any(c in out for c in _RAW), ascii(name + "/") in out) == (2, False, True), out

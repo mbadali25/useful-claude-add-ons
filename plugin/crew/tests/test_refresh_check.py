@@ -249,14 +249,18 @@ def test_graph_refresh_refused_while_denylisted_path_uncovered(tmp_path, capsys)
 def test_graph_refresh_refusal_escapes_hostile_names(tmp_path, capsys):
     """The refusal names uncovered paths escaped: a raw ESC would reach the
     terminal, and a newline could forge a line of the check's output."""
-    names = ("Z\x1b[2J.PEM", "ID_RSA\ngraph-ignore  ok")
+    # ESC and LF cannot be in a Windows file name; U+202E (a format character)
+    # and U+2028 (a line separator) can, and must be escaped the same way.
+    names = (("Z\x1b[2J.PEM", "ID_RSA\ngraph-ignore  ok") if sys.platform != "win32"
+             else ("Z\u202e[2J.PEM", "ID_RSA\u2028graph-ignore  ok"))
     root = _stale_graph_with(tmp_path, {name: "k\n" for name in names})
 
     item = _artifact(_check(root), "graph", "graphify-out")
     crew_refresh_check.main(["--root", str(root), "--ticket", TICKET])
     out = capsys.readouterr().out
 
-    assert (item["refreshable"], "\x1b" in out, "\n" in item["reason"],
+    assert (item["refreshable"], any(c in out for c in "\x1b\u202e\u2028"),
+            any(c in item["reason"] for c in "\n\u2028"),
             all(ascii(name) in item["reason"] for name in names)) == (
         False, False, False, True), (item, out)
 
