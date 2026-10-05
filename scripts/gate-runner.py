@@ -161,6 +161,10 @@ TABLE = (
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
+    _py_suite("crew-docs-suite", "scripts/_test/crew-docs.py"),
+    # T-0055. Locally it sees commit trailers only; CI also reads the PR body.
+    Step("check-crew-docs", "cheap", (PY, "scripts/check-crew-docs.py"),
+         ci=(("marketplace.yml", "python3 scripts/check-crew-docs.py"),)),
     _py_suite("ci-select", "scripts/_test/ci-select.py"),
     _py_suite("instruction-budgets-suite", "scripts/_test/instruction-budgets.py",
               "instruction-budgets.yml"),

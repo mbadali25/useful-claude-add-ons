@@ -92,6 +92,21 @@ lag. The same comparison for `graphify-out/` and `docs/diagrams/` can never come
 are tracked, so committing one advances HEAD past the sha it records.
 
 
+## From Scope discipline
+
+**Crew docs, and why the check counts only narrative docs** (T-0055, measured 2026-10-04 at
+origin/main `155fe6d8`). Of the last 60 first-parent merges on main
+(`git log origin/main --first-parent --merges -n 60`, each diffed against its first parent), 31
+changed crew code: a path under `plugin/crew/` that is not a `.md` file, a test, a `_test` suite, an
+eval or `plugin.json`. All 31 also changed `plugin/PLUGINS.md` and `CHANGELOG.md` (the version
+bump), and a re-anchor alone changes every code map (2a2d6e07: 9 files). So a check that counted
+those files as "docs touched" would have passed 31 of 31. 4 of the 31 changed no narrative doc
+(#380 1d43e9fe, #328 03d6b788, #317 e2bc4fa8, #302 8d84786d), and none of their PR bodies has a
+`Docs:` line. To re-measure: for each merge in that list, `git diff --name-only <merge>^1 <merge>`,
+classify the paths with `CREW`, `NOT_CODE` and `DOCS` in `scripts/check-crew-docs.py`, and count the
+merges with code and no doc. The count moves with every merge to main, so state the window and the
+sha you measured at.
+
 ## From Landmines
 
 - **`pwsh` is not on Git Bash's PATH here.** Name it absolutely. A bare `pwsh` fails as "command

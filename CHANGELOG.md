@@ -9,6 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — repository: CI checks that a crew code change updates a crew doc, or says why not (T-0055)
+
+- **Summary.** A pull request that changes crew code now fails CI unless it also changes a narrative
+  crew document or carries a `Docs: none - <reason>` line, so the rule that crew docs move with crew
+  code holds even when nobody reads the PR.
+- **`scripts/check-crew-docs.py`.** Reads the branch's own changes (`origin/main...HEAD` plus
+  `git status`). CODE is a path under `plugin/crew/` that is not Markdown, a test, a `_test` suite, an
+  eval or `plugin.json`; DOCS are crew's README and CONFIG, its command, agent and SKILL.md files, its
+  `docs/`, and `docs/guides/crew/src/*.md`. `plugin/PLUGINS.md`, `CHANGELOG.md`, `BUDGETS.md`, the code
+  maps, diagrams, graph and built guides count neither way. The declaration is a `Docs:` commit trailer
+  on the branch or a line in the PR body (hyphen, en or em dash); an empty or `<placeholder>` reason is
+  not one. Exit 77 when `origin/main` is not a ref, a git call fails, or a PR body it needed could not
+  be read.
+- **Wiring.** Two `marketplace.yml` steps (the suite, then the check), the matching `gate-runner.py`
+  table entries, and a `.crew/verify.json` rule that runs the suite. `CLAUDE.md` "Scope discipline"
+  gains the crew-docs paragraph; `.crew/standards.md` and `docs/claude-md-evidence.md` follow.
+- **Tests.** `scripts/_test/crew-docs.py`: 9 must-fail, 15 must-pass and 4 could-not-tell cases in
+  throwaway git repos, output checks, and 7 mutation cases that must each flip a named case.
+
 ### Changed — repository: the repo's own pwsh launches run on a private startup-profile cache (T-0506)
 
 - **Summary.** Every pwsh this repository's gate scripts start now gets its own throwaway

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **repository**: CI checks that a crew code change updates a crew doc, or says why not. A pull request that changes crew code now fails CI unless it also changes a narrative crew document or carries a `Docs: none - <reason>` line, so the rule that crew docs move with crew code holds even when nobody reads the PR.
 - **repository**: The repo's own pwsh launches run on a private startup-profile cache. Every pwsh this repository's gate scripts start now gets its own throwaway PowerShell startup-profile cache, so two runs at once can no longer corrupt the shared one and make every later pwsh die.
-- **gizmoduck 0.5.13**: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on. `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`, `--user` installs every tool that needs no package manager into the tool home without root, `--dry-run` shows the plan and changes nothing, and a failed tool now makes it exit 1.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -116,8 +116,8 @@ provisional build-branch bump the rule used to ask for is withdrawn.
 
 Doc set to search for the old description: `plugin/crew docs README.md CHANGELOG.md plugin/PLUGINS.md
 CLAUDE.md .crew/codemap`; a `plugin/crew/` change updates every document CLAUDE.md "Scope discipline"
-lists, or says `Docs: none - <why>` in its PR body. Parsed files: spec templates through
-`crew_ticket.validate` (not `sections()` alone); `.crew/codemap/*.md` through `graphify update .` with
+lists, or says `Docs: none - <why>` in its PR body or a `Docs:` commit trailer. Parsed files: spec
+templates through `crew_ticket.validate` (not `sections()` alone); `.crew/codemap/*.md` through `graphify update .` with
 node and link counts compared; a number this repository states about itself carries a
 `<!-- claim: ... -->` marker so `scripts/check-marketplace.py` checks it.
 

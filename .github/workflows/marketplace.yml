@@ -89,6 +89,16 @@ jobs:
       # green (L-0577).
       - name: Windows shard fan-in suite
         run: python3 scripts/_test/windows-shards.py
+      # T-0055: a PR that changes crew code touches a narrative crew doc or
+      # declares `Docs: none - <reason>` (PR body or commit trailer). The suite
+      # first (must-fail, must-pass, could-not-tell and mutation cases), then the
+      # check on this run's own branch. A push to main has an empty diff and
+      # passes; the PR run is the gate. Exit 77 (origin/main not a ref, the PR
+      # event unreadable) is a red step, never a silent pass.
+      - name: Crew docs-touched-or-declared suite
+        run: python3 scripts/_test/crew-docs.py
+      - name: Crew docs-touched-or-declared check
+        run: python3 scripts/check-crew-docs.py
       # scripts/ci-select.py decides which heavy suites a PR runs in
       # pytest-crew.yml, pylint.yml, shell-suites.yml and mcp-servers.yml
       # (C-0001). A wrong answer there is a suite skipped on a PR that needed
