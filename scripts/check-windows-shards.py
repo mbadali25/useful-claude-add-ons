@@ -8,10 +8,10 @@
 `.github/workflows/pytest-crew.yml` splits the Windows half of
 `crew-shell-matrix` into parallel jobs: the default set in `--shards` groups
 and the `slow` set in `--slow-shards` groups (both by pytest-split), and the
-unsplit `wallclock` set. Branch protection
-requires ONE check, `crew-shell-matrix (windows-latest)`, and that check is the
-job that runs this script. So this script is the only thing standing between a
-lost test and a green required check, and it fails closed: anything it cannot
+unsplit `wallclock` set. ONE check, `crew-shell-matrix (windows-latest)`,
+stands for all of them, and that check is the job that runs this script; ci.yml's
+`CI gate`, the check branch protection requires, fails whenever it does. So this
+script is the only thing standing between a lost test and a green gate, and it fails closed: anything it cannot
 read, find or match is a failure, never a pass.
 
 It passes when either

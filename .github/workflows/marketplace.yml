@@ -1,21 +1,19 @@
 name: Marketplace
 
-# push runs only on main: a feature branch is tested by its pull_request run
-# (the merge result), not twice. pull_request alone would never test main
-# itself after a merge, so both are declared.
+# A pull_request does not start this workflow directly: ci.yml does, through
+# workflow_call, and only when the PR's changed files need it (or always, for
+# marketplace and instruction-budgets) - scripts/ci-route.py decides. push runs
+# only on main, so main itself is tested in full after every merge.
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
-# One run per PR at a time: a new push to the PR cancels the superseded run.
-# Every non-PR run (push to main, schedule, workflow_dispatch) gets its own
-# group via run_id, so nothing on main is ever cancelled or queued behind
-# another run.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# No concurrency block: a PR's runs are ci.yml's, whose own block cancels a
+# superseded run - and this workflow with it. Under workflow_call,
+# github.workflow is the CALLER's name, so the old group here would have put
+# all six called workflows in one group with ci.yml itself.
 
 jobs:
   check:
@@ -78,12 +76,19 @@ jobs:
       # different half of the fix.
       - name: Version-drift commit-shape suite
         run: python3 scripts/_test/version-drift.py
-      # The fan-in behind the required `crew-shell-matrix (windows-latest)`
+      # The fan-in behind the `crew-shell-matrix (windows-latest)`
       # check (pytest-crew.yml's crew-windows-gate). Each case is one way a
       # test could be lost, or a Windows job not run, while that check went
       # green (L-0577).
       - name: Windows shard fan-in suite
         run: python3 scripts/_test/windows-shards.py
+      # The router and gate behind ci.yml, the one workflow a pull_request
+      # starts. Must-skip cases (docs-only PRs), must-run cases (an unknown
+      # path, a workflow change, a renamed crew guide) and every way the
+      # required `CI gate` could pass over a suite that did not run - plus
+      # ci.yml itself held to ci-route.py's tables.
+      - name: CI route and gate suite
+        run: python3 scripts/_test/ci-route.py
       # The UPDATE.md mirrors and the root README's "What's new" (the newest
       # CHANGELOG.md entries) are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check

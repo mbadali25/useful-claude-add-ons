@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Suite for scripts/check-windows-shards.py, the fail-closed fan-in behind the
-required `crew-shell-matrix (windows-latest)` check.
+`crew-shell-matrix (windows-latest)` check (which ci.yml's `CI gate` requires).
 
 Every case builds shard artifacts in a temp directory and runs the checker as
 a subprocess. The failing cases are the point: each is one way a test could be

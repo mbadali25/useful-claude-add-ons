@@ -1,21 +1,19 @@
 name: Shell suites (skills)
 
-# push runs only on main: a feature branch is tested by its pull_request run
-# (the merge result), not twice. pull_request alone would never test main
-# itself after a merge, so both are declared.
+# A pull_request does not start this workflow directly: ci.yml does, through
+# workflow_call, and only when the PR's changed files need it (or always, for
+# marketplace and instruction-budgets) - scripts/ci-route.py decides. push runs
+# only on main, so main itself is tested in full after every merge.
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
-# One run per PR at a time: a new push to the PR cancels the superseded run.
-# Every non-PR run (push to main, schedule, workflow_dispatch) gets its own
-# group via run_id, so nothing on main is ever cancelled or queued behind
-# another run.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# No concurrency block: a PR's runs are ci.yml's, whose own block cancels a
+# superseded run - and this workflow with it. Under workflow_call,
+# github.workflow is the CALLER's name, so the old group here would have put
+# all six called workflows in one group with ci.yml itself.
 
 # New file, not a pattern match: before this there was NO workflow in this repo
 # that ran a bash-driven suite. pytest-crew.yml runs pytest and cannot collect a

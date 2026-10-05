@@ -1,0 +1,96 @@
+name: CI
+
+# The ONE workflow a pull_request starts. Nothing else runs until `changes` has
+# read the PR's file list; then each suite workflow is called only if its files
+# changed, and `CI gate` - the only required check - says whether everything
+# that should have run did run and passed.
+#
+#   changes      scripts/ci-route.py changes: git diff of the PR merge commit
+#                against its base parent -> crew/shell/mcp/lint = true|false
+#   marketplace, budgets      always (cheap; they check docs too)
+#   pytest-crew, shell-suites, mcp-servers, pylint   only when routed
+#   CI gate      scripts/ci-route.py verdict: routed => success, unrouted =>
+#                skipped, anything else fails. `if: always()`, because a
+#                skipped required check counts as passed.
+#
+# The rules, and the strace measurement behind them, are in scripts/ci-route.py.
+# An unknown runs everything: an unmatched path, a failed diff, or any change
+# under .github/. push to main, the nightly schedule and workflow_dispatch are
+# untouched: each suite workflow keeps those triggers and runs in full.
+on:
+  pull_request:
+
+# One run per PR at a time: a new push cancels the superseded run, and every
+# workflow it called with it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      crew: ${{ steps.route.outputs.crew }}
+      shell: ${{ steps.route.outputs.shell }}
+      mcp: ${{ steps.route.outputs.mcp }}
+      lint: ${{ steps.route.outputs.lint }}
+      reason: ${{ steps.route.outputs.reason }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # The PR merge commit plus its first parent (the base tip): all the diff
+        # below reads. Same depth crew-windows-decide uses.
+        fetch-depth: 2
+    - name: Route the changed files to suites
+      id: route
+      run: python3 scripts/ci-route.py changes --base HEAD^1 --head HEAD >> "$GITHUB_OUTPUT"
+
+  marketplace:
+    needs: changes
+    uses: ./.github/workflows/marketplace.yml
+
+  budgets:
+    needs: changes
+    uses: ./.github/workflows/instruction-budgets.yml
+
+  pytest-crew:
+    needs: changes
+    if: needs.changes.outputs.crew == 'true'
+    uses: ./.github/workflows/pytest-crew.yml
+
+  shell-suites:
+    needs: changes
+    if: needs.changes.outputs.shell == 'true'
+    uses: ./.github/workflows/shell-suites.yml
+
+  mcp-servers:
+    needs: changes
+    if: needs.changes.outputs.mcp == 'true'
+    uses: ./.github/workflows/mcp-servers.yml
+
+  pylint:
+    needs: changes
+    if: needs.changes.outputs.lint == 'true'
+    uses: ./.github/workflows/pylint.yml
+
+  gate:
+    # The REQUIRED check. Branch protection names this and nothing else.
+    name: CI gate
+    needs: [changes, marketplace, budgets, pytest-crew, shell-suites, mcp-servers, pylint]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        sparse-checkout: scripts/ci-route.py
+        sparse-checkout-cone-mode: false
+    # Passed through env, never interpolated into the script: needs.* is data.
+    # The JSON keys are this workflow's job ids; ci-route.py maps them.
+    - name: Check every routed suite ran and passed
+      env:
+        CHANGES_RESULT: ${{ needs.changes.result }}
+        ROUTES: ${{ toJSON(needs.changes.outputs) }}
+        RESULTS: ${{ toJSON(needs) }}
+      run: python3 scripts/ci-route.py verdict

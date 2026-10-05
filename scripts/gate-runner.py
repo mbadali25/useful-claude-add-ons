@@ -155,6 +155,7 @@ TABLE = (
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
+    _py_suite("ci-route", "scripts/_test/ci-route.py"),
     _py_suite("instruction-budgets-suite", "scripts/_test/instruction-budgets.py",
               "instruction-budgets.yml"),
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
@@ -229,6 +230,9 @@ TABLE = (
 INCLUDED_WORKFLOWS = ("instruction-budgets.yml", "marketplace.yml", "mcp-servers.yml",
                       "pylint.yml", "pytest-crew.yml", "shell-suites.yml")
 EXCLUDED_WORKFLOWS = (
+    ("ci.yml", "the pull_request dispatcher: calls the included workflows, whose commands are "
+               "this table's; its own route and verdict are scripts/ci-route.py, whose suite "
+               "is the ci-route step"),
     ("plugin-evals.yml", "real, billed model calls behind a repository secret"),
     ("publish-mcp-servers.yml", "tag-only npm publish; its npm test is mcp-servers.yml's"),
     ("runner-autostart.yml", "dispatches a start of the self-hosted runner host; checks nothing"),

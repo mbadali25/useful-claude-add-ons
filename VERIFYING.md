@@ -84,8 +84,12 @@ matches `.github/workflows/`.
 
 ### 6-7. CI and receipts
 
-- Pull requests and pushes to `main` run most workflows under `.github/workflows/` (some only when
-  their paths change). The `crew` suite is `.github/workflows/pytest-crew.yml`.
+- A pull request starts one workflow, `.github/workflows/ci.yml`. Its first job routes the PR's
+  changed files (`scripts/ci-route.py`); the marketplace and instruction-budget workflows always
+  run, and the crew, shell, MCP and pylint workflows run only when their files changed. `CI gate`,
+  the one required check, fails unless every routed workflow ran and passed. An unknown path, a
+  failed diff or any `.github/` change runs everything. Pushes to `main` and the nightly schedule
+  run every workflow in full. The `crew` suite is `.github/workflows/pytest-crew.yml`.
 - A push to an `L-*`, `T-*` or `W-*` branch also runs the whole verify gate on the self-hosted
   runners (`.github/workflows/verify-gate.yml`) and uploads a receipt. That job runs only in this
   repository and only while the repo variable `CREW_RUNNER` is `self-hosted`.
