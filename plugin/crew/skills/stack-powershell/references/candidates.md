@@ -32,8 +32,10 @@ Counted: 1 (crew-0.19.92). 6 public change sets, which do not count.
 After every native command whose outcome matters, read `$LASTEXITCODE` immediately: not
 after a cmdlet, `Invoke-Expression`, or a pipeline that may have closed early. Reset it before
 a sequence that relies on it. Treat `$null` as failure, because it means the program never
-ran, and `exit $LASTEXITCODE` on `$null` exits 0. `try`/`catch` does not observe a native
-non-zero exit, so check it as well.
+ran, and `exit $LASTEXITCODE` on `$null` exits 0. By default `try`/`catch` does not observe a
+native non-zero exit, so check it as well. In PowerShell 7.4 and later,
+`$PSNativeCommandUseErrorActionPreference = $true` with `$ErrorActionPreference = 'Stop'` makes
+it catchable, but a script that must also run on 5.1 cannot rely on that.
 
 - crew-0.19.92 (PR #200), BLOCK: "a launch failure ... left `$LASTEXITCODE` `$null`, and
   `exit $LASTEXITCODE` on a `$null` value silently evaluates to 0".
