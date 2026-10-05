@@ -12,6 +12,7 @@ touches the network or the machine. Every stub logs its argv, which is how
 the tests prove a fallback was (or was not) taken.
 """
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -183,3 +184,22 @@ def test_force_reinstalls_a_present_tool(stubs):
                      extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
     assert "already installed" not in proc.stdout
     assert "releases/download/v9.9.9/" in log
+
+
+def test_trivy_falls_back_to_the_release_asset_when_its_install_script_fails(stubs):
+    # The official install.sh (fetched with curl) fails, as it does where
+    # github.com/<repo>/releases/<tag> is refused; the asset fallback must
+    # then resolve the tag via git and fetch the versioned tarball plus its
+    # checksums file. sudo is a logging no-op, so nothing is downloaded.
+    proc, log = _run(stubs, 'try_install "trivy" install_trivy', git="ok",
+                     tags=["v0.75.0", "v0.76.0-rc1", "v0.9.0"],
+                     extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert "official install script failed" in proc.stderr
+    assert "git ls-remote --tags --refs https://github.com/aquasecurity/trivy.git" in log
+    asset = {"x86_64": "64bit", "amd64": "64bit", "aarch64": "ARM64", "arm64": "ARM64"}
+    arch = asset.get(platform.machine().lower())
+    if arch is None:
+        pytest.skip(f"no trivy asset name known for {platform.machine()}")
+    # The exact upstream asset name: Linux-64bit / Linux-ARM64, not amd64.
+    assert f"releases/download/v0.75.0/trivy_0.75.0_Linux-{arch}.tar.gz" in log, log
+    assert "releases/download/v0.75.0/trivy_0.75.0_checksums.txt" in log, log

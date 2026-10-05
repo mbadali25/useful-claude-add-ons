@@ -167,8 +167,43 @@ install_trivy() {
   already_installed trivy trivy && return 0
   # Official install script (documented at trivy.dev) - resolves the latest
   # release and puts the binary on the given path itself.
-  curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-    | sudo sh -s -- -b /usr/local/bin
+  if curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+      | sudo sh -s -- -b /usr/local/bin; then
+    return 0
+  fi
+  # That script looks the release up on github.com/<repo>/releases/<tag>,
+  # which the same networks that block api.github.com also refuse (even when
+  # given an explicit tag), so fall back to the versioned release asset,
+  # checked against the release's own checksums file.
+  echo ">> trivy: official install script failed - installing the release asset directly" >&2
+  install_trivy_asset
+}
+
+install_trivy_asset() {
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64) arch=64bit ;;
+    aarch64|arm64) arch=ARM64 ;;
+    *) echo "Unsupported arch $(uname -m)"; return 1 ;;
+  esac
+  local ver
+  ver=$(resolve_latest_tag aquasecurity/trivy trivy) || return 1
+  local num="${ver#v}"
+  local tgz="trivy_${num}_Linux-${arch}.tar.gz" sums="trivy_${num}_checksums.txt"
+  local base="https://github.com/aquasecurity/trivy/releases/download/${ver}"
+
+  # Stage under /opt, not /tmp - see install_nuclei for why.
+  local stage=/opt/gizmoduck-trivy-download
+  sudo rm -rf "$stage"
+  sudo mkdir -p "$stage"
+  sudo curl -fsSL -o "$stage/$tgz" "$base/$tgz"
+  sudo curl -fsSL -o "$stage/$sums" "$base/$sums"
+  ( cd "$stage" && grep " ${tgz}\$" "$sums" | sudo sha256sum -c - )
+  sudo tar -xzf "$stage/$tgz" -C "$stage" trivy
+  sudo mv "$stage/trivy" /usr/local/bin/trivy
+  sudo chmod +x /usr/local/bin/trivy
+  sudo rm -rf "$stage"
+  echo ">> installed: $(trivy --version 2>&1 | head -1)"
 }
 
 install_checkov() {
