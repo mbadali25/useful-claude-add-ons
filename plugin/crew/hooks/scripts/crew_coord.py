@@ -847,7 +847,8 @@ def _split_url(url):
     found = _SCHEME_RE.match(text)
     if found:
         scheme, authority, path = found.groups()
-        host, port = re.match(r"^(.*?)(?::([0-9]*))?$", authority.rpartition("@")[2]).groups()
+        # Always matches (re.S, \Z): a malformed authority is judged by owner_name, never raises here.
+        host, port = re.match(r"(.*?)(?::([0-9]*))?\Z", authority.rpartition("@")[2], re.S).groups()
         port = (port.lstrip("0") or "0") if port else ""  # no int(): a 5,000-digit port must not raise
         if host and port and port != _DEFAULT_PORTS.get(scheme.lower()):
             host = f"{host}:{port}"

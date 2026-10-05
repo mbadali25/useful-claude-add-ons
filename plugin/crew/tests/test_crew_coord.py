@@ -2978,3 +2978,13 @@ def test_a_port_that_is_not_a_tcp_port_is_could_not_tell(port):
     key, why = crew_coord.owner_name(f"ssh://git@example.test:{port}/team/repo.git")
 
     assert (key, "not a TCP port" in why) == (None, True)
+
+
+@pytest.mark.parametrize("url", ["https://exa\nmple.test/team/repo", "https://example.test:22\n/team/repo",
+                                 "https://example.test\n:2222/team/repo"])
+def test_a_malformed_authority_is_could_not_tell_never_a_crash(url):
+    # Codex review of the owner-decision fixes, round 3 (rush g0): the port regex did not
+    # match an authority holding a newline, and `.groups()` raised AttributeError.
+    key, why = crew_coord.owner_name(url)
+
+    assert (key, bool(why)) == (None, True)
