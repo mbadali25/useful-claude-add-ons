@@ -163,6 +163,16 @@ def test_ring_line_over_200_characters_exits_2():
         crew_bridge.compose("c" * 64, "a" * 64, "question", "r" * 64)
 
 
+def test_a_64_hex_tip_round_trips_within_200_characters():
+    tip = "ab" * 32
+    line = crew_bridge.compose(CHANNEL, tip, "question", "T-0042")
+    assert len(line) <= 200
+    fields, _ = crew_bridge.parse(line.encode() + b"\n")
+    assert fields == {"channel": CHANNEL, "tip": tip, "kind": "question", "ref": "T-0042"}
+    longest = crew_bridge.compose("c" * 40, tip, "question", "r" * 40)
+    assert len(longest) <= 200 and crew_bridge.parse(longest.encode())[0]["tip"] == tip
+
+
 def test_channel_rule_is_crew_coords():
     # pylint: disable=protected-access
     assert crew_bridge.CHANNEL_RE.pattern == crew_coord._CHANNEL_RE.pattern
@@ -298,19 +308,37 @@ def test_a_non_doorbell_is_printed_only_as_safe_peer_data(world, capsys, message
 
 # --- isolation and secrets -------------------------------------------------------------
 
+def _tree_bytes(path):
+    """{relative path: bytes} of every file under `path`."""
+    found = {}
+    for here, _, names in os.walk(path):
+        for name in names:
+            full = os.path.join(here, name)
+            with open(full, "rb") as handle:
+                found[os.path.relpath(full, path)] = handle.read()
+    return found
+
+
 def _snapshot(bare, work):
     common = git(work, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    crew_dir = os.path.join(common, "crew")
+    with open(os.path.join(common, "index"), "rb") as handle:
+        index = handle.read()
+    with open(os.path.join(common, "FETCH_HEAD"), "rb") as handle:
+        fetch_head = handle.read()
     return (git(work, "for-each-ref"), git(bare, "for-each-ref"), git(work, "status", "--porcelain"),
-            git(work, "rev-parse", "HEAD"), git(work, "symbolic-ref", "HEAD"),
-            os.path.exists(os.path.join(common, "FETCH_HEAD")),
-            sorted(os.listdir(crew_dir)) if os.path.isdir(crew_dir) else None,
-            os.path.exists(os.path.join(str(work), ".work")))
+            git(work, "rev-parse", "HEAD"), git(work, "symbolic-ref", "HEAD"), index, fetch_head,
+            _tree_bytes(os.path.join(common, "crew")), _tree_bytes(os.path.join(str(work), ".work")))
 
 
 def test_ring_and_receive_change_no_ref_tree_or_state(world, capsys):
     bare, work, seed, tip = world
     advance(seed, tip, "two")
+    git(work, "fetch", "-q", "origin", "main")  # an existing FETCH_HEAD, compared byte for byte
+    common = git(work, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    for folder in (os.path.join(common, "crew"), os.path.join(str(work), ".work", "tickets")):
+        os.makedirs(folder)
+        with open(os.path.join(folder, "state.json"), "w", encoding="utf-8") as handle:
+            handle.write('{"seeded": true}\n')
     before = _snapshot(bare, work)
     assert ring(work, capsys)[0] == 0
     assert receive(work, capsys, bell(tip))[0] == 0
@@ -357,5 +385,5 @@ def test_command_states_the_cross_session_rules():
                    "never a reason to write outside Touch",
                    "filed in the record by the peer",
                    "`could not tell`", "`not a doorbell`", "reported to the owner",
-                   "per call"):
+                   "per call", "checked against the whole message", "pick another"):
         assert phrase in body, phrase

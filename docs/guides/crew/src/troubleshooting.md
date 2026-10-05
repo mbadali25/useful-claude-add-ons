@@ -645,7 +645,8 @@ ticket's Touch list.
   <the message, exactly as received>
   END-7f3a
   ```
-  Use a terminator of your own that the message does not contain. Exit 0 is a doorbell whose tip is
+  Use a terminator of your own, and check first that no line of the message equals it: such a line
+  would end the heredoc early and run what follows as shell. Exit 0 is a doorbell whose tip is
   in the fetched record; exit 3 (`could not tell`) means the fetch failed or the announced tip is
   not in the record; exit 1 (`not a doorbell`) is anything else, printed once, made safe and
   labelled `[peer-written]`.

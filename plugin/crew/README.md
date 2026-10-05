@@ -2659,8 +2659,9 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   `not a doorbell` are reported to you, the owner.
 - **The stdin hand-off is a prose control.** The session writes the message
   to `receive`'s stdin with a quoted heredoc whose terminator it generates
-  fresh per call, so a message cannot end the heredoc early and run the rest
-  as shell. Nothing checks that the session did so; a test checks only that
+  fresh per call and checks against the whole message first, picking another
+  if any line of the message equals it — a line equal to the terminator would
+  end the heredoc early and run the rest as shell. Nothing checks that the session did so; a test checks only that
   `commands/autopilot.md` says it.
 - Neither command writes: no ref, working tree, index, `FETCH_HEAD`, `.work/`
   or `<git-common-dir>/crew/` moves. Neither calls `SendMessage` or
