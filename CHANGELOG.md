@@ -9,7 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew: a vault write matches every directory from the vault down, not just the vault (T-0081)
+### crew, gizmoduck — batch 9: T-0081, T-0049, C-0015, C-0017
+
+- **Summary.** Three changes in one update: a crew vault write refuses a directory on its path that
+  was swapped for another real directory after the checks, one runner drives a crew ticket at a time
+  through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot
+  check: links in the templates dir, a nikto that exits 0 without running, and testssl without
+  `hexdump`.
+
+#### Fixed — crew: a vault write matches every directory from the vault down, not just the vault (T-0081)
 
 - **Summary.** A board or note directory inside the Obsidian vault that is swapped for another real
   directory between crew's checks and its write is now refused instead of written into.
@@ -32,8 +40,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   crew_tracker sabotage mutations go red (`sabotage.py`, SABOTAGE SUITE: PASS). Mutations for the
   new branches follow in L-0672.
 
-### Added — `crew`: in-flight markers, one runner drives a ticket at a time (T-0049)
+#### Added — `crew`: in-flight markers, one runner drives a ticket at a time (T-0049)
 
+- **Summary.** Before its loop `/crew:autopilot` claims the ticket with a marker shared by every
+  worktree of the clone, so a second runner on the same ticket is refused instead of racing it, and
+  `/crew:status` prints one `in-flight:` line per marker.
 - **What changed.** A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one
   marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by
   every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a
@@ -104,6 +115,34 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Sabotage.** 24 mutations, each RED on its named test by hand (the table is
   in the PR). `sabotage_inflight.py` and its `sabotage.py` registration land in
   a separate harness-only PR (T-0087 rule).
+
+#### Fixed — `gizmoduck`: bootstrap refuses links in the templates dir, install checks read a version, doctor sees testssl's missing `hexdump` (C-0015, C-0017)
+
+- **Summary.** gizmoduck's bootstrap no longer deletes through a symlink or junction in the Nuclei
+  templates dir, no longer counts a nikto that cannot run as installed, and ignores its directory
+  overrides outside its own tests; `doctor` reports testssl as unavailable when `hexdump` is absent.
+- **What changed.** `bootstrap.ps1`'s `Install-NucleiTemplatesClone` refuses a symlink or junction
+  in the templates dir, or the dir itself being one, instead of deleting them. The new
+  `Get-EmptyDirsDeepestFirst` walks one level at a time with its own stack and never uses
+  `Get-ChildItem -Recurse`, which follows junctions under PowerShell 5.1, so only real, empty
+  directories reach the non-recursive delete. `bootstrap.sh` already refused, and is now tested too.
+- **nikto.** The installed check reads a version string instead of trusting the exit code: on nikto
+  2.6.1 `nikto --version` prints "Unknown option: version" and exits 0, while `-Version` prints
+  `Nikto 2.6.1 (LW 2.5)`. It is `probe_nikto` in `bootstrap.sh` and `Test-NiktoRuns` in
+  `bootstrap.ps1`, which also runs it after cloning, so a nikto that cannot run is a failed install.
+- **Behaviour change.** `GIZMODUCK_BIN_DIR`, `GIZMODUCK_OPT_DIR` and `GIZMODUCK_APT_LISTS_DIR` take
+  effect only with `GIZMODUCK_BOOTSTRAP_TEST=1`; otherwise they are ignored with a notice and the
+  install locations stay `/usr/local/bin` and `/opt`. The test suite's `sudo` stub also refuses
+  real install paths.
+- **doctor.** testssl is reported as "installed, but hexdump not found" and counted as unavailable,
+  through a new `missing_prerequisite()` hook on the testssl adapter.
+- **C-0017.** No code change: `crew_keys.py`'s `since` is the first crew version whose template
+  declared the key, and `notify.urlEnv`, `notify.tokenEnv` and `notify.chatId` were declared before
+  0.11.0 (`c57d5bb6` / `7e503fe3`), so `FIRST` is correct and the configuration reference is not
+  regenerated.
+- **Not in this change.** GPG or checksum verification for dependency-check and ZAP (C-0015.5).
+- **Tests.** `plugin/gizmoduck/scripts/_test/test_bootstrap_version.py` and `test_doctor.py`: each
+  guard has must-block and must-allow cases, each sabotaged to confirm it goes red.
 
 ### crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21 — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
 
