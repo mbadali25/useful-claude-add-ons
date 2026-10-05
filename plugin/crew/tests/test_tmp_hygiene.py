@@ -72,9 +72,10 @@ HANDOFF = ("# Handoff\nwritten: now\nticket: T-1\nbranch: x\nhead: y\n\n"
 def _auto_clear(tmp_path, delay):
     """Run auto-clear.sh for real against a stub tmux, with its own TMPDIR.
 
-    The same minimal setup as test_auto_cycle.py's `_sendable` (a tmux pane
-    whose pid is this test process, an ancestor of the script), plus a log of
-    every tmux call. Returns (tmpdir, tmux log, completed process)."""
+    The same minimal setup as test_auto_cycle.py's `_sendable` (the session
+    bound to its own process by `crew_fixtures.bind_session`, T-0016, and a
+    tmux pane whose pid is that session's terminal), plus a log of every tmux
+    call. Returns (tmpdir, tmux log, completed process)."""
     t = tmp_path / "t"
     t.mkdir()
     auto = {"method": "tmux", "delaySeconds": delay}
@@ -94,14 +95,19 @@ def _auto_clear(tmp_path, delay):
     os.utime(str(handoff), (stamp, stamp))
     log = tmp_path / "tmux.log"
     bindir = tmp_path / "fakebin"
-    crew_fixtures.write_shim(bindir, "tmux", f'#!/bin/sh\necho "$*" >> "{log}"\necho {os.getpid()}\n')
+    crew_fixtures.write_shim(bindir, "tmux", f'#!/bin/sh\necho "$*" >> "{log}"\n'
+                                             f'echo {crew_fixtures.TERMINAL_PID}\n')
     home = str(tmp_path / "home")
-    env = dict(os.environ, HOME=home, USERPROFILE=home, CLAUDE_PROJECT_DIR=str(root),
+    bound = crew_fixtures.bind_session(tmp_path / "home", SESSION)
+    env = dict(os.environ, HOME=home, USERPROFILE=home, CLAUDE_PROJECT_DIR=str(root), **bound,
                CREW_VAULT_OPS=str(tmp_path / "absent-vault-ops.py"),
                CREW_OBSIDIAN_CONFIG=str(tmp_path / "absent-obsidian.json"),
                **crew_fixtures.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7",
                                         TMPDIR=str(t)))
-    env.pop("CREW_AUTOCLEAR_INHIBIT", None)
+    # T-0016 honours the process stub only while the inhibit is set, and
+    # `spawn` is the inhibit that still builds and spawns the real detached
+    # sender, which sleeps and then stops before any keystroke.
+    env["CREW_AUTOCLEAR_INHIBIT"] = "spawn"
     done = subprocess.run([BASH, os.path.join(HOOKS, "auto-clear.sh"), "--session", SESSION],
                           cwd=str(root), env=env, capture_output=True, text=True, input="",
                           timeout=60, check=False)
@@ -136,12 +142,16 @@ def _sender_pids(t):
 
 @POSIX
 def test_auto_clear_sender_leaves_nothing_after_sending(tmp_path):
+    """The sender runs to its end (under `spawn` it stops where it would type)
+    and leaves nothing in TMPDIR."""
     t, log, done = _auto_clear(tmp_path, 1)
     assert done.returncode == 0, done.stderr
     assert _sent(tmp_path), done.stdout + done.stderr
+    assert _wait(lambda: _sender_pids(t), 5), "the detached sender never started"
 
-    assert _wait(lambda: "/clear" in _read(log), 10), _read(log)
+    assert _wait(lambda: not _sender_pids(t), 10), "the sender never finished"
     assert _wait(lambda: not os.listdir(str(t)), 5), os.listdir(str(t))
+    assert "send-keys" not in _read(log)
 
 
 @POSIX
