@@ -381,12 +381,15 @@ def mint_goal(root, slug):
                 return dict(out, stop=True, reason=f"minting ticket {n + 1} of "
                             f"{len(tickets)} stopped: {exc}")
             out["minted"].append((n + 1, ticket, entry["title"]))
-    behind = [ticket for _n, ticket, _t in out["minted"]
-              if ap._index_status(top, ticket) == "direction"]  # pylint: disable=protected-access
+    # A row left at `direction` (the move to ready did not land) or no row at
+    # all (an adopted folder whose create never landed) is not a minted ticket.
+    behind = [f"{ticket} ({status or 'no INDEX row'})" for ticket, status in (
+        (ticket, ap._index_status(top, ticket)) for _n, ticket, _t in out["minted"])  # pylint: disable=protected-access
+        if status in (None, "direction")]
     if behind:
-        return dict(out, stop=True, reason=f"{', '.join(behind)} minted but left at `direction` "
-                    "(the move to ready did not land): the human moves each with "
-                    "crew_tracker.py move --root . --ticket <id> --to ready")
+        return dict(out, stop=True, reason=f"{', '.join(behind)} minted but not `ready`: the "
+                    "human finishes each (crew_tracker.py move --root . --ticket <id> --to "
+                    "ready, or adds its INDEX row)")
     return out
 
 
@@ -446,8 +449,9 @@ def goal_run(root, slug, session=None, transcript=None):
             "disagreement": "", "fallthrough": [], "next": None, "activate": False,
             "goal": slug, "done": False, "run": None}
     conf = ap.settings(top)
-    if not conf["armed"]:
-        return dict(base, reason="autopilot.mode is not plan or backlog, so no goal runs")
+    if not conf["armed"]:  # T-0056 review r2: a goal left running is marked stopped
+        return _marked(top, slug, dict(base, reason="autopilot.mode is not plan or backlog, so "
+                                                    "no goal runs"))
     picked = ap.resume_target(top, goal=slug)
     if picked["stop"]:
         return _marked(top, slug, dict(base, **{k: picked[k] for k in ("source", "fallthrough")},
@@ -468,7 +472,10 @@ def _marked(top, slug, result):
             return dict(result, ticket=None, stop=True, activate=False, run=None,
                         reason=f"could not record goal {slug} as running ({exc}), so a "
                                "handoff could not name it")
-        result = dict(result, warnings=[f"the goal's run state was not written ({exc})"])
+        result = dict(result, reason=f"{result['reason']}; and its {state} state could not be "
+                                     f"written ({exc}), so the goal file may still say running - "
+                                     f"crew_autopilot.py goal-mark --root . --goal {slug} "
+                                     f"--state {state} records it")
     return result
 
 

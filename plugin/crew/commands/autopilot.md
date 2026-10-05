@@ -60,7 +60,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
 ```
 
 It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop.
-- `stop=0` - announce `phase <p>: <c>` (a goal run first runs `crew_autopilot.py goal-mark --root . --goal <slug> --state running --ticket <ticket>`) and follow that command's `commands/*.md` here, or run a
+- `stop=0` - announce `phase <p>: <c>` (a goal run first re-runs section 2's `goal-run`, which marks the goal `running` and holds the token cap per phase; its `stop=1` stops, and a `ticket=` other than `<ticket>` stops) and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
   named and commit it, or run `commit-refresh`'s `git add -- ... && git commit ... -- ...` exactly as printed; then the tracker step (below). `auto-replan`: run its `auto-reject` line, report every line verbatim, send them as `review.md` step 5's notification. A `replan` that does not stop: `/crew:plan` writes a successor plan whose steps quote every BLOCK and FIX line of the rejected round verbatim, each with a neighbouring-case check, and differs from every plan approved before. `phase=ship` (T-0011) or `next-slice` (T-0059, a sliced plan's next PR slice): print the lines of
   `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py <p> --root . --ticket <ticket>`; `stop=1`/`ok=0` stops. Then `LAST=<c>`, `N+=1`, again.
@@ -69,7 +69,7 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback 
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --check` until `ok`, and back through `next`.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below. With `phase=split-approval` - not yet a stop: run
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --apply` (it applies only under the approval policy, and in Jira mode it always refuses); report each `child=`, or on `refused:` stop - the human types `/crew:split <ticket>`. Never run `/crew:split` yourself.
-- any other `stop=1` - print the phase, the reason and the command the human types (may be empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
+- any other `stop=1` - print the phase, the reason and the command the human types (may be empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`; in a goal run it is no stop: release the claim and go back to section 2's `goal-run` for the next ticket.
 
 The policy (T-0010; `next`'s reason names it; `human` always stops) is one writer here (the other policy writer is `auto-replan`'s `auto-reject`, T-0074, which writes only the ledger's REVIEWED -> NEEDS_REPLAN):
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>` (a goal run: `goal-approve --root . --goal <slug> --ticket <ticket>`, the same approve; a refusal prints exactly `/crew:approve <ticket>`, for the human to type, and the `resume:` line)

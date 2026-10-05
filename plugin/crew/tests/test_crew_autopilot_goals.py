@@ -1476,7 +1476,7 @@ def test_a_ticket_minted_at_direction_stops_the_mint(tmp_path, monkeypatch, caps
     monkeypatch.setattr(crew_ticket, "mint", real)
     again = _main(root, "goal-approve", "--goal", slug)
 
-    assert (code, "T-0002 minted but left at `direction`" in out, again,
+    assert (code, "T-0002 (direction) minted but not `ready`" in out, again,
             [t["id"] for t in crew_autopilot_goal.read_goal(str(root), slug)["tickets"]]) == (
         2, True, 2, ["T-0001", "T-0002", "T-0003"])
 
@@ -1542,3 +1542,19 @@ def test_a_done_check_that_raises_is_could_not_tell(tmp_path, monkeypatch):
     got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
 
     assert (got["ticket"], got["stop"], "could not tell" in got["reason"]) == (None, True, True)
+
+
+# --- L-0541 review round 3 -------------------------------------------------------
+
+def test_an_adopted_folder_without_an_index_row_stops_the_mint(tmp_path, capsys):
+    root, slug, _ids = _minted(tmp_path)
+    goal = crew_autopilot_goal.read_goal(str(root), slug)
+    goal["tickets"][2]["id"] = None
+    _write(root / ".work" / "autopilot" / f"{slug}.json", json.dumps(goal))
+    index = root / ".work" / "INDEX.md"
+    _write(index, "".join(l for l in _read(index).splitlines(True) if "T-0003" not in l))
+
+    code = _main(root, "goal-approve", "--goal", slug)
+
+    assert (code, "T-0003 (no INDEX row) minted but not `ready`" in capsys.readouterr().out) == (
+        2, True)

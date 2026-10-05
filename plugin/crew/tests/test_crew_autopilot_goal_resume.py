@@ -44,6 +44,15 @@ def _read(path):
         return handle.read()
 
 
+def _repo(tmp_path, mode="plan"):
+    """A repo with autopilot armed: handoff_resume names a running goal only
+    while autopilot can continue it (T-0056 review round 2)."""
+    root = make_repo(tmp_path, mode="off")
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                       "autopilot": {"mode": mode}}))
+    return root
+
+
 def _goal(root, goal="ship the export"):
     return crew_autopilot_goal.write_goal(str(root), goal, dict(PROPOSAL),
                                           [dict(t) for t in TICKETS])["slug"]
@@ -67,7 +76,7 @@ def _ticket(root, ticket):
 
 @pytest.mark.parametrize("state", handoff.RUN_STATES)
 def test_goal_mark_writes_the_run_block_and_keeps_every_other_key(tmp_path, state):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     slug = _goal(root)
     before = json.loads(_read(_path(root, slug)))
 
@@ -80,7 +89,7 @@ def test_goal_mark_writes_the_run_block_and_keeps_every_other_key(tmp_path, stat
 
 
 def test_goal_mark_keeps_the_rest_of_the_file_byte_for_byte(tmp_path):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     slug = _goal(root)
     handoff.goal_mark(str(root), slug, "running", "T-0001")
     first = _read(_path(root, slug))
@@ -96,7 +105,7 @@ def test_goal_mark_keeps_the_rest_of_the_file_byte_for_byte(tmp_path):
     ("ok", "paused", None), ("Bad", "running", None), ("../x", "running", None),
     ("ok", "running", "missing"), ("ok", "running", "{not json"), ("ok", "running", "[1]")])
 def test_goal_mark_refuses_and_writes_nothing(tmp_path, slug, state, content):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     real = _goal(root)
     path = _path(root, real)
     if content == "missing":
@@ -113,7 +122,7 @@ def test_goal_mark_refuses_and_writes_nothing(tmp_path, slug, state, content):
 
 
 def test_goal_mark_failed_replace_keeps_the_old_file(tmp_path, monkeypatch):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     slug = _goal(root)
     before = _read(_path(root, slug))
 
@@ -130,14 +139,14 @@ def test_goal_mark_failed_replace_keeps_the_old_file(tmp_path, monkeypatch):
 # --- running_goals ----------------------------------------------------------------
 
 def test_running_goals_with_no_folder_is_empty(tmp_path):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
 
     assert handoff.running_goals(str(root)) == {"running": [], "stopped": [], "done": [],
                                                 "unknown": []}
 
 
 def test_running_goals_sorts_by_state(tmp_path):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     slugs = [_goal(root, goal=f"goal {n}") for n in range(4)]
     for slug, state in zip(slugs, ("running", "stopped", "done")):
         handoff.goal_mark(str(root), slug, state)
@@ -154,7 +163,7 @@ def test_running_goals_sorts_by_state(tmp_path):
     ('{"run": {"state": "paused"}}', "paused"), ('{"run": {}}', "None"),
     ('{"run": "running"}', "None")])
 def test_running_goals_unreadable_is_unknown_never_dropped(tmp_path, content, why):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     _write(root / ".work" / "autopilot" / "bad.json", content)
 
     got = handoff.running_goals(str(root))
@@ -181,7 +190,7 @@ def test_running_goals_unreadable_is_unknown_never_dropped(tmp_path, content, wh
 ], ids=["one-running", "one-running-no-ticket", "ticket", "nothing", "ticket-no-folder",
         "two-running", "running-and-unknown", "unknown", "stopped", "done", "not-started"])
 def test_handoff_resume_cases(tmp_path, states, ticket, line, kind):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     _ticket(root, "T-0001")
     for n, state in enumerate(states):
         slug = _goal(root, goal=f"goal {n}")
@@ -199,7 +208,7 @@ def test_handoff_resume_cases(tmp_path, states, ticket, line, kind):
 @pytest.mark.parametrize("state,ticket", [("running", "T-0001"), (None, "T-0001"),
                                           (None, None), ("two", None)])
 def test_handoff_resume_line_parses_with_crew_resume(tmp_path, state, ticket):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     _ticket(root, "T-0001")
     if state == "running":
         handoff.goal_mark(str(root), _goal(root), "running")
@@ -215,7 +224,7 @@ def test_handoff_resume_line_parses_with_crew_resume(tmp_path, state, ticket):
 
 
 def test_handoff_resume_cli(tmp_path):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     slug = _goal(root)
     handoff.goal_mark(str(root), slug, "running", "T-0001")
 
@@ -226,7 +235,7 @@ def test_handoff_resume_cli(tmp_path):
 
 
 def test_handoff_resume_cli_crash_says_none_and_unknown(tmp_path):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
 
     out = _cli(root, "handoff-resume", "--ticket", "not a ticket")
 
@@ -237,7 +246,7 @@ def test_handoff_resume_cli_crash_says_none_and_unknown(tmp_path):
 @pytest.mark.parametrize("state,code,first", [("running", 0, "marked=1"),
                                               ("paused", 2, "marked=0 reason=state")])
 def test_goal_mark_cli(tmp_path, state, code, first):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     slug = _goal(root)
 
     out = _cli(root, "goal-mark", "--goal", slug, "--state", state, "--ticket", "T-0001")
@@ -389,7 +398,7 @@ def test_goal_resumes_after_switching_to_the_next_ticket_branch(tmp_path, monkey
 # --- T-0056 review round 1 -----------------------------------------------------------
 
 def test_an_unlistable_goal_folder_is_unknown(tmp_path, monkeypatch):
-    root = make_repo(tmp_path, mode="off")
+    root = _repo(tmp_path)
     _ticket(root, "T-0001")
     handoff.goal_mark(str(root), _goal(root), "running")
     real = os.listdir
@@ -554,3 +563,62 @@ def test_goal_resumes_after_a_crash(tmp_path, monkeypatch):
 
     assert (got["ticket"], got["goal"], got["next"]["phase"], got["activate"]) == (
         "T-0002", slug, crew_autopilot.next_phase(str(root), "T-0002")["phase"], True)
+
+
+# --- review round 2 (T-0056), round 1 (L-0658) -------------------------------------------
+
+def test_a_running_goal_while_autopilot_is_off_is_unknown(tmp_path):
+    root = _repo(tmp_path, mode="off")
+    _ticket(root, "T-0001")
+    handoff.goal_mark(str(root), _goal(root), "running")
+
+    got = handoff.handoff_resume(str(root), "T-0001")
+
+    assert (got["line"], got["kind"], "not armed" in got["reason"]) == (
+        "resume: none", "unknown", True)
+
+
+def test_goal_run_unarmed_marks_the_goal_stopped(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    config = json.loads(_read(root / ".crew" / "config.json"))
+    config["autopilot"]["mode"] = "off"
+    _write(root / ".crew" / "config.json", json.dumps(config))
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+
+    got = crew_autopilot_backlog.goal_run(str(root), slug, "s1", str(tmp_path / "t.jsonl"))
+
+    assert (got["stop"], json.loads(_read(_path(root, slug)))["run"]["state"]) == (
+        True, "stopped")
+
+
+def test_a_failed_stop_mark_is_named_in_the_stop(tmp_path, monkeypatch):
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    for ticket in ("T-0002", "T-0003"):
+        index = root / ".work" / "INDEX.md"
+        _write(index, _read(index).replace(f"{ticket} | ready |", f"{ticket} | done |"))
+
+    def boom(*_args, **_kwargs):
+        raise OSError("read-only file system")
+    monkeypatch.setattr(handoff, "goal_mark", boom)
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+
+    got = crew_autopilot_backlog.goal_run(str(root), slug, "s1", str(tmp_path / "t.jsonl"))
+
+    assert (got["stop"], got["done"], "may still say running" in got["reason"],
+            "goal-mark" in got["reason"]) == (True, True, True, True)
+
+
+def test_a_goal_file_that_cannot_be_looked_up_is_unknown(tmp_path, monkeypatch):
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path)
+    real = os.lstat
+
+    def denied(path, *args, **kwargs):
+        if str(path).endswith("ship-it.json"):
+            raise PermissionError(13, "denied")
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(os, "lstat", denied)
+
+    got = crew_goal_state.handoff_refusal(str(root), "ship-it")
+
+    assert (got[0], "could not read" in got[1]) == ("unknown", True)

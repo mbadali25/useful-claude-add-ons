@@ -146,6 +146,16 @@ def running_goals(root):
     return out
 
 
+def _armed(top):
+    """Whether autopilot is armed here (T-0056 review r2): a goal file left
+    `running` by a run that autopilot can no longer continue is not taken as
+    running. A settings read that raises is not armed."""
+    try:
+        return ap.settings(top)["armed"] is True
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return False
+
+
 def _render(command, kind, arg):
     resume = importlib.import_module("crew_resume")
     return "resume: " + resume.render({"ok": True, "command": command, "kind": kind, "arg": arg})
@@ -163,6 +173,11 @@ def handoff_resume(root, ticket=None):
         return {"line": NONE, "kind": "unknown",
                 "reason": "could not tell which goal is running: "
                           + ", ".join(goals["running"])}
+    if goals["running"] and not _armed(top):
+        return {"line": NONE, "kind": "unknown",
+                "reason": f"goal {goals['running'][0]} says running, but autopilot is not armed "
+                          "(or its settings could not be read), so whether it still runs "
+                          "could not be told"}
     if goals["running"]:
         slug = goals["running"][0]
         return {"line": _render(ap.AUTOPILOT, "goal", slug), "kind": "goal",

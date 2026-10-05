@@ -865,6 +865,9 @@ def _goal_file(root, slug, run):
 
 def _skeleton_after(flavor, root, goals, no_python=False):
     (root / ".work" / "HANDOFF.md").unlink()
+    config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    config["autopilot"] = {"mode": "plan"}  # a running goal counts only while armed
+    (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
     for slug, run in goals:
         _goal_file(root, slug, run)
     payload = _precompact(root, "s-skel", "auto")

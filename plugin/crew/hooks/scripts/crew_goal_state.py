@@ -35,8 +35,13 @@ def goal_file(root, slug):
 def run_state(root, slug):
     """`{"state", "ticket", "reason"}` -- the module docstring's states."""
     path = goal_file(root, slug)
-    if not os.path.lexists(path):
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
         return {"state": "missing", "ticket": None, "reason": ""}
+    except OSError as exc:  # there or not, it cannot be told: never "missing"
+        return {"state": "unknown", "ticket": None,
+                "reason": f"could not look it up ({type(exc).__name__})"}
     try:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
