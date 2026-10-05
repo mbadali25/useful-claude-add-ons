@@ -24,14 +24,17 @@ MEASURE, by git and never by string comparison:
   device, so only the ignore files in the WORKING TREE count. A machine-global
   excludes file, the repo's local config and `.git/info/exclude` do not travel
   with a clone, so they never make a pattern "covered". Status 0/1 only; any
-  other status is `unknown`, never "covered" and never "missing".
+  other status is `unknown`, never "covered" and never "missing". A
+  slash-free row (`.env`, `*.pem`) is probed at the root and one directory
+  down, so a root-anchored `/.env` does not make it "covered".
 - tracked: `git ls-files --cached --ignored --exclude-from=<row>` names the
   tracked files a row would match. Ignoring them does nothing, so they are
   named. A tracked file a SECRETS row matches is `needs-owner` (exit 3):
   rotation and history are the owner's decision, never crew's.
 - conflict: a directory candidate that would exclude a path some human `!`
   line re-includes (git cannot re-include inside an excluded directory) is
-  reported and not added.
+  reported and not added; a basename `!keep.txt` counts where a file git
+  lists carries that name. `summary` says `current except N conflict(s)`.
 - overridden: a pattern already in the managed block that a rule below it
   re-includes is the human's decision; it is reported and never re-added.
 
@@ -288,6 +291,9 @@ def _dir_of(path):
     return path.rsplit("/", 1)[0] + "/" if "/" in path else ""
 
 
+NESTED_PROBE_DIR = "crew-probe/"
+
+
 def _probe_dirs(paths):
     dirs = sorted({_dir_of(p) for p in paths}, key=lambda d: (d.count("/"), d))
     return dirs[:MAX_PROBE_DIRS]
@@ -312,8 +318,17 @@ def candidates(langs):
                 out.append(dict(row, lang=lang, pattern=row["patterns"][0],
                                 probes=[d + row["probe"] for d in _probe_dirs(evidence)]))
     for group, rows in (("os/editor", NOISE), ("secrets", SECRETS)):
-        out += [dict(row, lang=group, pattern=row["patterns"][0], probes=[row["probe"]]) for row in rows]
+        out += [dict(row, lang=group, pattern=row["patterns"][0], probes=_any_depth(row)) for row in rows]
     return [c for c in out if not any(_forbidden(p) for p in c["patterns"])]
+
+
+def _any_depth(row):
+    """A slash-free pattern matches at every depth, so it is probed at the root
+    AND one directory down: `/.env` ignores `.env` but not `config/.env`, and
+    must not make the row read as covered."""
+    if "/" in row["patterns"][0].rstrip("/"):
+        return [row["probe"]]
+    return [row["probe"], NESTED_PROBE_DIR + row["probe"]]
 
 
 # --- the root .gitignore ----------------------------------------------------------------
@@ -416,7 +431,13 @@ def _negations(top, files, root_text):
                 continue
             pat = body[1:].rstrip("/")
             if "/" not in pat:
-                continue  # a basename negation is not "under" any one directory
+                # A basename negation re-includes that name at any depth under
+                # its file, so it is "under" a directory exactly where a file
+                # git lists carries the name: `!keep.txt` with
+                # `src/App/bin/keep.txt` present conflicts with `/src/App/bin/`.
+                out += [(f, body, f"{rel}:{n}") for f in files
+                        if f.startswith(base) and _glob_seg(pat, f.rsplit("/", 1)[-1])]
+                continue
             out.append((base + pat.lstrip("/"), body, f"{rel}:{n}"))
     return out
 
@@ -572,6 +593,12 @@ def summarize(result):
                 langs.append(cand["lang"])
         tail = " - report only (crew:gitignore:off)" if result["off"] else ""
         return f"{len(missing)} missing ({', '.join(langs)}){tail}"
+    conflicts = [c for c in result["candidates"] if c["status"] == "conflict"]
+    if conflicts:
+        # Not added on purpose (a human `!` line decides), so not "missing" and
+        # not exit 1, but never a bare "current" while a wanted row is left out.
+        return (f"current except {len(conflicts)} conflict(s) - {conflicts[0]['pattern']} would override "
+                f"{conflicts[0]['negation']}; your negation decides")
     return "current"
 
 

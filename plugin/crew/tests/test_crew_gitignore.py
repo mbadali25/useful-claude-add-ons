@@ -286,6 +286,56 @@ def test_unanchored_directory_conflicts_with_a_negation_inside_it(tmp_path):
     assert by["__pycache__/"] == "conflict"
 
 
+def test_root_anchored_secret_rule_is_not_covered_for_nested_secrets(tmp_path):
+    """Review round 1: `/.env` ignores only the root `.env`; `config/.env`
+    stays visible, so the `.env` row is not covered and apply adds it."""
+    root = _repo(tmp_path, files={"a.py": ""}, gitignore="/.env\n/.env.*\n/*.pem\n")
+    assert not _ignored(root, "config/.env")
+
+    by = {c["pattern"]: c["status"] for c in cg.measure(str(root))["candidates"]}
+    assert (by[".env"], by[".env.*"], by["*.pem"]) == ("missing", "missing", "missing")
+
+    cg.main(["apply", "--root", str(root)])
+    assert _ignored(root, "config/.env") and _ignored(root, "config/.env.local")
+    by = {c["pattern"]: c["status"] for c in cg.measure(str(root))["candidates"]}
+    assert (by[".env"], by[".vscode/*"]) == ("covered", "covered")
+
+
+def test_basename_negation_conflicts_where_a_listed_file_carries_the_name(tmp_path):
+    """Review round 1: `!keep.txt` re-includes src/App/bin/keep.txt, which an
+    added `/src/App/bin/` would stop git re-including."""
+    root = _repo(tmp_path, files={"src/App/App.csproj": "", "src/App/bin/keep.txt": ""},
+                 gitignore="!keep.txt\n")
+
+    done = _run(root, "apply")
+
+    assert "conflict /src/App/bin/ would override !keep.txt at .gitignore:1" in done.stdout
+    block = _block((root / ".gitignore").read_text(encoding="utf-8"))
+    assert "/src/App/bin/" not in block and "/src/App/obj/" in block
+    assert not _ignored(root, "src/App/bin/keep.txt")
+
+
+def test_basename_negation_with_no_file_under_a_candidate_is_no_conflict(tmp_path):
+    root = _repo(tmp_path, files={"src/App/App.csproj": "", "docs/keep.txt": ""},
+                 gitignore="!keep.txt\n")
+
+    by = {c["pattern"]: c["status"] for c in cg.measure(str(root))["candidates"]}
+
+    assert by["/src/App/bin/"] == "missing"
+
+
+def test_conflict_left_after_apply_is_not_a_bare_current(tmp_path):
+    """Review round 1: a conflict row is not added, so the status line names it
+    instead of reading `current`."""
+    root = _repo(tmp_path, files={"src/App/App.csproj": ""}, gitignore="!src/App/bin/keep.txt\n")
+    cg.main(["apply", "--root", str(root)])
+
+    line = cg.summary(str(root))
+
+    assert line.startswith("current except 1 conflict(s) - /src/App/bin/ would override "
+                           "!src/App/bin/keep.txt"), line
+
+
 def test_check_is_read_only(tmp_path):
     root = _repo(tmp_path, files={"a.py": "", "w/package.json": ""}, gitignore="x/\n")
     snap = {}
