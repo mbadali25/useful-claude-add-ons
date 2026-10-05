@@ -9,6 +9,66 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.2: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
+
+Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main.
+
+- **What changed.** `crew_split.parse_slices(plan_text)` reads a plan's
+  `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`,
+  `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices
+  (`SLICES_MIN`/`SLICES_MAX`, the children's bounds), slices out of
+  sequence, a step in two slices, in none or not in the plan, a
+  non-contiguous or out-of-order slice, `Base: slice <k>` for a k not
+  earlier, and `Base: main` when the slice's `Files:` share a path (equal
+  or glob-matching) with an earlier slice's, or when a step names no
+  `Files:`, or when any pair of its and an earlier slice's `Files:` entries
+  is not provably disjoint: after crew_ticket's own segment normalisation,
+  their literal prefixes (a literal entry's is the whole entry, a directory)
+  must differ, case-folded, at an index both have (cannot tell is not
+  "shares nothing"). A Step heading after the section is still a step
+  and must be in a slice; `## Step N` is refused (`measure` counts only
+  `### Step`, case-sensitively, and so does `parse_slices`). No section is a valid plan. `/crew:autopilot` runs a sliced plan one slice at a time:
+  `next` stops a refused section at `plan` (`PR slices: ...`), names
+  `implement` with `slice n of m (<name>): steps a-b only`, and keeps the
+  state in `<git-common-dir>/crew/tickets/<id>/slices.json` (an unreadable
+  or out-of-shape file stops as `slices`). `/crew:done` on a non-final
+  slice sets the header `in-progress` (T-0037 kept it in `STATUS_VALUES`,
+  so the approval stands) and runs `crew_autopilot.py slice-done`; only the
+  last slice sets `done`, and a `done` header before then stops. `ship`
+  opens one PR per slice (`--base` per `slice_base`: the default branch, or
+  the stacked predecessor's branch; title `<id> slice n/m: <name>`), never
+  ships slice n before slice n-1 is merged (or opened, under `ship: pr`),
+  merges only through `merge_argv`, and records each PR and merge commit.
+  A merged non-final slice names `next-slice`, which creates
+  `<branch>-s<n>` off its base and opens the slice's review budget.
+- **Why.** The owner's 2026-09-26 direction (T-0052's split): a large
+  ticket that holds together stays one ticket and ships in ordered slices,
+  each with its own review budget, so a review is bounded to a few steps
+  (r = 0.73 between plan steps and findings).
+- **Not in this PR (harness follow-ups, CLAUDE.md T-0087).**
+  `review_ledger.open_slice` and `_spent` counting slice rows (the
+  per-slice budget reset), `crew_ticket.validate` appending `PR slices:`
+  problems, `review_ledger.summary` carrying `slices`, and
+  `sabotage_split.py` with the four T-0059 mutations are HARNESS paths.
+  Until they land, `next-slice` refuses with nothing written, so a sliced
+  ticket stops after its first slice ships; autopilot's own plan check
+  stands in for `validate`.
+- **Tests.** 32 `parse_slices` cases in `test_crew_split.py` and 43 in the
+  new `test_crew_autopilot_slices.py` (stubbed gh, tmp_path repos). Eight
+  mutations hand-run, each red on its named test: the `Base: main` overlap
+  check, the contiguity check, the predecessor-merged check,
+  `_current_rounds` ignoring slice rows, a late Step heading dropped,
+  glob-vs-glob overlap read as disjoint, a literal-vs-glob pair judged
+  disjoint, and a `./` prefix not normalised (on PR #366's branch; not re-run on
+  the port). `.crew/verify.json`'s `crew_split` rule gains
+  `crew_autopilot_slices.py` and `crew_ship.py` as paths and runs
+  `test_crew_autopilot_slices.py`.
+- **The port.** The slice run lives in the new `crew_autopilot_slices.py`
+  (dispatched through `EXTRA_ACTIONS`) to keep `crew_autopilot.py` under
+  pylint's module-length limit; `crew_ship.merged_phase` takes the
+  `finished` hook that names `next-slice`. `done.md` and `implement.md` stay
+  inside their 120-line budgets, edited in place.
+
 ### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 
 - **What changed.** `crew_autopilot.next_phase` runs T-0052's split rulebook
@@ -206,7 +266,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   Bash call whose command IS the probe script can vouch for `ready` (markers printed by any other
   command prove nothing); git's and ssh's credential pointers (`GIT_ASKPASS`, `SSH_ASKPASS`,
   `SSH_AUTH_SOCK`, environment-set git config) and `GITLAB_TOKEN` are stripped too; subprocess
-  output that is not UTF-8 is replaced, so a check reads it as `unknown` instead of raising.
+  output that is not UTF-8 is `unknown` (round 4: decoded strictly, so a replacement character can
+  never pass a judge). Round 4 also denies and probes `~/.ssh`, `~/.git-credentials` and
+  `~/.config/git/credentials`, strips `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_SSH`/
+  `GIT_SSH_COMMAND`, and never prints a failing `aws` command's stderr (the check names the command
+  and its exit code).
 - Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.
@@ -242,7 +306,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `1.1.0`, nor does `1.1.0-rc.1`, `1.1.0+b` or `1.1.0_2`; a `docs.json` deferral needs non-empty
   `key`, `why` and `unblock` or the check is `unknown`, and reaches TODO.md only as its own added
   entry (a bullet or heading that opens with the key as a whole id, never `T-00990` nor a
-  mention inside another entry) with that why and unblock; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
+  mention inside another entry) with that why and unblock, its continuation ending at any
+  bullet (`-`, `*`, `+`, `1.`), heading or blank line; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
   earlier plan do not stop a successor plan's first docs run.
 - Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
   its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
@@ -294,7 +359,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   a machine-file `unattendedCloud` is known, not inert; a repo
   `context.autoClear.onlyRepos`/`onlySessions` (read from the machine file only)
   is named `(repo, not read)`; and a config file that is there and cannot be read
-  is `could not tell (...)`, never an empty list.
+  is `could not tell (...)`, never an empty list (sorted first, so a cut line
+  still says it); a repo `[]` scope is named too, and a key holding a `.` is one
+  key, never two levels.
 - **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
   ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
   and `approval_hook.py`), the bare `/crew:approve` listing what is pending,

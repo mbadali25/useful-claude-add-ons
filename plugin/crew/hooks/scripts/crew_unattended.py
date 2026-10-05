@@ -118,7 +118,10 @@ STORE_PATHS = (
     ".aws", ".azure", os.path.join(".terraform.d", "credentials.tfrc.json"),
     os.path.join(".config", "gcloud"), ".kube", os.path.join(".config", "gh"),
     os.path.join(".docker", "config.json"),
-    os.path.join(".claude", "crew", "config.json"))
+    os.path.join(".claude", "crew", "config.json"),
+    # Forge credentials git and ssh read on their own: SSH keys, git's
+    # credential-store files (gitcredentials(7)).
+    ".ssh", ".git-credentials", os.path.join(".config", "git", "credentials"))
 
 # Inherited variables that carry, or point at, a cloud or forge credential.
 # Dropped from the launched session's environment (and from the export's).
@@ -132,7 +135,8 @@ _STRIP_NAMES = frozenset((
     # hands an inherited forge identity to `git` (gitcredentials(7)), and
     # environment-set config can name a credential helper.
     "GIT_ASKPASS", "SSH_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
-    "GIT_CONFIG_COUNT", "GITLAB_TOKEN"))
+    "GIT_CONFIG_COUNT", "GITLAB_TOKEN", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+    "GIT_SSH", "GIT_SSH_COMMAND"))
 
 # The launched session and the probe load the user's settings and the sealed
 # `--settings` only: a cloned repo's `.claude/settings.json` and
@@ -743,13 +747,15 @@ def _run(argv, env, timeout, cwd=None):
     """`(proc, why)`; `proc` is None and `why` names the failure when the
     process could not be run or timed out. argv list, never a shell."""
     try:
-        # Output that is not UTF-8 is replaced, never a traceback: the judges
-        # then fail to parse it and answer `unknown`.
+        # Output that is not UTF-8 is `unknown` (below), never a traceback and
+        # never a replacement character a judge could still read as valid.
         proc = subprocess.run(argv, env=env, cwd=cwd, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace",
+                              text=True, encoding="utf-8", errors="strict",
                               timeout=timeout, check=False, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return None, f"timed out after {timeout}s"
+    except UnicodeDecodeError:
+        return None, f"`{os.path.basename(argv[0])}` wrote output that is not UTF-8"
     except OSError as exc:
         return None, f"could not run `{argv[0]}` ({type(exc).__name__})"
     return proc, ""
@@ -770,9 +776,9 @@ def run_export(profile, base):
     if proc is None:
         return UNKNOWN, f"export: {why}", None
     if proc.returncode != 0:
-        tail = _first_line(proc.stderr)
-        return UNKNOWN, (f"export: `aws configure export-credentials` exited "
-                         f"{proc.returncode}" + (f": {tail}" if tail else "")), None
+        # Never its stderr: a failing credential command may print a secret.
+        return UNKNOWN, (f"export: `aws configure export-credentials --profile {profile}` "
+                         f"exited {proc.returncode} (run it by hand to see why)"), None
     try:
         obj = json.loads(proc.stdout)
     except ValueError:
@@ -787,9 +793,9 @@ def run_identity(identity, env):
     if proc is None:
         return UNKNOWN, f"identity: {why}", ""
     if proc.returncode != 0:
-        tail = _first_line(proc.stderr)
+        # Never its stderr: a failing credential command may print a secret.
         return UNKNOWN, (f"identity: `aws sts get-caller-identity` exited "
-                         f"{proc.returncode}" + (f": {tail}" if tail else "")), ""
+                         f"{proc.returncode} (run it by hand to see why)"), ""
     try:
         obj = json.loads(proc.stdout)
     except ValueError:

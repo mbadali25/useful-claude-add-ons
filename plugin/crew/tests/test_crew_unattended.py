@@ -427,11 +427,25 @@ def test_sealed_env_drops_git_and_ssh_credential_pointers():
     assert cu.stripped_env(base) == {"PATH": "/bin"}
 
 
-def test_run_decodes_non_utf8_output_without_raising(tmp_path):
-    """T-0044 port review r3 FIX: bytes that are not UTF-8 are replaced."""
+def test_run_non_utf8_output_is_unknown_never_raises(tmp_path):
+    """T-0044 port review r3/r4 FIX: bytes that are not UTF-8 are neither a
+    traceback nor a replacement character a judge could read as valid."""
     proc, why = cu._run([sys.executable, "-c",  # pylint: disable=protected-access
                          "import sys; sys.stdout.buffer.write(b'\\xff ok')"], None, 30)
-    assert (why, proc.stdout.endswith(" ok")) == ("", True)
+    assert (proc, "not UTF-8" in why) == (None, True), why
+
+
+def test_failed_credential_command_stderr_is_never_reported(monkeypatch):
+    """T-0044 port review r4 BLOCK: `why` names the exit, never stderr."""
+    class Proc:  # pylint: disable=too-few-public-methods
+        returncode = 255
+        stdout = ""
+        stderr = "error: sentinel-secret-value\n"
+    monkeypatch.setattr(cu, "_run", lambda *a, **k: (Proc, ""))
+
+    whys = [cu.run_export("ro", {})[1], cu.run_identity("arn:x", {})[1]]
+
+    assert [("sentinel" in w, "exited 255" in w) for w in whys] == [(False, True)] * 2, whys
 
 
 def test_run_probe_passes_the_exit_code(monkeypatch):
@@ -599,7 +613,9 @@ def test_core_stores_cover_the_named_paths():
     for home in ("/h", "/r"):
         for rel in (".aws", ".azure", ".terraform.d/credentials.tfrc.json",
                     ".config/gcloud", ".kube", ".config/gh",
-                    ".docker/config.json", ".claude/crew/config.json"):
+                    ".docker/config.json", ".claude/crew/config.json",
+                    # T-0044 port review r4: git's and ssh's own stores.
+                    ".ssh", ".git-credentials", ".config/git/credentials"):
             assert f"{home}/{rel}" in got, (home, rel)
 
 
@@ -862,8 +878,10 @@ MUST_REFUSE = {
     "identity-user-arn": (lambda w: w.set_sts(
         {"Arn": "arn:aws:iam::111111111111:user/ops"}), (), [":user/"]),
     "identity-malformed": (lambda w: w.set_sts("{nope"), (), ["not JSON"]),
+    # T-0044 port review r4: a failing credential command's stderr is never
+    # printed (it may hold a secret); the exit code and a fixed hint are.
     "identity-fails": (lambda w: w.mp.setenv("FAKE_STS_RC", "254"), (),
-                       ["exited 254", "ExpiredToken"]),
+                       ["exited 254", "run it by hand"]),
     "identity-times-out": (lambda w: (w.mp.setenv("FAKE_STS_SLEEP", "5"),
                                       w.mp.setattr(cu, "STS_TIMEOUT", 0.5)), (),
                            ["timed out"]),
