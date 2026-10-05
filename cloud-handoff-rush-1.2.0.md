@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T18:25Z
+Last updated: 2026-10-05T18:30Z
 
 ## >>> RESUME HERE
 
@@ -50,9 +50,9 @@ Last updated: 2026-10-05T18:25Z
 ## State
 
 - `main` = `a555ff37` (crew 1.1.0). `release/1.2.0` = `a555ff37` (fast-forwarded 2026-10-05).
-- Merged into release/1.2.0: #539 G8 (c510b764, crew 1.1.1); #541 G1 (3dbc033b, crew 1.1.2).
+- Merged into release/1.2.0: #539 G8 (c510b764, crew 1.1.1); #541 G1 (3dbc033b, crew 1.1.2); #543 G3 (2c911427, crew 1.1.5).
 - Merged into main: #540 H3 (97dda0bd, crew 1.1.3). Source PRs closed: #526, #529, #531, #538; #527 closed as superseded.
-- Version counter: 1.1.3 = H3 (#540, landing on main), 1.1.4 = H1 (reserved), 1.1.5 = G3 (landing). Next free after that: **1.1.6**.
+- Version counter: 1.1.3 = H3 (main), 1.1.4 = H1 (#542, reserved), 1.1.5 = G3 (release), 1.1.6 = G0 (landing). Next free: **1.1.7**.
 - Open group PRs: #540 H3 -> main (lands after H1). Source PRs are closed when their content reaches main.
 
 ### Groups (scope given to each builder)
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T18:30Z MERGED #543 (G3) into release/1.2.0 at 2c911427, crew 1.1.5 (30/30 CI, Codex group r6 CLEAN). G0 lander told release moved: re-merge, keep crew 1.1.6. Source PRs for G3 close when release reaches main. Next free 1.1.7.
 - 2026-10-05T18:25Z #542 H1 CI red on Windows shard 2: L-0690 test_a_timed_out_probe_says_so (unpack) and T-0098 supersede by_fullwidth_auto (None.startswith). Sent to H1 lander with instruction to collect all Windows shard failures into one push.
 - 2026-10-05T18:19Z Owner: L-0640 superseded-by lives in next.md, as built (open question 4 closed).
 - 2026-10-05T18:19Z G3 landed on branch (5fa60b93, crew 1.1.5; group review 6 rounds -> CLEAN, all fixes fail-closed). PR #543 -> release opened. G0 lander started (crew 1.1.6; will re-merge release after #543 merges).
