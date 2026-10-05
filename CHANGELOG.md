@@ -81,6 +81,39 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Sabotage.** 24 mutations, each RED on its named test by hand (the table is
   in the PR). `sabotage_inflight.py` and its `sabotage.py` registration land in
   a separate harness-only PR (T-0087 rule).
+### Changed — repository: one cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners (C-0009)
+
+- **Summary.** `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session:
+  besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists
+  every tool as ok or MISSING at the end.
+- **What changed.** Optional steps, in the script's existing `step` style: `pwsh` (the newest
+  stable tag found with `git ls-remote --tags`, because api.github.com answers 403 here; that
+  tag's linux tarball, checked against the release's `hashes.sha256`, unpacked to
+  `/opt/microsoft/powershell/7` and linked as `/usr/local/bin/pwsh` once it reports a version;
+  Microsoft's apt repo is the fallback for a refused download, a missing or wrong hash, or a pwsh
+  that cannot start), `mermaid` (mermaid-cli
+  12.0.0, as verify-gate.yml pins it, with `PUPPETEER_SKIP_DOWNLOAD=1`), `mcp-deps` (`npm ci` in
+  `mcp-servers/` when `node_modules` is missing or older than `package-lock.json`) and
+  `gizmoduck` (`plugin/gizmoduck/bootstrap.sh` when any scanner is missing, then each scanner
+  re-checked on PATH; `SKIP_GIZMODUCK=1` skips it). Until the C-0008 fix (PR #506) lands,
+  bootstrap.sh resolves the Nuclei version through api.github.com, which answers 403 here; the
+  failed Nuclei install fails the template update, which exits 1 and stops bootstrap before the
+  other scanners. The step is then reported FAILED and setup still exits 0. With #506, Nuclei
+  installs here and bootstrap runs to the end.
+- **Time limits.** The script's own curl calls carry `--connect-timeout`/`--max-time`, `git
+  ls-remote` a low-speed limit and a `timeout`, and pwsh's version probe a 60-second `timeout`.
+  npm installs and bootstrap.sh's own curl calls have no time limit. Every step runs with stdin
+  from `/dev/null` and `DEBIAN_FRONTEND=noninteractive`.
+- **apt.** Every apt-get call passes `-o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600`,
+  because the image ships `/tmp` as 755 root:root and apt's `_apt` user cannot write its
+  key-check files there; `/tmp` itself is left alone. `apt-get clean` follows each install
+  (its failure does not fail the step), since disk is a fixed per-session allowance. pwsh moved out of the apt step into its own.
+- **pytest.** The CORE `py-libs` step treats an importable pytest other than 8.x as missing and
+  re-pins `pytest~=8.0`, removes the image's uv-tool pytest 9 (isolated, no xdist, ahead of it on
+  PATH), and fails unless PATH resolves pytest 8.x. The CORE `ruff` step fails unless PATH
+  resolves ruff 0.16.x.
+- Repository tooling outside any plugin, so no version bump.
+
 ### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
 
 - **Summary.** Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket
@@ -238,6 +271,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - T-0063's sixteen sabotage mutations are not in this release: `plugin/crew/tests/sabotage*.py` is
   a harness path, and a harness change lands alone (T-0087), so they follow in their own lane.
   Each was run red against this tree before it was split out.
+
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that

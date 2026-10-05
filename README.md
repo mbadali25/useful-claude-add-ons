@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.0.375**: In-flight markers, one runner drives a ticket at a time. A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a token, the holder ...
-- **crew 1.0.349**: Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket until you release it, autopilot can push, open and (only when every required check allows) merge a ticket's pull request after `/crew:done`, and in a worktree it reads the ticket's INDEX row from the main checkout and commits refreshed artifacts itself.
+- **repository**: One cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners. `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session: besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists every tool as ok or MISSING at the end.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
