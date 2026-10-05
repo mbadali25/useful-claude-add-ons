@@ -96,7 +96,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --tic
 
 For each `refresh with` line, run the command it names, commit the result and re-run until it says
 `fresh` — an `unknown` whose anchor names no commit (a squash-merged branch) included: the refresh
-re-anchors it. These writes need no Touch entry when they are what a refresh writes: the completion
+re-anchors it. `fresh-uncommitted` means commit the paths its `uncommitted:` line lists, then re-run. These writes need no Touch entry when they are what a refresh writes: the completion
 audit admits an artifact a path you changed reaches, as a re-anchor (`anchor:` or provenance sha moved
 forward, to HEAD or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py
 rules`, the graph after a code change); anything else there needs Touch, and the audit names the reason.

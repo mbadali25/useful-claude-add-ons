@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.348<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.349<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -127,7 +127,7 @@ to CI or to branch protection.
 | Command | Purpose |
 |---|---|
 | `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this, unless you opt `/crew:autopilot` into `autopilot.approval`; the prompt hook records the receipt |
-| `/crew:autopilot [status\|run\|sleep\|wake] [ticket id]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; accepting a review with a BLOCK always stops (with `autopilot.maxAutoReplans` at 1 or more, an out-of-rounds BLOCK round is rejected by `crew_autopilot.py auto-reject` and replanned instead, capped), and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt (needs `scope.allowCliApproval: true`); its other writers are `sleep` and `wake`, which start or end sleep mode now (until L-1504 a manual sleep only tightens a day value) and write only `<git-common-dir>/crew/autopilot-sleep.json` (`sleep` needs `scope.allowCliApproval: true`); `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
+| `/crew:autopilot [status\|run\|sleep\|wake\|focus] [ticket id\|off]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; accepting a review with a BLOCK always stops (with `autopilot.maxAutoReplans` at 1 or more, an out-of-rounds BLOCK round is rejected by `crew_autopilot.py auto-reject` and replanned instead, capped), and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt (needs `scope.allowCliApproval: true`); its other writers are `sleep` and `wake`, which start or end sleep mode now (until L-1504 a manual sleep only tightens a day value) and write only `<git-common-dir>/crew/autopilot-sleep.json` (`sleep` needs `scope.allowCliApproval: true`); `focus <id>` / `focus off` set or drop an explicit lock on one ticket in `<git-common-dir>/crew/autopilot-focus.json` (an active ticket alone is not focus), refusing other tickets and stopping on a change outside Touch; `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show \| --models]` | Show where every crew setting comes from; with no argument, a menu that sets the machine or repo config and deletes the repo config with a backup |

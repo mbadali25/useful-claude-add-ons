@@ -46,6 +46,163 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `8ad90da2`; a reviewer's later checkout measured 619 to 0). `dos` and `fuzz` are not used as
   evidence: Nuclei's own `.nuclei-ignore` already hides most of them.
 
+### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
+
+- **Summary.** Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket
+  until you release it, autopilot can push, open and (only when every required check allows) merge a
+  ticket's pull request after `/crew:done`, and in a worktree it reads the ticket's INDEX row from the
+  main checkout and commits refreshed artifacts itself.
+
+#### Added — `crew`: `/crew:autopilot focus`, an explicit scope lock on one ticket (T-0020)
+
+- **Summary.** `/crew:autopilot focus <id>` locks autopilot onto one ticket until you type `focus off`; an active ticket on its own is never treated as a focus, so plain-text requests get the same answer they get without focus.
+- **Why.** The owner's standing ask: roles "drifting into unrelated rabbit holes". Focus locks
+  autopilot onto one ticket so it cannot wander to another, cannot carry an unrelated change past
+  the next phase, and has somewhere to put what it noticed.
+- **Explicit focus only (owner decision, 2026-10-05).** Focus is on only once `focus <id>`
+  writes this worktree's entry in `<git-common-dir>/crew/autopilot-focus.json`, the focus
+  marker; `focus off` drops that entry (the file goes when none is left) and leaves the
+  active-ticket pointer alone; `focus` shows `focus=<id>`, `focus=none` or `focus=unknown <why>`.
+  An active-ticket pointer alone - set by `crew_ticket.py activate`, or the `.work/INDEX.md`
+  fallback - is never a focus, so with no marker entry `crew_autopilot.route` answers exactly as
+  before and main's plain-text router (T-0057, L-0662) gives the same answer for `assign`,
+  `goal`, `wave` and `split` text (today: asks, or no line, since those are not available yet). `focus <id>` re-points the
+  active ticket through `crew_ticket.activate` (which records `.crew/.scope-base`, T-0061, and
+  whose scope-base line `focus` prints) only when the pointer names another ticket or none; it
+  refuses, writing nothing, a ticket with no `.work/tickets/<id>/`, a broken pointer, an unreadable
+  marker, or a focus already on another ticket.
+- **While focused.** The router refuses `run` of another ticket (named, or from the handoff),
+  `assign`, `goal` and any other subcommand, naming `/crew:autopilot focus off`; if the pointer
+  stops naming the focused ticket, all but `focus <id>` is refused. `status`, `focus off`,
+  `sleep` and `wake` always run (they neither start nor switch work; L-0652). Once the plan is
+  approved, `next` runs `completion_audit.audit` read-only and stops as `drift` on a changed path
+  outside Touch, or when the audit could not run. `focus --findings --ticket <id>` names
+  `TODO.md` when the approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`. Every
+  `focus` output ends with a reminder that Claude Code's built-in `/focus` only toggles the
+  display and only the user can type it.
+- **An unreadable marker is could-not-tell, never "no focus".** A marker that is not a file,
+  does not parse, cannot be read, or holds an entry that is not a ticket (INDEX-shaped, or with a
+  `.work/tickets/` folder; `bogus` is unknown) reads `focus=unknown`; the router then refuses
+  everything but `status`, `sleep` and `wake`, `next` stops as `drift`, and `focus off` refuses
+  rather than delete it. Every such message ends with `rm -- '<path>'` and
+  `Remove-Item -LiteralPath '<path>'` for the exact path (only when the path is paste-safe; else
+  the path as JSON and "remove this file by hand"), and says removing it drops every worktree's
+  focus. A stale lock's refusal carries the same removal for the lock file.
+- **Two worktrees at once lose nothing.** `focus <id>` and `focus off` hold
+  `autopilot-focus.json.lock` (crew_config_files.Lock's exclusive create, at most 5 seconds)
+  around the marker's read-modify-write; a lock that cannot be taken refuses with nothing
+  written. A two-process test with an injected delay goes red without the lock.
+- **`focus` is a writer.** `test_crew_autopilot_policy.py`'s `WRITERS` names it deliberately:
+  on the already-active ticket `focus --ticket` adds exactly the marker and `focus --off` leaves
+  every file as before.
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_focus.py` (explicit focus: a pointer without
+  focus gives main's answer for assign/goal/wave/split text; focus refuses other work; focus off restores the
+  unfocused answer; sleep/wake always route; an unreadable marker refuses). `autopilot.md`
+  section 6 (4 lines), the file at 117 of 120 (`test_lifecycle_commands.py` leaves 3 for T-0012
+  and T-0019). `test_crew_route.py` drops "focus on T-1" from its not-yet-available rows, since
+  focus is available now.
+- **Docs.** The crew README ("Focus" under "Scope and approval", the subcommand table, the stops,
+  the writers), `plugin/PLUGINS.md`, the user guide, the crew code map, the generated rules, and
+  `.crew/verify.json`'s autopilot rule.
+
+#### Added — `crew`: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
+
+- **Summary.** With autopilot armed, a ticket `/crew:done` closed is pushed and gets its pull request;
+  under `autopilot.ship: merge` (the default) autopilot also merges it with a merge commit once every
+  required check passes, and it stops instead whenever anything it rests on cannot be read.
+- New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
+  phase in `next`, both only while autopilot is armed; unarmed, a done ticket still reads `closed`
+  and gh is never asked. `commands/autopilot.md` runs it at `phase=ship` and stays inside its
+  117-line budget (117 with T-0020's and T-0063's lines).
+- New repo-only keys in the `autopilot` block: `ship` (`merge` default, or `pr`; anything else
+  reads as `pr` with a warning), `knownFailures` (`[]`; check names matched exactly) and
+  `ciTimeoutMinutes` (`60`), all three in `crew_state.REPO_ONLY_AUTOPILOT` (T-0050: never set in the
+  machine-global file). The repo config leaf count goes from 138 to 141; `crew-setup`'s
+  inline copy, the config template and `test_crew_autopilot.py`'s pinned block carry them.
+- The three keys move from `crew_keys.COMING` into `KEY_META` (T-0048's one row per config
+  leaf): `autopilot.ship` references `crew_autopilot.SHIP_POLICIES`, the other two are code-branch
+  rows run through `crew_autopilot.settings` in `test_crew_keys.py`. The configuration reference
+  and `CONFIG.md`'s generated section 10/11 tables are regenerated (81 global-settable, 60
+  repo-only, 141 leaves), and the full guide describes shipping as landed.
+- `next` on a done ticket reads the branch's PR with `gh pr view <branch> --json
+  number,state,url,headRefOid,id`. MERGED reads `closed`, and so does an open PR under `ship: pr`
+  ("PR #n open, merge by hand"). A detached HEAD, a gh failure, an answer that is not a PR state,
+  a PR closed without merging, a working tree that differs from HEAD, or a review receipt that no
+  longer stands stops. Only gh's exact "no pull requests found for branch" answer reads as no PR.
+- `ship` refuses the default branch and a dirty working tree (tracked or untracked, ignored files
+  aside) before it pushes with `git push -u origin <branch>` (never with force), takes HEAD once
+  right after the push, and opens the PR when there is none. Under `merge` it polls `gh pr checks
+  <n> --required` every 30 s and runs exactly `gh pr merge <n> --merge --match-head-commit
+  <HEAD>` - a merge commit, never `--squash`, `--rebase` or `--admin`, because a squash or rebase
+  rewrites the commits refresh anchors name (D-028) - only when every required check passes or
+  fails under a name listed exactly in `knownFailures`.
+- What the merge rests on is re-read: the settings, the spec's risk, the review families and the
+  sha256 of the ledger bytes they came from on every poll; the PR's head and this checkout's HEAD
+  before and after every poll and right before the merge; the review receipt after CI, on that same
+  ledger; the tree again; and the base branch's merge queue (`gh api graphql`; a queue, or one that
+  cannot be read, stops). A green that lands after `ciTimeoutMinutes` stops like a pending one. A
+  merge call that leaves the PR not MERGED with a queue on (or unreadable) is dequeued once with
+  `dequeuePullRequest`, the only GraphQL mutation `ship` sends, and stops.
+- gh 2.46's `gh pr checks` has no `--json`, so its text rows are parsed, names and states verbatim.
+  A row that is not exactly five tab-separated fields (gh prints a name and a description
+  unescaped, so a tab in one shifts the rest) makes the read unreadable, as do stderr beside the
+  rows and an exit code the rows contradict. The five fields are read from gh v2.46.0's source,
+  not measured on a live PR.
+- A `high`-risk ticket, or one with no risk in its header, never merges when every completed review
+  round is `claude` or has no `model_family`. Codex, the only cross-family reviewer here, was out
+  until 2026-10-01; while it is unavailable every `high`-risk ticket stops at `ship: merge` with
+  its PR open.
+- Batch 7: `ship_decision` and the gh/git adapter (everything that reads no review ledger) live in the
+  new `hooks/scripts/crew_ship.py`, because T-0020, T-0011 and T-0063 together took
+  `crew_autopilot.py` past pylint's 3400-line cap; `gh` and the push run the path
+  `crew_common.require_tool` finds (L-1508), and a tool not on PATH stops like one that cannot start.
+- New `tests/test_crew_autopilot_ship.py` (154 cases, gh and push stubbed) and a `.crew/verify.json`
+  rule for it. Every refusing branch was sabotaged by hand (70 mutations, all red). The matching
+  `SHIP_MUTATIONS` in `sabotage_autopilot.py` are left for a harness-only change (T-0087); this
+  release changes no harness file.
+- Carries review round 2's six findings on the branch (4 BLOCK, 2 FIX): the field count, HEAD taken
+  after the push, one ledger for the families and the receipt, the pre-merge HEAD re-read, the dirty
+  tree, and the dequeue.
+#### Changed — `crew`: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
+
+- **Summary.** In a lane worktree autopilot finds the ticket's INDEX row in the main checkout, and the
+  refresh check now says `fresh-uncommitted` when every artifact is current but a refreshed file is not
+  committed, which autopilot commits for you and `/crew:done` refuses.
+- `crew_autopilot.py next` and `resume` read a ticket's `.work/INDEX.md` row from the main checkout
+  (the first record of `git worktree list --porcelain`) when the lane worktree's INDEX has none.
+  `--json` names the file that answered as `index_source`. Rows in both checkouts whose status
+  cells differ stop as the new `index-disagreement`; a listing git cannot give is kept in the stop's
+  reason, never read as "no row". A ticket folder that exists only in the main checkout stops as
+  `folder-elsewhere`, naming the `cp -r` to make (both paths shell-quoted): autopilot never reads
+  a contract from another checkout, because the scope guard reads Touch from this one. With no
+  folder here and a listing git cannot give, it stops as `folder-elsewhere` saying it could not
+  tell whether the ticket folder is in the main checkout, never as "needs /crew:brainstorm".
+- `crew_refresh_check.py` has a fifth value, `fresh-uncommitted`: every artifact is current, but a
+  path under the refresh-artifact dirs is modified, staged, or untracked and not ignored. `--json`
+  lists them as `uncommitted`, the text prints an `uncommitted:` line, and the CLI exits 1.
+  Precedence is unknown > stale > fresh-uncommitted > fresh; a listing git cannot give is `unknown`.
+  `/crew:done` check 4 refuses it, `/crew:implement` step 6 commits the listed paths, and autopilot
+  runs it as a `commit-refresh` phase (`git add -- <paths> && git commit -m ... -- <paths>`, so nothing else staged rides along), before review and after
+  an accepted review alike: the review bundle is the working state, so the commit keeps a receipt
+  current (a real-repo test pins the bundle hash across it).
+- The code graph reads `fresh` when it is behind by sha but graphify's own
+  `<graph.out>/manifest.json` records the current MD5 of every committed code path that moved since
+  `built_at_commit`. graphify leaves `graph.json` untouched when the topology did not change, so the
+  graph used to read `stale` for ever after such a change. A missing or unparseable manifest keeps
+  the sha answer and says so; uncommitted code is never confirmed. Every `save_manifest` caller in
+  graphify 0.9.65 and 0.9.74 was re-read first: each runs after a successful `graph.json` write or a
+  same-topology confirmation.
+- Windows: a main checkout's INDEX.md outside this checkout is named in the evidence and the
+  no-row reason exactly as `index_source` names it, never re-slashed (`C:/...` against `C:\...`
+  failed two tests on crew-windows-default). `_main_checkout` resolving an aliased spelling of
+  either checkout is pinned by tests; relative evidence paths stay `/`-separated.
+- QA fixes: `commit-refresh` prints `git commit -m ... -- <paths>`, so anything else already
+  staged stays out of the refresh commit; a path that is not printable stops, shown escaped; and
+  when this checkout's INDEX row answers but the main checkout could not be read, the evidence
+  says the two were not compared.
+- T-0063's sixteen sabotage mutations are not in this release: `plugin/crew/tests/sabotage*.py` is
+  a harness path, and a harness change lands alone (T-0087), so they follow in their own lane.
+  Each was run red against this tree before it was split out.
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that
