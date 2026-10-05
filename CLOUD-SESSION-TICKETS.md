@@ -65,7 +65,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0011 | From batch 7 (harness, lands alone): batch 7 moved T-0011's ship code into new plugin/crew/hooks/scripts/crew_ship.py; it reads a harness format but is not in SEAM in scripts/check-tooling-pr.py. Add it to SEAM (+ tooling-pr suite case). Also carry batch-7 NITs N1-N5: CONFIG.md:2884 crew_ship.ship_decision; split-into quote lost for status:done (decide); LRM/RLM/ALM (U+200E/200F/061C) in _UNSAFE_PATH; codemap ship cites (crew.md:835-861). N1/N3/N4/N5 are feature-side: split into a separate feature PR. | none yet | after #501 |
 
-Next free untracked ID: **C-0012** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0012 | From #451 re-check (pre-existing, gizmoduck): `base.run_tool` doesn't set stdin=DEVNULL; Nuclei reads targets from stdin when it isn't a TTY, so a routine started with an open stdin pipe hangs until timeout and could scan extra targets fed on stdin. Set stdin=DEVNULL for every scanner subprocess; test with an open pipe. | none yet | batch 9 |
+
+Next free untracked ID: **C-0013** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
