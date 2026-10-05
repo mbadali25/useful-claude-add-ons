@@ -9,6 +9,29 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: a `stack-php` skill and PHP candidate standards, no gated PHP set yet (L-0533)
+
+- **Summary.** crew gains a `stack-php` skill with PHP 8 pitfalls and a `php -l` verify rule,
+  and lists four candidate PHP standards with their sources. None is enforced.
+- **What changed.** New `plugin/crew/skills/stack-php/SKILL.md` covers loose comparison,
+  `empty("0")`, array-key behaviour, bound SQL parameters, output escaping, `unserialize`,
+  per-file `strict_types`, byte strings, time zones and `composer.lock`. It has a `## Standards`
+  section and a proposed verify.json rule, `php -l` over tracked `.php`/`.phtml` files, which
+  exits 77 with `TOOL MISSING` when `php` is absent. New `stack-php/references/candidates.md`
+  covers PHP-01 (bound parameters and allow-listed identifiers), PHP-P1 (no `unserialize` of
+  data an attacker can influence), PHP-P2 (context escaping) and PHP-P3 (strict comparison).
+  Each gives its public change sets, its verdict and a php.net Source sentence, re-matched
+  against the raw page. `test_stack_skills.py` lists `stack-php`, and crew's skill count reads
+  32 everywhere it is stated. No `references/php.md`, loader or gate change, and no
+  install-script change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  bar. Owner-private evidence was not consulted, and the re-check is tracked as C-0020. Most
+  public change sets are WordPress plugins. PHP-02..PHP-20 were not assessed, so the spec's
+  `grep -c '^PHP-' >= 20` and "at least 20 PHP-NN in stack-php" checks do not pass. That is a
+  reported deviation, with no placeholder rows added. The verify rule was run against real PHP
+  8.3.6 on the build host: exit 0 on a clean file, and nonzero on a parse error.
+
 ### Added — crew: Angular 2+ candidate standards, no gated set yet (L-0538)
 
 - **Summary.** `stack-angular` now lists three candidate Angular 2+ standards with their

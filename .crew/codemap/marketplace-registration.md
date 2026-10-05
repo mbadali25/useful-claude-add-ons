@@ -58,14 +58,14 @@ main `bebbb97f` (`f458e752`), 1.0.47 on T-0072's branch at `715a8c2f`, 1.0.46 at
 **DERIVED, re-measured at `07ca3972`; the command count re-measured at `e95e5964`; the skills count re-measured at `f5d0f1b1`.**
 `.claude-plugin/marketplace.json:217` — crew's `description` — reads "4
 context-isolated agents (explorer, reviewer, security, researcher) …, 36
-slash commands, 31 bundled skills … 34 hook entries" (29 until T-0085 and #267, 30 on each branch alone). Measured independently
+slash commands, 32 bundled skills … 34 hook entries" (32 since L-0533 added `stack-php`; 29 until T-0085 and #267, 30 on each branch alone). Measured independently
 against disk:
 
 | Claim | Stated | On disk | Where |
 |---|---|---|---|
 | agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:887`, `INSTALLATION.md:252`, `plugin/README.md:414` |
 | commands | 36 | `find plugin/crew/commands -name '*.md'` → 36 (T-0004 added `autopilot.md`, T-0075 `config-setup.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
-| skills | 31 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 31 (T-0085 added `crew-standards`, #267 `crew-qa-standards`; both read 30 on their own branches, 31 from T-0085's landing merge) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both; both read 30 from `b82035e6` (the Touch amendment) and the check passes |
+| skills | 32 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 32 (L-0533 added `stack-php`; T-0085 added `crew-standards`, #267 `crew-qa-standards`; both read 30 on their own branches, 31 from T-0085's landing merge) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both; both read 30 from `b82035e6` (the Touch amendment) and the check passes |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
 Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1393`,
