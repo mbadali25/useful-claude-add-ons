@@ -860,10 +860,13 @@ def identify(root, env, index):
     polls = state["identifySeconds"] // POLL_SECONDS + 1
     answered = near = 0
     for poll in range(polls):
+        left = deadline - _clock()
+        if left <= 0:
+            break  # never a poll that starts after identifySeconds
         runs = _gh_json(["run", "list", "-w", state["workflow"], "-b", branch(state["ref"]),
                          "-e", "workflow_dispatch", "-u", state["actor"],
                          "-L", str(SNAPSHOT_LIMIT), "--json", RUN_FIELDS], root,
-                        timeout=max(1, int(deadline - _clock())))
+                        timeout=left)
         answered += runs is not None
         if _clock() > deadline:
             break  # an answer that came after identifySeconds is not used

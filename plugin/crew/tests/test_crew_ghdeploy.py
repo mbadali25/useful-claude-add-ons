@@ -1298,11 +1298,12 @@ for _name in sorted(_IDENTIFY_BLOCKS):
 
 @_scenario
 def test_identify_polls_until_identify_seconds(tmp_path, monkeypatch):
-    """none-in-timeout polls every 5 seconds for identifySeconds (120): 25 polls."""
+    """none-in-timeout polls every 5 seconds for identifySeconds (120): 24
+    polls, at 0 to 115 seconds; none starts at the deadline itself."""
     root = _identify_repo(tmp_path, monkeypatch)
     code, lines, gh = _identify(monkeypatch, root, [_ok(_OLD)])
     assert code == 3, lines
-    assert len(gh.calls) == 120 // 5 + 1
+    assert len(gh.calls) == 120 // 5
 
 
 @_scenario
@@ -1570,6 +1571,26 @@ def test_watch_slice_seconds_range(tmp_path, monkeypatch):
     code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)],
                              "--slice-seconds", "30")
     assert code == 0 and gh.timeouts == [30]
+
+
+@_scenario
+def test_identify_bounds_each_poll_by_the_exact_time_left(tmp_path, monkeypatch):
+    """The call gets the fractional time left (not rounded down), and no
+    poll starts once identifySeconds is spent."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    clock = {"now": _T0 + 3.0}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    monkeypatch.setattr(crew_ghdeploy, "_sleep",
+                        lambda s: clock.__setitem__("now", clock["now"] + s))
+    timeouts = []
+
+    def slow(_args, _root, timeout=None):
+        timeouts.append(round(timeout, 3))
+        clock["now"] += 110.1 if len(timeouts) == 1 else timeout
+        return _ok(_OLD)
+    code, lines = _run(monkeypatch, slow, "identify", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    assert timeouts == [120.0, 4.9]
 
 
 @_scenario
