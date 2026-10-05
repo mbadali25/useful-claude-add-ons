@@ -3158,7 +3158,6 @@ that brings each known-but-unbuilt key, and the values that do nothing yet:
 
 | Key or value | Brought by |
 |---|---|
-| `ship` under `autopilot` | T-0011 |
 | `reviewPolicy`, `maxLanes` under `autopilot` | T-0029 |
 | `maxTicketsPerRun` under `autopilot`, and `mode: "backlog"` | T-0012 |
 | `deploy: "nonprod"` or `"all"` (the key is read; nothing dispatches a deploy yet) | T-0045 |

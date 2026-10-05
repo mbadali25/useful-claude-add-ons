@@ -334,9 +334,9 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 # --- T-0070: inert settings, and the approvals that actually need you -------
 
 def test_status_names_inert_settings(tmp_path):
-    root = make_repo(tmp_path, config={"autopilot": {"ship": "merge"}})
+    root = make_repo(tmp_path, config={"autopilot": {"maxLanes": 3}})
     lines = [l for l in crew_status.collect(str(root)) if l.startswith("inert")]
-    assert lines == ["inert    autopilot.ship=merge (T-0011)"]
+    assert lines == ["inert    autopilot.maxLanes=3 (T-0029)"]
 
 
 def test_status_is_quiet_without_inert_settings(tmp_path):
@@ -415,7 +415,11 @@ def _index_is_a_directory(index):
 @pytest.mark.parametrize("damage,reason", [
     (os.unlink, "no .work/INDEX.md"),
     (_corrupt_index, ".work/INDEX.md is not UTF-8"),
-    (_index_is_a_directory, ".work/INDEX.md could not be read: IsADirectoryError"),
+    # open() on a directory raises IsADirectoryError on POSIX and
+    # PermissionError on Windows (EACCES from CreateFile): both are an
+    # unreadable INDEX, and the reason names what was raised.
+    (_index_is_a_directory, ".work/INDEX.md could not be read: "
+     + ("PermissionError" if os.name == "nt" else "IsADirectoryError")),
 ])
 def test_status_approvals_says_unknown_when_the_index_cannot_be_read(tmp_path, damage, reason):
     root = _approvals_repo(tmp_path)
@@ -433,6 +437,8 @@ def test_status_approvals_is_read_only(tmp_path):
     before = _stat_tree(root)
     done = _run(root, "--approvals")
     assert (done.returncode, _stat_tree(root)) == (0, before)
+
+
 def test_status_tree_runs_the_git_which_resolves(tmp_path, monkeypatch):
     # L-1508: the tree line judges the git PATH resolves the way bash, pwsh
     # and shutil.which do (PATHEXT: git.cmd). The failing git is NOT on PATH:

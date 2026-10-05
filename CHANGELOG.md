@@ -29,8 +29,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Why.** `.crew/config.json` held `autopilot.approval: self` for days before
   the crew that read it existed, and nothing said so; 13 of 25 approvals typed
   on 2026-09-27 changed nothing. T-0010 has since landed `approval` and
-  `questions`, so they are quiet now. Still named: `autopilot.ship` (T-0011),
-  `reviewPolicy` and `maxLanes` (T-0029), `maxTicketsPerRun` and `mode:
+  `questions`, and T-0011 `ship`, so they are quiet now. Still named:
+  `autopilot.reviewPolicy` and `maxLanes` (T-0029), `maxTicketsPerRun` and `mode:
   backlog` (T-0012), and a `deploy` other than `none` (T-0045). A key the
   global filter drops from `~/.claude/crew/config.json` is named `(global, not
   read)` instead of being dropped silently; that names what this crew does,

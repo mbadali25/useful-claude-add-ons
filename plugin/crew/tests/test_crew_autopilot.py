@@ -1472,18 +1472,19 @@ def _inert(got):
 
 def test_settings_warns_on_inert_autopilot_keys(tmp_path):
     root = make_repo(tmp_path, mode="off")
-    _config(root, {"mode": "plan", "ship": "merge", "maxLanes": 3})
+    _config(root, {"mode": "plan", "reviewPolicy": "fix-and-rereview", "maxLanes": 3})
 
     got = crew_autopilot.settings(str(root))
 
     assert [w.split(" - ")[0] for w in _inert(got)] == [
-        "inert: autopilot.maxLanes=3 (T-0029)", "inert: autopilot.ship=merge (T-0011)"]
+        "inert: autopilot.maxLanes=3 (T-0029)",
+        "inert: autopilot.reviewPolicy=fix-and-rereview (T-0029)"]
     done = subprocess.run([sys.executable, _SCRIPT, "settings", "--root", str(root)],
                           capture_output=True, text=True, check=False)
     lines = done.stdout.splitlines()
     assert lines[0].startswith("mode=plan")
-    assert "warning: inert: autopilot.ship=merge (T-0011) - would choose how a finished " \
-           "autopilot run ships" in lines
+    assert "warning: inert: autopilot.reviewPolicy=fix-and-rereview (T-0029) - would choose " \
+           "what autopilot does with review findings" in lines
 
 
 def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
@@ -1491,7 +1492,7 @@ def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
     # `inert_items` reaches fails, the run still gets its settings and the
     # warning says the inert keys could not be told.
     root = make_repo(tmp_path, mode="off")
-    _config(root, {"mode": "plan", "ship": "merge"})
+    _config(root, {"mode": "plan", "maxLanes": 3})
     monkeypatch.setitem(sys.modules, "completion_audit", None)
 
     got = crew_autopilot.settings(str(root))
