@@ -2057,16 +2057,53 @@ def focus_path(root):
 FOCUS_LOCK_WAIT = 5.0
 
 
-def _quoted(path, quote_escape):
-    return "'" + path.replace("'", quote_escape) + "'"
+# PowerShell reads U+2018..U+201B as single quotes too.
+_PS_QUOTES = ("'", "\u2018", "\u2019", "\u201a", "\u201b")
+_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f\u2018-\u201b]|\s{2,}")
+
+
+def _posix_quoted(path):
+    return "'" + path.replace("'", "'\\''") + "'"
+
+
+def _ps_quoted(path):
+    for mark in _PS_QUOTES:
+        path = path.replace(mark, mark * 2)
+    return "'" + path + "'"
+
+
+def _paste_safe(path):
+    """Whether `path` survives into a printed command unchanged: no control
+    character, no run of whitespace (`_one_line` would collapse it), no
+    quote PowerShell also reads, and the POSIX command parses back to exactly
+    `rm -- <path>`."""
+    import shlex  # pylint: disable=import-outside-toplevel
+    if _UNSAFE_PATH.search(path):
+        return False
+    rm_part = f"rm -- {_posix_quoted(path)}"
+    try:
+        return shlex.split(rm_part) == ["rm", "--", path] and _one_line(rm_part) == rm_part
+    except ValueError:
+        return False
+
+
+def _remove_by_hand(path, effect):
+    """`effect`, then paste-ready removal commands for `path` (POSIX and
+    PowerShell) when it is paste-safe, else the path as JSON and "remove
+    this file by hand", with no command that could name another file."""
+    if not _paste_safe(path):
+        # JSON escapes control characters; a run of spaces is escaped too, so
+        # `_one_line`'s collapse cannot change the path it names.
+        shown = re.sub(r" {2,}", lambda run: "\\u0020" * len(run.group()), json.dumps(path))
+        return f"{effect}: remove this file by hand: {shown}"
+    return (f"{effect}: rm -- {_posix_quoted(path)} (POSIX shell) or "
+            f"Remove-Item -LiteralPath {_ps_quoted(path)} (PowerShell)")
 
 
 def _focus_remedy(path):
     """The way out of an unknown marker, naming its exact path: `focus off`
     refuses to touch a file it cannot read, so the human removes it."""
-    return (f"removing it drops EVERY worktree's focus, not only this one's: "
-            f"rm -- {_quoted(path, chr(39) + chr(92) + chr(39) + chr(39))} (POSIX shell) or "
-            f"Remove-Item -LiteralPath {_quoted(path, chr(39) * 2)} (PowerShell)")
+    return _remove_by_hand(path, "removing it drops EVERY worktree's focus, not only this one's")
 
 
 def _focus_marker(top):
@@ -2116,7 +2153,9 @@ class _focus_lock:  # pylint: disable=invalid-name,too-few-public-methods
         except (self.files.Busy, OSError) as exc:
             raise _FocusLockError(
                 f"refused: the focus marker's lock {self.path}.lock could not be taken "
-                f"({exc}); nothing written") from exc
+                f"({exc}); nothing written. If no focus command is running, a process "
+                "died holding it; " + _remove_by_hand(
+                    self.path + ".lock", "removing the lock releases it")) from exc
         return self
 
     def __exit__(self, *exc):

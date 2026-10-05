@@ -970,13 +970,15 @@ explicit-focus rework (owner decision, 2026-10-05) and the re-review fixes, line
 citations in this section were not re-taken (T-0020 moves every line below its insertions).
 Focus is explicit: `focus_path` (`plugin/crew/hooks/scripts/crew_autopilot.py:2049`) is
 `<git-common-dir>/crew/autopilot-focus.json` (`FOCUS_FILE`, `:2046`), a JSON object keyed by
-worktree top-level; `_focus_marker` (`:2072`) reads it and returns why it could not -- not a
+worktree top-level; `_focus_marker` (`:2109`) reads it and returns why it could not -- not a
 file, does not parse or cannot be read, not an object, or this worktree's entry not a ticket
 (INDEX-shaped or naming a `.work/tickets/` folder) -- each reason ending with `_focus_remedy`
-(`:2064`), the POSIX and PowerShell removal commands for the exact path, never an empty mapping
-in its place. `focus_state` (`:2126`) reports `focus` from the marker only, `unknown` beside it,
+(`:2103`): through `_remove_by_hand` (`:2090`), the POSIX and PowerShell removal
+commands for the exact path only when `_paste_safe` (`:2075`) holds (no control character, whitespace run
+or PowerShell quote, and the rm parses back to the path), else the path as JSON with no command, never an empty mapping
+in its place. `focus_state` (`:2165`) reports `focus` from the marker only, `unknown` beside it,
 and the active-ticket pointer separately (`pointer`, never the `.work/INDEX.md` fallback).
-`focus_guard` (`:2144`) lets `status`, `focus off` and `NO_TICKET` (`:299`, L-0652's
+`focus_guard` (`:2183`) lets `status`, `focus off` and `NO_TICKET` (`:299`, L-0652's
 `sleep`/`wake`) through; an `unknown` marker refuses everything else without offering `focus
 off` (JUDGEMENT: could-not-tell kept as its own value, acted on closed, per CLAUDE.md
 "Lessons"); no entry is no focus; focused on T-A it refuses all but `focus T-A` when the pointer
@@ -984,18 +986,18 @@ names anything else, and otherwise all but `run`/`focus` with no ticket or T-A. 
 (`:1958`) calls it after resolving the subcommand and before the `AVAILABLE` check (`:1982`;
 `--goal` at `:1975`), `route_args` (`:1995`) guards the ticket word (`:2022`), and
 `resume_target` appends its refusal to the handoff/pointer disagreement (`:1055`). `focus_set`
-(`:2200`) and `focus_off` (`:2259`) do the marker's read-modify-write inside `_focus_lock`
-(`:2099`, `crew_config_files.Lock` on `<marker>.lock`, `FOCUS_LOCK_WAIT` `:2057`; a lock not
-taken refuses, nothing written), re-reading the marker inside it; `_write_marker` (`:2187`)
-removes the file when no entry is left. `focus_set` calls `crew_ticket.activate` (`:2254`, its
+(`:2239`) and `focus_off` (`:2298`) do the marker's read-modify-write inside `_focus_lock`
+(`:2136`, `crew_config_files.Lock` on `<marker>.lock`, `FOCUS_LOCK_WAIT` `:2057`; a lock not
+taken refuses, nothing written, with the same removal builder for a stale lock), re-reading the marker inside it; `_write_marker` (`:2226`)
+removes the file when no entry is left. `focus_set` calls `crew_ticket.activate` (`:2293`, its
 one call) only when the pointer names another ticket or none; `focus_off` calls no
 `crew_ticket.deactivate` (AST-pinned) and refuses an unknown marker rather than delete it.
 `next_phase` asks `_drift` (`:906`) first (`:877`): an `unknown` marker stops as `drift`; else
 only when focused on this ticket, approved, and ahead of a phase the loop would run
 (`POLICY_PHASES`, `:903`), it runs `completion_audit.audit` read-only, and a failure or a raise
-stops as `drift` (`FIXED_STOPS`, `:263`; `WAITING`, `:2343`). `findings_target` (`:2301`) and
-`focus_text` (`:2316`, every output ends with `FOCUS_REMINDER`, `:2032`); `main` registers
-`focus` at `:2696` and runs it at `:2733`. `plugin/crew/commands/autopilot.md` section 6
+stops as `drift` (`FIXED_STOPS`, `:263`; `WAITING`, `:2382`). `findings_target` (`:2340`) and
+`focus_text` (`:2355`, every output ends with `FOCUS_REMINDER`, `:2032`); `main` registers
+`focus` at `:2735` and runs it at `:2772`. `plugin/crew/commands/autopilot.md` section 6
 (`:112-117`). Tests: `plugin/crew/tests/test_crew_autopilot_focus.py` (two-process lock race
 included); `test_crew_autopilot_policy.py::test_approve_is_the_only_writing_subcommand` lists
 `focus` in `WRITERS`.

@@ -763,6 +763,56 @@ def test_every_unknown_message_ends_with_the_removal_commands(tmp_path, call):
     assert (line.endswith(_remedy_tail(root)), RELEASE in line) == (True, False)
 
 
+_PASTE_TABLE = ["/r/a b/autopilot-focus.json", "/r/it's/autopilot-focus.json",
+                "/r/-dash/autopilot-focus.json", "/r/$(echo pwn)`id`/autopilot-focus.json",
+                "/r/\u00fcn\u00ef\u2019c\u00f8d\u00e9/autopilot-focus.json",
+                "/r/two  spaces/autopilot-focus.json", "/r/tab\there/autopilot-focus.json",
+                "/r/new\nline/autopilot-focus.json", "/r/\u2018q\u201b/autopilot-focus.json"]
+
+
+@pytest.mark.parametrize("path", _PASTE_TABLE)
+def test_printed_removal_names_exactly_the_path_or_no_command(path):
+    """F1-b: what `focus` prints (one line, through `_one_line`) either holds
+    an rm that parses back to exactly the path, or no command and the path as
+    JSON that loads back to it."""
+    import shlex  # pylint: disable=import-outside-toplevel
+    printed = crew_autopilot._one_line(crew_autopilot._focus_remedy(path))  # pylint: disable=protected-access
+
+    if "rm -- " in printed:
+        rm_part = printed[printed.index("rm -- "):printed.index(" (POSIX shell)")]
+        ps_part = printed[printed.index("Remove-Item -LiteralPath "):printed.index(" (PowerShell)")]
+        assert (shlex.split(rm_part), ps_part) == (
+            ["rm", "--", path], "Remove-Item -LiteralPath '" + path.replace("'", "''") + "'")
+    else:
+        shown = printed[printed.index("remove this file by hand: ") + 26:]
+        assert ("Remove-Item" in printed, json.loads(shown)) == (False, path)
+
+
+@pytest.mark.parametrize("path,commands", [("/r/a b/autopilot-focus.json", True),
+                                           ("/r/two  spaces/autopilot-focus.json", False),
+                                           ("/r/new\nline/autopilot-focus.json", False),
+                                           ("/r/\u00fcn\u00ef\u2019c/autopilot-focus.json", False)])
+def test_commands_are_printed_only_for_a_paste_safe_path(path, commands):
+    assert ("rm -- " in crew_autopilot._focus_remedy(path)) is commands  # pylint: disable=protected-access
+
+
+def test_powershell_quoting_doubles_the_curly_single_quotes_too():
+    assert crew_autopilot._ps_quoted("a\u2018b\u2019c'd") == "'a\u2018\u2018b\u2019\u2019c''d'"  # pylint: disable=protected-access
+
+
+def test_a_stale_lock_names_a_paste_ready_removal(tmp_path, monkeypatch):
+    """A crash mid-write leaves the lock; the refusal says how to remove it."""
+    root = _two(tmp_path)
+    monkeypatch.setattr(crew_autopilot, "FOCUS_LOCK_WAIT", 0.2)
+    path = crew_autopilot.focus_path(str(root))
+    _write(path + ".lock", "99999")
+
+    _ok, line = crew_autopilot.focus_off(str(root))
+
+    assert ("99999" in line, f"rm -- '{path}.lock' (POSIX shell)" in line,
+            f"Remove-Item -LiteralPath '{path}.lock' (PowerShell)" in line) == (True, True, True)
+
+
 def test_removal_commands_quote_an_apostrophe_in_the_path():
     remedy = crew_autopilot._focus_remedy("/tmp/it's/autopilot-focus.json")  # pylint: disable=protected-access
 

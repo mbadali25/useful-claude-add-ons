@@ -41,8 +41,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `.work/tickets/` folder; `bogus` is unknown) reads `focus=unknown`; the router then refuses
   everything but `status`, `sleep` and `wake`, `next` stops as `drift`, and `focus off` refuses
   rather than delete it. Every such message ends with `rm -- '<path>'` and
-  `Remove-Item -LiteralPath '<path>'` for the exact path, and says removing it drops every
-  worktree's focus.
+  `Remove-Item -LiteralPath '<path>'` for the exact path (only when the path is paste-safe; else
+  the path as JSON and "remove this file by hand"), and says removing it drops every worktree's
+  focus. A stale lock's refusal carries the same removal for the lock file.
 - **Two worktrees at once lose nothing.** `focus <id>` and `focus off` hold
   `autopilot-focus.json.lock` (crew_config_files.Lock's exclusive create, at most 5 seconds)
   around the marker's read-modify-write; a lock that cannot be taken refuses with nothing
