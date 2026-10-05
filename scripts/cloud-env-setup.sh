@@ -25,6 +25,10 @@
 # allowed domains; the default "trusted" network policy denies them.
 set -uo pipefail
 
+# 1 = install the Codex CLI (needs the OpenAI domains above); 0 = skip it.
+# One script for both environments: paste it with this line set as needed.
+WITH_CODEX=1
+
 RUFF_SPEC='ruff~=0.16.0'          # pylint.yml
 PYLINT_SPEC='pylint~=4.0'         # pylint.yml
 PYTEST_SPEC='pytest~=8.0'         # every CI job that runs pytest
@@ -69,7 +73,9 @@ git_config() {
 
 # ---- Node ---------------------------------------------------------------------
 codex_cli() {
-  if have codex; then
+  if [ "$WITH_CODEX" != 1 ]; then
+    log "codex: skipped (WITH_CODEX=$WITH_CODEX)"
+  elif have codex; then
     log "codex: already installed ($(codex --version 2>/dev/null | head -1))"
   else
     npm install -g @openai/codex && log "codex: installed ($(codex --version 2>/dev/null | head -1))"
