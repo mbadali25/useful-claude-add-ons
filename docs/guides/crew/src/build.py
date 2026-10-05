@@ -43,7 +43,7 @@ Usage:
     build.py --check              # is every committed HTML current? writes nothing
 
 `--check` (T-0048) rebuilds every guide's HTML in memory exactly as a build
-does and compares it with the committed `crew-1.0-<name>.html`: exit 0 when
+does and compares it with the committed `crew-<name>.html`: exit 0 when
 all match, 1 naming each stale guide, and 2 when the build cannot run at all
 (no `markdown` module, or doc-builder fails to import) -- never 0, because a
 check that compared nothing is not "current". DOCX and PDF are not compared:
@@ -82,6 +82,13 @@ GUIDES = {
     "guide": ["guide.md"],
     "configuration-reference": ["configuration-reference.md"],
 }
+
+# Built files carry no version: `crew-<name>.{html,docx,pdf}` (C-0006), so a
+# new crew release never needs a rename. README.md's "Built artifacts" table
+# lists the resulting names; keep the two in sync.
+def html_name(name: str) -> str:
+    """The committed HTML file name for guide `name`."""
+    return f"crew-{name}.html"
 
 _FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 _FENCE_OPEN_RE = re.compile(r"^([ \t]+)(`{3,}|~{3,})")
@@ -248,7 +255,7 @@ def build_one(name: str, names: list[str], pal: "house_style.Palette",
     # Landmines: `open(p, "w")` truncates at open time).
     md_text, html_text = render_html(names, pal)
 
-    out_html = GUIDES_DIR / f"crew-1.0-{name}.html"
+    out_html = GUIDES_DIR / html_name(name)
     out_html.write_text(html_text, encoding="utf-8", newline="\n")
 
     fenced = fenced_block_count(md_text)
@@ -270,7 +277,7 @@ def check(pal: "house_style.Palette") -> list[str]:
     stale = []
     for name in sorted(GUIDES):
         _md, html_text = render_html(GUIDES[name], pal)
-        out_html = GUIDES_DIR / f"crew-1.0-{name}.html"
+        out_html = GUIDES_DIR / html_name(name)
         try:
             committed = out_html.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -317,7 +324,7 @@ def main(argv=None) -> int:
                   file=sys.stderr)
             return 2
         for name in stale:
-            print(f"stale: crew-1.0-{name}.html - rebuild with "
+            print(f"stale: {html_name(name)} - rebuild with "
                   f"python3 docs/guides/crew/src/build.py --guide {name}")
         return 1 if stale else 0
 

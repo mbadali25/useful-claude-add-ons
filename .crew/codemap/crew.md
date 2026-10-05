@@ -852,7 +852,8 @@ JUDGEMENT: the policy is read before `reject` takes the ledger lock (an accepted
 session per ticket), and the constant can be typed by hand with `review_ledger.py --reject --by`,
 the forge-local-state threat README's "Scope and approval" already states.
 
-**In-flight markers (T-0049, crew 1.0.375).** DERIVED at `3e6ff1e9`. `next_phase`
+**In-flight markers (T-0049).** DERIVED at `841b0585` (cites re-taken with `grep -n`); the line
+numbers in this paragraph are that commit's, not the anchor's. `next_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:1349`) takes `runner`; when set, and only after `_phase`
 returned no stop, `_inflight` (`:1316`, called at `:1368`) lazy-imports `crew_inflight` and asks its
 `next_stop` (`crew_inflight.py:574`), which reads `holds(root, ticket, runner=runner)`: `free`/`mine` return None (the plain result), `elsewhere` is
@@ -1581,6 +1582,16 @@ Obsidian vault). A CLI the commands call, not a hook.
   the wrong vault refuses), and `_held_check` (`:1163`) re-stats the
   directory's device and file id at the same three points. A platform with
   neither (`_WIN_PIN` `:330` false) refuses the write.
+  T-0081 (lines at `43cb9c8b`): `_vault_paths` also
+  records `<label>DirIds` (`:1048`), each real component's `(st_dev, st_ino)`
+  from `os.lstat`, or None, built by `_component_ids` (`:1092`) over the same
+  `_components`. Both walks match each component through `_match_component`
+  (`:1131`; `_open_pinned` `:1210`, `_hold_dirs` `:1173`): a different identity
+  is ESTALE (`_moved`'s "changed after the vault checks"); a None, an inode or
+  file id of 0 on either side (`_could_not_tell` `:1108`, also run on the POSIX
+  vault) or a list that does not line up (`_recorded_ids` `:1121`) is EIO
+  "could not tell", naming the directory. `_pinned_check` gains it through its re-walk;
+  its own held comparison is kept as defence in depth.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
   `repo-id:` (`_NOTE_REPO_ID` `:1279`, trailing `\r` excluded so a CRLF note
   reads as written; `_card_owner` `:1283` -> ours / foreign / unknown). The id
