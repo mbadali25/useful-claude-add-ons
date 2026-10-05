@@ -47,7 +47,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 03:14 UTC
+Last updated: 2026-10-05 03:22 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -106,6 +106,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 04:00: owner approved all 3: notes push every ~30 min + at merges (note.sh changed), Windows-red sweep after batch 7, crew 1.1.0 + guide rename last (C-0006 minted).
 - 03:50: owner confirmed: plain-text 'focus on T-1' turning focus on counts as explicit (T-0020 N3). Row stays.
 - 03:45: #357 re-review 0 BLOCK 2 FIX: F1 unknown marker gives no removal command and points to focus off which refuses; F2 concurrent focus loses an entry and the guard fails open (re-read insufficient, lock required). No-marker behaviour byte-identical to main (34 inputs); full crew suite 11664 passed. Sent fixes + main merge to builder. N3 (plain-text 'focus on T-1' writes marker) kept, owner informed.
 - 03:35: MERGED batch 6 #502 -> 47f71e93 (crew 1.0.348); #500 #348 #338 #361 show merged. CI 28/28 incl. 6+3 Windows; full crew suite 12358 passed. LANDPREP: full crew suite required on batch branches.
