@@ -323,15 +323,16 @@ def read_log(blob):
 
 
 def lost_ring(chan, tip, log):
-    """Why a ring the channel's history recorded is gone from the current log,
-    or None. The log is append-only, but a later commit can still rewrite it;
-    every ring commit (`RANG_SUBJECT`) appended its `rang` line last, and that
-    exact line must still be in the log at `tip`, or nothing pending can be
-    told. A history or blob that cannot be read is a reason too."""
+    """Why a ring the channel's history recorded is no longer where it was in
+    the current log, or None. The log is append-only, but a later commit can
+    still rewrite it -- drop a ring, edit it, or move a peer's older line after
+    it. So the whole log as each ring commit (`RANG_SUBJECT`) left it, ending
+    in its `rang` line, must still be the start of the log at `tip`, byte for
+    byte; otherwise nothing pending can be told. A history or blob that cannot
+    be read is a reason too."""
     listed = crew_coord.run_git(chan.root, ["log", "--format=%H %s", tip])
     if listed.code != 0:
         return "the channel's history could not be listed"
-    current = set(log.decode("utf-8", "replace").split("\n"))
     for row in listed.out.decode("utf-8", "replace").splitlines():
         sha, _, subject = row.partition(" ")
         if not subject.startswith(RANG_SUBJECT):
@@ -339,10 +340,9 @@ def lost_ring(chan, tip, log):
         blob = crew_coord.run_git(chan.root, ["cat-file", "blob", f"{sha}:{crew_coord.LOG}"])
         if blob.code != 0:
             return f"the ring commit {sha[:12]}'s {crew_coord.LOG} could not be read"
-        rang = blob.out.decode("utf-8", "replace").rstrip("\n").split("\n")[-1]
-        if rang not in current:
-            return (f"the ring recorded in {sha[:12]} is no longer in {crew_coord.LOG} (a later commit "
-                    "rewrote the log)")
+        if not log.startswith(blob.out):
+            return (f"the log as the ring commit {sha[:12]} left it is no longer the start of "
+                    f"{crew_coord.LOG} (a later commit rewrote the log)")
     return None
 
 

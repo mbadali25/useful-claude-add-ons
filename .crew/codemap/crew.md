@@ -1184,7 +1184,7 @@ a failed fetch, an absent channel or a missing log, and parses the whole log (`r
 line that is not a whole `log_line` entry, or a `rang` line without its fields, is `unknown`), then
 keeps each ring of this session id, or this machine and worktree, that no later line by a holder
 other than the ringer and this session follows (`pending_rings`, `:349`), once `lost_ring`
-(`:325`) has found every ring commit's `rang` line still in the log. `crew_coord.cmd_status`
+(`:325`) has found the log as every ring commit left it still the start of the current one. `crew_coord.cmd_status`
 reads only `claims/`, so the new event cannot disturb it. JUDGEMENT: matching on machine and
 worktree as well as the session id is what lets the resume step after `/clear` still see a ring.
 
