@@ -273,6 +273,79 @@ def test_index_rows_with_a_leading_pipe_are_reported_open(tmp_path):
     assert "open     T-0007" in lines
 
 
+def _graph_ignore_line(out):
+    lines = [line for line in out.splitlines() if line.startswith("graph-ignore")]
+    assert len(lines) == 1, out
+    return lines[0]
+
+
+def _uncovered_repo(tmp_path):
+    root = make_repo(tmp_path)
+    (root / ".env").write_text("PW=x\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", ".env"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "env"], cwd=root, check=True,
+                   capture_output=True)
+    return root
+
+
+def test_status_flags_uncovered_denylisted_path(tmp_path):
+    """T-0064: graphify's post-commit hook bypasses crew, so this line is the
+    warning that the next build would read a secrets-denylisted file."""
+    root = _uncovered_repo(tmp_path)
+
+    line = _graph_ignore_line(_run(root).stdout)
+
+    assert (line.startswith("graph-ignore  UNCOVERED"), ".env" in line,
+            "crew_graph_ignore.py --write" in line) == (True, True, True), line
+
+
+@pytest.mark.parametrize("case,prefix", [
+    ("covered", "graph-ignore  ok"),
+    ("unknown", "graph-ignore  unknown - "),
+], ids=["covered", "unknown"])
+def test_status_graph_ignore_ok_and_unknown(tmp_path, case, prefix):
+    root = _uncovered_repo(tmp_path)
+    if case == "covered":
+        (root / ".graphifyignore").write_text(".env\n", encoding="utf-8")
+    else:
+        (root / ".claude").mkdir()
+        (root / ".claude" / "settings.json").write_text("{not json", encoding="utf-8")
+
+    line = _graph_ignore_line(_run(root).stdout)
+
+    assert line.startswith(prefix), line
+
+
+_HOSTILE = ("Z\x1b[2J.PEM", "ID_RSA\ngraph-ignore  ok")
+
+
+def test_status_graph_ignore_line_escapes_hostile_names(tmp_path):
+    """A tracked name carrying ESC, or a newline that would forge a second
+    `graph-ignore  ok` line, is printed in its escaped form, never raw."""
+    root = make_repo(tmp_path)
+    for name in _HOSTILE:
+        (root / name).write_text("k\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", "--", *_HOSTILE], cwd=root, check=True,
+                   capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "keys"], cwd=root, check=True,
+                   capture_output=True)
+
+    out = _run(root).stdout
+    line = _graph_ignore_line(out)
+
+    assert ("\x1b" in out, ascii(_HOSTILE[0]) in line, ascii(_HOSTILE[1]) in line) == (
+        False, True, True), out
+
+
+def test_status_graph_ignore_line_is_read_only(tmp_path):
+    root = _uncovered_repo(tmp_path)
+    before = _stat_tree(root)
+
+    done = _run(root)
+
+    assert (done.returncode, "UNCOVERED" in done.stdout, _stat_tree(root)) == (0, True, before)
+
+
 def _review(verdict, failure_class=None):
     return {"verdict": verdict, "counts": {"BLOCK": 0, "FIX": 1, "NIT": 0},
             "bundle_sha256": "b" * 64, "base": "c" * 40, "head": "c" * 40,

@@ -77,7 +77,11 @@ setup forward. Neither is a hook — nothing here runs on its own — but both a
 menu item 22 (`uv tool install graphifyy` — the PyPI package is `graphifyy`,
 double-y; the CLI it installs is `graphify`). A keyless build needs both
 `--no-viz` and `--code-only`: without `--code-only`, `graphify` errors on any
-repository containing docs, rather than skipping them. Exporting the graph
+repository containing docs, rather than skipping them. Before any build,
+`crew_graph_ignore.py --check` confirms graphify will read no
+secrets-denylisted file: `.gitignore` does not stop graphify reading a tracked
+file, so the root `.graphifyignore` must exclude every one, and `--write` adds
+what is missing. Exporting the graph
 into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
 the user in `.crew/config.json`; `/crew:upgrade` never sets that flag itself.
 

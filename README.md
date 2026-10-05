@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: A graph build never reads a secrets-denylisted file. graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore` does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked `config/env.php` listed only in `.gitignore` reached ...
 - **crew**: `.gitignore` kept right for the languages in the repo. A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`, `summary`) detects the languages and build tools from the files git lists (python, node, dotnet, terraform, rust, maven, gradle, composer, go), recommends patterns from ...
-- **crew**: The shortfall rule says its wording list cannot be complete. crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and recovery paragraph, and the troubleshooting guide (HTML rebuilt) no longer say any admission that the review fell short is INCOMPLETE.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

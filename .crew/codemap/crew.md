@@ -1815,6 +1815,29 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   hook-script edit (its `why` says so first). Confirmed
   present, **not run and not read** by this note.
 
+**The secrets-denylist gate on the graph (T-0064, crew 1.0.237).** DERIVED at `687759ce`
+(T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167). `_graph`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1252`) calls `_graph_ignore_refusal` (`:1230`,
+called at `:1260`) after its "no code changed" return and before the graphify-missing check.
+While `crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore`
+does not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
+graphify command is run and autopilot's `_settles` stops on it unchanged. The checker is
+`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:139`), `translate_rule`
+for `Read(...)` deny rules (`:201`), `denylist` (`:266`), `candidates` (`:293`, `git ls-files
+--cached --others`, no `--exclude-standard`), `_judge` (`:337`; an unexcluded `sub/` is
+unknown, a symlink is judged by its target too), `_ignored` (`:359`, git's own `check-ignore
+--no-index` in a scratch repository with the user's global excludes disabled), `coverage`
+(`:408`), `write` (`:490`, temp file then `os.replace`; a literal only for a `_plain`
+(`:439`) path, never over a `!` line `_reincluded` (`:459`) finds) and `main` (`:567`). `crew_status.py`
+prints the same answer as its `graph-ignore` line (`_graph_ignore_line`,
+`plugin/crew/hooks/scripts/crew_status.py:185`, appended at `:252`). Tests:
+`plugin/crew/tests/test_graph_ignore.py`, `plugin/crew/tests/test_graph_ignore_graphify.py` (real
+graphify; skips without it), and new cases in `test_refresh_check.py` and `test_status.py`. The
+last `.crew/verify.json` rule maps them. Its mutations were run by hand; they join
+`plugin/crew/tests/sabotage_refresh.py` in a harness-only change, because `sabotage*.py` is in
+`HARNESS` (`scripts/check-tooling-pr.py`). JUDGEMENT: graphify's post-commit hook still builds
+without the check; `/crew:status`'s line is the only warning on that path.
+
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 "all four or nothing" (its `:246` at `d7c7c75c`).

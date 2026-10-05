@@ -582,6 +582,54 @@ setting that changes when Claude Code's auto-compact fires.
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
 
+## Graph refresh refused: secrets-denylisted path
+
+graphify reads every file its ignore rules do not exclude and records the symbols it finds in
+`graph.json`. For a file git tracks, `.gitignore` does not stop it: only `.graphifyignore` does.
+So crew checks, before it names or runs a graph build, that the root `.graphifyignore` excludes
+every file the secrets denylist matches.
+
+- **Symptom: `refresh-check` prints `graph graphify-out: unknown - graphify would read N
+  secrets-denylisted path(s) .graphifyignore does not exclude: ...; stop - a refresh cannot settle
+  this`,** or `/crew:status` prints `graph-ignore  UNCOVERED`.
+  **Check:** which files, and from which source.
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_graph_ignore.py" --root . --check --json
+  ```
+  The denylist is the built-in patterns (`.env`, `.env.*` but not `.env.example`, `*.pem`,
+  `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `id_ed25519*`), `.claude/secrets-denylist` if it exists,
+  and every in-repo `Read(...)` rule in `permissions.deny` of `.claude/settings.json` and
+  `.claude/settings.local.json`. `sources` in the JSON names which ones were read.
+  **Fix:** add the missing patterns, then check again.
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_graph_ignore.py" --root . --write
+  ```
+  It appends the missing patterns, then any flagged path they still miss (the denylist ignores
+  case, `.graphifyignore` does not, so `.ENV` gets `/.ENV`), under one marked block, and leaves
+  every existing line as it was. Commit `.graphifyignore`, then re-run the refresh check.
+  If it prints ``line N (`!pattern`) re-includes denylisted <path>; remove that line or accept the
+  exposure`` and exits 1, your own `!` line is the reason: `--write` never overrides it. Delete the
+  line, or keep it and accept that graphify reads that file. A path that is not one line of plain
+  text (a name holding a line break or other control character) is never written either; it stays
+  named, escaped, by `--check`: rename the file or exclude it by hand.
+
+- **Symptom: `denylist coverage unknown: <reason>`** (the refresh check) or `graph-ignore  unknown`
+  (`/crew:status`).
+  **Check:** the reason names it: git missing, a settings file that does not parse, an unreadable
+  `.claude/secrets-denylist` or `.graphifyignore`, a nested `.graphifyignore` (only the root one is
+  evaluated, and a nested one could re-include a file with `!`), a nested repository or submodule
+  `.graphifyignore` does not exclude, a symlink that resolves outside the repository or not at
+  all, or a deny-all `Read` rule.
+  **Fix:** repair what it names. An unknown is never read as covered, so no refresh is named until
+  it is fixed.
+
+- **Symptom: a graph was built before the fix** (by hand, or by graphify's post-commit hook, which
+  bypasses crew).
+  **Fix:** treat that graph as holding text from the secret files. Delete the graph output
+  directory (`graphify-out/` by default), run `--write`, check that `--check` exits 0, then
+  rebuild. Commit the rebuild if the output is tracked. The crew-graph skill's **Tainted graph**
+  section has the same steps.
+
 ## Turning things off
 
 Every switch named above, in one place. "Off" for a guard means the `PreToolUse` hook still fires

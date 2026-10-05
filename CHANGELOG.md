@@ -9,6 +9,47 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: a graph build never reads a secrets-denylisted file (T-0064)
+
+- graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore`
+  does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked
+  `config/env.php` listed only in `.gitignore` reached `graph.json`. New
+  `hooks/scripts/crew_graph_ignore.py` builds the repo's secrets denylist - built-in patterns
+  (`.env`, `.env.*` but not `.env.example`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`,
+  `id_ed25519*`), the optional tracked `.claude/secrets-denylist`, and every in-repo `Read(...)`
+  deny rule in `.claude/settings.json` and `.claude/settings.local.json` - and lists every file on
+  disk (tracked, untracked or ignored) it matches that the root `.graphifyignore` does not exclude,
+  judged by git's own matcher in a scratch repository. `--check` exits 0 covered, 1 uncovered
+  (paths only, never content), 2 unknown; `--write` appends the missing patterns, then each path
+  they still miss as an anchored literal (the denylist match ignores case, `.graphifyignore`'s
+  does not, so `.ENV` gets `/.ENV`), under one marked block, atomically, through a symlinked
+  `.graphifyignore`, keeping its mode and line ending (CRLF only when most lines use it). A literal
+  is written only for a path that is one line of plain text, so a file named `ID_RSA<LF>!.env`
+  cannot append `!.env`; such a path stays uncovered, named escaped. A `!` line already in
+  `.graphifyignore` is never overridden: `--write` writes the other patterns, prints ``line N
+  (`!pattern`) re-includes denylisted <path>; remove that line or accept the exposure`` and exits 1.
+  A symlink is judged by its target too, and
+  `Read(.\secrets\**)` is read as `Read(./secrets/**)`.
+- `crew_refresh_check.py` reports the graph `unknown` and not refreshable, naming the paths and
+  `crew_graph_ignore.py --write`, while any denylisted path is uncovered or coverage cannot be told,
+  so neither it nor autopilot names a graphify command then. `/crew:status` gains a `graph-ignore`
+  line: `ok`, `UNCOVERED` with the paths, or `unknown` with the reason; graphify's post-commit hook
+  bypasses crew, so this line is its warning. Every unknown stays unknown, never covered: git
+  missing, a settings file that does not parse, an unreadable denylist or `.graphifyignore`, a
+  nested `.graphifyignore`, a nested repository or submodule `.graphifyignore` does not exclude
+  (git lists it as `sub/`, never its files), a symlink resolving outside the repo or not at all,
+  a deny-all `Read`.
+- crew-graph's **Build** runs `--check` first and stops on 1 or 2; new **Secrets denylist** and
+  **Tainted graph** (delete the output, `--write`, rebuild) sections. crew-setup gains step 3e
+  (`--write`). The onboard, upgrade and status commands, the README, `PLUGINS.md` and the
+  troubleshooting guide say the same.
+- Tests: `test_graph_ignore.py`, the real-graphify fixture `test_graph_ignore_graphify.py` (skips,
+  saying so, without graphify; ran here against graphify 0.9.74), and new cases in
+  `test_refresh_check.py` and `test_status.py`. `.crew/verify.json` gains a last rule for the
+  checker. Fifteen mutations were applied by hand and each went red on its named test; they are not
+  in `sabotage_refresh.py`, which is a harness path (`scripts/check-tooling-pr.py`), and land in a
+  harness-only follow-up. Not run on Windows.
+
 ### Added — crew: `.gitignore` kept right for the languages in the repo (T-0039)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`,
