@@ -7,6 +7,7 @@ is pushed anywhere else, and no case calls SendMessage or ListAgents: the
 script only composes and classifies text.
 """
 import io
+import json
 import os
 import re
 import subprocess
@@ -38,8 +39,11 @@ def _configure(root):
 
 
 def _channel_commit(root, parent=None, text="one"):
-    """A commit for the channel, built with plumbing: a log.jsonl holding `text`."""
-    blob = subprocess.run(["git", "-C", str(root), "hash-object", "-w", "--stdin"], input=text + "\n",
+    """A commit for the channel, built with plumbing: a log.jsonl holding one
+    seed entry whose detail is `text`."""
+    line = json.dumps({"at": "2026-10-01T00:00:00+00:00", "event": "seed", "ticket": "-", "holder": "seed",
+                       "detail": text}, sort_keys=True)
+    blob = subprocess.run(["git", "-C", str(root), "hash-object", "-w", "--stdin"], input=line + "\n",
                           check=True, capture_output=True, text=True).stdout.strip()
     tree = subprocess.run(["git", "-C", str(root), "mktree"], input=f"100644 blob {blob}\tlog.jsonl\n",
                           check=True, capture_output=True, text=True).stdout.strip()
