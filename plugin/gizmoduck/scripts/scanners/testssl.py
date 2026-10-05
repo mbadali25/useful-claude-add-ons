@@ -192,7 +192,7 @@ def run(target, outdir, opts):
     # either - decline right here with an actionable message instead of
     # ever invoking testssl.sh and burying that behind its own error.
     hexdump_dir = _hexdump_dir()
-    if hexdump_dir is None and not base.which("hexdump"):
+    if missing_prerequisite() is not None:
         return None, base.ToolResult(
             -1, "",
             "testssl.sh requires `hexdump`, which is not on PATH and no "

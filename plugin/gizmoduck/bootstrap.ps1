@@ -346,7 +346,28 @@ function Install-XmlWriterModule {
   Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
 }
 
+# Puts Strawberry Perl's bin dir first on this session's PATH, so the `perl`
+# probed and launched right after a winget install is the one just installed:
+# winget's PATH change reaches only new terminals. -Persist also prepends it to
+# the user PATH, for the fallback where a broken perl must stop winning in
+# later sessions too. $env:PATH and PathSeparator, not $env:Path and ';', so
+# the suite can drive this under pwsh on Linux, where env names are
+# case-sensitive. Returns whether the dir held a perl.
+function Add-StrawberryPerlToPath {
+  param([Parameter(Mandatory)][string]$Bin, [switch]$Persist)
+  if (-not (Test-Path (Join-Path $Bin "perl.exe"))) { return $false }
+  $sep = [IO.Path]::PathSeparator
+  if ($Persist) {
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    [Environment]::SetEnvironmentVariable("Path", "$Bin$sep$userPath", "User")
+  }
+  $env:PATH = "$Bin$sep$env:PATH"
+  return $true
+}
+
 function Install-Nikto {
+  # $StrawberryBin is a parameter only so the suite can point it at a fixture.
+  param([string]$StrawberryBin = "C:\Strawberry\perl\bin")
   # Nikto is a Perl script with no native Windows package - it needs a Perl
   # runtime plus the script itself. The adapter (scanners/nikto.py) just
   # uses `base.which("perl")` - whichever perl ends up resolvable on PATH
@@ -358,6 +379,8 @@ function Install-Nikto {
   if (-not $perlCmd) {
     winget install --id StrawberryPerl.StrawberryPerl -e --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw "winget exited $LASTEXITCODE installing Strawberry Perl" }
+    # Without this, Test-NiktoRuns below finds no perl on a fresh machine.
+    Add-StrawberryPerlToPath -Bin $StrawberryBin | Out-Null
   } elseif (-not (Test-PerlHasXmlWriter $perlCmd.Source)) {
     Write-Host ">> $($perlCmd.Source) is missing XML::Writer (nikto's hard dependency) - installing it..."
     try {
@@ -371,12 +394,7 @@ function Install-Nikto {
       # found above (still missing XML::Writer) stays ahead of this new
       # Strawberry install in PATH search order, nikto would keep resolving
       # to the broken one. Prepend Strawberry's bin dir so it wins.
-      $strawberryBin = "C:\Strawberry\perl\bin"
-      if (Test-Path (Join-Path $strawberryBin "perl.exe")) {
-        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        [Environment]::SetEnvironmentVariable("Path", "$strawberryBin;$userPath", "User")
-        $env:Path = "$strawberryBin;$env:Path"
-      }
+      Add-StrawberryPerlToPath -Bin $StrawberryBin -Persist | Out-Null
     }
     if (-not (Test-PerlHasXmlWriter "perl")) {
       Write-Host "!! nikto may still fail: no perl on PATH could be confirmed to have XML::Writer" -ForegroundColor Yellow
