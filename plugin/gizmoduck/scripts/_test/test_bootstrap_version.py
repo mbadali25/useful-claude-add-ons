@@ -343,3 +343,35 @@ def test_ps1_both_fail_throws_naming_the_tool(stubs):
     assert "ERR=Widget Scanner: could not determine the latest version" in proc.stdout, \
         proc.stdout + proc.stderr
     assert "TAG=" not in proc.stdout
+
+
+# --- apt-get options (a /tmp at 755 breaks apt's `_apt` sandbox user) -------
+
+_APT_OPTS = "apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600"
+
+
+def test_apt_installs_run_the_sandbox_as_root_with_a_lock_timeout_then_clean(stubs):
+    proc, log = _run(stubs, "install_nmap; install_nikto",
+                     extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert proc.returncode == 0, proc.stderr
+    assert f"sudo {_APT_OPTS} install -y nmap\n" in log, log
+    assert f"sudo {_APT_OPTS} install -y nikto\n" in log, log
+    assert log.count(f"sudo {_APT_OPTS} clean\n") == 2, log
+
+
+def test_a_failed_apt_install_is_not_masked_by_clean_even_with_set_e_off(stubs):
+    # `|| apt_install` runs it with set -e suspended (install_depcheck's JRE).
+    failing = stubs["bin"] / "sudo"
+    failing.write_text('#!/usr/bin/env bash\necho "sudo $*" >> "$STUB_LOG"\n'
+                       '[[ " $* " == *" install "* ]] && exit 100\nexit 0\n', newline="\n")
+    failing.chmod(0o755)
+    proc, log = _run(stubs, "false || apt_install default-jre; echo rc=$?")
+    assert "rc=100" in proc.stdout, proc.stdout + proc.stderr
+    assert "clean" not in log
+
+
+def test_every_apt_get_call_goes_through_the_helper():
+    calls = [ln for ln in _BOOTSTRAP.read_text().splitlines()
+             if "apt-get " in ln and not ln.lstrip().startswith("#")
+             and "command -v apt-get" not in ln and "echo" not in ln]
+    assert calls == [f"  sudo {_APT_OPTS} \"$@\""], calls

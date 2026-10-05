@@ -78,6 +78,29 @@ already_installed() {
   return 0
 }
 
+# Every apt-get call goes through these two. The options:
+#  - APT::Sandbox::User=root: apt drops to its `_apt` user to fetch and verify
+#    indexes, writing temp files under /tmp. Some images (the Claude Code cloud
+#    image was measured with /tmp at 755 root:root) leave `_apt` unable to, and
+#    apt-get update/install fail with "Couldn't create temporary file
+#    /tmp/apt.conf.XXXX". Running the sandbox as root sidesteps that without
+#    touching /tmp's permissions - do not "fix" this with a chmod of /tmp.
+#  - DPkg::Lock::Timeout=600: wait for another apt/dpkg holding the lock (an
+#    unattended-upgrades run, or a parallel setup step) instead of failing.
+# apt_install also runs `apt-get clean`, since disk can be a fixed allowance
+# and the downloaded .debs are dead weight once installed.
+apt_get() {
+  sudo apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600 "$@"
+}
+
+apt_install() {
+  # Explicit `|| return`: a caller like `cmd || apt_install x` runs this with
+  # set -e suspended, and a failed install must not be masked by a clean that
+  # succeeds. A failed clean only costs disk, so it warns and moves on.
+  apt_get install -y "$@" || return
+  apt_get clean || echo "!! apt-get clean failed - continuing" >&2
+}
+
 install_prereqs() {
   local missing=0 c
   for c in curl unzip git python3 pip3 wkhtmltopdf; do
@@ -88,8 +111,8 @@ install_prereqs() {
     return 0
   fi
   if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update -y
-    sudo apt-get install -y curl unzip git python3 python3-pip wkhtmltopdf
+    apt_get update -y
+    apt_install curl unzip git python3 python3-pip wkhtmltopdf
   fi
 }
 
@@ -183,12 +206,12 @@ clone_nuclei_templates() {
 
 install_nmap() {
   already_installed nmap nmap && return 0
-  sudo apt-get install -y nmap
+  apt_install nmap
 }
 
 install_nikto() {
   already_installed nikto nikto && return 0
-  sudo apt-get install -y nikto
+  apt_install nikto
 }
 
 install_testssl() {
@@ -277,7 +300,7 @@ install_depcheck() {
   sudo ln -sf /opt/dependency-check/bin/dependency-check.sh /usr/local/bin/dependency-check
 
   # Dependency-Check is a Java app; make sure something can run it.
-  command -v java >/dev/null 2>&1 || sudo apt-get install -y default-jre
+  command -v java >/dev/null 2>&1 || apt_install default-jre
 }
 
 install_sqlmap() {
@@ -305,7 +328,7 @@ install_zap() {
   # which looks like a missing tool for reasons nobody can see from `doctor`.
   # Check for 17+ before doing anything else, matching the JRE gate ZAP needs.
   if ! java -version 2>&1 | grep -qE '"(1\.)?(1[7-9]|[2-9][0-9])'; then
-    sudo apt-get install -y openjdk-17-jre
+    apt_install openjdk-17-jre
   fi
 
   already_installed "OWASP ZAP" zap.sh && return 0
