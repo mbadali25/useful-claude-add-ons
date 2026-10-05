@@ -316,7 +316,13 @@ def test_trivy_falls_back_to_the_release_asset_when_its_install_script_fails(stu
     # The official install.sh (fetched with curl) fails, as it does where
     # github.com/<repo>/releases/<tag> is refused; the asset fallback must
     # then resolve the tag via git and fetch the versioned tarball plus its
-    # checksums file. sudo is a logging no-op, so nothing is downloaded.
+    # checksums file. The tarball is served from STUB_ASSETS so the step gets
+    # as far as the checksums download: try_install's set -e (L-0685) stops a
+    # step at its first failed command, which a 404 on the tarball now is.
+    asset_name = {"x86_64": "64bit", "amd64": "64bit", "aarch64": "ARM64",
+                  "arm64": "ARM64"}.get(platform.machine().lower())
+    if asset_name:
+        (stubs["assets"] / f"trivy_0.75.0_Linux-{asset_name}.tar.gz").write_bytes(b"stub")
     proc, log = _run(stubs, 'try_install "trivy" install_trivy', git="ok",
                      tags=["v0.75.0", "v0.76.0-rc1", "v0.9.0"],
                      extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})

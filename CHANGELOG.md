@@ -83,13 +83,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `marketplace.yml` step and gate-runner table step, and `case_no_step_launches_pwsh_directly` in
   `scripts/_test/gate-runner.py`.
 
-### Changed — gizmoduck 0.5.17: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
+### Changed — gizmoduck 0.5.18: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
 
 - **Summary.** `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`,
   `--user` installs every tool that needs no package manager into the tool home without root,
   `--dry-run` shows the plan and changes nothing, and a failed tool now makes it exit 1.
 - **Behaviour change: a partial install exits 1.** The script used to end on a `cat` and exit 0
-  whatever failed. Now: 0 nothing failed, 1 a tool or the template download failed, 2 a usage or
+  whatever failed. Each install step now really stops at its first failed command (`try_install`
+  ran it inside an `if`, where bash ignores `set -e`, so a failed download followed by a successful
+  last command read as OK); under `--user`, a tool-home directory that is not a git clone is never
+  replaced without `GIZMODUCK_BOOTSTRAP_FORCE=1`. Now: 0 nothing failed, 1 a tool or the template download failed, 2 a usage or
   precondition error. Skipped-only is 0 with a last line `GIZMODUCK_BOOTSTRAP_SKIPPED: <names>`.
 - **Privilege, decided once.** `id -u` 0: no `sudo` prefix. Otherwise `sudo`, with `-n` when stdin
   is not a terminal so a password prompt cannot hang a pipeline. Not root and no `sudo`: exit 2,

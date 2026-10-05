@@ -386,3 +386,34 @@ def test_user_mode_forced_nikto_refresh_whose_pull_fails_is_a_failure(env, tmp_p
     assert "pull" in log.read_text()
     assert proc.stdout.splitlines()[-1] == "failed=nikto", proc.stdout + proc.stderr
     assert "git pull" in proc.stderr and "failed" in proc.stderr, proc.stderr
+
+
+def test_try_install_fails_a_step_whose_middle_command_failed(env):
+    # set -e must stop the step at the failed command: a later command that
+    # succeeds must not turn it into OK (it did while try_install ran it in an `if`).
+    e, _fakes, _log = env
+    script = ('source "$0"; step() { false; echo reached-after-failure; }; '
+              'try_install demo step; echo "failed=${FAILED[*]}"')
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    assert "reached-after-failure" not in proc.stdout, proc.stdout
+    assert proc.stdout.splitlines()[-1] == "failed=demo", proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize("tool,func", [("sqlmap", "install_sqlmap"),
+                                       ("testssl.sh", "install_testssl")])
+def test_user_mode_keeps_a_tool_home_dir_that_is_not_a_clone(env, tmp_path, tool, func):
+    e, fakes, log = env
+    _fake(fakes, "hexdump", f"#!{_BASH}\nexit 0\n")
+    home = tmp_path / "toolhome"
+    (home / tool).mkdir(parents=True)
+    (home / tool / "mine.txt").write_text("keep me\n")
+    e["GIZMODUCK_HOME"] = str(home)
+    script = (f'source "$0"; USER_MODE=1; set_user_dirs; PRIV=(); '
+              f'try_install {tool} {func}; echo "failed=${{FAILED[*]}}"')
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    assert (home / tool / "mine.txt").is_file(), proc.stdout + proc.stderr
+    assert "clone" not in log.read_text(), log.read_text()
+    assert proc.stdout.splitlines()[-1] == f"failed={tool}", proc.stdout + proc.stderr
+    assert "not a git clone" in proc.stderr

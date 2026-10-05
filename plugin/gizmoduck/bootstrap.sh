@@ -128,12 +128,15 @@ git_net() {
 
 # Runs $2.. as a function, in a subshell with its own `set -e` so a failing
 # command inside it aborts just that one install instead of the whole script.
-# The subshell's exit status is what the `if` below tests, so -e in the
+# The subshell runs as a plain statement and its status is read after: inside
+# an `if` (as it once was) bash ignores set -e in the whole subshell, so a
+# failed download followed by a successful last command read as OK. -e in the
 # *parent* shell (which we don't set) never comes into play.
 try_install() {
-  local name="$1"; shift
+  local name="$1" rc; shift
   echo ">> installing ${name}..."
-  if ( set -e; "$@" ); then
+  ( set -e; "$@" ); rc=$?
+  if [[ $rc -eq 0 ]]; then
     echo ">> ${name}: OK"
   else
     echo "!! ${name}: install failed - continuing with the rest" >&2
@@ -545,12 +548,26 @@ install_testssl() {
   if [[ -d "$dir/.git" ]]; then
     as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
   else
+    keep_foreign_dir testssl.sh "$dir" && return 1
     as_root rm -rf "$dir"
     as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
       git clone --depth 1 https://github.com/drwetter/testssl.sh.git "$dir"
   fi
   as_root chmod +x "$dir/testssl.sh"
   as_root ln -sf "$dir/testssl.sh" "${BIN_DIR}/testssl.sh"
+}
+
+# --user: a directory under the tool home that is not a git clone was not made
+# by this script, so it is not replaced without GIZMODUCK_BOOTSTRAP_FORCE=1.
+# Returns 0 (and says so) when the caller must leave it alone.
+keep_foreign_dir() {
+  local name="$1" dir="$2"
+  if [[ $USER_MODE == 1 && -e "$dir" && ! -d "$dir/.git" \
+        && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    echo "!! ${name}: ${dir} exists and is not a git clone - move it aside, or set GIZMODUCK_BOOTSTRAP_FORCE=1 to replace it" >&2
+    return 0
+  fi
+  return 1
 }
 
 install_trivy() {
@@ -660,6 +677,7 @@ install_sqlmap() {
   if [[ -d "$dir/.git" ]]; then
     as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
   else
+    keep_foreign_dir sqlmap "$dir" && return 1
     as_root rm -rf "$dir"
     as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
       git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git "$dir"
