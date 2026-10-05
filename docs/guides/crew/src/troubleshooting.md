@@ -375,8 +375,9 @@ log said was `FAIL <name>`.
   is not installed. `DIAGRAMS_DIR` points it at a directory other than `docs/diagrams`.
 - **See why a check failed.** The current template runners print the last 5 lines of a failing
   check's output under its `FAIL` line and report exit 77 as `SKIP`, not a failure. A repo set up
-  earlier keeps its old runners: copy `check()` from the template `smoke.sh` and `run()` from the
-  template `run-all.sh` by hand.
+  earlier keeps its old runners: replace the counter line, the `check()` / `run()` function with the
+  `CUR_OUT` / `cleanup` / `trap` lines above it, and the final count line from the templates. Copying
+  `check()` alone breaks the old `smoke.sh` on the first exit 77 (`SKIP` is unset under `set -u`).
 
 ## Autopilot in a worktree, and the refresh check
 

@@ -39,6 +39,16 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 48 rules
 
+**DERIVED, T-0502 on `rush/g5-platform` (2026-10-05), read with `json.load`: 774 lines, 73 rules
+(the release line's map plus this branch's).** T-0502 adds rule 19 (`.crew/verify.json:290-295`):
+paths `plugin/crew/skills/crew-setup/templates/**` and
+`plugin/crew/tests/test_setup_verify_templates.py`, running that one test file (fake `mmdc`,
+throwaway repos; priced 10s, measured under 1s). It covers crew-setup's `_verify` runner templates
+(a failing check's last 5 lines as `FAIL <name> | ...`, exit 77 as SKIP, a temp-file capture
+removed on any exit) and the ready case `templates/cases/diagrams-render.sh`. No earlier rule ran
+a test of these templates: `plugin/crew/skills/**` maps only to `validate-prompts.py`. The
+paragraphs below read older trees and do not count this rule.
+
 **DERIVED, read with `json.load` on L-0574 after merging main `e0c70fc9` (2026-10-02): 533 lines, 48 rules.** Main's `e0c70fc9` map is 506 lines and 48 rules (rule 46 L-0555's `ci_receipt.py`, 47 L-0572's subset cover, 48 L-0575's recurring findings, last); L-0574 adds no rule, only the top-level `preReview` block and its `_note_preReview`. The "45 rules" heading above this note was already behind main's map before L-0574 merged it.
 
 **L-0555 PR 1 (`3a33161c`): 459 lines, 45 rules.** The last rule (`.crew/verify.json:482`) is L-0555's: `ci_receipt.py`, `test_ci_receipt.py` and `.github/workflows/verify-gate.yml`, running `test_ci_receipt.py`. The 44th is L-0557's (see its re-anchor note); the account below is the 43-rule state it extends.

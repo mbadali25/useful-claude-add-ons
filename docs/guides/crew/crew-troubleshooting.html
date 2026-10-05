@@ -531,8 +531,9 @@ log said was <code>FAIL &lt;name&gt;</code>.</p>
   is not installed. <code>DIAGRAMS_DIR</code> points it at a directory other than <code>docs/diagrams</code>.</li>
 <li><strong>See why a check failed.</strong> The current template runners print the last 5 lines of a failing
   check's output under its <code>FAIL</code> line and report exit 77 as <code>SKIP</code>, not a failure. A repo set up
-  earlier keeps its old runners: copy <code>check()</code> from the template <code>smoke.sh</code> and <code>run()</code> from the
-  template <code>run-all.sh</code> by hand.</li>
+  earlier keeps its old runners: replace the counter line, the <code>check()</code> / <code>run()</code> function with the
+  <code>CUR_OUT</code> / <code>cleanup</code> / <code>trap</code> lines above it, and the final count line from the templates. Copying
+  <code>check()</code> alone breaks the old <code>smoke.sh</code> on the first exit 77 (<code>SKIP</code> is unset under <code>set -u</code>).</li>
 </ul>
 <h2 id="autopilot-in-a-worktree-and-the-refresh-check">Autopilot in a Worktree, and the Refresh Check</h2>
 <ul>
