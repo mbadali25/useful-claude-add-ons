@@ -1261,7 +1261,8 @@ def test_autopilot_defaults_are_the_config_block():
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
         "sleep": {"schedule": None, "approval": None, "questions": None},
-        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
+        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+        "maxLanes": None, "reviewPolicy": "stop"}
 
 
 # --- step 6: the command -----------------------------------------------------

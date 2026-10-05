@@ -473,6 +473,44 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   `test_lifecycle_commands.py`'s exact-CLI list gains `goal-propose`,
   `goal-approve` and `route --root . --first goal`. `.crew/verify.json`'s
   autopilot rule runs the new file.
+### crew 1.1.9 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
+
+- **Summary.** A set of tickets the owner designed and approved together can now run at once, each
+  in its own isolated worktree, with every lane's questions and results reported in one batch.
+- **Added.** `plugin/crew/hooks/scripts/crew_wave.py`: `set` records an owner-designed set in
+  `.work/autopilot/<slug>.json`; `plan` (read-only) says per ticket `eligible` or why it is refused
+  (no current approval, `direction` or closed, a dependency not closed or unknown, a Touch overlap,
+  more lanes than `autopilot.maxLanes`) and the landing order; `start` writes the lane files and
+  prints one `Agent` launch per lane with `isolation: worktree`, never any other; `lane-init`,
+  `lane-prompt`, `lane-done`, `collect` (a missing lane file reads `unknown`, never `clean`) and
+  `cleanup` (merged, clean worktrees only; never `--force` or `branch -D`). The wave refuses to run
+  unless `scope.mode` is `block` for every lane ticket (`scope-not-enforcing`). `/crew:autopilot`
+  routes `wave`, `wave --set <slug>` and `wave <id>...` to it (section 7). New repo-only keys
+  `autopilot.maxLanes` (default: `pm.maxDispatches`, which it can only lower) and
+  `autopilot.reviewPolicy` (`stop` | `clean-only` | `fix-and-rereview`, default `stop`).
+- **Not in this entry.** The scope guard's subagent never-list (`review_ledger.py --accept|--reject`
+  and every abbreviation, `gh pr merge --admin`), `review_ledger.py`'s `allow_abbrev=False`, their
+  suite and `sabotage_wave.py` are review harness and land separately (T-0087). Until they do, only
+  the lane prompt keeps a lane from accepting a review or admin-merging.
+
+### crew 1.1.9 — T-0030: cross-session claims on a git-backed channel
+
+- **Summary.** Several crew sessions, on one machine or many, can now claim tickets on a shared
+  git branch so two of them never work the same ticket.
+- **Added.** `plugin/crew/hooks/scripts/crew_coord.py`: `claim`, `heartbeat`, `release`, `done`,
+  `release --break --by <name>` (the owner only), `recover` and `status` on the branch
+  `crew-coord/<channel>` of a shared remote (`coord.channel` / `coord.remote` in `.crew/config.json`).
+  Each claim is `claims/<repo>__<id>.json` plus one line in `log.jsonl`, written with git plumbing
+  on the freshly fetched tip and pushed with a plain push, never a force push; a rejected push
+  re-fetches and retries at most three times, then reads `unknown - could not push`. A claim whose
+  heartbeat is older than 30 minutes reads `owner unknown`, never free. A detached heartbeat
+  process refreshes it every 10 minutes while the session's Claude process lives. `recover` adopts a
+  claim after the session id changes only on the same machine and worktree, with the local identity
+  file naming the old holder and its process provably gone; anything else is presented for the owner.
+  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured.
+  The README's "Cross-session claims" section documents channels, the TTL and the no-force rule.
+- **Not in this entry.** The sabotage mutations (`sabotage_coord.py`, registered in `sabotage.py`)
+  are review harness and land separately (T-0087).
 
 ### crew 1.1.0 — C-0006: version-free guide file names
 

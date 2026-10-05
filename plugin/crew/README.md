@@ -871,8 +871,9 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 | `goal "<goal>"` | T-0012 (below): researches the goal once, writes the goal file and proposal, prints the `/goal` line for you to paste, and asks for the split approval. It mints nothing yet. |
 | `--goal <slug>`, `run --goal <slug>` | Not yet: resuming a goal stops with "arrives with L-0541". |
 | `focus <id>`, `focus off`, `focus` | T-0020's scope lock on one ticket: sets, releases or shows this worktree's explicit focus marker (a plain active-ticket pointer is not focus) — "Focus" under "Scope and approval". `focus off` must be exactly those two words. |
+| `wave`, `wave --set <slug>`, `wave <id> <id>...` | Runs an owner-designed, approved set of tickets as parallel isolated lanes (T-0029) — "`wave`" below. |
 
-Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of status\|run\|assign\|goal\|focus, or a ticket id". A second word that is not a ticket id (`status stauts`), or a third word, stops too: route never reads it as a ticket.
+Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of status\|run\|assign\|goal\|focus\|sleep\|wake\|wave, or a ticket id". A second word that is not a ticket id (`status stauts`), or a third word, stops too: route never reads it as a ticket.
 
 **`/crew:autopilot goal "<goal>"`** (T-0012). The goal's text never goes on a shell line: the command routes it with `route --root . --first goal`, researches the goal once (crew:explorer, crew:researcher) and stages a proposal at `.work/autopilot/<name>.proposal.json` — `goal`, a one-line `done_condition`, `findings`, and `tickets`, each with a `title`, a `risk` and `depends_on` (indexes of earlier tickets; the recommendation first, in dependency order). `crew_autopilot.py goal-propose --root . --proposal-file <f>` refuses, writing nothing, a file outside `.work/autopilot/` (symlinks resolved) or not regular, no goal text, an empty `done_condition`, a dependency that is unknown, a cycle or out of order, or a title `mint` would refuse; otherwise it writes the goal file `.work/autopilot/<slug>.json` (schema 1; the slug is T-0006's `--goal` grammar, `-2`, `-3` on a collision) and prints `slug=<slug> goal_status=printed ...`, one line per ticket, and `goal_line: /goal <condition> - or /crew:autopilot has stopped naming a command only the owner types` (one line, at most 300 characters; the condition is cut, never the clause, so Claude Code's evaluator treats an owner stop as met). **Autopilot prints that line for you to paste; it never runs, types or reports `/goal` as set**, because Claude Code's `/goal` is only the user's to type and its state cannot be observed (`goal_status` is always `printed`). T-0013's typer is offered only when `resume.auto` is armed, `crew_autocycle.resolve_method` names a sender, and T-0013 exposes a `/goal` typing entry point — today it does not, so a `typer: not offered` line names what is missing.
 
@@ -1036,6 +1037,8 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 **Routing never approves.** No phrase routes to `/crew:approve`, a `continue` whose next step is approval asks instead, and `/crew:approve` is not model-invocable anyway. Type `/crew:approve <id>` yourself.
 
 **Settings.** `route.enabled` in `.crew/config.json` or the machine-global file; only the JSON value `true` arms it (`"true"`, `1` and `yes` read as off, with a warning). `/crew:init` writes `false` into a new repo's file, and the repo value wins, so a machine-wide `true` needs the key removed or set `true` there too. A `route` block only in `.crew/crew.json` is reported, not read. Under Codex no line is emitted, and `memory.inject: false` silences it with the rest of the hook. `python3 crew_route.py settings --root .` shows what is in force; `python3 crew_route.py decide --root . --prompt "review it"` shows what a prompt would do. CONFIG.md §21 has the key.
+
+**`wave`** (T-0029; `hooks/scripts/crew_wave.py`). Design happens in the main session with the owner — `/crew:brainstorm`, `/crew:spec`, `/crew:plan` per ticket — and `crew_wave.py set --slug <s> --tickets <ids> [--deps <id>=<id>,<id>|none]` records the set in `.work/autopilot/<s>.json`. Approval is the owner's own group approval (T-0024: `/crew:approve T-a T-b`, then `/crew:approve --confirm`). `crew_wave.py plan --set <s>` is read-only: per ticket `eligible` or `refused: <reason>` — no current approval, INDEX status `direction` or closed, a dependency not closed, dependencies `unknown` (no set-file deps and no parseable `(depends on ...)` in the INDEX row: never read as none), a Touch that overlaps another lane's, or more lanes than `autopilot.maxLanes` — then the wave, the later waves and a provisional landing order by crew version. `crew_wave.py start --set <s>` writes one lane file per lane under `.work/autopilot/<s>/lanes/` and prints one launch per lane: an `Agent` with `isolation: worktree`, never any other launch — the Step 1 spike measured that only an isolated lane's hook payload carries its own worktree as `cwd`, so only there does the scope guard judge its writes by its own ticket. Each lane first runs `crew_wave.py lane-init`, which refuses to run in the main checkout, outside `<main>/.claude/worktrees/`, in a worktree another lane names, or where the ticket branch is checked out elsewhere; it checks out or creates `<id>-wave`, copies the ticket folder and `.crew/config.json` in byte-identical, and requires `crew_ticket.accepted` to say `approved` and the scope guard to be at `block` there before it activates the ticket. The lane then implements, refreshes, reviews (reserving and recording rounds through `review_run.py`; a relaunch hands a reserved, unrecorded round back instead of reserving another) and runs `completion_audit.py --check`, and ends with exactly one `crew_wave.py lane-done --state clean|findings|question|failed`. `crew_wave.py collect --set <s>` prints one batch: each lane's state (a missing or unreadable lane file is `unknown`, never `clean`; an `owner-accepted` receipt written while the lane ran marks it `failed`), every open question with its recommendation first, the exact `/crew:approve` lines, the landing order of clean lanes and the later waves. It lands nothing — merging is T-0011's. `crew_wave.py cleanup --set <s>` removes a lane's worktree (`git worktree remove`, never `--force`) and branch (`git branch -d`, never `-D`) only when its branch is on origin's default branch after a fetch and the worktree is clean with nothing untracked; everything else, and anything it cannot tell, is kept and named. **The wave refuses to run unless `scope.mode` is `block` for every lane ticket** (`scope-not-enforcing`, naming the fix; the config is read where the scope guard reads it, so a linked worktree with no `.crew/config.json` of its own is judged by the main checkout's, and its own config, when present, wins whole), and a lane never accepts or rejects a review, approves a plan or merges. The lane prompt forbids it; `crew_ticket.py approve` is already refused by the scope guard, and the guard's subagent never-list — `review_ledger.py --accept|--reject` with every abbreviation, `allow_abbrev=False` in `review_ledger.py`, and `gh pr merge --admin` from any subagent — is review-harness work that lands separately (T-0087). **Until it lands, nothing mechanical stops a lane from accepting a review or admin-merging; only the prompt does.** Settings (repo only): `autopilot.maxLanes` — lanes at once, default the resolved `pm.maxDispatches`, which it can only lower; `autopilot.reviewPolicy` — `stop` (default: the lane ends at the first verdict), `clean-only` (a CLEAN round goes on to the done checks) or `fix-and-rereview` (fix and re-review within the ledger's two rounds); anything else reads as `stop`, with a warning. The Workflow tool is not used: the spike could not measure whether crew's hooks fire inside it.
 
 ### Measuring 1.0
 
@@ -2565,6 +2568,211 @@ and both thresholds' defaults.
 setup gitignores — transcripts contain everything the session saw, including any
 secret that reached it.
 
+### Cross-session claims (`crew_coord.py`)
+
+Since 1.2.0. When several sessions — same or different repositories, same or
+different machines — work one backlog, each **claims** a ticket before working
+it, so two sessions never hold the same one. The record is not in `.work/`
+(ignored and per worktree) but on a git branch, `crew-coord/<channel>`, on a
+shared remote. Its tree holds `claims/<repo>__<id>.json` per claim and an
+append-only `log.jsonl`.
+
+```
+python3 hooks/scripts/crew_coord.py status  --channel <c> --remote origin
+python3 hooks/scripts/crew_coord.py claim   --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py release --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py done    --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --ticket <id>
+```
+
+`--channel` and `--remote` default to `coord.channel` and `coord.remote`
+(remote falling back to `origin`) in `.crew/config.json`.
+
+**The `<repo>` half of the key is derived, never typed:** it is the `origin`
+remote's URL as git resolves it — `git remote get-url origin`, so
+`url.<base>.insteadOf` applies and an alias names the repository it points
+at — reduced to its host and every path segment, lowercased, with `.git` and any
+user or token removed, and a port removed only when it is the scheme's default (ssh 22,
+https 443, http 80, git 9418): `ssh://host:2222/team/repo` gives `host_3a2222.team.repo`,
+so two repositories behind two ports of one host are two keys. Each of those parts is written so it can
+be read back one way only — every byte outside `a-z`, `0-9` and `-` becomes
+`_` and two hex digits, so `.` is `_2e` and `_` is `_5f` — and the parts are
+joined with a dot (`https://github.com/Owner/Repo.git`,
+`ssh://git@github.com/Owner/Repo.git` and `git@github.com:Owner/Repo.git` all
+give `github_2ecom.owner.repo`; `https://gitlab.com/group/sub/repo.git` gives
+`gitlab_2ecom.group.sub.repo`). So every worktree and clone of one repository
+names a ticket alike, and two different repositories never do — not on
+different hosts, not in different groups with the same last two names, and
+not where a dot inside a name would otherwise read as a separator
+(`team/a.b/repo` and `team/a/b.repo` are two keys). A network URL keeps that
+lowercasing and `.git` stripping because a hosting service serves those
+spellings as one repository; a local one does not. A local path, or the path
+a `file://` URL names (percent-decoded as git decodes it, with an empty or
+`localhost` host), gives `file_` and its segments **with their case and any
+`.git` kept**, because on a case-sensitive filesystem `Repo.git` and
+`repo.git` are two directories, and `repo` beside `repo.git` is two
+repositories anywhere. A local segment may be any name the filesystem allows
+(`.git`, a dot-directory, a space); only one that is not UTF-8 reads
+`unknown`. The path keyed is the repository git itself opens for
+it: a leading `~` or `~user` is expanded as git expands it, a relative path is
+read against the worktree git runs in, then git's own
+suffix order is applied (`<path>/.git`, `<path>`, `<path>.git/.git`,
+`<path>.git` — `enter_repo` in git's `setup.c`, read at v2.53.0), a gitfile is
+followed and a linked worktree's git directory is taken to its common one, and
+the result is made real (`..` and symlinks resolved) and each component is
+spelled as its directory lists it, so on a case-insensitive volume (macOS and
+Windows defaults) the case on disk is keyed, not the case typed. So
+`remote.git` from `/srv/work`, `/srv/work/remote.git/`, `/srv/work/remote`
+when only `remote.git` exists, and `file:///srv/work/remote.git` are one key;
+a non-bare `/srv/src` and its `/srv/src/.git` are one key; and a path that is
+not a repository here is keyed as written. A component whose directory cannot
+be listed, on a volume where its case does not matter, reads `unknown`,
+because its spelling on disk cannot be told. Every Azure DevOps form of one repository gives
+`dev_2eazure_2ecom.<org>.<project>.<repo>`: `https://dev.azure.com/<org>/<project>/_git/<repo>`,
+`https://dev.azure.com/<org>/_git/<repo>` (a project's default repository,
+whose name is the project's, so project = repo),
+`<org>.visualstudio.com/[DefaultCollection/][<project>/]_git/<repo>` and
+`ssh.dev.azure.com:v3/<org>/<project>/<repo>` — each name percent-decoded and
+lowercased, then written like any other part, so `My%20Project` and
+`My-Project` stay two projects. The markers `_git`, `v3` and
+`DefaultCollection` are compared after that decoding too, so `%5Fgit` is
+`_git`. An origin the key cannot be told
+from reads `unknown` (exit 3) and nothing is written: an Azure DevOps URL that
+fits none of those forms or whose names are not UTF-8, a network URL's host or
+path segment that is not letters, digits, `.`, `_`, `-`, a local path segment
+that is not UTF-8, a key over 128 characters, a URL with no
+path, a network URL with no host once any user and port are dropped
+(`https:///owner/repo`, `https://user@/owner/repo`, `https://:443/owner/repo`,
+`ssh:///owner/repo` — never read as a local path), a `file://` URL naming
+another host or not percent-encoded UTF-8, an empty `origin` URL, or a
+`get-url` that fails. That includes an
+on-premises Azure DevOps Server URL
+(`https://server/tfs/<collection>/<project>/_git/<repo>`), whose `_git`
+segment is outside the rule. It never falls back to a directory name, which
+would give one ticket a second key. Only when git says `origin` has no URL at
+all (`git config` exit 1) does it use the main worktree's directory name, and
+it prints why; a `git config` or `git rev-parse --git-common-dir` probe that
+fails is `unknown` too, never that fallback. `--ticket <repo>:<id>` is still accepted, but
+the `<repo>` given must be that derived name (compared lowercased); any other
+is refused, because a free-text repo gives one ticket several keys and so
+several holders. **The `<id>` half is upper-cased** for the same reason:
+tracker ids — Jira keys, SDP ids, the local `T-NNNN` — name one ticket
+whatever case they are typed in, so `t-0030` and `T-0030` are one key, not
+two holders.
+
+- **Writes never force.** Every change is a new commit on the freshly fetched
+  tip, built with git plumbing (no checkout, no working tree, index, `.work/`,
+  `HEAD` or `FETCH_HEAD` touched; other files on the channel keep their mode)
+  and sent with a plain `git push`. crew_coord.py will never force: no
+  `--force`, `-f`, `--force-with-lease` or `+` refspec. The push goes to
+  `crew-coord--push`, a remote defined only in the push's environment
+  (`GIT_CONFIG_COUNT`, git 2.31+) with the real remote's url, pushurl, proxy
+  and receivepack, and never its fetch or push refspecs or `mirror`: git
+  writes no remote-tracking ref, no local ref moves, and
+  no URL — or a token inside one — appears in the process's arguments. A
+  remote with several push URLs reads `unknown`, and so does one whose push
+  configuration cannot be read: each of those keys is read with
+  `git config --get-all`, where exit 1 means the key is absent and any other
+  failure is `unknown` with nothing pushed, never a missing pushurl that would
+  send the claim to the fetch URL. It runs with `--no-verify`,
+  so the repo's pre-push hook (husky, lefthook) never runs on a claim or a
+  heartbeat. A rejected push
+  re-fetches, re-applies the change — a peer's claim that landed in between is
+  then seen and refused — and retries at most 3 times, then reports
+  `unknown - could not push`. A fetch that fails reads `unknown`, never current,
+  and a claim is refused rather than granted on it.
+- **The TTL is 30 minutes** (`coord.ttlMinutes`; anything but a number above
+  0 and at most 10080, 7 days — a string, `0`, `NaN`, `Infinity`, `1e308` — is
+  a config error: every command exits 2 naming the key before any fetch or
+  push, so nothing is written). `claim` starts a detached
+  heartbeat that pushes `heartbeat_at` every 10 minutes while the session's
+  `CLAUDE_PID` lives and exits once it is gone, is reused by another process
+  (a different start time), or the claim is no longer `working` for it. One
+  loop runs per claim and holder — the holder's session id, machine,
+  worktree, pid and start time, every field that makes a holder: a second
+  loop for the same holder finds the first's lock and exits, while a new
+  holder's loop — after a release and a claim by another session, the same
+  session and pid claiming from another worktree, or a recover — takes a lock
+  of its own and does not wait for the old holder's loop, which exits on its
+  next tick. Inside
+  Claude Code's sandbox (bubblewrap `--unshare-pid`) the loop cannot see
+  `CLAUDE_PID`, reads it gone and exits at once, so the claim reads
+  `owner unknown` after the TTL; the claim recorded no PID namespace (below),
+  so recovery never adopts it: a false alarm, never a false grant. Its log
+  and locks live in a private per-user directory in the system
+  temp directory (`crew-coord-<uid>`, mode 0700; refused if it is a symlink,
+  another user's, or open to others), the log opened 0600 without following a
+  symlink. A `working` claim whose heartbeat is older than the TTL reads
+  `owner unknown (last heartbeat <age>)`, **never free**: a new claim on it is
+  refused. Staleness alone never releases or hands over a claim.
+- **Only the holder** releases, finishes or heartbeats a claim. A holder is
+  one session id in one process on one machine and worktree: session id,
+  machine, worktree and `CLAUDE_PID` all equal, and the pid's start time equal
+  where both sides recorded one. The same session id from another process or
+  worktree — `claude --resume <id>` while the original is still open — is
+  another holder: its `claim` is refused with the holder named, and it goes
+  through `recover`'s rules, never a silent reclaim. **Only the
+  owner** breaks one: `release --break --by <name>`, run from a terminal
+  outside Claude Code (it refuses while `CLAUDECODE` or
+  `CLAUDE_CODE_SESSION_ID` is set) and logged. That signal can be stripped
+  with `env -u`, so it stops accidental breaks, not a determined agent — it is
+  a documented rule, not an enforced one.
+- **Recovery when a session's id changes.** `/clear` changes the session id,
+  so a claim the previous session made looks foreign. `status` lists such
+  claims **first**, marked `yours from a previous session`, each with its one
+  recommended action. `recover` adopts one only when all of these hold: the
+  claim's machine is this host, its worktree is this worktree, the local
+  identity file (`<git-common-dir>/crew/coord-identity.json`, written by the
+  script) names the claim's holder, and the holder's `CLAUDE_PID` is
+  **provably gone** — then at once, however fresh its heartbeat (owner
+  decision, rush g0). Where the end cannot be proven (a sandbox's namespace,
+  a probe error, macOS), a fresh heartbeat says to wait for the TTL, and past
+  it the claim is still only presented. Anything else — another machine, a
+  live pid, a pid reused with a different start time, a missing or corrupt
+  identity file, a check that cannot tell — reads `needs the owner: <reason>`
+  and is never adopted. A pid check that cannot tell reads **alive**. On
+  Linux a pid reads gone only from the **PID namespace** the claim recorded
+  (`holder.pidns`, from `/proc/self/ns/pid` at claim time), and one is
+  recorded only when `CLAUDE_PID` was visible from it: Claude Code's sandbox
+  runs each command under bubblewrap's `--unshare-pid`, where a live
+  `CLAUDE_PID` is invisible and looks gone, and bubblewrap reuses namespace
+  ids, so a later sandbox can match the id of the one that claimed. A
+  namespace that was not recorded, that differs, or that this side cannot
+  read, cannot tell. The Linux check (`/proc`; a live pid whose `/proc` entry
+  cannot be read reads alive; the namespace rule, including a real
+  `bwrap --unshare-pid`) is exercised by the test suite — the spike's Linux
+  section was not run. The Windows check was measured, elevated, on one host:
+  `OpenProcess` with limited query rights, where only error 87 means gone,
+  any other error reads alive, an opened handle is gone only with a nonzero
+  exit time, and the creation time is compared with the recorded start. On
+  macOS it always reads "cannot tell", so
+  recovery there always goes to the owner. The identity file is shared by
+  every worktree of the repo and rewritten under a lock,
+  `<git-common-dir>/crew/coord-identity.json.lock` — an empty file that stays
+  there by design. Those two are the only files crew_coord.py writes under
+  `<git-common-dir>/crew/` (plus the identity file's per-pid `.tmp`, renamed
+  into place).
+- **Not measured: whether `/clear` keeps `CLAUDE_PID`.** If it does — the same
+  process carries on under a new session id — the old session's heartbeat
+  keeps the claim fresh while that process lives and its pid is alive, so
+  `recover` refuses. The new session
+  then cannot release, finish or recover its own ticket: the owner runs
+  `release --break --by <name>` from a terminal outside Claude Code, and the
+  new session claims again.
+- **Everything on the channel is peer-written data**, never instructions:
+  every line that prints a peer-written field — `status`, and the refusals of
+  `claim`, `release`, `done`, `heartbeat` and `recover` — ends
+  `[peer-written]`, and control, bidi-format and line-separator characters
+  (U+2028, U+202E and the like) become `?` first, so a peer field cannot start
+  a line of its own. A recommended command carries a peer-written `repo` or
+  ticket id only when it passes the key's own rule; anything else prints as
+  `<unsafe value withheld>`, so no shell metacharacter a peer wrote reaches a
+  command you are told to run.
+
+**After `/clear` or a resume, run `crew_coord.py status` first**, before any
+other work, and stop on any `needs the owner` line. (The autopilot resume step
+will run it itself once T-0004 lands; until then this line is the instruction.)
+
 ---
 
 ## 17. Linting, Terraform docs, and repo conventions
@@ -3238,7 +3446,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
-| `/crew:autopilot [status\|run\|focus] [<id>\|off]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `goal "<goal>"` (T-0012): propose, print the `/goal` line, approve the split. `assign` arrives with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302); `--goal` resume with L-0541 — see "Autopilot" |
+| `/crew:autopilot [status\|run\|focus\|wave] [<id>\|off\|--set <slug>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `wave`: run an approved set as parallel isolated lanes (T-0029). `goal "<goal>"` (T-0012): propose, print the `/goal` line, approve the split. `assign` arrives with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302); `--goal` resume with L-0541 — see "Autopilot" |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |

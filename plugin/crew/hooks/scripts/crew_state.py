@@ -1137,12 +1137,12 @@ AUTONOMOUS_STOPS = (
 # only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
                       "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None},
-                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
+                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+                      "maxLanes": None, "reviewPolicy": "stop"}  # T-0029 wave: crew_wave.settings
 
-# How many tickets one session's work becomes. The default is `system`: one
-# session is one ticket, and a second ticket is opened only when the work
-# reaches into another system. Splitting per change was the pre-0.17.0
-# behaviour and is kept as `change` for anyone who wants it back.
+# How many tickets one session's work becomes. The default is `system`: one session is one ticket, and a second
+# ticket is opened only when the work reaches into another system. Splitting per change was the pre-0.17.0 behaviour
+# and is kept as `change` for anyone who wants it back.
 TICKET_GRANULARITIES = ("session", "system", "change")
 GRANULARITY_DEFAULT = "system"
 

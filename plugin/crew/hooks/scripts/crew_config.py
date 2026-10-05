@@ -405,7 +405,8 @@ def default_config():
         # the machine-global file too, combined per key (the stricter of the
         # layers that set it wins; a silent layer imposes nothing).
         # `maxAutoReplans`, `sleep` and T-0011's `ship`, `knownFailures` and
-        # `ciTimeoutMinutes` are `crew_state.REPO_ONLY_AUTOPILOT`.
+        # `ciTimeoutMinutes`, and T-0029's `maxLanes` and `reviewPolicy`, are
+        # `crew_state.REPO_ONLY_AUTOPILOT`.
         # This block is the defaults layer and the prune shape;
         # `template_config` omits the personal keys, so a new repo's file
         # does not shadow the owner's global values. A key added here without

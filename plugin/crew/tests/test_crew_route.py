@@ -728,7 +728,7 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
     # L-0652 adds `sleep` and `wake`; `approve` and `questions-check` stay
     # script subcommands only.
     assert (crew_autopilot.SUBCOMMANDS, got) == (
-        ("status", "run", "assign", "goal", "focus", "sleep", "wake", "split"), [True, True])
+        ("status", "run", "assign", "goal", "focus", "sleep", "wake", "split", "wave"), [True, True])
 
 
 # --- T-0057: plain-text routing for the autopilot commands the router knows -----
@@ -1200,10 +1200,11 @@ _LIVE_SLEEP_WAKE = [(p, intent) for intent in ("sleep", "wake")
                     for p, _t, _top in EXAMPLES[intent]]
 
 
-def test_sleep_wake_and_split_are_live_and_wave_is_not():
+def test_sleep_wake_split_and_wave_are_live():
+    # T-0029 (wave) and T-0058 (split) are both live subcommands on release/1.2.0.
     assert ([s in crew_autopilot.SUBCOMMANDS for s in _FOUR],
             [s in crew_autopilot.AVAILABLE for s in _FOUR]) == \
-        ([False, True, True, True], [False, True, True, True])
+        ([True, True, True, True], [True, True, True, True])
 
 
 @pytest.mark.parametrize("prompt", _UNKNOWN_EXAMPLES)
