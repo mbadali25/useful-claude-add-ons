@@ -1626,10 +1626,12 @@ def _obsidian_move(root, settings, ticket, status, reopen=False):
     return [files, _board_write(paths, columns, edit)]
 
 
-def _folder_doubt(root, ticket):
+def _folder_doubt(ticket, probe):
     """The read note for a ticket folder whose place cannot be told (both
-    live and in Complete/, or a failed probe), or None."""
-    _, where, why = crew_common.locate_ticket(root, ticket)
+    live and in Complete/, or a failed probe), or None. `probe` is ONE
+    `locate_ticket` result, shared by every check of a read, so a second
+    probe can never replace a first one's unknown."""
+    _, where, why = probe
     return f"could not tell where {ticket}'s folder lives: {why}" if where == crew_common.COULD_NOT_TELL else None
 
 
@@ -1654,11 +1656,13 @@ def _obsidian_read(root, settings, ticket):
         status = files.get("status")
         notes = [f"archived; INDEX status {status}"]
         notes += [f"whose note could not tell: {detail}"] if owner == UNKNOWN else []
-        folder_doubt = _folder_doubt(root, ticket)
+        folder_doubt = _folder_doubt(ticket, crew_common.locate_ticket(root, ticket))
         notes += [folder_doubt] if folder_doubt else []
-        disagree = status not in ARCHIVE_STATUSES or bool(folder_doubt)
-        notes += ([f"INDEX status {status} is not closed"] if status is not None and disagree
-                  else ["INDEX status could not tell"] if status is None else [])
+        open_status = status not in ARCHIVE_STATUSES
+        disagree = open_status or bool(folder_doubt)
+        # From the status check alone: a folder doubt never calls `done` open.
+        notes += (["INDEX status could not tell"] if status is None
+                  else [f"INDEX status {status} is not closed"] if open_status else [])
         return [files, _result("obsidian", READ, "; ".join(notes),
                                lane=f"{crew_common.ARCHIVE_DIR}/", archived=True,
                                disagree=disagree)]
@@ -1681,8 +1685,9 @@ def _obsidian_read(root, settings, ticket):
         disagree = card["lane"] != expected
         notes = [f"INDEX status {status} expects {expected}"] if disagree else []
     notes += [f"whose card could not tell: {detail}"] if owner == UNKNOWN else []
-    _, folder_where, _ = crew_common.locate_ticket(root, ticket)
-    folder_doubt = _folder_doubt(root, ticket)
+    probe = crew_common.locate_ticket(root, ticket)
+    folder_where = probe[1]
+    folder_doubt = _folder_doubt(ticket, probe)
     if folder_doubt:
         disagree = True
         notes += [folder_doubt]

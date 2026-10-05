@@ -2971,6 +2971,38 @@ def test_a_read_surfaces_a_ticket_folder_in_both_places(tmp_path, archived_note)
     assert (got["disagree"], "folder lives" in (got["reason"] or "")) == (True, True), got
 
 
+def test_an_archived_done_read_with_folders_in_both_places_never_calls_done_open(tmp_path):
+    """Coordinator review: the folder doubt sets disagree, but the message
+    about INDEX comes from the status check alone -- `done` is closed."""
+    root, _vault = _archived_obsidian(tmp_path)
+    (root / ".work" / "tickets" / CARD).mkdir(parents=True)
+    _, _, why = crew_tracker.crew_common.locate_ticket(str(root), CARD)
+
+    got = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (got["disagree"], got["reason"]) == (
+        True, f"archived; INDEX status done; could not tell where {CARD}'s folder lives: {why}"), got
+
+
+def test_a_live_read_keeps_the_first_probe_unknown(tmp_path, monkeypatch):
+    """Coordinator review: one probe per read; a later probe answering LIVE
+    must not replace the first one's could-not-tell."""
+    root, _vault = _done_obsidian(tmp_path)
+    real = crew_tracker.crew_common.locate_ticket
+    calls = []
+
+    def flaky(top, ticket):
+        calls.append(ticket)
+        if len(calls) == 1:
+            return None, crew_tracker.crew_common.COULD_NOT_TELL, "probe failed: EIO"
+        return real(top, ticket)
+    monkeypatch.setattr(crew_tracker.crew_common, "locate_ticket", flaky)
+
+    got = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (got["disagree"], "probe failed: EIO" in (got["reason"] or "")) == (True, True), got
+
+
 def test_an_archived_read_with_an_open_index_row_disagrees(tmp_path):
     root, _vault = _archived_obsidian(tmp_path)
     (root / ".work" / "INDEX.md").write_text(DONE_ROW.replace("done", "review"), encoding="utf-8",
