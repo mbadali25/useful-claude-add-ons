@@ -120,6 +120,21 @@ def _hexdump_dir():
     return None
 
 
+def missing_prerequisite():
+    """What `doctor` reports beside an available testssl.sh, or None.
+
+    `testssl.sh --version` succeeds without hexdump, but every scan then dies
+    with "You need to install hexdump" - so "testssl.sh is on PATH" alone
+    would read OK on a machine where no TLS check can run (C-0015). None when
+    hexdump resolves on PATH or in one of the MSYS2 locations `run()` uses.
+    """
+    if base.which("hexdump") or _hexdump_dir():
+        return None
+    return ("hexdump not found - testssl.sh refuses to scan without it "
+            "(Ubuntu: apt install bsdextrautils; Windows: install MSYS2 or set "
+            "GIZMODUCK_MSYS2_BIN)")
+
+
 def run(target, outdir, opts):
     """Invoke testssl.sh and return (raw_path, ToolResult).
 
