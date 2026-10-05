@@ -25,8 +25,9 @@ ids. NG-P1 may be the owner's ANGULAR-05 or -06, but that could not be determine
 
 ### NG-07 A failed read renders as "could not verify" and disables every write it feeds
 
-0 counted. 3 in the spec's private count. Publicly, 3 change sets show the read half and
-1 shows the write half.
+Counted toward the bar: 3, in the coordinator's private count, which reaches the bar. It is
+held back only because its Why, Earned by and Change sets text is not yet publishable.
+Publicly, 3 change sets show the read half and 1 shows the write half; they do not count.
 
 Rule (the spec's publishable text). Refines GEN-01. When a read that a view's write
 controls depend on fails, the view does not fall back to empty or default values that
@@ -68,7 +69,8 @@ authorization server-side, in addition to any client-side guards." That supports
 
 ### NG-P1 No `bypassSecurityTrust*` on content a user, contact or model can author
 
-0 counted. 5 public change sets, not counted.
+Counted toward the bar: unknown (it may be ANGULAR-05 or -06, at 2 each privately).
+5 public change sets, which do not count.
 
 Never pass user-authored, contact-authored, model-generated or stored text through
 `DomSanitizer.bypassSecurityTrustHtml`, or through `...Url`, `...ResourceUrl`,
@@ -97,7 +99,8 @@ count as one. That does not count under the owner's decision.
 
 ### NG-P2 HTTP interceptors attach credentials only to allow-listed origins
 
-0 counted. 1 public change set, not counted.
+Counted toward the bar: unknown (its research id could not be determined). 1 public
+change set, which does not count.
 
 An interceptor adds a bearer token or other credential only to requests whose origin is
 on an explicit allow-list. A request to any other host goes out without it.

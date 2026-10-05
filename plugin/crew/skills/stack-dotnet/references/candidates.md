@@ -26,7 +26,8 @@ not be determined.
 
 ### DOTNET-P1 Never block on async code (`.Result`, `.Wait()`, `GetAwaiter().GetResult()`)
 
-0 counted. 3 public change sets, not counted.
+Counted toward the bar: unknown (whether it is one of the owner's research rules
+could not be determined). 3 public change sets, which do not count.
 
 In request, handler, UI and library code, await asynchronous work all the way up. Do not
 call `.Result`, `.Wait()`, `Task.WaitAll` or `.GetAwaiter().GetResult()` on a task that
@@ -55,7 +56,8 @@ decision.
 
 ### DOTNET-P2 Do not create an `HttpClient` per call: use `IHttpClientFactory` or one long-lived client
 
-0 counted. 7 public change sets, not counted, plus 1 weak one.
+Counted toward the bar: unknown (whether it is one of the owner's research rules
+could not be determined). 7 public change sets, which do not count, plus 1 weak one.
 
 Get `HttpClient` from `IHttpClientFactory` (named or typed clients), or reuse one
 long-lived instance whose `SocketsHttpHandler` sets `PooledConnectionLifetime`. Never

@@ -29,7 +29,8 @@ to -19 was not available, so the other ids are not written here.
 
 ### TERRAFORM-03 No literal account IDs or ARNs: derive them (research id inferred)
 
-0 counted. 4 public change sets, not counted. 0 in the spec's private re-count.
+Counted toward the bar: 0 (the spec's private re-count). 4 public change sets, which do
+not count.
 
 Do not hard-code account IDs, account-scoped ARNs, repository names or region strings in
 `.tf`. Use `data.aws_caller_identity`, `data.aws_region` and `data.aws_partition`,
@@ -63,10 +64,12 @@ decision.
 
 ### TERRAFORM-P1 Secrets never surface as outputs, and sensitive inputs are `sensitive = true`
 
-0 counted. 2 public change sets, not counted.
+Counted toward the bar: unknown (its research id could not be determined). 2 public
+change sets, which do not count.
 
-A secret is never an `output`. A variable or output that must carry one is marked
-`sensitive = true`, knowing that this hides it from CLI output, not from state. This
+A secret is not exposed as a root-module output for a person or pipeline to read. A
+variable that carries one, and a child-module output that must hand one to its caller,
+are marked `sensitive = true`. That hides the value from CLI output, not from state. This
 extends the secrets pitfall in `SKILL.md`.
 
 Public change sets (message text only):
@@ -86,7 +89,8 @@ Public verdict: candidate (2).
 
 ### TERRAFORM-12 CloudWatch log groups are encrypted with a customer-managed KMS key (research id inferred)
 
-0 counted. 0 public change sets. 2 in the spec's private re-count.
+Counted toward the bar: 2, in the spec's private re-count of the owner's repositories.
+One more reviewed change set would promote it. 0 public change sets.
 
 Settled position, flagged: "CMK always" is the lane's draft. Only one private
 repository's evidence supports it, and no public review-recorded change set was found.

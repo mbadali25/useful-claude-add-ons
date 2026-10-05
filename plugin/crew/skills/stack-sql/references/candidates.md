@@ -31,7 +31,8 @@ assessed.
 
 ### SQL-P1 PostgreSQL: a `SECURITY DEFINER` function pins `search_path` and revokes `EXECUTE` from `PUBLIC`
 
-0 counted. 6 public change sets, not counted.
+Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
+6 public change sets, which do not count.
 
 Every `CREATE [OR REPLACE] FUNCTION ... SECURITY DEFINER` sets `SET search_path =
 <trusted schemas>, pg_temp`, or `''` with fully qualified names. In the same transaction
@@ -70,16 +71,20 @@ could not be determined.
 
 ### SQL-P2 PostgreSQL: index a populated table `CONCURRENTLY`, in a migration that runs outside a transaction
 
-0 counted. 3 public change sets, not counted, and 2 of them are known to be `.sql`.
+Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
+3 public change sets, which do not count. 2 of them are known to be `.sql`.
 
-`CREATE INDEX` on a table that already holds rows uses `CONCURRENTLY`, and `DROP INDEX
-CONCURRENTLY` reverses it. `CONCURRENTLY` cannot run inside a transaction block, so the
+`CREATE INDEX` on a shared table that already holds rows uses `CONCURRENTLY`, and `DROP
+INDEX CONCURRENTLY` reverses it. `CONCURRENTLY` cannot run inside a transaction block, so the
 migration opts out of the runner's wrapping transaction (for example sqlx's
 `-- no-transaction` first line) and holds that one statement. An index created in the
 same file as its new table needs neither. A partitioned table is the exception:
 `CONCURRENTLY` does not work on its parent index. Build each partition's index
 concurrently, then create the parent index non-concurrently with `ON ONLY` and attach the
-partition indexes. A partitioned table's index cannot be dropped `CONCURRENTLY` either.
+partition indexes. Two kinds of index cannot be dropped `CONCURRENTLY`: a partitioned table's
+index, and an index that backs a `UNIQUE` or `PRIMARY KEY` constraint. Their rollback
+drops the constraint or the index in an ordinary transaction, and it says so. A temporary
+table needs none of this, because its index build is always non-concurrent.
 This builds on the existing `CREATE INDEX CONCURRENTLY` pitfall in `SKILL.md`.
 
 Public change sets (message text only):
@@ -102,7 +107,11 @@ currently not supported." "However, you may concurrently build the index on each
 partition individually and then finally create the partitioned index non-concurrently in
 order to reduce the time where writes to the partitioned table will be locked out."
 https://www.postgresql.org/docs/current/sql-dropindex.html, on `CONCURRENTLY`: "Lastly,
-indexes on partitioned tables cannot be dropped using this option."
+indexes on partitioned tables cannot be dropped using this option." "Only one index name
+can be specified, and the CASCADE option is not supported. (Thus, an index that supports a
+UNIQUE or PRIMARY KEY constraint cannot be dropped this way.)" CREATE INDEX page: "For
+temporary tables, CREATE INDEX is always non-concurrent, as no other session can access
+them, and non-concurrent index creation is cheaper."
 
 Public verdict: 3 public change sets under the shipped counting rule, which has no
 file-type condition. The research pass left this open because one of them is a Python
@@ -111,7 +120,8 @@ either way. The research id could not be determined.
 
 ### SQL-17 SQL Server: session SET options are part of the change
 
-0 counted. 0 public change sets found. The owner's private count is unknown.
+Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
+0 public change sets found.
 
 Rule text from the public pass (the research's own wording was not read). These settings
 behave differently for two kinds of object:

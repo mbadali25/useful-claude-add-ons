@@ -37,8 +37,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   Nothing is enforced.
 - **What changed.** New `plugin/crew/skills/stack-terraform/references/candidates.md` covers
   TERRAFORM-03 (no literal account IDs or ARNs), TERRAFORM-P1 (secrets never outputs; sensitive
-  inputs) and TERRAFORM-12 (CMK for CloudWatch log groups). Each gives its change sets, its
-  verdict and HashiCorp Source sentences, re-matched against the raw pages. The 1.7.0 floor is
+  inputs) and TERRAFORM-12 (CMK for CloudWatch log groups). The first two give their public
+  change sets, a verdict and HashiCorp Source sentences, re-matched against the raw pages.
+  TERRAFORM-12 has no public change set and no Source. Its 2 counted change sets are in the
+  spec's private re-count, and its "CMK always" position stays flagged. The 1.7.0 floor is
   confirmed from the raw `v1.7` CHANGELOG. `stack-terraform/SKILL.md` gains a `## Standards`
   section. It says no set ships, and that when one is earned its id is `TF`: the loader accepts
   2-6 capitals, so the spec's `TERRAFORM` would be refused. No set file, test, loader or gate
