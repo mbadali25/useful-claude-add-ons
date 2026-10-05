@@ -493,6 +493,23 @@ def _mode(path):
     return 0o666 & ~mask
 
 
+def _refuse_foreign_target(top, target):
+    """A checkout must not be able to aim --write at a file that is not an
+    ignore file: a `.graphifyignore` symlink to ~/.bashrc, `.git/config` or
+    `.claude/settings.json` would be appended to and replaced. A symlink is
+    written through only to a file inside the repository, outside any `.git`
+    directory, whose name ends in `ignore`."""
+    inside = os.path.normcase(os.path.realpath(top))
+    where = os.path.normcase(target)
+    if os.path.commonpath([inside, where]) != inside:
+        raise _Unknown(f"{IGNORE_FILE} resolves outside the repository ({shown(target)}); "
+                       "not written - make it a regular file in the repository")
+    rel = os.path.relpath(where, inside)
+    if ".git" in rel.split(os.sep) or not os.path.basename(where).lower().endswith("ignore"):
+        raise _Unknown(f"{IGNORE_FILE} resolves to {shown(rel)}, which is not an ignore file; "
+                       "not written - make it a regular file in the repository")
+
+
 def write(root, git="git"):
     """Append the missing positive patterns. Returns `(added, kept_open)`,
     `kept_open` being `{path: (line, pattern)}` for each denylisted path a `!` line of
@@ -507,12 +524,7 @@ def write(root, git="git"):
     # A symlinked .graphifyignore is written through: replacing the link
     # with a regular file would leave the file it names untouched.
     target = os.path.realpath(os.path.join(top, IGNORE_FILE))
-    inside = os.path.realpath(top)
-    if os.path.commonpath([os.path.normcase(inside), os.path.normcase(target)]) != os.path.normcase(inside):
-        # A checkout must not be able to aim --write at a file outside itself
-        # (a `.graphifyignore` symlink to ~/.bashrc would be appended to).
-        raise _Unknown(f"{IGNORE_FILE} resolves outside the repository ({shown(target)}); "
-                       "not written - make it a regular file in the repository")
+    _refuse_foreign_target(top, target)
     lines = _ignore_lines(top)
     present = {line.strip() for line in lines}
     missing = []

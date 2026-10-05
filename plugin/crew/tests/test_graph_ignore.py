@@ -443,6 +443,25 @@ def test_write_refuses_a_graphifyignore_symlinked_outside_the_repository(tmp_pat
             "resolves outside the repository" in out) == (2, b"precious\n", True, True), out
 
 
+@pytest.mark.parametrize("rel,body", [(os.path.join(".git", "config"), None),
+                                      (os.path.join(".claude", "settings.json"), "{}\n")])
+def test_write_refuses_a_graphifyignore_symlinked_to_a_non_ignore_file(tmp_path, capsys, rel, body):
+    """Review round 2: an in-repository symlink to git's config or a settings
+    file is not an ignore file; --write leaves it byte-identical."""
+    root = _repo(tmp_path, {".env": "PW=x\n"} if body is None else {".env": "PW=x\n", rel: body})
+    target = os.path.join(str(root), rel)
+    with open(target, "rb") as handle:
+        before = handle.read()
+    _symlink(root, target, ".graphifyignore")
+
+    code = _main(root, "--write")
+    out = capsys.readouterr().out
+    with open(target, "rb") as handle:
+        after = handle.read()
+
+    assert (code, after == before, "which is not an ignore file" in out) == (2, True, True), out
+
+
 def test_write_keeps_crlf_line_endings(tmp_path, capsys):
     root = _repo(tmp_path, {".env": "PW=x\n"})
     target = os.path.join(str(root), ".graphifyignore")
