@@ -64,6 +64,7 @@ import sys
 import crew_autopilot
 import crew_common
 import crew_config
+import crew_contract
 import crew_coord
 import crew_state
 import crew_ticket
@@ -522,10 +523,23 @@ def _judge(top, ticket, given, channels=None):
     if refusal:
         return dict(row, reason=refusal)
     deps = _deps(line, given)
-    refusal = _dep_refusal(top, deps, channels)
+    channels = {} if channels is None else channels
+    refusal = _dep_refusal(top, deps, channels) or _contract_refusal(top, ticket, channels)
     if refusal:
         return dict(row, deps=deps, reason=refusal)
     return dict(row, eligible=True, deps=deps, touch=list(approval["touch"]))
+
+
+def _contract_refusal(top, ticket, channels):
+    """L-0634: the ticket's contract bindings (`.work/tickets/<id>/contracts.json`)
+    must all still hold on their channels; a ticket with none fetches nothing.
+    Checked after the dependencies, so the cheaper refusals come first, and
+    through this plan's channel cache."""
+    try:
+        result = crew_contract.check_bindings(top, ticket, read=lambda channel: _channel_files(top, channel, channels))
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"its contract bindings could not be checked ({type(exc).__name__})"
+    return result["reason"] or None
 
 
 def plan(root, slug=None, tickets=None):

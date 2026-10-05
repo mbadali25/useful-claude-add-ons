@@ -2294,8 +2294,12 @@ this map's `anchor:`; re-find each name by content.
   `cmd_put` refuses a `built-against` latest and allows `--new-version` only over one;
   `cmd_build_against` needs `crew_ticket.accepted` to read `approved`, and writes the binding
   `.work/tickets/<id>/contracts.json` (`read_bindings`, `write_bindings`) after the push.
+- DERIVED (L-0634): `check_bindings` compares each binding with its fetched channel (`_judge_binding`:
+  the record's hash, the body's sha256, status `built-against`, this repo and ticket in `built_by`)
+  and returns ok / mismatch / unknown; `verify --ticket` prints it, and `crew_wave._judge` calls it
+  through `_contract_refusal` after the dependencies, sharing the plan's channel cache.
 - JUDGEMENT: the local binding, not the channel, is the evidence: a peer can rewrite the channel.
-  L-0634 compares the two (`read_bindings` is its reader). Tests: `plugin/crew/tests/test_crew_contract.py`,
+  `check_bindings` compares the two and never repairs either. Tests: `plugin/crew/tests/test_crew_contract.py`,
   under the last rule of `.crew/verify.json`. Sabotage is L-0635, a harness PR.
 
 ## Cross-session dependencies in the wave (L-0633)

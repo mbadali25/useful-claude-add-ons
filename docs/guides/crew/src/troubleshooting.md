@@ -414,6 +414,21 @@ peer-written data and ends `[peer-written]`.
 | `... unknown: '<remote>' (coord.remote) is not a configured remote` | `coord.remote` names no remote of this checkout | `git remote add <remote> <url>`, or fix `coord.remote` |
 | `dependencies unknown: ...` | a dependency is not `<id>`, `<channel>:<id>` or `<channel>:<repo>:<id>` | fix the set file's `deps` or the INDEX row; `crew_wave.py set` refuses a malformed one |
 
+## Wave refuses a ticket's contract
+
+A ticket that built against a contract version (`crew_contract.py build-against`) keeps a binding
+in `.work/tickets/<id>/contracts.json`. The wave checks each binding after the ticket's dependencies;
+run the same check alone with `crew_contract.py verify --ticket <id>` (exit 0 current, 1 changed,
+3 cannot tell).
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `contract <n> v<N> changed since <id> built against it (...)` | the channel no longer shows that version with the bound hash, a matching body, status `built-against` and this ticket in `built_by`: someone rewrote it | do not rebind: agree a new version (`put --name <n> --new-version --ticket <new id>`) and a new ticket on each side, then build against it |
+| `contract <n> v<N> unknown (...)` | the fetch failed, the channel or the version's files are missing, or the record is corrupt | fix what the brackets name (remote, channel name), then plan again; nothing is assumed current |
+| `contract bindings unknown (...)` | `contracts.json` does not parse | repair or remove it by hand, then `build-against` again; it is never read as "no bindings" |
+
+A newer version on the channel is information only and never refuses. The check writes nothing.
+
 ## Promote gate blocks a worktree deploy
 
 `promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it

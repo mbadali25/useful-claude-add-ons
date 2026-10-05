@@ -2625,6 +2625,7 @@ python3 hooks/scripts/crew_contract.py put           --name <n> --file <path>
 python3 hooks/scripts/crew_contract.py put           --name <n> --file <path> --new-version --ticket <id>
 python3 hooks/scripts/crew_contract.py build-against --name <n> --version <N> --ticket <id>
 python3 hooks/scripts/crew_contract.py status        [--name <n>]
+python3 hooks/scripts/crew_contract.py verify        --ticket <id>
 ```
 
 `--channel`, `--remote` and `--root` default as `crew_coord.py`'s do. A
@@ -2652,7 +2653,21 @@ push, never a force push, claims and every other file carried through.
   [{channel, name, version, hash}]}`) locally, the only local file it writes.
 - **What a peer can rewrite.** Anything on the channel: a peer pushing without
   this tool can edit a frozen record or body. This tool cannot prevent that;
-  the local binding is the evidence a later check compares the channel against.
+  the local binding is the evidence `verify` compares the channel against.
+- **`verify` and the wave refusal** (L-0634). `verify --ticket <id>` checks every
+  binding in the ticket's `contracts.json`: the channel must still show that
+  version with the bound hash, a body whose sha256 is that hash, status
+  `built-against`, and this repository and ticket in `built_by`. Exit 0 when
+  every binding holds, 1 on a mismatch, 3 when it cannot tell (the fetch fails,
+  the channel is absent, the version's record or body is missing, the record is
+  corrupt, the bindings file does not parse — never read as "no bindings"). A
+  ticket with no `contracts.json` is not checked and fetches nothing; a newer
+  version on the channel is information only. `crew_wave.py plan` and `start`
+  run the same check after a ticket's dependencies and refuse it with
+  `contract <n> v<N> changed since <id> built against it` or
+  `contract <n> v<N> unknown (<why>)`; no lane starts for it. Nothing is
+  repaired: the owner's way out is a new contract version and a new ticket on
+  each side.
 - **Unknown is never current.** A record that cannot be fetched or parsed, a
   version missing one of its two files, versions not numbered 1 to N, or a
   body whose sha256 is not its hash reads `unknown` (exit 3), and `status`

@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.20 — L-0634: the wave refuses a ticket whose contract moved since it was built against
+
+- **Summary.** A ticket built against a contract version is no longer started by the autopilot wave
+  once that version on the shared channel has changed, and `crew_contract.py verify` checks the same
+  thing on its own.
+- **Added.** `crew_contract.py verify --ticket <id>` and `check_bindings`: every binding in
+  `.work/tickets/<id>/contracts.json` must still find its version on the channel with the bound
+  hash, a body whose sha256 is that hash, status `built-against` and this repository and ticket in
+  `built_by` (exit 0); anything else is a mismatch (exit 1), and what cannot be checked is unknown
+  (exit 3), never "no bindings". A ticket with no bindings fetches nothing; a newer version is
+  information only; nothing is repaired. `crew_wave.py plan` and `start` refuse such a ticket after
+  its dependencies (`contract <n> v<N> changed since <id> built against it` / `... unknown`). README
+  and the troubleshooting guide describe the refusal and the way out.
+- **Not in this entry.** Sabotage for this guard is L-0635, a harness PR (T-0087).
+
 ### crew 1.1.20 — L-0633: a wave ticket can depend on a ticket another session works
 
 - **Summary.** An autopilot wave can now wait on a ticket another session is working, written
