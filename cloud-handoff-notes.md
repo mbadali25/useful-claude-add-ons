@@ -22,7 +22,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 main = 8479a837 (#496 L-1508 PR B merged), crew 1.0.347.
 | Item | Where | State | Next |
 |---|---|---|---|
-| C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | adversarial fail-open review running; land ALONE; first notes push after merge proves the skip path |
+| C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | review 1 BLOCK (combined pytest = one session; subset hides cross-suite breaks) + 2 FIX (lint config files; unpinned !cancelled()) -> builder fixing | re-check, land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
 | Batch 6 | `batch-6-build` (builder) | 4 members: #500 T-0045, #348 T-0041, #338 L-0582, #361 T-0050 (owner: ship 4; T-0020 held out), crew 1.0.348 | merge-resolution review running; CI 6+3; merge |
 | T-0020 #357 | `T-0020-build` 50a0104b | reworked: explicit focus marker (autopilot-focus.json), unknown marker refuses; Windows green; only red = missing bump (by design) | re-review running; then batch 7 |
@@ -48,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 02:41 UTC
+Last updated: 2026-10-05 03:00 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 03:20: #501 review 1 BLOCK 2 FIX: combined pytest is one session (dup basenames / gizmoduck pytest.ini as configfile) so subset runs hide breaks; ruff/pylint config not lint-selecting; !cancelled() unpinned. Sent to builder. Minted C-0005 (4 suites run by no workflow).
 - 03:10: T-0020 #357 reworked to explicit focus (50a0104b), Windows green, sabotage: pointer-as-focus -> 55 route tests red. Accepted its 1-line test_crew_route edit (focus leaves _RESERVED). Re-review started (incl. trap check: refusal on corrupt marker must name the file + fix).
 - 03:00: batch 6 merge review: 1 BLOCK (test_tool_resolution.py:66 pins crew_platform.py:144; T-0050 moved the gate to :145, so 4 tests fail: a semantic conflict only the full suite shows), 1 FIX (PLUGINS.md:38 lost T-0050 platform-sync text). REPO_ONLY_AUTOPILOT verified by running settings(). Sent to the builder with 3 NITs. LESSON: a batch must run the FULL crew suite, not the mapped subset.
 - 02:50: C-0001 built: draft #501 c2a133b7, CI green. Fail-open review started; subscribed. Minted C-0004 (Windows decide skips on scripts/** though crew reads scripts/).

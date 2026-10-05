@@ -51,7 +51,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0004 | From C-0001 build: `crew-windows-decide` (pytest-crew.yml) skips the Windows crew jobs when a PR changes only `scripts/**`, but crew's tests read scripts/ (check-tooling-pr.py, tooling-pr suite, etc.). Pre-existing gap. Make the Windows decide use the same selector (or treat scripts/** as crew). | none yet | after #501 |
 
-Next free untracked ID: **C-0005** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0005 | From #501 review (pre-existing): suites run by NO gated workflow: plugin/localgpu/{cli,mcp}/_test, plugin/rule-of-two/scripts/_test, skills/github/scripts/_test, skills/work-log-reporter/scripts/_test. Wire them into CI (and the selector map). | none yet | after #501 |
+
+Next free untracked ID: **C-0006** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
