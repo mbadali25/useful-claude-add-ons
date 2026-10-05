@@ -83,7 +83,7 @@ class Dispatcher:
         self.cfg = cfg
         self.sp = spool
         tgc = cfg.get("telegram", {})
-        self.token = os.environ.get(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
+        self.token = tg.token_from_env(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
         self.chat_id = tgc.get("chat_id")
         self.mode = tgc.get("mode", "dm")
         self.close_on_complete = cfg.get("dispatcher", {}).get("close_topic_on_complete", True)
@@ -120,8 +120,18 @@ class Dispatcher:
                 req = json.loads(f.read_text())
             except Exception:
                 f.unlink(missing_ok=True); continue
-            self._send(req)
+            # Off the queue BEFORE sending. It used to be removed only after
+            # _send returned, so an error that was not a TgError left it on
+            # disk: the daemon died, a supervisor (nssm, Task Scheduler)
+            # restarted it, and it posted the same message again - forever.
             f.unlink(missing_ok=True)
+            try:
+                self._send(req)
+            except Exception as e:  # pylint: disable=broad-except
+                req_id = req.get("req_id", f.stem)
+                eprint(f"send failed for {req_id}: {type(e).__name__}")
+                atomic_write(self.sp.answers / f"{req_id}.json",
+                             {"req_id": req_id, "reply": None, "error": type(e).__name__})
 
     def _send(self, req):
         req_id = req["req_id"]; job_id = req.get("job_id", "default")
@@ -137,15 +147,41 @@ class Dispatcher:
             return
         if req.get("want_reply"):
             deadline = time.time() + int(req.get("timeout", 3600))
-            self.pending[req_id] = {"job_id": job_id, "thread_id": tid,
-                                    "message_id": msg["message_id"], "labels": labels or [],
-                                    "deadline": deadline}
-            self.msg_index[msg["message_id"]] = req_id
-            self.thread_open.setdefault(str(tid), []).append(req_id)
-            atomic_write(self.sp.active / f"{req_id}.json", req)
+            pending = {"job_id": job_id, "thread_id": tid, "message_id": msg["message_id"],
+                       "labels": labels or [], "deadline": deadline}
+            self._track(req_id, pending)
+            # What was SENT is kept with the request, so a restart can resume
+            # waiting on this message instead of posting it a second time.
+            atomic_write(self.sp.active / f"{req_id}.json", {**req, "_sent": pending})
         elif tid and self.close_on_complete and req.get("event") in FINAL_EVENTS:
             tg.close_forum_topic(self.token, self.chat_id, tid)
             self.topics.pop(job_id, None); self.sp.save_topics(self.topics)
+
+    def _track(self, req_id, pending):
+        self.pending[req_id] = pending
+        self.msg_index[pending["message_id"]] = req_id
+        self.thread_open.setdefault(str(pending["thread_id"]), []).append(req_id)
+
+    def resume_active(self):
+        """Unanswered questions from a previous run. One that records what was
+        sent is waited on again, not re-posted: every restart used to send
+        each open question once more. One without that record (written by an
+        older notifyd) is sent once, and taken off disk first, so a failure
+        cannot repeat it."""
+        for f in self.sp.active.glob("*.json"):
+            # Each record on its own: this runs before the main loop's guard, so
+            # one malformed file must cost that file, never the daemon's start.
+            try:
+                req = json.loads(f.read_text())
+                sent = req.get("_sent")
+                if isinstance(sent, dict) and sent.get("message_id") is not None:
+                    self._track(req["req_id"], sent)
+                    continue
+                f.unlink(missing_ok=True)
+                self._send(req)
+            except Exception as e:  # pylint: disable=broad-except
+                f.unlink(missing_ok=True)
+                eprint(f"could not resume {f.name}: {type(e).__name__}")
 
     # -- update handling --
     def poll(self):
@@ -233,16 +269,20 @@ class Dispatcher:
             raise SystemExit(1)
         self.sp.pidfile.write_text(str(os.getpid()))
         eprint(f"notifyd up: mode={self.mode} chat={self.chat_id} spool={self.sp.root}")
-        # reload any active (unanswered) requests left from a previous run
-        for f in self.sp.active.glob("*.json"):
-            try: self._send(json.loads(f.read_text())); f.unlink(missing_ok=True)
-            except Exception: pass
+        self.resume_active()
         try:
             while True:
-                self.sp.heartbeat.write_text(str(int(time.time())))
-                self.process_requests()
-                self.poll()
-                self.check_deadlines()
+                # One bad request or reply costs one turn of this loop, not
+                # the daemon: an exception here used to end run(), and a
+                # supervisor's restart then replayed whatever caused it.
+                try:
+                    self.sp.heartbeat.write_text(str(int(time.time())))
+                    self.process_requests()
+                    self.poll()
+                    self.check_deadlines()
+                except Exception as e:  # pylint: disable=broad-except
+                    eprint(f"notifyd: {type(e).__name__} in the main loop; continuing")
+                    time.sleep(2)
                 time.sleep(0.4)
         except KeyboardInterrupt:
             eprint("notifyd stopping")
