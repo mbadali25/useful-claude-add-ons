@@ -528,7 +528,8 @@ def _stub(directory, name, body, win_body=None):
 def _notify_both(root, url, path=None):
     """sh then ps1, the same payload, OS=Windows_NT for BOTH -- on a real
     Windows host Git Bash inherits it too."""
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT", CREW_TEST_TEAMS_URL=url)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT", CREW_TEST_TEAMS_URL=url,
+               **_notify_home(root))
     if path:
         env["PATH"] = path
     payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
@@ -543,12 +544,24 @@ def _notify_both(root, url, path=None):
     return codes
 
 
+def _notify_home(root):
+    """HOME / USERPROFILE for the hooks: a fixture home beside the repo whose
+    machine-global `~/.claude/crew/config.json` names `urlEnv` -- the only
+    layer crew_notify honours it from (GLOBAL_ONLY_KEYS) -- so no case reads
+    the real `~/.claude`, and none passes only because the machine has one."""
+    home = pathlib.Path(root).parent / "notify-home"
+    crew = home / ".claude" / "crew"
+    crew.mkdir(parents=True, exist_ok=True)
+    (crew / "config.json").write_text(
+        json.dumps({"notify": {"urlEnv": "CREW_TEST_TEAMS_URL"}}), encoding="utf-8")
+    return {"HOME": str(home), "USERPROFILE": str(home)}
+
+
 def _notify_repo(tmp_path):
     root = _repo(tmp_path)
     (pathlib.Path(root) / ".crew").mkdir()
     (pathlib.Path(root) / ".crew" / "config.json").write_text(
-        json.dumps({"notify": {"provider": "teams", "urlEnv": "CREW_TEST_TEAMS_URL"}}),
-        encoding="utf-8")
+        json.dumps({"notify": {"provider": "teams"}}), encoding="utf-8")
     return root
 
 

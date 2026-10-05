@@ -96,7 +96,20 @@ def _teams():
 
 
 def _notify_repo(tmp_path):
-    return _crew_repo(tmp_path, {"notify": {"provider": "teams", "urlEnv": "CREW_TEST_TEAMS_URL"}})
+    return _crew_repo(tmp_path, {"notify": {"provider": "teams"}})
+
+
+def _notify_home(root):
+    """HOME / USERPROFILE for the notify hooks: a fixture home whose
+    machine-global `~/.claude/crew/config.json` names `urlEnv` -- the only
+    layer crew_notify honours it from (GLOBAL_ONLY_KEYS) -- so no case reads
+    the real `~/.claude`, and none passes only because the machine has one."""
+    home = pathlib.Path(root).parent / "notify-home"
+    crew = home / ".claude" / "crew"
+    crew.mkdir(parents=True, exist_ok=True)
+    (crew / "config.json").write_text(
+        json.dumps({"notify": {"urlEnv": "CREW_TEST_TEAMS_URL"}}), encoding="utf-8")
+    return {"HOME": str(home), "USERPROFILE": str(home)}
 
 
 def _notification(root, message="Claude needs your permission", prompt="p-1",
@@ -108,7 +121,8 @@ def _notification(root, message="Claude needs your permission", prompt="p-1",
 
 def _both_notify(root, url, payload, words=None):
     for flavour in ("sh", "ps1"):
-        done = _run(flavour, "notify", root, payload, ("hook",), CREW_TEST_TEAMS_URL=url)
+        done = _run(flavour, "notify", root, payload, ("hook",), CREW_TEST_TEAMS_URL=url,
+                    **_notify_home(root))
         if words is not None:
             words.append(done.stdout.decode("utf-8", "replace").strip())
     return len(_Counter.hits)
@@ -147,7 +161,7 @@ def test_a_notify_call_with_no_payload_always_sends(tmp_path, teams):
     root = _notify_repo(tmp_path)
     for index in range(2):
         _run("sh", "notify", root, b"", ("deploy", f"qa abc{index} - pass", "--outcome", "pass"),
-             CREW_TEST_TEAMS_URL=teams)
+             CREW_TEST_TEAMS_URL=teams, **_notify_home(root))
 
     assert len(_Counter.hits) == 2
 
