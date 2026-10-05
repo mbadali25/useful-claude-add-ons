@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew: a vault write matches every directory from the vault down, not just the vault (T-0081)
+
+- **Summary.** A board or note directory inside the Obsidian vault that is swapped for another real
+  directory between crew's checks and its write is now refused instead of written into.
+- **What changed.** `_vault_paths` in `plugin/crew/hooks/scripts/crew_tracker.py` records each real
+  directory between the vault and the board or note (`boardDirIds`, `noteDirIds`: `(st_dev, st_ino)`
+  from `os.lstat`, or None), and both pinned walks match it: the POSIX fd walk after each no-follow
+  open, the Windows handle walk on every held component. A different identity refuses as "a
+  directory on its path changed after the vault checks"; an identity that cannot be told (none
+  recorded, a list that does not line up, or an inode / file id of 0 on either side) refuses as
+  "could not tell".
+- **Behaviour change.** On POSIX, a vault or directory whose file system reports inode 0 now refuses
+  the write ("could not tell"), as Windows already did for a file id of 0.
+- **Tests.** Eight new tests in `plugin/crew/tests/test_crew_tracker.py` (board, middle-directory and
+  note swaps for a byte-identical copy, natively on POSIX and Windows; the handle walk's different
+  component; zero inode on the vault and a component; a missing or short record on both walks; the
+  record itself; a vault-root board still written). Three existing tests now also assert which
+  check refused, so the sabotage mutations aimed at the link, vault and zero-file-id checks stay
+  killed behind the new match. The committed mutations for the new branches follow in L-0672.
+
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that

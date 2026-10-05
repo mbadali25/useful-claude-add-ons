@@ -1834,6 +1834,11 @@ first and recomputing if Obsidian saved it meanwhile. Every vault write reaches
 its directory from the vault root one component at a time with
 `O_DIRECTORY|O_NOFOLLOW` and writes relative to that directory, so a directory
 swapped for a link after the checks is refused rather than written through.
+Every directory from the vault down is also matched against the one the checks
+found (T-0081): by device and inode on POSIX, by volume and file id on Windows,
+so a real directory renamed away and replaced by another, even a byte-identical
+copy, is refused too. An identity that cannot be told (none recorded, or an
+inode or file id of 0) refuses as "could not tell", never "the same".
 That fd follows its directory if it is renamed out of the vault, so the walk is
 repeated and matched by device and inode before the temp is written, before the
 replace and after it; a note that landed in a directory that left is removed

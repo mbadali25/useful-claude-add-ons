@@ -1009,6 +1009,8 @@ def _vault_paths(root, settings, names):
     """`({"vault", "dir", <label>: real path}, None)` or `(None, problem)`.
 
     `names` is `[(label, file name)]`, each placed at `<vault>/<boardDir>/`.
+    `<label>DirIds` records the identity of every directory between the vault
+    and that file (`_component_ids`), for the pinned walks to match.
     """
     raw = settings.get("vaultPath")
     if not raw or not isinstance(raw, str):
@@ -1043,6 +1045,7 @@ def _vault_paths(root, settings, names):
         if os.path.lexists(real) and not os.path.isfile(real):
             return None, f"{label} {shown} is not a regular file"
         found[label], found[label + "Shown"] = real, shown
+        found[label + "DirIds"] = _component_ids(found, label)
     # Each file, not the vault: a vault that CONTAINS the repo, with boardDir
     # pointing into it, puts the board in the worktree while the vault is not.
     repo = os.path.realpath(root)
@@ -1086,6 +1089,49 @@ def _components(paths, label):
     return [part for part in rel.split(os.sep) if part not in ("", ".")]
 
 
+def _component_ids(paths, label):
+    """`(st_dev, st_ino)` of each real component `_components` names, outermost
+    first, read with `os.lstat` so it is the object a no-follow open reaches;
+    None for one absent, not a directory, or unreadable."""
+    ids, path = [], paths["vault"]
+    for part in _components(paths, label):
+        path = os.path.join(path, part)
+        try:
+            info = os.lstat(path)
+        except OSError:
+            ids.append(None)
+            continue
+        ids.append((info.st_dev, info.st_ino) if stat.S_ISDIR(info.st_mode) else None)
+    return ids
+
+
+def _could_not_tell(found, want):
+    """Raise unless both identities can be told: a recorded `want` that is None,
+    or no inode / file id on either side, is no evidence -- never "the same"."""
+    if want is None or not found.st_ino or not want[1]:
+        raise OSError(errno.EIO, "could not tell whether a directory on its path is the one the vault "
+                                 "checks found: there is no identity to compare; nothing written")
+
+
+def _recorded_ids(paths, label, parts):
+    """The `_vault_paths` identities for `parts`, refused as "could not tell"
+    when they do not line up with the components being walked."""
+    ids = paths.get(label + "DirIds")
+    if not isinstance(ids, list) or len(ids) != len(parts):
+        raise OSError(errno.EIO, "could not tell whether the directories on its path are the ones the "
+                                 "vault checks found: no identity was recorded for each; nothing written")
+    return ids
+
+
+def _match_component(found, want):
+    """Raise unless `found` (the stat of a component the walk opened) is the
+    directory `_vault_paths` recorded there as `want`: EIO when either cannot
+    be told, ESTALE (`_moved`'s "changed after the vault checks") when they differ."""
+    _could_not_tell(found, want)
+    if (found.st_dev, found.st_ino) != tuple(want):
+        raise OSError(errno.ESTALE, "a directory on its path is not the one the vault checks found")
+
+
 def _hold_dirs(paths, label):
     """Windows: `[(stat, close)]`, a held handle on the vault and on every real
     component down to the directory holding `paths[label]`, outermost first.
@@ -1094,10 +1140,12 @@ def _hold_dirs(paths, label):
     `_release`. Each is refused rather than trusted when it is a reparse point
     (a link planted where a checked directory was), not a directory, or has no
     file id to compare -- no id is "could not tell", never "the same". The
-    vault is matched by device and file id against the one checked.
+    vault, and every component below it, is matched by device and file id
+    against the one checked (T-0081).
     """
     held = []
     try:
+        ids = _recorded_ids(paths, label, _components(paths, label))
         path = paths["vault"]
         for index, part in enumerate([None] + _components(paths, label)):
             if part is not None:
@@ -1113,6 +1161,8 @@ def _hold_dirs(paths, label):
                                          "the file system reports no file id; nothing written")
             if index == 0 and (seen.st_dev, seen.st_ino) != paths["vaultId"]:
                 raise OSError(errno.ESTALE, "the vault is not the directory that was checked")
+            if index:
+                _match_component(seen, ids[index - 1])
     except BaseException:
         _release(held)
         raise
@@ -1131,21 +1181,25 @@ def _open_pinned(paths, label):
 
     The components are the REAL path's, so a boardDir that is a link inside the
     vault still works; what cannot happen is a component that became a link
-    after `_vault_paths` resolved it. The vault itself is matched by device and
-    inode against the one checked.
+    after `_vault_paths` resolved it. The vault and each component are matched
+    by device and inode against the ones checked, so a real directory renamed
+    away and replaced by another is refused too (T-0081).
     """
     if not _DIR_FD:
         return _hold_dirs(paths, label)
     parts = _components(paths, label)
+    ids = _recorded_ids(paths, label, parts)
     fd = os.open(paths["vault"], _DIR_FLAGS)
     try:
         seen = os.fstat(fd)
+        _could_not_tell(seen, paths["vaultId"])
         if (seen.st_dev, seen.st_ino) != paths["vaultId"]:
             raise OSError(errno.ESTALE, "the vault is not the directory that was checked")
-        for part in parts:
+        for part, want in zip(parts, ids):
             inner = os.open(part, _DIR_FLAGS, dir_fd=fd)
             os.close(fd)
             fd = inner
+            _match_component(os.fstat(fd), want)
     except BaseException:
         os.close(fd)
         raise
