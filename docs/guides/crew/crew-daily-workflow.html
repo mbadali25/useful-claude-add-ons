@@ -169,7 +169,9 @@ appends a metrics row, marks the ticket done, and clears a stale handoff.</p>
 &lt;n&gt;</code> refuses unless T-0091 holds the train, <code>git merge-tree</code> against the base is clean, the base
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
 <code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (the train never merges; only
-autopilot's ship step does, under <code>autopilot.ship</code>). When it
+autopilot's ship step does, under <code>autopilot.ship</code>; with <code>autopilot.deploy</code> set, its deploy
+phase then names <code>/crew:promote &lt;env&gt;</code> for the first GitHub environment, or stops at
+<code>deploy-target</code> / <code>failed-deploy</code>). When it
 refuses, land in this order: <code>crew_train.py catch-up</code> (resolve any conflict), bump the version one
 past the base's, refresh the artifacts, commit, gate the merged head, review it again if
 <code>review_ledger.py --check-receipt</code> reads stale, then <code>check-land</code> again, so the tree the gate

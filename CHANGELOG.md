@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge (L-0649)
+
+- **Summary.** With `autopilot.deploy` `nonprod` or `all`, once the ship phase reports the ticket's PR
+  merged at this HEAD, `crew_autopilot.py next` answers `phase=deploy command=/crew:promote <env>`
+  for the first `.crew/verify.json` environment with a `github` entry (file order, nonProd before
+  prod) that has no PROMOTIONS row for the sha, when `deploy_allowed` answers exactly `allow` for
+  T-0009's class of the entry's dispatch; every non-empty report is printed.
+- **Two stops.** `deploy-target` when the target cannot be told or is not safe to drive (the map
+  unreadable, an entry `check` refuses, `requireHuman`, no `shaInput`, a class unknown, mismatched or
+  crashing, any verdict but `allow`); `failed-deploy` when the newest row for the sha is not all-pass
+  (never re-deployed). All targets all-pass, or no `github` environment, is `closed`. With
+  `deploy: none` (the default) nothing changes. `next` stays read-only: no `gh`, no
+  `crew_ghdeploy.py` subcommand. `settings` no longer says nothing dispatches a deploy.
+
 ### Fixed — `crew` 1.1.4: promote-gate no longer matches a fragment of a declared deploy (L-0689)
 
 - **Summary.** Both promote gates treated a command as a declared deploy when either text contained

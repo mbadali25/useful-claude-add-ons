@@ -108,7 +108,9 @@ With the train armed, landing is part of done: `crew_train.py check-land --ticke
 <n>` refuses unless T-0091 holds the train, `git merge-tree` against the base is clean, the base
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
 `gh pr merge <n> --merge --match-head-commit <sha>` for you to run (the train never merges; only
-autopilot's ship step does, under `autopilot.ship`). When it
+autopilot's ship step does, under `autopilot.ship`; with `autopilot.deploy` set, its deploy
+phase then names `/crew:promote <env>` for the first GitHub environment, or stops at
+`deploy-target` / `failed-deploy`). When it
 refuses, land in this order: `crew_train.py catch-up` (resolve any conflict), bump the version one
 past the base's, refresh the artifacts, commit, gate the merged head, review it again if
 `review_ledger.py --check-receipt` reads stale, then `check-land` again, so the tree the gate

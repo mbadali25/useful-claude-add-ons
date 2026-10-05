@@ -28,6 +28,16 @@ automatic rollback, re-dispatch of an older sha, or cancel**: say which
 happened, quote the record's lines, and give the owner the two options -
 roll back (re-promote the previous good sha) or fix forward. A person chooses.
 
+**Unattended (L-0649).** Under `/crew:autopilot` with `autopilot.deploy`
+`nonprod` or `all`, after the ticket's PR merges, `crew_autopilot.py next`
+names `/crew:promote <env>` for the first `github` environment (nonProd
+first) with no PROMOTIONS row for the merged sha, once `deploy_allowed`
+answers exactly `allow` for T-0009's class of its dispatch; the session then
+runs these five steps. It stops with `deploy-target` (the target cannot be
+told: `requireHuman`, no `shaInput`, an unknown or mismatched class, any
+verdict but `allow`) or `failed-deploy` (the newest row for the sha is not
+all-pass: never re-deployed, never rolled back by autopilot).
+
 `--dry-run` prints `crew_ghdeploy.py check`'s output (the dispatch for HEAD
 and every environment the gates apply to it) and runs nothing else.
 

@@ -3310,12 +3310,20 @@ stderr, exit 0. Each is one line, the verdict first: a value that is not plain
 printable text (a class or environment holding whitespace included) prints as
 its repr, so no input can add a line a consumer would read as a second verdict.
 
-**Inert until T-0045.** Nothing in this crew version dispatches a deploy, so
-`settings` warns whenever `autopilot.deploy` is not `none`. The consumer
-(T-0045) calls `deploy_allowed` immediately before each dispatch, passes the
-class from T-0005's classifier, proceeds only on the exact verdict `allow`
-(anything else — `ask`, `refuse`, no answer, a non-zero exit — stops), and
-persists every report. `allow` is necessary, not sufficient: T-0009's hook,
+**The deploy phase (L-0649).** With `autopilot.deploy` `nonprod` or `all`,
+once the ship phase reports the ticket's PR merged at this HEAD, `next`
+answers `phase=deploy command=/crew:promote <env>` for the first environment
+in `.crew/verify.json` with a `github` entry (file order, nonProd before
+prod) that has no PROMOTIONS row for the sha, after calling `deploy_allowed`
+with T-0009's class for the entry's dispatch and proceeding only on the exact
+verdict `allow` (every non-empty report is printed in the reason). It stops
+with **`deploy-target`** when the target cannot be told or is not safe to
+drive — the map unreadable, an entry `crew_ghdeploy.py check` refuses,
+`requireHuman`, no `shaInput`, a class unknown or mismatched, any verdict but
+`allow` — and with **`failed-deploy`** when the target's newest row for the
+sha is not all-pass (it never re-deploys). With every target all-pass, or no
+`github` environment (promotion is then a person's), it is `closed`. `next`
+stays read-only: no `gh`, no `crew_ghdeploy.py` subcommand. `allow` is necessary, not sufficient: T-0009's hook,
 promote-gate (`requireHuman`, the post-deploy proof) and every other gate
 still decide.
 

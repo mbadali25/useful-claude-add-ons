@@ -233,10 +233,9 @@ only under `all` with `environments.prodUnattended` true in BOTH layers and
 `guards.cloudGuard` a plain `block`. A crash asks. The CLI prints one line per
 stream (`--json` too), and `verdict=ask` even for a crash it cannot describe.
 
-The consumer (T-0045, not built here) calls it immediately before each
-dispatch, passes the class from T-0005's classifier, proceeds only on the exact
-verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
-not sufficient: T-0009's hook, promote-gate and every other gate still decide.
+Its consumer, the deploy phase (L-0649, crew_autopilot_deploy.py), calls it
+with T-0009's class, proceeds only on `allow` and prints every non-empty
+`report`. `allow` is necessary, not sufficient: every gate still decides.
 """
 import argparse
 import datetime
@@ -256,6 +255,7 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True
 
 import completion_audit
+import crew_autopilot_deploy
 import crew_common
 import crew_config
 import crew_ship
@@ -326,6 +326,8 @@ FIXED_STOPS = (
     ("no-progress", "a phase ran and the files on disk still name the same command"),
     ("auto-replan-cap", "autopilot.maxAutoReplans successor plans are already on the "
                         "ticket's review ledger: the owner decides, with the history"),
+    ("deploy-target", "after the merge, the deploy target cannot be told or is not safe to drive"),
+    ("failed-deploy", "the target's newest PROMOTIONS.md row for the sha is not all-pass"),
 )
 # Enforced by the command's procedure, not by `next` (which sees them only as
 # `no-progress` when the same command comes round again).
@@ -438,7 +440,7 @@ def _ship_phase(top, ticket, answer, why):
                       "is not a PR) - a human looks")
     state = pr["state"]
     if state == "MERGED":
-        return crew_ship.merged_phase(top, branch, pr, answer)
+        return crew_autopilot_deploy.after_merge(top, branch, pr, answer, config["deploy"], deploy_allowed)
     if state == "OPEN" and config["ship"] != "merge":
         return answer("closed", True, f"PR #{pr['number']} open, merge by hand "
                       f"({pr.get('url')}; autopilot.ship is {config['ship']})")
@@ -1687,9 +1689,7 @@ def _settings_at(top):
         warnings.append(f"autopilot.deploy is {deploy_saw!r}: only the exact strings "
                         "'nonprod' and 'all' arm it, so it reads as none")
     if deploy != "none":
-        warnings.append(f"autopilot.deploy is {deploy!r}, but nothing in this crew version "
-                        "dispatches a deploy: T-0045 consumes it; deploy-allowed answers "
-                        "the policy only")
+        warnings.append(f"autopilot.deploy is {deploy!r}: after a merge, next names /crew:promote (L-0649)")
     crew_json = _read_json(crew_common.repo_config_file(top, "crew.json"))
     if isinstance(crew_json, dict) and "autopilot" in crew_json \
             and "autopilot" not in crew_state.load_config(top):

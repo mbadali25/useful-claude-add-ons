@@ -21,6 +21,8 @@ GHRULE = os.path.join(CREW, "hooks", "scripts", "_promote_github.py")
 SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
 PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
 _G = "tests/test_promote_gate_github.py::"
+APD = os.path.join(CREW, "hooks", "scripts", "crew_autopilot_deploy.py")
+_A = "tests/test_crew_autopilot_deploy_phase.py::"
 _T = "tests/test_crew_ghdeploy.py::"
 _P = _T + "test_entry_problem[{}]"
 _C = _T + "test_check_applies_the_gates_union_rule[{}]"
@@ -687,4 +689,51 @@ GHDEPLOY_MUTATIONS = (
      '    picked = [dict(e, shaInput=e.get("shaInput", "sha")) for e in picked]\n'
      '    problems = [p for p in (_name_problem(e) for e in picked if "shaInput" in e) if p]\n',
      _G + "test_the_rule_applies_only_to_a_github_entry_with_a_sha_input"),
+    # --- autopilot's deploy phase (L-0649): one per refusing branch ----------
+    ("autopilot deploy: a requireHuman target is driven", APD,
+     '        if crew_ghdeploy._get_ci(cfg, "requireHuman", False) is True:',
+     '        if False:',
+     _A + "test_deploy_target_stops[require-human-target]"),
+    ("autopilot deploy: an entry with no shaInput is driven", APD,
+     '        if not entry.get("shaInput"):\n',
+     "        if False:\n",
+     _A + "test_deploy_target_stops[no-sha-input]"),
+    ("autopilot deploy: a class the classifier refuses is driven", APD,
+     "        except crew_ghdeploy.Refused as exc:\n            raise ValueError(f\"class",
+     "        except crew_ghdeploy.Refused:\n            klass = \"nonProd\"\n"
+     "        except ZeroDivisionError as exc:\n            raise ValueError(f\"class",
+     _A + "test_deploy_target_stops[class-unknown]"),
+    ("autopilot deploy: an unreadable map reads as no github environment", APD,
+     '        raise ValueError(f"verify-json-unreadable: {path}: {exc}") from exc\n',
+     "        return []\n",
+     _A + "test_deploy_target_stops[verify-json-unreadable]"),
+    ("autopilot deploy: an entry check refuses is driven", APD,
+     "            entry = crew_ghdeploy.validated(envs, env)[0]\n",
+     "            entry = crew_ghdeploy.entries(cfg)[0]\n",
+     _A + "test_deploy_target_stops[entry-refused]"),
+    ("autopilot deploy: deploy_allowed's ask proceeds", APD,
+     '        if verdict.get("verdict") != "allow":\n',
+     '        if verdict.get("verdict") == "refuse":\n',
+     _A + "test_deploy_allowed_anything_but_allow_stops[deploy-allowed-ask]"),
+    ("autopilot deploy: a non-pass row is driven again", APD,
+     '        if row == "fail":\n',
+     "        if False:\n",
+     _A + "test_row_not_pass_is_failed_deploy[not-run]"),
+    ("autopilot deploy: the first row decides, not the newest", APD,
+     '            newest = "pass" if all(c.lower() == "pass" for c in cells[3:6]) else "fail"\n',
+     '            newest = newest or ("pass" if all(c.lower() == "pass" for c in cells[3:6]) else "fail")\n',
+     _A + "test_a_later_pass_row_clears_a_failure"),
+    ("autopilot deploy: a crash in the target read is a pass-through", APD,
+     "    except Exception as exc:  # pylint: disable=broad-except\n        return answer(\"deploy-target\"",
+     "    except ZeroDivisionError as exc:  # pylint: disable=broad-except\n        return answer(\"deploy-target\"",
+     _A + "test_a_crash_reading_the_targets_is_deploy_target"),
+    # --- L-0649 must-allow non-vacuity ---------------------------------------
+    ("autopilot deploy: deploy none still runs the phase", APD,
+     '    if closed.get("phase") != "closed" or deploy == "none":\n',
+     '    if closed.get("phase") != "closed":\n',
+     _A + "test_deploy_none_default_is_closed_unchanged"),
+    ("autopilot deploy: prod is not held back until every nonProd passes", APD,
+     '    return sorted(found, key=lambda pair: pair[1] != "nonProd")\n',
+     "    return found\n",
+     _A + "test_prod_under_all_is_named_only_after_every_nonprod_passes"),
 )

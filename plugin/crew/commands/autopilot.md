@@ -95,7 +95,7 @@ A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown` (no INDEX row here or in the main checkout), `index-disagreement`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger), `drift`, `in-flight`, `handover-elsewhere`. This procedure: `review-verdict`, `failed-done-check`,
-`failed-phase`. No deploy (T-0005), merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
+`failed-phase`. After the merge, `deploy-target` and `failed-deploy` (L-0649; `phase=deploy` names `/crew:promote <env>`). No other deploy, merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.
