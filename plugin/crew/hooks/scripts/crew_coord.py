@@ -55,7 +55,8 @@ and no fetch refspec, push refspec or mirror, so git writes no remote-tracking
 ref, no local ref moves at all, and
 no URL -- or token inside one -- appears in argv. `--no-verify` means the
 repo's pre-push hook (husky, lefthook) never runs on a claim or a heartbeat. A
-remote with no push URL or several reads `unknown`. A rejected push re-fetches, re-applies the
+remote with no push URL or several reads `unknown`, and so does a push the
+remote's fetch side does not then show (a pushurl to another repository). A rejected push re-fetches, re-applies the
 change to the new tip (so a peer's claim that landed in between is seen and
 refused) and retries, at most MAX_RETRIES times, then reports
 `unknown - could not push`. What cannot be fetched or pushed reads `unknown`,
@@ -648,6 +649,9 @@ class Channel:
             else:
                 mode, sha = self._blob(prefix + head, data)
                 entries[head] = (mode, "blob", sha)
+        clash = sorted(set(entries) & set(subdirs))
+        if clash:  # a blob and a tree of one name: one would silently replace the other
+            raise OSError(f"{prefix}{clash[0]} is both a file and a directory on the channel")
         for name, sub in subdirs.items():
             entries[name] = ("040000", "tree", self._mktree(sub, f"{prefix}{name}/"))
         text = "".join(f"{mode} {kind} {sha}\t{name}\n" for name, (mode, kind, sha) in sorted(entries.items()))
@@ -708,6 +712,20 @@ class Channel:
     def push_argv(self, sha):
         return ["push", "--no-verify", "--", PUSH_REMOTE, f"{sha}:{self.ref}"]
 
+    def _confirm(self, sha, text):
+        """'ok' only when the remote's fetch side shows the pushed commit (at the
+        tip or under it): a pushurl that reaches another repository accepts the
+        push, yet every later fetch reads a channel without it."""
+        tip, state, why = self.fetch()
+        if state == "failed":
+            return Result("unknown", f"unknown - pushed {self.ref}, but could not fetch it back from "
+                                     f"{self.remote} to confirm: {why}")
+        if tip != sha and (tip is None or run_git(
+                self.root, ["merge-base", "--is-ancestor", sha, tip]).code != 0):
+            return Result("unknown", f"unknown - pushed {self.ref}, but {self.remote}'s fetch URL does "
+                                     "not show it (does its pushurl reach another repository?)")
+        return Result("ok", text)
+
     def write(self, change, message):
         """Apply `change(files) -> (status, message)` on the freshly fetched
         tip and push it; a rejected push re-fetches and re-applies, at most
@@ -735,7 +753,7 @@ class Channel:
                 return Result("unknown", f"unknown - could not build the commit: {exc}")
             pushed = run_git(self.root, self.push_argv(sha), env=push_env)
             if pushed.code == 0:
-                return Result("ok", text)
+                return self._confirm(sha, text)
             last = _last_line(pushed.err)
         return Result("unknown", f"unknown - could not push {self.ref} to {self.remote} after "
                                  f"{1 + MAX_RETRIES} attempts: {last}")

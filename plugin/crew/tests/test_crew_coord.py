@@ -618,6 +618,43 @@ def test_a_channel_path_it_cannot_carry_exactly_reads_unknown(capsys, monkeypatc
     assert git(remote, "rev-parse", REF).strip() == seed
 
 
+def test_a_claim_path_a_peer_holds_as_a_directory_reads_unknown(capsys, monkeypatch, tmp_path, wt,
+                                                                   remote):
+    # Codex review round 2 (rush g0): a peer's `claims/<key>.json/peer.txt` made _mktree
+    # replace the new claim blob with the peer's directory; the push "succeeded" with no claim.
+    _session(monkeypatch, "sess-a")
+    assert _run(capsys, wt, "claim")[0] == 0
+    claim = next(p for p in git(remote, "ls-tree", "-r", "--name-only", REF).splitlines()
+                 if p.startswith(crew_coord.CLAIMS))
+    blob = _plumb(wt, "hash-object", "-w", "--stdin", data=b"peer\n")
+    env = dict(os.environ, GIT_INDEX_FILE=os.fspath(tmp_path / "peer-index"))
+    subprocess.run(["git", "update-index", "--add", "--cacheinfo", f"100644,{blob},{claim}/peer.txt"],
+                   cwd=wt, env=env, check=True, capture_output=True)
+    tree = subprocess.run(["git", "write-tree"], cwd=wt, env=env, check=True,
+                          capture_output=True, text=True).stdout.strip()
+    seed = _plumb(wt, "commit-tree", tree, "-p", git(remote, "rev-parse", REF).strip(), "-m", "peer")
+    _plumb(wt, "push", "-q", "origin", f"{seed}:{REF}")
+
+    code, out = _run(capsys, wt, "claim")
+
+    assert (code, "both a file and a directory" in out) == (crew_coord.EXIT_UNKNOWN, True), out
+    assert git(remote, "rev-parse", REF).strip() == seed
+
+
+def test_a_pushurl_to_another_repository_reads_unknown(capsys, monkeypatch, tmp_path, wt, remote):
+    # Codex review round 2 (rush g0): a push accepted by a pushurl the fetch URL does not
+    # read was reported as a claim no later fetch could see.
+    other = tmp_path / "other.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(other)], check=True, capture_output=True)
+    git(wt, "config", "remote.origin.pushurl", os.fspath(other).replace("\\", "/"))
+    _session(monkeypatch, "sess-a")
+
+    code, out = _run(capsys, wt, "claim")
+
+    assert (code, "does not show it" in out) == (crew_coord.EXIT_UNKNOWN, True), out
+    assert git(remote, "rev-parse", "--verify", "-q", REF, check=False) == ""
+
+
 # --- Step 3: claims ------------------------------------------------------------
 
 def test_claim_writes_claim_file_and_log_line(capsys, monkeypatch, wt, remote, live_pid):
