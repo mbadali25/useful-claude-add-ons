@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.4**: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell. After the dispatch, `identify` finds the one run it created: a run of `gh run list` that was not in `prepare`'s snapshot, is a `workflow_dispatch` on the ref, was created no earlier than 30 seconds before `prepare`, and carries the correlation id in its title when one was sent. Its id and URL go into the state file.
 - **crew 1.1.4**: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch. Before a `github` environment's dispatch, `prepare` checks the entry, asks T-0009's classifier which environment the dispatch deploys to, and confirms the actor, the sha on the remote and (with no `shaInput`) the branch tip; it then records the actor's existing runs so the new one can be found afterwards, and prints the dispatch for the session to run itself.
-- **crew 1.1.4**: Promote-gate gates a workflow dispatch of a declared deploy, in either spelling. On the Bash tool, `gh workflow run <wf>` with its inputs in any order and its REST twin `gh api -X POST .../actions/workflows/<wf>/dispatches -f 'inputs[environment]=...'` are now the deploy they dispatch, so every pre-deploy check runs for them; before, both passed unchecked.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -485,8 +485,23 @@ the correlation id, the command, `identifySeconds`, `watchMinutes` and the
 deadline - and prints the dispatch as its last line before `result=`. It
 never dispatches: its only `gh` calls are `api user`, two GETs and `run
 list`. Run the printed command as its own Bash call, so the cloud guard and
-promote-gate judge it. **Not built yet:** finding the run, watching it and
-recording it.
+promote-gate judge it.
+
+**`identify` (L-0645)** - `crew_ghdeploy.py identify --root . --env <name>
+[--index N]` - names the one run the dispatch created. It polls `gh run list`
+(the snapshot's filters) every 5 seconds for up to `identifySeconds`. A
+candidate is a run not in the snapshot, with event `workflow_dispatch`, on
+the ref, created no earlier than `t0` minus 30 seconds and, when a
+correlation id was sent, whose display title holds it - with no fallback to
+the time rule, so `correlationInput` only works for a workflow whose
+`run-name` includes that input. Exactly one candidate is the run: its id and
+URL go into the state file (exit 0). It never picks among candidates, and
+**could-not-tell stops**: two or more (`two-candidates`), none by the timeout
+(`none-in-timeout`, `correlation-not-found`, `run-list-fails`), an
+unparseable `createdAt`, a state file that is missing, unreadable or older
+than 600 seconds (`stale-prepare`) is exit 3 with no run id written; do not
+watch or record a run by hand then. Its only `gh` call is `run list`.
+**Not built yet:** watching the run and recording it.
 
 ### The promotion record
 

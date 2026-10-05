@@ -19,6 +19,7 @@ import re
 import stat
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -1177,3 +1178,194 @@ def test_helper_never_dispatches(tmp_path, monkeypatch):
                 ["api", "-XPATCH", "x"]):
         assert _forbidden(bad), bad
     assert not _forbidden(["api", "user"])
+
+
+# --- identify (L-0645) --------------------------------------------------------
+
+_T0 = 1_000_000
+
+
+def _iso(epoch):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def _new_run(run_id, created=_T0 + 2, branch="main", event="workflow_dispatch", title="Deploy"):
+    return {"databaseId": run_id, "createdAt": created if isinstance(created, str)
+            else _iso(created), "headBranch": branch, "event": event,
+            "displayTitle": title, "url": f"https://github.com/o/r/actions/runs/{run_id}"}
+
+
+_OLD = [_new_run(11, created=_T0 - 3600), _new_run(12, created=_T0 - 1800)]
+
+
+def _identify_repo(tmp_path, monkeypatch, corr=False, t0=_T0, now=_T0 + 3):
+    """A repo after a successful `prepare` (snapshot 11 and 12, t0 = `t0`),
+    with a clock at `now` that each 5-second sleep advances."""
+    entry = dict(_SEQ_SHA_ENTRY, correlationInput="crew_id") if corr else None
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry)
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: t0)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 0, lines
+    clock = {"now": now}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    monkeypatch.setattr(crew_ghdeploy, "_sleep",
+                        lambda s: clock.__setitem__("now", clock["now"] + s))
+    return root
+
+
+def _identify(monkeypatch, root, answers):
+    """`identify` with `run list` answering `answers` (one per poll, the last
+    repeating): `(exit, lines, gh)`."""
+    gh = FakeGh({("run", "list"): answers})
+    code, lines = _run(monkeypatch, gh, "identify", "--root", str(root), "--env", "staging")
+    return code, lines, gh
+
+
+def _title(root):
+    return f"Deploy {_state(root)['correlationId']}"
+
+
+_IDENTIFY_BLOCKS = {
+    # name: (correlation?, run-list answers or a callable of root, reason)
+    "two-candidates": (False, [_ok(_OLD + [_new_run(13), _new_run(14)])], "two-candidates"),
+    "none-in-timeout": (False, [_ok(_OLD)], "none-in-timeout"),
+    "old-run-only": (False, [_ok([_new_run(11, created=_T0 + 1)])], "none-in-timeout"),
+    "wrong-branch": (False, [_ok(_OLD + [_new_run(13, branch="other")])], "none-in-timeout"),
+    "wrong-event": (False, [_ok(_OLD + [_new_run(13, event="push")])], "none-in-timeout"),
+    "outside-the-window": (False, [_ok(_OLD + [_new_run(13, created=_T0 - 31)])],
+                           "none-in-timeout"),
+    "correlation-not-found": (True, [_ok(_OLD + [_new_run(13, title="Deploy crew-other")])],
+                              "correlation-not-found"),
+    "created-unparseable": (False, [_ok(_OLD + [_new_run(13, created="yesterday")])],
+                            "created-unparseable"),
+    "created-without-zone": (False, [_ok(_OLD + [_new_run(13, created="2026-10-04T12:00:00")])],
+                             "created-unparseable"),
+    "run-list-fails": (False, [(1, "")], "run-list-fails"),
+    "run-list-not-runs": (False, [_ok({"runs": []})], "run-list-unreadable"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_IDENTIFY_BLOCKS))
+def test_identify_could_not_tell(tmp_path, monkeypatch, name):
+    """must-block: exit 3, the last line names the reason, no run id written
+    and the state file byte-identical."""
+    corr, answers, reason = _IDENTIFY_BLOCKS[name]
+    root = _identify_repo(tmp_path, monkeypatch, corr=corr)
+    path = root / ".crew" / ".ghdeploy" / "staging-0.json"
+    before = path.read_bytes()
+    code, lines, _gh = _identify(monkeypatch, root, answers)
+    assert code == 3, lines
+    assert lines[-1] == f"result=could-not-tell reason={reason}"
+    assert path.read_bytes() == before
+    assert not any("runs/1" in line for line in lines)
+
+
+for _name in sorted(_IDENTIFY_BLOCKS):
+    _scenario(lambda t, m, _n=_name: test_identify_could_not_tell(t, m, _n))
+
+
+@_scenario
+def test_identify_polls_until_identify_seconds(tmp_path, monkeypatch):
+    """none-in-timeout polls every 5 seconds for identifySeconds (120): 25 polls."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root, [_ok(_OLD)])
+    assert code == 3, lines
+    assert len(gh.calls) == 120 // 5 + 1
+
+
+@_scenario
+def test_identify_stale_prepare(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch, now=_T0 + 601)
+    code, lines, gh = _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=stale-prepare"
+    assert gh.calls == [] and "runId" not in _state(root)
+
+
+def test_identify_at_600_seconds_is_not_stale(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch, now=_T0 + 600)
+    code, lines, _gh = _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert code == 0, lines
+
+
+@_scenario
+def test_identify_state_file_missing(tmp_path, monkeypatch):
+    root = _seq_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root, [_ok([_new_run(13)])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=state-file-missing"
+    assert gh.calls == []
+
+
+@pytest.mark.parametrize("text", ["{not json", "[]", '{"workflow": "deploy.yml"}'])
+def test_identify_state_file_unreadable(tmp_path, monkeypatch, text):
+    root = _identify_repo(tmp_path, monkeypatch)
+    path = root / ".crew" / ".ghdeploy" / "staging-0.json"
+    path.write_text(text, encoding="utf-8")
+    code, lines, gh = _identify(monkeypatch, root, [_ok([_new_run(13)])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=state-file-unreadable"
+    assert gh.calls == [] and path.read_text(encoding="utf-8") == text
+
+
+_scenario(lambda t, m: test_identify_state_file_unreadable(t, m, "{not json"))
+
+
+@_scenario
+def test_identify_one_new_run(tmp_path, monkeypatch):
+    """must-allow: the one new run's id and URL go into the state file, and
+    the call carries the snapshot's filters."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert code == 0, lines
+    assert lines[-1] == "result=ok run=13"
+    state = _state(root)
+    assert state["runId"] == 13
+    assert state["runUrl"] == "https://github.com/o/r/actions/runs/13"
+    assert gh.calls == [["run", "list", "-w", "deploy.yml", "-b", "main", "-e",
+                         "workflow_dispatch", "-u", _ACTOR, "-L", "50", "--json",
+                         crew_ghdeploy.RUN_FIELDS]]
+
+
+@_scenario
+def test_identify_new_run_after_two_polls(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root,
+                                [_ok(_OLD), (1, ""), _ok(_OLD + [_new_run(13)])])
+    assert code == 0, lines
+    assert _state(root)["runId"] == 13 and len(gh.calls) == 3
+
+
+@_scenario
+def test_identify_correlation_found(tmp_path, monkeypatch):
+    """Two new runs in the window: the one titled with the id is the run."""
+    root = _identify_repo(tmp_path, monkeypatch, corr=True)
+    runs = _OLD + [_new_run(13, title="Deploy crew-staging-other"),
+                   _new_run(14, title=_title(root))]
+    code, lines, _gh = _identify(monkeypatch, root, [_ok(runs)])
+    assert code == 0, lines
+    assert _state(root)["runId"] == 14
+
+
+@_scenario
+def test_identify_clock_skew_within_30s(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, _gh = _identify(monkeypatch, root,
+                                 [_ok(_OLD + [_new_run(13, created=_T0 - 20)])])
+    assert code == 0, lines
+    assert _state(root)["runId"] == 13
+
+
+def test_identify_writes_run_atomically(tmp_path, monkeypatch):
+    """A failed write leaves the state file byte-identical."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    path = root / ".crew" / ".ghdeploy" / "staging-0.json"
+    before = path.read_bytes()
+
+    def fail(_src, _dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", fail)
+    with pytest.raises(OSError):
+        _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert path.read_bytes() == before
+    assert sorted(p.name for p in path.parent.iterdir()) == ["staging-0.json"]

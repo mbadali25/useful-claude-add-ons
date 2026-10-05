@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell (L-0645)
+
+- **Summary.** After the dispatch, `identify` finds the one run it created: a run of `gh run list`
+  that was not in `prepare`'s snapshot, is a `workflow_dispatch` on the ref, was created no earlier
+  than 30 seconds before `prepare`, and carries the correlation id in its title when one was sent.
+  Its id and URL go into the state file.
+- **Never a guess.** Two candidates, none within `identifySeconds`, an unparseable `createdAt`, or a
+  state file that is missing, unreadable or older than 600 seconds is could-not-tell (exit 3) and
+  writes no run id. Its only `gh` call is `run list`.
+
 ### Added — `crew` 1.1.4: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch (L-0644)
 
 - **Summary.** Before a `github` environment's dispatch, `prepare` checks the entry, asks T-0009's

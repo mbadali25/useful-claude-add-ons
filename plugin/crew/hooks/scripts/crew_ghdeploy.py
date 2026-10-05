@@ -2,6 +2,7 @@
 
     python3 crew_ghdeploy.py check   --root DIR --env NAME
     python3 crew_ghdeploy.py prepare --root DIR --env NAME [--index N]
+    python3 crew_ghdeploy.py identify --root DIR --env NAME [--index N]
 
 T-0045 slice 1. An environment in `.crew/verify.json` may carry a `github`
 entry -- one object or a list of them -- that describes a
@@ -84,6 +85,7 @@ Exit codes, with the last stdout line always `result=...`:
 """
 import argparse
 import calendar
+import datetime
 import json
 import os
 import re
@@ -748,6 +750,129 @@ def prepare(root, env, index):
             f"result=ok class={klass} sha={sha}"]
 
 
+# --- identify (L-0645) -----------------------------------------------------
+#
+# `identify` names the one run the session's dispatch created, or says it
+# cannot tell. A candidate is a run of `gh run list` (same workflow, ref,
+# event and actor filters as `prepare`'s snapshot) whose id is not in the
+# snapshot, whose event is `workflow_dispatch`, whose branch is the ref and
+# whose `createdAt` is no earlier than `t0` minus 30 seconds; with a
+# correlation id, its display title must also hold the id, with no fallback
+# to the time rule. Exactly one candidate is the run. It NEVER PICKS: two or
+# more, none by `identifySeconds`, an unparseable `createdAt`, or a state
+# file that is missing, unreadable or older than 600 seconds is could-not-tell
+# (exit 3) and writes no run id. Its only `gh` call is `run list`.
+
+POLL_SECONDS = 5
+SKEW_SECONDS = 30
+STALE_SECONDS = 600
+RUN_FIELDS = "databaseId,createdAt,headBranch,event,displayTitle,url"
+
+
+def read_state(root, env, index):
+    """The state file `prepare` wrote; raises CouldNotTell."""
+    path = state_path(root, env, index)
+    missing = not os.path.lexists(path)
+    if missing:
+        raise CouldNotTell("state-file-missing", f"{path} does not exist; run prepare first")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            state = json.loads(fh.read())
+    except (OSError, ValueError) as exc:
+        raise CouldNotTell("state-file-unreadable", f"{path}: {exc}") from exc
+    low, high = RANGES["identifySeconds"][:2]
+    good = (isinstance(state, dict)
+            and all(isinstance(state.get(k), str) and state[k]
+                    for k in ("workflow", "ref", "actor"))
+            and isinstance(state.get("t0"), int) and not isinstance(state["t0"], bool)
+            and isinstance(state.get("snapshot"), list)
+            and all(isinstance(r, int) for r in state["snapshot"])
+            and isinstance(state.get("correlationId"), (str, type(None)))
+            and isinstance(state.get("identifySeconds"), int)
+            and low <= state["identifySeconds"] <= high)
+    if not good:
+        raise CouldNotTell("state-file-unreadable", f"{path} is not a state file prepare wrote")
+    return state
+
+
+def _created(text):
+    """`createdAt` as epoch seconds, or None when it is not an ISO 8601
+    date-time with a zone."""
+    if not isinstance(text, str):
+        return None
+    try:
+        when = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when.timestamp() if when.tzinfo is not None else None
+
+
+def pick_run(runs, state):
+    """The candidates in one `gh run list` answer, never a choice among
+    them. Raises CouldNotTell for an answer that is not a list of runs or a
+    new run whose `createdAt` cannot be read. Returns (candidates, near):
+    `near` counts new runs in the window that lack the correlation id."""
+    if not (isinstance(runs, list) and all(
+            isinstance(r, dict) and isinstance(r.get("databaseId"), int) for r in runs)):
+        raise CouldNotTell("run-list-unreadable", "`gh run list` gave no list of runs")
+    seen = set(state["snapshot"])
+    corr = state.get("correlationId")
+    candidates, near = [], 0
+    for run in runs:
+        if run["databaseId"] in seen or run.get("event") != "workflow_dispatch" \
+                or run.get("headBranch") != state["ref"]:
+            continue
+        created = _created(run.get("createdAt"))
+        if created is None:
+            raise CouldNotTell("created-unparseable",
+                               f"a new run's createdAt {run.get('createdAt')!r} cannot be read")
+        if created < state["t0"] - SKEW_SECONDS:
+            continue
+        if corr and corr not in str(run.get("displayTitle", "")):
+            near += 1
+            continue
+        candidates.append(run)
+    return candidates, near
+
+
+def identify(root, env, index):
+    """Lines to print for `identify`; writes the run id into the state file."""
+    path = state_path(root, env, index)
+    state = read_state(root, env, index)
+    start = _clock()
+    if start - state["t0"] > STALE_SECONDS:
+        raise CouldNotTell("stale-prepare", f"prepare ran {int(start - state['t0'])}s ago, "
+                                            f"over {STALE_SECONDS}s; prepare again")
+    deadline = start + state["identifySeconds"]
+    polls = state["identifySeconds"] // POLL_SECONDS + 1
+    answered = near = 0
+    for poll in range(polls):
+        runs = _gh_json(["run", "list", "-w", state["workflow"], "-b", state["ref"],
+                         "-e", "workflow_dispatch", "-u", state["actor"],
+                         "-L", str(SNAPSHOT_LIMIT), "--json", RUN_FIELDS], root)
+        if runs is not None:
+            answered += 1
+            candidates, near = pick_run(runs, state)
+            if len(candidates) > 1:
+                raise CouldNotTell("two-candidates", f"{len(candidates)} new runs match; "
+                                                     "crew never picks one")
+            if candidates:
+                run = candidates[0]
+                state.update(runId=run["databaseId"], runUrl=run.get("url"))
+                write_state(path, state)
+                return [f"run: {run['databaseId']} {run.get('url') or ''}".rstrip(),
+                        f"result=ok run={run['databaseId']}"]
+        if poll + 1 == polls or _clock() >= deadline:
+            break
+        _sleep(POLL_SECONDS)
+    if not answered:
+        raise CouldNotTell("run-list-fails", "`gh run list` failed on every poll")
+    if near:
+        raise CouldNotTell("correlation-not-found", f"{near} new run(s) in the window, none "
+                                                    f"titled with {state['correlationId']}")
+    raise CouldNotTell("none-in-timeout", f"no new run within {state['identifySeconds']}s")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="crew_ghdeploy.py")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -755,6 +880,10 @@ def main(argv=None):
     cmd.add_argument("--root", default=".")
     cmd.add_argument("--env", required=True)
     cmd = sub.add_parser("prepare", help="refuse, or snapshot before the dispatch (L-0644)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
+    cmd = sub.add_parser("identify", help="name the one run the dispatch created (L-0645)")
     cmd.add_argument("--root", default=".")
     cmd.add_argument("--env", required=True)
     cmd.add_argument("--index", type=int, default=0)
@@ -768,6 +897,8 @@ def main(argv=None):
     try:
         if args.command == "prepare":
             lines = prepare(root, args.env, args.index)
+        elif args.command == "identify":
+            lines = identify(root, args.env, args.index)
         else:
             lines = check(root, args.env)
     except Refused as exc:
