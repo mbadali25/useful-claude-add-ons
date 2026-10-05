@@ -9,6 +9,57 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew`: a `github` deploy entry and `crew_ghdeploy.py check` (T-0045, slice 1)
+
+- **Summary.** `crew_ghdeploy.py check` validates a `github` deploy entry in
+  `.crew/verify.json` and prints the `gh workflow run` dispatch for HEAD, with
+  the environments the promote gates would apply to it.
+- **What changed.** A `.crew/verify.json` environment may carry a `github`
+  entry (one object or a list): `workflow` (a `.yml`/`.yaml` filename),
+  `ref` (a branch name, checked as a name only: `git check-ref-format
+  --branch` rules, no leading `-` or `@`, not `HEAD`, no `refs/` path but
+  `refs/heads/`; a bare tag name is NOT detected), fixed `inputs`, and optional `shaInput`,
+  `correlationInput`, `deployJob`, `watchMinutes` (1-360) and
+  `identifySeconds` (10-900). The new
+  `plugin/crew/hooks/scripts/crew_ghdeploy.py check --root . --env <name>`
+  validates it against a closed key set and the value grammar
+  `[A-Za-z0-9._/@:+-]` (anything else is refused by name, never quoted),
+  requires `deploy` to list exactly the entries' canonical prefixes so
+  promote-gate's existing match fires on the real dispatch, and applies
+  both gates' one rule as L-1503 left it, taking the stricter gate where
+  they differ: a map EITHER gate refuses (exact or case twin keys under
+  Python's or .NET's fold, an empty key at any depth, a comma or
+  control-character environment name, a null, non-string or date-time
+  `deploy`, a list or object `requireHuman`, JSON nested past a fixed 200
+  levels, below every interpreter's recursion limit) is
+  refused as `gate-refuses-map`, and each dispatch is printed with
+  `gated-as: '<names>'`, every environment whose `deploy` matches it
+  literally, ignoring case under either gate's fold, either way round,
+  after CR stripping - the union whose requirements apply. A
+  multi-environment match is not refused.
+  It prints the one
+  literal `gh workflow run` per entry for HEAD. Exit 0 valid, 2 refused
+  (`result=refused reason=<code>`), 3 could-not-tell (map, environment or
+  HEAD unreadable - never "no github entry"). It writes nothing and runs no
+  `gh`.
+- **Not yet.** Nothing dispatches, identifies, watches or records a run
+  (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
+  does not deploy (L-0649).
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 297 cases. An
+  agreement table (L-1503's 26 maps from test_promote_gate_literal_match.py
+  plus 9: 35 maps, 95 commands) feeds every command to the real
+  `promote-gate.sh`, the real `promote-gate.ps1` and `simulate_gate`, and 31
+  github maps compare `check`'s decision with both real gates on the dispatch
+  it printed; 10 more maps where the two real gates differ prove the
+  either-refuses / union rule, with the .NET-only fold table (27 pairs) and
+  the ConvertFrom-Json date-time port pinned; the `.ps1` halves but one
+  smoke map each are `slow`. A
+  `[!-[]` deploy (a range pwsh's `-like` threw on) is literal text and
+  accepted (#407 round-4 FIX). Messages naming a non-ASCII key survive a
+  cp1252 stdout. The 86
+  mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
+  named case red; they are unwired until L-0650 (tooling only).
+
 ### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
 
 - Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched

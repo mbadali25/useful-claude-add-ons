@@ -1972,6 +1972,13 @@ linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 
+A `.crew/verify.json` environment's `github` entry is not config, and no key
+here reads it (crew-verification skill, section 4). `crew_ghdeploy.py check`
+applies promote-gate's own rule (L-1503): it refuses a map either gate
+refuses and prints, under each dispatch, `gated-as:` - every environment
+whose `deploy` matches it under either gate, whose requirements all apply. A test
+table runs both real gates beside it on the same maps and commands.
+
 ### The ratchet is one table, not five copies
 
 `install.policy` shipped its ratchet as a bespoke `effective_install_policy`
