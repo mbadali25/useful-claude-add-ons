@@ -108,37 +108,57 @@ def _workflow(name):
     return name[len(".github/workflows/"):] if name.startswith(".github/workflows/") else name
 
 
-def sha_problem(entry, command, shell, full):
-    """Why the command's sha input is not the reviewed HEAD, or None. Every
-    dispatch of the entry's workflow in the command is checked on its own
-    inputs: another dispatch's sha input never stands in for it."""
-    if "shaInput" not in entry:
-        return None
+def _name_problem(entry):
+    """Why a present `shaInput` names no input, or None."""
     name = entry["shaInput"]
     if not isinstance(name, str) or not name:
         return (f"the `github` entry's `shaInput` is {json.dumps(name)}, which names no input, "
                 "so the sha rule cannot be applied. Fix the entry (`crew_ghdeploy.py check`)")
-    flag = f"`-f {name}=<sha>`"
+    return None
+
+
+def sha_problems(picked, command, shell, full):
+    """Why the command's dispatches do not carry the reviewed HEAD, for the
+    entries `picked` (one per matched environment): [] when they do. Each
+    dispatch of a picked entry's workflow is bound to the picked entries whose
+    declared inputs it gives - it must fit at least one, and carries the sha
+    input of every one it fits, on its own inputs: neither another dispatch's
+    sha input nor the declared text elsewhere on the line (an `echo`) vouches
+    for it. Every picked entry with `shaInput` needs a dispatch that fits it."""
+    problems = [p for p in (_name_problem(e) for e in picked if "shaInput" in e) if p]
+    checked = [e for e in picked if "shaInput" in e]
+    if problems or not checked:
+        return problems
     kind, why, scopes = crew_dispatch.dispatch_read(command, shell)
     if kind == "unsure":
-        return (f"the sha input {flag} is not a plain literal the gate can read ({why}). "
-                "Pass the full sha itself, as `crew_ghdeploy.py prepare` prints it")
-    mine = [s for s in scopes if _workflow(s.get("workflow")) == _workflow(entry.get("workflow"))]
-    if not mine:
-        return (f"the gate cannot read a dispatch of `{entry.get('workflow')}` in the command, "
-                f"so its {flag} cannot be checked")
-    for scope in mine:
-        # Bound to the entry: every dispatch of its workflow must carry the
-        # entry's own inputs. The declared text matching elsewhere on the line
-        # (an `echo`) never vouches for a dispatch that fits no entry.
-        if not _fits(scope, entry):
-            return (f"a dispatch of `{entry.get('workflow')}` in the command does not give the "
-                    "entry's declared inputs, so it fits no declared environment and which "
-                    "environment's preconditions apply cannot be told")
-        problem = _scope_problem(scope, name, flag, full)
-        if problem:
-            return problem
-    return None
+        flags = ", ".join(sorted({f"`-f {e['shaInput']}=<sha>`" for e in checked}))
+        return [f"the sha input {flags} is not a plain literal the gate can read ({why}). "
+                "Pass the full sha itself, as `crew_ghdeploy.py prepare` prints it"]
+    workflows = {_workflow(e.get("workflow")) for e in picked}
+    seen = set()
+    for scope in scopes:
+        if _workflow(scope.get("workflow")) not in workflows:
+            continue
+        fit = [i for i, e in enumerate(picked) if _workflow(e.get("workflow")) ==
+               _workflow(scope.get("workflow")) and _fits(scope, e)]
+        if not fit:
+            return [f"a dispatch of `{scope.get('workflow')}` in the command does not give any "
+                    "matched entry's declared inputs, so it fits no declared environment and "
+                    "which environment's preconditions apply cannot be told"]
+        for i in fit:
+            seen.add(i)
+            entry = picked[i]
+            if "shaInput" in entry:
+                problem = _scope_problem(scope, entry["shaInput"],
+                                         f"`-f {entry['shaInput']}=<sha>`", full)
+                if problem:
+                    return [problem]
+    missing = [e for i, e in enumerate(picked) if "shaInput" in e and i not in seen]
+    if missing:
+        return [f"the gate cannot read a dispatch of `{missing[0].get('workflow')}` giving the "
+                "matched entry's declared inputs, so its `-f "
+                f"{missing[0]['shaInput']}=<sha>` cannot be checked"]
+    return []
 
 
 def _fits(scope, entry):
@@ -173,19 +193,18 @@ def decide(command, shell, full, names):
     with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
         doc = json.load(fh)
     envs = get_ci(doc, "environments", {}) if isinstance(doc, dict) else {}
-    out = []
+    picked, out = [], []
     for env in names:
         cfg = envs.get(env) if isinstance(envs, dict) else None
         found = entries(cfg, env)
         if not found:
             continue
         try:
-            problem = sha_problem(chosen(found, command, env), command, shell, full)
+            picked.append(chosen(found, command, env))
         except ValueError as why:
-            problem = str(why)
-        if problem:
-            out.append(f"block\t{' '.join(problem.split())}")
-    return out
+            out.append(str(why))
+    out += sha_problems(picked, command, shell, full) if not out else []
+    return [f"block\t{' '.join(problem.split())}" for problem in out]
 
 
 def main(argv):

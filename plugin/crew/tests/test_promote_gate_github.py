@@ -302,3 +302,19 @@ def test_an_echoed_declared_dispatch_does_not_vouch_for_another(flavour, ghrepo)
     assert code == 2, err
     assert "fits no declared environment" in err, err
     assert ghrepo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_two_dispatches_to_two_environments_each_carry_head(flavour, ghrepo):
+    """L-0648 r3: one command dispatching development and qa, each with the
+    reviewed HEAD: each dispatch is bound to its own entry, so the sha rule
+    holds and the gates judge both environments (qa still needs
+    development's all-pass row)."""
+    sep = " && " if flavour == "sh" else "; "
+    full = ghrepo.main_full
+    command = _prefix("dev") + f" -f sha={full}" + sep + _prefix("qa") + f" -f sha={full}"
+    code, err = tree.run_gate(flavour, ghrepo, command)
+    assert code == 2, err
+    assert "'development' has no all-pass row" in err, err
+    assert "fits no declared environment" not in err and "the sha input" not in err, err
+    assert "carries no" not in err, err

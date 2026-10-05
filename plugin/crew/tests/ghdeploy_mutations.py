@@ -170,20 +170,24 @@ GHDEPLOY_MUTATIONS = (
      '    return "".join(c.upper() if len(c.upper()) == 1 else c for c in text)',
      "    return text",
      _C.format("qa/Prod before production/prod")),
-    ("ghdeploy: the simulation drops `cmd in d`", GH,
-     " or fold(command) in fold(dep)", "",
+    # L-0689: the gates match one way (the command contains the declared text).
+    ("ghdeploy: the simulation matches a fragment of a declared deploy again", GH,
+     "    return any(fold(dep) in fold(command) for fold in (_fold, _dotnet_fold))",
+     "    return any(fold(dep) in fold(command) or fold(command) in fold(dep)\n"
+     "               for fold in (_fold, _dotnet_fold))",
      _C.format("inputless staging before production")),
     ("ghdeploy: the simulation drops `d in cmd`", GH,
-     "fold(dep) in fold(command) or ", "",
+     "    return any(fold(dep) in fold(command) for fold in (_fold, _dotnet_fold))",
+     "    return any(fold(command) in fold(dep) for fold in (_fold, _dotnet_fold))",
      _C.format("plain deploy contained in a dispatch")),
     ("ghdeploy: the simulation keeps CRs the gates strip", GH,
      '    command = command.replace("\\r", "").rstrip("\\n")',
      '    command = command.rstrip("\\n")',
      _S.format(28)),
-    ("ghdeploy: the simulation keeps trailing newlines", GH,
-     '    command = command.replace("\\r", "").rstrip("\\n")',
-     '    command = command.replace("\\r", "")',
-     _S.format(25)),
+    # "the simulation keeps trailing newlines" is deleted, not re-anchored
+    # (L-0689): with one-way containment a trailing newline on the command can
+    # no longer change a match (the declared text is still inside it), so the
+    # mutation was green by construction and proved nothing.
     ("ghdeploy: a blank command still matches", GH,
      "    if _blank(command):\n        return []\n", "",
      _S.format(25)),
@@ -260,7 +264,7 @@ GHDEPLOY_MUTATIONS = (
      "and -2 ** 63 <= int(ticks) < 2 ** 63)", ")",
      _T + "test_is_dotnet_date_is_what_convertfrom_json_converts[/Date(99999999999999999999)/-False]"),
     ("ghdeploy: matching ignores .NET's fold", GH,
-     "               for fold in (_fold, _dotnet_fold))", "               for fold in (_fold,))",
+     "for fold in (_fold, _dotnet_fold))", "for fold in (_fold,))",
      _T + "test_simulate_gate_refuses_when_either_gate_refuses[either9]"),
     ("ghdeploy: no fixed nesting bound (re-review CI)", GH,
      "    if _depth(text) > _MAX_DEPTH:\n", "    if False:\n",
@@ -622,8 +626,8 @@ GHDEPLOY_MUTATIONS = (
      "    if False:\n",
      _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-not-head-sh]"),
     ("promote-gate: a non-literal sha input passes", GHRULE,
-     '    if kind == "unsure":\n        return (f"the sha input',
-     '    if kind == "unsure":\n        return None\n        return (f"the sha input',
+     '    if kind == "unsure":\n        flags = ',
+     '    if kind == "unsure":\n        return []\n        flags = ',
      _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-non-literal-sh]"),
     ("promote-gate.sh no longer runs the sha rule", SH,
      '  [ "$kind" = block ] && block "$tok"\ndone <<GHRULE\n',
@@ -643,8 +647,9 @@ GHDEPLOY_MUTATIONS = (
      "    if ($false) {\n",
      _G + 'test_a_malformed_github_value_refuses_the_map[string-ps1]'),
     ("promote-gate: another dispatch's sha input stands in", GHRULE,
-     '    mine = [s for s in scopes if _workflow(s.get("workflow")) == _workflow(entry.get("workflow"))]\n',
-     "    mine = [dict(scope, inputs=[i for s in scopes for i in s.get(\"inputs\", [])]) for scope in scopes[:1]]\n",
+     "                problem = _scope_problem(scope, entry[\"shaInput\"],\n",
+     "                problem = _scope_problem({\"inputs\": [i for s in scopes for i in s.get(\"inputs\", [])]},"
+     " entry[\"shaInput\"],\n",
      _G + "test_another_dispatchs_sha_input_does_not_stand_in[sh]"),
     ("promote-gate: github null reads as no github", GHRULE,
      "    github = get_ci(cfg, \"github\", _ABSENT) if isinstance(cfg, dict) else _ABSENT\n",
@@ -665,7 +670,7 @@ GHDEPLOY_MUTATIONS = (
      " `github` entry's `shaInput`",
      _G + "test_a_sha_input_that_names_no_input_blocks[number-sh]"),
     ("promote-gate: a dispatch that fits no entry is sha-checked anyway", GHRULE,
-     "        if not _fits(scope, entry):\n",
+     "        if not fit:\n",
      "        if False:\n",
      _G + "test_an_echoed_declared_dispatch_does_not_vouch_for_another[sh]"),
     # --- L-0648 must-allow non-vacuity ---------------------------------------
@@ -674,7 +679,8 @@ GHDEPLOY_MUTATIONS = (
      '--shell bash --full "$(git rev-parse HEAD)" \\\n',
      _G + "test_canonical_dispatch_from_worktree[sh]"),
     ("promote-gate: the sha rule applies to an entry with no shaInput", GHRULE,
-     '    if "shaInput" not in entry:\n        return None\n',
-     '    if "shaInput" not in entry:\n        entry = dict(entry, shaInput="sha")\n',
+     '    problems = [p for p in (_name_problem(e) for e in picked if "shaInput" in e) if p]\n',
+     '    picked = [dict(e, shaInput=e.get("shaInput", "sha")) for e in picked]\n'
+     '    problems = [p for p in (_name_problem(e) for e in picked if "shaInput" in e) if p]\n',
      _G + "test_the_rule_applies_only_to_a_github_entry_with_a_sha_input"),
 )
