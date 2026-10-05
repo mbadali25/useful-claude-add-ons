@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: A `github` deploy entry and `crew_ghdeploy.py check`. `crew_ghdeploy.py check` validates a `github` deploy entry in `.crew/verify.json` and prints the `gh workflow run` dispatch for HEAD, with the environments the promote gates would apply to it.
 - **repository**: The README shows the two latest updates and links to the changelog. The README's "What's new" is now two lines, the newest two changelog entries, and a link to the changelog, instead of about 500 lines of update history.
-- **crew 1.0.345**: Plain-text rows for autopilot wave, split, sleep and wake; plain-text routing for the autopilot commands the router knows; one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
