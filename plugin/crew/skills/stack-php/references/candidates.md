@@ -27,7 +27,7 @@ research ids.
 
 ## Candidate standards (not gated)
 
-### PHP-01 Every SQL value goes through a bound parameter, and identifiers come from an allow-list (research id inferred)
+### PHP-01 Every SQL value goes through the driver's bound parameters or the framework's placeholder API, and identifiers come from an allow-list (research id inferred)
 
 Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
 3 public change sets, which do not count, all WordPress plugins.
@@ -37,8 +37,9 @@ statements, with a generated placeholder list for `IN (...)`), or, where a frame
 no binding, through its placeholder API: WordPress's `$wpdb->prepare` substitutes escaped
 values into the SQL string rather than binding them. Never concatenate, even after
 `esc_sql` or `real_escape_string`. An identifier (an `ORDER BY`
-column, a table) comes from a fixed allow-list. Prepare the statement even when the
-parameter list is empty, so there is one code path.
+column, a table) comes from a fixed allow-list. A query with no values at all is a fixed
+literal: it is never assembled by the same string-building code that handles values (with
+WordPress, which wants at least one placeholder in `prepare`, it is passed as it is).
 
 Public change sets (message text only):
 - `immosuite-79e94957` (dbwmedia/Immo-Suite@79e94957): "fix review findings — ... Harden
@@ -88,8 +89,12 @@ Public change sets (message text only):
 Source: https://www.php.net/manual/en/function.unserialize.php: "Do not pass untrusted
 user input to unserialize() regardless of the options value of allowed_classes."
 
-Public verdict: admitted on public stand-ins (4). That does not count under the owner's
-decision.
+All four reviews found the same defect: attacker-influenced data reaching `unserialize`. Two
+fixes do what this rule asks (slimstat drops `maybe_unserialize`, and Luna moves cookies to
+JSON). The other two only harden the call (AskMyDocs restricts `allowed_classes`, and
+WP-Butler limits it to `stdClass`), which the manual says is not enough for untrusted input.
+Public verdict: 4 findings of the defect, admitted on public stand-ins. That does not count
+under the owner's decision.
 
 ### PHP-P2 Escape output for its context at every echo of request or stored data
 

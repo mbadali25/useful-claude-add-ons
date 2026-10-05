@@ -32,9 +32,12 @@ to -19 was not available, so the other ids are not written here.
 Counted toward the bar: 0 (the spec's private re-count). 4 public change sets, which do
 not count.
 
-Do not hard-code account IDs, account-scoped ARNs, repository names or region strings in
-`.tf`. Use `data.aws_caller_identity`, `data.aws_region` and `data.aws_partition`,
-resource attribute references, or variables. A literal ties the module to one account,
+Do not hard-code account IDs or account-scoped ARNs in `.tf`. Derive them from
+`data.aws_caller_identity`, `data.aws_partition` and resource attribute references. A value
+that has to differ between environments, such as a repository name or a region a module
+must not assume, comes from a variable. A region that is meant to be fixed may stay
+literal, for example in a provider block, which a data source of that same provider cannot
+configure. A literal ties the module to one account,
 breaks in a second environment, and publishes identifiers. Settled position: the
 stricter form applies to new code. An existing literal-ARN fix in a private repository is
 not reopened.

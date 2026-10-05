@@ -38,7 +38,10 @@ Every `CREATE [OR REPLACE] FUNCTION ... SECURITY DEFINER` sets `SET search_path 
 <trusted schemas>, pg_temp`, or `''` with fully qualified names. In the same transaction
 it runs `REVOKE ALL ON FUNCTION ... FROM PUBLIC` and grants `EXECUTE` only to the roles
 that need it. `CREATE OR REPLACE` does not keep an earlier `SET` clause, so state it again
-every time. Without the pin, a caller can shadow an object the function uses and run it
+every time. It does keep the function's existing grants, and revoking from `PUBLIC` leaves a
+direct grant to any other role in place. A replace therefore lists the current grants (for
+example from `information_schema.routine_privileges`) and revokes every role that should not
+have them. Without the pin, a caller can shadow an object the function uses and run it
 with the definer's privileges. The default `EXECUTE` grant to `PUBLIC` makes the function
 callable by every role that has `USAGE` on its schema.
 
@@ -63,7 +66,9 @@ Source: https://www.postgresql.org/docs/current/sql-createfunction.html, "Writin
 DEFINER Functions Safely": "For security, search_path should be set to exclude any schemas
 writable by untrusted users." "To do this, write pg_temp as the last entry in
 search_path." "Another point to keep in mind is that by default, execute privilege is
-granted to PUBLIC for newly created functions (see Section 5.8 for more information)."
+granted to PUBLIC for newly created functions (see Section 5.8 for more information)." Same
+page: "When CREATE OR REPLACE FUNCTION is used to replace an existing function, the ownership
+and permissions of the function do not change."
 
 Public verdict: admitted on public stand-ins (6). That does not count under the owner's
 decision. Its research id would be SQL-19 or SQL-20, the PostgreSQL ids, but which one

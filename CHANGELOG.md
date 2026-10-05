@@ -109,8 +109,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ### Added — crew: Terraform candidate standards and settled questions, no gated set yet (L-0536)
 
-- **Summary.** `stack-terraform` now lists three candidate Terraform standards with their
-  sources, and settles three questions: `for_each` in `import` blocks needs Terraform 1.7.0,
+- **Summary.** `stack-terraform` now lists three candidate Terraform standards with the
+  evidence each has, and settles three questions: `for_each` in `import` blocks needs Terraform 1.7.0,
   CMK for log groups stays a flagged candidate, and literal ARNs are banned in new code.
   Nothing is enforced.
 - **What changed.** New `plugin/crew/skills/stack-terraform/references/candidates.md` covers
