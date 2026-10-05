@@ -730,7 +730,8 @@ POLICY_TEXT = {
     "fix-and-rereview": ("autopilot.reviewPolicy fix-and-rereview: CLEAN goes on to step 7. On "
                          "FINDINGS, read rounds_left from `{ledger} --status --root . --ticket "
                          "{ticket}`: above 0, fix every BLOCK and FIX inside the ticket's Touch, "
-                         "rerun steps 4 and 6; at 0, step 8 with --state findings."),
+                         "commit, rerun step 4, then step 5 for the next round; at 0, step 8 "
+                         "with --state findings."),
 }
 
 
@@ -789,7 +790,9 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         f"4. refresh: {script('crew_refresh_check.py')} --root . --ticket {ticket}; run each "
         "refresh command it names (/crew:onboard --refresh, /crew:diagram refresh, graphify "
         "update .) and commit it before the review.",
-        f"5. review: follow /crew:review {ticket} (crew:reviewer while Codex is out). {resume} "
+        f"5. review: follow /crew:review {ticket} (crew:reviewer while Codex is out) up to its "
+        "recorded verdict only - none of its after-verdict steps (fixing, another round, accepting, "
+        f"asking the owner); this policy decides instead. {resume} "
         + POLICY_TEXT[policy].format(ledger=script("review_ledger.py"), ticket=ticket),
         "6. after a fix, rerun step 4 before the next round.",
         f"7. done checks: {script('completion_audit.py')} --check --ticket {ticket} --root . - "
@@ -939,17 +942,31 @@ def _merged(top, commit, ref):
     return {0: True, 1: False}.get(code)
 
 
-def _dirt(worktree):
-    """'' when clean, else why not; None when git could not say."""
-    code, out = _git(worktree, "status", "--porcelain")
+# crew's own machine-local state that lane-init's activate writes (scope_base.RECORD);
+# not lane work, so it does not keep a worktree.
+CREW_STATE = frozenset({".crew/.scope-base"})
+
+
+def _dirt(worktree, main_top):
+    """'' when clean, else why not; None when git could not say. An ignored
+    file byte-identical to the main checkout's copy (lane-init's ticket folder
+    and config), and crew's own CREW_STATE, are not the lane's and do not count."""
+    # --ignored: a lane's .work/ ticket copy, questions.md and review files are ignored
+    # by the repo, yet exist only in that worktree (codex review, rush g0).
+    code, out = _git(worktree, "status", "--porcelain", "--ignored", "--untracked-files=all")
     if code != 0:
         return None
-    lines = [line for line in out.splitlines() if line.strip()]
+    lines = [line for line in out.splitlines() if line.strip() and not (
+        line.startswith("!! ") and (line[3:] in CREW_STATE or _same_bytes(
+            os.path.join(worktree, line[3:]), os.path.join(main_top, line[3:]))))]
     if not lines:
         return ""
     untracked = sum(1 for line in lines if line.startswith("??"))
-    parts = ([f"dirty ({len(lines) - untracked} changed)"] if len(lines) > untracked else []) + (
-        [f"untracked ({untracked} files)"] if untracked else [])
+    ignored = sum(1 for line in lines if line.startswith("!!"))
+    changed = len(lines) - untracked - ignored
+    parts = ([f"dirty ({changed} changed)"] if changed else []) + (
+        [f"untracked ({untracked} files)"] if untracked else []) + (
+        [f"ignored files ({ignored})"] if ignored else [])
     return ", ".join(parts)
 
 
@@ -957,8 +974,12 @@ def _clean_lane(top, lane, ref, trees):
     """(removed, reason) for one lane. Removes only a worktree that is clean,
     with no untracked file, whose HEAD and branch are both on `ref`; never
     `--force`, never `branch -D`."""
+    if lane.get("state") not in STATES:  # a pending or running lane has not landed
+        return False, f"not landed: the lane is {lane.get('state') or 'unknown'}"
     branch = lane.get("branch") or branch_for(lane["ticket"])
     code, head = _git(top, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    if code == 0 and head == lane.get("base"):
+        return False, f"not landed: {branch} has no commit past its base"
     worktree = next((p for p, name in trees.items() if name == branch), None)
     if code != 0:
         return False, ("not merged: no lane branch" if worktree is None
@@ -969,7 +990,7 @@ def _clean_lane(top, lane, ref, trees):
     if not merged:
         return False, f"not merged: {branch} has commits that are not on {ref}"
     if worktree:
-        dirt = _dirt(worktree)
+        dirt = _dirt(worktree, top)
         if dirt is None:
             return False, f"could not tell whether {worktree} is clean"
         if dirt:

@@ -771,6 +771,15 @@ def test_lane_prompt_bumps_every_version_place_and_reviews_once(tmp_path):
     assert ("plugin/PLUGINS.md" in step3, "not including" in step2) == (True, True)
 
 
+def test_lane_prompt_review_stops_at_the_verdict_and_reruns_review_after_a_fix(tmp_path):
+    # Codex review round 5 (rush g0): /crew:review's after-verdict steps (fix, re-run,
+    # accept, ask) were not excluded, and fix-and-rereview never sent the lane back to step 5.
+    text = _prompt(_started(tmp_path, autopilot={"reviewPolicy": "fix-and-rereview"}))
+
+    assert ("up to its recorded verdict only" in text, "then step 5 for the next round" in text) == (
+        True, True)
+
+
 def test_lane_prompt_unknown_version_stops_a_crew_change_as_a_question(tmp_path):
     # Codex review round 4 (rush g0): an unknown version let a crew change reach clean unbumped.
     root = _started(tmp_path)
@@ -1069,6 +1078,44 @@ def test_cleanup_keeps_a_lane_with_untracked_files(tmp_path):
 
     assert (got["removed"], got["reason"].startswith("untracked ("), os.path.exists(wt)) == (
         False, True, True)
+
+
+def test_cleanup_keeps_a_lane_with_ignored_lane_only_files(tmp_path):
+    # Codex review round 5 (rush g0): `git status --porcelain` omits ignored files, so a
+    # lane's own .work/ questions.md was removed with its worktree.
+    root, wt = _landed(tmp_path)
+    _write(wt / ".work" / "tickets" / "T-1" / "questions.md", "## Q1 lane-only\n")
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "ignored files" in got["reason"], os.path.exists(wt)) == (False, True, True)
+
+
+@pytest.mark.parametrize("state", ["pending", "running"])
+def test_cleanup_never_removes_a_lane_that_has_not_landed(tmp_path, state):
+    # Codex review round 5 (rush g0): a fresh lane's branch sits at its base, which is
+    # already on main, so a clean, just-initialised worktree was removed.
+    root = _started(tmp_path)
+    _origin(root, tmp_path)
+    wt = _isolated(root)
+    assert crew_wave.lane_init(str(wt), str(root), "s", "T-1")[0]
+    _set_lane(root, "T-1", state=state)
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "not landed" in got["reason"], os.path.exists(wt)) == (False, True, True)
+
+
+def test_cleanup_never_removes_a_terminal_lane_with_no_commit(tmp_path):
+    root = _started(tmp_path)
+    _origin(root, tmp_path)
+    wt = _isolated(root)
+    assert crew_wave.lane_init(str(wt), str(root), "s", "T-1")[0]
+    crew_wave.lane_done(str(root), "s", "T-1", "failed", "nothing done")
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "no commit past its base" in got["reason"]) == (False, True)
 
 
 def test_cleanup_keeps_a_lane_with_an_unmerged_commit(tmp_path):
