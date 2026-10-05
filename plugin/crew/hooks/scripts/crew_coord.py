@@ -613,7 +613,14 @@ class Channel:
             parts = meta.split()
             if len(parts) != 3 or parts[1] != b"blob":
                 return None
-            path = name.decode("utf-8", "replace")
+            # Strict: "replace" would merge two non-UTF-8 names into one entry and a
+            # write would drop a peer's file. mktree's text form cannot carry a newline.
+            try:
+                path = name.decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+            if "\n" in path:
+                return None
             blob = run_git(self.root, ["cat-file", "blob", parts[2].decode()])
             if blob.code != 0:
                 return None

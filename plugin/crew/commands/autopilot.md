@@ -37,7 +37,7 @@ Print its lines as they are, then stop: read-only (`-B`: no bytecode), armed or 
 
 ## 2. Arm, then pick the ticket
 
-First, when `.crew/config.json` has a `coord` block (T-0030): `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_coord.py status` - print every `yours from a previous session` line with its recommended action, and stop if any; never `recover` or `--break` here.
+First, when `.crew/config.json` has a `coord` block (T-0030): `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_coord.py status` - print its lines; stop on a non-zero exit (`unknown`: could not fetch or read, or a corrupt claim) or any `yours from a previous session` line (with its recommended action); never `recover` or `--break` here.
 
 ```bash
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .

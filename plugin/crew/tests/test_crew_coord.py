@@ -598,6 +598,26 @@ def test_other_files_on_the_channel_keep_their_mode(capsys, monkeypatch, wt, rem
     assert f"120000 blob {link}\ttools/link" in listing
 
 
+
+@pytest.mark.parametrize("names", [[b"x\xff", b"x\xfe"], [b"a\nb"]])
+def test_a_channel_path_it_cannot_carry_exactly_reads_unknown(capsys, monkeypatch, wt, remote, names):
+    # Codex review (rush g0): decoding tree paths with "replace" merged x\xff and x\xfe
+    # into one entry, so a write could drop or rename a peer's file. A path that is not
+    # UTF-8, or that mktree's text form cannot carry, reads unknown and nothing is pushed.
+    blob = _plumb(wt, "hash-object", "-w", "--stdin", data=b"peer\n")
+    tree = subprocess.run(["git", "mktree", "-z"], cwd=wt, check=True, capture_output=True,
+                          input=b"".join(b"100644 blob " + blob.encode() + b"\t" + n + b"\0"
+                                         for n in names)).stdout.decode().strip()
+    seed = _plumb(wt, "commit-tree", tree, "-m", "seed")
+    _plumb(wt, "push", "-q", "origin", f"{seed}:{REF}")
+    _session(monkeypatch, "sess-a")
+
+    code, out = _run(capsys, wt, "claim")
+
+    assert (code, "unknown" in out) == (crew_coord.EXIT_UNKNOWN, True), out
+    assert git(remote, "rev-parse", REF).strip() == seed
+
+
 # --- Step 3: claims ------------------------------------------------------------
 
 def test_claim_writes_claim_file_and_log_line(capsys, monkeypatch, wt, remote, live_pid):
@@ -1571,6 +1591,7 @@ def test_autopilot_resume_runs_coord_status_before_any_other_step():
     assert status < section.index("crew_autopilot.py settings")
     assert status < section.index("crew_autopilot.py resume")
     assert "yours from a previous session" in section
+    assert "stop on a non-zero exit (`unknown`" in section
     assert "never `recover` or `--break` here" in section
 
 # --- Step 7: review round 2 (T-0030-coord--81NGuE) ------------------------------
