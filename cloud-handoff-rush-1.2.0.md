@@ -83,6 +83,7 @@ Untouched: #391 (the other session's notes branch).
 
 ## Log (newest first)
 
+- 2026-10-05T11:22Z Owner approved: landing order H1 -> H3 -> release -> H2; L-0515 nothing to build (folded into L-0520); T-0033 question to owner only if the builder finds one.
 - 2026-10-05T11:22Z Owner asked the other landing session to stay out of #324-#538.
 - 2026-10-05T11:05Z Handoff notes created (this file); brief, review script, schema and note.sh copied to docs/handoff/cloud/rush-1.2.0/.
 - 2026-10-05T11:00Z Owner: research the G7 files with an Opus agent. Research agent launched (public evidence only, scratchpad output); G7 builder told to wait for $S/g7/research/README.md.
