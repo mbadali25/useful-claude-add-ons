@@ -123,11 +123,16 @@ STORE_PATHS = (
 # Inherited variables that carry, or point at, a cloud or forge credential.
 # Dropped from the launched session's environment (and from the export's).
 _STRIP_PREFIXES = ("AWS_", "AZURE_", "ARM_", "CLOUDSDK_", "GOOGLE_",
-                   "TF_TOKEN_")
+                   "TF_TOKEN_", "GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 _STRIP_NAMES = frozenset((
     "KUBECONFIG", "GITHUB_TOKEN", "GH_TOKEN", "GH_ENTERPRISE_TOKEN",
     "GITHUB_ENTERPRISE_TOKEN", "DOCKER_CONFIG", "DOCKER_AUTH_CONFIG",
-    "TF_CLI_CONFIG_FILE", "TFE_TOKEN"))
+    "TF_CLI_CONFIG_FILE", "TFE_TOKEN",
+    # Git and SSH credential pointers: an askpass program or an agent socket
+    # hands an inherited forge identity to `git` (gitcredentials(7)), and
+    # environment-set config can name a credential helper.
+    "GIT_ASKPASS", "SSH_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT", "GITLAB_TOKEN"))
 
 # The launched session and the probe load the user's settings and the sealed
 # `--settings` only: a cloned repo's `.claude/settings.json` and
@@ -247,10 +252,29 @@ def probe_script(targets, nonce):
     return "\n".join(lines)
 
 
-def _tool_results(stream_lines, errors=None):
+def _tool_commands(stream_lines):
+    """`{tool_use id: Bash command}` for every Bash `tool_use` block."""
+    out = {}
+    for line in stream_lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        message = event.get("message") if isinstance(event, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict) and block.get("type") == "tool_use" \
+                    and block.get("name") == "Bash" and isinstance(block.get("id"), str):
+                given = block.get("input")
+                command = given.get("command") if isinstance(given, dict) else None
+                out[block["id"]] = command if isinstance(command, str) else None
+    return out
+
+
+def _tool_results(stream_lines, errors=None, ids=None):
     """The text of every `tool_result` block in stream-json output. When
     `errors` is a list, each block's `is_error` flag (True when set) is
-    appended to it, one per text."""
+    appended to it, one per text; when `ids` is a list, its `tool_use_id`."""
     out = []
     for line in stream_lines:
         try:
@@ -266,6 +290,8 @@ def _tool_results(stream_lines, errors=None):
                 continue
             if errors is not None:
                 errors.append(block.get("is_error") is True)
+            if ids is not None:
+                ids.append(block.get("tool_use_id"))
             body = block.get("content")
             if isinstance(body, str):
                 out.append(body)
@@ -278,13 +304,16 @@ def _tool_results(stream_lines, errors=None):
     return out
 
 
-def judge_probe(stream_lines, nonce, targets, returncode=0):
+def judge_probe(stream_lines, nonce, targets, returncode=0, script=None):
     """`(state, why)` for the sandbox probe's stream-json output. A store
     reported OPEN refuses whatever else happened; otherwise a tool result
     flagged `is_error` or a probe process that exited nonzero is `unknown`,
-    never `ready`, whatever markers its output holds."""
-    errors = []
-    results = _tool_results(stream_lines, errors)
+    never `ready`, whatever markers its output holds. With `script` (the
+    launch always passes it) only the result of a Bash `tool_use` whose
+    command IS the probe script can vouch for `ready`: a model that ran
+    anything else measured nothing."""
+    errors, ids = [], []
+    results = _tool_results(stream_lines, errors, ids)
     if not results:
         return UNKNOWN, "probe made no tool call, so nothing was measured"
     seen = {}
@@ -308,6 +337,13 @@ def judge_probe(stream_lines, nonce, targets, returncode=0):
                          "ran short or was cut off")
     if any(errors):
         return UNKNOWN, "sandbox: the probe's tool call reported an error, so nothing is proven"
+    if script is not None:
+        commands = _tool_commands(stream_lines)
+        ran = [commands.get(i) for i in ids]
+        if not ran or any(command is None or command.strip() != script.strip()
+                          for command in ran):
+            return UNKNOWN, ("sandbox: the probe's Bash command was not the probe script, "
+                             "so nothing was measured")
     if returncode != 0:
         return UNKNOWN, f"sandbox: the probe session exited {returncode}, so nothing is proven"
     for index, target in enumerate(targets):
@@ -707,9 +743,11 @@ def _run(argv, env, timeout, cwd=None):
     """`(proc, why)`; `proc` is None and `why` names the failure when the
     process could not be run or timed out. argv list, never a shell."""
     try:
+        # Output that is not UTF-8 is replaced, never a traceback: the judges
+        # then fail to parse it and answer `unknown`.
         proc = subprocess.run(argv, env=env, cwd=cwd, capture_output=True,
-                              text=True, timeout=timeout, check=False,
-                              stdin=subprocess.DEVNULL)
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout, check=False, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return None, f"timed out after {timeout}s"
     except OSError as exc:
@@ -802,14 +840,15 @@ def run_probe(exe, root, settings_path, env, targets):
     """The probe runs the SAME executable the launch will exec, from the
     same directory, with the same leading flags."""
     nonce = secrets.token_hex(16)
-    prompt = _PROBE_PROMPT.format(script=probe_script(targets, nonce))
+    script = probe_script(targets, nonce)
+    prompt = _PROBE_PROMPT.format(script=script)
     proc, why = _run([exe, "-p", prompt] + sealed_flags(settings_path) + [
                       "--output-format", "stream-json", "--verbose",
                       "--max-turns", "2", "--allowedTools", "Bash"],
                      env, PROBE_TIMEOUT, cwd=root)
     if proc is None:
         return UNKNOWN, f"sandbox: probe {why}"
-    return judge_probe(proc.stdout.splitlines(), nonce, targets, proc.returncode)
+    return judge_probe(proc.stdout.splitlines(), nonce, targets, proc.returncode, script)
 
 
 # --- the chain ----------------------------------------------------------------

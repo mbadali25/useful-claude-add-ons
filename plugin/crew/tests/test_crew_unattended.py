@@ -122,10 +122,13 @@ if "-p" in args:
     out = []
     def emit(obj):
         out.append(json.dumps(obj))
+    # The fake runs the probe script it was given, as the real model must
+    # (`wrongcmd` runs something else).
+    script = prompt.split("\n\n", 1)[1].rstrip("\n")
     def result(text, is_error=False):
         emit({"type": "assistant", "message": {"content": [
             {"type": "tool_use", "id": "t1", "name": "Bash",
-             "input": {"command": "probe"}}]}})
+             "input": {"command": "echo fake" if mode == "wrongcmd" else script}}]}})
         emit({"type": "user", "message": {"content": [
             {"type": "tool_result", "tool_use_id": "t1", "is_error": is_error,
              "content": [{"type": "text", "text": text}]}]}})
@@ -392,6 +395,45 @@ def test_core_probe_nonzero_exit_is_unknown():
     assert got == "refuse"
 
 
+def _ran(command, text, is_error=False):
+    """A stream with one Bash tool_use running `command` and its result."""
+    return [json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "tu1", "name": "Bash",
+                 "input": {"command": command}}]}}),
+            json.dumps({"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "tu1", "is_error": is_error,
+                 "content": [{"type": "text", "text": text}]}]}})]
+
+
+def test_core_probe_needs_the_probe_script_to_have_run():
+    """T-0044 port review r3 BLOCK: markers printed by some other command
+    vouch for nothing; only the probe script's own result can be ready."""
+    script = cu.probe_script(TARGETS, "n0nce")
+    fake = "echo NONCE n0nce; echo SHUT 0; echo SHUT 1; echo END n0nce"
+
+    assert [cu.judge_probe(lines, "n0nce", TARGETS, 0, script)[0] for lines in (
+        _ran(script, SEALED), _ran(fake, SEALED), _stream(SEALED),
+        _ran(fake, SEALED.replace("SHUT 1", "OPEN 1")))] == [
+            "ready", "unknown", "unknown", "refuse"]
+
+
+def test_sealed_env_drops_git_and_ssh_credential_pointers():
+    """T-0044 port review r3 BLOCK: an askpass program, an agent socket or
+    environment-set git config hands git an inherited forge identity."""
+    base = {"GIT_ASKPASS": "/x", "SSH_ASKPASS": "/y", "SSH_AUTH_SOCK": "/s",
+            "GIT_CONFIG_PARAMETERS": "'credential.helper'='store'", "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "credential.helper", "GIT_CONFIG_VALUE_0": "store",
+            "GITLAB_TOKEN": "t", "PATH": "/bin"}
+    assert cu.stripped_env(base) == {"PATH": "/bin"}
+
+
+def test_run_decodes_non_utf8_output_without_raising(tmp_path):
+    """T-0044 port review r3 FIX: bytes that are not UTF-8 are replaced."""
+    proc, why = cu._run([sys.executable, "-c",  # pylint: disable=protected-access
+                         "import sys; sys.stdout.buffer.write(b'\\xff ok')"], None, 30)
+    assert (why, proc.stdout.endswith(" ok")) == ("", True)
+
+
 def test_run_probe_passes_the_exit_code(monkeypatch):
     """run_probe judges the process's exit code, not stdout alone."""
     class Proc:  # pylint: disable=too-few-public-methods
@@ -402,7 +444,8 @@ def test_run_probe_passes_the_exit_code(monkeypatch):
     def fake_run(argv, env, timeout, cwd=None):
         prompt = argv[argv.index("-p") + 1]
         nonce = prompt.split("echo NONCE ", 1)[1].split()[0]
-        Proc.stdout = "\n".join(_stream(SEALED.replace("n0nce", nonce)))
+        Proc.stdout = "\n".join(_ran(cu.probe_script(TARGETS, nonce),
+                                     SEALED.replace("n0nce", nonce)))
         seen["cwd"] = cwd
         return Proc, ""
     monkeypatch.setattr(cu, "_run", fake_run)
@@ -836,6 +879,9 @@ MUST_REFUSE = {
                         ["could not tell"]),
     "probe-no-end-marker": (lambda w: w.mp.setenv("FAKE_PROBE", "noend"), (),
                             ["no end marker"]),
+    # T-0044 port review r3: markers from any other command prove nothing.
+    "probe-wrong-command": (lambda w: w.mp.setenv("FAKE_PROBE", "wrongcmd"), (),
+                            ["not the probe script"]),
     # A cloned repo's settings must not shape the sealed sandbox. The launch
     # does not load them (`--setting-sources user`); this refuses anyway.
     "repo-excludes-cat": (lambda w: w.set_repo_settings(

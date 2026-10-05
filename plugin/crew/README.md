@@ -1671,7 +1671,9 @@ The launched session is exec'd as
 cloud or forge credential variable (`AWS_*`, `AZURE_*`, `ARM_*`, `CLOUDSDK_*`,
 `GOOGLE_*`, `TF_TOKEN_*`, `KUBECONFIG`, `GITHUB_TOKEN`, `GH_TOKEN`,
 `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `DOCKER_CONFIG`,
-`DOCKER_AUTH_CONFIG`, `TF_CLI_CONFIG_FILE`, `TFE_TOKEN`); the exported
+`DOCKER_AUTH_CONFIG`, `TF_CLI_CONFIG_FILE`, `TFE_TOKEN`, `GITLAB_TOKEN`, and git's and
+ssh's credential pointers `GIT_ASKPASS`, `SSH_ASKPASS`, `SSH_AUTH_SOCK`,
+`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*`); the exported
 temporary credentials; `AWS_EC2_METADATA_DISABLED=true`; `CREW_UNATTENDED=1`
 (so T-0005's guard judges it unattended); `AWS_CONFIG_FILE` at a region-only
 file and `AWS_SHARED_CREDENTIALS_FILE` at a path that does not exist, both in a
