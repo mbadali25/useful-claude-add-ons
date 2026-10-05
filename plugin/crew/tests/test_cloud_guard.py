@@ -1426,4 +1426,3 @@ def test_the_guard_still_decides_inside_its_hook_timeout_with_a_lingering_python
     assert proc.returncode == 0
     doc = json.loads(proc.stdout.decode("utf-8"))
     assert doc["hookSpecificOutput"]["permissionDecision"] == "deny", doc
-
