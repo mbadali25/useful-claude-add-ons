@@ -424,7 +424,7 @@ def test_refunded_tool_round_retries_once_and_clean_wins(repo, tmp_path):
 
 
 def test_retry_limit_is_one_per_invocation(repo, tmp_path):
-    result, _ = _run(repo, tmp_path, "turnfail")
+    result, _ = _run(repo, tmp_path, "turnfail,turnfail")
 
     lines = _not_retried(repo, tmp_path, result, 2, "retry limit 1 per invocation")
     assert (lines[0], _calls(tmp_path)) == (

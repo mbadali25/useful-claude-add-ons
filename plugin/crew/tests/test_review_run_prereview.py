@@ -505,8 +505,8 @@ def test_a_pre_review_gate_that_cannot_read_or_log_the_incident_exits_2(
     import argparse  # pylint: disable=import-outside-toplevel
     scratch = tmp_path / "scratch"
     scratch.mkdir()
-    failing = [{"name": "ruff", "status": rc.FAIL, "files": 1, "new": ["m.py: BLE001 new"],
-                "detail": ""}]
+    failing = [{"name": "ruff", "status": rc.FAIL, "files": 1, "detail": "",
+                "new": [{"path": "m.py", "rule": "BLE001", "message": "new", "count": 1}]}]
     monkeypatch.setattr(review_run.review_checks, "run_checks_bound",
                         lambda *_a: (failing, True, "b" * 64))
     monkeypatch.setattr(crew_incident, "read_state", (
