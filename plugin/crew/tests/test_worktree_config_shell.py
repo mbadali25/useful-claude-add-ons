@@ -1064,9 +1064,11 @@ def _run_wrapper(tmp_path, root, wrapper):
     argv = ([_BASH, script] if wrapper.endswith(".sh") else
             [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script])
     env = _guard_env(tmp_path, root, "sh" if wrapper.endswith(".sh") else "ps1")
-    env["TMPDIR"] = env["TEMP"] = env["TMP"] = str(tmp_path)
-    return subprocess.run(argv, input=_WRAPPERS[wrapper], capture_output=True, env=env,
-                          cwd=str(root), timeout=120, check=False)
+    tmp = str(tmp_path)
+    env = dict(env, TMPDIR=tmp, TEMP=tmp, TMP=tmp)
+    with crew_fixtures.msys_tmp_pinned(_BASH, env):
+        return subprocess.run(argv, input=_WRAPPERS[wrapper], capture_output=True, env=env,
+                              cwd=str(root), timeout=120, check=False)
 
 
 @pytest.mark.parametrize("wrapper", WRAPPER_DRIVERS)

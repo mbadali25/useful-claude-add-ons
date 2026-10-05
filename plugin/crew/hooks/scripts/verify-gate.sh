@@ -166,7 +166,8 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || {
 # review_gate.py reads too. When git cannot tell, it is this checkout's own.
 crew_repo_config_dir .
 CREW_REPO_CONFIG="$CREW_CFG_DIR/config.json"
-export CREW_REPO_CONFIG
+# Not exported: a rule command must not inherit a gate variable
+# (test_verify_gate_rule_env_leak.py). The matcher below is handed it alone.
 if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' "$CREW_REPO_CONFIG" 2>/dev/null; then
   if [ "$CI_MODE" -eq 1 ]; then
     echo "verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, so nothing was checked. Turn it on or remove the CI job." >&2
@@ -937,7 +938,7 @@ if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
   TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
 fi
 
-MATCHED=$("$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
+MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
 import json,sys,fnmatch,io,os,re
 try:
     sys.stdout.reconfigure(newline="\n")
