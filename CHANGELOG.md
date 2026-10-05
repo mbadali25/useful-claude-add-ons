@@ -9,6 +9,37 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew: tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP (T-0071)
+
+- **Summary.** On a shared Obsidian board, two repositories whose origins differ only in the case
+  of the user or path are now two owners, and one repository reached through `file://`,
+  `file://localhost` or a bare path is one. Two overlapping moves leave INDEX and the board
+  agreeing, a glued checkbox (`- [ ]T-0042`) is repaired, a stray quote in a note's `repo-id:` is
+  no longer stripped, and `/crew:fix` creates its ticket through MCP under Jira or ServiceDesk Plus.
+- **BREAKING for notes written with a mixed-case origin.** `normal_url` in
+  `plugin/crew/hooks/scripts/crew_tracker.py` folds only the scheme and the host (with its port);
+  the ssh username and the path keep their case. A ticket note an older crew wrote for an origin
+  with capitals in its user or path holds the all-lowercase id, and `create`, `move` and `read`
+  now refuse that card as another repo's. The refusal keeps its sentence and adds the fix: change
+  the note's line to `repo-id: <this repo's id>`. Crew never accepts the old id on its own.
+- **What changed.** A `file://` authority is not path text (`_file_url_path(url, windows)`): POSIX
+  drops any authority, as git does (measured, git 2.53.0); Windows drops an empty or `localhost`
+  one and the `/` before a drive letter, and keeps today's common-dir identity for any other host
+  (git for Windows not measured; the Windows branch is tested through the pure helper on every OS).
+  A move's board half re-reads INDEX inside the board's atomic update and places the card in the
+  lane for the status INDEX holds then, saying `(INDEX moved on to <status>)` when that differs; a
+  row gone or unknown at that point leaves the board alone (`could not tell where INDEX has ...`,
+  exit 1). `_NOTE_REPO_ID` strips a quote only as a matched pair around the whole value. `_BOX`
+  and `_CHECKED` need a space, tab or line end after the marker. `commands/fix.md` step 1 resolves
+  the tracker kind first, as `brainstorm.md` does.
+- **Tests.** New in `test_crew_tracker.py`: case-split origins refused, scheme and host folded, the
+  old lowercased note refused with its fix (and no clause for a note differing in more than case),
+  `file://` authorities one id, drive prefixes by platform, the overlapping-move interleaving, the
+  could-not-tell board write, matched and lone quotes, glued checkboxes; in
+  `test_lifecycle_commands.py`, fix.md's Jira/SDP mint. `test_obsidian_backwards_move_leaves_the_board_alone`
+  now also asserts the board half did not run, so its sabotage mutation still goes red now that the
+  board follows INDEX. New mutations for these fixes are L-0669 (tooling PR).
+
 ### Fixed — crew: a vault write matches every directory from the vault down, not just the vault (T-0081)
 
 - **Summary.** A board or note directory inside the Obsidian vault that is swapped for another real

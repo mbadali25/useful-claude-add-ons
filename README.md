@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: Tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP. On a shared Obsidian board, two repositories whose origins differ only in the case of the user or path are now two owners, and one repository reached through `file://`, `file://localhost` or a bare path is one. Two overlapping moves leave INDEX and the board agreeing, a glued checkbox (`- [ ]T-0042`) is repaired, a stray quote in a note's `repo-id:` is no longer stripped, and `/crew:fix` creates its ticket through MCP under Jira or ServiceDesk Plus.
 - **crew**: A vault write matches every directory from the vault down, not just the vault. A board or note directory inside the Obsidian vault that is swapped for another real directory between crew's checks and its write is now refused instead of written into.
-- **crew 1.0.351, notify 1.1.2**: Notifications that failed, repeated, or said only "missing". Chat notifications now go through when the bot token was saved with a trailing space or newline, a missing setting is named along with where to set it, a refused send says Telegram's reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

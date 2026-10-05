@@ -1860,15 +1860,30 @@ A platform with neither mechanism refuses the write. On POSIX a move inside the 
 remains a residual race; on Windows the held handles close it.
 
 **Whose card.** The ticket note is written once and never rewritten, and
-records `repo-id:` — the origin URL lowercased with `.git` dropped, or the git
-common dir's real path when there is no origin or the origin is a relative path
+records `repo-id:` — the origin URL with `.git` dropped and only its scheme and
+host (with the port) case-folded, or the git common dir's real path when there is no origin or the origin is a relative path
 (`../origin/app.git` from `a/app` and `b/app` is one string naming two
-repositories). An ssh origin keeps its username and drops only a password:
+repositories). The ssh username and the path keep their case (since T-0071):
+`ssh://Alice@host/~/repo.git` and `ssh://alice@host/~/repo.git`, or
+`https://host/Team/Repo` and `https://host/team/repo`, are two owners. A note an
+older crew wrote for an origin with capitals in its user or path holds the
+all-lowercase id and is refused like any foreign note; the refusal says so and
+names the fix, `repo-id: <this repo's id>`, which you edit in by hand — crew
+never accepts the old id on its own, because it is exactly the ambiguous one.
+An ssh origin keeps its username and drops only a password:
 `alice@host:repo.git` and `bob@host:repo.git` are two users' repositories. Every
 other scheme drops the whole userinfo, because `https://<token>@host/...` puts a
 token where a username goes and the id is written into a note a human reads. A
 local origin is its real path, and a `file://` one is percent-decoded first, as
-git decodes it: `file:///srv/a%20b.git` is `/srv/a b.git`.
+git decodes it: `file:///srv/a%20b.git` is `/srv/a b.git`. A `file://`
+authority is not path text: on POSIX any authority is dropped, as git drops it,
+so `file:///srv/app.git`, `file://localhost/srv/app.git` and `/srv/app.git` are
+one owner; on Windows an empty or `localhost` authority is dropped with the `/`
+before a drive letter (`file:///C:/repos/app.git` is `C:/repos/app.git`), and any
+other authority keeps the common-dir identity (git for Windows not measured).
+A quote around the note's `repo-id:` value is stripped only as a matched pair
+(`"<id>"` or `'<id>'`); a lone quote is part of the id. An id that itself begins
+and ends with the same quote character loses that pair when read back.
 Never the directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
 repo shares one board, so a note naming another repo refuses `create`, `move`
 and `read`. A card whose owner cannot be told — no note, a note with no

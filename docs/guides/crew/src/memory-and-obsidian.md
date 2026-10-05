@@ -277,15 +277,20 @@ board at the vault root, and a card another repo owns is refused.
 
 **Whose card it is.** `/crew:brainstorm` writes a ticket note beside the board,
 `<boardDir>/T-0042.md`, once. Its `repo-id:` line is how crew tells your
-repository's cards from another's. The value is your origin URL, lowercased
-with `.git` dropped, or the git directory's path when there is no origin. An
-ssh origin keeps its username (`git@github.com:team/app`); other URLs lose any
-user or token; a `file://` origin is decoded to its path.
+repository's cards from another's. The value is your origin URL with `.git`
+dropped and only the scheme and host case-folded, or the git directory's path
+when there is no origin. The user and the path keep their case, so
+`github.com:Team/App` and `github.com:team/app` are two repositories. An ssh
+origin keeps its username (`git@github.com:Team/app`); other URLs lose any user
+or token; a `file://` origin is decoded to its path, with `localhost` (or, on
+POSIX, any host) dropped. A quote around the value counts only as a matched pair.
 
 **Claiming an older note.** A card whose note has no `repo-id:` (a board from
 crew 0.20, or a card you added by hand) is refused until you add one. The
 refusal names the exact line: add `- repo-id: <the id it prints>` to the note
-and run the command again. Crew never rewrites a note for you.
+and run the command again. Crew never rewrites a note for you. A note written by
+an older crew for an origin with capitals in it holds the id lowercased; crew
+refuses it as another repo's and names the line to change it to.
 
 The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in `plugin/crew/README.md`.

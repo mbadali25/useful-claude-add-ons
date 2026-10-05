@@ -336,14 +336,19 @@ board at the vault root, and a card another repo owns is refused.</p>
 </table>
 <p><strong>Whose card it is.</strong> <code>/crew:brainstorm</code> writes a ticket note beside the board,
 <code>&lt;boardDir&gt;/T-0042.md</code>, once. Its <code>repo-id:</code> line is how crew tells your
-repository's cards from another's. The value is your origin URL, lowercased
-with <code>.git</code> dropped, or the git directory's path when there is no origin. An
-ssh origin keeps its username (<code>git@github.com:team/app</code>); other URLs lose any
-user or token; a <code>file://</code> origin is decoded to its path.</p>
+repository's cards from another's. The value is your origin URL with <code>.git</code>
+dropped and only the scheme and host case-folded, or the git directory's path
+when there is no origin. The user and the path keep their case, so
+<code>github.com:Team/App</code> and <code>github.com:team/app</code> are two repositories. An ssh
+origin keeps its username (<code>git@github.com:Team/app</code>); other URLs lose any user
+or token; a <code>file://</code> origin is decoded to its path, with <code>localhost</code> (or, on
+POSIX, any host) dropped. A quote around the value counts only as a matched pair.</p>
 <p><strong>Claiming an older note.</strong> A card whose note has no <code>repo-id:</code> (a board from
 crew 0.20, or a card you added by hand) is refused until you add one. The
 refusal names the exact line: add <code>- repo-id: &lt;the id it prints&gt;</code> to the note
-and run the command again. Crew never rewrites a note for you.</p>
+and run the command again. Crew never rewrites a note for you. A note written by
+an older crew for an origin with capitals in it holds the id lowercased; crew
+refuses it as another repo's and names the line to change it to.</p>
 <p>The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in <code>plugin/crew/README.md</code>.</p>
 <h2 id="native-memories-as-vault-pointers">Native Memories as Vault Pointers</h2>

@@ -1476,7 +1476,10 @@ Obsidian vault). A CLI the commands call, not a hook.
   (`:632`) refuses `|` and every break `str.splitlines` honours. Obsidian =
   files + the board (`_obsidian_create` `:1343`, `_obsidian_move` `:1388`,
   `_obsidian_read` `:1427`); a move whose INDEX half refuses writes no board
-  (`:1422`), as a create whose INDEX half refuses writes no card (`:1376`).
+  (`:1422`), and a move's board half re-reads INDEX inside the board's
+  atomic update and places the card in the lane for the status INDEX holds
+  then (T-0071 #3, `_obsidian_move` `edit`), refusing with `could not tell
+  where INDEX has` when the row is gone or unknown, as a create whose INDEX half refuses writes no card (`:1376`).
   Jira/SDP answer `delegated` with `<sync> <KEY> --push --to <status>` at
   `_PUSH_AT` (`:115`: `in-progress`, `done`) and `nothing to push` otherwise
   (`_push` `:1457`, `_delegated` `:1452`); CLI exit codes 0/1/3/2
@@ -1529,17 +1532,24 @@ Obsidian vault). A CLI the commands call, not a hook.
   tell", naming the directory. `_pinned_check` gains it through its re-walk;
   its own held comparison is kept as defence in depth.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
-  `repo-id:` (`_NOTE_REPO_ID` `:1279`, trailing `\r` excluded so a CRLF note
-  reads as written; `_card_owner` `:1283` -> ours / foreign / unknown). The id
-  is `repo_id` (`:594`): the origin URL through `normal_url` (`:555`,
-  lowercased, `.git` stripped; an ssh origin - scp-style or a scheme in
-  `_SSH_SCHEMES` `:552` - keeps its username and drops a password, every other
-  scheme drops the whole userinfo); for a local origin (`_local_path` `:577`,
-  a `file://` path percent-decoded as git decodes it), an absolute path's
+  `repo-id:` (`_NOTE_REPO_ID` `:1402`, trailing `\r` excluded so a CRLF note
+  reads as written, a quote stripped only as a matched pair, T-0071 #4;
+  `_card_owner` `:1406` -> ours / foreign / unknown). The id
+  is `repo_id` (`:643`): the origin URL through `normal_url` (`:570`,
+  scheme and host with port case-folded, user and path kept as written
+  (T-0071 #1), `.git` stripped; an ssh origin - scp-style or a scheme in
+  `_SSH_SCHEMES` `:567` - keeps its username and drops a password, every other
+  scheme drops the whole userinfo); for a local origin (`_local_path` `:603`,
+  a `file://` path through the pure `_file_url_path(url, windows)` `:621`:
+  the authority dropped on POSIX, an empty or `localhost` one and the `/`
+  before a drive letter dropped on Windows, then percent-decoded as git
+  decodes it), an absolute path's
   realpath, and for a relative one - `../origin/app.git` names a different
   repository from each checkout - the git common dir's realpath, as with no
   origin; `None` (git could not say) refuses via `_no_identity` (`:1312`).
-  `_foreign` (`:1302`) refuses create, move and read; unknown refuses create
+  `_foreign` (`:1425`) refuses create, move and read, and names the
+  `repo-id:` line to write when the note's id is this repo's case-folded
+  (an older crew's lowercased id, never accepted); unknown refuses create
   and move with the `repo-id:` fix (`_unclaimed` `:1307`) and is a caveat on
   read. There is no claim by title: a card's text matching this repo's INDEX
   title is not an owner. `repo_name` (`:620`) is a human label only.
@@ -1547,14 +1557,17 @@ Obsidian vault). A CLI the commands call, not a hook.
   on LF alone by `_board_lines` `:761`; the done lane must carry exactly one
   `**Complete**`, `_complete_markers` `:841`), `find_card` (`:865`; a card is
   the first id on its first line), `move_card` (`:926`; a card already in its
-  lane is repaired in place by `_checkbox` `:913`, which also gives a card
-  with no box one (`_BOX` `:910`), and one above `**Complete**` in Done is
+  lane is repaired in place by `_checkbox` `:971`, which also gives a card
+  with no box one (`_BOX` `:967`, a marker only when a space, tab or line end
+  follows; a glued `- [ ]T-0042` is repaired, T-0071 #6), and one above `**Complete**` in Done is
   moved below it), `add_card` (`:953`), written by `_board_write` (`:1208`).
   The ticket note (`_note_text` `:1227`) is an exclusive create
   (`_create_note_once` `:1236`, `_NOTE_FLAGS` `:292`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:61`,
-  `implement.md:33` and `:113`, `done.md:82` and `fix.md:27`, `:73`, `:81`,
-  `:90`, `:92` (all under `plugin/crew/commands/`); brainstorm and fix take
+  `implement.md:33` and `:113`, `done.md:82` and `fix.md:27` (`resolve`, T-0071 #5), `:30`, `:79`,
+  `:87`, `:96`, `:98` (all under `plugin/crew/commands/`); fix, like
+  brainstorm, resolves the tracker kind first and under Jira or SDP creates
+  through MCP and uses its key; brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its

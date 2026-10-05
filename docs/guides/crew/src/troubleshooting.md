@@ -519,6 +519,10 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
     - **Another repo owns it.**
       `obsidian: could not update: id taken: T-0060 on Board.md belongs to another repo (https://example.invalid/team/app, per T-0060.md), not this one (https://example.invalid/other/app): give this repo its own obsidian.boardDir`
       **Fix:** two repos share one board. Give each repo its own `obsidian.boardDir`.
+    - **An older crew wrote the note's id lowercased.**
+      `obsidian: could not update: T-0042 on Board.md belongs to another repo (https://example.invalid/team/app, per T-0042.md), not this one (https://example.invalid/Team/App): give this repo its own obsidian.boardDir; the note may carry this repo's id as an older crew wrote it (lowercased): if the card is this repo's, change the line to 'repo-id: https://example.invalid/Team/App'`
+      **Fix:** since T-0071 an origin keeps the case of its user and path. If the
+      card is yours, change the note's `repo-id:` line to the id it names.
     - **Nobody can tell who owns it.**
       `obsidian: could not update: id taken: could not tell whose card T-0042 is (no T-0042.md note names its repo-id); if it is this repo's, put 'repo-id: https://example.invalid/other/app' in T-0042.md`
       **Fix:** if the card is yours, add the line it names to the note (see "The
