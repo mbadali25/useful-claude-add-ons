@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T16:14Z
+Last updated: 2026-10-05T16:15Z
 
 ## >>> RESUME HERE
 
@@ -93,6 +93,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T16:15Z G2 built (8 tickets; T-0049 superseded by #513; head 7ece4366, placeholder 1.1.2). Capped: T-0070, T-0044, T-0058, T-0059 -> 4 coordinator reviews running. C-0035 (per-slice ledger budget; T-0059 stops after slice 1 without it), C-0036, C-0037 minted. G6 unblocks when G2 lands.
 - 2026-10-05T16:14Z #541 G1 CI red (Linux 3.12): onboard refresh path lost 'Then run step 6.'; sabotage anchor 'migrate stages with a truncating open' lost in crew_migrate.py (harness can't change in a release lane -> restore anchor in feature code). Sent to G1 lander.
 - 2026-10-05T16:10Z Coordinator reviews of G1b capped fixes: T-0065 CLEAN; T-0036 BLOCK (short Authorization in Markdown table / trailing #); L-0509 BLOCK (double locate_ticket probe) + FIX (closed status described as open). Sent to G1b builder (max 3 rounds).
 - 2026-10-05T16:06Z G1 landed on rush/g1-ports (97f0b43b, crew 1.1.2, group review 7 rounds -> CLEAN); PR #541 opened. G5 built (9 tickets CLEAN; gizmoduck 0.5.19, windows-ssm 1.0.1). G1b built (T-0025, L-0590 CLEAN; T-0036, T-0065, L-0509 capped -> coordinator reviews running). G0: T-0030 final fix CLEAN; T-0029 1 FIX (invalid lane id) + owner decisions (port in repo key; recover on provably dead PID) sent to G0 builder. C-0031..C-0034 minted.
