@@ -54,6 +54,7 @@ import crew_state  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 CREW_AGENTS = os.path.normpath(os.path.join(HERE, os.pardir, os.pardir, "agents"))
 NOT_CHECKED = ["managed-policy agents", "agents passed with --agents"]
+CREW_DOUBT = "crew:*"  # `maybe`'s key for "crew's own agent files could not all be read"
 
 
 def config_dir():
@@ -208,6 +209,10 @@ def installed(root):
         names.update((role, f"crew:{role}"))
     crew_own, problems = _agents_in(CREW_AGENTS)
     everywhere += problems
+    # A `crew:` name not among the roles depends on crew's own agent files:
+    # one that could not be read leaves it unknown, never missing.
+    if problems:
+        maybe.setdefault(CREW_DOUBT, problems[0])
     for name in crew_own:
         names.update((name, f"crew:{name}"))
     for directory in (os.path.join(config_dir(), "agents"), os.path.join(root, ".claude", "agents")):
@@ -270,6 +275,8 @@ def check(root):
             continue
         plugin = name.split(":", 1)[0] if ":" in name else None
         reason = maybe.get(name)
+        if reason is None and plugin == "crew":
+            reason = maybe.get(CREW_DOUBT)
         if reason is None and plugin != "crew" and everywhere:
             reason = everywhere[0]
         if reason:

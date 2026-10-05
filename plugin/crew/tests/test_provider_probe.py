@@ -94,6 +94,15 @@ def test_codex_probe_reports_an_incomplete_stream(layout):
     assert "the Codex event stream has no completed turn" in done.stdout
 
 
+def test_codex_probe_reports_a_non_string_message_as_failed(layout):
+    root, elsewhere, bindir = layout
+    _stub(bindir, root, body=OK_EVENTS.replace('"text":"OK"', '"text":{}'))
+
+    done = _probe(elsewhere, bindir, "codex", "--root", root)
+
+    assert (done.returncode, done.stdout.startswith("codex: FAILED")) == (1, True), done.stdout + done.stderr
+
+
 def test_codex_probe_reports_a_timeout(layout):
     root, elsewhere, bindir = layout
     _stub(bindir, root, body="sleep 30\n")

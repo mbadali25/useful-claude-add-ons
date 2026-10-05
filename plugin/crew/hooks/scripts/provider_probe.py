@@ -55,7 +55,9 @@ def probe(provider, root, model="", effort="", timeout=DEFAULT_TIMEOUT):
         return 1, f"{provider}: FAILED - timed out"
     if provider == "codex":
         message, error = review_verdict.codex_final_message(stdout)
-        if code == 0 and error is None and (message or "").strip():
+        # A malformed event can carry a non-string text: no message, not a crash.
+        message = message if isinstance(message, str) else ""
+        if code == 0 and error is None and message.strip():
             return 0, f"{provider}: ok ({model or 'default'})"
         if code == 0 and error is None:
             error = "the call completed with no agent message"

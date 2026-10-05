@@ -205,6 +205,22 @@ def test_crew_roles_resolve_even_when_registry_unreadable(tmp_path, home, capsys
     assert _main(_repo(tmp_path, ["security", "crew:explorer"]), capsys)[0] == 0
 
 
+def test_an_unreadable_crew_agent_leaves_crew_names_unknown(tmp_path, home, capsys, monkeypatch):
+    _home(home)
+    real = verify_agents._agents_in  # pylint: disable=protected-access
+
+    def agents_in(directory):
+        if directory == verify_agents.CREW_AGENTS:
+            return set(), [f"{directory}/explorer.md: PermissionError"]
+        return real(directory)
+    monkeypatch.setattr(verify_agents, "_agents_in", agents_in)
+
+    # Not a role, so only crew's own agent files could supply it.
+    code, out = _main(_repo(tmp_path, ["crew:docs-writer", "security"]), capsys)
+
+    assert (code, "MISSING" in out, "UNKNOWN crew:docs-writer" in out) == (2, False, True), out
+
+
 def test_no_agents_named_is_ok(tmp_path, home, capsys):
     _home(home)
     root = tmp_path / "repo"
