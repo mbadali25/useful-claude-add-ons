@@ -79,7 +79,7 @@ self-check is complete and stamped for the exact bundle Codex is about to read. 
 approval receipt is told the gate does not apply, and during a declared incident
 (`/crew:emergency`) the gate stands down and logs the skip. The self-check is asked for last: a
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
-has not passed is refused (exit 5) before it.
+has not passed is refused (exit 9) before it.
 
 After the standards checklist comes the **recurring-findings checklist**: the defect classes earlier
 reviews kept finding (processes and races, claims not true at the commit, tests that cannot fail,
@@ -91,7 +91,7 @@ files changed, every class is listed under an `UNKNOWN:` line rather than none.
 
 Between the verify gate and the self-check, `review_run.py` lints the bundle's changed files with
 the linters `.crew/verify.json` lists under `preReview` (L-0574). Each file is linted at its base
-and at the bundle, and a finding the bundle adds refuses the round (exit 5, nothing spent) before
+and at the bundle, and a finding the bundle adds refuses the round (exit 9, nothing spent) before
 Codex is launched. `--allow-unverified` does not override a new finding. A linter that could not run,
 or could not parse a changed file, reads `COULD NOT CHECK`, never a pass. It refuses too, unless
 `--allow-unverified` is given, and `review.json` records that override as `prereview.overridden`.

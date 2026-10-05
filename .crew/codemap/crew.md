@@ -1849,12 +1849,12 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
 - **Gate.** `review_run.run` first calls main's `preflight`
   (`plugin/crew/hooks/scripts/review_run.py:672`, at `:846`; #264): a CLEAN receipt covering the
   bundle answers CLEAN with no round and no self-check, and a verify gate that has not passed
-  the tree is refused with exit 5 before the self-check is asked for (owner decision
+  the tree is refused with exit 9 before the self-check is asked for (owner decision
   2026-09-30, "Preflight first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`).
   Then (L-0574, DERIVED) `prereview_gate` (`:731`, called at `:857`) runs
   `plugin/crew/hooks/scripts/review_checks.py` over the bundle's changed files against their base
-  blobs, per `.crew/verify.json`'s `preReview`: a NEW linter finding is exit 5 and not
-  overridable; COULD NOT CHECK is exit 5 unless `--allow-unverified`; only an active incident
+  blobs, per `.crew/verify.json`'s `preReview`: a NEW linter finding is exit 9 and not
+  overridable; COULD NOT CHECK is exit 9 unless `--allow-unverified`; only an active incident
   stands it down. Only then does it call `standards_gate` (`:699`) at `:859`, before
   `review_ledger.reserve` (`:863`), for every provider, unless `review_ledger.status` already
   reads `NEEDS_REPLAN` or no rounds left: then the budget refusal answers first and neither the

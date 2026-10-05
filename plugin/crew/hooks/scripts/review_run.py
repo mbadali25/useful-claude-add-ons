@@ -108,17 +108,17 @@ then `prereview_gate`, then `standards_gate`):
      one round, not a clean review of the tree.
   2. Has the verify gate passed on this tree (`review_gate.gate_state`)? A
      tree it has not passed, or one whose state could not be read, is refused
-     with exit 5 and no round spent: a reviewer's opinion on code the gate
+     with exit 9 and no round spent: a reviewer's opinion on code the gate
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
   3. Then (`prereview_gate`, L-0574): does the bundle add a linter finding
      its own base did not have (`review_checks.py`, configured under
-     `preReview` in `.crew/verify.json`)? A NEW finding is exit 5, no round
+     `preReview` in `.crew/verify.json`)? A NEW finding is exit 9, no round
      spent, and `--allow-unverified` does not override it. A check that could
      not run (missing tool, crash, timeout, bad output, a file the tool could
      not parse, a config it cannot read) is COULD NOT CHECK, never a pass:
-     exit 5 too, unless `--allow-unverified`, which review.json records as
+     exit 9 too, unless `--allow-unverified`, which review.json records as
      `prereview.overridden`. Only an active incident stands both down, and
      logs a `prereview-checks` skip. No `preReview` key proceeds and says so.
   4. Only then (`standards_gate`, T-0085): is the standards self-check
@@ -136,10 +136,11 @@ the `review:` summary line prints both. It also carries `prereview`: the
 `{"result": "not-recorded", "reason": ...}` -- never a bare null.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 5 not run, verify gate not green or a pre-review check new or
+(NEEDS_REPLAN); 9 not run, verify gate not green or a pre-review check new or
 could not check (no round spent); 2 usage or setup error, or the standards
-self-check missing or stale -- not run, no round spent. Exit 5 is decided
-before exit 2 (self-check) is asked for.
+self-check missing or stale -- not run, no round spent. Exit 9 is decided
+before exit 2 (self-check) is asked for. 5, 6 and 7 are `--probe`'s alone
+(L-0528): no two EXIT_* constants share a value.
 """
 import argparse
 import datetime
@@ -165,7 +166,7 @@ import review_verdict
 import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
-EXIT_UNVERIFIED = 5
+EXIT_UNVERIFIED = 9
 DEFAULT_TIMEOUT = 1800
 # Bound on the follow-up `communicate()` after a kill, below. Not the same
 # knob as --timeout: this one exists so a descendant that escaped the kill

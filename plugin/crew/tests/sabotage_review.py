@@ -590,7 +590,17 @@ REVIEW_FIX_MUTATIONS = (
         "    short = preflight(args)\n    if short is not None:\n        return short\n",
         "    short = None\n",
         ("tests/test_review_gate.py::"
-         "test_an_unverified_tree_is_refused_with_exit_5_and_no_round_spent"),
+         "test_an_unverified_tree_is_refused_with_exit_unverified_and_no_round_spent"),
+    ),
+    (
+        # L-0528: the refusal's code collides with the probe's limited code
+        # again, so a caller that does not know the mode cannot tell "the
+        # gate has not passed" from "Codex hit a usage limit".
+        "review_run's unverified exit collides with the probe's limited exit again",
+        REVIEW_RUN,
+        "EXIT_UNVERIFIED = 9\n",
+        "EXIT_UNVERIFIED = 5\n",
+        "tests/test_review_run_launch.py::test_review_run_exit_codes_are_distinct",
     ),
     (
         # "Could not tell" reviews as though it were "passed".

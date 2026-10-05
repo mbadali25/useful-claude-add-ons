@@ -21,6 +21,7 @@ import crew_incident
 import crew_standards as cs
 import crew_ticket
 import review_ledger as rl
+import review_run
 import scope_base
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 
@@ -233,10 +234,11 @@ def test_run_with_a_corrupt_approval_receipt_still_gates(repo, tmp_path):
     assert (result.returncode, "review-run: self-check" in result.stderr) == (2, True)
 
 
-@pytest.mark.parametrize("extra, code", [((), 5), (("--allow-unverified",), 2)])
+@pytest.mark.parametrize("extra, code", [((), review_run.EXIT_UNVERIFIED),
+                                         (("--allow-unverified",), 2)])
 def test_run_refuses_an_unreadable_manifest(repo, tmp_path, extra, code):
     """L-0574 review round 5: the pre-review checks read the config from the
-    bundle, so an unreadable manifest refuses there first (exit 5); past an
+    bundle, so an unreadable manifest refuses there first (exit 9); past an
     --allow-unverified the standards gate still refuses it (exit 2)."""
     _selfcheck(repo)
     scratch = tmp_path / "scratch"
@@ -329,7 +331,7 @@ _VERIFY_MAP = {"version": 1,
 def test_preflight_answers_before_the_selfcheck_is_asked_for(repo, tmp_path, case):
     """Owner decision 2026-09-30 ("Preflight first"): main's preflight runs
     first. A CLEAN receipt covering the bundle answers CLEAN with no round and
-    no self-check; a tree the verify gate has not passed is refused with exit 5
+    no self-check; a tree the verify gate has not passed is refused with exit 9
     before the self-check is asked for."""
     if case == "clean-receipt":
         _selfcheck(repo)
@@ -349,7 +351,7 @@ def test_preflight_answers_before_the_selfcheck_is_asked_for(repo, tmp_path, cas
 
     result = _run(repo, scratch, fakes, "codex", "--work-dir", str(tmp_path / "w"))
 
-    expected = (0, True) if case == "clean-receipt" else (5, True)
+    expected = (0, True) if case == "clean-receipt" else (review_run.EXIT_UNVERIFIED, True)
     marker = ("CLEAN from the existing receipt" in result.stdout if case == "clean-receipt"
               else "gate UNVERIFIED" in result.stderr)
     assert (result.returncode, marker, "self-check" in result.stderr,

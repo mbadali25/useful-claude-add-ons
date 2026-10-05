@@ -166,7 +166,7 @@
 %% Standards: line (:36), so its citations from :43 moved +1. review.md: exit codes :441
 %% (2 also = self-check missing or stale, :447-450, nothing reserved; 5 = verify gate not
 %% passed, :450), fallback :452, verdict :484. main's preflight (#264) runs first: a CLEAN
-%% receipt covering the bundle answers CLEAN, an unverified gate is refused with exit 5; then
+%% receipt covering the bundle answers CLEAN, an unverified gate is refused with exit 9; then
 %% review_run.py's standards_gate, called before review_ledger.reserve
 %% (crew_standards.review_gate). Owner decision 2026-09-30, "Preflight first". The line list under "Every node
 %% cites" below is kept as of a4eb2f55; the nodes carry the current lines.
@@ -198,7 +198,7 @@
 %% Re-anchored a7f9c5e4 -> 69c7edbd (T-0085's landing merge of main a61a6f38, crew 1.0.70): main's #264
 %% preflight joins the review subgraph as pf0 ahead of the self-check gate rv0 - a CLEAN receipt
 %% covering the bundle goes to rcpt with no round and no self-check, an unverified or unknown gate is
-%% exit 5 back to the verify gate (review.md:450), and the budget edge to replan now leaves pf0
+%% exit 9 back to the verify gate (review.md:450), and the budget edge to replan now leaves pf0
 %% (owner decision 2026-09-30, "Preflight first"; review_run.py preflight :454 called at :521,
 %% standards_gate :481 at :532). review.md's exit-2 text is :447-450. No other node or edge changed.
 %% Re-anchored 69c7edbd -> c04dd2ef (T-0085 landing, crew 1.0.72): review.md was rewrapped from 557 to 551
@@ -406,7 +406,7 @@ flowchart LR
 %% L-0574 (on ffd11270): review_run.py gained prereview_gate (:577), question 3 of "BEFORE ANY ROUND
 %% IS RESERVED", asked after preflight (:524, called :651) and before standards_gate, inside the
 %% not-spent branch (:655-666). New node pr0 and its refusal loop fx0 sit between pf0 and rv0; the
-%% budget edge now says the checks are skipped too. review.md:450 carries the exit 5 text for both.
+%% budget edge now says the checks are skipped too. review.md:450 carries the exit 9 text for both.
 %% Re-anchored 6053b65d -> 17dc6d23 (L-0574): review.md edited in place (line count unchanged, :450 still
 %% the exit-5 paragraph); review_run.py citations re-read at 17dc6d23 (see the L-0574 note above).
 %% Re-anchored 17dc6d23 -> 8177fdff (L-0574 round 1 fixes): review_run.py moved; its cited lines re-read below.

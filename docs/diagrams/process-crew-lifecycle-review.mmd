@@ -24,7 +24,7 @@
 %% Note rv1: on one bundle; prompt carries the standards checklist, then the recurring-findings checklist, then any web tests
 %% Note rv3: report findings and every ignored line verbatim (:498-500); final round, 0 BLOCK?
 %%    else fix, or the owner accepts :503, :505-508
-%% Note pr0->fx0: NEW finding: exit 5, no round spent, not overridable; or COULD NOT CHECK: exit 5
+%% Note pr0->fx0: NEW finding: exit 9, no round spent, not overridable; or COULD NOT CHECK: exit 9
 %%    unless --allow-unverified
 %% Note pf0->replan: the budget refusal answers first, no pre-review checks, no self-check
 %% Note rv2->rv3: FINDINGS (stray prose beside findings ignored and named: review_verdict.py:210-213)
@@ -37,10 +37,10 @@ flowchart TB
     subgraph review["/crew:review - two rounds per ticket"]
         pf0{"preflight (#264):<br/>receipt, gate, budget?"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
-        pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
+        pf0 -- "gate not passed or unknown:<br/>exit 9, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> to_im5
         pf0 -- "go on" --> pr0{"pre-review checks<br/>pass? (L-0574)"}
-        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 5, no round spent<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
+        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 9, no round spent<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> to_im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check<br/>stamped?"}
         pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:850-861" --> replan

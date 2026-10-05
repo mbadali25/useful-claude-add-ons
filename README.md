@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.12 — L-0528**: Review exit 5 means only a Codex limit. `/crew:review`'s "not run, verify gate not green or a pre-review check refused it" exit moves from 5 to 9, so 5 is only ever the Codex probe's usage limit.
 - **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
-- **crew 1.0.352, gizmoduck 0.5.9**: Three changes in one update: a crew vault write refuses a directory on its path that was swapped for another real directory after the checks, one runner drives a crew ticket at a time through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot check: links in the templates dir, a nikto that exits 0 without running, and testssl without `hexdump`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

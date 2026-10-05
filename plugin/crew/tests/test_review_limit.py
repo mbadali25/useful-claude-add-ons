@@ -214,6 +214,13 @@ def test_probe_limit_error_is_limited_and_reserves_nothing(lane):
     assert "hit your usage limit" in _field(result, "PROBE_DETAIL")
 
 
+def test_probe_codes_stay_and_the_unverified_refusal_moved_off_5():
+    """L-0528: the probe keeps 5/6/7 (persisted `codex-probe=5` notes keep
+    their meaning); the gate and pre-review refusal is 9, so 5 is a limit."""
+    assert (review_run.EXIT_PROBE_LIMITED, review_run.EXIT_PROBE_FAILED,
+            review_run.EXIT_PROBE_UNKNOWN, review_run.EXIT_UNVERIFIED) == (5, 6, 7, 9)
+
+
 def test_probe_limit_on_stderr_is_limited(lane):
     repo, scratch, bin_dir = lane
 

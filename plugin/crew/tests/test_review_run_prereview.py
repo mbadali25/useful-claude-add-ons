@@ -21,6 +21,7 @@ import crew_standards as cs
 import crew_ticket
 import review_checks as rc
 import review_ledger as rl
+import review_run
 import scope_base
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 from test_review_checks import _FAKE
@@ -142,7 +143,7 @@ def test_new_finding_refuses_before_reserve(tmp_path, fake, provider):
 
     assert (result.returncode, "NEW x1 m.py: BLE001 new" in result.stderr,
             _ledger_snapshot(repo) == before, _record(scratch)["result"]) == (
-        5, True, True, rc.FAIL), result.stderr
+        review_run.EXIT_UNVERIFIED, True, True, rc.FAIL), result.stderr
 
 
 @pytest.mark.parametrize("linters", ["new-alone", "new-and-could-not"])
@@ -154,7 +155,8 @@ def test_new_finding_is_not_overridable(tmp_path, fake, linters):
     result = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
 
     assert (result.returncode, _ledger_snapshot(repo) == before,
-            "does not override a new finding" in result.stderr) == (5, True, True), result.stderr
+            "does not override a new finding" in result.stderr) == (
+        review_run.EXIT_UNVERIFIED, True, True), result.stderr
 
 
 def test_could_not_check_refuses_unless_allow_unverified(tmp_path):
@@ -167,7 +169,7 @@ def test_could_not_check_refuses_unless_allow_unverified(tmp_path):
 
     assert (refused.returncode, refused_ledger_same, "COULD NOT CHECK" in refused.stderr,
             allowed.returncode, "ROUND=1" in allowed.stdout, _record(scratch)["overridden"]) == (
-        5, True, True, 0, True, True), refused.stderr + allowed.stderr
+        review_run.EXIT_UNVERIFIED, True, True, 0, True, True), refused.stderr + allowed.stderr
 
 
 def test_incident_stands_checks_down(tmp_path, fake):
@@ -191,7 +193,7 @@ def test_only_an_active_incident_stands_down(tmp_path, fake, case):
 
     result = _run(repo, scratch, tmp_path, "claude")
 
-    assert result.returncode == 5, result.stderr
+    assert result.returncode == review_run.EXIT_UNVERIFIED, result.stderr
 
 
 def test_order_gate_before_checks(tmp_path, fake):
@@ -200,7 +202,7 @@ def test_order_gate_before_checks(tmp_path, fake):
     result = _run(repo, scratch, tmp_path, "codex")
 
     assert (result.returncode, "gate UNVERIFIED" in result.stderr,
-            "pre-review checks" in result.stderr) == (5, True, False), result.stderr
+            "pre-review checks" in result.stderr) == (review_run.EXIT_UNVERIFIED, True, False), result.stderr
 
 
 def test_order_checks_before_selfcheck(tmp_path, fake):
@@ -210,7 +212,7 @@ def test_order_checks_before_selfcheck(tmp_path, fake):
     result = _run(repo, scratch, tmp_path, "codex")
 
     assert (result.returncode, "pre-review checks: ruff FAIL" in result.stderr,
-            "self-check" in result.stderr) == (5, True, False), result.stderr
+            "self-check" in result.stderr) == (review_run.EXIT_UNVERIFIED, True, False), result.stderr
 
 
 def test_spent_budget_skips_checks(tmp_path, fake):
@@ -291,7 +293,7 @@ def test_allow_unverified_never_passes_a_new_finding_beside_a_parse_failure(tmp_
     result = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
 
     assert (result.returncode, _ledger_snapshot(repo) == before,
-            _record(scratch)["result"]) == (5, True, rc.FAIL), result.stderr
+            _record(scratch)["result"]) == (review_run.EXIT_UNVERIFIED, True, rc.FAIL), result.stderr
 
 
 def test_the_record_is_bound_to_the_manifest_the_checks_read(tmp_path, fake, monkeypatch):
@@ -343,7 +345,7 @@ def test_two_runs_sharing_a_scratch_do_not_swap_records(tmp_path):
 
     assert ("ROUND=1" in allowed.stdout, refused.returncode, done.returncode,
             review["prereview"]["overridden"], review["prereview"]["round"]) == (
-        True, 5, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
+        True, review_run.EXIT_UNVERIFIED, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")

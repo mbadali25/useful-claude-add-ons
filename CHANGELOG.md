@@ -9,6 +9,19 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.12 — L-0528: review exit 5 means only a Codex limit
+
+- **Summary.** `/crew:review`'s "not run, verify gate not green or a pre-review check refused it" exit
+  moves from 5 to 9, so 5 is only ever the Codex probe's usage limit.
+- **Breaking.** An out-of-repo script that branches on `review_run.py` exit 5 for a red gate or a
+  pre-review refusal must read 9. The probe's codes (`--probe`: 5 limited, 6 failed, 7 unknown) and
+  the persisted `codex-probe=5` metrics note do not change.
+- **What changed.** `EXIT_UNVERIFIED` in `plugin/crew/hooks/scripts/review_run.py` is 9 (8 is left
+  for L-0527's `EXIT_PROBE_CHANGED`). `test_review_run_exit_codes_are_distinct` finds every `EXIT_*`
+  constant by introspection and fails on a shared value, and a `sabotage_review.py` entry that puts
+  the collision back goes RED on it. `commands/review.md`, the README, the working-with-codex guide,
+  the review diagrams and the code map say exit 9.
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file
