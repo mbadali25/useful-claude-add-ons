@@ -357,3 +357,91 @@ def test_preflight_answers_before_the_selfcheck_is_asked_for(repo, tmp_path, cas
     assert (result.returncode, marker, "self-check" in result.stderr,
             rl.status(str(repo), TICKET)["rounds_used"]) == (*expected, False, rounds), (
         result.stdout + result.stderr)
+
+
+# --- L-0518 tooling half: one authorizing read (F2), a gate that cannot run (N4) --
+
+def _in_process(repo, tmp_path, monkeypatch, capsys):
+    """review_run.main for a claude reservation, in this process, so a module
+    it reads can be patched; (exit code, stderr)."""
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    monkeypatch.setenv("PATH", str(fake_reviewer_bin(tmp_path / "bin")) + os.pathsep
+                       + os.environ.get("PATH", ""))
+    code = review_run.main(["--root", str(repo), "--ticket", TICKET, "--scratch", str(scratch),
+                            "--provider", "claude", "--reserve-only"])
+    return code, capsys.readouterr().err
+
+
+def test_reserve_refuses_an_ungated_round_when_the_locked_ledger_is_not_spent(repo):
+    before = _ledger_snapshot(repo)
+
+    ok, number, message = rl.reserve(str(repo), TICKET, "claude", gated=False)
+
+    assert (ok, number, message, _ledger_snapshot(repo) == before) == (
+        False, None, rl.GATE_CHANGED, True)
+
+
+def test_reserve_ungated_still_answers_a_spent_budget_as_spent(repo):
+    for _ in range(2):
+        assert rl.reserve(str(repo), TICKET, "claude")[0]
+
+    ok, _, message = rl.reserve(str(repo), TICKET, "claude", gated=False)
+
+    assert (ok, "review budget exhausted" in message,
+            rl.status(str(repo), TICKET)["state"]) == (False, True, rl.NEEDS_REPLAN)
+
+
+def test_run_does_not_reserve_an_ungated_round_after_the_ledger_moved(
+        repo, tmp_path, monkeypatch, capsys):
+    """F2 must-block: the unlocked read says NEEDS_REPLAN (so the gates are
+    skipped) while the ledger itself has rounds left -- a successor plan
+    approved in between. Nothing is reserved and no self-check was asked."""
+    _selfcheck(repo, "missing")
+    real = rl.status
+    monkeypatch.setattr(rl, "status", lambda root, ticket: dict(
+        real(root, ticket), state=rl.NEEDS_REPLAN, rounds_left=0))
+
+    code, err = _in_process(repo, tmp_path, monkeypatch, capsys)
+
+    assert (code, rl.GATE_CHANGED in err, "self-check" in err,
+            real(str(repo), TICKET)["rounds_used"]) == (
+        review_run.EXIT_USAGE, True, False, 0), err
+
+
+def test_a_self_check_gate_whose_incident_read_fails_exits_2_not_1(
+        repo, tmp_path, monkeypatch, capsys):
+    """N4: an exception from the incident read is "not run" (2), never a
+    traceback and exit 1, which /crew:review would read as FINDINGS."""
+    _selfcheck(repo, "missing")
+    import crew_incident  # pylint: disable=import-outside-toplevel
+
+    def broken(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied", ".crew/incident.json")
+
+    monkeypatch.setattr(crew_incident, "read_state", broken)
+
+    code, err = _in_process(repo, tmp_path, monkeypatch, capsys)
+
+    assert (code, "review-run: self-check gate could not run: PermissionError" in err,
+            rl.status(str(repo), TICKET)["rounds_used"]) == (2, True, 0), err
+
+
+def test_a_self_check_gate_whose_skip_log_fails_exits_2_not_1(
+        repo, tmp_path, monkeypatch, capsys):
+    """N4: during an active incident, a skip log that cannot be written (an
+    unwritable .crew/) is "not run" too, and the gate does not stand down."""
+    _selfcheck(repo, "missing")
+    import crew_incident  # pylint: disable=import-outside-toplevel
+    crew_incident.declare(str(repo), "prod is down")
+
+    def broken(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied", ".crew/incident-skips.log")
+
+    monkeypatch.setattr(crew_incident, "log_skip", broken)
+
+    code, err = _in_process(repo, tmp_path, monkeypatch, capsys)
+
+    assert (code, "review-run: self-check gate could not run: PermissionError" in err,
+            "stands down" in err, rl.status(str(repo), TICKET)["rounds_used"]) == (
+        2, True, False, 0), err

@@ -499,3 +499,32 @@ def test_a_self_check_note_with_a_newline_prints_on_one_line(monkeypatch, capsys
 
     err = capsys.readouterr().err
     assert [l for l in err.splitlines() if "pre-review checks" in l and l.startswith("review-run: pre")] == [], err
+
+
+@pytest.mark.parametrize("broken", ["read_state", "log_skip"])
+def test_a_pre_review_gate_that_cannot_read_or_log_the_incident_exits_2(
+        tmp_path, monkeypatch, capsys, broken):
+    """L-0518 N4: the incident read or the skip log raising is "not run" (2,
+    nothing reserved), never an escaped exception (exit 1 reads as FINDINGS)."""
+    import argparse  # pylint: disable=import-outside-toplevel
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    failing = [{"name": "ruff", "status": rc.FAIL, "files": 1, "new": ["m.py: BLE001 new"],
+                "detail": ""}]
+    monkeypatch.setattr(review_run.review_checks, "run_checks_bound",
+                        lambda *_a: (failing, True, "b" * 64))
+    monkeypatch.setattr(crew_incident, "read_state", (
+        lambda *_a, **_k: {"active": True, "present": True, "id": "INC-1"}))
+
+    def boom(*_a, **_k):
+        raise PermissionError(13, "Permission denied", ".crew")
+
+    monkeypatch.setattr(crew_incident, broken, boom)
+    args = argparse.Namespace(root=str(tmp_path), manifest=str(scratch / "manifest.json"),
+                              scratch=str(scratch), allow_unverified=False, ticket=TICKET)
+
+    code = review_run.prereview_gate(args)
+
+    err = capsys.readouterr().err
+    assert (code, "review-run: pre-review gate could not run: PermissionError" in err,
+            "stand down" in err) == (review_run.EXIT_USAGE, True, False), err

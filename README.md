@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.12 — L-0518 (tooling half)**: One locked read authorizes a gate skip; a gate that cannot run is exit 2. `/crew:review` can no longer spend a round with no self-check when a successor plan is approved mid-run, and a broken incident file makes a review "not run" instead of looking like FINDINGS.
 - **crew 1.1.12 — L-0514**: A refunded tool-failure review round retries once by itself. When Codex or Copilot loses a review round to a tool failure (a failed turn, a crash, empty output), `/crew:review` now retries it once on its own instead of stopping, and says why when it does not.
-- **crew 1.1.12 — L-0528**: Review exit 5 means only a Codex limit. `/crew:review`'s "not run, verify gate not green or a pre-review check refused it" exit moves from 5 to 9, so 5 is only ever the Codex probe's usage limit.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

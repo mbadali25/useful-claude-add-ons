@@ -151,7 +151,8 @@ the `review:` summary line prints both. It also carries `prereview`: the
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
 (NEEDS_REPLAN); 9 not run, verify gate not green or a pre-review check new or
 could not check (no round spent); 2 usage or setup error, or the standards
-self-check missing or stale -- not run, no round spent. Exit 9 is decided
+self-check missing or stale, or a gate that could not run or a ledger that
+moved since the gate decision (L-0518) -- not run, no round spent. Exit 9 is decided
 before exit 2 (self-check) is asked for. 5, 6 and 7 are `--probe`'s alone
 (L-0528): no two EXIT_* constants share a value.
 """
@@ -730,9 +731,12 @@ def standards_gate(args):
     if note:
         sys.stderr.write(f"review-run: {note}\n")
     if problems:
-        incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
+        incident = _incident(args, "self-check")
+        if incident is None:
+            return EXIT_USAGE
         if incident["active"]:
-            crew_incident.log_skip(args.root, "standards-selfcheck", "; ".join(problems))
+            if not _log_skip(args, "self-check", "standards-selfcheck", "; ".join(problems)):
+                return EXIT_USAGE
             _err(f"review-run: incident {incident['id']} is active; the standards "
                              "self-check stands down and the skip is logged\n")
             args.reserved_std = "std:none"
@@ -747,6 +751,32 @@ def standards_gate(args):
     # recomputation after the review (L-0578 review round 2).
     args.reserved_std = review_metrics.std_from_note(note)
     return None
+
+
+def _incident(args, gate):
+    """The incident state for a gate's stand-down, or None after saying the
+    gate could not run (L-0518 N4): an exception escaping here would exit 1,
+    which /crew:review reads as FINDINGS, not as "not run"."""
+    try:
+        return crew_incident.read_state(args.root, crew_state.load_config(args.root))
+    except (OSError, ValueError) as exc:
+        _gate_failed(gate, exc)
+        return None
+
+
+def _log_skip(args, gate, check, detail):
+    """Log an incident skip; False after saying the gate could not run (N4)."""
+    try:
+        crew_incident.log_skip(args.root, check, detail)
+    except (OSError, ValueError) as exc:
+        _gate_failed(gate, exc)
+        return False
+    return True
+
+
+def _gate_failed(gate, exc):
+    _err(f"review-run: {gate} gate could not run: {type(exc).__name__}: {exc}; nothing "
+         "launched, no round spent\n")
 
 
 def prereview_gate(args):
@@ -780,11 +810,14 @@ def prereview_gate(args):
     if verdict == review_checks.PASS:
         args.prereview_staged = _record(args.scratch, bundle, results, False, False)
         return None
-    incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
+    incident = _incident(args, "pre-review")
+    if incident is None:
+        return EXIT_USAGE
     if incident["active"]:
-        crew_incident.log_skip(args.root, "prereview-checks", f"{verdict}: " + "; ".join(
-            f"{r['name']} {r['status']}" for r in results if r["status"] in (
-                review_checks.FAIL, review_checks.COULD_NOT)))
+        if not _log_skip(args, "pre-review", "prereview-checks", f"{verdict}: " + "; ".join(
+                f"{r['name']} {r['status']}" for r in results if r["status"] in (
+                    review_checks.FAIL, review_checks.COULD_NOT))):
+            return EXIT_USAGE
         _err(f"review-run: incident {incident['id']} is active; the pre-review "
                          "checks stand down and the skip is logged\n")
         args.prereview_staged = _record(args.scratch, bundle, results, False, True)
@@ -873,19 +906,22 @@ def run(args):
     # rather than sending the author to answer and restamp for nothing.
     # `reserve` re-reads the ledger under its lock and is what refuses.
     ledger = review_ledger.status(args.root, args.ticket)
-    if not (ledger.get("state") == review_ledger.NEEDS_REPLAN
-            or ledger.get("rounds_left") == 0):
+    gated = not (ledger.get("state") == review_ledger.NEEDS_REPLAN
+                 or ledger.get("rounds_left") == 0)
+    if gated:
         refused = prereview_gate(args)
         if refused is None:
             refused = standards_gate(args)
         if refused is not None:
             return refused
 
+    # The skip is carried into the locked read (L-0518 F2): a ledger that is
+    # no longer spent there refuses rather than reserving an ungated round.
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
-                                                args.model)
+                                                args.model, gated=gated)
     _err(f"review-run: {message}\n")
     if not ok:
-        return EXIT_REFUSED
+        return EXIT_USAGE if message == review_ledger.GATE_CHANGED else EXIT_REFUSED
     _bind_record(args, number)
     _keep_reserved_std(args, number)
     if args.provider not in LAUNCHED:

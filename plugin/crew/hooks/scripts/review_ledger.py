@@ -311,9 +311,19 @@ def _fresh(ticket):
             "refused": [], "receipt": None}
 
 
-def reserve(root, ticket, provider, model=None):
+# L-0518 (F2): `reserve(..., gated=False)` found the ledger no longer spent.
+GATE_CHANGED = ("the ledger changed since the gate decision: the pre-review and standards gates "
+                "were skipped for a spent budget, and a round is now free; run again, nothing spent")
+
+
+def reserve(root, ticket, provider, model=None, gated=True):
     """Reserve the next round BEFORE launching a reviewer. Returns
-    (True, round_number, message) or (False, None, message)."""
+    (True, round_number, message) or (False, None, message).
+
+    `gated` is False when the caller skipped its gates because its unlocked
+    read said the budget was spent (review_run.run). Under the lock, a state
+    that would reserve a round refuses that with GATE_CHANGED, writing
+    nothing: one authorizing fact, read once, under the lock (L-0518 F2)."""
 
     def change(data, state):
         if state == "corrupt":
@@ -332,6 +342,8 @@ def reserve(root, ticket, provider, model=None):
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
             return data, exhausted
+        if not gated:
+            return None, (False, None, GATE_CHANGED)
         number = len(rounds) + 1
         rounds.append({"round": number, "status": "reserved", "reserved_at": _now(),
                        "provider": provider, "model": model or None, "pid": os.getpid()})

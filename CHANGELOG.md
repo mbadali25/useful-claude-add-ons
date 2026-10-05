@@ -9,6 +9,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.12 — L-0518 (tooling half): one locked read authorizes a gate skip; a gate that cannot run is exit 2
+
+- **Summary.** `/crew:review` can no longer spend a round with no self-check when a successor plan
+  is approved mid-run, and a broken incident file makes a review "not run" instead of looking like
+  FINDINGS.
+- **What changed.** F2: `review_run.run` skips the pre-review and standards gates only for a spent
+  budget, read without the lock; it now passes that decision to `review_ledger.reserve(...,
+  gated=False)`, which refuses under the lock with `GATE_CHANGED` (exit 2, nothing spent) when the
+  ledger has a round free after all. N4: an `OSError`/`ValueError` from the incident read or the skip
+  log in `standards_gate` or `prereview_gate` prints `review-run: <gate> gate could not run: ...`
+  and exits 2, where it escaped as exit 1 (read by `/crew:review` as FINDINGS). Six tests and three
+  `sabotage_standards.py` entries; the re-anchored "self-check gate answers before a spent budget"
+  and "an expired or stood-down incident stands the checks down" entries mutate the new code.
+  The feature half (F1, F3, F4, N1-N3, N5 in `crew_standards.py`) and its sabotage entries and the
+  `review.md` F1 wording are not here: that code is not on main yet.
+
 ### crew 1.1.12 — L-0514: a refunded tool-failure review round retries once by itself
 
 - **Summary.** When Codex or Copilot loses a review round to a tool failure (a failed turn, a
