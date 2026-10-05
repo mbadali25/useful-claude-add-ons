@@ -84,6 +84,7 @@ def test_a_restated_tier_tuple_is_a_problem(monkeypatch):
     ("autopilot.deploy", crew_autopilot.DEPLOY_VALUES),
     ("autopilot.approval", crew_autopilot.POLICIES),
     ("autopilot.questions", crew_autopilot.POLICIES),
+    ("autopilot.ship", crew_autopilot.SHIP_POLICIES),
 ])
 def test_tuple_backed_values_are_the_same_object(key, obj):
     assert crew_keys.values_of(key) is obj
@@ -131,7 +132,8 @@ def test_values_agree_with_the_writers_enum_values():
 
 # `branch` rows whose reader checks a shape rather than a closed value list.
 _OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "autopilot.maxAutoReplans", "tickets.baseBranch",
-                     "git.forbiddenTrailers", "autopilot.sleep.schedule")
+                     "git.forbiddenTrailers", "autopilot.sleep.schedule",
+                     "autopilot.knownFailures", "autopilot.ciTimeoutMinutes")
 
 
 def test_every_row_has_a_summary_and_a_values_kind():
@@ -234,6 +236,34 @@ def test_autopilot_max_phases_agrees_with_the_reader(tmp_path, value, kept):
     assert got["maxPhases"] == (value if kept else 12)
     assert kept == (not any("maxPhases" in w for w in got["warnings"]))
     assert crew_keys.KEY_META["autopilot.maxPhases"]["type"] == "positive integer"
+
+
+@pytest.mark.parametrize("value", ["pr", "merge", "Merge", "squash", True])
+def test_autopilot_ship_values_agree_with_the_reader(tmp_path, value):
+    declared = crew_keys.values_of("autopilot.ship")
+    got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"ship": value}}))
+    assert got["ship"] == (value if value in declared else "pr")
+    assert (value in declared) == (not any("autopilot.ship" in w for w in got["warnings"]))
+
+
+@pytest.mark.parametrize("value, kept", [
+    ([], True), (["ci (linux)"], True), ("ci", False), ([1], False), (None, False),
+])
+def test_autopilot_known_failures_agrees_with_the_reader(tmp_path, value, kept):
+    got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"knownFailures": value}}))
+    assert got["knownFailures"] == (value if kept else [])
+    assert kept == (not any("knownFailures" in w for w in got["warnings"]))
+    assert crew_keys.KEY_META["autopilot.knownFailures"]["type"] == "list of check names"
+
+
+@pytest.mark.parametrize("value, kept", [(1, True), (60, True), (0, False), ("60", False),
+                                         (True, False)])
+def test_autopilot_ci_timeout_agrees_with_the_reader(tmp_path, value, kept):
+    got = crew_autopilot.settings(_repo(tmp_path,
+                                        {"autopilot": {"ciTimeoutMinutes": value}}))
+    assert got["ciTimeoutMinutes"] == (value if kept else 60)
+    assert kept == (not any("ciTimeoutMinutes" in w for w in got["warnings"]))
+    assert crew_keys.KEY_META["autopilot.ciTimeoutMinutes"]["type"] == "positive integer"
 
 
 @pytest.mark.parametrize("value, kept", [

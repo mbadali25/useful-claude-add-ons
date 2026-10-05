@@ -394,11 +394,16 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # Still 138 with T-0050 (batch 6): the personal `autopilot` keys stay
     # declared here (this is the defaults layer); only `template_config()`
     # omits them.
-    # 140 with T-0051's `notify.realertHours` and `notify.questionTypes` on
-    # top of those 138, measured by running this test on T-0051-build after
-    # merging main 47f71e93.
+    # 141 with T-0011's repo-only ship phase (batch 7): `autopilot.ship`,
+    # `autopilot.knownFailures` (an empty list, so one leaf) and
+    # `autopilot.ciTimeoutMinutes` on top of those 138.
+    assert {"autopilot.ship", "autopilot.knownFailures",
+            "autopilot.ciTimeoutMinutes"} <= declared
+    # 143 with T-0051's `notify.realertHours` and `notify.questionTypes` on
+    # top of those 141, both layers, measured by running this test on
+    # T-0051-build after merging main abddc302.
     assert {"notify.realertHours", "notify.questionTypes"} <= declared
-    assert len(declared) == 140
+    assert len(declared) == 143
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():

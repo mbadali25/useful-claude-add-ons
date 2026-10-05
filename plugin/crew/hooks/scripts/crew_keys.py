@@ -12,7 +12,8 @@ keep printing the old list. `tests/test_crew_keys.py` holds every such row to
 `is`, not `==`.
 
 Where a validator is a code branch rather than a tuple (`autopilot.mode`,
-`autopilot.maxPhases`, `resume.auto`, `context.autoClear.enabled`,
+`autopilot.maxPhases`, `autopilot.knownFailures`, `autopilot.ciTimeoutMinutes`,
+`resume.auto`, `context.autoClear.enabled`,
 `route.enabled`), the row declares the values (kind `branch`) and a test runs
 each one, and one undeclared value, through the real reader. Where crew
 validates nothing, the row says `unvalidated` and names the file that reads
@@ -482,6 +483,21 @@ KEY_META = {
                                       "keeps the day value; anything else counts as human, "
                                       "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
                                       "1.0.332", _S + "crew_sleep.py"),
+    "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
+                           "merges it (a merge commit) once the required checks allow. "
+                           "Anything else reads as `pr`, with a warning.", "tuple",
+                           crew_autopilot.SHIP_POLICIES, "1.0.349"),
+    "autopilot.knownFailures": _row("Required checks whose `fail` does not block a merge, "
+                                    "matched by exact name; anything but a list of "
+                                    "strings reads as `[]`, with a warning.", "branch",
+                                    None, "1.0.349", _S + "crew_autopilot.py",
+                                    type_="list of check names"),
+    "autopilot.ciTimeoutMinutes": _row("Minutes `ship` waits for the required checks; "
+                                       "still pending, or green only after it, stops. "
+                                       "Anything but a positive integer reads as 60, "
+                                       "with a warning.", "branch", None, "1.0.349",
+                                       _S + "crew_autopilot.py",
+                                       type_="positive integer"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
@@ -505,15 +521,6 @@ def _coming(key, ticket, change, summary, default, layer, values=None):
 # spec on 2026-10-03. `change` is `new key`, or `changes <what>` for a key
 # already in KEY_META. Defaults and layers are the spec's words, not a guess.
 COMING = (
-    _coming("autopilot.ship", "T-0011", "new key",
-            "After `/crew:done`, open a PR (`pr`) or also merge it once required checks "
-            "are green (`merge`).", "merge", "repo", ("pr", "merge")),
-    _coming("autopilot.knownFailures", "T-0011", "new key",
-            "Required checks that may fail without blocking a merge, matched by exact "
-            "name.", "[]", "repo"),
-    _coming("autopilot.ciTimeoutMinutes", "T-0011", "new key",
-            "How long ship waits for CI; still pending at the timeout stops.", "60",
-            "repo"),
     _coming("autopilot.maxTicketsPerRun", "T-0012", "new key",
             "Tickets one goal run may work before it stops.", "3", "repo"),
     _coming("autopilot.maxTokensPerSession", "T-0012", "new key",

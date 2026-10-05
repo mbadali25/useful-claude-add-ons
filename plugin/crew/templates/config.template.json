@@ -224,7 +224,10 @@
       "schedule": null,
       "approval": null,
       "questions": null
-    }
+    },
+    "ship": "merge",
+    "knownFailures": [],
+    "ciTimeoutMinutes": 60
   },
   "tickets": {
     "baseBranch": null
