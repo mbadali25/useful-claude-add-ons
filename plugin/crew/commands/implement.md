@@ -38,7 +38,7 @@ me `tracker not updated: <reason>` and keep going — a tracker never blocks wor
 
 Print what earlier reviews kept finding on this ticket's paths and keep each item open while you work:
 `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket $1` (exit 1: read its UNKNOWN,
-UNREADABLE or PROBLEM line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`. Per step: write the
+UNREADABLE or PROBLEM line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`; with `## PR slices`, only the `steps=` that `crew_autopilot.py slice --root . --ticket $1` prints (T-0059). Per step: write the
 test it names, watch it fail, make the minimal change, watch it pass, then the next step. A step whose Expected does not
 match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 

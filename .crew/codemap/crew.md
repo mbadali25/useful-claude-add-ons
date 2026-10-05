@@ -1732,6 +1732,43 @@ Obsidian vault). A CLI the commands call, not a hook.
   a source that is there but unmeasurable (no `- [ ]` acceptance bullet, no
   `### Step`, a Touch entry outside every codemap subsystem) still stops.
 
+## PR slices (T-0059)
+
+- DERIVED (T-0059, ported onto release/1.2.0 by hand; cites are line numbers
+  on rush/g2-autopilot at the commit that adds this section, behind the anchor
+  above like the rest of the file). `crew_split.parse_slices`
+  (`plugin/crew/hooks/scripts/crew_split.py:1247`) reads a plan's `## PR slices` section into
+  `{n, name, steps, base, files}` per slice; `SLICES_MIN, SLICES_MAX` (`:138`) are the children's
+  bounds. `_slice_problems` (`:1188`) holds the count, numbering, partition, contiguity and order
+  rules; `_base_problems` (`:1218`) the `Base:` rule, through `_overlaps` (`:1173`, equality or
+  `crew_ticket.path_matches` either way; any other pair is "cannot tell" unless `_disjoint`
+  (`:1165`) proves it: the `_literal_prefix` (`:1152`) of each, after `crew_ticket._segments`,
+  differs case-folded at an index both have) over each step's `Files:` from `_step_blocks`
+  (`:1087`) and `crew_ticket.parse_plan`; a step with no `Files:` is "cannot tell", never
+  independent.
+- `plugin/crew/hooks/scripts/crew_autopilot_slices.py` holds the slice run (pylint's module
+  length kept it out of `crew_autopilot.py`): `context` (`:94`) and `slices_path` (`:52`,
+  `<git-common-dir>/crew/tickets/<id>/slices.json`, written by `_write_slice_state` `:83`
+  through temp + `os.replace`); `slice_base` (`:126`); `order_stop` (`:179`) and `branch_stop`
+  (`:200`); `record_shipped` (`:211`); `create_argv` (`:225`) and `ship_slice` (`:237`);
+  `slice_done` (`:265`) and `next_slice` (`:298`), which refuses with nothing written while
+  `review_ledger.open_slice` is absent. In `plugin/crew/hooks/scripts/crew_autopilot.py`,
+  `_phase` (`:962`) stops a refused section at `plan` and an unreadable state as `slices`,
+  `_done_phase` (`:1092`) stops an early `done` header, and a non-final slice in `done` goes
+  through `_ship_phase` (`:428`), whose `finished` names `next-slice` (also passed to
+  `crew_ship.merged_phase`, `plugin/crew/hooks/scripts/crew_ship.py:323`). `ship` hands a sliced
+  plan to `ship_slice` and both reach `_ship` (`plugin/crew/hooks/scripts/crew_autopilot.py:619`).
+  `_current_rounds` (`:1109`) counts from the later of the successor and slice boundaries,
+  reading the ledger's raw `slices` rows through `_ledger_status` (`:1123`) because
+  `review_ledger.summary` does not carry them.
+- JUDGEMENT: the per-slice budget reset (`review_ledger.open_slice` and `_spent` counting slice
+  rows), `crew_ticket.validate` reporting `PR slices:` problems, and `sabotage_split.py` are HARNESS
+  paths (CLAUDE.md, T-0087) and land in a separate tooling PR; until then a sliced ticket stops
+  after its first slice ships.
+- Tests: `plugin/crew/tests/test_crew_split.py` (parse_slices),
+  `plugin/crew/tests/test_crew_autopilot_slices.py`; the T-0052 `crew_split` rule in
+  `.crew/verify.json` runs both.
+
 ## The artifact refresh check (T-0008, crew 1.0.36)
 
 `plugin/crew/hooks/scripts/crew_refresh_check.py` answers one read-only

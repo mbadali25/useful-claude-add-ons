@@ -82,7 +82,7 @@ never rewrites the commits — a rewrite is the owner's decision, and it stales 
 
 ## On all five passing
 
-1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
+1. A sliced plan (T-0059): run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py slice --root . --ticket "$1"`; on `final=no` set the header to `status: in-progress` instead (it keeps the approval), run the same script's `slice-done --root . --ticket "$1"`, say "slice <n> of <m> done" and stop here - the ticket stays open and steps 2-4 wait for the last slice (`slice=none` or `final=yes` goes on; exit 1 stops). Otherwise set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
    that value keeps the approval, so the checks above stay true. Then move the
    tracker: `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket "$1" --to done`.
    Print its lines verbatim; on exit 3 run the command it printed (Jira, SDP);

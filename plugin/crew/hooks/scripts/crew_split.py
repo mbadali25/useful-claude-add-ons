@@ -25,6 +25,8 @@ The API (stable; T-0058 and T-0059 build on it):
     apply(top, ticket, via, ...)    -> {"children", "parent", "warnings"}
     ticket_split_policy(top, ticket) -> {allow, policy, risk, known, reason,
                                         warnings} (T-0058, autopilot's yes)
+    parse_slices(plan_text)         -> (slices, problems) for the plan's
+                                        `## PR slices` (T-0059); none = ([], [])
 
 A trigger means LOOK, never SPLIT: a split also needs `separable-criteria`
 evidence, and "not too big" is a result, not a failure. `split.md` format:
@@ -129,6 +131,13 @@ SUBSYSTEMS_LOOK = 2
 # /crew:split's rule since before T-0052: fewer than two is not a split, more
 # than five is an epic wearing a story's label (split.md, step 3).
 CHILDREN_MIN, CHILDREN_MAX = 2, 5
+# T-0059: a sliced plan's bounds are the children's, for the same reason one
+# level down - one slice is not a slicing, and more than five is a split. The
+# ledger evidence (T-0052 Evidence: no ticket of 8 steps or fewer passed 4
+# rounds) says a slice of 2-4 steps fits one review budget.
+SLICES_MIN, SLICES_MAX = CHILDREN_MIN, CHILDREN_MAX
+SLICES_HEADING = "PR slices"
+MAIN_BASE = "main"
 
 EVIDENCE_KEYS = ("plan-steps", "acceptance-count", "subsystems", "findings-rate",
                  "tickets-too-large", "separable-criteria")
@@ -159,6 +168,11 @@ _STEP_RE = re.compile(r"^###\s+Step\b")
 _STATUS_RE = re.compile(r"(?<![\w-])status:[ \t]*\S+")
 _MINTED_RE = re.compile(r"^-[ \t]+Child[ \t]+(\d+):[ \t]*(\S+)[ \t]*$")
 _MINTED_HEAD_RE = re.compile(r"(?m)^##[ \t]+Minted\b.*$")
+_ANY_HEADING_RE = re.compile(r"^(#{1,3})\s+(.*?)\s*#*\s*$")
+# The same heading `measure` counts (`_STEP_RE`): level 3, case-sensitive.
+_PLAN_STEP_RE = re.compile(r"^###\s+Step\s+(\d+)\b")
+_SLICE_RE = re.compile(r"^###\s+Slice\s+(\d+)\s*:?\s*(.*?)\s*$", re.IGNORECASE)
+_SLICE_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?(steps|base):[ \t]*(.*?)\s*$", re.IGNORECASE)
 MINTED_RULE = ("a ## Minted section is written by apply only: the last section, holding "
                "only `- Child N: <id>` lines")
 
@@ -1062,6 +1076,208 @@ def apply(top, ticket, via, session=None):
 
 
 # --- CLI -------------------------------------------------------------------------------
+
+# --- PR slices: the plan section a cohesive-but-large ticket ships through (T-0059) -----
+#
+# A ticket that holds together but is too large for one review keeps one ticket
+# and its plan groups the steps into ordered slices, each shipped as its own PR
+# with its own review budget. parse_slices is the one reader; crew_autopilot
+# routes on it and stops a plan whose section it refuses.
+
+def _step_blocks(text):
+    """{step number: the step's text} for every `## Step N` / `### Step N`
+    heading, wherever it sits: a Step heading written after `## PR slices`
+    is still a plan step (and ends that section), so a partition that leaves
+    it out reports it uncovered. A block runs to the next heading of level
+    three or above."""
+    blocks, current = {}, None
+    for line in text.splitlines():
+        heading = _ANY_HEADING_RE.match(line)
+        if heading:
+            current = None
+            step = _PLAN_STEP_RE.match(line)
+            if step:
+                current = int(step.group(1))
+                blocks.setdefault(current, [])
+            continue
+        if current is not None:
+            blocks[current].append(line)
+    return {n: "\n".join(lines) for n, lines in blocks.items()}
+
+
+def _level_two_steps(text):
+    """Step numbers written as `## Step N` rather than `### Step N`."""
+    return {int(m.group(1)) for m in re.finditer(r"(?m)^##[ \t]+Step[ \t]+(\d+)\b", text)}
+
+
+def _slice_section(text):
+    """The `### Slice` blocks under `## PR slices` as [(n, name, lines)], or
+    None when the plan has no such section."""
+    found, slices = False, []
+    inside = False
+    for line in text.splitlines():
+        heading = _ANY_HEADING_RE.match(line)
+        if heading and (len(heading.group(1)) <= 2 or _PLAN_STEP_RE.match(line)):
+            # A Step heading ends the section too: it is a plan step, never
+            # part of the last slice's block.
+            inside = (not _PLAN_STEP_RE.match(line)
+                      and _norm(heading.group(2)).casefold() == SLICES_HEADING.casefold())
+            found = found or inside
+            continue
+        if not inside:
+            continue
+        head = _SLICE_RE.match(line)
+        if head:
+            slices.append((int(head.group(1)), head.group(2), []))
+        elif slices:
+            slices[-1][2].append(line)
+    return slices if found else None
+
+
+def _step_list(value):
+    """[step numbers] from `1, 2`, `3-4` or `5`, or None when unreadable."""
+    steps = []
+    for part in value.split(","):
+        part = part.strip()
+        span = re.fullmatch(r"(\d+)\s*-\s*(\d+)", part)
+        if span and int(span.group(1)) <= int(span.group(2)):
+            steps.extend(range(int(span.group(1)), int(span.group(2)) + 1))
+        elif part.isdigit():
+            steps.append(int(part))
+        else:
+            return None
+    return steps or None
+
+
+def _literal_prefix(entry):
+    """The case-folded segments before the first wildcard segment, after
+    crew_ticket's own normalisation (`./` and empty segments drop). A literal
+    entry's prefix is the whole entry: `path_matches` reads a literal as a
+    directory covering everything under it."""
+    prefix = []
+    for part in crew_ticket._segments(entry):  # pylint: disable=protected-access
+        if crew_ticket._is_glob(part):  # pylint: disable=protected-access
+            break
+        prefix.append(part.casefold())
+    return prefix
+
+
+def _disjoint(a, b):
+    """True only when Files entries `a` and `b` provably name nothing in
+    common: their literal prefixes differ at an index both have (compared
+    case-folded, as fnmatch does on Windows). Every other pair is unknown."""
+    left, right = _literal_prefix(a), _literal_prefix(b)
+    return any(x != y for x, y in zip(left, right))
+
+
+def _overlaps(mine, theirs):
+    """(shared, unknown) for every pair of Files entries: `shared` the
+    entries in `mine` that equal or match one in `theirs`, `unknown` the
+    pairs that are neither that nor provably disjoint - an unknown is never
+    "disjoint"."""
+    shared, unknown = set(), set()
+    for a in mine:
+        for b in theirs:
+            if a == b or crew_ticket.path_matches(a, b) or crew_ticket.path_matches(b, a):
+                shared.add(a)
+            elif not _disjoint(a, b):
+                unknown.add(f"{a} vs {b}")
+    return sorted(shared), sorted(unknown)
+
+
+def _slice_problems(slices, steps):
+    problems = []
+    if not SLICES_MIN <= len(slices) <= SLICES_MAX:
+        problems.append(f"{len(slices)} slice{'s' * (len(slices) != 1)}: a sliced plan "
+                        f"has {SLICES_MIN}-{SLICES_MAX}")
+    if [s["n"] for s in slices] != list(range(1, len(slices) + 1)):
+        problems.append("slices are not numbered 1, 2, 3 ... in order")
+    owner = {}
+    for piece in slices:
+        for step in piece["steps"]:
+            if step not in steps:
+                problems.append(f"slice {piece['n']} names step {step}: no such step "
+                                "in the plan")
+            elif step in owner:
+                problems.append(f"step {step} is in slices {owner[step]} and {piece['n']}")
+            else:
+                owner[step] = piece["n"]
+    problems += [f"step {step} is in no slice" for step in sorted(steps) if step not in owner]
+    last = 0
+    for piece in slices:
+        run = sorted(piece["steps"])
+        if run and run != list(range(run[0], run[0] + len(run))):
+            problems.append(f"slice {piece['n']}'s steps {run} are not one contiguous run")
+        if run and run[0] <= last:
+            problems.append(f"slice {piece['n']} starts at step {run[0]}, out of order "
+                            f"after step {last}")
+        last = max(last, run[-1] if run else last)
+    return problems
+
+
+def _base_problems(slices, step_files):
+    problems = []
+    for i, piece in enumerate(slices):
+        base = piece["base"]
+        if base is None:
+            problems.append(f"slice {piece['n']}: Base: must be `main` or `slice <k>`")
+        elif base != MAIN_BASE and base >= piece["n"]:
+            problems.append(f"slice {piece['n']}: Base: slice {base} is not an earlier "
+                            "slice")
+        if base != MAIN_BASE or i == 0:
+            continue
+        unknown = [s for s in piece["steps"] if not step_files.get(s)]
+        unknown += [s for e in slices[:i] for s in e["steps"] if not step_files.get(s)]
+        if unknown:
+            problems.append(f"slice {piece['n']}: Base: main, but cannot tell whether it "
+                            f"shares Files with an earlier slice (no Files: on step "
+                            f"{', '.join(map(str, sorted(set(unknown))))})")
+            continue
+        shared, unknown = _overlaps(piece["files"], [f for e in slices[:i] for f in e["files"]])
+        if unknown and not shared:
+            problems.append(f"slice {piece['n']}: Base: main, but cannot tell whether it "
+                            f"shares Files with an earlier slice (not provably disjoint: "
+                            f"{'; '.join(unknown)}) - use Base: slice <k> or exact paths")
+        if shared:
+            problems.append(f"slice {piece['n']}: Base: main, but it shares Files with an "
+                            f"earlier slice ({', '.join(shared)}) - use Base: slice <k>")
+    return problems
+
+
+def parse_slices(plan_text):
+    """`(slices, problems)` for the plan's `## PR slices` section. A slice is
+    `{"n", "name", "steps", "base", "files"}`: `base` is "main" or the earlier
+    slice's number (None unreadable) and `files` the union of its steps'
+    `Files:` entries. No section returns `([], [])`; a section that breaks a
+    rule returns its slices and the problems, each naming the slice or step."""
+    text = plan_text or ""
+    section = _slice_section(text)
+    if section is None:
+        return [], []
+    blocks = _step_blocks(text)
+    step_files = {n: crew_ticket.parse_plan(block)[0] for n, block in blocks.items()}
+    slices, problems = [], []
+    for n, name, lines in section:
+        fields = {}
+        for line in lines:
+            field = _SLICE_FIELD_RE.match(line)
+            if field:
+                fields.setdefault(field.group(1).casefold(), field.group(2))
+        steps = _step_list(fields.get("steps", ""))
+        if steps is None:
+            problems.append(f"slice {n}: Steps: must list step numbers (`1, 2` or `3-4`)")
+        base_text = _norm(fields.get("base", "")).casefold()
+        base = re.fullmatch(r"slice\s+(\d+)", base_text)
+        base = MAIN_BASE if base_text == MAIN_BASE else (int(base.group(1)) if base else None)
+        steps = steps or []
+        slices.append({"n": n, "name": name, "steps": steps, "base": base,
+                       "files": sorted({f for s in steps for f in step_files.get(s, [])})})
+    problems += [f"plan.md `## Step {n}`: write steps as `### Step N` (measure counts only "
+                 "those, so the two readers would disagree)" for n in sorted(_level_two_steps(text))]
+    problems += _slice_problems(slices, set(blocks))
+    problems += _base_problems(slices, step_files)
+    return slices, problems
+
 
 def _fmt(value):
     return UNKNOWN if value is None else str(value)

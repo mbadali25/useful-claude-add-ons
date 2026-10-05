@@ -700,6 +700,10 @@ GOAL_WRITERS = ("goal-propose", "goal-approve")
 # what crew_split.apply writes, under the policy; test_crew_autopilot_split.py
 # and test_crew_split.py pin both, and bare `split` writes nothing.
 GOAL_WRITERS += ("split",)
+# T-0059: `slice` reads; `slice-done` and `next-slice` (and `ship` on a sliced
+# plan) write slices.json; test_crew_autopilot_slices.py pins each. The usage
+# names the three on one line.
+GOAL_WRITERS += ("slice|slice-done|next-slice",)
 
 
 def _usage_subcommands():

@@ -20,6 +20,7 @@
                                     --findings --ticket <id>]
     python3 crew_autopilot.py ship --root . --ticket <id> [--json]
     python3 crew_autopilot.py split --root . --ticket <id> [--check|--apply]
+    python3 crew_autopilot.py slice|slice-done|next-slice --root . --ticket <id>
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -36,7 +37,9 @@ exactly true).
 T-0072's `deploy-allowed` and T-0011's `ship` write no file. T-0058's `split
 --check` writes `crew_split.check`'s record and `split --apply` what
 `crew_split.apply` writes, only under `crew_split.ticket_split_policy`
-(crew_autopilot_split.py's docstring). `ship` is the one
+(crew_autopilot_split.py's docstring). T-0059's `ship` on a sliced plan,
+`slice-done` and `next-slice` write `<git-common-dir>/crew/tickets/<id>/slices.json`
+(crew_autopilot_slices.py's docstring), and `next-slice` the next slice's branch. `ship` is the one
 action outside the checkout: it pushes the ticket's branch, opens its PR and
 may run `gh pr merge <n> --merge --match-head-commit <HEAD>` (below). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
@@ -118,6 +121,7 @@ force says `take`. Exit 0 valid, 1 not.
   INDEX status done/cancelled/superseded closed              stop (and merged/closed/...)
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
   spec header cancelled/superseded       closed              stop (quotes split-into:)
+  spec header `done`, slice n < m current slices              stop (later slices unbuilt)
   spec header `status: done`, unarmed    closed              stop
   ... armed, detached HEAD or gh failure ship                stop (cannot tell)
   ... PR merged at this HEAD (full SHA)  closed              stop
@@ -134,7 +138,11 @@ force says `take`. Exit 0 valid, 1 not.
   no plan.md                             plan                /crew:plan <id>
   plan fails crew_ticket.validate        plan                stop
   size check after plan (T-0058)         split-*             crew_autopilot_split.py
+  plan's `## PR slices` refused          plan                stop (T-0059, PR slices: ...)
   approval not accepted                  approve             stop, unless the policy allows
+  slices.json unreadable/out of shape    slices              stop (cannot tell the slice)
+  non-final slice in `done`              (the ship rows above; merged, or open under
+                                          `ship: pr`, names next-slice instead of closed)
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop, unless auto-rejected
   no review round under this plan        implement           /crew:implement <id>
@@ -148,6 +156,9 @@ force says `take`. Exit 0 valid, 1 not.
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+A sliced plan's other rows carry `slice` and prefix the reason with `slice n
+of m (<name>): steps a-b only` (crew_autopilot_slices.py, T-0059).
 
 T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off):
 an out-of-rounds FINDINGS round with a BLOCK that `auto_replan_policy` allows
@@ -249,6 +260,7 @@ import completion_audit
 import crew_common
 import crew_autopilot_docs
 import crew_autopilot_sleep
+import crew_autopilot_slices
 import crew_autopilot_split
 import crew_config
 import crew_ship
@@ -381,7 +393,7 @@ def _ledger_hash(top, ticket):
 def _families(top, ticket):
     """The `model_family` of every completed round under the current plan,
     or None when the ledger cannot be read."""
-    ledger = review_ledger.status(top, ticket)
+    ledger = _ledger_status(top, ticket)
     if ledger["state"] == review_ledger.UNKNOWN:
         return None
     return [r.get("model_family") for r in _current_rounds(ledger)
@@ -413,12 +425,27 @@ def ship_command(ticket):
     return f"crew_autopilot.py ship --ticket {ticket}"
 
 
-def _ship_phase(top, ticket, answer, why):
+def _ship_phase(top, ticket, answer, why, ctx=None):
     """`next` for a ticket `/crew:done` closed: `closed` once its PR merged
     this HEAD (or, under `ship: pr`, once one is open), `ship` while there is work
     left, and a stop for every state that cannot be read. Unarmed, it is
-    `closed` without asking gh: shipping is autopilot's alone."""
+    `closed` without asking gh: shipping is autopilot's alone. `ctx` is a
+    sliced ticket's (T-0059): a non-final slice whose PR merged (or opened,
+    under `ship: pr`) names `next-slice` instead of `closed`."""
     config = settings(top)
+    final = ctx is None or ctx["piece"]["n"] == ctx["m"]
+    sl = crew_autopilot_slices
+
+    def finished(reason):
+        if final:
+            return answer("closed", True, reason)
+        return dict(answer("next-slice", False, f"{sl.label(ctx)} shipped: {reason}",
+                           sl.slice_command(ticket)), slice=ctx["piece"]["n"])
+
+    if not config["armed"] and not final:
+        return answer("ship", True, f"{sl.label(ctx)} done. Shipping is "
+                      "/crew:autopilot's and autopilot.mode is off: a person ships this "
+                      "slice; armed, autopilot ships it and opens the next")
     if not config["armed"]:
         return answer("closed", True, f"{why}: closed by /crew:done. Shipping is "
                       "/crew:autopilot's and autopilot.mode is off, so a person pushes and "
@@ -427,6 +454,9 @@ def _ship_phase(top, ticket, answer, why):
     if not branch:
         return answer("ship", True, "cannot tell which branch ships: HEAD is detached or "
                       "unreadable - a human checks out the ticket's branch")
+    wrong = sl.branch_stop(ctx, branch) if ctx else ""
+    if wrong:
+        return answer("ship", True, wrong)
     pr = crew_ship.read_pr(top, branch)
     if pr is None:
         return answer("ship", True, f"could not read the PR state for {branch} (gh pr view "
@@ -434,10 +464,10 @@ def _ship_phase(top, ticket, answer, why):
                       "is not a PR) - a human looks")
     state = pr["state"]
     if state == "MERGED":
-        return crew_ship.merged_phase(top, branch, pr, answer)
+        return crew_ship.merged_phase(top, branch, pr, answer, finished)
     if state == "OPEN" and config["ship"] != "merge":
-        return answer("closed", True, f"PR #{pr['number']} open, merge by hand "
-                      f"({pr.get('url')}; autopilot.ship is {config['ship']})")
+        return finished(f"PR #{pr['number']} open, merge by hand "
+                        f"({pr.get('url')}; autopilot.ship is {config['ship']})")
     if state not in ("NONE", "OPEN"):
         return answer("ship", True, f"PR #{pr.get('number')} for {branch} is {state}, not "
                       "open or merged - a person decides")
@@ -445,10 +475,15 @@ def _ship_phase(top, ticket, answer, why):
     if tree:
         return answer("ship", True, f"{tree}: a push carries only commits, so what was "
                       "reviewed would not be what ships - a human decides")
+    order = sl.order_stop(top, ctx, branch, config["ship"]) if ctx else ""
+    if order:
+        return answer("ship", True, order)
     ok, message = review_ledger.check_receipt(top, ticket)
     if not ok:
         return answer("ship", True, f"the review receipt no longer stands ({message}): "
                       "shipping would put unreviewed commits in the PR - a human decides")
+    if ctx:
+        why = f"{sl.label(ctx)}: {why}"
     return answer("ship", False, f"{why}; " + ("no PR yet" if state == "NONE" else
                                                f"PR #{pr['number']} open, merging when green"),
                   ship_command(ticket))
@@ -572,6 +607,18 @@ def ship(root, ticket):
         return _ship_result(ticket, "stop", True, f"will not push {branch or '(no branch)'}: "
                             f"the default branch is {default or 'unreadable'}, and ship "
                             "pushes only a ticket branch that is not it")
+    ctx = crew_autopilot_slices.context(top, ticket)
+    if ctx:
+        # T-0059: one PR per slice, in order, based per the plan's Base: rule.
+        return crew_autopilot_slices.ship_slice(
+            top, ticket, ctx, branch, default,
+            lambda create: _ship(top, ticket, branch, create))
+    return _ship(top, ticket, branch, ["pr", "create", "--head", branch, "--fill"])
+
+
+def _ship(top, ticket, branch, create):
+    """`ship` from the clean-tree check on, with `create` the `gh pr create`
+    argv when the branch has no PR."""
     tree = crew_ship._tree_stop(top)
     if tree:
         return _ship_result(ticket, "stop", True, f"{tree} - nothing pushed")
@@ -587,7 +634,7 @@ def ship(root, ticket):
                             "after pushing")
     pr = crew_ship.read_pr(top, branch)
     if pr is not None and pr["state"] == "NONE":
-        created = crew_ship._run_gh(top, ["pr", "create", "--head", branch, "--fill"])
+        created = crew_ship._run_gh(top, create)
         if created is None or created[0] != 0:
             return _ship_result(ticket, "stop", True, "gh pr create failed: "
                                 + ((created[2] or created[1]).strip() if created else
@@ -966,7 +1013,7 @@ def _phase(root, ticket, policy=True):
         spec_text = read_text(os.path.join(folder, "spec.md")) if status == "done" else None
         if spec_text is not None and _header_status(spec_text) == "done":
             evidence.append(_rel(top, os.path.join(folder, "spec.md")))
-            return _ship_phase(top, ticket, answer, f".work/INDEX.md marks {ticket} `done` "
+            return _done_phase(top, ticket, answer, f".work/INDEX.md marks {ticket} `done` "
                                "and spec.md's header is `status: done`")
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
                       "re-driven, whatever spec.md's header says" + _successor(folder))
@@ -980,7 +1027,9 @@ def _phase(root, ticket, policy=True):
     header = None if contract["spec.md"] is None else _header_status(
         crew_ticket._text(contract["spec.md"]))  # pylint: disable=protected-access
     if header == "done":
-        return _ship_phase(top, ticket, answer, "spec.md header is `status: done`")
+        return _done_phase(top, ticket, answer, "spec.md header is `status: done`",
+                           None if contract["plan.md"] is None
+                           else crew_ticket._text(contract["plan.md"]))  # pylint: disable=protected-access
     if header in HEADER_CLOSED:
         return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
                       "in this ticket" + _successor(folder))
@@ -1010,6 +1059,10 @@ def _phase(root, ticket, policy=True):
     gate = crew_autopilot_split.gate(top, ticket, "plan", answer, policy)
     if gate:
         return gate
+    sl = crew_autopilot_slices
+    ctx = sl.context(top, ticket, crew_ticket._text(contract["plan.md"]))  # pylint: disable=protected-access
+    if ctx and ctx["error"].startswith("PR slices:"):
+        return answer("plan", True, f"plan.md's {ctx['error']}", f"/crew:plan {ticket}")
     approval = crew_ticket.accepted(top, ticket)
     evidence.append(_rel(top, crew_ticket.approval_path(top, ticket)))
     if approval["status"] != "approved":
@@ -1023,16 +1076,59 @@ def _phase(root, ticket, policy=True):
         hint = (_approval_hint(top, ticket) if policy
                 else POLICY_FREE_APPROVE.format(ticket=ticket))
         return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
+    if ctx and ctx["error"]:
+        return answer("slices", True, ctx["error"])
+    if ctx and ctx["piece"]["n"] in ctx["state"]["done"] and ctx["piece"]["n"] < ctx["m"]:
+        return sl.with_slice(ctx, _ship_phase(top, ticket, answer, "done by /crew:done "
+                                              "(crew_autopilot.py slice-done)", ctx))
     found = _review_phase(top, ticket, evidence, answer)
-    return _auto_replan_route(top, ticket, found, answer) if policy else found
+    found = _auto_replan_route(top, ticket, found, answer) if policy else found
+    if ctx:
+        found = dict(found, reason=f"{sl.label(ctx)}: steps "
+                     f"{sl.steps_text(ctx['piece']['steps'])} only - {found['reason']}")
+    return sl.with_slice(ctx, found)
+
+
+def _done_phase(top, ticket, answer, why, plan_text=None):
+    """The header reads `done`: `_ship_phase`, except on a sliced plan whose
+    current slice is not the last (closing now would leave the later slices
+    unbuilt) or whose slice state cannot be read (T-0059)."""
+    sl = crew_autopilot_slices
+    ctx = sl.context(top, ticket, plan_text)
+    if ctx and ctx["error"]:
+        return answer("slices", True, ctx["error"])
+    if ctx and ctx["piece"]["n"] != ctx["m"]:
+        return answer("slices", True, f"spec.md header is `status: done` while "
+                      f"{sl.label(ctx)} is current: closing now would leave the "
+                      "later slices unbuilt. A non-final slice's /crew:done sets "
+                      "`in-progress` and runs crew_autopilot.py slice-done - a human "
+                      "puts the header back")
+    return sl.with_slice(ctx, _ship_phase(top, ticket, answer, why, ctx))
 
 
 def _current_rounds(ledger):
-    """Rounds reserved under the current plan: after the latest successor."""
+    """Rounds reserved under the current plan and slice: after the later of
+    the latest successor's and the latest slice's (T-0059) boundary."""
     rounds = ledger.get("rounds") or []
-    successors = ledger.get("successors") or []
-    after = successors[-1].get("after_round", 0) if successors else 0
-    return rounds[after:] if isinstance(after, int) else rounds
+    marks = []
+    for key in ("successors", "slices"):
+        rows = ledger.get(key) or []
+        marks.append(rows[-1].get("after_round", 0) if rows and isinstance(rows[-1], dict)
+                     else 0)
+    if not all(crew_autopilot_slices.is_int(m) for m in marks):
+        return rounds
+    return rounds[max(marks):]
+
+
+def _ledger_status(top, ticket):
+    """`review_ledger.status` plus the ledger's `slices` rows (T-0059), which
+    its summary does not carry: `_current_rounds` counts from them."""
+    ledger = review_ledger.status(top, ticket)
+    if ledger["state"] != review_ledger.UNKNOWN and "slices" not in ledger:
+        data, state = review_ledger._load(ledger["path"])  # pylint: disable=protected-access
+        if state == "ok" and isinstance(data, dict):
+            ledger = dict(ledger, slices=data.get("slices") or [])
+    return ledger
 
 
 # T-0074: the one name `auto-reject` writes as `rejected.by`. No flag sets it.
@@ -1237,7 +1333,7 @@ def auto_reject(root, ticket):
 
 
 def _review_phase(top, ticket, evidence, answer):
-    ledger = review_ledger.status(top, ticket)
+    ledger = _ledger_status(top, ticket)
     evidence.append(_rel(top, ledger["path"]))
     if ledger["state"] == review_ledger.UNKNOWN:
         return answer("review", True, f"review ledger {_rel(top, ledger['path'])} is "
@@ -2319,7 +2415,9 @@ GOAL_RESUME_ARRIVES = "L-0541"  # `--goal` resume; the goal file itself: crew_au
 # Script actions whose code (parsers, usage and `main`) lives in a sibling module.
 EXTRA_ACTIONS = {"goal-propose": "crew_autopilot_goal", "goal-approve": "crew_autopilot_goal",
                  "tracker": "crew_autopilot_docs", "sleep": "crew_autopilot_sleep",
-                 "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split"}
+                 "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split",
+                 "slice": "crew_autopilot_slices", "slice-done": "crew_autopilot_slices",
+                 "next-slice": "crew_autopilot_slices"}
 
 
 def stops():
@@ -2766,7 +2864,7 @@ WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
     "done", "auto-replan", "auto-replan-cap", NEEDS_OWNER) + crew_autopilot_docs.WAITING
-    + crew_autopilot_split.WAITING}
+    + crew_autopilot_split.WAITING + crew_autopilot_slices.WAITING}
 WAITING["split-check"] = "autopilot"  # T-0058: autopilot looks, then goes on
 WAITING["ship"] = "owner"
 WAITING["closed"] = "nobody"

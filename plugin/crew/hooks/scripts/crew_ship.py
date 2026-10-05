@@ -320,15 +320,17 @@ def _full_sha(value):
     return value if _SHA.fullmatch(value) else None
 
 
-def merged_phase(top, branch, pr, answer):
+def merged_phase(top, branch, pr, answer, finished=None):
     """A MERGED PR closes the ticket only when it merged this checkout's HEAD
     (full SHAs). A later commit on the branch, or a head either side cannot
     read, stops: autopilot never ships a merged branch again, and "could not
-    tell" never reads `closed`."""
+    tell" never reads `closed`. `finished(reason)`, when given, answers the
+    merged-at-HEAD case instead (T-0059: a non-final slice opens the next)."""
     merged = _full_sha(pr.get("headRefOid"))
     local = _full_sha(git_out(top, "rev-parse", "HEAD"))
     if merged and local and merged == local:
-        return answer("closed", True, f"PR #{pr['number']} is merged ({pr.get('url')})")
+        why = f"PR #{pr['number']} is merged ({pr.get('url')})"
+        return finished(why) if finished else answer("closed", True, why)
     if merged and local:
         return answer("ship", True, f"{branch} has commits after PR #{pr['number']} merged "
                       f"(merged head {merged}, HEAD {local}) - ship them on a new branch "
