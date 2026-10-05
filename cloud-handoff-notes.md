@@ -45,7 +45,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:21 UTC
+Last updated: 2026-10-05 01:23 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -104,6 +104,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:23: L-1512 #497 re-versioned to crew 1.0.346 at c1c978dc after merging main 7ba4c184 (README synced); CI running
 - 01:30: #496 review 0 BLOCK 2 FIX (version, sync-updates). Builder holds until #497 merges, then 1.0.347 in one push. Minted C-0002 (.cmd git drops ^ peels on Windows, fail-closed) and C-0003 (verify_fingerprint unknown->nothing-changed).
 - 01:20: MERGED #499 L-1518 -> 7ba4c184. Owner: #407 -> fresh branch from main (T-0045-v2-build). #497 re-check 0/1 (version); builder fixing. #496 CI green, review started. C-0001 agent accidentally pkilled a reviewer's pytest; asked reviewer to confirm its rule 4/7 runs were complete. LANDPREP: never merge-then-revert in a batch; alone PRs = main+1 at land.
 - 00:56: L-1508 PR B #496 (harness-only, lands alone) green at 1a264e2a: 9 harness files run require_tool(git), allowlist emptied of harness, 20 new tests, 13/13 sites sabotage-red; crew 1.0.413 placeholder; ready for review
