@@ -473,8 +473,8 @@ def test_autopilot_low_context_handoff_uses_handoff_resume():
             "with `resume: /crew:autopilot <ticket>` as its resume line" in section,
             "goal-mark --root . --goal <slug> --state stopped" in section,
             "not for this context handoff, which leaves the goal `running`" in section,
-            "re-runs section 2's `goal-run`, which marks the goal `running` and holds the token "
-            "cap per phase" in flat,
+            "A goal run first re-runs section 2's `goal-run` before every `next`, which marks the "
+            "goal `running` and re-checks the token cap before any phase, approval or answer" in flat,
             "in a goal run it is no stop: release the claim and go back to section 2's `goal-run`"
             in flat) == (
         True, True, False, True, True, True, True)

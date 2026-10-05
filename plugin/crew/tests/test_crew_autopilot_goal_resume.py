@@ -622,3 +622,33 @@ def test_a_goal_file_that_cannot_be_looked_up_is_unknown(tmp_path, monkeypatch):
     got = crew_goal_state.handoff_refusal(str(root), "ship-it")
 
     assert (got[0], "could not read" in got[1]) == ("unknown", True)
+
+
+# --- L-0658 review round 2: the SessionStart staleness rule ------------------------------
+
+@pytest.mark.parametrize("state,stale", [("running", False), ("stopped", True), ("done", True)])
+def test_a_running_goal_handoff_is_not_archived_for_branch_drift(tmp_path, monkeypatch,
+                                                                 state, stale):
+    import crew_state  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    if state != "running":
+        handoff.goal_mark(str(root), slug, state)
+    _goal_handoff(root, slug)  # branch: and head: name another branch
+    text = _read(root / ".work" / "HANDOFF.md").replace(
+        "written: 2026-10-05T00:00:00Z", "written: " + __import__("time").strftime(
+            "%Y-%m-%dT%H:%M:%SZ", __import__("time").gmtime()))
+    _write(root / ".work" / "HANDOFF.md", text)
+
+    verdict = crew_state.handoff_staleness(str(root), text)
+    archived = crew_state.archive_stale_handoff(str(root), {})
+
+    assert (verdict["stale"], archived["archived"],
+            os.path.exists(root / ".work" / "HANDOFF.md")) == (stale, stale, not stale)
+
+
+def test_two_resume_lines_keep_the_drift_check(tmp_path, monkeypatch):
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    text = f"resume: /crew:autopilot --goal {slug}\nresume: /crew:done T-0001\n"
+
+    assert crew_goal_state.running_goal_handoff(str(root), text) is False

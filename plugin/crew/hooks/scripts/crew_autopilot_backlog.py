@@ -134,6 +134,10 @@ def ticket_state(top, ticket):
     if status is None:
         return "unknown", (f"{ticket} has no row in .work/INDEX.md"
                            + (f" ({row['why']})" if row["why"] else ""))
+    spec = os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")
+    text = read_text(spec)
+    if text is None and os.path.lexists(spec):  # never read as absent, so never as closed
+        return "unknown", f"{ap._rel(top, spec)} exists but could not be read"
     if status in CLOSED:
         return _lifecycle_closed(top, ticket)
     if status in SETTLED:
@@ -142,10 +146,6 @@ def ticket_state(top, ticket):
         return "waiting", f"{ticket} is {status} in .work/INDEX.md: it waits on the owner"
     if status not in OPEN:
         return "unknown", f"{ticket}'s INDEX status {status!r} is not one crew writes"
-    spec = os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")
-    text = read_text(spec)
-    if text is None and os.path.lexists(spec):
-        return "unknown", f"{ap._rel(top, spec)} exists but could not be read"
     header = ap._header_status(text) if text is not None else None  # pylint: disable=protected-access
     if header in HEADER_CLOSED:
         return _lifecycle_closed(top, ticket)
@@ -363,6 +363,7 @@ def mint_goal(root, slug):
             if entry["id"]:
                 out["minted"].append((n + 1, entry["id"], entry["title"]))
                 continue
+            ticket = None
             try:
                 ticket = _adopt(top, slug, n + 1, len(tickets))
                 if ticket is None:
@@ -376,10 +377,13 @@ def mint_goal(root, slug):
                 entry["id"] = ticket
                 goal_mod._write_json_atomic(goal_mod.goal_path(top, slug), goal)  # pylint: disable=protected-access
             except (crew_ticket.TicketError, goal_mod.GoalError, OSError) as exc:
+                entry["id"] = None  # only what the goal file holds counts as minted
                 out["unminted"] = [(k + 1, t["title"]) for k, t in enumerate(tickets)
                                    if k >= n and not t["id"]]
+                made = (f"; {ticket} was made for ticket {n + 1} but its id did not reach the "
+                        "goal file - a re-run adopts it") if ticket else ""
                 return dict(out, stop=True, reason=f"minting ticket {n + 1} of "
-                            f"{len(tickets)} stopped: {exc}")
+                            f"{len(tickets)} stopped: {exc}{made}")
             out["minted"].append((n + 1, ticket, entry["title"]))
     # A row left at `direction` (the move to ready did not land) or no row at
     # all (an adopted folder whose create never landed) is not a minted ticket.

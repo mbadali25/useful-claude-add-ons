@@ -921,7 +921,8 @@ def handoff_staleness(root, handoff_text, cfg=None, now=None, mtime=None):
     # a timeout all read the same as "cannot check". REALITY DRIFT therefore
     # only ever recommends staleness, never disproves it: when git cannot
     # answer, this loop contributes no reasons and AGE is what decides.
-    if git_out(root, "rev-parse", "--is-inside-work-tree"):
+    bound = __import__("crew_goal_state").running_goal_handoff(root, handoff_text)  # L-0658: a goal file, not drift
+    if git_out(root, "rev-parse", "--is-inside-work-tree") and not bound:
         current_branch = git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
         if noted_branch and current_branch and current_branch != noted_branch:
             reasons.append(
@@ -1127,7 +1128,7 @@ AUTONOMOUS_STOPS = (
 )
 
 # `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases `crew_autopilot.py next` names from disk.
-# `mode` is armed only by the exact strings `plan` and `backlog` (L-0541), a typo is `off`; `maxPhases` bounds the phases one run takes.
+# `mode` is armed only by exactly `plan` or `backlog` (L-0541), a typo is `off`; `maxPhases` bounds one run's phases.
 # `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is read by crew_autopilot.deploy_allowed.
 # Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names each, a test iterates the tuple.
 # `approval`/`questions` (T-0010, plan approval and open questions) are `human|self|risk`: `risk` acts only on a spec
@@ -1136,9 +1137,8 @@ AUTONOMOUS_STOPS = (
 # T-0011, after /crew:done: `ship` `pr` opens the PR, `merge` also merges once every required check passes or fails
 # only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
-                      "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None, "deploy": None},
-                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
-                      # L-0541: a goal run's caps (crew_autopilot_backlog.py).
+                      "maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+                      "sleep": {"schedule": None, "approval": None, "questions": None, "deploy": None},
                       "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}
 
 # How many tickets one session's work becomes. The default is `system`: one

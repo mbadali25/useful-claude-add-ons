@@ -1267,7 +1267,8 @@ def test_autopilot_defaults_are_the_config_block():
     assert crew_config.default_config()["autopilot"] == {
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
-        "sleep": {"schedule": None, "approval": None, "questions": None},
+        "sleep": {"schedule": None, "approval": None, "questions": None,
+                  "deploy": None},  # L-0654
         "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
         "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}  # L-0541's caps
 

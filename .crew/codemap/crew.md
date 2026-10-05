@@ -4814,6 +4814,9 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 - DERIVED. L-0541 review round 2: a ticket marked done is closed for the picker only once
   `_phase` says `closed` (`_lifecycle_closed`, `crew_autopilot_backlog.py:157`), so an unshipped
   ticket is worked before the next.
+- DERIVED. Review round 2: `crew_state.handoff_staleness` (SessionStart's archive and
+  `crew_autocycle.resume_plan`) skips its branch/head drift reasons for a note whose one
+  `resume:` line is a running goal (`crew_goal_state.running_goal_handoff`); age still stales it.
 - JUDGEMENT. In `resume_target` a missing, not-started or done goal falls through with its reason;
   an unreadable or stopped one stops. `decide` waits on all of them.
 

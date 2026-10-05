@@ -16,6 +16,7 @@ reason and the command that resumes it, and is never taken.
 """
 import json
 import os
+import re
 
 RUN_STATES = ("running", "stopped", "done")
 REASON_MAX = 200
@@ -81,3 +82,23 @@ def handoff_refusal(root, slug, echo=True):
     why = f": {got['reason']}" if echo and got["reason"] else ""
     return state, (f"goal {slug} stopped{why} - /crew:autopilot --goal {slug} resumes it "
                    "once you choose to")
+
+
+_GOAL_RESUME_RE = re.compile(r"^resume:[ \t]*/crew:autopilot[ \t]+--goal[ \t]+"
+                             r"([a-z0-9][a-z0-9-]{0,63})[ \t]*$", re.MULTILINE)
+
+
+def running_goal_handoff(root, handoff_text):
+    """Whether the note's one `resume:` line is `/crew:autopilot --goal <slug>`
+    for a goal whose run state is `running`: `crew_state.handoff_staleness`
+    then skips its branch and head drift checks (L-0658 review r2), as
+    `decide` does. Any doubt -- two resume lines, a goal file that cannot be
+    read -- is False, so the drift checks still run."""
+    text = handoff_text if isinstance(handoff_text, str) else ""
+    found = _GOAL_RESUME_RE.findall(text)
+    if len(found) != 1 or len(re.findall(r"^resume:", text, re.MULTILINE)) != 1:
+        return False
+    try:
+        return run_state(root, found[0])["state"] == "running"
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return False

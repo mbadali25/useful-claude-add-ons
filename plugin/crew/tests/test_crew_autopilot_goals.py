@@ -1558,3 +1558,36 @@ def test_an_adopted_folder_without_an_index_row_stops_the_mint(tmp_path, capsys)
 
     assert (code, "T-0003 (no INDEX row) minted but not `ready`" in capsys.readouterr().out) == (
         2, True)
+
+
+# --- L-0541 review round 4 -------------------------------------------------------
+
+def test_a_done_ticket_with_an_unreadable_spec_is_could_not_tell(tmp_path):
+    root, slug, _ids = _minted(tmp_path)
+    _set_status(root, "T-0001", "done")
+    spec = root / ".work" / "tickets" / "T-0001" / "spec.md"
+    os.makedirs(spec)  # there, and not a file read_text can read
+
+    got = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+
+    assert (got["ticket"], got["stop"], "could not be read" in got["reason"]) == (None, True, True)
+
+
+def test_a_goal_file_write_that_fails_names_the_ticket_it_made(tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, approval="self", tracker="files")
+    slug = _goal(root)["slug"]
+    real, writes = crew_autopilot_goal._write_json_atomic, []  # pylint: disable=protected-access
+
+    def second_write_fails(path, data):
+        writes.append(path)
+        if len(writes) == 3:  # the note, ticket 1's id, then ticket 2's id
+            raise OSError("disk full")
+        return real(path, data)
+    monkeypatch.setattr(crew_autopilot_goal, "_write_json_atomic", second_write_fails)
+
+    code = _main(root, "goal-approve", "--goal", slug)
+    out = capsys.readouterr().out
+
+    assert (code, "minted: ticket 1 T-0001" in out, "unminted: ticket 2" in out,
+            "T-0002 was made for ticket 2 but its id did not reach the goal file" in out) == (
+        2, True, True, True)

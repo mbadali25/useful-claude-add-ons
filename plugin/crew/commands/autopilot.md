@@ -59,8 +59,8 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
   --ticket <ticket> --phases-run N --last-command "LAST" --runner autopilot
 ```
 
-It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop.
-- `stop=0` - announce `phase <p>: <c>` (a goal run first re-runs section 2's `goal-run`, which marks the goal `running` and holds the token cap per phase; its `stop=1` stops, and a `ticket=` other than `<ticket>` stops) and follow that command's `commands/*.md` here, or run a
+It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop. A goal run first re-runs section 2's `goal-run` before every `next`, which marks the goal `running` and re-checks the token cap before any phase, approval or answer; its `stop=1` stops, and a `ticket=` other than `<ticket>` stops.
+- `stop=0` - announce `phase <p>: <c>`  and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
   named and commit it, or run `commit-refresh`'s `git add -- ... && git commit ... -- ...` exactly as printed; then the tracker step (below). `auto-replan`: run its `auto-reject` line, report every line verbatim, send them as `review.md` step 5's notification. A `replan` that does not stop: `/crew:plan` writes a successor plan whose steps quote every BLOCK and FIX line of the rejected round verbatim, each with a neighbouring-case check, and differs from every plan approved before. `phase=ship` (T-0011) or `next-slice` (T-0059, a sliced plan's next PR slice): print the lines of
   `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py <p> --root . --ticket <ticket>`; `stop=1`/`ok=0` stops. Then `LAST=<c>`, `N+=1`, again.
