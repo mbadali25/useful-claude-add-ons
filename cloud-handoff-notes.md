@@ -52,7 +52,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 04:20 UTC
+Last updated: 2026-10-05 04:30 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -111,6 +111,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 06:25: cloud-env-setup.sh written + tested twice here (all steps ok; /tmp 755 needs APT::Sandbox::User=root); copy in procedures/. Disk was 97% full: cleaned caches + merged-PR worktrees (156 -> 119, 4.8G free). T-0105 #433 built (7bd91f80), Windows pending.
 - 06:00: owner wants gizmoduck tools in the cloud env. Measured: api.github.com + releases/latest 403; versioned release downloads 200; git ls-remote ok; apt/pypi/golang ok. Minted C-0008: bootstrap.sh git-tags fallback + run it here + setup script. Builder started.
 - 05:45: owner chose A for T-0108 (try Nuclei install, else build and mark NOT VERIFIED). T-0108 builder started.
 - 05:35: spec wave A: builders started for #478 T-0081, #462 L-0678, #433 T-0105, #401 L-0673 (no version bump; batch members). Queued: T-0108 (Nuclei verification question), L-0661+L-0663 harness. Held until #501: T-0102/T-0055/T-0506/T-0054.
