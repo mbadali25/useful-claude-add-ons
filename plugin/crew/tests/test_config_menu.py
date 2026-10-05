@@ -6,9 +6,6 @@ layer, every writable row offers a value, and every value offered is one the
 writer accepts. Save, delete and restore are tested for order -- validate
 before write, back up before remove -- because that order is the feature.
 """
-# The tests read and write fixture files through inline open() calls; the
-# rewrite to `with` blocks is tracked in the T-0075 round-6 follow-up ticket.
-# pylint: disable=consider-using-with
 import errno
 import json
 import os
@@ -28,6 +25,18 @@ import crew_state
 
 _PLUGIN = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 _TS = "20260927T120000Z"
+
+
+def _bytes(path):
+    """The file's bytes, read through a `with` block (T-0103)."""
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def _text(path):
+    """The file's UTF-8 text, read through a `with` block (T-0103)."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
 
 
 def _now():
@@ -284,14 +293,14 @@ def test_menu_spec_reads_an_object_at_a_leaf(tmp_path, capsys, layer):
 
 def test_save_refuses_an_object_at_a_leaf(tmp_path, capsys):
     root, gpath = _repo(tmp_path, global_cfg={})
-    before = open(gpath, "rb").read()
+    before = _bytes(gpath)
 
     code = menu.main(["--root", root, "--global-path", gpath, "save", "--changes",
                       '{"machine":{"pm.authority":{"a":1}}}'])
 
     out, err = capsys.readouterr()
     assert (code, "refused, nothing written" in err, "->" in out) == (2, True, False)
-    assert open(gpath, "rb").read() == before
+    assert _bytes(gpath) == before
 
 
 @pytest.mark.parametrize("layer", ["machine", "repo"])
@@ -315,13 +324,13 @@ def test_menu_spec_reads_a_non_object_open_table(tmp_path, capsys, layer):
 
 def test_save_refuses_a_non_object_at_an_open_table(tmp_path, capsys):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     code = menu.main(["--root", root, "--global-path", gpath, "save", "--changes",
                       '{"repo":{"qa.roles":1}}'])
 
     assert (code, "refused, nothing written" in capsys.readouterr().err) == (2, True)
-    assert open(_config(root), "rb").read() == before
+    assert _bytes(_config(root)) == before
 
 
 def test_pending_set_unblocks_rows(tmp_path, capsys):
@@ -359,7 +368,7 @@ def test_menu_offers_null_only_where_the_writer_takes_it(tmp_path):
 def test_spec_prints_the_layer_digest(tmp_path, capsys, layer):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
     target = gpath if layer == "machine" else _config(root)
-    raw = open(target, "rb").read()
+    raw = _bytes(target)
 
     spec = menu.menu_spec(root, layer, gpath)
     menu.main(["--root", root, "--global-path", gpath, "spec", "--layer", layer,
@@ -486,19 +495,19 @@ def test_save_writes_each_layer_once(tmp_path, monkeypatch):
 def test_save_with_machine_changes_only_leaves_the_repo_file(tmp_path, monkeypatch):
     root, gpath = _repo(tmp_path)
     repo_file = os.path.join(root, ".crew", "config.json")
-    before = open(repo_file, "rb").read()
+    before = _bytes(repo_file)
     calls = _count_replaces(monkeypatch)
 
     menu.save(root, {"machine": _MACHINE_SET}, apply=True, global_path=gpath)
 
     assert ([c for c in calls if c != "profile.json"],
-            open(repo_file, "rb").read()) == (["global.json"], before)
+            _bytes(repo_file)) == (["global.json"], before)
 
 
 def test_save_validates_both_layers_before_writing_either(tmp_path, capsys):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "report-only"}})
     repo_file = os.path.join(root, ".crew", "config.json")
-    before = (open(gpath, "rb").read(), open(repo_file, "rb").read())
+    before = (_bytes(gpath), _bytes(repo_file))
 
     code = menu.save(root, {"machine": _MACHINE_SET,
                             "repo": {"scope.mode": "block"}},
@@ -506,7 +515,7 @@ def test_save_validates_both_layers_before_writing_either(tmp_path, capsys):
 
     assert code == 2
     assert "scope.mode" in capsys.readouterr().err
-    assert (open(gpath, "rb").read(), open(repo_file, "rb").read()) == before
+    assert (_bytes(gpath), _bytes(repo_file)) == before
 
 
 def test_save_dry_run_writes_nothing(tmp_path, monkeypatch, capsys):
@@ -547,7 +556,7 @@ def test_save_reports_a_partial_os_failure(tmp_path, monkeypatch, capsys):
     assert code == 1
     assert "machine layer: written" in captured.out
     assert "repo layer: NOT written" in captured.err
-    assert json.loads(open(gpath, encoding="utf-8").read())["pm"]["authority"] == "act"
+    assert json.loads(_text(gpath))["pm"]["authority"] == "act"
 
 
 def test_save_reports_a_partial_refusal(tmp_path, monkeypatch, capsys):
@@ -570,7 +579,7 @@ def test_save_reports_a_partial_refusal(tmp_path, monkeypatch, capsys):
 
 def test_save_reports_a_refusal_on_the_first_write(tmp_path, monkeypatch, capsys):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     def _refuse(*_args, **_kwargs):
         raise crew_config.GlobalWriteRefused("the global file changed")
@@ -581,7 +590,7 @@ def test_save_reports_a_refusal_on_the_first_write(tmp_path, monkeypatch, capsys
     err = capsys.readouterr().err
     assert (code, "machine layer: NOT written" in err,
             "nothing was written" in err) == (1, True, True)
-    assert open(_config(root), "rb").read() == before
+    assert _bytes(_config(root)) == before
 
 
 def test_save_cli_takes_a_json_change_set(tmp_path, capsys):
@@ -592,8 +601,7 @@ def test_save_cli_takes_a_json_change_set(tmp_path, capsys):
                       "--apply"])
 
     assert code == 0, capsys.readouterr()
-    written = json.loads(open(os.path.join(root, ".crew", "config.json"),
-                              encoding="utf-8").read())
+    written = json.loads(_text(os.path.join(root, ".crew", "config.json")))
     assert written["tracker"] == "sdp"
 
 
@@ -625,7 +633,7 @@ def _backups(root):
                                            ("repo", False)])
 def test_delete_refuses_without_confirmation(tmp_path, confirm, apply):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     plan = menu.plan_delete(root, gpath)
 
     code = menu.delete_repo_config(root, confirm, apply, now=_now(),
@@ -634,18 +642,18 @@ def test_delete_refuses_without_confirmation(tmp_path, confirm, apply):
                                        "machine": plan["machine"]})
 
     assert code == (0 if confirm == "repo" else 2)
-    assert (_backups(root), open(_config(root), "rb").read()) == ([], before)
+    assert (_backups(root), _bytes(_config(root))) == ([], before)
 
 
 def test_delete_writes_backup_first(tmp_path, monkeypatch):
     root, gpath = _repo(tmp_path)
-    original = open(_config(root), "rb").read()
+    original = _bytes(_config(root))
     seen = []
     real_move = crew_config_files.move_aside
 
     def _checking_move(src, dest):
         got = real_move(src, dest)
-        seen.append((os.path.exists(src), open(dest, "rb").read() == original))
+        seen.append((os.path.exists(src), _bytes(dest) == original))
         return got
     monkeypatch.setattr(crew_config_files, "move_aside", _checking_move)
 
@@ -656,14 +664,14 @@ def test_delete_writes_backup_first(tmp_path, monkeypatch):
 
 def test_delete_refuses_when_the_move_fails(tmp_path, monkeypatch):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     def _fail(*_args, **_kwargs):
         raise OSError("read-only file system")
     monkeypatch.setattr(crew_config_files, "move_aside", _fail)
     code = _delete(root, gpath)
 
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, before, [])
+    assert (code, _bytes(_config(root)), _backups(root)) == (2, before, [])
 
 
 def test_delete_backup_name_never_collides(tmp_path):
@@ -677,8 +685,8 @@ def test_delete_backup_name_never_collides(tmp_path):
     _delete(root, gpath)
 
     assert _backups(root) == [f"config.json.bak-{_TS}", f"config.json.bak-{_TS}-2"]
-    assert open(os.path.join(crew_dir, f"config.json.bak-{_TS}"), "rb").read() == b"older"
-    assert open(os.path.join(crew_dir, "config.json.broken"), "rb").read() == b"broken"
+    assert _bytes(os.path.join(crew_dir, f"config.json.bak-{_TS}")) == b"older"
+    assert _bytes(os.path.join(crew_dir, "config.json.broken")) == b"broken"
 
 
 _BOM = b"\xef\xbb\xbf"
@@ -699,7 +707,7 @@ def test_delete_refuses_a_config_restore_would_refuse(tmp_path, capsys, state):
     code = _delete(root, gpath)
 
     err = capsys.readouterr().err
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+    assert (code, _bytes(_config(root)), _backups(root)) == (
         2, _UNRESTORABLE[state], [])
     assert "config.json.broken" in err and "by hand" in err
 
@@ -757,20 +765,20 @@ def test_delete_refuses_when_the_file_changed_after_the_plan(tmp_path, capsys):
     code = menu.apply_delete(root, plan, "repo", now=_now(), expect={
         "repo": plan["digest"], "machine": plan["machine"]})
 
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, newer, [])
+    assert (code, _bytes(_config(root)), _backups(root)) == (2, newer, [])
     assert "changed since the preview" in capsys.readouterr().err
 
 
 def test_delete_refuses_while_the_lock_is_held(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(crew_config_files, "LOCK_WAIT_SECONDS", 0.1)
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     with open(_config(root) + ".lock", "w", encoding="utf-8") as handle:
         handle.write("4242")
 
     code = _delete(root, gpath)
 
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, before, [])
+    assert (code, _bytes(_config(root)), _backups(root)) == (2, before, [])
     assert "config.json.lock" in capsys.readouterr().err
 
 
@@ -785,7 +793,7 @@ def test_delete_then_restore_is_byte_identical_with_bom_and_crlf(tmp_path, capsy
     code = menu.restore_repo_config(root, backup, True, now=_now())
 
     capsys.readouterr()
-    assert (code, open(_config(root), "rb").read()) == (0, original)
+    assert (code, _bytes(_config(root))) == (0, original)
 
 
 def _preview(root, gpath, capsys):
@@ -895,7 +903,7 @@ def _restore_form(capsys, name):
 
 def test_restore_command_runs_in_the_host_shell(tmp_path, capsys):
     root, gpath = _repo(tmp_path / "my repo's", {"tracker": "jira"})
-    original = open(_config(root), "rb").read()
+    original = _bytes(_config(root))
     _delete(root, gpath)
     command = _restore_form(capsys, "cmd" if os.name == "nt" else "sh")
 
@@ -903,7 +911,7 @@ def test_restore_command_runs_in_the_host_shell(tmp_path, capsys):
                          check=False)
 
     assert run.returncode == 0, run.stderr
-    assert open(_config(root), "rb").read() == original
+    assert _bytes(_config(root)) == original
 
 
 def test_restore_command_runs_in_powershell(tmp_path, capsys):
@@ -911,7 +919,7 @@ def test_restore_command_runs_in_powershell(tmp_path, capsys):
     if pwsh is None:
         pytest.skip("no pwsh on this machine: the PowerShell form is not run")
     root, gpath = _repo(tmp_path / "my repo's", {"tracker": "jira"})
-    original = open(_config(root), "rb").read()
+    original = _bytes(_config(root))
     _delete(root, gpath)
     command = _restore_form(capsys, "PowerShell")
 
@@ -919,7 +927,7 @@ def test_restore_command_runs_in_powershell(tmp_path, capsys):
                          capture_output=True, text=True, check=False)
 
     assert run.returncode == 0, run.stderr + run.stdout
-    assert open(_config(root), "rb").read() == original
+    assert _bytes(_config(root)) == original
 
 
 def test_delete_prints_all_three_restore_lines(tmp_path, capsys):
@@ -992,28 +1000,28 @@ def test_delete_leaves_crew_json(tmp_path):
 
     _delete(root, gpath)
 
-    assert open(crew_json, encoding="utf-8").read() == '{"x": 1}'
+    assert _text(crew_json) == '{"x": 1}'
 
 
 def test_restore_backs_up_a_healed_default_first(tmp_path):
     root, gpath = _repo(tmp_path, {"tracker": "jira"})
-    original = open(_config(root), "rb").read()
+    original = _bytes(_config(root))
     _delete(root, gpath)
     crew_platform.heal_config(root)
-    healed = open(_config(root), "rb").read()
+    healed = _bytes(_config(root))
     backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
 
     code = menu.restore_repo_config(root, backup, True, now=_now())
 
-    assert (code, open(_config(root), "rb").read()) == (0, original)
+    assert (code, _bytes(_config(root))) == (0, original)
     saved = os.path.join(root, ".crew", f"config.json.bak-{_TS}-2")
-    assert open(saved, "rb").read() == healed
+    assert _bytes(saved) == healed
 
 
 @pytest.mark.parametrize("where", ["outside", "badname", "notjson", "empty"])
 def test_restore_refuses_a_non_backup_path(tmp_path, where):
     root, _ = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     crew_dir = os.path.join(root, ".crew")
     path = {"outside": str(tmp_path / f"config.json.bak-{_TS}"),
             "badname": os.path.join(crew_dir, "verify.json"),
@@ -1026,7 +1034,7 @@ def test_restore_refuses_a_non_backup_path(tmp_path, where):
 
     code = menu.restore_repo_config(root, path, True, now=_now())
 
-    assert (code, open(_config(root), "rb").read()) == (2, before)
+    assert (code, _bytes(_config(root))) == (2, before)
 
 
 def test_repo_name_is_the_checkout_basename(tmp_path):
@@ -1164,8 +1172,8 @@ def test_config_md_no_longer_claims_it_never_writes_the_repo_file():
 
 def test_save_dry_run_prints_both_digests(tmp_path, capsys):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "report-only"}})
-    digests = (crew_config_files.digest(open(gpath, "rb").read()),
-               crew_config_files.digest(open(_config(root), "rb").read()))
+    digests = (crew_config_files.digest(_bytes(gpath)),
+               crew_config_files.digest(_bytes(_config(root))))
 
     code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
                      apply=False, global_path=gpath)
@@ -1178,8 +1186,8 @@ def test_save_dry_run_prints_both_digests(tmp_path, capsys):
 
 def test_save_apply_refuses_when_a_layer_changed_since_the_dry_run(tmp_path, capsys):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "report-only"}})
-    good = crew_config_files.digest(open(gpath, "rb").read())
-    before = (open(gpath, "rb").read(), open(_config(root), "rb").read())
+    good = crew_config_files.digest(_bytes(gpath))
+    before = (_bytes(gpath), _bytes(_config(root)))
 
     code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
                      apply=True, global_path=gpath,
@@ -1188,12 +1196,12 @@ def test_save_apply_refuses_when_a_layer_changed_since_the_dry_run(tmp_path, cap
     err = capsys.readouterr().err
     assert code == 2
     assert "repo layer" in err and "changed since" in err
-    assert (open(gpath, "rb").read(), open(_config(root), "rb").read()) == before
+    assert (_bytes(gpath), _bytes(_config(root))) == before
 
 
 def test_save_apply_without_expect_still_merges_inside_the_lock(tmp_path):
     root, gpath = _repo(tmp_path)
-    data = json.loads(open(_config(root), encoding="utf-8").read())
+    data = json.loads(_text(_config(root)))
     data["x-other"] = 1
     with open(_config(root), "w", encoding="utf-8") as handle:
         handle.write(json.dumps(data))
@@ -1201,20 +1209,20 @@ def test_save_apply_without_expect_still_merges_inside_the_lock(tmp_path):
     code = menu.save(root, {"repo": {"tracker": "sdp"}}, apply=True,
                      global_path=gpath)
 
-    written = json.loads(open(_config(root), encoding="utf-8").read())
+    written = json.loads(_text(_config(root)))
     assert (code, written["x-other"], written["tracker"]) == (0, 1, "sdp")
 
 
 def test_save_cli_passes_the_expected_digests(tmp_path, capsys):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     code = menu.main(["--root", root, "--global-path", gpath, "save",
                       "--changes", json.dumps({"repo": {"tracker": "sdp"}}),
                       "--apply", "--expect-repo", "f" * 64])
 
     assert code == 2, capsys.readouterr()
-    assert open(_config(root), "rb").read() == before
+    assert _bytes(_config(root)) == before
 
 
 # --- T-0075 successor: CLI shape validation, never a traceback --------------
@@ -1246,13 +1254,13 @@ _MALFORMED = [
                          ids=[i for i, _a, _n in _MALFORMED])
 def test_cli_refuses_malformed_input_with_exit_2(tmp_path, capsys, argv, needle):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     code = menu.main(["--root", root, "--global-path", gpath] + argv)
 
     assert code == 2
     assert needle in capsys.readouterr().err
-    assert open(_config(root), "rb").read() == before
+    assert _bytes(_config(root)) == before
 
 
 @pytest.mark.parametrize("argv", [
@@ -1287,7 +1295,7 @@ def test_repo_only_save_prints_the_machine_digest(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert _digest_line(out, "machine") == crew_config_files.digest(
-        open(gpath, "rb").read())
+        _bytes(gpath))
 
 
 def test_repo_only_save_refuses_when_the_machine_file_changed(tmp_path, capsys):
@@ -1300,20 +1308,20 @@ def test_repo_only_save_refuses_when_the_machine_file_changed(tmp_path, capsys):
                 "repo": _digest_line(out, "repo")}
     with open(gpath, "w", encoding="utf-8") as handle:
         handle.write(json.dumps({"guards": {"forcePush": "allow"}}))
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     code = menu.save(root, {"repo": {"guards.forcePush": "allow"}}, apply=True,
                      global_path=gpath, expect=reviewed)
 
     assert code == 2
     assert "machine layer" in capsys.readouterr().err
-    assert open(_config(root), "rb").read() == before
+    assert _bytes(_config(root)) == before
 
 
 def test_repo_only_save_passes_the_machine_digest_to_the_writer(tmp_path,
                                                                 monkeypatch):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
-    machine = crew_config_files.digest(open(gpath, "rb").read())
+    machine = crew_config_files.digest(_bytes(gpath))
     seen = {}
     real = crew_config.write_repo_config
 
@@ -1340,7 +1348,7 @@ def test_two_layer_save_binds_the_repo_write_to_the_machine_it_wrote(tmp_path,
     code = menu.save(root, changes, apply=True, global_path=gpath,
                      expect=reviewed)
 
-    written = json.loads(open(_config(root), encoding="utf-8").read())
+    written = json.loads(_text(_config(root)))
     assert (code, written["tracker"]) == (0, "jira"), capsys.readouterr().err
 
 
@@ -1375,13 +1383,13 @@ def test_save_compares_against_an_absent_machine_file(tmp_path, capsys, layer):
                else {"repo": {"tracker": "sdp"}})
     with open(gpath, "w", encoding="utf-8") as handle:
         handle.write('{"x-other": 1}')
-    before = (open(gpath, "rb").read(), open(_config(root), "rb").read())
+    before = (_bytes(gpath), _bytes(_config(root)))
 
     code = menu.save(root, changes, apply=True, global_path=gpath,
                      expect={"machine": "absent"})
 
     assert code == 2, capsys.readouterr()
-    assert (open(gpath, "rb").read(), open(_config(root), "rb").read()) == before
+    assert (_bytes(gpath), _bytes(_config(root))) == before
 
 
 def test_save_passes_an_absent_expectation_to_the_machine_writer(tmp_path,
@@ -1409,7 +1417,7 @@ def test_save_cli_takes_absent_as_an_expectation(tmp_path, capsys):
                       "--apply", "--expect-machine", "absent"])
 
     assert code == 0, capsys.readouterr().err
-    assert json.loads(open(gpath, encoding="utf-8").read())["pm"] == {
+    assert json.loads(_text(gpath))["pm"] == {
         "authority": "act"}
 
 
@@ -1419,8 +1427,8 @@ def test_delete_preview_prints_both_digests(tmp_path, capsys):
     out = _preview(root, gpath, capsys)
 
     assert (_digest_line(out, "repo"), _digest_line(out, "machine")) == (
-        crew_config_files.digest(open(_config(root), "rb").read()),
-        crew_config_files.digest(open(gpath, "rb").read()))
+        crew_config_files.digest(_bytes(_config(root))),
+        crew_config_files.digest(_bytes(gpath)))
 
 
 @pytest.mark.parametrize("expect", [None, "stale-repo", "stale-machine",
@@ -1435,13 +1443,13 @@ def test_delete_apply_is_bound_to_the_preview(tmp_path, capsys, expect):
         reviewed["machine"] = "absent"
     elif expect == "no-machine":
         del reviewed["machine"]
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     code = menu.delete_repo_config(root, "repo", True, now=_now(),
                                    global_path=gpath,
                                    expect=None if expect is None else reviewed)
 
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+    assert (code, _bytes(_config(root)), _backups(root)) == (
         2, before, [])
     assert "preview" in capsys.readouterr().err
 
@@ -1466,7 +1474,7 @@ def test_delete_rechecks_the_machine_file_inside_the_locks(tmp_path, capsys,
     root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
                         global_cfg={"guards": {"forcePush": "block"}})
     plan = menu.plan_delete(root, gpath)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     real_unbound = menu._unbound  # pylint: disable=protected-access
 
     def _unbound_then_a_machine_write(*args):
@@ -1479,7 +1487,7 @@ def test_delete_rechecks_the_machine_file_inside_the_locks(tmp_path, capsys,
     code = menu.apply_delete(root, plan, "repo", now=_now(), expect=_bound(plan))
 
     err = capsys.readouterr().err
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+    assert (code, _bytes(_config(root)), _backups(root)) == (
         2, before, [])
     assert "changed since the preview" in err and gpath in err
 
@@ -1488,13 +1496,13 @@ def test_delete_refuses_while_the_machine_lock_is_held(tmp_path, capsys,
                                                        monkeypatch):
     monkeypatch.setattr(crew_config_files, "LOCK_WAIT_SECONDS", 0.1)
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     with open(gpath + ".lock", "w", encoding="utf-8") as handle:
         handle.write("4242")
 
     code = _delete(root, gpath)
 
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+    assert (code, _bytes(_config(root)), _backups(root)) == (
         2, before, [])
     assert gpath + ".lock" in capsys.readouterr().err
 
@@ -1512,14 +1520,14 @@ def _deny_lock_files(monkeypatch):
 def test_delete_refuses_when_the_machine_lock_cannot_be_created(tmp_path, capsys,
                                                                 monkeypatch):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     plan = menu.plan_delete(root, gpath)
     _deny_lock_files(monkeypatch)
 
     code = menu.apply_delete(root, plan, "repo", now=_now(),
                              expect={"repo": plan["digest"], "machine": plan["machine"]})
 
-    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+    assert (code, _bytes(_config(root)), _backups(root)) == (
         2, before, [])
     assert gpath + ".lock" in capsys.readouterr().err
 
@@ -1529,21 +1537,21 @@ def test_restore_refuses_when_the_lock_cannot_be_created(tmp_path, capsys,
     root, gpath = _repo(tmp_path, {"tracker": "jira"})
     _delete(root, gpath)
     crew_platform.heal_config(root)
-    healed = open(_config(root), "rb").read()
+    healed = _bytes(_config(root))
     backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
     capsys.readouterr()
     _deny_lock_files(monkeypatch)
 
     code = menu.restore_repo_config(root, backup, True, now=_now())
 
-    assert (code, open(_config(root), "rb").read()) == (2, healed)
+    assert (code, _bytes(_config(root))) == (2, healed)
     assert "config.json.lock" in capsys.readouterr().err
 
 
 def test_save_reports_an_os_failure_without_a_traceback(tmp_path, capsys,
                                                         monkeypatch):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     _deny_lock_files(monkeypatch)
 
     code = menu.save(root, {"repo": {"tracker": "jira"}}, apply=True,
@@ -1552,7 +1560,7 @@ def test_save_reports_an_os_failure_without_a_traceback(tmp_path, capsys,
     err = capsys.readouterr().err
     assert (code, "repo layer: NOT written" in err, "nothing was written" in err,
             ".json.lock" in err) == (1, True, True, True)
-    assert open(_config(root), "rb").read() == before
+    assert _bytes(_config(root)) == before
 
 
 def test_delete_takes_the_machine_lock_before_the_repo_lock(tmp_path, capsys,
@@ -1624,7 +1632,7 @@ def test_delete_rollback_never_replaces_a_file_saved_in_the_gap(
         "repo": plan["digest"], "machine": plan["machine"]})
 
     backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
-    assert (code, open(_config(root), "rb").read(), open(backup, "rb").read()) == (
+    assert (code, _bytes(_config(root)), _bytes(backup)) == (
         1, foreign, changed)
     assert backup in capsys.readouterr().err
 
@@ -1661,7 +1669,7 @@ def _moving(root):
 def test_delete_reports_a_foreign_file_kept_during_the_move(
         tmp_path, capsys, monkeypatch):
     root, gpath = _repo(tmp_path)
-    original = open(_config(root), "rb").read()
+    original = _bytes(_config(root))
     plan = menu.plan_delete(root, gpath)
     _two_foreign_saves(root, monkeypatch)
 
@@ -1673,9 +1681,9 @@ def test_delete_reports_a_foreign_file_kept_during_the_move(
     backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
     err = capsys.readouterr().err
     kept = _moving(root)
-    assert (code, open(backup, "rb").read(), open(_config(root), "rb").read()) == (
+    assert (code, _bytes(backup), _bytes(_config(root))) == (
         1, original, b'{"F2": 1}\n')
-    assert [open(k, "rb").read() for k in kept] == [b'{"F1": 1}\n']
+    assert [_bytes(k) for k in kept] == [b'{"F1": 1}\n']
     assert backup in err and kept[0] in err
 
 
@@ -1692,8 +1700,8 @@ def test_restore_reports_a_foreign_file_kept_during_its_move_aside(
 
     err = capsys.readouterr().err
     kept = _moving(root)
-    assert (code, open(_config(root), "rb").read()) == (1, b'{"F2": 1}\n')
-    assert [open(k, "rb").read() for k in kept] == [b'{"F1": 1}\n']
+    assert (code, _bytes(_config(root))) == (1, b'{"F2": 1}\n')
+    assert [_bytes(k) for k in kept] == [b'{"F1": 1}\n']
     assert kept[0] in err
 
 
@@ -1713,7 +1721,7 @@ def test_delete_refuses_a_symlinked_config(tmp_path, capsys):
 @pytest.mark.skipif(os.name == "nt", reason="needs a POSIX symlink")
 def test_restore_refuses_a_symlinked_backup(tmp_path, capsys):
     root, _ = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
     target = os.path.join(root, ".crew", f"config.json.bak-{_TS}-real")
     with open(target, "wb") as handle:
         handle.write(b'{"tracker": "jira"}\n')
@@ -1722,7 +1730,7 @@ def test_restore_refuses_a_symlinked_backup(tmp_path, capsys):
 
     code = menu.restore_repo_config(root, link, True, now=_now())
 
-    assert (code, open(_config(root), "rb").read()) == (2, before)
+    assert (code, _bytes(_config(root))) == (2, before)
     assert "not a regular file" in capsys.readouterr().err
 
 
@@ -1745,7 +1753,7 @@ def test_restore_never_replaces_a_file_that_appears_after_the_move_aside(
 
     code = menu.restore_repo_config(root, backup, True, now=_now())
 
-    assert (code, open(_config(root), "rb").read()) == (2, healed_again)
+    assert (code, _bytes(_config(root))) == (2, healed_again)
 
 
 @pytest.mark.parametrize("argv,needle", [
@@ -1757,13 +1765,13 @@ def test_restore_never_replaces_a_file_that_appears_after_the_move_aside(
         "delete-expect-empty"])
 def test_cli_refuses_an_explicitly_empty_value(tmp_path, capsys, argv, needle):
     root, gpath = _repo(tmp_path)
-    before = open(_config(root), "rb").read()
+    before = _bytes(_config(root))
 
     code = menu.main(["--root", root, "--global-path", gpath] + argv)
 
     assert code == 2
     assert needle in capsys.readouterr().err
-    assert open(_config(root), "rb").read() == before
+    assert _bytes(_config(root)) == before
 
 
 def test_sleep_overrides_offer_the_three_policies_and_unset(tmp_path):
@@ -1776,3 +1784,4 @@ def test_sleep_overrides_offer_the_three_policies_and_unset(tmp_path):
         assert (rows[path]["writable"],
                 sorted(map(repr, (c["value"] for c in rows[path]["choices"])))) == (
             True, sorted(map(repr, ("human", "self", "risk", None)))), path
+
