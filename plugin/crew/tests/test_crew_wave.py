@@ -584,6 +584,35 @@ def test_lane_init_copies_nested_ticket_files(tmp_path):
     assert (ok, reason, (wt / rel).read_bytes() == (root / rel).read_bytes()) == (True, "", True)
 
 
+def test_lane_init_rerun_never_overwrites_the_lanes_own_edits(tmp_path):
+    # Codex review round 3 (rush g0): a second lane-init copied the main checkout's
+    # ticket files over the lane's edited ones.
+    root = _started(tmp_path)
+    wt = _isolated(root)
+    assert crew_wave.lane_init(str(wt), str(root), "s", "T-1")[0] is True
+    _write(wt / ".work" / "tickets" / "T-1" / "plan.md", "the lane's edit\n")
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (ok, "nothing overwritten" in reason,
+            (wt / ".work/tickets/T-1/plan.md").read_text(encoding="utf-8")) == (
+        False, True, "the lane's edit\n")
+
+
+def test_start_refuses_a_corrupt_start_record_and_leaves_it(tmp_path):
+    # Codex review round 3 (rush g0): a corrupt start.json was rebuilt from nothing,
+    # dropping its lanes from collect's report.
+    root = _started(tmp_path)
+    path = crew_wave.start_path(str(root), "s")
+    _write(path, "{broken")
+
+    got = _cli("start", "--root", root, "--set", "s")
+
+    with open(path, encoding="utf-8") as handle:
+        kept = handle.read()
+    assert (got.returncode, "unreadable" in got.stderr, kept) == (1, True, "{broken")
+
+
 def test_lane_init_checks_out_an_existing_branch(tmp_path):
     root = _started(tmp_path)
     git(root, "branch", "T-1-wave")

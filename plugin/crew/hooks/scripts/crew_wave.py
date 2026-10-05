@@ -570,7 +570,12 @@ def start(root, slug):
     if code != 0 or not base:
         raise WaveError("could not read the main checkout's HEAD for the lanes' base commit")
     record, rstate = _read_json(start_path(top, slug))
-    record = record if rstate == "ok" and isinstance(record, dict) else {}
+    if rstate == "missing":
+        record = {}
+    elif rstate != "ok" or not isinstance(record, dict) or not isinstance(record.get("lanes", []), list):
+        # Never rebuilt from nothing: its lanes would drop out of collect's report.
+        raise WaveError(f"{start_path(top, slug)} is unreadable; it was left as it is -- the owner "
+                        "repairs or removes it")
     receipts = dict(record.get("receipts") or {})
     lanes = list(record.get("lanes") or [])
     versions = dict(result["land"])
@@ -692,6 +697,11 @@ def lane_init(root, main, slug, ticket):
         return False, (f"{SCOPE_STOP}: {main_top}/.crew/config.json does not exist, so the scope "
                        f"guard would read scope.mode off in this worktree -- {SCOPE_FIX}")
     for rel in [os.path.join(rel_folder, n) for n in names] + [config]:
+        if os.path.lexists(os.path.join(top, rel)) and not _same_bytes(os.path.join(main_top, rel),
+                                                                         os.path.join(top, rel)):
+            # A re-run lane-init must not overwrite the lane's own edits.
+            return False, (f"copy refused: {rel} in this worktree differs from the main checkout's; "
+                           "nothing overwritten")
         problem = _copy_in(os.path.join(main_top, rel), os.path.join(top, rel))
         if problem:
             return False, f"copy refused: {problem}"
