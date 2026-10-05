@@ -9,6 +9,42 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — gizmoduck 0.5.7: bootstrap works where the GitHub API is blocked (C-0008)
+
+- **Summary.** `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on
+  networks that refuse `api.github.com`, such as a Claude Code cloud session, and skips tools that are
+  already installed when you run it again.
+- **Version lookup.** Nuclei, Dependency-Check and ZAP still ask the GitHub API for the latest release
+  first; when that fails, `resolve_latest_tag` takes the highest plain `X.Y.Z` tag from
+  `git ls-remote --tags`, skipping rc/beta/alpha, weekly and malformed tags, and names the tool when
+  both fail. `bootstrap.ps1` gets the same lookup as `Resolve-LatestTag`.
+- **Trivy.** Its official install script looks releases up on `github.com/<repo>/releases/<tag>`,
+  which the same networks refuse, so on failure the versioned release tarball is fetched instead.
+- **Checksums.** The Nuclei zip (both bootstraps) and the Trivy tarball are checked against their
+  release's checksums file, matched on the exact file name; a mismatch, a missing line or a missing
+  file refuses the install and nothing reaches the install directory.
+- **Templates.** `nuclei -update-templates` was measured exiting 0 with an empty
+  `~/nuclei-templates` when the API is refused. Both bootstraps now check for templates on disk and,
+  only when there are none, clone the newest stable `nuclei-templates` tag with git into a sibling
+  temp directory. It is moved into place only if the target is missing or holds no files; a
+  directory with files is never deleted. A failed update over existing templates keeps them with a
+  warning. No templates after the clone, or no Nuclei engine at all, is still a hard failure.
+  `doctor` reports an empty templates directory as a failure instead of OK.
+- **Re-runs.** `bootstrap.sh` reports "already installed" and skips a tool that is on PATH, not
+  empty, and passes `--version` (ZAP: its `zap-<ver>.jar` is present); anything else is reinstalled.
+  `GIZMODUCK_BOOTSTRAP_FORCE=1` reinstalls everything.
+- **Time limits.** curl calls carry `--connect-timeout`/`--max-time`; `git ls-remote` and the
+  template clone run under `timeout` (skipped where it is missing) with a low-speed abort.
+- **testssl.sh.** It refuses to start without `hexdump`, which a minimal Ubuntu 24.04 lacks;
+  `bsdextrautils` is installed when it is missing.
+- **apt.** Every `apt-get` call goes through one helper that passes
+  `-o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600`, and installs end with `apt-get clean`.
+  An image that ships `/tmp` as 755 root:root (measured in the Claude Code cloud image) leaves apt's
+  `_apt` sandbox user unable to write its temp files, and `apt-get update`/`install` fail with
+  "Couldn't create temporary file /tmp/apt.conf.XXXX"; the lock timeout waits out another apt run
+  instead of failing, and `clean` frees the downloaded packages on a fixed disk allowance. `/tmp`'s
+  permissions are not touched. Empty package lists are refreshed before an install.
+
 ### Changed — repository: PRs run only the heavy CI suites their changes reach (C-0001)
 
 - **Summary.** A pull request that changes only plain documentation, or only one plugin or skill,
@@ -51,8 +87,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   gates (each whole `if:` expression's shape, and `!cancelled()` on every job that needs the
   select job, and no read of the selection outside an `if:`). Twenty-seven sabotages of the
   selector, a workflow or the tree each turned it red.
-||||||| 95bc71bb
-||||||| abddc302
+
 ### Changed — repository: one cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners (C-0009)
 
 - **Summary.** `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session:
@@ -85,6 +120,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   PATH), and fails unless PATH resolves pytest 8.x. The CORE `ruff` step fails unless PATH
   resolves ruff 0.16.x.
 - Repository tooling outside any plugin, so no version bump.
+
 
 ### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
 
