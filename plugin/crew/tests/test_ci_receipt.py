@@ -90,6 +90,95 @@ def test_parse_log_reads_pass_fail_and_skip_and_ignores_the_total_line():
     ]
 
 
+# L-0673: lines captured from real runs of verify-gate.sh at the T-0082 merge.
+# A rule that exited 130, and the trap's lines for a gate sent TERM mid-rule.
+_TELL_130 = ("verify-gate: COULD NOT TELL (exit status 130: ended by signal 2, or the rule's "
+             "own status): sh -c 'exit 130'")
+_TELL_TERM = ("verify-gate: COULD NOT TELL (the gate received TERM while this command was "
+              "running): sleep 20")
+
+
+def test_parse_log_reads_could_not_tell_as_unknown():
+    odd = "printf '%s): x' a"  # a command holding "): " is still matched whole
+    log = "\n".join([
+        "VERIFY FAILED: sh -c 'exit 130'", _TELL_130, "",
+        "verify-gate: 0s  sh -c 'exit 130'",
+        f"VERIFY FAILED: {odd}", f"verify-gate: COULD NOT TELL (a (nested): reason): {odd}",
+        f"verify-gate: 2s  {odd}",
+        "verify-gate: 2s total across 2 rule command(s)",
+        "verify-gate: 2 rule command(s) COULD NOT BE JUDGED - counted as FAILED",
+    ])
+    assert cr.parse_log(log) == [
+        {"cmd": "sh -c 'exit 130'", "seconds": 0, "state": "UNKNOWN"},
+        {"cmd": odd, "seconds": 2, "state": "UNKNOWN"},
+    ]
+    assert cr.log_complete(log) is True
+
+
+def test_parse_log_marks_a_log_without_the_total_line_incomplete(tmp_path):
+    log = "\n".join([
+        "verify-gate: 0s  echo first",
+        "VERIFY FAILED: false", "verify-gate: 1s  false",
+        "VERIFY FAILED: sleep 20", _TELL_TERM,
+    ])
+    assert cr.parse_log(log) == [
+        {"cmd": "echo first", "seconds": 0, "state": "PASS"},
+        {"cmd": "false", "seconds": 1, "state": "FAIL"},
+        {"cmd": "sleep 20", "seconds": None, "state": "UNKNOWN"},
+    ]
+    assert cr.log_complete(log) is False
+    root = _repo(tmp_path)
+    env = _env(git(root, "rev-parse", "HEAD"))
+
+    killed = cr.build(str(root), "143", log, env=env, since=0)
+    whole = cr.build(str(root), "1", log + "\nverify-gate: 1s total across 3 rule command(s)",
+                     env=env, since=0)
+    quiet = cr.build(str(root), "0", log, env=env, since=0)
+
+    assert (killed["log_complete"], whole["log_complete"], quiet["log_complete"]) == (
+        False, True, False)
+    assert killed["pass"] is False
+    assert "partial" in cr._summary(killed)  # pylint: disable=protected-access
+    assert "| UNKNOWN | - | `sleep 20` |" in cr._summary(killed)  # pylint: disable=protected-access
+    assert "partial" not in cr._summary(whole)  # pylint: disable=protected-access
+    assert "partial" not in cr._summary(quiet)  # pylint: disable=protected-access
+
+
+def test_a_total_line_in_a_failing_rules_output_does_not_complete_the_log():
+    """Captured from the real gate (review FIX 1): a failing rule prints a
+    nested gate's total line, which the gate echoes in its last 25 lines of
+    output; then the gate is sent TERM mid-rule and `echo third` never runs.
+    Only a total line after the last per-rule line completes the log."""
+    nested = "sh -c 'echo \"verify-gate: 1s total across 1 rule command(s)\"; exit 1'"
+    log = "\n".join([
+        f"VERIFY FAILED: {nested}",
+        "verify-gate: 1s total across 1 rule command(s)",
+        f"verify-gate: 0s  {nested}",
+        "VERIFY FAILED: sleep 20", _TELL_TERM, "",
+    ])
+    assert cr.log_complete(log) is False
+    assert cr.log_complete(log + "\nverify-gate: 1s total across 3 rule command(s)") is True
+    assert [c["state"] for c in cr.parse_log(log)] == ["FAIL", "UNKNOWN"]
+
+
+@needs_bash
+def test_build_after_a_real_gate_that_could_not_tell_lists_the_rule_unknown(tmp_path):
+    root = _repo(tmp_path, run="sh -c 'exit 130'")
+    result = _gate_all(root)
+    assert result.returncode == 2, result.stderr
+
+    receipt = cr.build(str(root), str(result.returncode), result.stderr,
+                       env=_env(git(root, "rev-parse", "HEAD")), since=0)
+
+    assert receipt["pass"] is False
+    assert receipt["log_complete"] is True
+    # `seconds` is whole wall seconds from `date +%s`, so it can read 1 on a
+    # boundary: its type is pinned, not its value.
+    assert [(c["cmd"], c["state"]) for c in receipt["commands"]] == [
+        ("sh -c 'exit 130'", "UNKNOWN")]
+    assert isinstance(receipt["commands"][0]["seconds"], int)
+
+
 # --- build, against the real gate ----------------------------------------------------
 
 @needs_bash

@@ -2016,8 +2016,8 @@ citations taken with `grep -n` there.
   cache; `require_tool` (`:58`) raises `ToolNotFound` (`:53`), a `FileNotFoundError`, so a site's
   existing `except (OSError, ...)` takes the path a missing bare name took. `git_out` (`:87`) runs
   it.
-- DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:129`
-  and `:144`, `plugin/crew/hooks/scripts/crew_instructions.py:293`,
+- DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:133`
+  and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:293`,
   `plugin/crew/hooks/scripts/crew_refresh_check.py:503`, `:517`, `:548`,
   `plugin/crew/hooks/scripts/crew_state.py:2198`, `plugin/crew/hooks/scripts/crew_status.py:52`,
   `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,
