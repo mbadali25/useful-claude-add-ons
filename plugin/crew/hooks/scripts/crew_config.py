@@ -2212,9 +2212,6 @@ def inspect_global(root, path=None):
 # its key enters `default_config()`; a value-level entry must be deleted by the
 # ticket that makes the value work. The landing ticket deletes its rows.
 INERT_PENDING = {
-    "autopilot.reviewPolicy": ("would choose what autopilot does with review findings",
-                               "T-0029"),
-    "autopilot.maxLanes": ("would cap how many tickets autopilot runs at once", "T-0029"),
     "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
                                    "L-0541"),
     ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
