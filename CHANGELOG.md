@@ -31,7 +31,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   sha is the one deployed. A skipped or absent deploy job, a cancelled run or a sha mismatch is fail;
   an unreadable view or a run still going at the deadline is unknown (the run is left running).
 - **The watch exit code never decides**, and the run is never cancelled, re-run or approved. The
-  verdict and its reason go into the state file.
+  verdict and its reason go into the state file. Each call, run views included, ends inside the Bash
+  tool's 600-second limit; a status `gh` does not report as running or completed is unknown.
 
 ### Added — `crew` 1.1.4: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell (L-0645)
 

@@ -919,6 +919,11 @@ SLICE_SECONDS = 540
 SLICE_MAX = 570
 VIEW_INTERVAL = 15
 VIEW_FIELDS = "status,conclusion,headSha,jobs,url"
+# The statuses of a run that has not finished (GitHub's check-run statuses).
+RUNNING = ("queued", "in_progress", "waiting", "requested", "pending")
+# Every `run view` of one call fits in this after the slice, so a call never
+# outlives the Bash tool's 600-second limit: 570 + 25 < 600.
+VIEW_BUDGET = 25
 EXIT = {"pass": 0, "fail": 1, "unknown": 3}
 
 
@@ -926,8 +931,11 @@ def judge(view, state):
     """`(verdict, reason)` from one `gh run view` answer (None: unreadable)."""
     if not isinstance(view, dict):
         return "unknown", "view-unreadable"
-    if view.get("status") != "completed":
+    status = view.get("status")
+    if status in RUNNING:
         return "unknown", "still-running"
+    if status != "completed":
+        return "unknown", "status-unreadable"
     conclusion = view.get("conclusion")
     if not isinstance(conclusion, str) or not conclusion:
         return "unknown", "conclusion-unreadable"
@@ -955,8 +963,12 @@ def judge(view, state):
     return "pass", "success-deploy-job-succeeded"
 
 
-def _view(root, run_id):
-    return _gh_json(["run", "view", str(run_id), "--json", VIEW_FIELDS], root)
+def _view(root, run_id, limit):
+    """`gh run view`, bounded so it ends by `limit` (a `_clock()` time)."""
+    left = limit - _clock()
+    if left <= 0:
+        return None
+    return _gh_json(["run", "view", str(run_id), "--json", VIEW_FIELDS], root, timeout=left)
 
 
 def watch(root, env, index, slice_seconds=SLICE_SECONDS):
@@ -970,19 +982,25 @@ def watch(root, env, index, slice_seconds=SLICE_SECONDS):
     deadline = state.get("deadline")
     if not isinstance(deadline, int) or isinstance(deadline, bool):
         raise CouldNotTell("state-file-unreadable", f"{path} holds no deadline")
+    # prepare writes both keys, null when unset: a state file without them is
+    # not one this watch can judge, never "no deploy job configured".
+    if "deployJob" not in state or "shaInput" not in state:
+        raise CouldNotTell("state-file-unreadable", f"{path} does not say whether a deploy "
+                                                    "job or a sha input was configured")
     start = _clock()
     end = min(start + slice_seconds, deadline)
+    limit = start + slice_seconds + VIEW_BUDGET
     watched = None
     if end > start:
         watched, _out = _run_gh(["run", "watch", str(run_id), "--exit-status",
                                  "--interval", str(VIEW_INTERVAL)], root,
-                                timeout=max(1, int(end - start)))
-    view = _view(root, run_id)
+                                timeout=end - start)
+    view = _view(root, run_id, limit)
     # A watch that could not run: poll the view for the rest of the slice.
     while judge(view, state)[1] == "still-running" and _clock() + VIEW_INTERVAL <= end \
             and watched not in (None, 124):
         _sleep(VIEW_INTERVAL)
-        view = _view(root, run_id)
+        view = _view(root, run_id, limit)
     verdict, reason = judge(view, state)
     if reason == "still-running" and _clock() < deadline:
         return 75, [f"run {run_id} is still running; the slice ended before the deadline",

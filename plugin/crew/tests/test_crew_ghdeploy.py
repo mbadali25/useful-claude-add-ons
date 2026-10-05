@@ -1411,7 +1411,8 @@ _WATCH_ENTRY = dict(_SEQ_SHA_ENTRY, deployJob="deploy*")
 
 class ClockGh(FakeGh):  # pylint: disable=too-few-public-methods
     """FakeGh whose `run watch` takes time: a 124 (killed at its timeout)
-    advances the clock by that timeout, anything else by 80 seconds."""
+    advances the clock by that timeout, anything else by 80 seconds or the
+    timeout, whichever is less."""
 
     def __init__(self, answers, clock):
         super().__init__(answers)
@@ -1422,7 +1423,8 @@ class ClockGh(FakeGh):  # pylint: disable=too-few-public-methods
         code, out = super().__call__(args, root, **kw)
         if list(args[:2]) == ["run", "watch"]:
             self.timeouts.append(kw.get("timeout"))
-            self.clock["now"] += kw.get("timeout", 0) if code == 124 else 80
+            timeout = kw.get("timeout", 0)
+            self.clock["now"] += timeout if code == 124 else min(80, timeout)
         return code, out
 
 
@@ -1489,6 +1491,10 @@ _WATCH_CASES = {
     "watch-nonzero-view-success": (None, [(1, "token type not supported")],
                                    lambda r: [_view(r)], 0, "pass",
                                    "success-deploy-job-succeeded"),
+    "status-unreadable": (None, [(0, "")], lambda r: [_view(r, status=None, conclusion="")],
+                          3, "unknown", "status-unreadable"),
+    "status-unknown-word": (None, [(0, "")], lambda r: [_view(r, status="paused", conclusion="")],
+                            3, "unknown", "status-unreadable"),
     "no-shainput-head-matches": (_NO_SHA_WATCH, [(0, "")], lambda r: [_view(r)],
                                  0, "pass", "success-deploy-job-succeeded"),
 }
@@ -1763,3 +1769,38 @@ def test_previous_good_is_the_last_all_pass_row():
     text = _PREV + "| 2026-10-03T10:00Z | staging | " + "c" * 40 + " | PASS | pass | pass | o |\n"
     assert crew_ghdeploy.previous_good(text, "staging") == "c" * 40
     assert crew_ghdeploy.previous_good(_PREV, "qa") is None
+
+
+@_scenario
+def test_watch_a_state_file_without_the_entry_keys_is_unreadable(tmp_path, monkeypatch):
+    """A state file that does not say whether `deployJob` was set is never
+    read as "no deploy job configured"."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    state = _state(root)
+    del state["deployJob"]
+    crew_ghdeploy.write_state(str(root / ".crew" / ".ghdeploy" / "staging-0.json"), state)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")],
+                             [_view(root, jobs=[("deploy-prod", "skipped")])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=state-file-unreadable"
+    assert gh.calls == [] and "verdict" not in _state(root)
+
+
+@_scenario
+def test_watch_one_call_ends_inside_the_bash_limit(tmp_path, monkeypatch):
+    """A watch that uses its whole 570-second slice leaves the run view at
+    most 25 seconds, so one call ends inside 600."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    start = clock["now"]
+    seen = []
+
+    def gh(args, _root, timeout=None):
+        seen.append((list(args[:2]), timeout))
+        clock["now"] += timeout  # every call runs until it is killed
+        return 124, ""
+    code, lines = _run(monkeypatch, gh, "watch", "--root", str(root), "--env", "staging",
+                       "--slice-seconds", "570")
+    assert code == 3, lines
+    assert lines[-1] == "result=unknown run=13 reason=view-unreadable"
+    assert seen == [(["run", "watch"], 570), (["run", "view"], 25)]
+    assert clock["now"] - start < 600
