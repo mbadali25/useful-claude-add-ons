@@ -706,8 +706,8 @@ line. Nothing starts on its own - the command is named, never sent as
 record for 600 s and never one it could not have replaced
 (`_compact_was_manual`, `:721`). A record a later PreCompact could neither remove nor empty
 is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:630`, `_mark_stuck` `:638`;
-the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:52-53`,
-`plugin/crew/hooks/scripts/handoff-write.ps1:330-331`), and a compact is not manual while that
+the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:64-65`,
+`plugin/crew/hooks/scripts/handoff-write.ps1:430-431`), and a compact is not manual while that
 marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out with the records.
 
 A handoff resumes only in the session that wrote it (T-0042). On an armed machine every
@@ -987,30 +987,31 @@ registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 
-DERIVED at `eba11657`, re-read after review round 1. `plugin/crew/hooks/scripts/crew_route.py`
-(399 lines) decides whether a short plain-text prompt names a lifecycle command. The table
-is `PHRASES` (`:86`): brainstorm, spec, plan, implement, review, done,
-continue, status - no approve row. `match` (`:144`) matches the WHOLE prompt
-after `normalise` (`:121`) refuses a line break - `\n`, `\r`, or any other
-boundary `str.splitlines` knows (`_OTHER_LINE_BREAKS` `:107`, T-0069) - more than
-`MAX_PROMPT_CHARS` (`:66`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:100`) phrases
+DERIVED at `eba11657`, re-read after review round 1; every `crew_route.py` line below re-read
+at `bb89215d` (L-0662, on T-0057 and T-0069), +1 from line 70 on after the batch-5 merge (one docstring line). `plugin/crew/hooks/scripts/crew_route.py`
+(627 lines) decides whether a short plain-text prompt names a lifecycle command. The table
+is `PHRASES` (`:141`): brainstorm, spec, plan, implement, review, done,
+continue, status, then T-0057's five and L-0662's four autopilot rows - no approve row. `match`
+(`:247`) matches the WHOLE prompt after `normalise` (`:224`) refuses a line break - `\n`, `\r`,
+or any other boundary `str.splitlines` knows (`_OTHER_LINE_BREAKS` `:184`, T-0069) - more than
+`MAX_PROMPT_CHARS` (`:109`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:177`) phrases
 ("do it", "yes", bare "done"...) return None whatever a row says. `decide`
-(`:243`) returns `route`, `ask` or `none`; `_resolve` (`:202`) takes an
+(`:463`) returns `route`, `ask` or `none`; `_resolve` (`:356`) takes an
 explicit id only with a `.work/tickets/<id>/` folder, then
 `crew_ticket.resolve_active`'s `active-ticket` source, then
 `crew_autopilot.open_index_tickets` with exactly one ticket - never
 `resolve_active`'s own first-open-line INDEX answer. `continue` goes through
-`_continue` (`:223`) to `crew_autopilot.next_phase`; a stop, an exception, or
+`_continue` (`:377`) to `crew_autopilot.next_phase`; a stop, an exception, or
 a command naming approve is an `ask`. Every route answer goes through `_route`
-(`:194`): a command `_routable` (`:182`) says `_clip` would change - cut past
+(`:348`): a command `_routable` (`:336`) says `_clip` would change - cut past
 `FIELD_CHARS["command"]` (200) or reflowed whitespace - is an `ask`, never a
 route of a different command (T-0069), and `render`'s route branch refuses one
-the same way through `_run_clause` (`:274`). `render` (`:290`) clips every other
+the same way through `_run_clause` (`:496`). `render` (`:512`) clips every other
 variable-length field it reads to its own `FIELD_CHARS` cap with `_clip`
-(`:261`), so the line is at most `MAX_LINE_CHARS` (`:75`, 1400) and always
+(`:483`), so the line is at most `MAX_LINE_CHARS` (`:118`, 1400) and always
 fits the UserPromptSubmit budget (`crew_context.TURN_CHARS`, 2000) as the
 first item: `fit` keeps whole items or none, and before review round 1 a long
-open question dropped the ask entirely. `settings` (`:336`) reads
+open question dropped the ask entirely. `settings` (`:564`) reads
 `crew_config.resolve_config` and arms only on `is True`. The one consumer is
 `crew_context.route_item` (`plugin/crew/hooks/scripts/crew_context.py:839`),
 called first in the UserPromptSubmit branch (`:937`): Claude harness only,
@@ -1025,6 +1026,51 @@ then T-0024's approval rule 32 (`:383-391`), T-0094's admission rule 33 (`:392-4
 T-0010's policy rule 29 (`:355-362`) sits after T-0072's autopilot rule 28 (`:345-354`). (Corrected
 2026-09-29, T-0094: this sentence numbered them 31, 32, 29 and 28 at `bbd9a66d`, one too high;
 `json.load` puts T-0023's routing rule at index 30, and at 31 since L-0516's rule 10.)
+
+**Autopilot rows (T-0057, crew 1.0.345).** DERIVED at `9c013fb1` (review round 3); lines
+re-read at `bb89215d` after the merge onto T-0069's main, +1 from line 70 on after the batch-5 merge. Five rows
+follow `status` in `PHRASES` (`plugin/crew/hooks/scripts/crew_route.py:153`): `autopilot-status`,
+`assign`, `goal`, `goal-resume`, `focus`, with rules `autopilot`, `autopilot-text`,
+`autopilot-resume`, `autopilot-ticket`. `decide` (`:463`) hands them to `_autopilot` (`:433`),
+which first runs `_gate` (`:397`): `crew_autopilot.route(top, <command's last word>)` inside a
+`try`; a raise, an answer that is not a dict with `sub`, `stop` (a bool) and `reason`, or a `sub`
+that is not a string naming the subcommand asked about (`run` for `--goal`) is an `ask`; an empty
+`sub` is `none`; a `stop` is an ask with `unavailable: True` carrying the router's reason, or "not
+available yet" when it gives none. So whether a subcommand has landed is read from
+`crew_autopilot.AVAILABLE` (`plugin/crew/hooks/scripts/crew_autopilot.py:263`) at decide time and
+never copied into the table. Before that, `match` (`crew_route.py:247`) passes assign, goal and
+focus through `_screen` (`:281`); `normalise` has already refused every line break, so the
+`_LINE_BREAKS` check T-0057 carried is gone. In order: the stem `_APPROV` (`:198`,
+letters-only) or a first token in `_NOTHING` (`:196`) is no match; then the allowlist, a
+character of the raw prompt (after the one prefix `normalise` drops) outside `_PLAIN` (`:195`,
+ASCII letters, digits, space and `.,:;_#()-`; no quote, so autopilot.md's refused characters
+never route), is carried as `refuse` and asked after the gate; then a word starting with `-` or
+`_NEGATION` (`:200`) is a refusal too. The routed text is the typed text. `autopilot-resume`
+always asks (no goal slug; T-0056), `autopilot-text` routes `<command> <text>`, and an id goes
+through `_resolve`; every route goes through `_route`. `_TEXT` (`:126`) excludes `?`; `_ID`
+(`:123`) is ASCII letters (`(?-i:...)`, since IGNORECASE folds a long s or Kelvin sign into
+`[a-z]`) and `[0-9]` digits, for every row. `render` (`:512`) gives an `unavailable` ask its own
+line (`:545`, "answer the prompt as written", never "which ticket"; `_TICKETED` at `:204` limits
+"which ticket" to ticket intents) and ends a route whose intent is in `_UNDO_INTENTS` (`:207`,
+goal and sleep) with `GOAL_UNDO` (`:205`, `:535`). JUDGEMENT: the sabotage mutations for
+these branches are L-0661 (harness, its own PR).
+
+**Wave, split, sleep and wake (L-0662, crew 1.0.345).** DERIVED at `bb89215d`. Four rows follow
+`focus` (`crew_route.py:166-174`). `wave` (`autopilot-tickets`) matches `_IDS` (`:131`, two or
+more `_ONE_ID` joined by `,`, `and` or `, and`); `match` reads them back with `_WAVE_ID` (`:130`),
+upper-cases and de-duplicates them in order into `tickets`, and a list of fewer than two is no
+match; `_wave` (`:422`) asks naming every id without a `.work/tickets/<id>/` folder, else routes
+`wave <ID> <ID> ...` with the first id as `ticket` (`command_for` `:318`). `split`
+(`autopilot-ref`) routes `split <ID>` through `_resolve` (`:450`), and `split` is in `_TICKETED`.
+`sleep` and `wake` use rule `autopilot` with fixed phrases (`_IM` `:132`); the bare greetings
+in `_GREETINGS` (`:135`) match but `_autopilot` asks "did you mean ...?" after the gate (`:443`,
+owner decision 2026-10-04). `_SCREENED` (`:211`) runs `_screen` on all four with no free text,
+adding only the apostrophe sleep and wake spell; `_CURLY_IM` (`:212`) lets U+2019 through as the
+second character of a leading `I'm` only, so a long s, a Kelvin sign or any other curly quote
+asks. `sleep` and `wake` are in `crew_autopilot.SUBCOMMANDS` and `AVAILABLE`
+(`crew_autopilot.py:261-263`, L-0652's manual sleep mode), so both route on main; `wave` and
+`split` are not, so `_gate` makes each `none` until its command's ticket (T-0029, T-0058) adds it. JUDGEMENT: the sabotage mutations for these
+rows are L-0663 (harness).
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4), and again at `d7c7c75c` on T-0010-solo's merge of `6387ab49`, where T-0010's code above it moved every line (re-read by `grep -n` per symbol).
 `crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:1186`) is the policy
@@ -1252,6 +1298,39 @@ Obsidian vault). A CLI the commands call, not a hook.
   refused with nothing written (`move`, `:1481`). `STATUS_ORDER` (`:91`) is
   read by `_backwards` (`:654`): a move backwards, or from a status crew does
   not know, is `could not update` unless `--reopen`.
+- DERIVED (T-0037; measured on this tree, anchors not moved):
+  the ticket status vocabulary's one owner is this table. `OWNER_STATUSES`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:101`, `needs-owner`: open,
+  Backlog lane) and `CLOSED_STATUSES`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:102`, `cancelled`,
+  `superseded`: Done lane, checked) sit beside `STATUS_ORDER`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:100`) as rows of
+  `LANE_FOR_STATUS` (`plugin/crew/hooks/scripts/crew_tracker.py:103`).
+  `_backwards` (`plugin/crew/hooks/scripts/crew_tracker.py:668`) refuses any
+  move out of a closed word, and `done` to a closed word or `needs-owner`,
+  without `--reopen`; `needs-owner` to or from an open word is never
+  backwards; `_PUSH_AT` (`plugin/crew/hooks/scripts/crew_tracker.py:129`) is
+  unchanged, so Jira/SDP push none of the three (`_push`,
+  `plugin/crew/hooks/scripts/crew_tracker.py:1477`). The closed words also sit
+  in `crew_state._DONE_RE` and `_TABLE_DONE_WORDS`
+  (`plugin/crew/hooks/scripts/crew_state.py:218`, `:238`), which
+  `crew_ticket._index_closed` (`plugin/crew/hooks/scripts/crew_ticket.py:831`)
+  reads, so approval precheck refuses them with `crew_ticket.py` unedited;
+  in autopilot's `INDEX_DONE` and the new `HEADER_CLOSED`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:185`, `:188`), used by
+  `_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:472`) and `_closed`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1470`), whose closed reason
+  quotes a `split-into:` / `superseded-by:` line (`_successor`,
+  `plugin/crew/hooks/scripts/crew_autopilot.py:295`). `_phase` stops an
+  INDEX `needs-owner` row as phase `needs-owner`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:454`), waiting on `owner`
+  (`WAITING`, `plugin/crew/hooks/scripts/crew_autopilot.py:1378`).
+  `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
+  prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
+  (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a
+  `cancelled`/`superseded`/`needs-owner` header edit stales an approval.
+  `plugin/crew/tests/test_status_vocabulary.py` holds every list to
+  `CLOSED_STATUSES`.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
   (`_files_create` `:666`, `_files_move` `:692`, `_files_read` `:720`); a row
   with no status cell is `could not update` / `could not read`; `create` on
@@ -1339,6 +1418,52 @@ Obsidian vault). A CLI the commands call, not a hook.
   owner tests skip without it); one `.crew/verify.json` rule, rule 30 (`:363-371`; `:316-323` on T-0094's merge of `8ab733d7`; `:315-322` since T-0010's rule 29 went in above it and T-0075's rule-7 paths landed; `:309-316` on T-0010-solo at `d7c7c75c`; `:307-314` on main at `3648f59a`; `:305-312` on T-0075's branch before its rule-7 paths, `:303-310` after T-0018 landed, `:301-308` before).
   JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by
   byte comparison only, never by opening Obsidian.
+
+## The split rulebook (T-0052)
+
+- DERIVED (T-0052, after review round 3; measured on this tree, anchors not moved):
+  `plugin/crew/hooks/scripts/crew_split.py` holds `/crew:split`'s judgement as code; its module docstring is the
+  API T-0058 and T-0059 build on. The thresholds are constants, each with its
+  evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:106`),
+  `ACCEPTANCE_LOOK` (`:110`), `SUBSYSTEMS_LOOK` (`:113`), `CHILDREN_MIN,
+  CHILDREN_MAX` (`:116`); `EVIDENCE_KEYS` (`:118`), `VIAS` (`:126`, `command`
+  only; T-0058 appends `autopilot`), `SDP_STOP` (`:127`). `measure`
+  (`:241`) returns None, never 0, for a measure it cannot read or a readable
+  section that yields nothing, and `triggers` (`:268`) reports it as
+  `unknown:<name>`. `check_proposal` (`:418`) over `parse_proposal` (`:352`)
+  is the placement rule (every parent criterion exactly once,
+  whitespace-collapsed equality); `minted_tail` (`:330`) accepts `## Minted`
+  only as a trailing block of `- Child N: <id>` lines, and `_proposal_sha`
+  (`:495`) hashes everything else. `tracker_mode` (`:465`) reads
+  `crew_tracker.resolve`. `check` (`:574`) records the proposal's sha256, the
+  current turn (`current_turn`, `:533`) and a hash of the prompt that set it
+  (`current_prompt`, `:548`), both read from the context hook's per-session
+  state through `crew_context._session_file`
+  (`plugin/crew/hooks/scripts/crew_context.py:227`, written at `:1071-1072`),
+  keyed by `CLAUDE_CODE_SESSION_ID` (`plugin/crew/hooks/scripts/crew_split.py:128`); `confirm` (`:631`) passes
+  only on a different turn for the same session, an unchanged proposal, and a
+  readable prompt that is neither a `<`-envelope nor check's own (owner
+  decision 2026-10-04: a self-scheduled plain-text "yes" passes; a documented
+  limit). `apply` (`:903`) refuses through `_refuse_mode` (`:825`) and
+  `_existing_children` (`:760`: under an apply record, `apply_record_path`
+  `:506`, each `## Minted` entry and each orphan, `_orphans` `:744`, needs
+  provenance, `_provenance` `:706`, an open INDEX row, `_indexed` `:721` (a
+  `cancelled`/`superseded` child is never reused), and a direction equal to
+  the current proposal's child, `_written_for` `:733`), then writes
+  `spec.pre-split.md`, mints through `_mint_children` (`:857`, calling
+  `crew_ticket.mint`, `plugin/crew/hooks/scripts/crew_ticket.py:1355`,
+  unedited: it takes no risk, so the child's `risk:` rides in its direction
+  body), and only then sets the parent `superseded`.
+- `plugin/crew/commands/split.md` is the procedure: a tracker switch (files
+  and Obsidian through `apply --via command`, Jira's MCP steps kept, SDP
+  stops), `check` before the confirmation, `confirm` before the first Jira
+  create, and a stop under `/crew:autopilot`.
+- Tests: `plugin/crew/tests/test_crew_split.py`, fixture
+  `plugin/crew/tests/split_fixtures/t0004_spec_pre_split.md` (reconstructed;
+  see the test's docstring); its own `.crew/verify.json` rule (the last one).
+  JUDGEMENT: no `sabotage_split.py` yet - `plugin/crew/tests/sabotage*.py` is
+  HARNESS, so its mutations were run by hand and a separate tooling PR
+  registers them (`TODO.md`).
 
 ## The artifact refresh check (T-0008, crew 1.0.36)
 
@@ -4070,13 +4195,13 @@ commit. This section does not move the file's `anchor:`.
   python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:354`) prints a
   resolved path. The PowerShell twin `Get-CrewRepoConfigDir` is one body copied into
   `plugin/crew/hooks/scripts/cloud-guard.ps1:192`, `plugin/crew/hooks/scripts/promote-gate.ps1:142`
-  and `plugin/crew/hooks/scripts/auto-clear.ps1:126`.
+  and `plugin/crew/hooks/scripts/auto-clear.ps1:132`.
 - **DERIVED.** Routed readers: `crew_incident_active`'s `standDown` read
   (`plugin/crew/hooks/scripts/_common.sh:386`), `_cloud_guard_armed`
   (`plugin/crew/hooks/scripts/cloud-guard.sh:40-53`, a missing resolver armed at `:42`, `unknown` at `:44`),
   `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:248-249`),
   promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:201`)
-  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:197`).
+  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:374`).
   `.crew/incident.json`, markers and logs stay in the worktree's own `.crew/`.
 - **DERIVED.** Held by `plugin/crew/tests/test_worktree_config_shell.py`: parity with the
   Python resolver on ten cases per flavour, the copies byte-identical, the cloud-guard
@@ -4087,3 +4212,48 @@ commit. This section does not move the file's `anchor:`.
   `verify-gate.ps1`'s inline `Test-CrewIncidentActive` reads the lane's own
   `standDown` while the bash gate (through `_common.sh`) and `crew_incident.py` read
   the inherited one.
+
+## The session hooks read the resolved repo config (L-0680, slice 1)
+
+Added 2026-10-04 on `L-0680-build`, stacked on `T-0096-build`; the citations are
+to that branch's content commits. This section does not move the file's `anchor:`.
+
+- **DERIVED.** Each `.sh` hook calls `crew_repo_config_dir .` after its `cd` and reads
+  `$CREW_CFG_DIR/config.json`: `plugin/crew/hooks/scripts/notify.sh:11`,
+  `plugin/crew/hooks/scripts/handoff-read.sh:49`, `plugin/crew/hooks/scripts/handoff-write.sh:16`,
+  `plugin/crew/hooks/scripts/context-watch.sh:180` (after the `.crew/` directory gate, which
+  stays). Python is handed the path as an argument; context-watch's no-python awk pass reads the
+  same file.
+- **DERIVED.** Each `.ps1` hook carries a verbatim `Get-CrewRepoConfigDir` (now seven copies, held
+  equal by `PS_COPIES`, `plugin/crew/tests/test_worktree_config_shell.py:45`) and routes through
+  it: `plugin/crew/hooks/scripts/notify.ps1:345`, `plugin/crew/hooks/scripts/handoff-read.ps1:320`,
+  `plugin/crew/hooks/scripts/handoff-write.ps1:388`, `plugin/crew/hooks/scripts/context-watch.ps1:434`.
+  `notify.ps1` run with `&` from `context-watch.ps1` gets its own script scope, so its copy only
+  shadows the caller's identical one.
+- **DERIVED.** handoff-write keeps the literal own-or-unknown gate in its non-`main` branch
+  (`plugin/crew/hooks/scripts/handoff-write.sh:23`, `plugin/crew/hooks/scripts/handoff-write.ps1:396`):
+  there the resolved directory is the own `.crew/`, and `plugin/crew/tests/sabotage_resume.py`
+  (a harness path) anchors on that text. `handoff-write.ps1:484` accepts an Int64 or
+  BigInteger `keepTranscripts` (PowerShell 7's `ConvertFrom-Json`), clamped to Int32.MaxValue as
+  bash's one-liner clamps it; both flavours take an integer only (review rounds 1-2).
+- **DERIVED.** context-watch's messages name the file in force: `CFG_SHOWN`
+  (`plugin/crew/hooks/scripts/context-watch.sh:182`) and `$cfgShown`
+  (`plugin/crew/hooks/scripts/context-watch.ps1:436`) are `.crew/config.json` for an own file and
+  the main checkout's full path when inherited.
+- **DERIVED.** `test_no_session_hook_names_the_own_config_path`
+  (`plugin/crew/tests/test_worktree_config_shell.py:892`) fails on any executable line in the
+  eight scripts naming `.crew/config.json` or `.crew/crew.json` beyond `OWN_PATH_ALLOWED` (`:869`).
+- **DERIVED.** The handoff path stays inside the checkout (review round 1, B1): bash through
+  `crew_handoff_path` (`plugin/crew/hooks/scripts/_common.sh:368`), which calls
+  `crew_state.handoff_path`, and context-watch's own read (`plugin/crew/hooks/scripts/context-watch.sh:354`);
+  PowerShell through `Get-CrewHandoffPath`, three byte-identical copies
+  (`plugin/crew/hooks/scripts/handoff-read.ps1:235`, `plugin/crew/hooks/scripts/handoff-write.ps1:335`,
+  `plugin/crew/hooks/scripts/context-watch.ps1:78`), stricter on links. An inherited absolute or
+  `..` value, or one naming a directory, is the lane's `.work/HANDOFF.md`, with a warning, and
+  the path is printed with forward slashes on every OS (a Windows pre-flight read `.work\HANDOFF.md`);
+  context-watch's message, both flavours, says the configured path leaves the checkout. The `.ps1`
+  copies turn `\` into `/` before the check off Windows, since PowerShell's file cmdlets read it as
+  a separator there too (review round 3). Held by
+  `plugin/crew/tests/test_worktree_config_shell.py:745` and its two siblings.
+- **JUDGEMENT.** Still own-file only: the harness readers `verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR).

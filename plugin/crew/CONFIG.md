@@ -161,9 +161,14 @@ survives a console on the OEM code page. In the cloud guard's bash fallback a
 missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
 `crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
 in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
-veto. Still own-file only: the session hooks (`notify`, `handoff-read`,
-`handoff-write`, `context-watch`), the verify gate, the scope and completion
-wrappers, and `review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
+veto, and (L-0680) the session hooks `notify`, `handoff-read`, `handoff-write` and
+`context-watch` in both flavours, whose writes stay in the worktree and whose
+inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
+names a directory, is `.work/HANDOFF.md` there, as in `crew_state.handoff_path`; the
+`.ps1` hooks count any symlink or junction on the way as leaving, since 5.1 cannot
+resolve one). Still
+own-file only: the verify gate, the scope and completion wrappers, and
+`review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
 lane's own `emergency.standDown` while the bash verify gate and
 `crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
 
@@ -3088,10 +3093,10 @@ still decide.
 
 ---
 
-## 21. `route` — plain-text lifecycle routing, off until `true`
+## 21. `route` — plain-text command routing, off until `true`
 
 `route.enabled` (T-0023, since 1.0.46) lets a short plain-text prompt reach a
-lifecycle command. When it is on, crew's UserPromptSubmit context hook
+lifecycle command or, since 1.0.345, a `/crew:autopilot` subcommand. When it is on, crew's UserPromptSubmit context hook
 (`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
 the answer is `none`, puts one line FIRST in the turn's context: the
 `/crew:<command> <ticket>` whose procedure Claude should run through the Skill
@@ -3099,6 +3104,9 @@ tool, or a request to ask the user which ticket. The hook runs nothing and
 blocks nothing; the command's own checks still decide. The table of phrases,
 the three outcomes and what never routes are in the plugin README's
 "Plain-text lifecycle" section; `crew_route.PHRASES` is the single definition.
+Since 1.0.345 (T-0057) the table also names five `/crew:autopilot` phrases
+(status, assign, goal, goal resume, focus); this same key arms them, and one
+whose subcommand has not landed gets a line that runs nothing.
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|

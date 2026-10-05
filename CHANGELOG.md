@@ -30,6 +30,292 @@ All notable changes to this repository are documented here. Format follows [Keep
   anchor quoted a changed argv; the 8 entries anchored within 15 lines of a
   change still match exactly once and go red.
 
+### crew 1.0.345 — batch 5: T-0052, T-0057, L-0662
+
+#### Added — `crew`: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
+
+- **What changed.** `crew_route.PHRASES` gains four rows after `focus`:
+  `run <id>, <id> and <id> in parallel` -> `/crew:autopilot wave <ID> <ID> ...` (ids upper-cased,
+  de-duplicated in order; fewer than two distinct is no match; any id without a
+  `.work/tickets/<id>/` folder asks, naming it); `split this ticket` / `split it` / `split <id>` /
+  `this ticket is too big` / `<id> is too big` -> `/crew:autopilot split <ID>` (resolved like
+  every ticket row; never `/crew:split`); `I'm heading to bed`, `heading to bed`,
+  `going to sleep`, `I'm going to sleep` -> `/crew:autopilot sleep`, whose line also asks
+  Claude to say what changed and how to undo it; `I'm back` -> `/crew:autopilot wake`.
+- **Bare greetings never route (owner decision, 2026-10-04).** `good night`, `morning` and
+  `good morning` match the sleep and wake rows but, past the gate, always ask
+  "did you mean /crew:autopilot sleep?" (or `wake`).
+- **Live as each command lands.** `sleep` and `wake` route now: L-0652's manual sleep mode put
+  both in `crew_autopilot.SUBCOMMANDS` and `AVAILABLE` (the batch-5 merge turned the inert-on-main
+  tests for them into live ones). `wave` and `split` are not subcommands yet, so T-0057's gate
+  gives no line; reserved, the soft ask; available, a route through T-0069's `_route`. No edit
+  to `crew_autopilot.py`. The greeting ask no longer doubles `?;` in its line.
+- **Same screen.** Every new row passes T-0057's `_screen` allowlist (sleep and wake add only the
+  apostrophe of `I'm`: ASCII, or U+2019 as the second character of a leading `I'm`, which iOS
+  and macOS type), so a long s or Kelvin sign that IGNORECASE folds onto a pattern letter, or a
+  curly quote anywhere else, asks rather than routes.
+- **Merge of T-0057 onto main.** T-0057's autopilot routes go through `_route`; its `_screen`
+  line-break check is gone (`normalise` already refuses every `str.splitlines` boundary), so the
+  `\x1c`-`\x1e` separators in free text now decide `none` rather than `ask`.
+- **Tests.** `test_crew_route.py`: inert, reserved and available (every subcommand available)
+  cases for each example, wave's two-real-tickets rule, split's ask, the must-not-route list,
+  lookalike must-ask cases, the greeting must-ask cases, the curly-apostrophe position and the
+  sleep undo line. The verify rule now runs through `pytest_rule.py`. Local sabotage mutations each went red; they
+  are L-0663's to commit (`sabotage*.py` is harness).
+
+#### Added — `crew`: plain-text routing for the autopilot commands the router knows (T-0057)
+
+- **What changed.** `crew_route.PHRASES` gains five rows after `status`:
+  `autopilot status [<id>]` / `what's autopilot doing?` -> `/crew:autopilot status`;
+  `take care of <work>` / `handle <work>` -> `assign <work>`; `work toward(s) <goal>` /
+  `make it so <goal>` -> `goal <goal>`; `pick the goal back up` / `resume the goal`
+  (always asks: routing never picks a goal slug, T-0056); `focus on <id>` -> `focus <id>`.
+  Same switch (`route.enabled`), same whole-prompt matcher, same route / ask / none.
+- **Availability is read, not copied.** Each row asks `crew_autopilot.route` at decide
+  time. A subcommand that stops (today `assign`, `goal`, `focus`, `run --goal`) gets a line
+  that runs nothing, says it is not available yet and tells Claude to answer the prompt as
+  written; a router that raises or answers an unknown shape asks; a name the router does
+  not know produces no line. A row goes live the day its ticket adds the name to
+  `crew_autopilot.AVAILABLE`, with no edit to `crew_route.py`.
+- **An allowlist, not a phrase list.** First, no line for a line break (`normalise`
+  refuses every boundary `str.splitlines` knows, T-0069), free text whose first token is `it`, `that`, `everything`
+  and the like, or free text naming the stem `approv`, also with every non-letter
+  removed. Then an assign, goal or focus prompt with any character other than ASCII
+  letters, digits, space and `.,:;_#()-` asks: quotes, lookalike letters, combining
+  marks, format characters (RLO, zero-width space, soft hyphen), fullwidth or lookalike
+  `/` and `?`, and `/ ? " $ \ | & < > *`. So the routed command is
+  exactly what was typed. On that ASCII, a word starting with `-` (a flag:
+  `handle --goal x`, `handle -rf`) asks while `sign-off` routes, and a trailing negation
+  (`not`, `no`, `nah`, `nope`, `wait`, `cancel`, `cancel that`, `scratch that`,
+  `never mind`, `forget it`, `not now`) asks. `?` is accepted
+  only on the two status questions. A router answer whose `sub` is not a string naming
+  the subcommand asked about asks; a stop with no reason reads "not available yet". A
+  `goal` route also asks Claude to say what changed and how to undo it. Every decision
+  carries `unavailable`, and a non-ticket ask no longer says "which ticket".
+- **Every autopilot route goes through T-0069's `_route`** (carried at the batch-5
+  merge): a command `_clip` would cut or reflow asks instead of routing a different
+  command, as the lifecycle rows already do; T-0057's own line-break tuple is gone.
+- **Ticket ids are ASCII.** `_ID` is `(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+` for every row,
+  so an Arabic-Indic digit, a long s, a Kelvin sign or a dotless i no longer matches.
+- **Tests.** `test_crew_route.py` and `test_crew_route_hook.py` (both wrappers): one case
+  per gate branch, must-route and must-not-route prompts, shell characters, the undo line,
+  bounded lines, and three review rounds' must-not-route, must-ask and must-allow cases.
+  Local sabotage mutations of the new branches each went red (the list is L-0661's);
+  they are committed separately as L-0661, because `sabotage*.py` is harness.
+
+#### Added — `crew`: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+
+- **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
+  `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
+  acceptance checks, Touch, codemap subsystems and the repo findings rate;
+  an unreadable measure is `None`, reported `unknown:<name>`, never "not
+  fired"), `check_proposal` (2-5 children, each with a title, risk,
+  subsystem, criteria and exclusions; every parent acceptance criterion
+  placed verbatim exactly once across the children and `## Stays on parent`;
+  a `separable-criteria` evidence line for a split; "not too big" is a
+  result), and `check` / `confirm` / `apply`. `/crew:split` drops "Jira
+  only": in **files and Obsidian mode** it writes `split.md`, runs `check`,
+  asks one confirmation, then `apply --via command` keeps the parent's text
+  as `spec.pre-split.md`, mints each child `ready` through
+  `crew_ticket.mint` with a direction pointing back, and only after every
+  mint returned marks the parent `superseded` (T-0037's word) with a
+  `split-into:` line. Its **Jira** steps are unchanged, now with `check`
+  before the confirmation and `confirm` before the first create. **SDP
+  stops**: "SDP is a service desk, not where this work gets decomposed".
+- **The confirmation refuses without a new human turn.** `/crew:split` stays
+  model-invocable. `check`, on a pass, records the proposal's sha256 and the
+  session's current human-turn id (the context hook's `turn.id`, found
+  through `CLAUDE_CODE_SESSION_ID`); `confirm`, and `apply` through it,
+  passes only when the proposal is unchanged and a different turn id is
+  readable for the same session, moved by a prompt that is readable, not a
+  harness envelope (task notification, wake, webhook) and not the prompt
+  check ran under (a loop). No session id, an absent or unreadable turn
+  record or prompt, or a check that saw no turn is a refusal; a successful
+  apply spends the check; under `/crew:autopilot`
+  the command stops and names T-0058's `/crew:autopilot split <id>`.
+- **Thresholds, with their evidence** (constants, not config):
+  `PLAN_STEPS_LOOK = 9`, `ACCEPTANCE_LOOK = 12`, `SUBSYSTEMS_LOOK = 2`,
+  measured 2026-09-26 on 19 review ledgers and documented in the README's
+  "Splitting a ticket" section. A trigger means look, never split. Not
+  re-measured here: the ledgers live in the owner's git common dir, not in
+  this container.
+- **Why.** The owner's 2026-09-26 direction: one split rulebook that
+  `/crew:split` and autopilot both use, so autopilot gets no rules of its own
+  that could drift. T-0058 (autopilot's size check and `/crew:autopilot
+  split`) and T-0059 (plan PR slices) build on this API.
+- **Decisions on the spec.** `crew_ticket.mint` takes no `risk` argument, so
+  the child's `risk:` rides in its direction body (as `assign` does), and
+  `crew_ticket.py` (HARNESS) is not edited. An unconfigured tracker reads
+  `files` for the prose but `apply` refuses it, because `mint` does. Under
+  Obsidian, `mint` now writes the card itself; `/crew:obsidian-sync` is named
+  only when a warning names the board. A failed mint records the minted
+  children under a trailing `## Minted` in `split.md`; a re-run after a new
+  check and yes skips a child only when an apply record exists and its
+  direction carries apply's provenance (`origin: split of <parent>`,
+  `split-child: <n>`) and an INDEX row and its direction is exactly what the
+  current proposal's child would get, and adopts a child whose id never
+  reached `split.md` on the same terms; a minted child an edited proposal no
+  longer matches stops the apply, naming it.
+  A `## Minted` section apply did not write is refused, and the proposal
+  hash covers every byte but a valid trailing block. An unknown evidence key
+  is refused even beside a known one.
+- **Accepted limit (owner decision 2026-10-04).** The confirmation gate is
+  not owner-proof against the session itself: a session can schedule its own
+  plain-text "yes" (`send_later`, a routine) and pass it. Documented in the
+  module docstring and the README; the follow-up routes split approval
+  through the `/crew:approve` harness path (`TODO.md`).
+- **Review round 1 (#364).** Three BLOCKs (a `## Minted` heading that hid
+  later edits from the hash, an unverified `## Minted` that let apply skip a
+  child, a turn moved by a task notification passing `confirm`), four FIXes
+  (a readable section yielding nothing, or an unmatched Touch entry, read as
+  0; the sabotage module's follow-up recorded in `TODO.md`; the window
+  between a mint and its record, and a non-UTF-8 spec found after minting)
+  and three NITs, each test-first. **Round 2:** a skipped or adopted child
+  is compared to the current proposal (a swapped child was reused with its
+  old criteria), orphans need the apply record and an INDEX row, and the
+  repeated-prompt refusal says the owner may have typed the same words.
+  **Round 3:** a `cancelled` or `superseded` child is never reused, so
+  cancelling a stale child unblocks the apply, and the refusal names that
+  exit and restoring the child's text.
+- **Tests.** `test_crew_split.py` (100 cases): must-block and must-allow for
+  every rule, the confirm gate, `apply` in files and Obsidian mode, and the
+  command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
+  entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
+  Twenty-seven mutations (the first ten: child bound, substring placement,
+  duplicates, exclusions, `separable-criteria`, `None` as 0, the sdp stop,
+  mint order, parent-status order, the confirm turn check; seventeen more for
+  the review rounds' guards) were run by hand, each red on its named test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
+  paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
+  maps `crew_split.py`, its test, the fixture and `split.md`.
+
+### Changed — `crew` 1.0.344: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
+
+- **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
+  gains three rows beside `STATUS_ORDER`: `OWNER_STATUSES = ("needs-owner",)`
+  (open, waiting on the owner, Obsidian Backlog lane) and
+  `CLOSED_STATUSES = ("cancelled", "superseded")` (closed, Done lane,
+  checked). `move --to` any of them is accepted; any move out of `done`,
+  `cancelled` or `superseded` needs `--reopen` and is otherwise refused with
+  nothing written, and `needs-owner` moves to and from any open word without
+  it. The closed words close a ticket in every reader: `crew_state`'s table
+  and prose readers (the session brief, `crew_ticket.resolve_active`'s INDEX
+  fallback, and approval precheck through `_index_closed`, with
+  `crew_ticket.py` unedited), autopilot's `INDEX_DONE` and a new
+  `HEADER_CLOSED` (`done`, `cancelled`, `superseded`; a header `merged` still
+  does not close), and `/crew:status`, which lists them on no line. A closed
+  reason quotes the spec's `split-into: <ids>` (T-0052) or `superseded-by:
+  <id>` line. Autopilot stops an INDEX `needs-owner` row as phase
+  `needs-owner`, waiting on `owner`, naming the ticket's unanswered
+  `## Open questions` or saying none is recorded - never as "cannot tell
+  whether direction is approved". `/crew:status` prints
+  `owner    <ids> (needs-owner)`. The README gains a "Ticket statuses" table;
+  `obsidian-sync.md`, `status.md`, `autopilot.md`, the memory-and-obsidian
+  guide's lane table and `crew_keys.py`'s `obsidian.columns.backlog`/`.done`
+  summaries (so the generated configuration reference) name the words.
+- **Why.** Nothing on main knew these words: a `cancelled` INDEX row read as
+  OPEN, so the session brief could name a cancelled ticket as the current
+  one, autopilot stopped on it as "cannot tell whether direction is
+  approved", and `move --to cancelled` refused with "maps to no lane".
+  T-0052, T-0058 and T-0059 (#364, #365, #366) cite this vocabulary, and
+  T-0039 and T-0040 name `needs-owner`.
+- **Approval is unchanged.** `crew_ticket.STATUS_VALUES` keeps its seven
+  values and `approval_digest` is untouched, so a blocking hook accepts
+  nothing new. `in-progress` and every other `STATUS_VALUES` word keep an
+  approval (T-0059's non-final slice); a header edit to `cancelled` or
+  `superseded` stales it on purpose, and `needs-owner` (never a header word)
+  stales it like any unknown word. Tests pin both and the tuple's literal
+  value.
+- **Trackers.** Jira and SDP push none of the three (`_PUSH_AT` stays
+  `in-progress`, `done`): the line says "nothing to push" and exits 0, and
+  the owner closes a cancelled Jira or SDP item by hand. No `obsidian.columns`
+  key is added, so a cancelled card sits checked in Done. No new command: a
+  ticket is cancelled with `crew_tracker.py move --to cancelled`.
+- **Owner approval.** The owner approved (2026-10-04) every `OWNER CHECK:`
+  choice in T-0037's reconstructed spec as written: `needs-owner` is never a
+  spec header word; `STATUS_VALUES` is unchanged; the Obsidian closed words go
+  to the `done` lane, checked; Jira/SDP push nothing; no separate needs-owner
+  queue (a non-ticket item is minted `ready`, then moved); two PRs.
+- **Tests.** `test_status_vocabulary.py` (new) holds `CLOSED_STATUSES` to
+  `crew_state._TABLE_DONE_WORDS`, `_DONE_RE`, `crew_autopilot.INDEX_DONE` and
+  `HEADER_CLOSED`, keeps it and `needs-owner` out of `STATUS_VALUES`, and
+  checks the `obsidian-sync.md`, README and memory-and-obsidian guide
+  tables list every `LANE_FOR_STATUS` key. Must-block and must-allow cases in
+  `test_crew_tracker.py`, `test_crew_state.py`, `test_crew_ticket.py`,
+  `test_approval_digest.py`, `test_crew_autopilot.py`,
+  `test_crew_autopilot_status.py` and `test_status.py`. A new
+  `.crew/verify.json` rule maps the four scripts, `obsidian-sync.md`, the
+  README and the guide source to the vocabulary, precheck and approval suites.
+- **Two PRs (owner rule T-0087).** This is PR A, the feature: it changes no
+  `HARNESS` path. Its 19 sabotage mutations were run by hand, each red on its
+  named test, and are registered in `sabotage_*.py` by PR B
+  (`T-0037-sabotage`), a tooling PR that lands alone after this one.
+
+### Changed — `obsidian-vault` 0.5.0: vault recall relevance (T-0083)
+
+- **Behaviour change: default recall results.** `vault_ops.py recall` (the CLI crew's context hook
+  calls on every prompt) returns fewer, more relevant notes for every caller, with no crew change:
+  - it never reads `wiki/sessions/archive/` (any letter case), nor a symlinked note whose real
+    path is inside it; a symlinked note that resolves outside the vault or into `.trash`,
+    `.git`, `node_modules` or another dot folder is always skipped (hard links cannot be
+    detected; Windows junctions are untested);
+  - stop words and words under three characters are not query terms; a stop-word-only query
+    returns nothing, exit 0; terms match whole words only (`port` no longer matches `support`),
+    where a note's joined word (`crew-context.sh`, `vault_recall.py`) also counts as its parts,
+    a joined query word (`t-0083`, `github.com`) is one term matched whole or as its parts side
+    by side in order; plurals pair `y`/`ies`, `es` only after s/x/z/ch/sh, else a plain `s`
+    (also stripped from an `es` word: `releases` finds `release`), no form is shorter than three
+    letters (`uses` is not `us`), `news` is an exception (never `new`), no plural form is a stop
+    word, and CamelCase is not split;
+  - a note must hold 1 distinct term for a query of one or two terms, 2 for three to five, 3 for
+    six or more;
+  - inside a vault the order is project, note kind (`wiki/concepts/` and `wiki/decisions/`, then
+    other notes, then `wiki/sessions/`, any letter case), score, path. Vault priority still
+    comes first.
+- Not in this release: the vault's `.obsidian/app.json` `userIgnoreFilters`. Their format has
+  not been checked against a real vault, so recall does not read them; that is a follow-up.
+- New options: `--project NAME[,NAME]` (a note whose `project:` or a path folder matches ranks
+  first; another project's notes rank last and are never dropped), `--min-terms N` (`1` restores
+  the old floor) and `--include-excluded`.
+- New JSON keys, existing ones unchanged: `kind`, `project` and `matched` per result; `project`,
+  `need`, `below_floor`, `excluded_dirs` and `skipped_links` at the top.
+- crew passing its project to `--project` is L-0675, a separate change.
+### Changed — `crew` 1.0.343: in a lane worktree, the session hooks read the main checkout's config (L-0680, T-0096 slice 1)
+
+- **What changed.** `notify`, `handoff-read`, `handoff-write` and `context-watch`, in both
+  flavours, read the repo config through T-0096's resolver (`crew_repo_config_dir` in
+  `_common.sh`; a verbatim `Get-CrewRepoConfigDir` in each `.ps1`, now seven copies held
+  byte-identical). A linked worktree with no crew config of its own gets the main checkout's
+  notifications, handoff path, transcript retention and context thresholds, where it got
+  nothing before. Own files win whole; `unknown` (git cannot name the main checkout) reads only
+  the own `.crew/`.
+- **Taken defaults (the spec's recommended options).** A lane notifies with the main checkout's
+  `notify` settings, so several lanes ping one channel unless a lane writes its own config. An
+  inherited relative `context.handoffPath` names a file in the lane. The `.crew/` directory gates
+  stay, so `context-watch` still needs a `.crew/` directory in the lane. Nothing these hooks
+  write moves.
+- context-watch's messages that say where to set a value name the main checkout's file by its
+  path when it is inherited; unchanged text for an own file.
+- `handoff-write.ps1` honours `context.keepTranscripts` on PowerShell 7, whose `ConvertFrom-Json`
+  reads a JSON integer as Int64 (BigInteger past Int64); it was dropped there and five copies
+  kept. Both flavours clamp a larger value to Int32.MaxValue (2,147,483,647 kept, in effect
+  all). Both now take an integer only, as documented: a digit string such as `"2"`, which bash
+  used to accept, a float or a bool keeps the default 5.
+- `context.handoffPath` stays inside the checkout in every flavour, by the Python readers' rule
+  (`crew_state.handoff_path`): an absolute, `..` or symlinked value that leaves it (in a lane,
+  one naming the main checkout's file), or one naming a directory, is the default
+  `.work/HANDOFF.md`, with a warning, so a lane never writes or prints the main checkout's
+  note; context-watch's message says so too. The path is printed with forward slashes on
+  every OS. The `.ps1` hooks read a backslash as a separator on every OS, as PowerShell's file
+  cmdlets do, so `..\main\...` cannot slip past the check on Linux; bash reads it as python
+  does (a filename character off Windows). PowerShell, which cannot resolve a
+  link as `realpath` does, treats any link on the way as leaving.
+- `auto-clear.ps1` lists `wrapUp` among `context.autoClear`'s known keys, so it no longer logs
+  that recognised key as unrecognised.
+- **Not in this release:** the harness readers (`verify-gate.*`, `scope-guard.*`,
+  `completion-audit.*`, `review_gate.py`), L-0681, a tooling PR.
+- Tests: `plugin/crew/tests/test_worktree_config_shell.py` (both flavours and the no-python
+  path; a static check that no executable line in the eight scripts names the own path outside
+  a counted allowlist). Every routed gate was sabotaged by hand and went red.
 ### Fixed - `crew` 1.0.342: both promote gates match deploy commands by one literal rule and fail closed (L-1503)
 
 - High severity, on main, found reviewing #407. `promote-gate.ps1` picked the environment with
