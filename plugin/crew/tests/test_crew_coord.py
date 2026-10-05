@@ -1936,9 +1936,9 @@ def test_recover_adopts_a_fresh_heartbeat_whose_pid_is_provably_gone(capsys, mon
 
 
 _UNPROVABLE = {
-    "sandbox": dict(pidns=None),  # pid invisible at claim time: no namespace recorded
-    "other-namespace": dict(pidns="pid:[1]"),
-    "other-host": dict(machine="other-host"),
+    "sandbox": {"pidns": None},  # pid invisible at claim time: no namespace recorded
+    "other-namespace": {"pidns": "pid:[1]"},
+    "other-host": {"machine": "other-host"},
 }
 
 
