@@ -586,6 +586,11 @@ if os.path.exists(".work/PROMOTIONS.md"):
     rows = open(".work/PROMOTIONS.md", encoding="utf-8", errors="replace").read()
 
 def passed(name, sha):
+    """The NEWEST row for `name` and `sha` decides (L-0665): rows are appended,
+    so file order is time order, and a later pass clears an earlier failure
+    while a later failure revokes an earlier pass. True / False for that row
+    all-pass or not; None when there is no row."""
+    newest = None
     for line in rows.splitlines():
         if "|" not in line:
             continue
@@ -594,8 +599,8 @@ def passed(name, sha):
             continue
         # when | env | sha | smoke | regression | verify | by
         if cells[1] == name and cells[2].startswith(sha[:7]):
-            return all(c.lower() == "pass" for c in cells[3:6])
-    return False
+            newest = all(c.lower() == "pass" for c in cells[3:6])
+    return newest
 
 # The union rule: every matched environment's requirements, each in its own
 # terms (its upstreams, its runbook, its approval marker). With several, each
@@ -604,9 +609,14 @@ for env in envs:
     cfg = doc.get("ENVIRONMENTS", {}).get(fold(env), {})
     before = len(out)
     for upstream in cfg.get("REQUIRES", []):
-        if not passed(upstream, sha):
+        verdict = passed(upstream, sha)
+        if verdict is None:
             out.append(f"'{upstream}' has no all-pass row for sha {sha} in .work/PROMOTIONS.md. "
                        f"Run /crew:promote {upstream} first, and let it record the result.")
+        elif not verdict:
+            out.append(f"'{upstream}' has rows for sha {sha} in .work/PROMOTIONS.md, but the "
+                       "newest row is not all-pass: a later failure revokes an earlier pass. "
+                       f"Run /crew:promote {upstream} again, and let it record the result.")
 
     # Fail CLOSED: an absent "rollback" key used to mean "no rollback needed".
     # It now means "nobody said". The only way to deploy with no rollback plan is

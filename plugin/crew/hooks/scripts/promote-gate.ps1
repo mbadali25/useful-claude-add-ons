@@ -938,17 +938,21 @@ foreach ($m in [regex]::Matches($cmd, '(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A
 }
 
 # requires: an all-pass row for THIS sha
+# The NEWEST row for the environment and sha decides (L-0665), as in the
+# .sh's passed(): 'pass' / 'fail' for that row all-pass or not, 'none' when
+# there is no row.
 function Test-Promoted([string]$name, [string]$sha) {
-  if (-not (Test-Path .work/PROMOTIONS.md)) { return $false }
+  if (-not (Test-Path .work/PROMOTIONS.md)) { return 'none' }
+  $newest = 'none'
   foreach ($line in Get-Content .work/PROMOTIONS.md) {
     if ($line -notmatch '\|') { continue }
     $cells = ($line.Trim().Trim('|') -split '\|') | ForEach-Object { $_.Trim() }
     if ($cells.Count -lt 6) { continue }
     if ($cells[1] -eq $name -and $cells[2].StartsWith($sha.Substring(0, [Math]::Min(7, $sha.Length)))) {
-      return ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass')
+      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' }
     }
   }
-  return $false
+  return $newest
 }
 # The union rule: every matched environment's requirements, each in its own
 # terms (its upstreams, its runbook, its approval marker). With several, each
@@ -957,8 +961,11 @@ foreach ($e in $envNames) {
   $cfg = $vm.environments.$e
   $before = $problems.Count
   foreach ($up in $cfg.requires) {
-    if (-not (Test-Promoted $up $sha)) {
+    $upVerdict = Test-Promoted $up $sha
+    if ($upVerdict -ceq 'none') {
       $problems.Add("'$up' has no all-pass row for sha $sha in .work/PROMOTIONS.md. Run /crew:promote $up first, and let it record the result.")
+    } elseif ($upVerdict -cne 'pass') {
+      $problems.Add("'$up' has rows for sha $sha in .work/PROMOTIONS.md, but the newest row is not all-pass: a later failure revokes an earlier pass. Run /crew:promote $up again, and let it record the result.")
     }
   }
 

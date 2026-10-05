@@ -57,7 +57,8 @@ def test_forged_row_in_excerpt(flavour, tmp_path, monkeypatch):
     assert full in text and "pass / pass / pass" in text
     code, err = run_gate(flavour, repo, "deploy-qa")
     _blocked_as(code, err, "qa")
-    assert "'development' has no all-pass row" in err, err
+    # The newest development row for the sha is record's not-run row (L-0665).
+    assert "'development' has rows for sha" in err and "newest row is not all-pass" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -75,9 +76,7 @@ def test_fail_then_requires(flavour, tmp_path, monkeypatch):
 def test_a_real_all_pass_row_satisfies_requires(flavour, tmp_path):
     """must-allow (non-vacuity): in the same fixture, promote's own all-pass
     row for the sha lets qa through, so the blocks above are the record's
-    doing. (After a recorded fail, a later pass row for the same sha is
-    shadowed by the not-run row: promote-gate's first-row `passed()`, which
-    this ticket does not change.)"""
+    doing."""
     repo = Repo(tmp_path / "r", _envs())
     full = _git(repo.root, "rev-parse", "HEAD")
     (repo.root / ".work" / "PROMOTIONS.md").write_text(
@@ -88,6 +87,19 @@ def test_a_real_all_pass_row_satisfies_requires(flavour, tmp_path):
     assert code == 0, err
     assert json.dumps(repo.in_flight()).startswith('"qa ')
 
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_pass_recorded_after_a_recorded_fail_admits(flavour, tmp_path, monkeypatch):
+    """L-0665: the newest row decides, so promote's all-pass row appended
+    after record's not-run row (the fixed re-run) satisfies `requires`."""
+    repo = Repo(tmp_path / "r", _envs())
+    full = _record_fail(monkeypatch, repo, "boom\n")
+    path = repo.root / ".work" / "PROMOTIONS.md"
+    path.write_text(path.read_text(encoding="utf-8")
+                    + f"| 2026-10-05T13:00Z | development | {full} | pass | pass | pass | o |\n",
+                    encoding="utf-8")
+    code, err = run_gate(flavour, repo, "deploy-qa")
+    assert code == 0, err
 
 # --- L-0648: the sha input of a declared github dispatch is the reviewed HEAD --
 #

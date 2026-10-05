@@ -405,6 +405,10 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
 - **"the tree this deploy runs from ('...') is dirty"** names the tree it judged. If that is the
   main checkout while you meant a worktree, run the command there: `cd <worktree> && <deploy>`, or
   enter the worktree first. A dirty main checkout no longer blocks a clean worktree.
+- **"has rows for sha X ..., but the newest row is not all-pass"** (L-0665): the newest
+  `.work/PROMOTIONS.md` row for that environment and sha is a failure, a `not-run` row from
+  `crew_ghdeploy.py record`, or anything but three `pass` cells; an older pass no longer counts. Re-run
+  `/crew:promote <upstream>` for that sha and let it append its row.
 - **"no all-pass row for sha X"** where X is the worktree's sha: the upstream environment passed a
   different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
   not carry over.

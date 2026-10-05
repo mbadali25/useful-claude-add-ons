@@ -2938,7 +2938,7 @@ file names, a leading `.github/workflows/` dropped. Blocked:
 A dispatch of a workflow file no declared deploy names, `--help`, a GET and
 every command in a repo that declares no dispatch deploy pass untouched. The
 committed map's dispatches are matched too while the map is dirty, and an
-open incident turns each block into a skip row. For an environment with a `github` entry
+open incident turns each block into a skip row. A `requires` environment is judged by its NEWEST row for the sha in `.work/PROMOTIONS.md` (L-0665): a later failure revokes an earlier pass, a later pass clears an earlier failure. For an environment with a `github` entry
 whose `shaInput` is set, both flavours also require that input once, as the
 full lowercase HEAD of the judged tree (L-0648). The PowerShell tool is read the
 same way (L-0664), python found by the shared `Resolve-CrewPython` probe; with

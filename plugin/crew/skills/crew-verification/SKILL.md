@@ -549,7 +549,9 @@ Every promotion appends one line to `.work/PROMOTIONS.md`:
 | 2026-08-23T15:40Z | production | a1b2c3d | pass | pass | FAIL | mbadali |
 ```
 
-This is what `requires` reads. It is also the only honest answer to "is prod
+This is what `requires` reads: the NEWEST row for the environment and sha
+decides (file order is time order), so a re-run's pass clears an earlier
+failure and a later failure revokes an earlier pass. It is also the only honest answer to "is prod
 running the thing qa signed off on" - compare the shas, not the branch names.
 
 Record failures too. A promotions log with no failures in it is a log nobody

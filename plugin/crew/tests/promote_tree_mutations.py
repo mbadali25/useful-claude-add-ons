@@ -24,6 +24,7 @@ TREE = os.path.join(_SCRIPTS, "_promote_tree.py")
 DISPATCH = os.path.join(_SCRIPTS, "_promote_dispatch.py")
 _T = "tests/test_promote_gate_effective_tree.py::"
 _D = "tests/test_promote_gate_dispatch.py::"
+_R = "tests/test_promote_gate_rows.py::test_the_newest_row_decides"
 
 PROMOTE_TREE_MUTATIONS = (
     # Retargeted after review r1: the dirty-worktree case is now also caught by
@@ -196,4 +197,21 @@ PROMOTE_TREE_MUTATIONS = (
      "if (-not $envProperty -and $envNames.Count -eq 0 -and -not $mapDirty) { exit 0 }\n",
      "if (-not $envProperty -and $envNames.Count -eq 0) { exit 0 }\n",
      _D + "test_a_working_map_without_environments_still_reads_the_committed_dispatches[ps1]"),
+    # L-0665: the newest row decides, both flavours.
+    ("promote-gate.sh returns on the first matching row again (fail then pass)", SH,
+     '            newest = all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     '            return all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     _R + "[fail-then-pass-sh]"),
+    ("promote-gate.sh returns on the first matching row again (pass then fail)", SH,
+     '            newest = all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     '            return all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     _R + "[pass-then-fail-sh]"),
+    ("promote-gate.ps1 returns on the first matching row again (fail then pass)", PS1,
+     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' }\n",
+     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' })\n",
+     _R + "[fail-then-pass-ps1]"),
+    ("promote-gate.ps1 returns on the first matching row again (pass then fail)", PS1,
+     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' }\n",
+     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' })\n",
+     _R + "[pass-then-fail-ps1]"),
 )

@@ -9,6 +9,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.1.4: promote-gate reads the newest PROMOTIONS.md row for an environment and sha, not the first (L-0665)
+
+- **Summary.** Both promote gates decided `requires` from the FIRST row matching the upstream and the
+  sha, so a failure followed by a fixed re-run stayed blocked, and a pass followed by a later failure
+  still admitted the deploy. Now the newest row (file order) decides; a revoked pass is blocked with
+  "the newest row is not all-pass". No row still blocks as before. A `not-run` row written by
+  `crew_ghdeploy.py record` is revoked by promote's later all-pass row for the same sha.
+
 ### Added — `crew` 1.1.4: promote-gate holds a `github` entry's sha input to the reviewed HEAD (L-0648)
 
 - **Summary.** When a command matches an environment with `github` entries, both promote gates take

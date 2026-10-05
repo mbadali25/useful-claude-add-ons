@@ -28,8 +28,8 @@ Run these in order. **Stop at the first failure** and report which gate failed
 with the error text verbatim.
 
 **Gate 1 - pre-deploy.**
-- Every environment in `requires` has a `pass` row in `.work/PROMOTIONS.md` for
-  the sha you are about to deploy. Not "a pass row" - a pass row *for this sha*.
+- Every environment in `requires` has, as its NEWEST `.work/PROMOTIONS.md` row for
+  the sha you are about to deploy, an all-pass row. A later failure revokes it.
 - The tree the deploy runs from is clean, is at the sha you are about to
   deploy, and that sha is pushed. That is the tree `promote-gate` judges: the
   Bash call's working directory, moved by a leading `cd <dir> &&` and named by
