@@ -14,9 +14,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Summary.** A board or note directory inside the Obsidian vault that is swapped for another real
   directory between crew's checks and its write is now refused instead of written into.
 - **What changed.** `_vault_paths` in `plugin/crew/hooks/scripts/crew_tracker.py` records each real
-  directory between the vault and the board or note (`boardDirIds`, `noteDirIds`: `(st_dev, st_ino)`
-  from `os.lstat`, or None), and both pinned walks match it: the POSIX fd walk after each no-follow
-  open, the Windows handle walk on every held component. A different identity refuses as "a
+  directory between the vault and the board or note as `boardDirIds` / `noteDirIds`, one
+  `(st_dev, st_ino)` from `os.lstat` or None per directory, and both pinned walks match it: the POSIX
+  fd walk after each no-follow open, the Windows handle walk on every held component. A different identity refuses as "a
   directory on its path changed after the vault checks"; an identity that cannot be told (none
   recorded, a list that does not line up, or an inode / file id of 0 on either side) refuses as
   "could not tell".
