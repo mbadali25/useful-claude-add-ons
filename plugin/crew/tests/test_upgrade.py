@@ -1512,6 +1512,48 @@ def test_a_rerun_keeps_the_report_file_mode(tmp_path):
     assert stat.S_IMODE(os.stat(_upgrade_md(root)).st_mode) == 0o600
 
 
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="names an fd through /proc")
+def test_the_sibling_is_private_before_the_earlier_report_is_written_into_it(tmp_path,
+                                                                             monkeypatch):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    os.chmod(_upgrade_md(root), 0o600)
+    seen = []
+    real_fdopen = os.fdopen
+
+    class Spy:  # pylint: disable=too-few-public-methods
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return self.handle.__exit__(*exc)
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+        def write(self, data):
+            fd = self.handle.fileno()
+            name = os.path.basename(os.readlink(f"/proc/self/fd/{fd}"))
+            if name.startswith("UPGRADE.md.") and name.endswith(".tmp"):
+                seen.append(stat.S_IMODE(os.fstat(fd).st_mode))
+            return self.handle.write(data)
+
+    monkeypatch.setattr(crew_upgrade.os, "fdopen", lambda fd, *a, **k: Spy(real_fdopen(fd, *a, **k)))
+    old = os.umask(0o022)
+    try:
+        crew_upgrade.run(str(root), {}, force=True)
+    finally:
+        os.umask(old)
+
+    assert (bool(seen), set(seen), stat.S_IMODE(os.stat(_upgrade_md(root)).st_mode)) == (
+        True, {0o600}, 0o600)
+
+
 def test_first_upgrade_has_no_marker(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config={"tier": 0}, codemap={"auth": V1_MAP})
 

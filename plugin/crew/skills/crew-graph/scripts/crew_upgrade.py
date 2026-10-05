@@ -1307,6 +1307,13 @@ def _report(status, head, results, notes, root):
     return "\n".join(lines) + "\n"
 
 
+def _umask():
+    """The process umask, read without leaving it changed."""
+    mask = os.umask(0o022)
+    os.umask(mask)
+    return mask
+
+
 def _write_upgrade_report(path, report):
     """Put `report` on top of `path`, keeping the earlier file below the marker.
 
@@ -1330,12 +1337,20 @@ def _write_upgrade_report(path, report):
         data += b"\n" + UPGRADE_HISTORY_MARKER.encode("utf-8") + b"\n\n" + old
     tmp_path = f"{path}.{os.getpid()}.tmp"
     try:
-        with open(tmp_path, "wb") as handle:
+        # Created private (0600) and given the earlier report's bits before a
+        # byte is written, so the old report is never readable through it.
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                     0o600)
+        with os.fdopen(fd, "wb") as handle:
+            if mode is not None and hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), stat.S_IMODE(mode))
+            elif mode is not None:
+                os.chmod(tmp_path, stat.S_IMODE(mode))
+            elif hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), 0o666 & ~_umask())
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        if mode is not None:
-            os.chmod(tmp_path, stat.S_IMODE(mode))
         os.replace(tmp_path, path)
     finally:
         if os.path.exists(tmp_path):
