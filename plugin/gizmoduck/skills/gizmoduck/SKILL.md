@@ -149,4 +149,7 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
 - **doctor** — `gizmoduck.py doctor` verifies nuclei, templates, python, and
   wkhtmltopdf; if anything's missing, point the user at the bootstrap scripts.
   It also reports whether `NVD_API_KEY` is set (never the value) — that's a
-  gap, not a failure, and never changes doctor's exit code.
+  gap, not a failure, and never changes doctor's exit code. It prints the tool
+  home and every set lookup override; an override marked `!!` points at nothing
+  and disables its tool rather than falling back to PATH. The lookup order and
+  the variables are in the README's "Where gizmoduck looks for tools".

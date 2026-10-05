@@ -34,6 +34,32 @@ reinstalls everything.
 If your antivirus/EDR quarantines or deletes nikto, sqlmap, ZAP, or a Nuclei
 template mid-install, see [`docs/antivirus-exclusions.md`](docs/antivirus-exclusions.md) - that's expected, not a broken install.
 
+## Where gizmoduck looks for tools
+
+Every scanner is found by one rule, in this order:
+
+1. **The tool's own override variable**, when it is set (table below).
+2. **The tool home**: `GIZMODUCK_HOME`, or by default `$XDG_DATA_HOME/gizmoduck`, else
+   `~/.local/share/gizmoduck`, on Linux and macOS. Executables in its `bin/` are found ahead of
+   PATH for every scanner and for Nuclei. Windows has no default tool home; set `GIZMODUCK_HOME`
+   to use one.
+3. **PATH**.
+4. **The Windows install location** `%LOCALAPPDATA%\Programs\<tool>`, where `bootstrap.ps1`
+   extracts ZAP, nikto and testssl.sh.
+
+**A set override that does not resolve disables that tool.** It does not fall back to a copy on
+PATH, so a scan never runs a different install from the one you named; `/gizmoduck:doctor`
+names the variable, its value and the tool it disables. Variables are read when a tool is looked
+up, not when gizmoduck starts.
+
+| Variable | Names | In the tool home |
+|---|---|---|
+| `GIZMODUCK_HOME` | the tool home itself | `bin/<tool>` for every scanner and Nuclei |
+| `GIZMODUCK_ZAP_HOME` | a ZAP install directory: `zap.sh`/`zap.bat` in it or one level down, else a `zap-*.jar` under it (run with `java`) | `zap/` |
+| `GIZMODUCK_NIKTO_PL` | the `nikto.pl` file (run with `perl`) | `nikto/program/nikto.pl` |
+| `GIZMODUCK_TESTSSL_SH` | the `testssl.sh` script (run with `bash`) | `testssl.sh/testssl.sh` |
+| `GIZMODUCK_MSYS2_BIN` | a directory holding `hexdump`, for testssl.sh under Git Bash; a helper, not a scanner, so it is not part of the order above | - |
+
 ## Dependency-Check: NVD API key (optional)
 
 dependency-check's first run downloads the entire NVD CVE corpus. Without an API

@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — gizmoduck 0.5.9: one tool lookup order, and an override you set now wins (L-0684)
+
+- **Summary.** Every scanner is found the same way — your override variable, then a tool home,
+  then PATH, then the Windows install folder — and an override that points at nothing now
+  disables that tool instead of quietly using another copy.
+- **Behaviour change: a set override beats PATH.** `GIZMODUCK_ZAP_HOME`, `GIZMODUCK_NIKTO_PL`
+  and `GIZMODUCK_TESTSSL_SH` used to lose to a `zap.sh`, `nikto` or `testssl.sh` on PATH. They
+  now win. `GIZMODUCK_ZAP_HOME` also finds a `zap.sh`/`zap.bat` in the directory or one level
+  down, not only a jar.
+- **Behaviour change: a set but stale override disables the tool.** It used to fall through to
+  whatever else was installed; now the tool is unavailable and `/gizmoduck:doctor` prints
+  `!! <VAR>=<value> does not resolve - <tool> is disabled`. Doctor's exit status is unchanged.
+- **Tool home.** `GIZMODUCK_HOME`, by default `$XDG_DATA_HOME/gizmoduck` or
+  `~/.local/share/gizmoduck` on Linux and macOS (none on Windows). Its `bin/` is searched ahead
+  of PATH by every adapter and by Nuclei's lookup; `zap/`, `nikto/program/nikto.pl` and
+  `testssl.sh/testssl.sh` under it are the second lookup step. Doctor prints it.
+- **Read at call time.** nikto's and testssl's candidate paths were fixed when the module was
+  imported; every variable is now read at lookup. The README's new "Where gizmoduck looks for
+  tools" section documents the order and all five variables. The test suite points
+  `GIZMODUCK_HOME` at an empty directory so no test reads a real tool home.
+
 ### Added — `windows-ssm` 1.0.0: Linux tools on Windows, and what SSM will carry (T-0102)
 
 - **Summary.** A new skill for running Linux-style tools on Windows and driving nodes through

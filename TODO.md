@@ -4,6 +4,10 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **L-0684 follow-up (gizmoduck guides).** The built guides under `docs/guides/gizmoduck/` have no
+  source in the repo, so they were not rebuilt for gizmoduck 0.5.9's tool lookup order and do not
+  mention `GIZMODUCK_HOME` or that a broken override disables its tool. The plugin README's "Where
+  gizmoduck looks for tools" is current; rebuild the guides from a source once one exists.
 - **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
   chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
   being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run

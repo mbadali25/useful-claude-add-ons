@@ -57,17 +57,10 @@ _MSYS2_HEXDUMP_CANDIDATES = tuple(
 
 # bootstrap.ps1 only ever git-clones testssl.sh on Windows - nothing puts a
 # directly executable testssl.sh/testssl on PATH there the way bootstrap.sh's
-# `ln -sf .../testssl.sh /usr/local/bin/testssl.sh` does on Linux. This is
-# where that clone actually lands (Join-Path $env:LOCALAPPDATA "Programs"
-# "testssl.sh"). A GIZMODUCK_TESTSSL_SH override takes precedence for an
-# operator who put it somewhere else.
-_TESTSSL_SCRIPT_CANDIDATES = tuple(
-    p for p in (
-        os.environ.get("GIZMODUCK_TESTSSL_SH"),
-        (str(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "testssl.sh" / "testssl.sh")
-         if os.environ.get("LOCALAPPDATA") else None),
-    ) if p
-)
+# symlink does on Linux. _testssl_script_candidates() is where that clone
+# lands (Join-Path $env:LOCALAPPDATA "Programs" "testssl.sh"), the last
+# lookup step; GIZMODUCK_TESTSSL_SH and the tool home come first (L-0684).
+OVERRIDE_VAR = "GIZMODUCK_TESTSSL_SH"
 
 _ERROR_SEVERITIES = ("WARN", "FATAL")
 # OK is a confident, documented "this check found nothing" - not an unmapped
@@ -76,30 +69,53 @@ _ERROR_SEVERITIES = ("WARN", "FATAL")
 _OK_ALIAS = "OK"
 
 
+def _testssl_script_candidates():
+    """Step 4: the %LOCALAPPDATA% clone bootstrap.ps1 makes. Read now."""
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if not local_appdata:
+        return ()
+    return (str(Path(local_appdata) / "Programs" / "testssl.sh" / "testssl.sh"),)
+
+
 def _find_testssl_script():
-    for candidate in _TESTSSL_SCRIPT_CANDIDATES:
+    for candidate in _testssl_script_candidates():
         if candidate and Path(candidate).is_file():
             return candidate
     return None
 
 
+def testssl_override():
+    """GIZMODUCK_TESTSSL_SH's state (base.Override), read now."""
+    return base.override(OVERRIDE_VAR, base.existing_file)
+
+
+def _with_bash(script):
+    bash = base.which("bash")
+    return [bash, script] if script and bash else None
+
+
 def _resolve_command():
-    """The argv prefix to invoke testssl.sh with, or None if no usable route
-    exists. Prefers a directly-executable testssl.sh/testssl on PATH (the
-    Linux install: bootstrap.sh symlinks it with +x and its own shebang, so
-    the kernel handles the interpreter itself) - else falls back to running
-    the git-cloned script explicitly through bash, since that is the only
-    thing bootstrap.ps1 ever provides on Windows and is the verified working
-    invocation there (`bash testssl.sh ...`).
+    """The argv prefix to invoke testssl.sh with, or None. One order
+    (L-0684): (1) GIZMODUCK_TESTSSL_SH through bash - set but not a file
+    makes testssl unavailable, never a fall-through; (2)
+    <tool home>/testssl.sh/testssl.sh through bash; (3) a directly
+    executable testssl.sh/testssl via base.which (tool home bin, then PATH:
+    bootstrap.sh's symlink, whose shebang picks the interpreter); (4) the
+    %LOCALAPPDATA% clone through bash, the verified working invocation on
+    Windows (`bash testssl.sh ...`).
     """
+    ovr = testssl_override()
+    if ovr.state != base.UNSET:
+        return _with_bash(ovr.found)
+    home = base.tool_home()
+    if home is not None:
+        command = _with_bash(base.existing_file(home / "testssl.sh" / "testssl.sh"))
+        if command:
+            return command
     binary = base.which("testssl.sh") or base.which("testssl")
     if binary:
         return [binary]
-    script = _find_testssl_script()
-    bash = base.which("bash")
-    if script and bash:
-        return [bash, script]
-    return None
+    return _with_bash(_find_testssl_script())
 
 
 def is_available():
