@@ -4,6 +4,164 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### crew 1.0.345 — batch 5: T-0052, T-0057, L-0662
+
+#### Added — `crew`: plain-text rows for autopilot wave, split, sleep and wake (L-0662)
+
+- **What changed.** `crew_route.PHRASES` gains four rows after `focus`:
+  `run <id>, <id> and <id> in parallel` -> `/crew:autopilot wave <ID> <ID> ...` (ids upper-cased,
+  de-duplicated in order; fewer than two distinct is no match; any id without a
+  `.work/tickets/<id>/` folder asks, naming it); `split this ticket` / `split it` / `split <id>` /
+  `this ticket is too big` / `<id> is too big` -> `/crew:autopilot split <ID>` (resolved like
+  every ticket row; never `/crew:split`); `I'm heading to bed`, `heading to bed`,
+  `going to sleep`, `I'm going to sleep` -> `/crew:autopilot sleep`, whose line also asks
+  Claude to say what changed and how to undo it; `I'm back` -> `/crew:autopilot wake`.
+- **Bare greetings never route (owner decision, 2026-10-04).** `good night`, `morning` and
+  `good morning` match the sleep and wake rows but, past the gate, always ask
+  "did you mean /crew:autopilot sleep?" (or `wake`).
+- **Live as each command lands.** `sleep` and `wake` route now: L-0652's manual sleep mode put
+  both in `crew_autopilot.SUBCOMMANDS` and `AVAILABLE` (the batch-5 merge turned the inert-on-main
+  tests for them into live ones). `wave` and `split` are not subcommands yet, so T-0057's gate
+  gives no line; reserved, the soft ask; available, a route through T-0069's `_route`. No edit
+  to `crew_autopilot.py`. The greeting ask no longer doubles `?;` in its line.
+- **Same screen.** Every new row passes T-0057's `_screen` allowlist (sleep and wake add only the
+  apostrophe of `I'm`: ASCII, or U+2019 as the second character of a leading `I'm`, which iOS
+  and macOS type), so a long s or Kelvin sign that IGNORECASE folds onto a pattern letter, or a
+  curly quote anywhere else, asks rather than routes.
+- **Merge of T-0057 onto main.** T-0057's autopilot routes go through `_route`; its `_screen`
+  line-break check is gone (`normalise` already refuses every `str.splitlines` boundary), so the
+  `\x1c`-`\x1e` separators in free text now decide `none` rather than `ask`.
+- **Tests.** `test_crew_route.py`: inert, reserved and available (every subcommand available)
+  cases for each example, wave's two-real-tickets rule, split's ask, the must-not-route list,
+  lookalike must-ask cases, the greeting must-ask cases, the curly-apostrophe position and the
+  sleep undo line. The verify rule now runs through `pytest_rule.py`. Local sabotage mutations each went red; they
+  are L-0663's to commit (`sabotage*.py` is harness).
+
+#### Added — `crew`: plain-text routing for the autopilot commands the router knows (T-0057)
+
+- **What changed.** `crew_route.PHRASES` gains five rows after `status`:
+  `autopilot status [<id>]` / `what's autopilot doing?` -> `/crew:autopilot status`;
+  `take care of <work>` / `handle <work>` -> `assign <work>`; `work toward(s) <goal>` /
+  `make it so <goal>` -> `goal <goal>`; `pick the goal back up` / `resume the goal`
+  (always asks: routing never picks a goal slug, T-0056); `focus on <id>` -> `focus <id>`.
+  Same switch (`route.enabled`), same whole-prompt matcher, same route / ask / none.
+- **Availability is read, not copied.** Each row asks `crew_autopilot.route` at decide
+  time. A subcommand that stops (today `assign`, `goal`, `focus`, `run --goal`) gets a line
+  that runs nothing, says it is not available yet and tells Claude to answer the prompt as
+  written; a router that raises or answers an unknown shape asks; a name the router does
+  not know produces no line. A row goes live the day its ticket adds the name to
+  `crew_autopilot.AVAILABLE`, with no edit to `crew_route.py`.
+- **An allowlist, not a phrase list.** First, no line for a line break (`normalise`
+  refuses every boundary `str.splitlines` knows, T-0069), free text whose first token is `it`, `that`, `everything`
+  and the like, or free text naming the stem `approv`, also with every non-letter
+  removed. Then an assign, goal or focus prompt with any character other than ASCII
+  letters, digits, space and `.,:;_#()-` asks: quotes, lookalike letters, combining
+  marks, format characters (RLO, zero-width space, soft hyphen), fullwidth or lookalike
+  `/` and `?`, and `/ ? " $ \ | & < > *`. So the routed command is
+  exactly what was typed. On that ASCII, a word starting with `-` (a flag:
+  `handle --goal x`, `handle -rf`) asks while `sign-off` routes, and a trailing negation
+  (`not`, `no`, `nah`, `nope`, `wait`, `cancel`, `cancel that`, `scratch that`,
+  `never mind`, `forget it`, `not now`) asks. `?` is accepted
+  only on the two status questions. A router answer whose `sub` is not a string naming
+  the subcommand asked about asks; a stop with no reason reads "not available yet". A
+  `goal` route also asks Claude to say what changed and how to undo it. Every decision
+  carries `unavailable`, and a non-ticket ask no longer says "which ticket".
+- **Every autopilot route goes through T-0069's `_route`** (carried at the batch-5
+  merge): a command `_clip` would cut or reflow asks instead of routing a different
+  command, as the lifecycle rows already do; T-0057's own line-break tuple is gone.
+- **Ticket ids are ASCII.** `_ID` is `(?-i:[A-Za-z][A-Za-z0-9]*)-[0-9]+` for every row,
+  so an Arabic-Indic digit, a long s, a Kelvin sign or a dotless i no longer matches.
+- **Tests.** `test_crew_route.py` and `test_crew_route_hook.py` (both wrappers): one case
+  per gate branch, must-route and must-not-route prompts, shell characters, the undo line,
+  bounded lines, and three review rounds' must-not-route, must-ask and must-allow cases.
+  Local sabotage mutations of the new branches each went red (the list is L-0661's);
+  they are committed separately as L-0661, because `sabotage*.py` is harness.
+
+#### Added — `crew`: one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker (T-0052, 1 of 3)
+
+- **What changed.** `plugin/crew/hooks/scripts/crew_split.py` holds
+  `/crew:split`'s judgement as code: `measure` and `triggers` (plan steps,
+  acceptance checks, Touch, codemap subsystems and the repo findings rate;
+  an unreadable measure is `None`, reported `unknown:<name>`, never "not
+  fired"), `check_proposal` (2-5 children, each with a title, risk,
+  subsystem, criteria and exclusions; every parent acceptance criterion
+  placed verbatim exactly once across the children and `## Stays on parent`;
+  a `separable-criteria` evidence line for a split; "not too big" is a
+  result), and `check` / `confirm` / `apply`. `/crew:split` drops "Jira
+  only": in **files and Obsidian mode** it writes `split.md`, runs `check`,
+  asks one confirmation, then `apply --via command` keeps the parent's text
+  as `spec.pre-split.md`, mints each child `ready` through
+  `crew_ticket.mint` with a direction pointing back, and only after every
+  mint returned marks the parent `superseded` (T-0037's word) with a
+  `split-into:` line. Its **Jira** steps are unchanged, now with `check`
+  before the confirmation and `confirm` before the first create. **SDP
+  stops**: "SDP is a service desk, not where this work gets decomposed".
+- **The confirmation refuses without a new human turn.** `/crew:split` stays
+  model-invocable. `check`, on a pass, records the proposal's sha256 and the
+  session's current human-turn id (the context hook's `turn.id`, found
+  through `CLAUDE_CODE_SESSION_ID`); `confirm`, and `apply` through it,
+  passes only when the proposal is unchanged and a different turn id is
+  readable for the same session, moved by a prompt that is readable, not a
+  harness envelope (task notification, wake, webhook) and not the prompt
+  check ran under (a loop). No session id, an absent or unreadable turn
+  record or prompt, or a check that saw no turn is a refusal; a successful
+  apply spends the check; under `/crew:autopilot`
+  the command stops and names T-0058's `/crew:autopilot split <id>`.
+- **Thresholds, with their evidence** (constants, not config):
+  `PLAN_STEPS_LOOK = 9`, `ACCEPTANCE_LOOK = 12`, `SUBSYSTEMS_LOOK = 2`,
+  measured 2026-09-26 on 19 review ledgers and documented in the README's
+  "Splitting a ticket" section. A trigger means look, never split. Not
+  re-measured here: the ledgers live in the owner's git common dir, not in
+  this container.
+- **Why.** The owner's 2026-09-26 direction: one split rulebook that
+  `/crew:split` and autopilot both use, so autopilot gets no rules of its own
+  that could drift. T-0058 (autopilot's size check and `/crew:autopilot
+  split`) and T-0059 (plan PR slices) build on this API.
+- **Decisions on the spec.** `crew_ticket.mint` takes no `risk` argument, so
+  the child's `risk:` rides in its direction body (as `assign` does), and
+  `crew_ticket.py` (HARNESS) is not edited. An unconfigured tracker reads
+  `files` for the prose but `apply` refuses it, because `mint` does. Under
+  Obsidian, `mint` now writes the card itself; `/crew:obsidian-sync` is named
+  only when a warning names the board. A failed mint records the minted
+  children under a trailing `## Minted` in `split.md`; a re-run after a new
+  check and yes skips a child only when an apply record exists and its
+  direction carries apply's provenance (`origin: split of <parent>`,
+  `split-child: <n>`) and an INDEX row and its direction is exactly what the
+  current proposal's child would get, and adopts a child whose id never
+  reached `split.md` on the same terms; a minted child an edited proposal no
+  longer matches stops the apply, naming it.
+  A `## Minted` section apply did not write is refused, and the proposal
+  hash covers every byte but a valid trailing block. An unknown evidence key
+  is refused even beside a known one.
+- **Accepted limit (owner decision 2026-10-04).** The confirmation gate is
+  not owner-proof against the session itself: a session can schedule its own
+  plain-text "yes" (`send_later`, a routine) and pass it. Documented in the
+  module docstring and the README; the follow-up routes split approval
+  through the `/crew:approve` harness path (`TODO.md`).
+- **Review round 1 (#364).** Three BLOCKs (a `## Minted` heading that hid
+  later edits from the hash, an unverified `## Minted` that let apply skip a
+  child, a turn moved by a task notification passing `confirm`), four FIXes
+  (a readable section yielding nothing, or an unmatched Touch entry, read as
+  0; the sabotage module's follow-up recorded in `TODO.md`; the window
+  between a mint and its record, and a non-UTF-8 spec found after minting)
+  and three NITs, each test-first. **Round 2:** a skipped or adopted child
+  is compared to the current proposal (a swapped child was reused with its
+  old criteria), orphans need the apply record and an INDEX row, and the
+  repeated-prompt refusal says the owner may have typed the same words.
+  **Round 3:** a `cancelled` or `superseded` child is never reused, so
+  cancelling a stale child unblocks the apply, and the refusal names that
+  exit and restoring the child's text.
+- **Tests.** `test_crew_split.py` (100 cases): must-block and must-allow for
+  every rule, the confirm gate, `apply` in files and Obsidian mode, and the
+  command's prose. The T-0004 fixture is reconstructed (12 checks, 18 Touch
+  entries) because `.work/tickets/T-0004/spec.pre-split.md` is not tracked.
+  Twenty-seven mutations (the first ten: child bound, substring placement,
+  duplicates, exclusions, `separable-criteria`, `None` as 0, the sdp stop,
+  mint order, parent-status order, the confirm turn check; seventeen more for
+  the review rounds' guards) were run by hand, each red on its named test; `sabotage_split.py` and its registration in `sabotage.py` are HARNESS
+  paths, so a separate tooling PR adds them. A new `.crew/verify.json` rule
+  maps `crew_split.py`, its test, the fixture and `split.md`.
+
 ### Changed — `crew` 1.0.344: ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker (T-0037, PR A)
 
 - **What changed.** `crew_tracker.py` owns the ticket status vocabulary and
