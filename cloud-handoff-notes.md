@@ -20,13 +20,11 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - Plan after batch 7: Windows re-run sweep of the 7 red PRs; C-0002..C-0005, C-0007; then crew 1.1.0 + guide rename (C-0006) last. C-0006 ENDS this rush; the next rush (owner 2026-10-05) takes the remaining new draft PRs / spec-draft waves.
 
 ### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
-main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
+main = abddc302 (batch 7 #505 merged), crew 1.0.349.
 | Item | Where | State | Next |
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | c39dc4e6: BLOCK + 2 FIX + 2 NIT fixed (22 sabotages red), CI green 28/28; also pins combined run to gizmoduck pytest.ini | focused re-check running; re-check, land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
-| T-0020 #357 | `T-0020-build` 857188a6 | review-clean (final re-check 0/0); 857188a6 ALL Windows green (only red = bump, by design) | batch 7 member, ready |
-| Batch 7 | `batch-7-build` (builder started 04:45) | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
 | Spec wave A (building, no bump, for batches) | #478 T-0081, #462 L-0678, #433 T-0105, #401 L-0673, #451 T-0108 | 5 builders started 05:35-05:45 (T-0108: owner A, Nuclei verify-or-mark) | review each, then batch 8/9 |
 | Spec wave A queued | #417+#424 L-0661+L-0663 (harness, alone) | not started (CI capacity) | next |
 | Spec runners-up | T-0106 (after T-0105), T-0502 (after L-0673), L-0689 then L-0665 (promote-gate), T-0103 + L-0675 (after batch 7) | - | later |
@@ -52,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 05:01 UTC
+Last updated: 2026-10-05 05:02 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -111,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 08:35: MERGED batch 7 #505 -> abddc302 (crew 1.0.349); #357 #353 #368 show merged. CI 28/28. Batch-7 NITs N1-N5 for a follow-up.
 - 08:30: #451 T-0108 review 0 BLOCK 3 FIX (live-verified): -config/-tp profile and ambient nuclei config.yaml defeat safe defaults; adapter accepts rate 0 / intrusive 'false'. Owner: refuse profiles in routine; pin -rld 1s + refuse risky ambient config (fail closed). Sent to builder.
 - 08:15: #401 L-0673 review 0 BLOCK 2 FIX (log_complete faked by rule output's total line; flaky seconds==0 test). Not SEAM. NITs incl. harness ps1 citations of verify.md :72/:114 moved by rewrap. Sent to builder. Minted C-0010 (receipt PASS-row injection, pre-existing).
 - 08:05: batch 7 #505 merge review 0 BLOCK 0 FIX (full crew suite 14955 passed, 1 load-flake wallclock passed alone; no-focus routing identical to main). NITs N1-N5 (CONFIG.md:2884 ship_decision name, misleading commit msgs, split-into quote on status:done, LRM/RLM in _UNSAFE_PATH, codemap ship cites) -> carry. CI: 2 Windows shards left. Subscribed.

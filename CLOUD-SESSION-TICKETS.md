@@ -99,6 +99,7 @@ Next free untracked ID: **C-0011** (owner rule 2026-10-05: cloud-session tickets
 | L-1512 | #497 | 2828acef | 1.0.346 |
 | L-1508 (PR B, harness) | #496 | 8479a837 | 1.0.347 (also: root README.md added to check-tooling-pr ALONGSIDE) |
 | T-0045, T-0041, L-0582, T-0050 (batch 6) | #502 (lands #500, #348, #338, #361) | 47f71e93 | 1.0.348 |
+| T-0020, T-0011, T-0063 (batch 7) | #505 (lands #357, #353, #368) | abddc302 | 1.0.349 |
 
 ## Closed without merging (your instruction)
 
