@@ -203,7 +203,12 @@ def test_failed_fetch_is_unknown_never_none_pending(world, capsys, tmp_path):
 
 @pytest.mark.parametrize("raw", ["{not json", "[1, 2]", '{"event": "rang", "holder": "me"}',
                                  '{"at": "x", "event": 7, "holder": "p"}',
-                                 '{"at": "2026-10-05T12:00:00+00:00", "event": "claim"}'])
+                                 '{"at": "2026-10-05T12:00:00+00:00", "event": "claim"}',
+                                 '{"event": "claim", "holder": "peer"}',
+                                 '{"at": "2026-10-05T12:00:00+00:00", "event": "claim", "holder": "peer"}',
+                                 '{"at": "soon", "event": "claim", "ticket": "k", "holder": "peer", "detail": ""}',
+                                 '{"at": "2026-10-05T12:00:00+00:00", "event": "claim", "ticket": 1, '
+                                 '"holder": "peer", "detail": ""}'])
 def test_corrupt_log_line_is_unknown_never_skipped(world, capsys, raw):
     bare, work, seed, _ = world
     assert ring_to(work, capsys)[0] == 0
@@ -212,6 +217,24 @@ def test_corrupt_log_line_is_unknown_never_skipped(world, capsys, raw):
     assert code == 3
     assert lines[0].startswith("unknown")
     assert "no pending doorbells" not in "\n".join(lines)
+
+
+def test_absent_channel_is_unknown_never_none_pending(world, capsys):
+    _, work, _, _ = world
+    code, lines = run(work, ["pending", "--channel", "other", "--remote", "origin"], capsys=capsys)
+    assert code == 3 and lines[0].startswith("unknown")
+    assert "no pending doorbells" not in "\n".join(lines)
+
+
+def test_a_channel_without_a_log_is_unknown(world, capsys):
+    bare, work, seed, tip = world
+    tree = subprocess.run(["git", "-C", str(seed), "mktree"], input="", check=True, capture_output=True,
+                          text=True).stdout.strip()
+    sha = git(seed, "commit-tree", tree, "-p", tip, "-m", "log gone")
+    git(seed, "push", "-q", "origin", f"{sha}:{REF}")
+    assert channel_tip(bare) == sha
+    code, lines = pending(work, capsys)
+    assert code == 3 and lines[0].startswith("unknown")
 
 
 def test_a_resumed_session_in_this_worktree_still_sees_its_ring(world, capsys, monkeypatch):

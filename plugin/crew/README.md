@@ -2688,8 +2688,10 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   since the doorbell at <time> (<age> ago) [peer-written]`, exit 3; with
   none, `no pending doorbells`, exit 0. Nothing turns a pending ring into
   consent: no timeout, no retry, no "delivered" state, however old it is. A
-  failed fetch is `unknown - could not fetch` and a log line that is not a
-  log entry is `unknown`, never `no pending doorbells`. `/crew:autopilot`
+  failed fetch, a channel that does not exist, a channel with no
+  `log.jsonl`, and a log line that is not a whole entry (every key
+  `crew_coord.py` writes) are all `unknown`, never `no pending doorbells`:
+  an incomplete line is never read as a peer moving the record. `/crew:autopilot`
   prints it in `status` and in its resume step and reports the lines to you;
   a pending ring is not a stop. **Limit:** any later log line by a holder
   other than the ringer and this session clears the ring — a third session on

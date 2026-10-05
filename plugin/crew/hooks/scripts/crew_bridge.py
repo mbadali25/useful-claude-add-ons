@@ -57,8 +57,9 @@ record change from <label> since the doorbell at <time> (<age> ago)
 turns a pending ring into consent: no timeout, no retry, no "delivered"
 state. A later line by any holder other than the ringer and this session
 clears it -- a third session on the channel too (a stated limit). A failed
-fetch is `unknown`, never `no pending doorbells`, and a log line that is not
-what T-0030 or this script writes is `unknown`, never skipped.
+fetch, an absent channel, a channel with no log, and a log line that is not
+a whole entry of what T-0030 or this script writes are `unknown`, never `no
+pending doorbells` and never skipped.
 
 Apart from `ring --to`, nothing here writes: no ref, working tree, index,
 FETCH_HEAD, `.work/` or `<git-common-dir>/crew/` moves (the fetch only adds
@@ -191,8 +192,11 @@ def cmd_ring_to(chan, top, kind, ref, label):
 
 def read_log(blob):
     """The channel log as a list of entries, or (None, why) for a line that is
-    not a JSON object with a string `event` and a `holder` (a session id, or
-    null for an owner's break), or a `rang` line missing its fields."""
+    not a whole log entry -- a JSON object with every key `crew_coord.log_line`
+    writes: `at` (a timestamp), `event`, `ticket` and `detail` (strings) and
+    `holder` (a session id, or null for an owner's break) -- or a `rang` line
+    missing its own fields. An incomplete line is never read as a peer's
+    record change: it would clear a ring."""
     try:
         text = blob.decode("utf-8")
     except UnicodeDecodeError:
@@ -205,12 +209,12 @@ def read_log(blob):
             entry = json.loads(line)
         except ValueError:
             return None, f"log.jsonl line {number} is not JSON"
-        if (not isinstance(entry, dict) or not isinstance(entry.get("event"), str) or "holder" not in entry
-                or not (entry["holder"] is None or isinstance(entry["holder"], str))):
-            return None, f"log.jsonl line {number} is not a log entry"
+        if (not isinstance(entry, dict) or crew_coord.parse_stamp(entry.get("at")) is None
+                or not all(isinstance(entry.get(key), str) for key in ("event", "ticket", "detail"))
+                or "holder" not in entry or not (entry["holder"] is None or isinstance(entry["holder"], str))):
+            return None, f"log.jsonl line {number} is not a whole log entry"
         if entry["event"] == RANG and not (
                 isinstance(entry["holder"], str) and entry["holder"]
-                and crew_coord.parse_stamp(entry.get("at")) is not None
                 and all(isinstance(entry.get(k), str) and entry[k] for k in ("to", "tip", "machine", "worktree"))):
             return None, f"log.jsonl line {number} is a rang line without its fields"
         entries.append(entry)
@@ -240,11 +244,19 @@ def cmd_pending(chan, top):
     if state == "failed":
         print(f"unknown - could not fetch {chan.ref} from {crew_coord.safe(chan.remote, 80)}: {why}")
         return crew_coord.EXIT_UNKNOWN
+    if state == "absent":
+        print(f"unknown - {chan.ref} does not exist on {crew_coord.safe(chan.remote, 80)}: a ring recorded "
+              "there could have gone with it, so pending doorbells cannot be told")
+        return crew_coord.EXIT_UNKNOWN
     files = chan.read(tip)
     if files is None:
         print(f"unknown - could not read {chan.ref} at {tip}")
         return crew_coord.EXIT_UNKNOWN
-    entries, why = read_log(files.get(crew_coord.LOG, b""))
+    if crew_coord.LOG not in files:
+        print(f"unknown - {chan.ref} has no {crew_coord.LOG}: every write to the channel appends to it, so "
+              "pending doorbells cannot be told")
+        return crew_coord.EXIT_UNKNOWN
+    entries, why = read_log(files[crew_coord.LOG])
     if entries is None:
         print(f"unknown - {why} on {chan.ref}; pending doorbells cannot be told")
         return crew_coord.EXIT_UNKNOWN
