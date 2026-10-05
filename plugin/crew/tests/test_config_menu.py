@@ -1806,8 +1806,18 @@ def test_delete_failure_after_the_move_names_the_backup(tmp_path, capsys,
 
     def _fail(*_args, **_kwargs):
         raise OSError(errno.EIO, "I/O error")
-    monkeypatch.setattr(crew_config_files,
-                        "_fsync_dir" if where == "fsync" else "_regular_bytes", _fail)
+    real_read = crew_config_files.read_restorable
+
+    def _read_back_fails(path):
+        # os.read failing on the moved backup: read_restorable lets that
+        # OSError through (only a failed open becomes Unreadable).
+        if path == _backup_path(root):
+            raise OSError(errno.EIO, "I/O error", path)
+        return real_read(path)
+    if where == "fsync":
+        monkeypatch.setattr(crew_config_files, "_fsync_dir", _fail)
+    else:
+        monkeypatch.setattr(crew_config_files, "read_restorable", _read_back_fails)
 
     code = _apply(root, plan)
 
