@@ -6,7 +6,10 @@ name: Marketplace
 on:
   push:
     branches: [main]
+  # ready_for_review (L-0511): marking a draft ready re-runs the full check on the
+  # same head, so a draft run's --pending-bump pass never stands for a ready PR.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 # One run per PR at a time: a new push to the PR cancels the superseded run.
@@ -38,8 +41,17 @@ jobs:
       # as the validation failing.
       - name: Install the validator's dependency
         run: python -m pip install --upgrade pip pyyaml
+      # L-0511 / REPO-03: a build branch carries no version bump until land, so a
+      # DRAFT pull request reports version drift as "pending at land" (exit 0 for
+      # that one check; every other check still fails). A ready PR, a push to main
+      # and a manual run take the full check, so a content change with no bump
+      # still cannot merge. The flag is also ignored on branch main.
       - name: Check the marketplace is internally consistent
+        if: github.event.pull_request.draft != true
         run: python3 scripts/check-marketplace.py
+      - name: Check the marketplace is internally consistent (draft PR, bump pending at land)
+        if: github.event.pull_request.draft == true
+        run: python3 scripts/check-marketplace.py --pending-bump
       # check_argument_hint_frontmatter parses every command's and skill's
       # frontmatter with the same PyYAML loader Claude Code uses, so a value
       # like `argument-hint: [a] [b]` - two unquoted bracket groups, read as

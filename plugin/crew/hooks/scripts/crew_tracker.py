@@ -112,6 +112,30 @@ LANE_FOR_STATUS = {
     "cancelled": "done",
     "superseded": "done",
 }
+# L-0530: INDEX words the owner retired on 2026-10-05, each with the crew word
+# that replaced it. A hint only -- it names the word to write by hand and never
+# adds a lane, a write or an exit code. Disjoint from LANE_FOR_STATUS
+# (test_status_vocabulary.py); `land-blocked` has no owner decision, so no row.
+RETIRED_STATUSES = {
+    "approved": "spec",
+    "merged": "done",
+    "closed": "done",
+    "new": "direction",
+    "parked": "needs-owner",
+}
+
+
+# The ten words in the owner's reading order (the open waiting word beside the
+# backlog words), as `read` lists them for a word crew does not know.
+KNOWN_STATUSES = STATUS_ORDER[:2] + OWNER_STATUSES + STATUS_ORDER[2:] + CLOSED_STATUSES
+
+
+def _crew_word_hint(status):
+    """`; the crew word is <w>` for a retired INDEX word, else the empty string."""
+    word = RETIRED_STATUSES.get(status)
+    return f"; the crew word is {word}" if word else ""
+
+
 DEFAULT_COLUMNS = {
     "backlog": "Backlog",
     "ready": "Ready",
@@ -676,7 +700,7 @@ def _backwards(ticket, current, status):
         return None
     if current not in STATUS_ORDER:
         return (f"could not tell whether {current} -> {status} goes backwards ({current!r} is not a "
-                f"status crew knows); pass --reopen if the move is meant")
+                f"status crew knows); pass --reopen if the move is meant{_crew_word_hint(current)}")
     if status not in STATUS_ORDER:
         return None
     if STATUS_ORDER.index(status) < STATUS_ORDER.index(current):
@@ -1523,9 +1547,16 @@ def _obsidian_read(root, settings, ticket):
     if problem:
         return [files, _result("obsidian", UNREADABLE, problem)]
     status = files.get("status")
-    expected = settings["columns"].get(LANE_FOR_STATUS.get(status, ""), None)
-    disagree = card["lane"] != expected
-    notes = [f"INDEX status {status} expects {expected}"] if disagree else []
+    if status is None:  # the files half already says why INDEX could not be read
+        disagree, notes = COULD_NOT_TELL, ["INDEX status could not be read"]
+    elif status not in LANE_FOR_STATUS:  # L-0530: name the word, never map it
+        disagree = COULD_NOT_TELL
+        notes = [f"INDEX status {status} is not a status crew knows ({', '.join(KNOWN_STATUSES)})"
+                 f"{_crew_word_hint(status)}"]
+    else:
+        expected = settings["columns"].get(LANE_FOR_STATUS[status])
+        disagree = card["lane"] != expected
+        notes = [f"INDEX status {status} expects {expected}"] if disagree else []
     notes += [f"whose card could not tell: {detail}"] if owner == UNKNOWN else []
     return [files, _result("obsidian", READ, "; ".join(notes) or None, lane=card["lane"], disagree=disagree)]
 
@@ -1570,7 +1601,7 @@ def move(root, ticket, status, reopen=False):
         return _report(info, [stop])
     kind = info["kind"]
     if status not in LANE_FOR_STATUS:
-        return _report(info, [_result(kind, FAILED, f"status {status} maps to no lane")])
+        return _report(info, [_result(kind, FAILED, f"status {status} maps to no lane{_crew_word_hint(status)}")])
     if kind in _SYNC:
         return _report(info, [_push(kind, ticket, status)])
     if kind == "obsidian":
