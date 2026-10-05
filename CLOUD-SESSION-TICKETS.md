@@ -59,7 +59,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0008 | Owner 2026-10-05: gizmoduck tools in the cloud env. bootstrap.sh resolves 'latest' via api.github.com (403 here); direct release downloads and git ls-remote work. Fix: git-tags fallback in bootstrap.sh (+ idempotent skips), run it end to end here, and hand the owner a setup script that calls it. gizmoduck bump. | builder on C-0008-build | review, land |
 
-Next free untracked ID: **C-0009** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0009 | Owner 2026-10-05: ONE cloud setup script. Fold the coordinator's additions (pwsh, gizmoduck bootstrap, apt /tmp-755 sandbox fix, mermaid-cli + mcp npm, pytest uv-tool shadow fix) into the repo's scripts/cloud-env-setup.sh (#503, owner's other session). Stacked on #504 (bubblewrap). | builder on C-0009-build | after #504 |
+
+Next free untracked ID: **C-0010** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 

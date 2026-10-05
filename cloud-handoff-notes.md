@@ -52,7 +52,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 04:47 UTC
+Last updated: 2026-10-05 04:48 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -111,6 +111,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 07:35: main moved to 95bc71bb (#503 owner's other session: scripts/cloud-env-setup.sh). Owner: merge my setup additions into the repo script (C-0009, stacked on #504). T-0105 #433 review 0 BLOCK 1 FIX (note wording ignores T-0050 personal keys) -> builder fixing.
 - 07:20: L-0673 #401 built (5b5bba68, Windows green, only red = bump). Review started (incl. SEAM question for ci_receipt.py).
 - 07:10: L-0678 #462 built (ade46c94, Windows green, only red = bump). T-0105 #433 built (7bd91f80). Reviews started for both. C-0008 PR #506 opened (40507b10).
 - 06:55: #501 re-check 1 BLOCK: a new production module whose name collides across the combined run's shared sys.path breaks main while PR is green (repro 18 failed). Fix: module/package-name uniqueness check in ci-select suite. Pin verified safe. Sent to builder.
