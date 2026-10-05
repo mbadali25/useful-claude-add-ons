@@ -1648,8 +1648,8 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:55-66`) runs it again
   and refuses on `stale`, `unknown` or (T-0063) `fresh-uncommitted` without refreshing (`:61-64`);
   a `fresh-uncommitted` goes back to implement to commit, which keeps check 1's receipt.
-- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:236-241`: the code map,
-  `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:277-283`: the code map,
+  `docs.diagramsDir`, `graph.out`, `.claude/rules` and, since T-0036, `docs/reference`) is the one definition.
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:209-220`) lets a ticket write
   under those dirs without a Touch entry **only while its approval is
@@ -1707,6 +1707,22 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   could-not-tell; `_FINAL_PATH` is None off Windows); an ambiguous new anchor is
   could-not-tell, and `_base_text` (`:583`) looks the base copy up with `git ls-tree`.
   With no current approval nothing is exempt.
+- T-0036 adds a fourth judged kind, `reference`: `_references`
+  (`plugin/crew/hooks/scripts/crew_refresh_check.py:1383`, called from `ticket_freshness` at `:1568`)
+  judges `docs/reference/integrations.md` only - absent is no line, a presence `_present` cannot
+  tell or an unreadable doc is `unknown` and a stop, no citation or no Generated header is `unknown`
+  and refreshable, otherwise `_judge` against the header's sha. The header is read by
+  `generated_header` (`plugin/crew/hooks/scripts/crew_reference.py:113`: `GENERATED_RE` on the first
+  non-blank line only, so one inside a fenced example is not it), imported at
+  `crew_refresh_check.py:238`. `crew_reference.py lint` (`:213`; CLI `main` `:233`) is what
+  `/crew:reference --integrations` (`plugin/crew/commands/reference.md:79`) runs on its draft:
+  header, an anchor and an `Auth:` line per `###` entry, every anchor inside the repo and within its
+  file, no empty doc, and `SECRET_PATTERNS` (`:62`, known shapes only) reported by name and line,
+  never by value nor by an anchor's text on the same line.
+  `/crew:implement` step 6 names the doc (`plugin/crew/commands/implement.md:90-91`). Tests:
+  `plugin/crew/tests/test_reference_docs.py`. JUDGEMENT: `artifact_verdicts` has no `reference`
+  kind, so once L-0540 wires it into the audit a refreshed `integrations.md` will need Touch;
+  `--flows` and `docs/reference/flows/` are L-0549's.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
   `plugin/crew/tests/test_completion_audit_refresh_artifacts.py` (main's; T-0094's

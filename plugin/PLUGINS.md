@@ -149,7 +149,7 @@ to CI or to branch protection.
 | `/crew:onboard [--refresh <subsystem>]` | Learn this codebase once and write a durable, verifiable code map |
 | `/crew:plan <ticket id> [--approve]` | Turn an approved spec into a step-by-step plan, then get it approved |
 | `/crew:promote <development \| qa \| production> [--dry-run \| --status]` | Promote a build to the next environment, with the full post-deploy proof |
-| `/crew:reference [--api \| --features \| --audit \| <area>]` | Generate the API and feature reference from the code, with anchors |
+| `/crew:reference [--api \| --features \| --integrations \| --audit \| <area>]` | Generate the API, feature and integrations reference from the code, with anchors |
 | `/crew:review [ticket id]` | Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean) |
 | `/crew:runbook <name \| --from-ticket T-#### \| --audit \| --verify <name>>` | Write, update, or audit operational runbooks |
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync a ticket between ServiceDesk Plus (via MCP) and the local cache |
@@ -198,7 +198,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-verification` | The change-to-check map, the `_verify/` layout, secrets handling, browser-test policy, and the five promotion gates for development -> qa -> production |
 | `crew-context` | Context exhaustion — warn near the limit, write handoffs, resume after a clear or compact |
 | `crew-best-practices` | Community best practices for Claude Code, audited against crew — what crew already does, the three architectural rules it departs from and why (ADR 0003), and the five contradictions the source records about itself |
-| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API and feature reference under `docs/reference/` |
+| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API, feature and integrations reference under `docs/reference/` |
 | `crew-lint` | Linters and formatters for PowerShell, PHP, Python, Terraform, and JavaScript, wired into the gate |
 | `crew-terraform` | `terraform-docs` and `tflint` for a module — header block, `footer.md`, README injection |
 | `crew-runbooks` | Writing, indexing, and maintaining operational runbooks |
@@ -234,7 +234,7 @@ Setup is nine resumable phases (`/crew:init`), and every artifact it writes is a
 | `.crew/verify.json` | phase 5 | Which checks a changed path requires, which specialist reviews it, and the promotion sequence per environment |
 | `.crew/codemap/` | phase 4 | One note per subsystem, every claim anchored to `file:line` and a sha |
 | `_verify/` | phase 3 | `smoke.sh`, `run-all.sh`, `cases/`, and a `README.md` recording what each check covers and when it last proved it could fail |
-| `docs/reference/` | `/crew:reference` | Every endpoint and every headless capability, anchored |
+| `docs/reference/` | `/crew:reference` | Every endpoint, every headless capability and every outbound call (`integrations.md`, linted, judged by the refresh check), anchored |
 | `.work/` | as work happens | Tickets, findings, the handoff note, and `PROMOTIONS.md` |
 | `CLAUDE.md` | phase 1 | Created if absent; if present, missing sections are **appended, never overwritten** |
 
